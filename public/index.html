@@ -1,0 +1,1658 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>كن أونلاين — نظام إدارة متاجر العملاء</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#12212B;
+  --ink-2:#3D5563;
+  --ink-3:#7C929E;
+  --ground:#E9EFEC;
+  --surface:#FFFFFF;
+  --line:#D3DEDA;
+  --pine:#0E7C66;
+  --pine-soft:#E3F1ED;
+  --gold:#C08A00;
+  --gold-soft:#FBF0D6;
+  --brick:#A8321D;
+  --brick-soft:#FAE6E1;
+  --radius:14px;
+  --shadow:0 1px 2px rgba(18,33,43,.06), 0 8px 24px -12px rgba(18,33,43,.18);
+  --mono:'IBM Plex Mono', ui-monospace, monospace;
+  --sans:'Tajawal', system-ui, 'Segoe UI', sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:var(--sans);
+  background:var(--ground);
+  color:var(--ink);
+  -webkit-font-smoothing:antialiased;
+  line-height:1.55;
+}
+button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit}
+button{cursor:pointer;border:none;background:none}
+a{color:inherit}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums;direction:ltr;display:inline-block}
+.hidden{display:none !important}
+:focus-visible{outline:2px solid var(--pine);outline-offset:2px;border-radius:4px}
+
+/* ---------- shell ---------- */
+.shell{max-width:1180px;margin:0 auto;padding:0 16px 64px}
+.topbar{
+  background:var(--ink);color:#fff;position:sticky;top:0;z-index:40;
+}
+.topbar-in{max-width:1180px;margin:0 auto;padding:12px 16px;display:flex;align-items:center;gap:14px}
+.brand{display:flex;align-items:center;gap:9px;font-weight:800;letter-spacing:-.2px}
+.brand-mark{
+  width:26px;height:26px;border-radius:7px;background:var(--pine);
+  display:grid;place-items:center;font-family:var(--mono);font-size:13px;font-weight:600;color:#fff
+}
+.brand small{display:block;font-weight:400;font-size:11px;color:#9DB4B0;letter-spacing:.06em}
+.topbar .spacer{flex:1}
+.who{font-size:13px;color:#A9BEC4;display:flex;align-items:center;gap:10px}
+.ghost-btn{
+  border:1px solid rgba(255,255,255,.22);color:#fff;padding:6px 12px;border-radius:8px;font-size:13px;
+  transition:background .15s
+}
+.ghost-btn:hover{background:rgba(255,255,255,.1)}
+
+/* ---------- login ---------- */
+.login-wrap{min-height:100dvh;display:grid;place-items:center;padding:24px;background:
+  radial-gradient(1000px 600px at 80% -10%, #DCEAE5 0%, transparent 60%), var(--ground)}
+.login{width:100%;max-width:420px}
+.login-card{background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:28px;box-shadow:var(--shadow)}
+.login h1{font-size:23px;letter-spacing:-.4px;margin-bottom:6px}
+.login p.sub{color:var(--ink-2);font-size:14px;margin-bottom:22px}
+.field{margin-bottom:14px}
+.field label{display:block;font-size:13px;font-weight:500;color:var(--ink-2);margin-bottom:6px}
+.field input,.field select,.field textarea{
+  width:100%;padding:11px 13px;border:1px solid var(--line);border-radius:10px;background:#FBFDFC;
+  transition:border-color .15s, background .15s
+}
+.field input:focus,.field select:focus,.field textarea:focus{border-color:var(--pine);background:#fff;outline:none}
+.btn{
+  width:100%;background:var(--pine);color:#fff;padding:12px;border-radius:10px;font-weight:700;
+  transition:filter .15s, transform .05s
+}
+.btn:hover{filter:brightness(1.07)}
+.btn:active{transform:translateY(1px)}
+.btn.sm{width:auto;padding:9px 16px;font-size:14px;font-weight:500}
+.btn.line{background:transparent;color:var(--pine);border:1px solid var(--pine)}
+.btn.dark{background:var(--ink)}
+.btn.danger{background:transparent;color:var(--brick);border:1px solid #E7C4BC}
+.demo-list{margin-top:20px;border-top:1px dashed var(--line);padding-top:16px}
+.demo-list h4{font-size:12px;color:var(--ink-3);font-weight:500;letter-spacing:.08em;margin-bottom:9px}
+.demo-chip{
+  display:flex;width:100%;justify-content:space-between;align-items:center;gap:8px;
+  padding:8px 11px;border:1px solid var(--line);border-radius:9px;margin-bottom:7px;font-size:13px;background:#fff;
+  text-align:right;transition:border-color .15s
+}
+.demo-chip:hover{border-color:var(--pine)}
+.demo-chip span.mono{font-size:11.5px;color:var(--ink-3)}
+.err{background:var(--brick-soft);color:var(--brick);padding:10px 12px;border-radius:9px;font-size:13.5px;margin-bottom:14px}
+
+/* ---------- page head ---------- */
+.page-head{padding:26px 0 18px;display:flex;flex-wrap:wrap;align-items:flex-end;gap:14px}
+.page-head h2{font-size:26px;letter-spacing:-.5px;line-height:1.25}
+.page-head .eyebrow{font-size:12px;color:var(--ink-3);letter-spacing:.1em;margin-bottom:3px}
+.page-head .spacer{flex:1}
+.seg{display:flex;background:#DDE7E3;border-radius:10px;padding:3px;gap:2px}
+.seg button{padding:7px 13px;border-radius:8px;font-size:13px;color:var(--ink-2);font-weight:500;white-space:nowrap}
+.seg button[aria-pressed="true"]{background:#fff;color:var(--ink);box-shadow:0 1px 2px rgba(18,33,43,.1)}
+
+/* ---------- funding gauge (signature) ---------- */
+.gauge{
+  background:var(--ink);color:#fff;border-radius:var(--radius);padding:18px 20px;margin-bottom:16px;
+  position:relative;overflow:hidden
+}
+.gauge-top{display:flex;flex-wrap:wrap;gap:12px;align-items:baseline;margin-bottom:14px}
+.gauge-label{font-size:12.5px;color:#9DB4B0;letter-spacing:.06em}
+.gauge-amount{font-family:var(--mono);font-size:30px;font-weight:600;letter-spacing:-1px}
+.gauge-amount .cur{font-size:14px;color:#9DB4B0;margin-inline-start:5px}
+.gauge-top .spacer{flex:1}
+.gauge-days{text-align:left;font-size:12.5px;color:#9DB4B0}
+.gauge-days b{display:block;font-family:var(--mono);font-size:20px;color:#fff;font-weight:500}
+.track{height:9px;border-radius:99px;background:rgba(255,255,255,.13);overflow:hidden;display:flex}
+.track i{display:block;height:100%;background:var(--pine);transition:width .7s cubic-bezier(.3,1,.4,1)}
+.track i.low{background:var(--gold)}
+.track i.crit{background:#E2603F}
+.gauge-foot{display:flex;justify-content:space-between;font-size:11.5px;color:#8FA6A2;margin-top:8px}
+.gauge-alert{
+  margin-top:13px;background:rgba(226,96,63,.16);border:1px solid rgba(226,96,63,.4);
+  padding:9px 12px;border-radius:9px;font-size:13px;color:#FFD9CF
+}
+
+/* ---------- kpi grid ---------- */
+.section-title{font-size:12.5px;color:var(--ink-3);letter-spacing:.1em;font-weight:500;margin:24px 0 10px;display:flex;align-items:center;gap:10px}
+.section-title:after{content:"";flex:1;height:1px;background:var(--line)}
+.grid{display:grid;gap:12px}
+.g4{grid-template-columns:repeat(4,1fr)}
+.g3{grid-template-columns:repeat(3,1fr)}
+.g2{grid-template-columns:repeat(2,1fr)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:15px 16px}
+.kpi .k-label{font-size:12.5px;color:var(--ink-2);margin-bottom:7px;display:flex;align-items:center;gap:6px}
+.kpi .k-val{font-family:var(--mono);font-size:25px;font-weight:600;letter-spacing:-1px;line-height:1.15}
+.kpi .k-val .cur{font-size:12px;color:var(--ink-3);font-family:var(--sans);margin-inline-start:4px;letter-spacing:0}
+.kpi .k-foot{margin-top:7px;font-size:12px;color:var(--ink-3);display:flex;align-items:center;gap:6px}
+.delta{font-family:var(--mono);font-size:11.5px;padding:1px 6px;border-radius:99px;font-weight:500}
+.delta.up{background:var(--pine-soft);color:var(--pine)}
+.delta.down{background:var(--brick-soft);color:var(--brick)}
+.delta.flat{background:#EDF1F0;color:var(--ink-3)}
+.kpi.accent-gold{background:var(--gold-soft);border-color:#EBDCB2}
+.kpi.accent-pine{background:var(--pine-soft);border-color:#C4E0D8}
+.dot{width:7px;height:7px;border-radius:99px;display:inline-block}
+.dot.pine{background:var(--pine)} .dot.gold{background:var(--gold)} .dot.brick{background:var(--brick)}
+
+/* ---------- chart ---------- */
+.chart-card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:16px}
+.chart-head{display:flex;flex-wrap:wrap;gap:14px;align-items:center;margin-bottom:12px}
+.chart-head h3{font-size:15px;font-weight:700}
+.legend{display:flex;gap:14px;font-size:12px;color:var(--ink-2);margin-inline-start:auto}
+.legend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-inline-end:5px}
+svg.chart{width:100%;height:auto;display:block;overflow:visible}
+
+/* ---------- table ---------- */
+.table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface)}
+table{width:100%;border-collapse:collapse;font-size:13.5px;min-width:640px}
+th{
+  text-align:right;font-size:11.5px;color:var(--ink-3);font-weight:500;letter-spacing:.04em;
+  padding:11px 13px;background:#F5F8F7;border-bottom:1px solid var(--line);white-space:nowrap
+}
+td{padding:11px 13px;border-bottom:1px solid #EDF2F0;white-space:nowrap}
+tbody tr:last-child td{border-bottom:none}
+tbody tr:hover{background:#FAFCFB}
+td.num{font-family:var(--mono);font-variant-numeric:tabular-nums;direction:ltr;text-align:left}
+.pill{font-size:11.5px;padding:2px 9px;border-radius:99px;background:#EDF2F0;color:var(--ink-2)}
+.pill.on{background:var(--pine-soft);color:var(--pine)}
+.pill.off{background:var(--brick-soft);color:var(--brick)}
+.row-act{display:flex;gap:6px}
+.icon-btn{padding:4px 9px;border:1px solid var(--line);border-radius:7px;font-size:12px;color:var(--ink-2);background:#fff}
+.icon-btn:hover{border-color:var(--pine);color:var(--pine)}
+
+/* ---------- note ---------- */
+.note-card{background:var(--gold-soft);border:1px solid #EBDCB2;border-radius:var(--radius);padding:16px}
+.note-card h4{font-size:13px;margin-bottom:6px;color:#7A5900}
+.note-card p{font-size:14px;color:#5C4400;white-space:pre-wrap}
+
+/* ---------- admin nav ---------- */
+.admin-nav{display:flex;gap:6px;overflow-x:auto;padding:14px 0 4px;-webkit-overflow-scrolling:touch}
+.admin-nav button{
+  padding:8px 15px;border-radius:99px;font-size:14px;color:var(--ink-2);white-space:nowrap;
+  border:1px solid transparent
+}
+.admin-nav button[aria-pressed="true"]{background:var(--ink);color:#fff}
+.admin-nav button:not([aria-pressed="true"]):hover{border-color:var(--line);background:#fff}
+
+/* ---------- forms ---------- */
+.form-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.form-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;align-items:center}
+.hint{font-size:12.5px;color:var(--ink-3)}
+.toast{
+  position:fixed;inset-block-end:20px;inset-inline-start:50%;transform:translateX(50%) translateY(20px);
+  background:var(--ink);color:#fff;padding:11px 18px;border-radius:10px;font-size:14px;
+  opacity:0;pointer-events:none;transition:.25s;z-index:99;box-shadow:var(--shadow)
+}
+.toast.show{opacity:1;transform:translateX(50%) translateY(0)}
+.empty{padding:34px 18px;text-align:center;color:var(--ink-3);font-size:14px}
+.empty b{display:block;color:var(--ink);font-size:15px;margin-bottom:4px}
+
+.detail-strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+.detail-strip>div{background:var(--surface);padding:11px 14px}
+.detail-strip .dt{font-size:11.5px;color:var(--ink-3);margin-bottom:2px}
+.detail-strip .dd{font-size:13.5px;font-weight:500;overflow:hidden;text-overflow:ellipsis}
+.split{display:flex;height:24px;border-radius:7px;overflow:hidden;background:var(--line);margin:4px 0 16px}
+.split i{display:block;height:100%;min-width:1px}
+.cost-list{list-style:none;display:grid;gap:1px;background:var(--line);border:1px solid var(--line);border-radius:11px;overflow:hidden}
+.cost-list li{background:var(--surface);display:flex;align-items:center;gap:10px;padding:9px 13px;font-size:13.5px}
+.cost-list li .sw{width:10px;height:10px;border-radius:3px;flex:none}
+.cost-list li .g{flex:1}
+.cost-list li .v{font-family:var(--mono);font-variant-numeric:tabular-nums;direction:ltr}
+.cost-list li .p{font-family:var(--mono);font-size:11.5px;color:var(--ink-3);width:44px;text-align:left;direction:ltr}
+.cost-list li.sum{background:#F5F8F7;font-weight:700}
+.sub-head{font-size:12px;color:var(--ink-3);margin:16px 0 8px;font-weight:500}
+.pill.wait{background:var(--gold-soft);color:#7A5900}
+.pill.mid{background:#E4EDF1;color:#2F5A70}
+.gov-row{display:flex;align-items:center;gap:10px;font-size:13.5px;margin-bottom:9px}
+.gov-row .g{width:96px;flex:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gov-row .bar{flex:1;height:8px;border-radius:99px;background:#EDF2F0;overflow:hidden}
+.gov-row .bar i{display:block;height:100%;background:var(--pine);border-radius:99px}
+.gov-row .n{font-family:var(--mono);font-size:12.5px;color:var(--ink-2);width:70px;text-align:left;direction:ltr;flex:none}
+@media (max-width:520px){ .gov-row .g{width:74px} .gov-row .n{width:60px;font-size:11.5px} }
+
+@media (max-width:900px){
+  .g4{grid-template-columns:repeat(2,1fr)}
+  .g3{grid-template-columns:repeat(2,1fr)}
+  .form-grid{grid-template-columns:repeat(2,1fr)}
+  .page-head h2{font-size:22px}
+}
+@media (max-width:520px){
+  .g4,.g3,.g2{grid-template-columns:repeat(2,1fr)}
+  .form-grid{grid-template-columns:1fr}
+  .gauge-amount{font-size:26px}
+  .kpi .k-val{font-size:21px}
+  .shell{padding-inline:12px}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none !important;animation:none !important}}
+@media print{
+  .topbar,.seg,.admin-nav,.btn,.icon-btn{display:none !important}
+  body{background:#fff}
+  .card,.chart-card,.table-wrap{break-inside:avoid}
+}
+</style>
+</head>
+<body>
+
+<div id="loginView" class="login-wrap">
+  <div class="login">
+    <div class="brand" style="justify-content:center;margin-bottom:18px;color:var(--ink)">
+      <span class="brand-mark">ك</span>
+      <span>كن أونلاين<small>لوحة متابعة المتاجر</small></span>
+    </div>
+    <div class="login-card">
+      <h1>ادخل بإيميلك</h1>
+      <p class="sub">هتلاقي أرقام متجرك محدّثة لحد النهارده.</p>
+      <div id="loginErr" class="err hidden"></div>
+      <div class="field">
+        <label for="emailInput">البريد الإلكتروني</label>
+        <input id="emailInput" type="email" inputmode="email" autocomplete="email" placeholder="name@store.com">
+      </div>
+      <div class="field">
+        <label for="passInput">كلمة المرور</label>
+        <input id="passInput" type="password" autocomplete="current-password" placeholder="كلمة المرور بتاعتك">
+      </div>
+      <button class="btn" id="loginBtn">دخول</button>
+      <div class="demo-list hidden" id="demoBox">
+        <h4>حسابات تجريبية — اضغط للدخول</h4>
+        <div id="demoAccounts"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="setupView" class="login-wrap hidden">
+  <div class="login">
+    <div class="brand" style="justify-content:center;margin-bottom:18px;color:var(--ink)">
+      <span class="brand-mark">ك</span><span>كن أونلاين<small>أول تشغيل</small></span>
+    </div>
+    <div class="login-card">
+      <h1>اعمل حساب الإدارة</h1>
+      <p class="sub">الحساب ده هيتعمل مرة واحدة بس، ومنه هتضيف باقي الحسابات.</p>
+      <div id="setupErr" class="err hidden"></div>
+      <div class="field"><label for="setupEmail">البريد الإلكتروني</label>
+        <input id="setupEmail" type="email" inputmode="email" placeholder="you@kun-online.com"></div>
+      <div class="field"><label for="setupPass">كلمة المرور</label>
+        <input id="setupPass" type="password" autocomplete="new-password" placeholder="٨ حروف على الأقل"></div>
+      <div class="field"><label for="setupPass2">تأكيد كلمة المرور</label>
+        <input id="setupPass2" type="password" autocomplete="new-password" placeholder="اكتبها تاني"></div>
+      <button class="btn" id="setupBtn">إنشاء الحساب</button>
+    </div>
+  </div>
+</div>
+
+<div id="appView" class="hidden">
+  <div class="topbar">
+    <div class="topbar-in">
+      <div class="brand"><span class="brand-mark">ك</span><span>كن أونلاين<small id="roleLabel">لوحة العميل</small></span></div>
+      <div class="spacer"></div>
+      <div class="who"><span id="whoName"></span><button class="ghost-btn" id="logoutBtn">خروج</button></div>
+    </div>
+  </div>
+  <div class="shell" id="viewRoot"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============================================================
+   كن أونلاين — نظام إدارة متاجر العملاء (نموذج تشغيلي)
+   ============================================================ */
+
+/* ---------- 1. التخزين ---------- */
+const KEY = 'konline:agency:v3';
+const mem = {};
+const store = {
+  async get(k){
+    try{ if(window.storage){ const r = await window.storage.get(k,false); if(r&&r.value) return JSON.parse(r.value); } }
+    catch(e){ /* المفتاح غير موجود أو التخزين غير متاح */ }
+    return mem[k] || null;
+  },
+  async set(k,v){
+    mem[k]=v;
+    try{ if(window.storage) await window.storage.set(k, JSON.stringify(v), false); }
+    catch(e){ console.warn('تعذر الحفظ الدائم، البيانات محفوظة في الجلسة فقط', e); }
+  }
+};
+
+/* ---------- 1ب. الاتصال بالسيرفر ---------- */
+let ONLINE = false;
+async function api(path, opts){
+  const r = await fetch(path, Object.assign({
+    credentials:'same-origin', headers:{'Content-Type':'application/json'}
+  }, opts||{}));
+  let data = {};
+  try{ data = await r.json(); }catch(e){ throw new Error('رد غير متوقع من السيرفر'); }
+  if(!r.ok) throw new Error(data.error || ('خطأ '+r.status));
+  return data;
+}
+function normalizeDB(){
+  DB = DB || {};
+  DB.agency  = DB.agency  || { name:'كن أونلاين' };
+  DB.clients = DB.clients || [];
+  DB.entries = DB.entries || [];
+  DB.funding = DB.funding || [];
+  DB.orders  = DB.orders  || [];
+}
+
+/* ---------- 2. أدوات ---------- */
+const uid = () => Math.random().toString(36).slice(2,9);
+const iso = d => d.toISOString().slice(0,10);
+const today = () => iso(new Date());
+const addDays = (dstr,n) => { const d=new Date(dstr+'T00:00:00'); d.setDate(d.getDate()+n); return iso(d); };
+const num = (v,d=0) => { const n=Number(v); return Number.isFinite(n)? n.toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d}) : '—'; };
+const money = (v,d=0) => num(Math.round(v*100)/100,d);
+const safeDiv = (a,b) => (b && Number.isFinite(a/b)) ? a/b : 0;
+const arDate = s => { const d=new Date(s+'T00:00:00'); return d.toLocaleDateString('ar-EG',{day:'numeric',month:'short'}); };
+const esc = s => String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2200); }
+
+/* ---------- 3. قوائم ثابتة ---------- */
+const GOV_BY_MARKET = {
+  'مصر':['القاهرة','الجيزة','الإسكندرية','القليوبية','الدقهلية','الشرقية','الغربية','المنوفية','البحيرة','كفر الشيخ','دمياط','بورسعيد','الإسماعيلية','السويس','أسيوط','سوهاج','المنيا','بني سويف','الفيوم','قنا','الأقصر','أسوان','البحر الأحمر','مطروح','شمال سيناء','جنوب سيناء','الوادي الجديد'],
+  'السعودية':['منطقة الرياض','مكة المكرمة','المدينة المنورة','المنطقة الشرقية','القصيم','عسير','تبوك','حائل','جازان','نجران','الباحة','الجوف','الحدود الشمالية']
+};
+const ORDER_SOURCES = ['واتساب','صفحة فيسبوك','إنستجرام','مكالمة تليفون','المتجر (إيزي أوردرز)','مصدر آخر'];
+const STATE_TEXT = {
+  new:'أوردر جديد — في انتظار التأكيد', confirmed:'اتأكد بالتليفون',
+  in_transit:'خرج للتوزيع مع المندوب', delivered:'تم التسليم للعميل',
+  returned:'مرتجع — العميل رفض الاستلام', cancelled:'ملغي'
+};
+function govList(market){ return GOV_BY_MARKET[market] || GOV_BY_MARKET['مصر']; }
+
+/* ---------- 3. بيانات البداية ---------- */
+let seedState = 987654321;
+function rnd(){ seedState = (seedState*1664525 + 1013904223) % 4294967296; return seedState/4294967296; }
+function around(base, spread){ return Math.max(0, base + (rnd()-0.5)*2*spread); }
+
+function seedData(){
+  const clients = [
+    { id:'c1', name:'عيد ستور — السعودية', email:'eid@demo.com', currency:'SAR', market:'السعودية',
+      store:'3eedstores.com', adAccount:'act_000000000000001', status:'active',
+      manager:'أحمد', phone:'+20xxxxxxxxxx', startDate:addDays(today(),-190), plan:'إدارة كاملة',
+      econ:{ price:210, productCost:78, shipping:22, packaging:6, codFeePct:2, confirmCost:4, otherCost:3, returnCost:18 },
+      note:'الكرييتف "الخلاط" لسه الأفضل أداءً. زوّدنا ميزانية LAL-180 بنسبة 20% وثبتنا CPO تحت 38 ريال.' },
+    { id:'c2', name:'وِفاق — مصر', email:'wefaq@demo.com', currency:'EGP', market:'مصر',
+      store:'wefaq-games.com', adAccount:'act_000000000000002', status:'active',
+      manager:'أحمد', phone:'+20xxxxxxxxxx', startDate:addDays(today(),-120), plan:'إدارة إعلانات + محتوى',
+      econ:{ price:390, productCost:145, shipping:45, packaging:10, codFeePct:2.5, confirmCost:8, otherCost:6, returnCost:35 },
+      note:'اختبرنا 3 هوكس جديدة الأسبوع ده. الهوك بتاع "لعبة العيلة" جاب أقل تكلفة طلب.' },
+    { id:'c3', name:'Har Mony', email:'harmony@demo.com', currency:'EGP', market:'مصر',
+      store:'harmony.store', adAccount:'act_000000000000003', status:'active',
+      manager:'أحمد', phone:'+20xxxxxxxxxx', startDate:addDays(today(),-60), plan:'إدارة كاملة',
+      econ:{ price:520, productCost:230, shipping:50, packaging:12, codFeePct:2.5, confirmCost:10, otherCost:8, returnCost:45 },
+      note:'الإنفاق متوقف يومين للتصوير الجديد. الرصيد كفاية لحد نهاية الشهر.' }
+  ];
+  const profiles = {
+    c1:{ orders:34, aov:210, cpo:36, cogsR:.42, ship:22, conf:.78, del:.86 },
+    c2:{ orders:26, aov:390, cpo:62, cogsR:.38, ship:45, conf:.72, del:.82 },
+    c3:{ orders:15, aov:520, cpo:95, cogsR:.45, ship:50, conf:.69, del:.80 }
+  };
+  const entries=[], funding=[];
+  const start = addDays(today(), -29);
+  clients.forEach(c=>{
+    const p = profiles[c.id];
+    for(let i=0;i<30;i++){
+      const date = addDays(start,i);
+      const trend = 1 + (i/29)*0.28;                       // نمو تدريجي
+      const weekend = [4,5].includes(new Date(date+'T00:00:00').getDay()) ? 1.15 : 1;
+      const orders = Math.max(1, Math.round(around(p.orders*trend*weekend, p.orders*0.28)));
+      const cpo = around(p.cpo, p.cpo*0.2);
+      const adSpend = Math.round(orders*cpo);
+      const aov = around(p.aov, p.aov*0.12);
+      const confirmed = Math.round(orders*around(p.conf,.06));
+      const delivered = Math.round(confirmed*around(p.del,.06));
+      const returned = Math.max(0, Math.round(delivered*around(.05,.03)));
+      const revenue = Math.round(delivered*aov);
+      const cogs = Math.round(revenue*p.cogsR);
+      const shipping = Math.round(delivered*p.ship);
+      const other = Math.round(around(revenue*0.02, revenue*0.01));
+      entries.push({ id:uid(), clientId:c.id, date, orders, adSpend, revenue, cogs, shipping, other, confirmed, delivered, returned });
+    }
+    const spent = entries.filter(e=>e.clientId===c.id).reduce((s,e)=>s+e.adSpend,0);
+    funding.push({ id:uid(), clientId:c.id, date:start, type:'deposit', amount:Math.round(spent*0.62/500)*500, note:'تمويل أول الشهر' });
+    funding.push({ id:uid(), clientId:c.id, date:addDays(start,16), type:'deposit', amount:Math.round(spent*0.5/500)*500, note:'تمويل إضافي' });
+  });
+  // أوردرات فردية — بالشكل اللي بييجي من ويبهوك إيزي أوردرز وبيتتبّع مع J&T
+  const NAMES = ['محمود سيد','سارة عبد الرحمن','أحمد فتحي','منى إبراهيم','كريم مصطفى','هبة السيد','عمرو زكي','نورا حسن','طارق يوسف','دينا سمير','مصطفى العربي','ياسمين فؤاد'];
+  const STATES = [['delivered',.55],['in_transit',.22],['new',.08],['returned',.07],['cancelled',.08]];
+  const pickState = () => { let r=rnd(), acc=0; for(const [k,w] of STATES){ acc+=w; if(r<=acc) return k; } return 'delivered'; };
+  const orders=[];
+  clients.forEach(c=>{
+    const govs = govList(c.market);
+    const price = (c.econ&&c.econ.price)||300;
+    for(let i=0;i<46;i++){
+      const date = addDays(today(), -Math.floor(rnd()*14));
+      const st = pickState();
+      const qty = rnd()>0.82 ? 2 : 1;
+      orders.push({
+        id:'EO-'+uid().toUpperCase(), clientId:c.id, date, source:'المتجر (إيزي أوردرز)',
+        product:'', address:'', note:'', createdBy:'system',
+        name:NAMES[Math.floor(rnd()*NAMES.length)],
+        phone:'01'+Math.floor(rnd()*9)+String(Math.floor(rnd()*10000000)).padStart(7,'0'),
+        gov:govs[Math.floor(rnd()*govs.length)],
+        total: Math.round(price*qty),
+        qty,
+        awb: (st==='new'||st==='cancelled') ? null : 'JT'+String(Math.floor(rnd()*900000000)+100000000)+'EG',
+        state: st,
+        checkpoint: st==='delivered'?'تم التسليم للعميل': st==='in_transit'?'خرج للتوزيع مع المندوب':
+                    st==='returned'?'مرتجع — العميل رفض الاستلام': st==='cancelled'?'ملغي':'في انتظار التأكيد'
+      });
+    }
+  });
+  return {
+    agency:{ name:'كن أونلاين', adminEmail:'admin@konline.agency' },
+    clients, entries, funding, orders
+  };
+}
+
+/* ---------- 4. الحسابات ---------- */
+function rangeDates(range){
+  const t = today();
+  if(range==='today') return [t,t];
+  if(range==='7') return [addDays(t,-6), t];
+  if(range==='30') return [addDays(t,-29), t];
+  return ['1900-01-01', t];
+}
+function entriesFor(clientId, range){
+  const [from,to] = rangeDates(range);
+  return DB.entries
+    .filter(e=>e.clientId===clientId && e.date>=from && e.date<=to)
+    .sort((a,b)=> a.date < b.date ? -1 : 1);
+}
+function agg(list){
+  const t = { orders:0, adSpend:0, revenue:0, cogs:0, shipping:0, other:0, confirmed:0, delivered:0, returned:0 };
+  list.forEach(e=>{ for(const k in t) t[k] += Number(e[k]||0); });
+  t.expenses = t.adSpend + t.cogs + t.shipping + t.other;
+  t.profit   = t.revenue - t.expenses;
+  t.cpo      = safeDiv(t.adSpend, t.orders);
+  t.aov      = safeDiv(t.revenue, t.delivered);
+  t.roas     = safeDiv(t.revenue, t.adSpend);
+  t.margin   = safeDiv(t.profit, t.revenue)*100;
+  t.confRate = safeDiv(t.confirmed, t.orders)*100;
+  t.delRate  = safeDiv(t.delivered, t.confirmed)*100;
+  t.retRate  = safeDiv(t.returned, t.delivered)*100;
+  return t;
+}
+function fundingState(clientId){
+  const dep = DB.funding.filter(f=>f.clientId===clientId)
+    .reduce((s,f)=> s + (f.type==='deposit'? Number(f.amount) : -Number(f.amount)), 0);
+  const spent = DB.entries.filter(e=>e.clientId===clientId).reduce((s,e)=>s+Number(e.adSpend||0),0);
+  const last7 = entriesFor(clientId,'7');
+  const avgDaily = safeDiv(last7.reduce((s,e)=>s+Number(e.adSpend||0),0), last7.length||1);
+  const left = dep - spent;
+  return { deposited:dep, spent, left, avgDaily, days: avgDaily>0 ? left/avgDaily : Infinity, pct: dep>0 ? Math.max(0,Math.min(100,left/dep*100)) : 0 };
+}
+const ECON_DEFAULTS = { price:0, productCost:0, shipping:0, packaging:0, codFeePct:0, confirmCost:0, otherCost:0, returnCost:0 };
+const COST_COLORS = ['#3D5563','#5E7684','#8FA3AD','#B9C7CE','#CBD6DB','#DDE5E8'];
+
+/* تحليل ربحية الأوردر الواحد: سعر البيع − المصاريف الضمنية − التكلفة الإعلانية */
+function orderEconomics(client, cpoActual){
+  const e = Object.assign({}, ECON_DEFAULTS, client.econ||{});
+  const fee = e.price * (Number(e.codFeePct)||0) / 100;
+  const items = [
+    { label:'تكلفة المنتج',            v:Number(e.productCost)||0 },
+    { label:'الشحن للعميل',            v:Number(e.shipping)||0 },
+    { label:'التغليف والتعبئة',        v:Number(e.packaging)||0 },
+    { label:'عمولة التحصيل / الدفع',   v:fee },
+    { label:'التأكيد وخدمة العملاء',   v:Number(e.confirmCost)||0 },
+    { label:'مصاريف ضمنية أخرى',       v:Number(e.otherCost)||0 }
+  ].map((x,i)=> Object.assign(x,{ color:COST_COLORS[i] }));
+  const implicit = items.reduce((s,x)=>s+x.v,0);
+  const contribution = e.price - implicit;              // الربح قبل الإعلان = أقصى تكلفة إعلانية مسموحة
+  const ad = Number(cpoActual)||0;
+  const net = contribution - ad;
+  return { e, items, implicit, contribution, ad, net,
+    margin: safeDiv(net, e.price)*100,
+    marginBefore: safeDiv(contribution, e.price)*100,
+    breakeven: contribution,
+    healthy: ad>0 ? ad <= contribution : true,
+    ready: e.price>0 };
+}
+
+function deltaBadge(cur, prev, higherIsBetter=true){
+  if(!prev) return '<span class="delta flat mono">جديد</span>';
+  const d = (cur-prev)/Math.abs(prev)*100;
+  if(Math.abs(d) < 1) return '<span class="delta flat mono">0%</span>';
+  const good = higherIsBetter ? d>0 : d<0;
+  return `<span class="delta ${good?'up':'down'} mono">${d>0?'+':''}${d.toFixed(0)}%</span>`;
+}
+
+/* ---------- 5. الرسم البياني ---------- */
+function chartSVG(list, currency){
+  if(!list.length) return '<div class="empty">لسه مفيش بيانات في الفترة دي.</div>';
+  const W=760, H=230, pad={t:14,r:34,b:26,l:34};
+  const iw = W-pad.l-pad.r, ih = H-pad.t-pad.b;
+  const maxRev = Math.max(...list.map(e=>e.revenue), 1);
+  const maxAd  = Math.max(...list.map(e=>e.adSpend), 1);
+  const n = list.length;
+  const bw = Math.max(3, iw/n*0.55);
+  const x = i => pad.l + (iw/n)*(i+0.5);
+  let bars='', line='', dots='', labels='';
+  list.forEach((e,i)=>{
+    const h = (e.revenue/maxRev)*ih;
+    bars += `<rect x="${(x(i)-bw/2).toFixed(1)}" y="${(pad.t+ih-h).toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" rx="2.5" fill="#C4E0D8"><title>${arDate(e.date)} — إيراد ${money(e.revenue)} ${currency}</title></rect>`;
+    const ly = pad.t + ih - (e.adSpend/maxAd)*ih*0.9;
+    line += `${i?'L':'M'}${x(i).toFixed(1)},${ly.toFixed(1)}`;
+    dots += `<circle cx="${x(i).toFixed(1)}" cy="${ly.toFixed(1)}" r="2.6" fill="#C08A00"><title>${arDate(e.date)} — إعلانات ${money(e.adSpend)} ${currency}</title></circle>`;
+  });
+  const step = Math.ceil(n/6);
+  list.forEach((e,i)=>{ if(i%step===0 || i===n-1)
+    labels += `<text x="${x(i).toFixed(1)}" y="${H-7}" text-anchor="middle" font-size="10.5" fill="#7C929E" font-family="IBM Plex Mono">${arDate(e.date)}</text>`; });
+  let grid='';
+  for(let g=0;g<=3;g++){ const y = pad.t + (ih/3)*g; grid += `<line x1="${pad.l}" y1="${y}" x2="${W-pad.r}" y2="${y}" stroke="#EDF2F0" stroke-width="1"/>`; }
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="الإيراد والإنفاق الإعلاني يومياً">
+    ${grid}${bars}
+    <path d="${line}" fill="none" stroke="#C08A00" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+    ${dots}${labels}
+  </svg>`;
+}
+
+/* ---------- 6. لوحة العميل ---------- */
+let clientRange = '30';
+let clientTab = 'dash';
+function renderClient(client){
+  if(clientTab==='add') return clientAddOrderView(client);
+  const cur = client.currency;
+  const f = fundingState(client.id);
+  const listAll = entriesFor(client.id,'all');
+  const listRange = entriesFor(client.id, clientRange);
+  const a = agg(listRange);
+  const allT = agg(listAll);
+  const td = listAll.filter(e=>e.date===today());
+  const t = agg(td.length ? td : listAll.slice(-1));
+  const yd = listAll.filter(e=>e.date===addDays(today(),-1));
+  const y = agg(yd);
+  const lowClass = f.days<3 ? 'crit' : f.days<7 ? 'low' : '';
+  const ec = orderEconomics(client, a.cpo);
+
+  const rows = listRange.slice().reverse().map(e=>{
+    const x = agg([e]);
+    return `<tr>
+      <td>${arDate(e.date)}</td>
+      <td class="num">${num(e.orders)}</td>
+      <td class="num">${money(e.adSpend)}</td>
+      <td class="num">${money(x.cpo,1)}</td>
+      <td class="num">${money(e.revenue)}</td>
+      <td class="num">${money(x.roas,2)}</td>
+      <td class="num" style="color:${x.profit>=0?'var(--pine)':'var(--brick)'}">${money(x.profit)}</td>
+    </tr>`; }).join('');
+
+  return `
+  <div class="page-head">
+    <div>
+      <div class="eyebrow">${esc(client.market)} · ${esc(client.store)}</div>
+      <h2>${esc(client.name)}</h2>
+    </div>
+    <div class="spacer"></div>
+    <div class="seg" id="rangeSeg">
+      ${[['today','النهارده'],['7','٧ أيام'],['30','٣٠ يوم'],['all','كل الفترة']]
+        .map(([v,l])=>`<button data-range="${v}" aria-pressed="${clientRange===v}">${l}</button>`).join('')}
+    </div>
+    <button class="btn sm dark" id="goAddOrder" style="border-radius:10px">+ أوردر جديد</button>
+  </div>
+
+  <div class="gauge">
+    <div class="gauge-top">
+      <div>
+        <div class="gauge-label">المتبقي من التمويل الإعلاني</div>
+        <div class="gauge-amount">${money(f.left)}<span class="cur">${cur}</span></div>
+      </div>
+      <div class="spacer"></div>
+      <div class="gauge-days">
+        يكفي تقريباً
+        <b>${f.days===Infinity?'—':Math.floor(f.days)} يوم</b>
+        بمعدل ${money(f.avgDaily)} ${cur}/يوم
+      </div>
+    </div>
+    <div class="track"><i class="${lowClass}" style="width:${f.pct.toFixed(1)}%"></i></div>
+    <div class="gauge-foot"><span>مصروف: ${money(f.spent)} ${cur}</span><span>إجمالي التمويل: ${money(f.deposited)} ${cur}</span></div>
+    ${f.days<7 ? `<div class="gauge-alert">الرصيد قارب على الانتهاء — محتاج تمويل جديد خلال ${Math.max(0,Math.floor(f.days))} يوم عشان الحملات ما تقفش.</div>`:''}
+  </div>
+
+  <div class="section-title">تفاصيل الحساب</div>
+  <div class="detail-strip">
+    <div><div class="dt">المتجر</div><div class="dd">${esc(client.store||'—')}</div></div>
+    <div><div class="dt">السوق والعملة</div><div class="dd">${esc(client.market||'—')} · ${cur}</div></div>
+    <div><div class="dt">الباقة</div><div class="dd">${esc(client.plan||'إدارة كاملة')}</div></div>
+    <div><div class="dt">مدير الحساب</div><div class="dd">${esc(client.manager||'فريق كن أونلاين')}</div></div>
+    <div><div class="dt">بداية التعاون</div><div class="dd">${client.startDate?arDate(client.startDate):'—'}</div></div>
+    <div><div class="dt">حساب الإعلانات</div><div class="dd mono" style="font-size:12px">${esc(client.adAccount||'—')}</div></div>
+    <div><div class="dt">حالة الحملات</div><div class="dd"><span class="pill ${client.status==='active'?'on':'off'}">${client.status==='active'?'شغّالة':'متوقفة'}</span></div></div>
+    <div><div class="dt">تواصل</div><div class="dd mono" style="font-size:12px">${esc(client.phone||'—')}</div></div>
+  </div>
+
+  <div class="section-title">أداء النهارده</div>
+  <div class="grid g4">
+    <div class="card kpi accent-pine">
+      <div class="k-label"><i class="dot pine"></i>طلبات النهارده</div>
+      <div class="k-val">${num(t.orders)}</div>
+      <div class="k-foot">${deltaBadge(t.orders,y.orders)} مقارنة بأمس</div>
+    </div>
+    <div class="card kpi accent-gold">
+      <div class="k-label"><i class="dot gold"></i>مصروف الإعلانات</div>
+      <div class="k-val">${money(t.adSpend)}<span class="cur">${cur}</span></div>
+      <div class="k-foot">${deltaBadge(t.adSpend,y.adSpend,false)} مقارنة بأمس</div>
+    </div>
+    <div class="card kpi">
+      <div class="k-label">تكلفة الطلب تسويقياً</div>
+      <div class="k-val">${money(t.cpo,1)}<span class="cur">${cur}</span></div>
+      <div class="k-foot">${deltaBadge(t.cpo,y.cpo,false)} كل ما تقل كل ما أحسن</div>
+    </div>
+    <div class="card kpi">
+      <div class="k-label">إيراد النهارده</div>
+      <div class="k-val">${money(t.revenue)}<span class="cur">${cur}</span></div>
+      <div class="k-foot">${deltaBadge(t.revenue,y.revenue)} مقارنة بأمس</div>
+    </div>
+  </div>
+
+  <div class="section-title">الإجمالي — ${clientRange==='all'?'كل الفترة':clientRange==='today'?'النهارده':'آخر '+clientRange+' يوم'}</div>
+  <div class="grid g4">
+    <div class="card kpi"><div class="k-label">إجمالي الطلبات</div><div class="k-val">${num(a.orders)}</div>
+      <div class="k-foot">${num(a.delivered)} طلب تم تسليمه</div></div>
+    <div class="card kpi"><div class="k-label">إجمالي الإيرادات</div><div class="k-val">${money(a.revenue)}<span class="cur">${cur}</span></div>
+      <div class="k-foot">متوسط قيمة الطلب ${money(a.aov)} ${cur}</div></div>
+    <div class="card kpi"><div class="k-label">إجمالي المصاريف</div><div class="k-val">${money(a.expenses)}<span class="cur">${cur}</span></div>
+      <div class="k-foot">منها ${money(a.adSpend)} إعلانات</div></div>
+    <div class="card kpi"><div class="k-label">صافي الربح</div>
+      <div class="k-val" style="color:${a.profit>=0?'var(--pine)':'var(--brick)'}">${money(a.profit)}<span class="cur">${cur}</span></div>
+      <div class="k-foot">هامش ${a.margin.toFixed(1)}%</div></div>
+  </div>
+
+  <div class="grid g4" style="margin-top:12px">
+    <div class="card kpi ${a.margin>=0?'accent-pine':''}"><div class="k-label">هامش الربح</div>
+      <div class="k-val" style="color:${a.margin>=0?'var(--pine)':'var(--brick)'}">${a.margin.toFixed(1)}<span class="cur">%</span></div>
+      <div class="k-foot">من كل ١٠٠ ${cur} مبيعات، ${money(a.margin)} ربح</div></div>
+    <div class="card kpi"><div class="k-label">العائد على الإعلان ROAS</div><div class="k-val">${money(a.roas,2)}<span class="cur">×</span></div>
+      <div class="k-foot">كل ١ ${cur} إعلان يرجّع ${money(a.roas,2)}</div></div>
+    <div class="card kpi"><div class="k-label">متوسط تكلفة الطلب تسويقياً</div><div class="k-val">${money(a.cpo,1)}<span class="cur">${cur}</span></div>
+      <div class="k-foot">على مدار الفترة</div></div>
+    <div class="card kpi"><div class="k-label">متوسط قيمة الطلب</div><div class="k-val">${money(a.aov)}<span class="cur">${cur}</span></div>
+      <div class="k-foot">${num(a.delivered)} طلب مسلّم</div></div>
+  </div>
+
+  <div class="grid g3" style="margin-top:12px">
+    <div class="card kpi"><div class="k-label">معدل تأكيد الطلبات</div><div class="k-val">${a.confRate.toFixed(0)}<span class="cur">%</span></div>
+      <div class="k-foot">${num(a.confirmed)} من ${num(a.orders)}</div></div>
+    <div class="card kpi"><div class="k-label">معدل التسليم</div><div class="k-val">${a.delRate.toFixed(0)}<span class="cur">%</span></div>
+      <div class="k-foot">${num(a.delivered)} طلب واصل</div></div>
+    <div class="card kpi"><div class="k-label">معدل المرتجع</div><div class="k-val" style="color:${a.retRate>10?'var(--brick)':'inherit'}">${a.retRate.toFixed(1)}<span class="cur">%</span></div>
+      <div class="k-foot">${num(a.returned)} طلب راجع</div></div>
+  </div>
+
+  ${econSection(ec, cur)}
+
+  <div class="section-title">الإيراد مقابل الإنفاق الإعلاني</div>
+  <div class="chart-card">
+    <div class="chart-head">
+      <h3>يوم بيوم</h3>
+      <div class="legend">
+        <span><i style="background:#C4E0D8"></i>الإيراد</span>
+        <span><i style="background:#C08A00"></i>الإنفاق الإعلاني</span>
+      </div>
+    </div>
+    ${chartSVG(listRange, cur)}
+  </div>
+
+  ${ordersSection(client, clientRange)}
+
+  ${client.note ? `<div class="section-title">ملاحظة الفريق</div>
+  <div class="note-card"><h4>تحديث من فريق كن أونلاين</h4><p>${esc(client.note)}</p></div>` : ''}
+
+  <div class="section-title">التفاصيل اليومية</div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>اليوم</th><th>طلبات</th><th>إعلانات (${cur})</th><th>تكلفة الطلب</th><th>إيراد</th><th>ROAS</th><th>صافي الربح</th></tr></thead>
+      <tbody>${rows || '<tr><td colspan="7" class="empty">مفيش بيانات في الفترة دي.</td></tr>'}</tbody>
+    </table>
+  </div>
+  <div class="form-actions">
+    <button class="btn sm line" id="expClient">تنزيل CSV</button>
+    <button class="btn sm line" onclick="window.print()">طباعة / PDF</button>
+    <span class="hint">إجمالي الفترة كلها: ${num(allT.orders)} طلب · ${money(allT.revenue)} ${cur} إيراد</span>
+  </div>
+
+  ${passwordCard()}`;
+}
+
+const ORDER_STATE = {
+  new:{ ar:'جديد', cls:'wait' }, confirmed:{ ar:'مؤكد', cls:'mid' },
+  in_transit:{ ar:'مع الشحن', cls:'mid' }, delivered:{ ar:'تم التسليم', cls:'on' },
+  returned:{ ar:'مرتجع', cls:'off' }, cancelled:{ ar:'ملغي', cls:'off' }
+};
+function ordersFor(clientId, range){
+  const [from,to] = rangeDates(range);
+  return (DB.orders||[]).filter(o=>o.clientId===clientId && o.date>=from && o.date<=to)
+    .sort((a,b)=> a.date<b.date?1:-1);
+}
+/* نموذج إضافة أوردر يدوي — نفس الحقول عند العميل وعند الإدارة */
+function orderFormFields(client, withClientPicker){
+  const govs = client ? govList(client.market) : govList('مصر');
+  const clientPicker = withClientPicker ? `
+      <div class="field"><label>العميل صاحب المتجر</label><select id="n_client">
+        ${DB.clients.map(c=>`<option value="${c.id}" ${client&&c.id===client.id?'selected':''}>${esc(c.name)}</option>`).join('')}
+      </select></div>` : '';
+  return `
+    <div class="form-grid">
+      ${clientPicker}
+      <div class="field"><label>اسم المشتري</label><input id="n_name" placeholder="الاسم زي ما قاله"></div>
+      <div class="field"><label>رقم التليفون</label><input id="n_phone" type="tel" inputmode="tel" placeholder="01xxxxxxxxx"></div>
+      <div class="field"><label>المحافظة</label><input id="n_gov" list="govlist" placeholder="اكتب أو اختار">
+        <datalist id="govlist">${govs.map(g=>`<option value="${esc(g)}">`).join('')}</datalist></div>
+      <div class="field"><label>وصل الأوردر منين</label><select id="n_source">
+        ${ORDER_SOURCES.map(x=>`<option ${x==='واتساب'?'selected':''}>${x}</option>`).join('')}</select></div>
+      <div class="field" style="grid-column:span 2"><label>العنوان بالتفصيل</label><input id="n_address" placeholder="الشارع والمنطقة وأقرب علامة مميزة"></div>
+      <div class="field"><label>المنتج</label><input id="n_product" placeholder="اسم المنتج / المقاس / اللون"></div>
+      <div class="field"><label>الكمية</label><input id="n_qty" type="number" min="1" value="1"></div>
+      <div class="field"><label>الإجمالي المطلوب${client?' ('+client.currency+')':''}</label><input id="n_total" type="number" min="0" step="0.01" placeholder="0"></div>
+      <div class="field"><label>تاريخ الأوردر</label><input id="n_date" type="date" value="${today()}"></div>
+      <div class="field" style="grid-column:1/-1"><label>ملاحظة</label><input id="n_note" placeholder="مثلاً: يفضّل التسليم بعد ٥ العصر"></div>
+    </div>`;
+}
+/** بيقرأ النموذج ويرجّع أوردر جاهز — أو null لو في نقص */
+function readOrderForm(clientId){
+  const g = id => { const el = document.getElementById(id); return el ? el.value : ''; };
+  const name = g('n_name').trim(), phone = g('n_phone').trim(), total = +g('n_total')||0;
+  if(!name || !phone){ toast('اسم المشتري ورقم التليفون مطلوبين'); return null; }
+  if(total<=0){ toast('اكتب إجمالي الأوردر'); return null; }
+  return {
+    id:'MN-'+uid().toUpperCase(), clientId, date:g('n_date')||today(),
+    name, phone, gov:g('n_gov').trim()||'غير محدد', address:g('n_address').trim(),
+    product:g('n_product').trim(), qty:+g('n_qty')||1, total,
+    source:g('n_source')||'واتساب', note:g('n_note').trim(),
+    awb:null, state:'new', checkpoint:STATE_TEXT.new
+  };
+}
+
+/* قسم أوردرات المشترين وحالة الشحن */
+function ordersSection(client, range){
+  const list = ordersFor(client.id, range);
+  if(!list.length) return '';
+  const cur = client.currency;
+  const cnt = st => list.filter(o=>o.state===st).length;
+  const govs = {};
+  list.forEach(o=>{ govs[o.gov] = govs[o.gov] || {orders:0, delivered:0, revenue:0};
+    govs[o.gov].orders++; if(o.state==='delivered'){ govs[o.gov].delivered++; govs[o.gov].revenue += o.total; } });
+  const top = Object.entries(govs).sort((a,b)=>b[1].orders-a[1].orders).slice(0,6);
+  const maxG = top.length ? top[0][1].orders : 1;
+  const govRows = top.map(([g,v])=>`<div class="gov-row">
+      <span class="g">${esc(g)}</span>
+      <span class="bar"><i style="width:${(v.orders/maxG*100).toFixed(0)}%"></i></span>
+      <span class="n">${v.orders} طلب</span>
+      <span class="n">${(safeDiv(v.delivered,v.orders)*100).toFixed(0)}% تسليم</span>
+    </div>`).join('');
+  const rows = list.slice(0,25).map(o=>{
+    const st = ORDER_STATE[o.state] || ORDER_STATE.new;
+    return `<tr>
+      <td>${arDate(o.date)}</td>
+      <td>${esc(o.name)}</td>
+      <td class="num">${esc(o.phone)}</td>
+      <td>${esc(o.gov)}</td>
+      <td class="num">${money(o.total)}</td>
+      <td class="mono" style="font-size:11.5px">${o.awb?esc(o.awb):'—'}</td>
+      <td><span class="pill ${st.cls}">${st.ar}</span></td>
+      <td><span class="hint">${esc(o.checkpoint)}</span></td>
+    </tr>`;}).join('');
+  return `
+  <div class="section-title">أوردرات المشترين وحالة الشحن</div>
+  <div class="grid g4">
+    <div class="card kpi"><div class="k-label">أوردرات الفترة</div><div class="k-val">${num(list.length)}</div>
+      <div class="k-foot">جايّة أوتوماتيك من المتجر</div></div>
+    <div class="card kpi accent-pine"><div class="k-label">تم التسليم</div><div class="k-val">${num(cnt('delivered'))}</div>
+      <div class="k-foot">${(safeDiv(cnt('delivered'),list.length)*100).toFixed(0)}% من الأوردرات</div></div>
+    <div class="card kpi"><div class="k-label">مع شركة الشحن</div><div class="k-val">${num(cnt('in_transit'))}</div>
+      <div class="k-foot">لسه في الطريق</div></div>
+    <div class="card kpi"><div class="k-label">مرتجع / ملغي</div>
+      <div class="k-val" style="color:var(--brick)">${num(cnt('returned')+cnt('cancelled'))}</div>
+      <div class="k-foot">${num(cnt('returned'))} مرتجع · ${num(cnt('cancelled'))} ملغي</div></div>
+  </div>
+  <div class="card" style="margin-top:12px">
+    <div class="chart-head"><h3>أعلى المحافظات</h3>
+      <span class="legend" style="font-size:12px">الترتيب بعدد الأوردرات ومعاه نسبة التسليم</span></div>
+    ${govRows}
+  </div>
+  <div class="table-wrap" style="margin-top:12px"><table>
+    <thead><tr><th>التاريخ</th><th>المشتري</th><th>التليفون</th><th>المحافظة</th><th>الإجمالي (${cur})</th><th>بوليصة J&amp;T</th><th>الحالة</th><th>آخر تحديث</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table></div>
+  <p class="hint" style="margin-top:10px">آخر ${Math.min(25,list.length)} أوردر من ${num(list.length)}. الحالة بتتحدّث من تتبّع J&amp;T مصر.</p>
+
+`;
+}
+
+/* شاشة العميل: تسجيل أوردر جديد */
+function clientAddOrderView(client){
+  const mine = (DB.orders||[]).filter(o=>o.clientId===client.id && String(o.id).startsWith('MN-'))
+    .sort((a,b)=> a.date<b.date?1:-1).slice(0,12);
+  const rows = mine.map(o=>{
+    const st = ORDER_STATE[o.state] || ORDER_STATE.new;
+    return `<tr><td>${arDate(o.date)}</td><td>${esc(o.name)}</td><td class="num">${esc(o.phone)}</td>
+      <td>${esc(o.gov)}</td><td><span class="pill mid">${esc(o.source||'—')}</span></td>
+      <td class="num">${money(o.total)}</td><td><span class="pill ${st.cls}">${st.ar}</span></td></tr>`;}).join('');
+  return `
+  <div class="page-head">
+    <div><div class="eyebrow">${esc(client.name)}</div><h2>تسجيل أوردر جديد</h2></div>
+    <div class="spacer"></div>
+    <div class="seg" id="clientTabs">
+      <button data-ctab="dash" aria-pressed="false">الداشبورد</button>
+      <button data-ctab="add" aria-pressed="true">أوردر جديد</button>
+    </div>
+  </div>
+  <div class="card">
+    <p class="hint" style="margin-bottom:14px">الأوردرات اللي بتيجي من واتساب أو من الصفحة سجّلها هنا، وهتدخل في أرقام الداشبورد زيها زي أوردرات المتجر بالظبط.</p>
+    ${orderFormFields(client, false)}
+    <div class="form-actions">
+      <button class="btn sm" id="saveOrder">تسجيل الأوردر</button>
+      <span class="hint">فريق كن أونلاين هيشوفه على طول ويجهّز الشحن.</span>
+    </div>
+  </div>
+  <div class="section-title">آخر الأوردرات اللي سجّلتها</div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>التاريخ</th><th>المشتري</th><th>التليفون</th><th>المحافظة</th><th>المصدر</th><th>الإجمالي</th><th>الحالة</th></tr></thead>
+    <tbody>${rows || '<tr><td colspan="7" class="empty"><b>لسه ما سجّلتش أوردر يدوي</b>أول أوردر يجيلك على واتساب سجّله فوق.</td></tr>'}</tbody>
+  </table></div>`;
+}
+
+/* قسم اقتصاديات الأوردر الواحد */
+function econSection(ec, cur){
+  if(!ec.ready) return `
+  <div class="section-title">اقتصاديات الأوردر الواحد</div>
+  <div class="card"><div class="empty"><b>لسه ما اتحددش سعر الأوردر ومصاريفه</b>فريق كن أونلاين هيضيفهم من لوحة الإدارة وهتلاقي التحليل هنا.</div></div>`;
+
+  const price = ec.e.price;
+  const pct = v => safeDiv(v, price)*100;
+  const segs = ec.items.filter(i=>i.v>0)
+    .map(i=>`<i style="width:${pct(i.v).toFixed(2)}%;background:${i.color}" title="${i.label}"></i>`).join('')
+    + (ec.ad>0 ? `<i style="width:${Math.min(100,pct(ec.ad)).toFixed(2)}%;background:var(--gold)" title="التكلفة الإعلانية"></i>` : '')
+    + (ec.net>0 ? `<i style="width:${pct(ec.net).toFixed(2)}%;background:var(--pine)" title="صافي الربح"></i>` : '');
+
+  const rows = ec.items.map(i=>`<li>
+      <span class="sw" style="background:${i.color}"></span>
+      <span class="g">${i.label}</span>
+      <span class="v">${money(i.v,1)}</span><span class="p">${pct(i.v).toFixed(0)}%</span></li>`).join('');
+
+  return `
+  <div class="section-title">اقتصاديات الأوردر الواحد</div>
+  <div class="grid g4">
+    <div class="card kpi"><div class="k-label">إجمالي سعر الأوردر</div>
+      <div class="k-val">${money(price,1)}<span class="cur">${cur}</span></div>
+      <div class="k-foot">سعر البيع للعميل النهائي</div></div>
+    <div class="card kpi"><div class="k-label">مصاريف الأوردر الضمنية</div>
+      <div class="k-val">${money(ec.implicit,1)}<span class="cur">${cur}</span></div>
+      <div class="k-foot">${pct(ec.implicit).toFixed(0)}% من سعر الأوردر</div></div>
+    <div class="card kpi accent-gold"><div class="k-label"><i class="dot gold"></i>التكلفة الإعلانية للطلب</div>
+      <div class="k-val">${money(ec.ad,1)}<span class="cur">${cur}</span></div>
+      <div class="k-foot">${ec.healthy
+        ? `في الأمان — الحد الأقصى ${money(ec.breakeven,1)}`
+        : `<span style="color:var(--brick)">أعلى من الحد الأقصى ${money(ec.breakeven,1)}</span>`}</div></div>
+    <div class="card kpi ${ec.net>=0?'accent-pine':''}"><div class="k-label">ربح الأوردر الواحد</div>
+      <div class="k-val" style="color:${ec.net>=0?'var(--pine)':'var(--brick)'}">${money(ec.net,1)}<span class="cur">${cur}</span></div>
+      <div class="k-foot">هامش ${ec.margin.toFixed(1)}%</div></div>
+  </div>
+
+  <div class="card" style="margin-top:12px">
+    <div class="chart-head">
+      <h3>سعر الأوردر بيروح فين</h3>
+      <span class="legend" style="font-size:12px">أقصى تكلفة إعلانية تقدر تدفعها للطلب:
+        <b class="mono" style="margin-inline-start:5px">${money(ec.breakeven,1)} ${cur}</b></span>
+    </div>
+    <div class="split">${segs}</div>
+    <ul class="cost-list">
+      ${rows}
+      <li class="sum"><span class="sw" style="background:var(--ink-3)"></span><span class="g">إجمالي المصاريف الضمنية</span>
+        <span class="v">${money(ec.implicit,1)}</span><span class="p">${pct(ec.implicit).toFixed(0)}%</span></li>
+      <li><span class="sw" style="background:var(--gold)"></span><span class="g">التكلفة الإعلانية (فعلية)</span>
+        <span class="v">${money(ec.ad,1)}</span><span class="p">${pct(ec.ad).toFixed(0)}%</span></li>
+      <li class="sum"><span class="sw" style="background:${ec.net>=0?'var(--pine)':'var(--brick)'}"></span>
+        <span class="g">صافي ربح الأوردر</span>
+        <span class="v" style="color:${ec.net>=0?'var(--pine)':'var(--brick)'}">${money(ec.net,1)}</span>
+        <span class="p">${ec.margin.toFixed(0)}%</span></li>
+    </ul>
+    <p class="hint" style="margin-top:10px">الربح قبل الإعلان ${money(ec.contribution,1)} ${cur} (${ec.marginBefore.toFixed(0)}%) — ده الرقم اللي بنبني عليه سقف الميزانية.</p>
+  </div>
+`;
+}
+
+/* بطاقة تغيير كلمة المرور — بتظهر للعميل والإدارة */
+function passwordCard(){
+  if(!ONLINE) return '';
+  return `
+  <div class="section-title">الأمان</div>
+  <div class="card">
+    <div class="form-grid" style="max-width:640px">
+      <div class="field"><label>كلمة المرور الحالية</label>
+        <input id="p_current" type="password" autocomplete="current-password"></div>
+      <div class="field"><label>كلمة المرور الجديدة</label>
+        <input id="p_next" type="password" autocomplete="new-password" placeholder="٨ حروف على الأقل"></div>
+    </div>
+    <div class="form-actions">
+      <button class="btn sm" id="changePassBtn">تغيير كلمة المرور</button>
+      <span class="hint">هتفضل داخل بعد التغيير، بس أي جهاز تاني هيحتاج الجديدة.</span>
+    </div>
+  </div>`;
+}
+function bindPasswordCard(){
+  const b = document.getElementById('changePassBtn');
+  if(!b) return;
+  b.onclick = async ()=>{
+    const cur = document.getElementById('p_current').value;
+    const next = document.getElementById('p_next').value;
+    if(next.length < 8){ toast('كلمة المرور الجديدة لازم تكون ٨ حروف على الأقل'); return; }
+    b.disabled = true;
+    try{
+      await api('/api/change-password', {method:'POST', body:JSON.stringify({current:cur, next})});
+      document.getElementById('p_current').value=''; document.getElementById('p_next').value='';
+      toast('كلمة المرور اتغيّرت');
+    }catch(e){ toast(e.message); }
+    finally{ b.disabled=false; }
+  };
+}
+
+/* ---------- 7. لوحة الإدارة ---------- */
+let adminTab = 'overview';
+let editingEntry = null;
+let editingClient = null;
+
+function renderAdmin(){
+  const tabs = [['overview','نظرة عامة'],['orders','الأوردرات'],['entry','الإدخال اليومي'],['funding','التمويلات'],['clients','العملاء'],['users','الحسابات'],['settings','الإعدادات']];
+  return `
+  <div class="page-head">
+    <div><div class="eyebrow">لوحة الإدارة</div><h2>كل العملاء في مكان واحد</h2></div>
+  </div>
+  <div class="admin-nav">${tabs.map(([v,l])=>`<button data-tab="${v}" aria-pressed="${adminTab===v}">${l}</button>`).join('')}</div>
+  <div id="adminBody">${
+    adminTab==='overview'? adminOverview() :
+    adminTab==='orders'  ? adminOrders() :
+    adminTab==='entry'   ? adminEntry() :
+    adminTab==='funding' ? adminFunding() :
+    adminTab==='clients' ? adminClients() :
+    adminTab==='users'   ? adminUsers() : adminSettings()
+  }</div>`;
+}
+
+function adminOverview(){
+  const rows = DB.clients.map(c=>{
+    const a = agg(entriesFor(c.id,'30'));
+    const f = fundingState(c.id);
+    const risk = f.days<3 ? 'off' : f.days<7 ? '' : 'on';
+    return `<tr>
+      <td><b>${esc(c.name)}</b><br><span class="hint">${esc(c.market)}</span></td>
+      <td class="num">${num(a.orders)}</td>
+      <td class="num">${money(a.adSpend)}</td>
+      <td class="num">${money(a.cpo,1)}</td>
+      <td class="num">${money(a.revenue)}</td>
+      <td class="num">${money(a.roas,2)}</td>
+      <td class="num" style="color:${a.profit>=0?'var(--pine)':'var(--brick)'}">${money(a.profit)}</td>
+      <td class="num">${money(f.left)}</td>
+      <td><span class="pill ${risk}">${f.days===Infinity?'—':Math.floor(f.days)} يوم</span></td>
+      <td><button class="icon-btn" data-view="${c.id}">افتح لوحته</button></td>
+    </tr>`;
+  }).join('');
+  const totals = DB.clients.map(c=>agg(entriesFor(c.id,'30')));
+  const tOrders = totals.reduce((s,x)=>s+x.orders,0);
+  const lowCount = DB.clients.filter(c=>fundingState(c.id).days<7).length;
+  return `
+  <div class="grid g4" style="margin-top:8px">
+    <div class="card kpi"><div class="k-label">عملاء نشطين</div><div class="k-val">${num(DB.clients.filter(c=>c.status==='active').length)}</div><div class="k-foot">من ${num(DB.clients.length)} عميل</div></div>
+    <div class="card kpi"><div class="k-label">طلبات آخر ٣٠ يوم</div><div class="k-val">${num(tOrders)}</div><div class="k-foot">كل العملاء</div></div>
+    <div class="card kpi"><div class="k-label">أيام مسجّلة</div><div class="k-val">${num(DB.entries.length)}</div><div class="k-foot">صف بيانات</div></div>
+    <div class="card kpi ${lowCount?'accent-gold':''}"><div class="k-label">تحتاج تمويل</div><div class="k-val">${num(lowCount)}</div><div class="k-foot">رصيدهم أقل من ٧ أيام</div></div>
+  </div>
+  <div class="section-title">أداء آخر ٣٠ يوم — لكل عميل</div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>العميل</th><th>طلبات</th><th>إعلانات</th><th>تكلفة الطلب</th><th>إيراد</th><th>ROAS</th><th>صافي ربح</th><th>رصيد التمويل</th><th>يكفي</th><th></th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table></div>
+  <p class="hint" style="margin-top:10px">الأرقام بعملة كل عميل — مش مجمّعة عشان ما نخلطش الجنيه بالريال.</p>`;
+}
+
+let orderFilter = 'all';
+function adminOrders(){
+  const first = DB.clients[0];
+  let list = (DB.orders||[]).slice();
+  if(orderFilter!=='all') list = list.filter(o=>o.clientId===orderFilter);
+  list.sort((a,b)=> a.date<b.date?1:-1);
+  const manual = list.filter(o=>String(o.id).startsWith('MN-'));
+  const rows = list.slice(0,60).map(o=>{
+    const c = DB.clients.find(x=>x.id===o.clientId);
+    const stOpts = Object.keys(ORDER_STATE).map(k=>
+      `<option value="${k}" ${o.state===k?'selected':''}>${ORDER_STATE[k].ar}</option>`).join('');
+    return `<tr>
+      <td>${arDate(o.date)}<br><span class="hint mono" style="font-size:10.5px">${esc(o.id)}</span></td>
+      <td>${esc(c?c.name:'—')}</td>
+      <td>${esc(o.name)}<br><span class="hint">${esc(o.gov||'')}</span></td>
+      <td class="num">${esc(o.phone)}</td>
+      <td><span class="pill ${String(o.id).startsWith('MN-')?'wait':'mid'}">${esc(o.source||'المتجر')}</span></td>
+      <td class="num">${money(o.total)} ${c?c.currency:''}</td>
+      <td><input class="mono" data-awb="${o.id}" value="${esc(o.awb||'')}" placeholder="رقم البوليصة"
+           style="width:132px;padding:5px 8px;border:1px solid var(--line);border-radius:7px;font-size:12px"></td>
+      <td><select data-st="${o.id}" style="padding:5px 8px;border:1px solid var(--line);border-radius:7px;font-size:12.5px">${stOpts}</select></td>
+      <td><button class="icon-btn" data-delorder="${o.id}">حذف</button></td>
+    </tr>`;}).join('');
+  return `
+  <div class="section-title">تسجيل أوردر وصل للإدارة</div>
+  <div class="card">
+    <p class="hint" style="margin-bottom:14px">لو العميل بعتلك أوردر على واتساب أو تليفون، سجّله هنا وهيظهر في داشبورده فوراً.</p>
+    ${orderFormFields(first, true)}
+    <div class="form-actions">
+      <button class="btn sm" id="adminSaveOrder">تسجيل الأوردر</button>
+      <span class="hint">الحالة بتبدأ "جديد" — غيّرها من الجدول تحت مع رقم البوليصة.</span>
+    </div>
+  </div>
+  <div class="section-title">كل الأوردرات</div>
+  <div class="page-head" style="padding:0 0 12px">
+    <span class="hint">${num(list.length)} أوردر · منهم ${num(manual.length)} مسجّل يدوي</span>
+    <div class="spacer"></div>
+    <div class="seg" id="orderFilter">
+      <button data-of="all" aria-pressed="${orderFilter==='all'}">الكل</button>
+      ${DB.clients.map(c=>`<button data-of="${c.id}" aria-pressed="${orderFilter===c.id}">${esc(c.name.split(' —')[0])}</button>`).join('')}
+    </div>
+  </div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>التاريخ</th><th>المتجر</th><th>المشتري</th><th>التليفون</th><th>المصدر</th><th>الإجمالي</th><th>بوليصة J&amp;T</th><th>الحالة</th><th></th></tr></thead>
+    <tbody>${rows || '<tr><td colspan="9" class="empty">مفيش أوردرات.</td></tr>'}</tbody>
+  </table></div>
+  <p class="hint" style="margin-top:10px">أول ٦٠ أوردر. تغيير الحالة أو رقم البوليصة بيتحفظ على طول.</p>`;
+}
+
+function adminEntry(){
+  const e = editingEntry || {};
+  const clientOpts = DB.clients.map(c=>`<option value="${c.id}" ${e.clientId===c.id?'selected':''}>${esc(c.name)}</option>`).join('');
+  const recent = DB.entries.slice().sort((a,b)=> a.date<b.date?1:-1).slice(0,25).map(x=>{
+    const c = DB.clients.find(c=>c.id===x.clientId);
+    return `<tr>
+      <td>${arDate(x.date)}</td><td>${esc(c?c.name:'—')}</td>
+      <td class="num">${num(x.orders)}</td><td class="num">${money(x.adSpend)}</td>
+      <td class="num">${money(x.revenue)}</td><td class="num">${num(x.delivered)}</td>
+      <td><div class="row-act">
+        <button class="icon-btn" data-edit="${x.id}">تعديل</button>
+        <button class="icon-btn" data-del="${x.id}">حذف</button>
+      </div></td></tr>`;
+  }).join('');
+  const v = (k,d='') => e[k]!==undefined ? e[k] : d;
+  return `
+  <div class="section-title">${editingEntry?'تعديل يوم مسجّل':'تسجيل يوم جديد'}</div>
+  <div class="card">
+    <div class="form-grid">
+      <div class="field"><label>العميل</label><select id="f_client">${clientOpts}</select></div>
+      <div class="field"><label>التاريخ</label><input id="f_date" type="date" value="${v('date',today())}"></div>
+      <div class="field"><label>عدد الطلبات</label><input id="f_orders" type="number" min="0" value="${v('orders','')}" placeholder="0"></div>
+      <div class="field"><label>مصروف الإعلانات</label><input id="f_adSpend" type="number" min="0" step="0.01" value="${v('adSpend','')}" placeholder="0"></div>
+      <div class="field"><label>طلبات مؤكدة</label><input id="f_confirmed" type="number" min="0" value="${v('confirmed','')}" placeholder="0"></div>
+      <div class="field"><label>طلبات مسلّمة</label><input id="f_delivered" type="number" min="0" value="${v('delivered','')}" placeholder="0"></div>
+      <div class="field"><label>مرتجعات</label><input id="f_returned" type="number" min="0" value="${v('returned','')}" placeholder="0"></div>
+      <div class="field"><label>الإيراد المحصّل</label><input id="f_revenue" type="number" min="0" step="0.01" value="${v('revenue','')}" placeholder="0"></div>
+      <div class="field"><label>تكلفة البضاعة</label><input id="f_cogs" type="number" min="0" step="0.01" value="${v('cogs','')}" placeholder="0"></div>
+      <div class="field"><label>الشحن</label><input id="f_shipping" type="number" min="0" step="0.01" value="${v('shipping','')}" placeholder="0"></div>
+      <div class="field"><label>مصاريف أخرى</label><input id="f_other" type="number" min="0" step="0.01" value="${v('other','')}" placeholder="0"></div>
+    </div>
+    <div class="form-actions">
+      <button class="btn sm" id="saveEntry">${editingEntry?'حفظ التعديل':'حفظ اليوم'}</button>
+      <button class="btn sm line" id="autoCosts">املأ المصاريف من إعدادات الأوردر</button>
+      ${editingEntry?'<button class="btn sm line" id="cancelEdit">إلغاء</button>':''}
+      <span class="hint">لو سجّلت نفس اليوم لنفس العميل تاني، هيتحدّث الصف القديم مش هيتكرر.</span>
+    </div>
+  </div>
+  <div class="section-title">آخر الأيام المسجّلة</div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>اليوم</th><th>العميل</th><th>طلبات</th><th>إعلانات</th><th>إيراد</th><th>مسلّم</th><th></th></tr></thead>
+    <tbody>${recent || '<tr><td colspan="7" class="empty">مفيش بيانات لسه.</td></tr>'}</tbody>
+  </table></div>`;
+}
+
+function adminFunding(){
+  const clientOpts = DB.clients.map(c=>`<option value="${c.id}">${esc(c.name)} (${c.currency})</option>`).join('');
+  const rows = DB.funding.slice().sort((a,b)=> a.date<b.date?1:-1).map(f=>{
+    const c = DB.clients.find(c=>c.id===f.clientId);
+    return `<tr>
+      <td>${arDate(f.date)}</td><td>${esc(c?c.name:'—')}</td>
+      <td><span class="pill ${f.type==='deposit'?'on':'off'}">${f.type==='deposit'?'إيداع':'خصم'}</span></td>
+      <td class="num">${money(f.amount)} ${c?c.currency:''}</td>
+      <td>${esc(f.note||'')}</td>
+      <td><button class="icon-btn" data-delfund="${f.id}">حذف</button></td>
+    </tr>`;
+  }).join('');
+  const balances = DB.clients.map(c=>{
+    const f = fundingState(c.id);
+    return `<div class="card kpi">
+      <div class="k-label">${esc(c.name)}</div>
+      <div class="k-val" style="color:${f.days<7?'var(--brick)':'inherit'}">${money(f.left)}<span class="cur">${c.currency}</span></div>
+      <div class="k-foot">يكفي ${f.days===Infinity?'—':Math.floor(f.days)} يوم بمعدل ${money(f.avgDaily)}/يوم</div>
+    </div>`;
+  }).join('');
+  return `
+  <div class="section-title">أرصدة التمويل الحالية</div>
+  <div class="grid g3">${balances}</div>
+  <div class="section-title">إضافة حركة تمويل</div>
+  <div class="card">
+    <div class="form-grid">
+      <div class="field"><label>العميل</label><select id="fu_client">${clientOpts}</select></div>
+      <div class="field"><label>النوع</label><select id="fu_type"><option value="deposit">إيداع تمويل</option><option value="withdraw">خصم / استرداد</option></select></div>
+      <div class="field"><label>المبلغ</label><input id="fu_amount" type="number" min="0" step="0.01" placeholder="0"></div>
+      <div class="field"><label>التاريخ</label><input id="fu_date" type="date" value="${today()}"></div>
+      <div class="field" style="grid-column:1/-1"><label>ملاحظة</label><input id="fu_note" type="text" placeholder="تحويل بنكي / فودافون كاش..."></div>
+    </div>
+    <div class="form-actions"><button class="btn sm" id="saveFunding">تسجيل الحركة</button>
+    <span class="hint">الرصيد = إجمالي الإيداعات − إجمالي الإنفاق الإعلاني المسجّل.</span></div>
+  </div>
+  <div class="section-title">كشف الحركات</div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>التاريخ</th><th>العميل</th><th>النوع</th><th>المبلغ</th><th>ملاحظة</th><th></th></tr></thead>
+    <tbody>${rows || '<tr><td colspan="6" class="empty">مفيش حركات.</td></tr>'}</tbody>
+  </table></div>`;
+}
+
+function adminClients(){
+  const c = editingClient || {};
+  const e = c.econ || {};
+  const v = (o,k,d='') => (o[k]!==undefined && o[k]!==null) ? o[k] : d;
+  const rows = DB.clients.map(x=>{
+    const ex = orderEconomics(x, agg(entriesFor(x.id,'30')).cpo);
+    return `<tr>
+    <td><b>${esc(x.name)}</b><br><span class="hint mono" style="font-size:11.5px">${esc(x.email)}</span></td>
+    <td>${esc(x.market)} · ${x.currency}</td>
+    <td>${esc(x.plan||'—')}<br><span class="hint">${esc(x.manager||'')}</span></td>
+    <td class="num">${ex.ready?money(ex.e.price,1):'—'}</td>
+    <td class="num">${ex.ready?money(ex.implicit,1):'—'}</td>
+    <td class="num" style="color:${ex.net>=0?'var(--pine)':'var(--brick)'}">${ex.ready?money(ex.net,1):'—'}</td>
+    <td class="num">${ex.ready?ex.margin.toFixed(1)+'%':'—'}</td>
+    <td><span class="pill ${x.status==='active'?'on':'off'}">${x.status==='active'?'نشط':'متوقف'}</span></td>
+    <td><div class="row-act">
+      <button class="icon-btn" data-editc="${x.id}">تعديل</button>
+      <button class="icon-btn" data-note="${x.id}">ملاحظة</button>
+      <button class="icon-btn" data-toggle="${x.id}">${x.status==='active'?'إيقاف':'تفعيل'}</button>
+      <button class="icon-btn" data-view="${x.id}">لوحته</button>
+    </div></td></tr>`;}).join('');
+  const curOpts = ['EGP','SAR','AED','USD'].map(u=>`<option ${v(c,'currency')===u?'selected':''}>${u}</option>`).join('');
+  return `
+  <div class="section-title">${editingClient?'تعديل بيانات: '+esc(c.name):'إضافة عميل جديد'}</div>
+  <div class="card">
+    <div class="sub-head">بيانات الحساب</div>
+    <div class="form-grid">
+      <div class="field"><label>اسم المتجر</label><input id="c_name" value="${esc(v(c,'name'))}" placeholder="اسم العميل / المتجر"></div>
+      <div class="field"><label>إيميل الدخول</label><input id="c_email" type="email" value="${esc(v(c,'email'))}" placeholder="name@store.com"></div>
+      <div class="field"><label>السوق</label><input id="c_market" value="${esc(v(c,'market'))}" placeholder="مصر / السعودية"></div>
+      <div class="field"><label>العملة</label><select id="c_currency">${curOpts}</select></div>
+      <div class="field"><label>رابط المتجر</label><input id="c_store" value="${esc(v(c,'store'))}" placeholder="store.com"></div>
+      <div class="field"><label>حساب الإعلانات</label><input id="c_ad" value="${esc(v(c,'adAccount'))}" placeholder="act_..."></div>
+      <div class="field"><label>الباقة</label><input id="c_plan" value="${esc(v(c,'plan'))}" placeholder="إدارة كاملة"></div>
+      <div class="field"><label>مدير الحساب</label><input id="c_manager" value="${esc(v(c,'manager'))}" placeholder="اسم المسؤول"></div>
+      <div class="field"><label>تليفون التواصل</label><input id="c_phone" value="${esc(v(c,'phone'))}" placeholder="+20..."></div>
+      <div class="field"><label>بداية التعاون</label><input id="c_start" type="date" value="${esc(v(c,'startDate',today()))}"></div>
+      <div class="field"><label>كلمة مرور دخول العميل</label>
+        <input id="c_password" type="password" autocomplete="new-password"
+          placeholder="${editingClient?'سيبها فاضية لو مش عايز تغيّرها':'٨ حروف على الأقل'}"></div>
+      <div class="field"><label>معرّف المتجر في إيزي أوردرز</label><input id="c_store_id" value="${esc(v(c,'storeId'))}" placeholder="store_id"></div>
+    </div>
+    <div class="sub-head">اقتصاديات الأوردر — منها بيتحسب الربح والهامش في لوحة العميل</div>
+    <div class="form-grid">
+      <div class="field"><label>إجمالي سعر الأوردر</label><input id="e_price" type="number" min="0" step="0.01" value="${v(e,'price','')}" placeholder="0"></div>
+      <div class="field"><label>تكلفة المنتج</label><input id="e_product" type="number" min="0" step="0.01" value="${v(e,'productCost','')}" placeholder="0"></div>
+      <div class="field"><label>الشحن للعميل</label><input id="e_ship" type="number" min="0" step="0.01" value="${v(e,'shipping','')}" placeholder="0"></div>
+      <div class="field"><label>التغليف والتعبئة</label><input id="e_pack" type="number" min="0" step="0.01" value="${v(e,'packaging','')}" placeholder="0"></div>
+      <div class="field"><label>عمولة التحصيل / الدفع %</label><input id="e_fee" type="number" min="0" step="0.1" value="${v(e,'codFeePct','')}" placeholder="0"></div>
+      <div class="field"><label>التأكيد وخدمة العملاء</label><input id="e_conf" type="number" min="0" step="0.01" value="${v(e,'confirmCost','')}" placeholder="0"></div>
+      <div class="field"><label>مصاريف ضمنية أخرى</label><input id="e_other" type="number" min="0" step="0.01" value="${v(e,'otherCost','')}" placeholder="0"></div>
+      <div class="field"><label>تكلفة المرتجع الواحد</label><input id="e_return" type="number" min="0" step="0.01" value="${v(e,'returnCost','')}" placeholder="0"></div>
+    </div>
+    <div class="form-actions">
+      <button class="btn sm" id="saveClient">${editingClient?'حفظ التعديل':'إضافة العميل'}</button>
+      ${editingClient?'<button class="btn sm line" id="cancelClient">إلغاء</button>':''}
+      <span class="hint">كلمة المرور بتتخزّن مشفّرة في قاعدة البيانات — العميل هيدخل بالإيميل وكلمة المرور دول.</span>
+    </div>
+  </div>
+  <div class="section-title">تفاصيل العملاء</div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>العميل</th><th>السوق</th><th>الباقة</th><th>سعر الأوردر</th><th>مصاريف ضمنية</th><th>ربح الأوردر</th><th>الهامش</th><th>الحالة</th><th></th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table></div>
+  <p class="hint" style="margin-top:10px">ربح الأوردر والهامش محسوبين بعد خصم متوسط التكلفة الإعلانية الفعلية لآخر ٣٠ يوم.</p>`;
+}
+
+let editingUser = null;
+function adminUsers(){
+  if(!ONLINE) return `<div class="card"><div class="empty"><b>الحسابات محتاجة السيرفر</b>الشاشة دي بتشتغل بعد رفع النظام على الاستضافة.</div></div>`;
+  const u = editingUser || {};
+  const list = DB._users || [];
+  const rows = list.map(x=>{
+    const c = DB.clients.find(c=>c.id===x.clientId);
+    return `<tr>
+      <td class="mono" style="font-size:12.5px">${esc(x.email)}</td>
+      <td><span class="pill ${x.role==='admin'?'wait':'mid'}">${x.role==='admin'?'إدارة':'عميل'}</span></td>
+      <td>${esc(c?c.name:'—')}</td>
+      <td><span class="pill ${x.status==='active'?'on':'off'}">${x.status==='active'?'نشط':'موقوف'}</span></td>
+      <td>${x.lastLogin?arDate(String(x.lastLogin).slice(0,10)):'—'}</td>
+      <td><div class="row-act">
+        <button class="icon-btn" data-edituser="${x.id}">تعديل</button>
+        <button class="icon-btn" data-deluser="${x.id}">حذف</button>
+      </div></td></tr>`;}).join('');
+  const clientOpts = DB.clients.map(c=>`<option value="${c.id}" ${u.clientId===c.id?'selected':''}>${esc(c.name)}</option>`).join('');
+  return `
+  <div class="section-title">${editingUser?'تعديل حساب: '+esc(u.email):'إضافة حساب دخول'}</div>
+  <div class="card">
+    <div class="form-grid">
+      <div class="field"><label>البريد الإلكتروني</label><input id="u_email" type="email" value="${esc(u.email||'')}" placeholder="name@store.com"></div>
+      <div class="field"><label>الصلاحية</label><select id="u_role">
+        <option value="client" ${u.role==='client'?'selected':''}>عميل</option>
+        <option value="admin" ${u.role==='admin'?'selected':''}>إدارة</option></select></div>
+      <div class="field"><label>مربوط بأي متجر</label><select id="u_client"><option value="">—</option>${clientOpts}</select></div>
+      <div class="field"><label>الحالة</label><select id="u_status">
+        <option value="active" ${u.status!=='paused'?'selected':''}>نشط</option>
+        <option value="paused" ${u.status==='paused'?'selected':''}>موقوف</option></select></div>
+      <div class="field" style="grid-column:span 2"><label>كلمة المرور</label>
+        <input id="u_password" type="password" autocomplete="new-password"
+          placeholder="${editingUser?'سيبها فاضية لو مش عايز تغيّرها':'٨ حروف على الأقل'}"></div>
+    </div>
+    <div class="form-actions">
+      <button class="btn sm" id="saveUser">${editingUser?'حفظ التعديل':'إنشاء الحساب'}</button>
+      ${editingUser?'<button class="btn sm line" id="cancelUser">إلغاء</button>':''}
+      <span class="hint">كلمة المرور بتتخزّن مشفّرة — ولا إنت ولا حد يقدر يقراها بعد الحفظ.</span>
+    </div>
+  </div>
+  <div class="section-title">الحسابات</div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>الإيميل</th><th>الصلاحية</th><th>المتجر</th><th>الحالة</th><th>آخر دخول</th><th></th></tr></thead>
+    <tbody>${rows || '<tr><td colspan="6" class="empty">مفيش حسابات لسه.</td></tr>'}</tbody>
+  </table></div>`;
+}
+
+function adminSettings(){
+  return `
+  <div class="section-title">نسخة احتياطية</div>
+  <div class="card">
+    <p class="hint" style="margin-bottom:12px">نزّل كل البيانات كملف JSON، أو ارفع نسخة قديمة لاستعادتها. مفيد جداً قبل أي تجربة.</p>
+    <div class="form-actions">
+      <button class="btn sm line" id="expJSON">تنزيل نسخة</button>
+      <button class="btn sm line" id="impBtn">استعادة نسخة</button>
+      <input type="file" id="impFile" accept="application/json" class="hidden">
+      <button class="btn sm danger" id="resetBtn">إعادة البيانات التجريبية</button>
+    </div>
+  </div>
+  <div class="section-title">إيميل الإدارة</div>
+  <div class="card">
+    <div class="field" style="max-width:340px"><label>الإيميل اللي بيفتح لوحة الإدارة</label>
+      <input id="adminEmail" value="${esc(DB.agency.adminEmail)}"></div>
+    <div class="form-actions"><button class="btn sm" id="saveAgency">حفظ</button></div>
+  </div>
+  ${passwordCard()}`;
+}
+
+/* ---------- 8. CSV ---------- */
+function downloadFile(name, content, type){
+  const blob = new Blob(["\ufeff"+content], {type});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href=url; a.download=name; a.click();
+  setTimeout(()=>URL.revokeObjectURL(url), 1500);
+}
+function clientCSV(client){
+  const head = ['التاريخ','الطلبات','مصروف الإعلانات','تكلفة الطلب','مؤكد','مسلّم','مرتجع','الإيراد','تكلفة البضاعة','الشحن','أخرى','صافي الربح'];
+  const lines = entriesFor(client.id,'all').map(e=>{
+    const x = agg([e]);
+    return [e.date,e.orders,e.adSpend,x.cpo.toFixed(2),e.confirmed,e.delivered,e.returned,e.revenue,e.cogs,e.shipping,e.other,x.profit].join(',');
+  });
+  return [head.join(','), ...lines].join('\n');
+}
+
+/* ---------- 9. التشغيل والتوجيه ---------- */
+let DB = null;
+let session = null;
+
+async function boot(){
+  document.getElementById('loginBtn').onclick = doLogin;
+  document.getElementById('setupBtn').onclick = doSetup;
+  ['setupEmail','setupPass','setupPass2'].forEach(id=>
+    document.getElementById(id).addEventListener('keydown', e=>{ if(e.key==='Enter') doSetup(); }));
+  ['emailInput','passInput'].forEach(id=>
+    document.getElementById(id).addEventListener('keydown', e=>{ if(e.key==='Enter') doLogin(); }));
+  document.getElementById('logoutBtn').onclick = async ()=>{
+    if(ONLINE){ try{ await api('/api/logout',{method:'POST'}); }catch(e){} }
+    session=null; show('login');
+  };
+  try{
+    const me = await api('/api/me');
+    ONLINE = true;
+    if(me && me.needsSetup){ show('setup'); return; }
+    if(me && me.role){
+      session = me.role==='client' ? {role:'client', clientId:me.clientId} : {role:'admin'};
+      DB = await api('/api/state'); normalizeDB(); show('app'); return;
+    }
+    show('login');
+  }catch(err){
+    // مفيش سيرفر — وضع العرض التجريبي بالبيانات المحلية
+    ONLINE = false;
+    DB = await store.get(KEY);
+    if(!DB){ DB = seedData(); await store.set(KEY, DB); }
+    normalizeDB(); renderDemoAccounts();
+    document.getElementById('demoBox').classList.remove('hidden');
+    const passField = document.getElementById('passInput').closest('.field');
+    if(passField) passField.classList.add('hidden');
+    show('login');
+  }
+}
+function renderDemoAccounts(){
+  const box = document.getElementById('demoAccounts');
+  const items = [{name:'الإدارة — كن أونلاين', email:DB.agency.adminEmail}]
+    .concat(DB.clients.map(c=>({name:c.name, email:c.email})));
+  box.innerHTML = items.map(i=>`<button class="demo-chip" data-email="${esc(i.email)}"><span>${esc(i.name)}</span><span class="mono">${esc(i.email)}</span></button>`).join('');
+  box.querySelectorAll('[data-email]').forEach(b=> b.onclick = ()=>{
+    document.getElementById('emailInput').value = b.dataset.email; doLogin();
+  });
+}
+async function doLogin(){
+  const email = document.getElementById('emailInput').value.trim().toLowerCase();
+  const password = document.getElementById('passInput').value;
+  const err = document.getElementById('loginErr');
+  const fail = m => { err.textContent=m; err.classList.remove('hidden'); };
+  if(!email){ fail('اكتب إيميلك الأول.'); return; }
+  if(ONLINE){
+    const btn = document.getElementById('loginBtn');
+    btn.disabled = true; btn.textContent = 'بنتأكد...';
+    try{
+      const res = await api('/api/login', {method:'POST', body:JSON.stringify({email, password})});
+      session = res.role==='client' ? {role:'client', clientId:res.clientId} : {role:'admin'};
+      DB = await api('/api/state'); normalizeDB();
+      clientTab='dash'; err.classList.add('hidden'); show('app');
+    }catch(e){ fail(e.message); }
+    finally{ btn.disabled=false; btn.textContent='دخول'; }
+    return;
+  }
+  if(email === DB.agency.adminEmail.toLowerCase()){ session={role:'admin'}; err.classList.add('hidden'); show('app'); return; }
+  const c = DB.clients.find(c=>c.email.toLowerCase()===email);
+  if(!c){ err.textContent='الإيميل ده مش مسجّل عندنا. كلّم فريق كن أونلاين يضيفك.'; err.classList.remove('hidden'); return; }
+  if(c.status!=='active'){ err.textContent='الحساب موقوف مؤقتاً. كلّم فريق الحساب.'; err.classList.remove('hidden'); return; }
+  session={role:'client', clientId:c.id}; clientTab='dash'; err.classList.add('hidden'); show('app');
+}
+async function doSetup(){
+  const email = document.getElementById('setupEmail').value.trim();
+  const pass  = document.getElementById('setupPass').value;
+  const pass2 = document.getElementById('setupPass2').value;
+  const err = document.getElementById('setupErr');
+  const fail = m => { err.textContent=m; err.classList.remove('hidden'); };
+  if(!email.includes('@')) return fail('اكتب إيميل صحيح.');
+  if(pass.length < 8) return fail('كلمة المرور لازم تكون ٨ حروف على الأقل.');
+  if(pass !== pass2) return fail('كلمتين المرور مش متطابقتين.');
+  const btn = document.getElementById('setupBtn');
+  btn.disabled = true; btn.textContent = 'بننشئ الحساب...';
+  try{
+    const res = await api('/api/setup', {method:'POST', body:JSON.stringify({email, password:pass})});
+    session = {role:'admin'};
+    DB = await api('/api/state'); normalizeDB();
+    err.classList.add('hidden'); show('app'); toast('الحساب اتعمل — أهلاً بيك');
+  }catch(e){ fail(e.message); }
+  finally{ btn.disabled=false; btn.textContent='إنشاء الحساب'; }
+}
+
+function show(view){
+  document.getElementById('loginView').classList.toggle('hidden', view!=='login');
+  document.getElementById('setupView').classList.toggle('hidden', view!=='setup');
+  document.getElementById('appView').classList.toggle('hidden', view!=='app');
+  if(view==='app') paint();
+  else document.getElementById('emailInput').value='';
+}
+function paint(keepScroll){
+  const y = window.scrollY;
+  const root = document.getElementById('viewRoot');
+  if(session.role==='admin'){
+    document.getElementById('roleLabel').textContent='لوحة الإدارة';
+    document.getElementById('whoName').textContent=DB.agency.adminEmail;
+    root.innerHTML = renderAdmin();
+    bindAdmin();
+  } else {
+    const c = DB.clients.find(x=>x.id===session.clientId);
+    document.getElementById('roleLabel').textContent='لوحة العميل';
+    document.getElementById('whoName').textContent=c.name;
+    root.innerHTML = renderClient(c);
+    bindClient(c);
+  }
+  if(keepScroll) window.scrollTo({top:y,behavior:'instant'});
+  else window.scrollTo({top:0,behavior:'instant'});
+}
+async function persist(){
+  if(!ONLINE) return store.set(KEY, DB);
+  const copy = Object.assign({}, DB);
+  delete copy.orders;                       // الأوردرات ليها جدول مستقل
+  try{ await api('/api/state', {method:'PUT', body:JSON.stringify(copy)}); }
+  catch(e){ toast('ما اتحفظش: '+e.message); throw e; }
+}
+
+function bindClient(c){
+  document.querySelectorAll('#rangeSeg button').forEach(b=> b.onclick = ()=>{ clientRange=b.dataset.range; paint(); });
+  document.querySelectorAll('#clientTabs button').forEach(b=> b.onclick = ()=>{ clientTab=b.dataset.ctab; paint(); });
+  const go = document.getElementById('goAddOrder');
+  if(go) go.onclick = ()=>{ clientTab='add'; paint(); };
+  const so = document.getElementById('saveOrder');
+  if(so) so.onclick = async ()=>{
+    const rec = readOrderForm(c.id);
+    if(!rec) return;
+    rec.createdBy = 'client';
+    DB.orders = DB.orders || [];
+    try{
+      if(ONLINE){ const res = await api('/api/orders',{method:'POST', body:JSON.stringify(rec)}); DB.orders.push(res.order); }
+      else { DB.orders.push(rec); await persist(); }
+      paint(); toast('الأوردر اتسجّل');
+    }catch(e){ toast('ما اتسجّلش: '+e.message); }
+  };
+  bindPasswordCard();
+  const ex = document.getElementById('expClient');
+  if(ex) ex.onclick = ()=>{ downloadFile(`${c.email}-report.csv`, clientCSV(c), 'text/csv;charset=utf-8'); toast('اتنزّل الملف'); };
+}
+
+function bindAdmin(){
+  document.querySelectorAll('.admin-nav button').forEach(b=> b.onclick = async ()=>{
+    adminTab=b.dataset.tab; editingEntry=null; editingClient=null; editingUser=null;
+    if(adminTab==='users' && ONLINE){
+      try{ DB._users = await api('/api/users'); }catch(e){ toast(e.message); }
+    }
+    paint();
+  });
+  document.querySelectorAll('[data-view]').forEach(b=> b.onclick = ()=>{ session={role:'client', clientId:b.dataset.view}; clientRange='30'; clientTab='dash'; paint(); });
+
+  const $ = id => document.getElementById(id);
+
+  if(adminTab==='orders'){
+    document.querySelectorAll('#orderFilter button').forEach(b=> b.onclick = ()=>{ orderFilter=b.dataset.of; paint(); });
+    $('adminSaveOrder').onclick = async ()=>{
+      const cid = $('n_client').value;
+      const rec = readOrderForm(cid);
+      if(!rec) return;
+      rec.createdBy = 'admin';
+      DB.orders = DB.orders || [];
+      try{
+        if(ONLINE){ const res = await api('/api/orders',{method:'POST', body:JSON.stringify(rec)}); DB.orders.push(res.order); }
+        else { DB.orders.push(rec); await persist(); }
+        paint(); toast('الأوردر اتسجّل في حساب العميل');
+      }catch(e){ toast('ما اتسجّلش: '+e.message); }
+    };
+    document.querySelectorAll('[data-st]').forEach(el=> el.onchange = async ()=>{
+      const o = DB.orders.find(x=>x.id===el.dataset.st);
+      o.state = el.value; o.checkpoint = STATE_TEXT[el.value] || '';
+      if(ONLINE) await api('/api/orders/'+encodeURIComponent(o.id), {method:'PATCH', body:JSON.stringify({state:o.state})});
+      else await persist();
+      paint(true); toast('الحالة اتغيّرت');
+    });
+    document.querySelectorAll('[data-awb]').forEach(el=> el.onchange = async ()=>{
+      const o = DB.orders.find(x=>x.id===el.dataset.awb);
+      o.awb = el.value.trim() || null;
+      if(o.awb && o.state==='new'){ o.state='in_transit'; o.checkpoint=STATE_TEXT.in_transit; }
+      if(ONLINE) await api('/api/orders/'+encodeURIComponent(o.id), {method:'PATCH', body:JSON.stringify({awb:o.awb, state:o.state})});
+      else await persist();
+      paint(true); toast('اتحفظ رقم البوليصة');
+    });
+    document.querySelectorAll('[data-delorder]').forEach(b=> b.onclick = async ()=>{
+      if(ONLINE) await api('/api/orders/'+encodeURIComponent(b.dataset.delorder), {method:'DELETE'});
+      DB.orders = DB.orders.filter(o=>o.id!==b.dataset.delorder);
+      if(!ONLINE) await persist();
+      paint(true); toast('اتحذف');
+    });
+  }
+
+  if(adminTab==='entry'){
+    $('saveEntry').onclick = async ()=>{
+      const rec = {
+        clientId:$('f_client').value, date:$('f_date').value,
+        orders:+$('f_orders').value||0, adSpend:+$('f_adSpend').value||0,
+        confirmed:+$('f_confirmed').value||0, delivered:+$('f_delivered').value||0,
+        returned:+$('f_returned').value||0, revenue:+$('f_revenue').value||0,
+        cogs:+$('f_cogs').value||0, shipping:+$('f_shipping').value||0, other:+$('f_other').value||0
+      };
+      if(!rec.date){ toast('اختار التاريخ'); return; }
+      const existing = DB.entries.find(e=>e.clientId===rec.clientId && e.date===rec.date && (!editingEntry || e.id!==editingEntry.id));
+      if(editingEntry){ Object.assign(editingEntry, rec); if(existing) DB.entries = DB.entries.filter(e=>e.id!==existing.id); }
+      else if(existing){ Object.assign(existing, rec); }
+      else DB.entries.push({id:uid(), ...rec});
+      editingEntry=null; await persist(); paint(); toast('اتحفظ');
+    };
+    $('autoCosts').onclick = ()=>{
+      const c = DB.clients.find(x=>x.id===$('f_client').value);
+      const ec = orderEconomics(c, 0);
+      if(!ec.ready){ toast('حدّد سعر الأوردر ومصاريفه في تبويب العملاء الأول'); return; }
+      const del = +$('f_delivered').value||0, ords = +$('f_orders').value||0, ret = +$('f_returned').value||0;
+      if(!del){ toast('اكتب عدد الطلبات المسلّمة الأول'); return; }
+      const fee = ec.e.price * (Number(ec.e.codFeePct)||0)/100;
+      $('f_revenue').value  = Math.round(del * ec.e.price);
+      $('f_cogs').value     = Math.round(del * ec.e.productCost);
+      $('f_shipping').value = Math.round(del * ec.e.shipping);
+      $('f_other').value    = Math.round(del*(ec.e.packaging + fee) + ords*ec.e.confirmCost + del*ec.e.otherCost + ret*(Number(ec.e.returnCost)||0));
+      toast('اتحسبت من إعدادات الأوردر — عدّل أي رقم لو مختلف');
+    };
+    const ce = $('cancelEdit'); if(ce) ce.onclick = ()=>{ editingEntry=null; paint(); };
+    document.querySelectorAll('[data-edit]').forEach(b=> b.onclick = ()=>{ editingEntry = DB.entries.find(e=>e.id===b.dataset.edit); paint(); });
+    document.querySelectorAll('[data-del]').forEach(b=> b.onclick = async ()=>{
+      DB.entries = DB.entries.filter(e=>e.id!==b.dataset.del); await persist(); paint(); toast('اتحذف');
+    });
+  }
+
+  if(adminTab==='funding'){
+    $('saveFunding').onclick = async ()=>{
+      const amount = +$('fu_amount').value||0;
+      if(amount<=0){ toast('اكتب مبلغ صحيح'); return; }
+      DB.funding.push({ id:uid(), clientId:$('fu_client').value, type:$('fu_type').value,
+        amount, date:$('fu_date').value||today(), note:$('fu_note').value.trim() });
+      await persist(); paint(); toast('اتسجّلت الحركة');
+    };
+    document.querySelectorAll('[data-delfund]').forEach(b=> b.onclick = async ()=>{
+      DB.funding = DB.funding.filter(f=>f.id!==b.dataset.delfund); await persist(); paint(); toast('اتحذفت');
+    });
+  }
+
+  if(adminTab==='clients'){
+    $('saveClient').onclick = async ()=>{
+      const name=$('c_name').value.trim(), email=$('c_email').value.trim().toLowerCase();
+      if(!name||!email){ toast('الاسم والإيميل مطلوبين'); return; }
+      if(DB.clients.some(c=>c.email.toLowerCase()===email && (!editingClient || c.id!==editingClient.id))){
+        toast('الإيميل ده مستخدم بالفعل'); return; }
+      const data = {
+        name, email, market:$('c_market').value.trim()||'مصر', currency:$('c_currency').value,
+        store:$('c_store').value.trim(), adAccount:$('c_ad').value.trim(), plan:$('c_plan').value.trim(),
+        manager:$('c_manager').value.trim(), phone:$('c_phone').value.trim(), startDate:$('c_start').value,
+        storeId:$('c_store_id').value.trim(),
+        econ:{ price:+$('e_price').value||0, productCost:+$('e_product').value||0, shipping:+$('e_ship').value||0,
+               packaging:+$('e_pack').value||0, codFeePct:+$('e_fee').value||0, confirmCost:+$('e_conf').value||0,
+               otherCost:+$('e_other').value||0, returnCost:+$('e_return').value||0 }
+      };
+      const pass = ($('c_password') && $('c_password').value) || '';
+      if(pass && pass.length < 8){ toast('كلمة المرور لازم تكون ٨ حروف على الأقل'); return; }
+      let target;
+      if(editingClient){ Object.assign(editingClient, data); target = editingClient; editingClient=null; }
+      else { target = Object.assign({ id:uid(), status:'active', note:'' }, data); DB.clients.push(target); }
+      try{
+        await persist();
+        if(ONLINE && (pass || data.email)){
+          const body = { email:data.email, role:'client', clientId:target.id, status:target.status==='active'?'active':'paused' };
+          if(pass) body.password = pass;
+          try{ await api('/api/users', {method:'POST', body:JSON.stringify(body)}); }
+          catch(e){
+            if(String(e.message).includes('كلمة مرور')) toast('اتحفظت بياناته — لسه محتاج تحدد كلمة مرور من تبويب الحسابات');
+            else toast(e.message);
+          }
+        }
+        renderDemoAccounts(); paint(); toast('اتحفظ');
+      }catch(e){ toast(e.message); }
+    };
+    document.querySelectorAll('[data-editc]').forEach(b=> b.onclick = ()=>{
+      editingClient = DB.clients.find(c=>c.id===b.dataset.editc); paint(); });
+    const cc = $('cancelClient'); if(cc) cc.onclick = ()=>{ editingClient=null; paint(); };
+    document.querySelectorAll('[data-toggle]').forEach(b=> b.onclick = async ()=>{
+      const c = DB.clients.find(c=>c.id===b.dataset.toggle);
+      c.status = c.status==='active'?'paused':'active'; await persist(); paint();
+    });
+    document.querySelectorAll('[data-note]').forEach(b=> b.onclick = async ()=>{
+      const c = DB.clients.find(c=>c.id===b.dataset.note);
+      const t = prompt('الملاحظة اللي هتظهر في لوحة العميل:', c.note||'');
+      if(t!==null){ c.note=t; await persist(); toast('اتحفظت'); }
+    });
+  }
+
+  if(adminTab==='users'){
+    const refresh = async ()=>{ try{ DB._users = await api('/api/users'); }catch(e){} };
+    const su = $('saveUser');
+    if(su) su.onclick = async ()=>{
+      const email=$('u_email').value.trim(), pass=$('u_password').value;
+      if(!email.includes('@')){ toast('اكتب إيميل صحيح'); return; }
+      if(!editingUser && pass.length<8){ toast('حساب جديد محتاج كلمة مرور ٨ حروف على الأقل'); return; }
+      if(pass && pass.length<8){ toast('كلمة المرور لازم تكون ٨ حروف على الأقل'); return; }
+      const body = { email, role:$('u_role').value, clientId:$('u_client').value || null, status:$('u_status').value };
+      if(pass) body.password = pass;
+      try{
+        await api('/api/users', {method:'POST', body:JSON.stringify(body)});
+        editingUser=null; await refresh(); paint(); toast('اتحفظ');
+      }catch(e){ toast(e.message); }
+    };
+    const cu = $('cancelUser'); if(cu) cu.onclick = ()=>{ editingUser=null; paint(); };
+    document.querySelectorAll('[data-edituser]').forEach(b=> b.onclick = ()=>{
+      editingUser = (DB._users||[]).find(u=>u.id===b.dataset.edituser); paint(); });
+    document.querySelectorAll('[data-deluser]').forEach(b=> b.onclick = async ()=>{
+      if(!confirm('هتمسح الحساب ده نهائياً. تكمل؟')) return;
+      try{ await api('/api/users/'+encodeURIComponent(b.dataset.deluser), {method:'DELETE'});
+        await refresh(); paint(); toast('اتحذف');
+      }catch(e){ toast(e.message); }
+    });
+  }
+
+  if(adminTab==='settings'){
+    $('expJSON').onclick = ()=>{ downloadFile('konline-backup.json', JSON.stringify(DB,null,2), 'application/json'); toast('اتنزّلت النسخة'); };
+    $('impBtn').onclick = ()=> $('impFile').click();
+    $('impFile').onchange = e=>{
+      const file = e.target.files[0]; if(!file) return;
+      const r = new FileReader();
+      r.onload = async () => {
+        try{
+          const d = JSON.parse(r.result);
+          if(!d.clients||!d.entries) throw new Error('الملف ناقص');
+          DB = d; await persist(); renderDemoAccounts(); paint(); toast('اتستعادت النسخة');
+        }catch(err){ toast('الملف مش سليم — جرّب نسخة تانية'); }
+      };
+      r.readAsText(file);
+    };
+    $('resetBtn').onclick = async ()=>{
+      if(!confirm('ده هيمسح كل البيانات ويرجّع البيانات التجريبية. تكمل؟')) return;
+      DB = seedData(); await persist(); renderDemoAccounts(); paint(); toast('رجعت البيانات التجريبية');
+    };
+    bindPasswordCard();
+    $('saveAgency').onclick = async ()=>{
+      const v = $('adminEmail').value.trim();
+      if(!v){ toast('اكتب إيميل'); return; }
+      DB.agency.adminEmail=v; await persist(); renderDemoAccounts(); toast('اتحفظ');
+    };
+  }
+}
+
+boot();
+</script>
+</body>
+</html>
