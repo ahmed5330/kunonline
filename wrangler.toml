@@ -15,8 +15,7 @@ binding = "ASSETS"
 [[d1_databases]]
 binding = "DB"
 database_name = "kunonline"
-database_id = "database_id = "c426601d-182f-486e-a5c1-bb1bca0ecb0b""
-
+database_id = "c426601d-182f-486e-a5c1-bb1bca0ecb0b"
 # تتبع شحنات J&T كل ساعتين (بتوقيت UTC)
 [triggers]
 crons = ["0 */2 * * *"]
