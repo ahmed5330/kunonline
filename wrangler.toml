@@ -1,0 +1,26 @@
+# إعدادات النشر على Cloudflare
+# بعد أول نشر، حط database_id اللي هيطلعلك من الأمر:
+#   npx wrangler d1 create konline
+
+name = "konline-system"
+main = "src/index.js"
+compatibility_date = "2026-05-01"
+
+# الداشبورد نفسه — أي مسار مش /api أو /webhooks بيتقدّم من هنا
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+# قاعدة البيانات
+[[d1_databases]]
+binding = "DB"
+database_name = "konline"
+database_id = "ضع-الـ-database_id-هنا"
+
+# تتبع شحنات J&T كل ساعتين (بتوقيت UTC)
+[triggers]
+crons = ["0 */2 * * *"]
+
+# متغيرات عادية (مش أسرار) — الأسرار تتحط بأمر wrangler secret put
+[vars]
+TRACKING_PROVIDER = "track123"

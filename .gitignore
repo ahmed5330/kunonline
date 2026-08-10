@@ -1,0 +1,11 @@
+# أسرار — ممنوع ترفع الملف ده نهائياً
+.env
+.env.*
+.dev.vars
+
+# أدوات
+node_modules/
+.wrangler/
+dist/
+.DS_Store
+*.log
