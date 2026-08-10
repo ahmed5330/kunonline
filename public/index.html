@@ -314,7 +314,7 @@ td.num{font-family:var(--mono);font-variant-numeric:tabular-nums;direction:ltr;t
    ============================================================ */
 
 /* ---------- 1. التخزين ---------- */
-const KEY = 'konline:agency:v4';
+const KEY = 'konline:agency:v5';
 const mem = {};
 const store = {
   async get(k){
@@ -349,6 +349,7 @@ function normalizeDB(){
   DB.entries = DB.entries || [];
   DB.funding = DB.funding || [];
   DB.orders  = DB.orders  || [];
+  DB.products = DB.products || [];
 }
 
 /* ---------- 2. أدوات ---------- */
@@ -498,6 +499,39 @@ function agg(list){
   t.retRate  = safeDiv(t.returned, t.delivered)*100;
   return t;
 }
+/* الداشبورد بيتحسب من الأوردرات نفسها — الإيراد والربح من المحصّل بس */
+function orderAgg(list){
+  const t = { orders:list.length, pending:0, confirmed:0, preparing:0, shipped:0,
+    collected:0, returned:0, cancelled:0,
+    revenue:0, productCost:0, shipping:0, other:0, returnedShipping:0, pipeline:0 };
+  list.forEach(o=>{
+    t[o.state] = (t[o.state] || 0) + 1;
+    if(o.state === 'collected'){
+      t.revenue      += Number(o.total)||0;
+      t.productCost  += Number(o.productCost)||0;
+      t.shipping     += Number(o.shippingCost)||0;
+      t.other        += Number(o.otherCost)||0;
+    } else if(o.state === 'returned'){
+      /* المرتجع مبيجبش إيراد لكن بيكلّف شحن رايح جاي */
+      t.returnedShipping += Number(o.shippingCost)||0;
+    } else if(!['cancelled'].includes(o.state)){
+      t.pipeline += Number(o.total)||0;   /* فلوس لسه في الطريق */
+    }
+  });
+  t.inProgress = t.pending + t.confirmed + t.preparing + t.shipped;
+  t.directCost = t.productCost + t.shipping + t.other + t.returnedShipping;
+  t.grossProfit = t.revenue - t.directCost;
+  t.aov = safeDiv(t.revenue, t.collected);
+  t.collectRate = safeDiv(t.collected, t.orders)*100;
+  t.returnRate  = safeDiv(t.returned, t.collected + t.returned)*100;
+  t.confirmRate = safeDiv(t.orders - t.pending - t.cancelled, t.orders)*100;
+  return t;
+}
+/* الإنفاق الإعلاني لسه بييجي من الإدخال اليومي — الإعلانات مش بتظهر في الأوردرات */
+function adSpendFor(clientId, range){
+  return entriesFor(clientId, range).reduce((s,e)=> s + (Number(e.adSpend)||0), 0);
+}
+
 function fundingState(clientId){
   const dep = DB.funding.filter(f=>f.clientId===clientId)
     .reduce((s,f)=> s + (f.type==='deposit'? Number(f.amount) : -Number(f.amount)), 0);
@@ -579,27 +613,35 @@ function renderClient(client){
   if(clientTab==='add') return clientAddOrderView(client);
   const cur = client.currency;
   const f = fundingState(client.id);
-  const listAll = entriesFor(client.id,'all');
   const listRange = entriesFor(client.id, clientRange);
-  const a = agg(listRange);
-  const allT = agg(listAll);
-  const td = listAll.filter(e=>e.date===today());
-  const t = agg(td.length ? td : listAll.slice(-1));
-  const yd = listAll.filter(e=>e.date===addDays(today(),-1));
-  const y = agg(yd);
+  const allOrders = ordersFor(client.id, 'all');
   const lowClass = f.days<3 ? 'crit' : f.days<7 ? 'low' : '';
-  const ec = orderEconomics(client, a.cpo);
+  const ordersRange = ordersFor(client.id, clientRange);
+  const a = orderAgg(ordersRange);
+  const adSpend = adSpendFor(client.id, clientRange);
+  const totalCost = a.directCost + adSpend;
+  const netProfit = a.revenue - totalCost;
+  const margin = safeDiv(netProfit, a.revenue)*100;
+  const tOrd = orderAgg((DB.orders||[]).filter(o=>o.clientId===client.id && o.date===today()));
+  const yOrd = orderAgg((DB.orders||[]).filter(o=>o.clientId===client.id && o.date===addDays(today(),-1)));
+  const tAd = entriesFor(client.id,'all').filter(e=>e.date===today()).reduce((s,e)=>s+(Number(e.adSpend)||0),0);
+  const yAd = entriesFor(client.id,'all').filter(e=>e.date===addDays(today(),-1)).reduce((s,e)=>s+(Number(e.adSpend)||0),0);
+  const ec = orderEconomics(client, safeDiv(adSpend, a.orders));
 
-  const rows = listRange.slice().reverse().map(e=>{
-    const x = agg([e]);
+  /* كل يوم: أوردراته من جدول الأوردرات + إنفاقه الإعلاني من الإدخال اليومي */
+  const days = [...new Set(ordersRange.map(o=>o.date).concat(listRange.map(e=>e.date)))].sort().reverse();
+  const rows = days.map(d=>{
+    const da = orderAgg(ordersRange.filter(o=>o.date===d));
+    const ad = listRange.filter(e=>e.date===d).reduce((s,e)=>s+(Number(e.adSpend)||0),0);
+    const profit = da.revenue - da.directCost - ad;
     return `<tr>
-      <td>${arDate(e.date)}</td>
-      <td class="num">${num(e.orders)}</td>
-      <td class="num">${money(e.adSpend)}</td>
-      <td class="num">${money(x.cpo,1)}</td>
-      <td class="num">${money(e.revenue)}</td>
-      <td class="num">${money(x.roas,2)}</td>
-      <td class="num" style="color:${x.profit>=0?'var(--pine)':'var(--brick)'}">${money(x.profit)}</td>
+      <td>${arDate(d)}</td>
+      <td class="num">${num(da.orders)}</td>
+      <td class="num">${num(da.collected)}</td>
+      <td class="num">${money(ad)}</td>
+      <td class="num">${money(safeDiv(ad, da.orders),1)}</td>
+      <td class="num">${money(da.revenue)}</td>
+      <td class="num" style="color:${profit>=0?'var(--pine)':'var(--brick)'}">${money(profit)}</td>
     </tr>`; }).join('');
 
   return `
@@ -650,62 +692,72 @@ function renderClient(client){
   <div class="grid g4">
     <div class="card kpi accent-pine">
       <div class="k-label"><i class="dot pine"></i>طلبات النهارده</div>
-      <div class="k-val">${num(t.orders)}</div>
-      <div class="k-foot">${deltaBadge(t.orders,y.orders)} مقارنة بأمس</div>
+      <div class="k-val">${num(tOrd.orders)}</div>
+      <div class="k-foot">${deltaBadge(tOrd.orders, yOrd.orders)} مقارنة بأمس</div>
     </div>
     <div class="card kpi accent-gold">
       <div class="k-label"><i class="dot gold"></i>مصروف الإعلانات</div>
-      <div class="k-val">${money(t.adSpend)}<span class="cur">${cur}</span></div>
-      <div class="k-foot">${deltaBadge(t.adSpend,y.adSpend,false)} مقارنة بأمس</div>
+      <div class="k-val">${money(tAd)}<span class="cur">${cur}</span></div>
+      <div class="k-foot">${deltaBadge(tAd, yAd, false)} مقارنة بأمس</div>
     </div>
     <div class="card kpi">
       <div class="k-label">تكلفة الطلب تسويقياً</div>
-      <div class="k-val">${money(t.cpo,1)}<span class="cur">${cur}</span></div>
-      <div class="k-foot">${deltaBadge(t.cpo,y.cpo,false)} كل ما تقل كل ما أحسن</div>
+      <div class="k-val">${money(safeDiv(tAd, tOrd.orders),1)}<span class="cur">${cur}</span></div>
+      <div class="k-foot">كل ما تقل كل ما أحسن</div>
     </div>
     <div class="card kpi">
-      <div class="k-label">إيراد النهارده</div>
-      <div class="k-val">${money(t.revenue)}<span class="cur">${cur}</span></div>
-      <div class="k-foot">${deltaBadge(t.revenue,y.revenue)} مقارنة بأمس</div>
+      <div class="k-label">تم تحصيله النهارده</div>
+      <div class="k-val">${money(tOrd.revenue)}<span class="cur">${cur}</span></div>
+      <div class="k-foot">${num(tOrd.collected)} طلب اتحصّل</div>
     </div>
   </div>
 
-  <div class="section-title">الإجمالي — ${clientRange==='all'?'كل الفترة':clientRange==='today'?'النهارده':'آخر '+clientRange+' يوم'}</div>
+  <div class="section-title">الأوردرات — ${clientRange==='all'?'كل الفترة':clientRange==='today'?'النهارده':'آخر '+clientRange+' يوم'}</div>
   <div class="grid g4">
-    <div class="card kpi"><div class="k-label">إجمالي الطلبات</div><div class="k-val">${num(a.orders)}</div>
-      <div class="k-foot">${num(a.delivered)} طلب تم تسليمه</div></div>
-    <div class="card kpi"><div class="k-label">إجمالي الإيرادات</div><div class="k-val">${money(a.revenue)}<span class="cur">${cur}</span></div>
-      <div class="k-foot">متوسط قيمة الطلب ${money(a.aov)} ${cur}</div></div>
-    <div class="card kpi"><div class="k-label">إجمالي المصاريف</div><div class="k-val">${money(a.expenses)}<span class="cur">${cur}</span></div>
-      <div class="k-foot">منها ${money(a.adSpend)} إعلانات</div></div>
-    <div class="card kpi"><div class="k-label">صافي الربح</div>
-      <div class="k-val" style="color:${a.profit>=0?'var(--pine)':'var(--brick)'}">${money(a.profit)}<span class="cur">${cur}</span></div>
-      <div class="k-foot">هامش ${a.margin.toFixed(1)}%</div></div>
+    <div class="card kpi"><div class="k-label">إجمالي الأوردرات</div><div class="k-val">${num(a.orders)}</div>
+      <div class="k-foot">من المتجر ومن واتساب والصفحة</div></div>
+    <div class="card kpi accent-pine"><div class="k-label">تم التحصيل</div>
+      <div class="k-val" style="color:var(--pine)">${num(a.collected)}</div>
+      <div class="k-foot">${a.collectRate.toFixed(0)}% من الأوردرات</div></div>
+    <div class="card kpi"><div class="k-label">لسه في الطريق</div><div class="k-val">${num(a.inProgress)}</div>
+      <div class="k-foot">بقيمة ${money(a.pipeline)} ${cur}</div></div>
+    <div class="card kpi"><div class="k-label">مرتجع / ملغي</div>
+      <div class="k-val" style="color:var(--brick)">${num(a.returned + a.cancelled)}</div>
+      <div class="k-foot">${num(a.returned)} مرتجع · ${num(a.cancelled)} ملغي</div></div>
+  </div>
+
+  <div class="section-title">الفلوس — من الأوردرات المحصّلة بس</div>
+  <div class="grid g4">
+    <div class="card kpi"><div class="k-label">الإيرادات المحصّلة</div>
+      <div class="k-val">${money(a.revenue)}<span class="cur">${cur}</span></div>
+      <div class="k-foot">متوسط الطلب ${money(a.aov)} ${cur}</div></div>
+    <div class="card kpi"><div class="k-label">إجمالي المصاريف</div>
+      <div class="k-val">${money(totalCost)}<span class="cur">${cur}</span></div>
+      <div class="k-foot">منها ${money(adSpend)} إعلانات</div></div>
+    <div class="card kpi ${netProfit>=0?'accent-pine':''}"><div class="k-label">صافي الربح</div>
+      <div class="k-val" style="color:${netProfit>=0?'var(--pine)':'var(--brick)'}">${money(netProfit)}<span class="cur">${cur}</span></div>
+      <div class="k-foot">بعد البضاعة والشحن والإعلانات</div></div>
+    <div class="card kpi"><div class="k-label">هامش الربح</div>
+      <div class="k-val" style="color:${margin>=0?'var(--pine)':'var(--brick)'}">${margin.toFixed(1)}<span class="cur">%</span></div>
+      <div class="k-foot">من كل ١٠٠ ${cur} محصّلة</div></div>
   </div>
 
   <div class="grid g4" style="margin-top:12px">
-    <div class="card kpi ${a.margin>=0?'accent-pine':''}"><div class="k-label">هامش الربح</div>
-      <div class="k-val" style="color:${a.margin>=0?'var(--pine)':'var(--brick)'}">${a.margin.toFixed(1)}<span class="cur">%</span></div>
-      <div class="k-foot">من كل ١٠٠ ${cur} مبيعات، ${money(a.margin)} ربح</div></div>
-    <div class="card kpi"><div class="k-label">العائد على الإعلان ROAS</div><div class="k-val">${money(a.roas,2)}<span class="cur">×</span></div>
-      <div class="k-foot">كل ١ ${cur} إعلان يرجّع ${money(a.roas,2)}</div></div>
-    <div class="card kpi"><div class="k-label">متوسط تكلفة الطلب تسويقياً</div><div class="k-val">${money(a.cpo,1)}<span class="cur">${cur}</span></div>
-      <div class="k-foot">على مدار الفترة</div></div>
-    <div class="card kpi"><div class="k-label">متوسط قيمة الطلب</div><div class="k-val">${money(a.aov)}<span class="cur">${cur}</span></div>
-      <div class="k-foot">${num(a.delivered)} طلب مسلّم</div></div>
-  </div>
-
-  <div class="grid g3" style="margin-top:12px">
-    <div class="card kpi"><div class="k-label">معدل تأكيد الطلبات</div><div class="k-val">${a.confRate.toFixed(0)}<span class="cur">%</span></div>
-      <div class="k-foot">${num(a.confirmed)} من ${num(a.orders)}</div></div>
-    <div class="card kpi"><div class="k-label">معدل التسليم</div><div class="k-val">${a.delRate.toFixed(0)}<span class="cur">%</span></div>
-      <div class="k-foot">${num(a.delivered)} طلب واصل</div></div>
-    <div class="card kpi"><div class="k-label">معدل المرتجع</div><div class="k-val" style="color:${a.retRate>10?'var(--brick)':'inherit'}">${a.retRate.toFixed(1)}<span class="cur">%</span></div>
-      <div class="k-foot">${num(a.returned)} طلب راجع</div></div>
+    <div class="card kpi"><div class="k-label">العائد على الإعلان ROAS</div>
+      <div class="k-val">${money(safeDiv(a.revenue, adSpend),2)}<span class="cur">×</span></div>
+      <div class="k-foot">على المحصّل الفعلي</div></div>
+    <div class="card kpi"><div class="k-label">تكلفة الطلب تسويقياً</div>
+      <div class="k-val">${money(safeDiv(adSpend, a.orders),1)}<span class="cur">${cur}</span></div>
+      <div class="k-foot">لكل أوردر داخل</div></div>
+    <div class="card kpi"><div class="k-label">تكلفة الطلب المحصّل</div>
+      <div class="k-val">${money(safeDiv(adSpend, a.collected),1)}<span class="cur">${cur}</span></div>
+      <div class="k-foot">الرقم الحقيقي اللي يهمك</div></div>
+    <div class="card kpi"><div class="k-label">معدل المرتجع</div>
+      <div class="k-val" style="color:${a.returnRate>10?'var(--brick)':'inherit'}">${a.returnRate.toFixed(1)}<span class="cur">%</span></div>
+      <div class="k-foot">شحن ضايع ${money(a.returnedShipping)} ${cur}</div></div>
   </div>
 
   ${econSection(ec, cur)}
-
   <div class="section-title">الإيراد مقابل الإنفاق الإعلاني</div>
   <div class="chart-card">
     <div class="chart-head">
@@ -726,14 +778,14 @@ function renderClient(client){
   <div class="section-title">التفاصيل اليومية</div>
   <div class="table-wrap">
     <table>
-      <thead><tr><th>اليوم</th><th>طلبات</th><th>إعلانات (${cur})</th><th>تكلفة الطلب</th><th>إيراد</th><th>ROAS</th><th>صافي الربح</th></tr></thead>
+      <thead><tr><th>اليوم</th><th>أوردرات</th><th>محصّل</th><th>إعلانات (${cur})</th><th>تكلفة الطلب</th><th>إيراد محصّل</th><th>صافي الربح</th></tr></thead>
       <tbody>${rows || '<tr><td colspan="7" class="empty">مفيش بيانات في الفترة دي.</td></tr>'}</tbody>
     </table>
   </div>
   <div class="form-actions">
     <button class="btn sm line" id="expClient">تنزيل CSV</button>
     <button class="btn sm line" onclick="window.print()">طباعة / PDF</button>
-    <span class="hint">إجمالي الفترة كلها: ${num(allT.orders)} طلب · ${money(allT.revenue)} ${cur} إيراد</span>
+    <span class="hint">إجمالي الفترة كلها: ${num(allOrders.length)} أوردر · ${money(orderAgg(allOrders).revenue)} ${cur} محصّل</span>
   </div>
 
   ${passwordCard()}`;
@@ -770,9 +822,16 @@ function orderFormFields(client, withClientPicker){
       <div class="field"><label>وصل الأوردر منين</label><select id="n_source">
         ${ORDER_SOURCES.map(x=>`<option ${x==='واتساب'?'selected':''}>${x}</option>`).join('')}</select></div>
       <div class="field" style="grid-column:span 2"><label>العنوان بالتفصيل</label><input id="n_address" placeholder="الشارع والمنطقة وأقرب علامة مميزة"></div>
-      <div class="field"><label>المنتج</label><input id="n_product" placeholder="اسم المنتج / المقاس / اللون"></div>
+      <div class="field"><label>المنتج</label><select id="n_product_id">
+        <option value="">— اكتبه بإيدي —</option>
+        ${(DB.products||[]).filter(pr=>!client||pr.clientId===client.id).map(pr=>
+          `<option value="${esc(pr.id)}" data-price="${pr.price}" data-cost="${pr.cost}" data-name="${esc(pr.name)}">${esc(pr.name)} — ${money(pr.price)}</option>`).join('')}
+      </select></div>
+      <div class="field"><label>أو اكتب اسم المنتج</label><input id="n_product" placeholder="لو مش في القايمة"></div>
       <div class="field"><label>الكمية</label><input id="n_qty" type="number" min="1" value="1"></div>
-      <div class="field"><label>الإجمالي المطلوب${client?' ('+client.currency+')':''}</label><input id="n_total" type="number" min="0" step="0.01" placeholder="0"></div>
+      <div class="field"><label>الإجمالي المطلوب${client?' ('+client.currency+')':''}</label>
+        <input id="n_total" type="number" min="0" step="0.01" placeholder="0">
+        <span class="hint" id="totalHint">بيتحسب لوحده لما تختار منتج</span></div>
       <div class="field"><label>تاريخ الأوردر</label><input id="n_date" type="date" value="${today()}"></div>
       <div class="field" style="grid-column:1/-1"><label>ملاحظة</label><input id="n_note" placeholder="مثلاً: يفضّل التسليم بعد ٥ العصر"></div>
     </div>`;
@@ -783,12 +842,21 @@ function readOrderForm(clientId){
   const name = g('n_name').trim(), phone = g('n_phone').trim(), total = +g('n_total')||0;
   if(!name || !phone){ toast('اسم المشتري ورقم التليفون مطلوبين'); return null; }
   if(total<=0){ toast('اكتب إجمالي الأوردر'); return null; }
+  const sel = document.getElementById('n_product_id');
+  const opt = sel && sel.selectedOptions[0];
+  const pid = sel ? sel.value : '';
+  const qty = +g('n_qty')||1;
+  const pr  = (DB.products||[]).find(x=>x.id===pid);
   return {
     id:'MN-'+uid().toUpperCase(), clientId, date:g('n_date')||today(),
     name, phone, gov:g('n_gov').trim()||'غير محدد', address:g('n_address').trim(),
-    product:g('n_product').trim(), qty:+g('n_qty')||1, total,
+    product: pr ? pr.name : g('n_product').trim(),
+    productId: pid || null,
+    unitPrice: pr ? pr.price : safeDiv(total, qty),
+    productCost: pr ? (Number(pr.cost)||0)*qty : 0,
+    qty, total,
     source:g('n_source')||'واتساب', note:g('n_note').trim(),
-    awb:null, state:'new', checkpoint:STATE_TEXT.new
+    awb:null, state:'pending', checkpoint:STATE_TEXT.pending
   };
 }
 
@@ -800,14 +868,14 @@ function ordersSection(client, range){
   const cnt = st => list.filter(o=>o.state===st).length;
   const govs = {};
   list.forEach(o=>{ govs[o.gov] = govs[o.gov] || {orders:0, delivered:0, revenue:0};
-    govs[o.gov].orders++; if(o.state==='delivered'){ govs[o.gov].delivered++; govs[o.gov].revenue += o.total; } });
+    govs[o.gov].orders++; if(o.state==='collected'){ govs[o.gov].delivered++; govs[o.gov].revenue += o.total; } });
   const top = Object.entries(govs).sort((a,b)=>b[1].orders-a[1].orders).slice(0,6);
   const maxG = top.length ? top[0][1].orders : 1;
   const govRows = top.map(([g,v])=>`<div class="gov-row">
       <span class="g">${esc(g)}</span>
       <span class="bar"><i style="width:${(v.orders/maxG*100).toFixed(0)}%"></i></span>
       <span class="n">${v.orders} طلب</span>
-      <span class="n">${(safeDiv(v.delivered,v.orders)*100).toFixed(0)}% تسليم</span>
+      <span class="n">${(safeDiv(v.delivered,v.orders)*100).toFixed(0)}% تحصيل</span>
     </div>`).join('');
   const rows = list.slice(0,25).map(o=>{
     const st = ORDER_STATE[o.state] || ORDER_STATE.new;
@@ -826,9 +894,9 @@ function ordersSection(client, range){
   <div class="grid g4">
     <div class="card kpi"><div class="k-label">أوردرات الفترة</div><div class="k-val">${num(list.length)}</div>
       <div class="k-foot">جايّة أوتوماتيك من المتجر</div></div>
-    <div class="card kpi accent-pine"><div class="k-label">تم التسليم</div><div class="k-val">${num(cnt('delivered'))}</div>
-      <div class="k-foot">${(safeDiv(cnt('delivered'),list.length)*100).toFixed(0)}% من الأوردرات</div></div>
-    <div class="card kpi"><div class="k-label">مع شركة الشحن</div><div class="k-val">${num(cnt('in_transit'))}</div>
+    <div class="card kpi accent-pine"><div class="k-label">تم التحصيل</div><div class="k-val">${num(cnt('collected'))}</div>
+      <div class="k-foot">${(safeDiv(cnt('collected'),list.length)*100).toFixed(0)}% من الأوردرات</div></div>
+    <div class="card kpi"><div class="k-label">مع شركة الشحن</div><div class="k-val">${num(cnt('shipped')+cnt('preparing'))}</div>
       <div class="k-foot">لسه في الطريق</div></div>
     <div class="card kpi"><div class="k-label">مرتجع / ملغي</div>
       <div class="k-val" style="color:var(--brick)">${num(cnt('returned')+cnt('cancelled'))}</div>
@@ -959,6 +1027,39 @@ function passwordCard(){
     </div>
   </div>`;
 }
+/* التحصيل ما يتسجّلش من غير تكاليفه — النافذة دي بتطلبها */
+function askCosts(order){
+  return new Promise(resolve=>{
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'position:fixed;inset:0;background:rgba(18,33,43,.55);z-index:200;display:grid;place-items:center;padding:18px';
+    wrap.innerHTML = `
+      <div class="card" style="max-width:420px;width:100%;box-shadow:var(--shadow)">
+        <h3 style="font-size:16px;margin-bottom:4px">تسجيل التحصيل</h3>
+        <p class="hint" style="margin-bottom:14px">${esc(order.name||'')} — إجمالي ${money(order.total)}.
+          محتاجين تكاليف الأوردر عشان الربح يطلع صح.</p>
+        <div class="field"><label>سعر الشحن</label>
+          <input id="ac_ship" type="number" min="0" step="0.01" value="${order.shippingCost!=null?order.shippingCost:''}" placeholder="0"></div>
+        <div class="field"><label>مصاريف أخرى</label>
+          <input id="ac_other" type="number" min="0" step="0.01" value="${order.otherCost!=null?order.otherCost:0}" placeholder="0"></div>
+        <div class="form-actions">
+          <button class="btn sm" id="ac_ok">تأكيد التحصيل</button>
+          <button class="btn sm line" id="ac_cancel">إلغاء</button>
+        </div>
+      </div>`;
+    document.body.appendChild(wrap);
+    const close = v => { document.body.removeChild(wrap); resolve(v); };
+    wrap.querySelector('#ac_cancel').onclick = ()=> close(null);
+    wrap.onclick = ev => { if(ev.target === wrap) close(null); };
+    const ship = wrap.querySelector('#ac_ship');
+    ship.focus();
+    wrap.querySelector('#ac_ok').onclick = ()=>{
+      const sv = ship.value, ov = wrap.querySelector('#ac_other').value;
+      if(sv === ''){ toast('اكتب سعر الشحن'); return; }
+      close({ shippingCost: Number(sv)||0, otherCost: Number(ov)||0 });
+    };
+  });
+}
+
 function bindPasswordCard(){
   const b = document.getElementById('changePassBtn');
   if(!b) return;
@@ -984,7 +1085,8 @@ let editingClient = null;
 function renderAdmin(){
   const allTabs = [
     ['overview','نظرة عامة','orders'], ['orders','الأوردرات','orders'],
-    ['entry','الإدخال اليومي','entries'], ['finance','الحسابات','finance'],
+    ['entry','الإدخال اليومي','entries'], ['products','المنتجات','orders'],
+    ['import','استيراد شيت','orders'], ['finance','الحسابات','finance'],
     ['funding','التمويلات','finance'], ['clients','العملاء','clients'],
     ['users','الفريق','users'], ['settings','الإعدادات','settings']
   ];
@@ -999,6 +1101,8 @@ function renderAdmin(){
   <div id="adminBody">${
     adminTab==='overview'? adminOverview() :
     adminTab==='orders'  ? adminOrders() :
+    adminTab==='products'? adminProducts() :
+    adminTab==='import'  ? adminImport() :
     adminTab==='finance' ? adminFinance() :
     adminTab==='entry'   ? adminEntry() :
     adminTab==='funding' ? adminFunding() :
@@ -1044,8 +1148,9 @@ function adminOverview(){
 }
 
 let orderFilter = 'all';
+let orderFormClient = null;
 function adminOrders(){
-  const first = DB.clients[0];
+  const first = DB.clients.find(c=>c.id===orderFormClient) || DB.clients[0];
   let list = (DB.orders||[]).slice();
   if(orderFilter!=='all') list = list.filter(o=>o.clientId===orderFilter);
   list.sort((a,b)=> a.date<b.date?1:-1);
@@ -1061,6 +1166,9 @@ function adminOrders(){
       <td class="num">${esc(o.phone)}</td>
       <td><span class="pill ${String(o.id).startsWith('MN-')?'wait':'mid'}">${esc(o.source||'المتجر')}</span></td>
       <td class="num">${money(o.total)} ${c?c.currency:''}</td>
+      <td class="num">${o.shippingCost!=null?money(o.shippingCost):'—'}</td>
+      <td class="num" style="color:${o.state==='collected'?((o.total-(o.productCost||0)-(o.shippingCost||0)-(o.otherCost||0))>=0?'var(--pine)':'var(--brick)'):'var(--ink-3)'}">
+        ${o.state==='collected'?money(o.total-(o.productCost||0)-(o.shippingCost||0)-(o.otherCost||0)):'—'}</td>
       <td><input class="mono" data-awb="${o.id}" value="${esc(o.awb||'')}" placeholder="رقم البوليصة"
            style="width:132px;padding:5px 8px;border:1px solid var(--line);border-radius:7px;font-size:12px"></td>
       <td><select data-st="${o.id}" style="padding:5px 8px;border:1px solid var(--line);border-radius:7px;font-size:12.5px">${stOpts}</select></td>
@@ -1086,8 +1194,8 @@ function adminOrders(){
     </div>
   </div>
   <div class="table-wrap"><table>
-    <thead><tr><th>التاريخ</th><th>المتجر</th><th>المشتري</th><th>التليفون</th><th>المصدر</th><th>الإجمالي</th><th>بوليصة J&amp;T</th><th>الحالة</th><th></th></tr></thead>
-    <tbody>${rows || '<tr><td colspan="9" class="empty">مفيش أوردرات.</td></tr>'}</tbody>
+    <thead><tr><th>التاريخ</th><th>المتجر</th><th>المشتري</th><th>التليفون</th><th>المصدر</th><th>الإجمالي</th><th>الشحن</th><th>ربح الأوردر</th><th>بوليصة J&amp;T</th><th>الحالة</th><th></th></tr></thead>
+    <tbody>${rows || '<tr><td colspan="11" class="empty">مفيش أوردرات.</td></tr>'}</tbody>
   </table></div>
   <p class="hint" style="margin-top:10px">أول ٦٠ أوردر. تغيير الحالة أو رقم البوليصة بيتحفظ على طول.</p>`;
 }
@@ -1244,6 +1352,214 @@ function adminClients(){
     <tbody>${rows}</tbody>
   </table></div>
   <p class="hint" style="margin-top:10px">ربح الأوردر والهامش محسوبين بعد خصم متوسط التكلفة الإعلانية الفعلية لآخر ٣٠ يوم.</p>`;
+}
+
+let productClient = null;
+let editingProduct = null;
+function adminProducts(){
+  if(!ONLINE) return `<div class="card"><div class="empty"><b>المنتجات محتاجة السيرفر</b>الشاشة دي بتشتغل بعد رفع النظام على الاستضافة.</div></div>`;
+  const cid = productClient || (DB.clients[0] && DB.clients[0].id);
+  const client = DB.clients.find(c=>c.id===cid);
+  const cur = client ? client.currency : 'EGP';
+  const list = (DB.products||[]).filter(p=>p.clientId===cid);
+  const e = editingProduct || {};
+  const rows = list.map(p=>{
+    const profit = (Number(p.price)||0) - (Number(p.cost)||0);
+    return `<tr>
+      <td><b>${esc(p.name)}</b>${p.sku?`<br><span class="hint mono" style="font-size:11px">${esc(p.sku)}</span>`:''}</td>
+      <td class="num">${money(p.price)}</td>
+      <td class="num">${money(p.cost)}</td>
+      <td class="num" style="color:${profit>=0?'var(--pine)':'var(--brick)'}">${money(profit)}</td>
+      <td class="num">${(safeDiv(profit,p.price)*100).toFixed(0)}%</td>
+      <td><span class="pill ${p.active?'on':'off'}">${p.active?'معروض':'موقوف'}</span></td>
+      <td><div class="row-act">
+        <button class="icon-btn" data-editp="${esc(p.id)}">تعديل</button>
+        <button class="icon-btn" data-delp="${esc(p.id)}">حذف</button>
+      </div></td></tr>`;}).join('');
+  return `
+  <div class="page-head" style="padding:8px 0 12px">
+    <div class="eyebrow">منتجات المتجر — منها بيتحسب سعر الأوردر وتكلفته</div>
+    <div class="spacer"></div>
+    <div class="seg" id="prodSeg">
+      ${DB.clients.map(c=>`<button data-pc="${c.id}" aria-pressed="${cid===c.id}">${esc(c.name.split(' —')[0])}</button>`).join('')}
+    </div>
+  </div>
+  <div class="section-title">${editingProduct?'تعديل: '+esc(e.name):'إضافة منتج'}</div>
+  <div class="card">
+    <div class="form-grid">
+      <div class="field"><label>اسم المنتج</label><input id="p_name" value="${esc(e.name||'')}" placeholder="ترينج شتوي مقاس L"></div>
+      <div class="field"><label>الكود (SKU)</label><input id="p_sku" value="${esc(e.sku||'')}" placeholder="اختياري"></div>
+      <div class="field"><label>سعر البيع (${cur})</label><input id="p_price" type="number" min="0" step="0.01" value="${e.price!==undefined?e.price:''}" placeholder="0"></div>
+      <div class="field"><label>تكلفة الشراء (${cur})</label><input id="p_cost" type="number" min="0" step="0.01" value="${e.cost!==undefined?e.cost:''}" placeholder="0"></div>
+      <div class="field"><label>الحالة</label><select id="p_active">
+        <option value="1" ${e.active!==0?'selected':''}>معروض</option>
+        <option value="0" ${e.active===0?'selected':''}>موقوف</option></select></div>
+    </div>
+    <div class="form-actions">
+      <button class="btn sm" id="saveProduct">${editingProduct?'حفظ التعديل':'إضافة المنتج'}</button>
+      ${editingProduct?'<button class="btn sm line" id="cancelProduct">إلغاء</button>':''}
+      <span class="hint">لما تختار المنتج في الأوردر، السعر والتكلفة بيتحطوا لوحدهم.</span>
+    </div>
+  </div>
+  <div class="section-title">منتجات ${esc(client?client.name:'')}</div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>المنتج</th><th>سعر البيع</th><th>التكلفة</th><th>الربح</th><th>الهامش</th><th>الحالة</th><th></th></tr></thead>
+    <tbody>${rows || '<tr><td colspan="7" class="empty"><b>مفيش منتجات للمتجر ده</b>ضيف أول منتج من فوق.</td></tr>'}</tbody>
+  </table></div>`;
+}
+
+/* ---------- استيراد الشيتات ---------- */
+let importMode = 'orders';
+let importRows = [], importHeaders = [], importMap = {}, importClient = null;
+
+/* قارئ CSV بسيط بيتعامل مع علامات التنصيص والفواصل جوه الخانات */
+function parseCSV(text){
+  const rows = []; let row = [], field = '', q = false;
+  text = text.replace(/^\uFEFF/, '');
+  for(let i=0;i<text.length;i++){
+    const ch = text[i];
+    if(q){
+      if(ch === '"'){ if(text[i+1] === '"'){ field+='"'; i++; } else q = false; }
+      else field += ch;
+    } else if(ch === '"') q = true;
+    else if(ch === ',' || ch === ';' || ch === '\t'){ row.push(field); field=''; }
+    else if(ch === '\n'){ row.push(field); rows.push(row); row=[]; field=''; }
+    else if(ch !== '\r') field += ch;
+  }
+  if(field || row.length){ row.push(field); rows.push(row); }
+  return rows.filter(r=> r.some(x=> String(x).trim() !== ''));
+}
+
+const IMPORT_FIELDS = {
+  orders: [
+    ['id','معرّف الأوردر',['order id','order_id','رقم الاوردر','order number','id']],
+    ['ref','رقم الطلب المختصر',['id','ref','رقم الطلب','order no']],
+    ['name','اسم المشتري',['fullname','full name','name','customer','الاسم','اسم العميل','العميل']],
+    ['phone','التليفون',['phone','mobile','تليفون','الموبايل','رقم الهاتف','الهاتف']],
+    ['altPhone','تليفون احتياطي',['alt phone','alternative phone','تليفون تاني']],
+    ['gov','المحافظة',['city','government','governorate','المحافظة','المدينة']],
+    ['address','العنوان',['address','العنوان']],
+    ['product','المنتج',['product name','product','item','المنتج','الصنف']],
+    ['variant','النوع/المقاس',['variant','option','المقاس','اللون']],
+    ['sku','كود المنتج',['sku','كود المنتج','الكود']],
+    ['qty','الكمية',['quantity','qty','الكمية','العدد']],
+    ['unitPrice','سعر الوحدة',['item price','unit price','price','سعر الوحدة','السعر']],
+    ['total','الإجمالي المطلوب',['total cost','total','amount','الإجمالي','المبلغ','الاجمالي','cod']],
+    ['status','الحالة',['status','state','الحالة']],
+    ['date','التاريخ',['createdat','created at','date','التاريخ','تاريخ الطلب']],
+    ['utm','مصدر الإعلان',['utm source','utm_source','source','المصدر']],
+    ['payment','طريقة الدفع',['payment method','payment','طريقة الدفع']],
+    ['note','ملاحظة',['note','notes','ملاحظة','ملاحظات']],
+    ['awb','رقم البوليصة',['awb','tracking','waybill','بوليصة','رقم البوليصة','تتبع']]
+  ],
+  tracking: [
+    ['awb','رقم البوليصة',['waybill no.','waybill no','waybill','awb','billcode','tracking','بوليصة','رقم البوليصة','رقم الشحنة']],
+    ['ref','رقم الطلب',['order no.','order no','order number','رقم الطلب','رقم الاوردر']],
+    ['status','حالة التوقيع',['signing status','status','state','الحالة','حالة الشحنة']],
+    ['shippingCost','مصاريف الشحن',['total freight','freight','shipping fee','shipping','سعر الشحن','مصاريف الشحن']],
+    ['otherCost','عمولة التحصيل',['cod service fee','service fee','cod fee','عمولة التحصيل','رسوم التحصيل']],
+    ['codAmount','المبلغ المحصّل',['cod amount','cod','المبلغ المحصل','المحصّل']],
+    ['date','تاريخ التوقيع',['sign time','signed time','delivery date','تاريخ التسليم','التاريخ']]
+  ]
+};
+
+/* بنحمّل مكتبة قراءة Excel وقت الحاجة بس */
+let sheetJSLoaded = null;
+function loadSheetJS(){
+  if(window.XLSX) return Promise.resolve();
+  if(sheetJSLoaded) return sheetJSLoaded;
+  sheetJSLoaded = new Promise((res,rej)=>{
+    const sc = document.createElement('script');
+    sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    sc.onload = res; sc.onerror = rej;
+    document.head.appendChild(sc);
+  });
+  return sheetJSLoaded;
+}
+
+/* مصدر الإعلان من عمود UTM */
+function sourceFromUtm(utm, payment){
+  const u = String(utm||'').toLowerCase();
+  if(u.includes('fb') || u.includes('facebook')) return 'إعلان فيسبوك';
+  if(u.includes('ig') || u.includes('insta'))    return 'إنستجرام';
+  if(u.includes('tiktok') || u.includes('tt'))   return 'تيك توك';
+  if(u.includes('google'))                       return 'جوجل';
+  if(u.includes('whats'))                        return 'واتساب';
+  return 'المتجر (إيزي أوردرز)';
+}
+/* التاريخ بيجي بأشكال كتير — بناخد أول ١٠ حروف لو الشكل قياسي */
+function normDate(v){
+  const t = String(v||'').trim();
+  if(/^\d{4}-\d{2}-\d{2}/.test(t)) return t.slice(0,10);
+  const d = new Date(t);
+  return isNaN(d) ? today() : iso(d);
+}
+
+function guessColumn(headers, keys){
+  const norm = x => String(x||'').trim().toLowerCase();
+  for(const k of keys){
+    const i = headers.findIndex(h=> norm(h) === norm(k));
+    if(i>=0) return i;
+  }
+  for(const k of keys){
+    const i = headers.findIndex(h=> norm(h).includes(norm(k)));
+    if(i>=0) return i;
+  }
+  return -1;
+}
+
+function adminImport(){
+  if(!ONLINE) return `<div class="card"><div class="empty"><b>الاستيراد محتاج السيرفر</b>الشاشة دي بتشتغل بعد رفع النظام على الاستضافة.</div></div>`;
+  const fields = IMPORT_FIELDS[importMode];
+  const clientOpts = DB.clients.map(c=>`<option value="${c.id}" ${importClient===c.id?'selected':''}>${esc(c.name)}</option>`).join('');
+  const mapUI = importHeaders.length ? `
+    <div class="section-title">اربط أعمدة الشيت</div>
+    <div class="card">
+      <div class="form-grid">
+        ${fields.map(([key,label])=>`
+          <div class="field"><label>${label}</label>
+            <select data-map="${key}">
+              <option value="-1">— مش موجود —</option>
+              ${importHeaders.map((h,i)=>`<option value="${i}" ${importMap[key]===i?'selected':''}>${esc(h||('عمود '+(i+1)))}</option>`).join('')}
+            </select></div>`).join('')}
+      </div>
+      <div class="form-actions">
+        <button class="btn sm" id="runImport">استيراد ${num(importRows.length)} صف</button>
+        <span class="hint">النظام حاول يربط الأعمدة لوحده — راجعها قبل الاستيراد.</span>
+      </div>
+    </div>
+    <div class="section-title">معاينة أول ٥ صفوف</div>
+    <div class="table-wrap"><table>
+      <thead><tr>${fields.map(([,l])=>`<th>${l}</th>`).join('')}</tr></thead>
+      <tbody>${importRows.slice(0,5).map(r=>`<tr>${fields.map(([k])=>
+        `<td>${esc(importMap[k]>=0 ? (r[importMap[k]]||'') : '—')}</td>`).join('')}</tr>`).join('')}</tbody>
+    </table></div>` : '';
+
+  return `
+  <div class="page-head" style="padding:8px 0 12px">
+    <div class="eyebrow">ارفع ملف CSV واربط أعمدته</div>
+    <div class="spacer"></div>
+    <div class="seg" id="impSeg">
+      <button data-im="orders" aria-pressed="${importMode==='orders'}">شيت إيزي أوردرز</button>
+      <button data-im="tracking" aria-pressed="${importMode==='tracking'}">شيت J&amp;T</button>
+    </div>
+  </div>
+  <div class="card">
+    <p class="hint" style="margin-bottom:14px">
+      ${importMode==='orders'
+        ? 'شيت الأوردرات بيضيف أوردرات جديدة أو يحدّث الموجود. لو الشيت فيه رقم أوردر، بنستخدمه عشان ما يتكررش.'
+        : 'كشف J&amp;T بيطابق برقم البوليصة، ولو مالقاهاش بيطابق بـ <b>Order NO.</b> جوه نفس المتجر. الشحنة الموقّعة بتتحوّل لـ "تم التحصيل" ومصاريف الشحن وعمولة التحصيل بتتسجّل عليها.'}
+    </p>
+    <div class="form-grid">
+      <div class="field"><label>الشيت ده لأي متجر</label>
+        <select id="imp_client"><option value="">اختار المتجر</option>${clientOpts}</select></div>
+      <div class="field" style="grid-column:span 2"><label>الملف (Excel أو CSV)</label>
+        <input id="imp_file" type="file" accept=".xlsx,.xls,.csv,text/csv"></div>
+    </div>
+    <p class="hint">بيقرا ملف Excel مباشرة زي ما نزّلته من إيزي أوردرز — مش محتاج تحوّله.</p>
+  </div>
+  ${mapUI}
+  <div id="importResult"></div>`;
 }
 
 let txRange = '30';
@@ -1417,10 +1733,16 @@ function downloadFile(name, content, type){
   setTimeout(()=>URL.revokeObjectURL(url), 1500);
 }
 function clientCSV(client){
-  const head = ['التاريخ','الطلبات','مصروف الإعلانات','تكلفة الطلب','مؤكد','مسلّم','مرتجع','الإيراد','تكلفة البضاعة','الشحن','أخرى','صافي الربح'];
-  const lines = entriesFor(client.id,'all').map(e=>{
-    const x = agg([e]);
-    return [e.date,e.orders,e.adSpend,x.cpo.toFixed(2),e.confirmed,e.delivered,e.returned,e.revenue,e.cogs,e.shipping,e.other,x.profit].join(',');
+  const head = ['التاريخ','رقم الأوردر','المشتري','التليفون','المحافظة','المنتج','الكمية','الإجمالي',
+    'تكلفة البضاعة','الشحن','مصاريف أخرى','ربح الأوردر','البوليصة','الحالة','المصدر'];
+  const lines = ordersFor(client.id,'all').map(o=>{
+    const st = ORDER_STATE[o.state] || {ar:o.state};
+    const profit = o.state==='collected'
+      ? (Number(o.total)||0) - (Number(o.productCost)||0) - (Number(o.shippingCost)||0) - (Number(o.otherCost)||0)
+      : 0;
+    return [o.date, o.id, (o.name||'').replace(/,/g,' '), o.phone, o.gov, (o.product||'').replace(/,/g,' '),
+      o.qty||1, o.total, o.productCost||0, o.shippingCost==null?'':o.shippingCost,
+      o.otherCost==null?'':o.otherCost, profit, o.awb||'', st.ar, o.source||''].join(',');
   });
   return [head.join(','), ...lines].join('\n');
 }
@@ -1552,11 +1874,31 @@ async function persist(){
   catch(e){ toast('ما اتحفظش: '+e.message); throw e; }
 }
 
+/* اختيار المنتج بيملأ السعر تلقائياً */
+function bindProductPicker(){
+  const sel = document.getElementById('n_product_id');
+  if(!sel) return;
+  const qty = document.getElementById('n_qty');
+  const total = document.getElementById('n_total');
+  const hint = document.getElementById('totalHint');
+  const recalc = ()=>{
+    const opt = sel.selectedOptions[0];
+    if(!opt || !sel.value){ if(hint) hint.textContent='اكتب الإجمالي بإيدك'; return; }
+    const price = Number(opt.dataset.price)||0;
+    const q = Number(qty.value)||1;
+    total.value = Math.round(price*q*100)/100;
+    if(hint) hint.textContent = `${money(price)} × ${q} — تقدر تعدّله`;
+  };
+  sel.onchange = recalc;
+  qty.oninput = recalc;
+}
+
 function bindClient(c){
   document.querySelectorAll('#rangeSeg button').forEach(b=> b.onclick = ()=>{ clientRange=b.dataset.range; paint(); });
   document.querySelectorAll('#clientTabs button').forEach(b=> b.onclick = ()=>{ clientTab=b.dataset.ctab; paint(); });
   const go = document.getElementById('goAddOrder');
   if(go) go.onclick = ()=>{ clientTab='add'; paint(); };
+  bindProductPicker();
   const so = document.getElementById('saveOrder');
   if(so) so.onclick = async ()=>{
     const rec = readOrderForm(c.id);
@@ -1583,6 +1925,10 @@ function bindAdmin(){
     if(adminTab==='finance' && ONLINE){
       try{ DB._tx = await api('/api/transactions'); }catch(e){ toast(e.message); }
     }
+    if(adminTab==='products' && ONLINE){
+      try{ DB.products = await api('/api/products'); }catch(e){ toast(e.message); }
+    }
+    if(adminTab==='import'){ importRows=[]; importHeaders=[]; importMap={}; }
     paint();
   });
   document.querySelectorAll('[data-view]').forEach(b=> b.onclick = ()=>{ session={role:'client', clientId:b.dataset.view}; clientRange='30'; clientTab='dash'; paint(); });
@@ -1591,6 +1937,10 @@ function bindAdmin(){
 
   if(adminTab==='orders'){
     document.querySelectorAll('#orderFilter button').forEach(b=> b.onclick = ()=>{ orderFilter=b.dataset.of; paint(); });
+    if(nc) nc.onchange = ()=>{ orderFormClient = nc.value; paint(true); };
+    bindProductPicker();
+    const nc = $('n_client');
+    if(nc) nc.onchange = ()=>{ paint(true); };
     $('adminSaveOrder').onclick = async ()=>{
       const cid = $('n_client').value;
       const rec = readOrderForm(cid);
@@ -1605,10 +1955,20 @@ function bindAdmin(){
     };
     document.querySelectorAll('[data-st]').forEach(el=> el.onchange = async ()=>{
       const o = DB.orders.find(x=>x.id===el.dataset.st);
-      o.state = el.value; o.checkpoint = STATE_TEXT[el.value] || '';
-      if(ONLINE) await api('/api/orders/'+encodeURIComponent(o.id), {method:'PATCH', body:JSON.stringify({state:o.state})});
-      else await persist();
-      paint(true); toast('الحالة اتغيّرت');
+      const next = el.value;
+      const body = { state: next };
+      if(next === 'collected'){
+        const costs = await askCosts(o);
+        if(!costs){ paint(true); return; }          /* لغى — نرجّع القايمة زي ما كانت */
+        Object.assign(body, costs);
+        o.shippingCost = costs.shippingCost; o.otherCost = costs.otherCost;
+      }
+      o.state = next; o.checkpoint = STATE_TEXT[next] || '';
+      try{
+        if(ONLINE) await api('/api/orders/'+encodeURIComponent(o.id), {method:'PATCH', body:JSON.stringify(body)});
+        else await persist();
+        paint(true); toast('الحالة اتغيّرت');
+      }catch(e){ toast(e.message); paint(true); }
     });
     document.querySelectorAll('[data-awb]').forEach(el=> el.onchange = async ()=>{
       const o = DB.orders.find(x=>x.id===el.dataset.awb);
@@ -1721,6 +2081,149 @@ function bindAdmin(){
       const t = prompt('الملاحظة اللي هتظهر في لوحة العميل:', c.note||'');
       if(t!==null){ c.note=t; await persist(); toast('اتحفظت'); }
     });
+  }
+
+  if(adminTab==='products'){
+    document.querySelectorAll('#prodSeg button').forEach(b=> b.onclick = ()=>{
+      productClient=b.dataset.pc; editingProduct=null; paint(); });
+    const sp = $('saveProduct');
+    if(sp) sp.onclick = async ()=>{
+      const name = $('p_name').value.trim();
+      if(!name){ toast('اكتب اسم المنتج'); return; }
+      const body = { clientId: productClient || DB.clients[0].id, name,
+        sku:$('p_sku').value.trim(), price:+$('p_price').value||0, cost:+$('p_cost').value||0,
+        active: $('p_active').value === '1' };
+      if(editingProduct) body.id = editingProduct.id;
+      try{
+        await api('/api/products',{method:'POST', body:JSON.stringify(body)});
+        editingProduct=null; DB.products = await api('/api/products'); paint(); toast('اتحفظ');
+      }catch(e){ toast(e.message); }
+    };
+    const cp = $('cancelProduct'); if(cp) cp.onclick = ()=>{ editingProduct=null; paint(); };
+    document.querySelectorAll('[data-editp]').forEach(b=> b.onclick = ()=>{
+      editingProduct = (DB.products||[]).find(x=>x.id===b.dataset.editp); paint(); });
+    document.querySelectorAll('[data-delp]').forEach(b=> b.onclick = async ()=>{
+      if(!confirm('هتمسح المنتج ده. تكمل؟')) return;
+      try{ await api('/api/products/'+encodeURIComponent(b.dataset.delp),{method:'DELETE'});
+        DB.products = await api('/api/products'); paint(true); toast('اتحذف');
+      }catch(e){ toast(e.message); }
+    });
+  }
+
+  if(adminTab==='import'){
+    document.querySelectorAll('#impSeg button').forEach(b=> b.onclick = ()=>{
+      importMode=b.dataset.im; importRows=[]; importHeaders=[]; importMap={}; paint(); });
+    const ic = $('imp_client'); if(ic) ic.onchange = ()=>{ importClient = ic.value; };
+    const f = $('imp_file');
+    if(f) f.onchange = async e=>{
+      const file = e.target.files[0]; if(!file) return;
+      const useRows = rows=>{
+        if(rows.length < 2){ toast('الملف فاضي'); return; }
+        importHeaders = rows[0].map(h=>String(h==null?'':h));
+        importRows = rows.slice(1);
+        importMap = {};
+        IMPORT_FIELDS[importMode].forEach(([key,,keys])=>{ importMap[key] = guessColumn(importHeaders, keys); });
+        paint();
+        toast(`قرينا ${importRows.length} صف — راجع ربط الأعمدة`);
+      };
+      if(/\.xlsx?$/i.test(file.name)){
+        try{
+          await loadSheetJS();
+          const buf = await file.arrayBuffer();
+          const wb = XLSX.read(buf, {type:'array'});
+          /* ملف J&T فيه صفحتين: ملخص الفاتورة وتفاصيل الشحنات.
+             بندوّر على الصفحة اللي فيها عمود البوليصة مش أول صفحة */
+          const wanted = importMode==='tracking'
+            ? ['waybill','بوليصة','order no']
+            : ['fullname','phone','total cost','name'];
+          let best = null;
+          for(const nm of wb.SheetNames){
+            const rr = XLSX.utils.sheet_to_json(wb.Sheets[nm], {header:1, raw:false, defval:''})
+              .filter(r=> r.some(x=>String(x).trim()!==''));
+            if(rr.length < 2) continue;
+            const head = rr[0].map(h=>String(h).toLowerCase());
+            const hit = wanted.some(w=> head.some(h=> h.includes(w)));
+            if(hit){ best = rr; break; }
+            if(!best) best = rr;
+          }
+          if(!best){ toast('الملف مفيهوش بيانات'); return; }
+          useRows(best);
+        }catch(err){
+          toast('ما قدرناش نقرا ملف Excel — احفظه CSV UTF-8 وجرّب تاني');
+        }
+        return;
+      }
+      const r = new FileReader();
+      r.onload = ()=> useRows(parseCSV(String(r.result)));
+      r.onerror = ()=> toast('ما قدرناش نقرا الملف');
+      r.readAsText(file, 'UTF-8');
+    };
+    document.querySelectorAll('[data-map]').forEach(el=> el.onchange = ()=>{
+      importMap[el.dataset.map] = Number(el.value);
+    });
+    const run = $('runImport');
+    if(run) run.onclick = async ()=>{
+      if(importMode==='orders' && !importClient){ toast('اختار المتجر الأول'); return; }
+      const get = (row,key)=> importMap[key]>=0 ? String(row[importMap[key]]||'').trim() : '';
+      const numOf = v => Number(String(v||'').replace(/[^\d.\-]/g,''))||0;
+      let rows = importRows.map(r=>{
+        const o = {};
+        IMPORT_FIELDS[importMode].forEach(([k])=>{ const v = get(r,k); if(v!=='') o[k]=v; });
+        if(o.qty)   o.qty   = numOf(o.qty)||1;
+        if(o.total) o.total = numOf(o.total);
+        if(o.unitPrice) o.unitPrice = numOf(o.unitPrice);
+        if(o.shippingCost) o.shippingCost = numOf(o.shippingCost);
+        if(o.date) o.date = normDate(o.date);
+        if(importMode==='tracking'){
+          if(o.otherCost) o.otherCost = numOf(o.otherCost);
+          if(o.codAmount) o.codAmount = numOf(o.codAmount);
+        }
+        if(importMode==='orders'){
+          o.source = sourceFromUtm(o.utm, o.payment);
+          if(o.variant) o.product = (o.product||'') + ' — ' + o.variant;
+          if(o.ref) o.note = 'طلب #' + o.ref + (o.note ? ' · ' + o.note : '');
+          if(o.altPhone && o.phone !== o.altPhone) o.note = (o.note||'') + ' · تليفون تاني ' + o.altPhone;
+          if(!o.id && o.ref) o.id = o.ref;
+        }
+        return o;
+      }).filter(o=> importMode==='tracking' ? (o.awb || o.ref) : (o.name || o.phone || o.id));
+
+      /* الأوردر اللي فيه أكتر من منتج بييجي في أكتر من صف — بنجمعهم
+         عشان الإيراد ما يتحسبش مرتين */
+      if(importMode==='orders'){
+        const merged = new Map();
+        rows.forEach(o=>{
+          const key = o.id || (o.phone + '|' + o.date + '|' + o.total);
+          const prev = merged.get(key);
+          if(!prev){ merged.set(key, o); return; }
+          prev.qty = (prev.qty||1) + (o.qty||1);
+          if(o.product && !String(prev.product||'').includes(o.product)){
+            prev.product = (prev.product||'') + ' + ' + o.product;
+          }
+          if(o.sku && prev.sku !== o.sku) prev.sku = prev.sku ? prev.sku + ',' + o.sku : o.sku;
+          /* الإجمالي بيفضل زي ما هو — مش بنجمعه */
+        });
+        rows = [...merged.values()];
+      }
+      if(!rows.length){ toast('مفيش صفوف صالحة — راجع ربط الأعمدة'); return; }
+      run.disabled = true; run.textContent = 'بنستورد...';
+      try{
+        const res = await api('/api/orders/bulk',{method:'POST',
+          body:JSON.stringify({ mode:importMode, clientId:importClient, rows })});
+        DB.orders = (await api('/api/state')).orders || DB.orders;
+        const box = document.getElementById('importResult');
+        box.innerHTML = importMode==='orders'
+          ? `<div class="note-card" style="margin-top:14px"><h4>الاستيراد خلص</h4>
+             <p>أضفنا ${num(res.created)} أوردر جديد وحدّثنا ${num(res.updated)}.
+             ${res.noCost ? '\n⚠️ ' + num(res.noCost) + ' أوردر ما لقيناش تكلفة بضاعته — ضيف المنتجات في تبويب المنتجات عشان الربح يطلع صح.' : 'وتكلفة البضاعة اتحسبت من كتالوج المنتجات.'}</p></div>`
+          : `<div class="note-card" style="margin-top:14px"><h4>الاستيراد خلص</h4>
+             <p>طابقنا ${num(res.matched)} شحنة${res.byRef? ' (منهم '+num(res.byRef)+' بـ Order NO. مش بالبوليصة)':''}،
+             و${num(res.collected)} اتحوّلوا لـ "تم التحصيل" بمصاريف شحنهم.
+             ${res.unmatchedCount? '\n⚠️ '+num(res.unmatchedCount)+' شحنة مالهاش أوردر عندنا: '+res.unmatched.slice(0,8).join(' · ') : ''}</p></div>`;
+        toast('الاستيراد خلص');
+      }catch(e){ toast(e.message); }
+      finally{ run.disabled=false; run.textContent='استيراد'; }
+    };
   }
 
   if(adminTab==='finance'){
