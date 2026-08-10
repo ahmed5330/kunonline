@@ -314,7 +314,7 @@ td.num{font-family:var(--mono);font-variant-numeric:tabular-nums;direction:ltr;t
    ============================================================ */
 
 /* ---------- 1. التخزين ---------- */
-const KEY = 'konline:agency:v3';
+const KEY = 'konline:agency:v4';
 const mem = {};
 const store = {
   async get(k){
@@ -331,6 +331,8 @@ const store = {
 
 /* ---------- 1ب. الاتصال بالسيرفر ---------- */
 let ONLINE = false;
+let MYPERMS = ['orders','entries','finance','clients','users','settings'];
+const may = p => MYPERMS.includes(p);
 async function api(path, opts){
   const r = await fetch(path, Object.assign({
     credentials:'same-origin', headers:{'Content-Type':'application/json'}
@@ -368,10 +370,19 @@ const GOV_BY_MARKET = {
 };
 const ORDER_SOURCES = ['واتساب','صفحة فيسبوك','إنستجرام','مكالمة تليفون','المتجر (إيزي أوردرز)','مصدر آخر'];
 const STATE_TEXT = {
-  new:'أوردر جديد — في انتظار التأكيد', confirmed:'اتأكد بالتليفون',
-  in_transit:'خرج للتوزيع مع المندوب', delivered:'تم التسليم للعميل',
-  returned:'مرتجع — العميل رفض الاستلام', cancelled:'ملغي'
+  pending:'جاري التأكيد', confirmed:'تم تأكيد الطلب', preparing:'جاري الشحن',
+  shipped:'تم الشحن', collected:'تم التحصيل', returned:'مرتجع', cancelled:'تم إلغاء الطلب'
 };
+const ROLE_LABELS = { admin:'مدير', ops:'تشغيل وشحن', support:'خدمة عملاء', accountant:'محاسب', client:'عميل' };
+const ROLE_DESC = {
+  admin:'كل الصلاحيات — بيانات العملاء والحسابات والفريق',
+  ops:'الأوردرات وحالات الشحن + الإدخال اليومي. مش بيوصل للحسابات',
+  support:'الأوردرات وحالاتها بس',
+  accountant:'المصاريف والتحصيلات + مشاهدة الأوردرات من غير تعديل'
+};
+const EXPENSE_CATS = ['رواتب وأجور','إعلانات ممولة','إيجار','اشتراكات وأدوات','شحن ومرتجعات','عمولات','مصاريف بنكية','ضرائب','تسويق ومحتوى','مصاريف إدارية','أخرى'];
+const INCOME_CATS  = ['اشتراك شهري','عمولة لكل أوردر','رسوم تأسيس متجر','إدارة إعلانات','استشارات','مشروع خاص','أخرى'];
+const PAY_METHODS  = ['كاش','تحويل بنكي','فودافون كاش','إنستاباي','فيزا','أخرى'];
 function govList(market){ return GOV_BY_MARKET[market] || GOV_BY_MARKET['مصر']; }
 
 /* ---------- 3. بيانات البداية ---------- */
@@ -429,7 +440,7 @@ function seedData(){
   });
   // أوردرات فردية — بالشكل اللي بييجي من ويبهوك إيزي أوردرز وبيتتبّع مع J&T
   const NAMES = ['محمود سيد','سارة عبد الرحمن','أحمد فتحي','منى إبراهيم','كريم مصطفى','هبة السيد','عمرو زكي','نورا حسن','طارق يوسف','دينا سمير','مصطفى العربي','ياسمين فؤاد'];
-  const STATES = [['delivered',.55],['in_transit',.22],['new',.08],['returned',.07],['cancelled',.08]];
+  const STATES = [['collected',.5],['shipped',.18],['preparing',.06],['confirmed',.07],['pending',.06],['returned',.06],['cancelled',.07]];
   const pickState = () => { let r=rnd(), acc=0; for(const [k,w] of STATES){ acc+=w; if(r<=acc) return k; } return 'delivered'; };
   const orders=[];
   clients.forEach(c=>{
@@ -447,10 +458,9 @@ function seedData(){
         gov:govs[Math.floor(rnd()*govs.length)],
         total: Math.round(price*qty),
         qty,
-        awb: (st==='new'||st==='cancelled') ? null : 'JT'+String(Math.floor(rnd()*900000000)+100000000)+'EG',
+        awb: ['pending','confirmed','cancelled'].includes(st) ? null : 'JT'+String(Math.floor(rnd()*900000000)+100000000)+'EG',
         state: st,
-        checkpoint: st==='delivered'?'تم التسليم للعميل': st==='in_transit'?'خرج للتوزيع مع المندوب':
-                    st==='returned'?'مرتجع — العميل رفض الاستلام': st==='cancelled'?'ملغي':'في انتظار التأكيد'
+        checkpoint: STATE_TEXT[st]
       });
     }
   });
@@ -730,9 +740,13 @@ function renderClient(client){
 }
 
 const ORDER_STATE = {
-  new:{ ar:'جديد', cls:'wait' }, confirmed:{ ar:'مؤكد', cls:'mid' },
-  in_transit:{ ar:'مع الشحن', cls:'mid' }, delivered:{ ar:'تم التسليم', cls:'on' },
-  returned:{ ar:'مرتجع', cls:'off' }, cancelled:{ ar:'ملغي', cls:'off' }
+  pending:  { ar:'جاري التأكيد',   cls:'wait' },
+  confirmed:{ ar:'تم تأكيد الطلب', cls:'mid'  },
+  preparing:{ ar:'جاري الشحن',     cls:'mid'  },
+  shipped:  { ar:'تم الشحن',       cls:'mid'  },
+  collected:{ ar:'تم التحصيل',     cls:'on'   },
+  returned: { ar:'مرتجع',          cls:'off'  },
+  cancelled:{ ar:'تم إلغاء الطلب', cls:'off'  }
 };
 function ordersFor(clientId, range){
   const [from,to] = rangeDates(range);
@@ -968,15 +982,24 @@ let editingEntry = null;
 let editingClient = null;
 
 function renderAdmin(){
-  const tabs = [['overview','نظرة عامة'],['orders','الأوردرات'],['entry','الإدخال اليومي'],['funding','التمويلات'],['clients','العملاء'],['users','الحسابات'],['settings','الإعدادات']];
+  const allTabs = [
+    ['overview','نظرة عامة','orders'], ['orders','الأوردرات','orders'],
+    ['entry','الإدخال اليومي','entries'], ['finance','الحسابات','finance'],
+    ['funding','التمويلات','finance'], ['clients','العملاء','clients'],
+    ['users','الفريق','users'], ['settings','الإعدادات','settings']
+  ];
+  const tabs = allTabs.filter(([,,p])=> !p || may(p) || (p==='orders' && may('orders_view')));
+  if(!tabs.some(t=>t[0]===adminTab)) adminTab = tabs.length ? tabs[0][0] : 'overview';
   return `
   <div class="page-head">
-    <div><div class="eyebrow">لوحة الإدارة</div><h2>كل العملاء في مكان واحد</h2></div>
+    <div><div class="eyebrow">لوحة الإدارة${(session&&session.staffRole&&session.staffRole!=='admin')?' · '+(ROLE_LABELS[session.staffRole]||''):''}</div>
+      <h2>كل العملاء في مكان واحد</h2></div>
   </div>
   <div class="admin-nav">${tabs.map(([v,l])=>`<button data-tab="${v}" aria-pressed="${adminTab===v}">${l}</button>`).join('')}</div>
   <div id="adminBody">${
     adminTab==='overview'? adminOverview() :
     adminTab==='orders'  ? adminOrders() :
+    adminTab==='finance' ? adminFinance() :
     adminTab==='entry'   ? adminEntry() :
     adminTab==='funding' ? adminFunding() :
     adminTab==='clients' ? adminClients() :
@@ -1223,6 +1246,94 @@ function adminClients(){
   <p class="hint" style="margin-top:10px">ربح الأوردر والهامش محسوبين بعد خصم متوسط التكلفة الإعلانية الفعلية لآخر ٣٠ يوم.</p>`;
 }
 
+let txRange = '30';
+function txFor(range){
+  const [from,to] = rangeDates(range);
+  return (DB._tx||[]).filter(t=>t.date>=from && t.date<=to).sort((a,b)=> a.date<b.date?1:-1);
+}
+function adminFinance(){
+  if(!ONLINE) return `<div class="card"><div class="empty"><b>الحسابات محتاجة السيرفر</b>الشاشة دي بتشتغل بعد رفع النظام على الاستضافة.</div></div>`;
+  const list = txFor(txRange);
+  const inc = list.filter(t=>t.type==='income'), exp = list.filter(t=>t.type==='expense');
+  const sum = a => a.reduce((s,t)=>s+Number(t.amount||0),0);
+  const income = sum(inc), expense = sum(exp), net = income-expense;
+
+  const byCat = {};
+  exp.forEach(t=>{ byCat[t.category] = (byCat[t.category]||0) + Number(t.amount||0); });
+  const cats = Object.entries(byCat).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  const maxCat = cats.length? cats[0][1] : 1;
+  const catRows = cats.map(([c,v])=>`<div class="gov-row">
+      <span class="g">${esc(c)}</span>
+      <span class="bar"><i style="width:${(v/maxCat*100).toFixed(0)}%;background:var(--brick)"></i></span>
+      <span class="n">${money(v)}</span>
+      <span class="n">${(safeDiv(v,expense)*100).toFixed(0)}%</span>
+    </div>`).join('');
+
+  const rows = list.slice(0,80).map(t=>{
+    const c = DB.clients.find(x=>x.id===t.clientId);
+    return `<tr>
+      <td>${arDate(t.date)}</td>
+      <td><span class="pill ${t.type==='income'?'on':'off'}">${t.type==='income'?'تحصيل':'مصروف'}</span></td>
+      <td>${esc(t.category)}</td>
+      <td class="num" style="color:${t.type==='income'?'var(--pine)':'var(--brick)'}">${t.type==='income'?'+':'−'}${money(t.amount)} ${esc(t.currency||'EGP')}</td>
+      <td>${esc(t.method||'—')}</td>
+      <td>${esc(c?c.name:'—')}</td>
+      <td>${esc(t.note||'')}</td>
+      <td><button class="icon-btn" data-deltx="${esc(t.id)}">حذف</button></td>
+    </tr>`;}).join('');
+
+  const clientOpts = DB.clients.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  return `
+  <div class="page-head" style="padding:8px 0 12px">
+    <div class="eyebrow">حركات المصاريف والتحصيلات</div>
+    <div class="spacer"></div>
+    <div class="seg" id="txSeg">
+      ${[['today','النهارده'],['7','٧ أيام'],['30','٣٠ يوم'],['all','كل الفترة']]
+        .map(([v,l])=>`<button data-tx="${v}" aria-pressed="${txRange===v}">${l}</button>`).join('')}
+    </div>
+  </div>
+
+  <div class="grid g3">
+    <div class="card kpi accent-pine"><div class="k-label">إجمالي التحصيلات</div>
+      <div class="k-val" style="color:var(--pine)">${money(income)}<span class="cur">EGP</span></div>
+      <div class="k-foot">${num(inc.length)} حركة</div></div>
+    <div class="card kpi"><div class="k-label">إجمالي المصاريف</div>
+      <div class="k-val" style="color:var(--brick)">${money(expense)}<span class="cur">EGP</span></div>
+      <div class="k-foot">${num(exp.length)} حركة</div></div>
+    <div class="card kpi ${net>=0?'accent-gold':''}"><div class="k-label">الصافي</div>
+      <div class="k-val" style="color:${net>=0?'var(--pine)':'var(--brick)'}">${money(net)}<span class="cur">EGP</span></div>
+      <div class="k-foot">${income>0?'هامش '+(safeDiv(net,income)*100).toFixed(1)+'%':'—'}</div></div>
+  </div>
+
+  <div class="section-title">تسجيل حركة</div>
+  <div class="card">
+    <div class="form-grid">
+      <div class="field"><label>النوع</label><select id="t_type">
+        <option value="expense">مصروف</option><option value="income">تحصيل / إيراد</option></select></div>
+      <div class="field"><label>البند</label><select id="t_cat">${EXPENSE_CATS.map(c=>`<option>${c}</option>`).join('')}</select></div>
+      <div class="field"><label>المبلغ</label><input id="t_amount" type="number" min="0" step="0.01" placeholder="0"></div>
+      <div class="field"><label>العملة</label><select id="t_cur"><option>EGP</option><option>SAR</option><option>AED</option><option>USD</option></select></div>
+      <div class="field"><label>طريقة الدفع</label><select id="t_method">${PAY_METHODS.map(m=>`<option>${m}</option>`).join('')}</select></div>
+      <div class="field"><label>التاريخ</label><input id="t_date" type="date" value="${today()}"></div>
+      <div class="field"><label>مرتبطة بعميل</label><select id="t_client"><option value="">— مصروف عام —</option>${clientOpts}</select></div>
+      <div class="field" style="grid-column:span 2"><label>البيان</label><input id="t_note" placeholder="تفاصيل الحركة"></div>
+    </div>
+    <div class="form-actions"><button class="btn sm" id="saveTx">تسجيل الحركة</button>
+      <span class="hint">البند بيتغيّر تلقائياً حسب النوع — مصاريف ولا تحصيلات.</span></div>
+  </div>
+
+  ${cats.length ? `<div class="section-title">المصاريف حسب البند</div>
+  <div class="card">${catRows}</div>` : ''}
+
+  <div class="section-title">كشف الحركات</div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>التاريخ</th><th>النوع</th><th>البند</th><th>المبلغ</th><th>طريقة الدفع</th><th>العميل</th><th>البيان</th><th></th></tr></thead>
+    <tbody>${rows || '<tr><td colspan="8" class="empty">مفيش حركات في الفترة دي.</td></tr>'}</tbody>
+  </table></div>
+  <div class="form-actions"><button class="btn sm line" id="expTx">تنزيل CSV</button>
+    <span class="hint">أول ٨٠ حركة. الأرقام مجمّعة بالجنيه — راجع العملة في الحركات غير المصرية.</span></div>`;
+}
+
 let editingUser = null;
 function adminUsers(){
   if(!ONLINE) return `<div class="card"><div class="empty"><b>الحسابات محتاجة السيرفر</b>الشاشة دي بتشتغل بعد رفع النظام على الاستضافة.</div></div>`;
@@ -1231,8 +1342,8 @@ function adminUsers(){
   const rows = list.map(x=>{
     const c = DB.clients.find(c=>c.id===x.clientId);
     return `<tr>
-      <td class="mono" style="font-size:12.5px">${esc(x.email)}</td>
-      <td><span class="pill ${x.role==='admin'?'wait':'mid'}">${x.role==='admin'?'إدارة':'عميل'}</span></td>
+      <td>${esc(x.name||'—')}<br><span class="hint mono" style="font-size:11.5px">${esc(x.email)}</span></td>
+      <td><span class="pill ${x.role==='admin'?'wait':x.role==='client'?'mid':'on'}">${ROLE_LABELS[x.role]||x.role}</span></td>
       <td>${esc(c?c.name:'—')}</td>
       <td><span class="pill ${x.status==='active'?'on':'off'}">${x.status==='active'?'نشط':'موقوف'}</span></td>
       <td>${x.lastLogin?arDate(String(x.lastLogin).slice(0,10)):'—'}</td>
@@ -1242,13 +1353,14 @@ function adminUsers(){
       </div></td></tr>`;}).join('');
   const clientOpts = DB.clients.map(c=>`<option value="${c.id}" ${u.clientId===c.id?'selected':''}>${esc(c.name)}</option>`).join('');
   return `
-  <div class="section-title">${editingUser?'تعديل حساب: '+esc(u.email):'إضافة حساب دخول'}</div>
+  <div class="section-title">${editingUser?'تعديل حساب: '+esc(u.name||u.email):'إضافة عضو فريق أو حساب دخول'}</div>
   <div class="card">
     <div class="form-grid">
-      <div class="field"><label>البريد الإلكتروني</label><input id="u_email" type="email" value="${esc(u.email||'')}" placeholder="name@store.com"></div>
+      <div class="field"><label>الاسم</label><input id="u_name" value="${esc(u.name||'')}" placeholder="اسم عضو الفريق"></div>
+      <div class="field"><label>البريد الإلكتروني</label><input id="u_email" type="email" value="${esc(u.email||'')}" placeholder="name@kun-online.com"></div>
       <div class="field"><label>الصلاحية</label><select id="u_role">
-        <option value="client" ${u.role==='client'?'selected':''}>عميل</option>
-        <option value="admin" ${u.role==='admin'?'selected':''}>إدارة</option></select></div>
+        ${['admin','ops','support','accountant','client'].map(r=>
+          `<option value="${r}" ${u.role===r?'selected':''}>${ROLE_LABELS[r]}</option>`).join('')}</select></div>
       <div class="field"><label>مربوط بأي متجر</label><select id="u_client"><option value="">—</option>${clientOpts}</select></div>
       <div class="field"><label>الحالة</label><select id="u_status">
         <option value="active" ${u.status!=='paused'?'selected':''}>نشط</option>
@@ -1257,15 +1369,20 @@ function adminUsers(){
         <input id="u_password" type="password" autocomplete="new-password"
           placeholder="${editingUser?'سيبها فاضية لو مش عايز تغيّرها':'٨ حروف على الأقل'}"></div>
     </div>
+    <ul class="cost-list" style="margin-top:6px">
+      ${['admin','ops','support','accountant'].map(r=>`<li>
+        <span class="sw" style="background:${r==='admin'?'var(--brick)':r==='accountant'?'var(--gold)':'var(--pine)'}"></span>
+        <span class="g"><b>${ROLE_LABELS[r]}</b> — ${ROLE_DESC[r]}</span></li>`).join('')}
+    </ul>
     <div class="form-actions">
       <button class="btn sm" id="saveUser">${editingUser?'حفظ التعديل':'إنشاء الحساب'}</button>
       ${editingUser?'<button class="btn sm line" id="cancelUser">إلغاء</button>':''}
       <span class="hint">كلمة المرور بتتخزّن مشفّرة — ولا إنت ولا حد يقدر يقراها بعد الحفظ.</span>
     </div>
   </div>
-  <div class="section-title">الحسابات</div>
+  <div class="section-title">كل الحسابات</div>
   <div class="table-wrap"><table>
-    <thead><tr><th>الإيميل</th><th>الصلاحية</th><th>المتجر</th><th>الحالة</th><th>آخر دخول</th><th></th></tr></thead>
+    <thead><tr><th>العضو</th><th>الصلاحية</th><th>المتجر</th><th>الحالة</th><th>آخر دخول</th><th></th></tr></thead>
     <tbody>${rows || '<tr><td colspan="6" class="empty">مفيش حسابات لسه.</td></tr>'}</tbody>
   </table></div>`;
 }
@@ -1328,7 +1445,8 @@ async function boot(){
     ONLINE = true;
     if(me && me.needsSetup){ show('setup'); return; }
     if(me && me.role){
-      session = me.role==='client' ? {role:'client', clientId:me.clientId} : {role:'admin'};
+      session = me.role==='client' ? {role:'client', clientId:me.clientId} : {role:'admin', staffRole:me.role, name:me.name};
+      MYPERMS = me.perms || [];
       DB = await api('/api/state'); normalizeDB(); show('app'); return;
     }
     show('login');
@@ -1364,7 +1482,10 @@ async function doLogin(){
     btn.disabled = true; btn.textContent = 'بنتأكد...';
     try{
       const res = await api('/api/login', {method:'POST', body:JSON.stringify({email, password})});
-      session = res.role==='client' ? {role:'client', clientId:res.clientId} : {role:'admin'};
+      const meNow = await api('/api/me');
+      MYPERMS = meNow.perms || [];
+      session = res.role==='client' ? {role:'client', clientId:res.clientId}
+                                    : {role:'admin', staffRole:res.role, name:meNow.name};
       DB = await api('/api/state'); normalizeDB();
       clientTab='dash'; err.classList.add('hidden'); show('app');
     }catch(e){ fail(e.message); }
@@ -1390,7 +1511,8 @@ async function doSetup(){
   btn.disabled = true; btn.textContent = 'بننشئ الحساب...';
   try{
     const res = await api('/api/setup', {method:'POST', body:JSON.stringify({email, password:pass})});
-    session = {role:'admin'};
+    session = {role:'admin', staffRole:'admin'};
+    MYPERMS = ['orders','entries','finance','clients','users','settings'];
     DB = await api('/api/state'); normalizeDB();
     err.classList.add('hidden'); show('app'); toast('الحساب اتعمل — أهلاً بيك');
   }catch(e){ fail(e.message); }
@@ -1457,6 +1579,9 @@ function bindAdmin(){
     adminTab=b.dataset.tab; editingEntry=null; editingClient=null; editingUser=null;
     if(adminTab==='users' && ONLINE){
       try{ DB._users = await api('/api/users'); }catch(e){ toast(e.message); }
+    }
+    if(adminTab==='finance' && ONLINE){
+      try{ DB._tx = await api('/api/transactions'); }catch(e){ toast(e.message); }
     }
     paint();
   });
@@ -1598,6 +1723,44 @@ function bindAdmin(){
     });
   }
 
+  if(adminTab==='finance'){
+    document.querySelectorAll('#txSeg button').forEach(b=> b.onclick = ()=>{ txRange=b.dataset.tx; paint(); });
+    const setCats = ()=>{
+      const t = $('t_type').value;
+      $('t_cat').innerHTML = (t==='income'?INCOME_CATS:EXPENSE_CATS).map(c=>`<option>${esc(c)}</option>`).join('');
+    };
+    if($('t_type')) $('t_type').onchange = setCats;
+    const st = $('saveTx');
+    if(st) st.onclick = async ()=>{
+      const amount = +$('t_amount').value||0;
+      if(amount<=0){ toast('اكتب مبلغ صحيح'); return; }
+      const body = { type:$('t_type').value, category:$('t_cat').value, amount,
+        currency:$('t_cur').value, method:$('t_method').value, date:$('t_date').value||today(),
+        clientId:$('t_client').value||null, note:$('t_note').value.trim() };
+      try{
+        await api('/api/transactions',{method:'POST', body:JSON.stringify(body)});
+        DB._tx = await api('/api/transactions'); paint(); toast('الحركة اتسجّلت');
+      }catch(e){ toast(e.message); }
+    };
+    document.querySelectorAll('[data-deltx]').forEach(b=> b.onclick = async ()=>{
+      if(!confirm('هتمسح الحركة دي. تكمل؟')) return;
+      try{ await api('/api/transactions/'+encodeURIComponent(b.dataset.deltx),{method:'DELETE'});
+        DB._tx = await api('/api/transactions'); paint(true); toast('اتحذفت');
+      }catch(e){ toast(e.message); }
+    });
+    const ex = $('expTx');
+    if(ex) ex.onclick = ()=>{
+      const head = ['التاريخ','النوع','البند','المبلغ','العملة','طريقة الدفع','العميل','البيان'];
+      const lines = txFor(txRange).map(t=>{
+        const c = DB.clients.find(x=>x.id===t.clientId);
+        return [t.date, t.type==='income'?'تحصيل':'مصروف', t.category, t.amount,
+          t.currency||'EGP', t.method||'', c?c.name:'', (t.note||'').replace(/,/g,' ')].join(',');
+      });
+      downloadFile('konline-accounts.csv', [head.join(','), ...lines].join('\n'), 'text/csv;charset=utf-8');
+      toast('اتنزّل الملف');
+    };
+  }
+
   if(adminTab==='users'){
     const refresh = async ()=>{ try{ DB._users = await api('/api/users'); }catch(e){} };
     const su = $('saveUser');
@@ -1606,7 +1769,11 @@ function bindAdmin(){
       if(!email.includes('@')){ toast('اكتب إيميل صحيح'); return; }
       if(!editingUser && pass.length<8){ toast('حساب جديد محتاج كلمة مرور ٨ حروف على الأقل'); return; }
       if(pass && pass.length<8){ toast('كلمة المرور لازم تكون ٨ حروف على الأقل'); return; }
-      const body = { email, role:$('u_role').value, clientId:$('u_client').value || null, status:$('u_status').value };
+      const role = $('u_role').value;
+      const body = { email, name:$('u_name').value.trim(), role,
+        clientId: role==='client' ? ($('u_client').value || null) : null,
+        status:$('u_status').value };
+      if(editingUser) body.id = editingUser.id;
       if(pass) body.password = pass;
       try{
         await api('/api/users', {method:'POST', body:JSON.stringify(body)});
