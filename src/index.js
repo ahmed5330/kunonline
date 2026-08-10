@@ -178,12 +178,15 @@ async function saveState(env, state) {
   ).bind(JSON.stringify(state), new Date().toISOString()).run();
 }
 
-const ORDER_COLS = 'id, client_id, date, name, phone, gov, address, product, qty, total, source, note, awb, state, checkpoint, created_at';
+const ORDER_COLS = 'id, client_id, ref, date, name, phone, gov, address, product, product_id, unit_price, qty, total, product_cost, shipping_cost, other_cost, source, note, awb, state, checkpoint, collected_at, created_at';
 
 const rowToOrder = r => ({
-  id: r.id, clientId: r.client_id, date: r.date, name: r.name, phone: r.phone,
-  gov: r.gov, address: r.address, product: r.product, qty: r.qty, total: r.total,
-  source: r.source, note: r.note, awb: r.awb, state: r.state, checkpoint: r.checkpoint
+  id: r.id, clientId: r.client_id, ref: r.ref, date: r.date, name: r.name, phone: r.phone,
+  gov: r.gov, address: r.address, product: r.product, productId: r.product_id,
+  unitPrice: r.unit_price, qty: r.qty, total: r.total,
+  productCost: r.product_cost || 0, shippingCost: r.shipping_cost, otherCost: r.other_cost,
+  source: r.source, note: r.note, awb: r.awb, state: r.state,
+  checkpoint: r.checkpoint, collectedAt: r.collected_at
 });
 
 async function listOrders(env, clientId) {
@@ -196,15 +199,39 @@ async function listOrders(env, clientId) {
 
 async function insertOrder(env, o) {
   await env.DB.prepare(
-    `INSERT INTO orders (${ORDER_COLS}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    `INSERT INTO orders (${ORDER_COLS}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
      ON CONFLICT(id) DO UPDATE SET
-       state = excluded.state, checkpoint = excluded.checkpoint, awb = COALESCE(excluded.awb, orders.awb)`
+       state = excluded.state, checkpoint = excluded.checkpoint,
+       awb = COALESCE(excluded.awb, orders.awb),
+       ref = COALESCE(excluded.ref, orders.ref),
+       shipping_cost = COALESCE(excluded.shipping_cost, orders.shipping_cost),
+       other_cost = COALESCE(excluded.other_cost, orders.other_cost),
+       collected_at = COALESCE(excluded.collected_at, orders.collected_at)`
   ).bind(
-    o.id, o.clientId, o.date, o.name || '', o.phone || '', o.gov || '', o.address || '',
-    o.product || '', o.qty || 1, o.total || 0, o.source || '', o.note || '',
-    o.awb || null, o.state || 'new', o.checkpoint || '', new Date().toISOString()
+    o.id, o.clientId, o.ref || null, o.date, o.name || '', o.phone || '', o.gov || '', o.address || '',
+    o.product || '', o.productId || null, o.unitPrice || 0, o.qty || 1, o.total || 0,
+    o.productCost || 0,
+    o.shippingCost === undefined || o.shippingCost === null ? null : Number(o.shippingCost),
+    o.otherCost === undefined || o.otherCost === null ? null : Number(o.otherCost),
+    o.source || '', o.note || '', o.awb || null, o.state || 'pending', o.checkpoint || '',
+    o.collectedAt || null, new Date().toISOString()
   ).run();
   return o;
+}
+
+/* ---------- المنتجات ---------- */
+const PRODUCT_COLS = 'id, client_id, name, sku, price, cost, active, created_at';
+const rowToProduct = r => ({
+  id: r.id, clientId: r.client_id, name: r.name, sku: r.sku,
+  price: r.price, cost: r.cost, active: r.active
+});
+
+async function listProducts(env, clientId) {
+  const q = clientId
+    ? env.DB.prepare(`SELECT ${PRODUCT_COLS} FROM products WHERE client_id = ? ORDER BY name`).bind(clientId)
+    : env.DB.prepare(`SELECT ${PRODUCT_COLS} FROM products ORDER BY client_id, name`);
+  const { results } = await q.all();
+  return (results || []).map(rowToProduct);
 }
 
 /* ---------- توحيد الحالات ---------- */
@@ -236,9 +263,10 @@ function mapEasyOrdersStatus(s) {
 function mapJTStatus(raw) {
   const t = String(raw || '').toLowerCase();
   const has = (...w) => w.some(x => t.includes(x));
-  if (has('delivered', 'signed', 'تم التسليم', 'تم الاستلام')) return 'collected';
-  if (has('returned', 'return', 'rts', 'مرتجع', 'راجع', 'إرجاع')) return 'returned';
+  /* الترتيب مهم: "Return Sign" فيها كلمة sign، فلازم نفحص المرتجع الأول */
+  if (has('return', 'rts', 'reject', 'مرتجع', 'راجع', 'إرجاع', 'مرفوض')) return 'returned';
   if (has('cancel', 'ملغي', 'ملغاة')) return 'cancelled';
+  if (has('sign', 'delivered', 'تم التسليم', 'تم الاستلام', 'وقّع')) return 'collected';
   return 'shipped';
 }
 
@@ -404,16 +432,17 @@ async function handleApi(request, env, url, path) {
   if (path === '/api/state' && request.method === 'GET') {
     const state = await loadState(env);
     if (isStaff(user)) {
-      return json({ ...state, orders: await listOrders(env), roles: ROLES });
+      return json({ ...state, orders: await listOrders(env), products: await listProducts(env), roles: ROLES });
     }
     const scoped = scopeForClient(state, await listOrders(env, me.clientId), me.clientId);
+    if (scoped) scoped.products = await listProducts(env, me.clientId);
     return scoped ? json(scoped) : json({ error: 'الحساب مش موجود' }, 404);
   }
 
   /* حفظ البيانات — الإدارة بس */
   if (path === '/api/state' && request.method === 'PUT') {
     const body = await request.json();
-    delete body.orders; delete body.roles;
+    delete body.orders; delete body.roles; delete body.products;
     (body.clients || []).forEach(c => { delete c.password; delete c.code; });
 
     if (can(user, 'settings')) {           /* المدير بيحفظ كل حاجة */
@@ -445,7 +474,7 @@ async function handleApi(request, env, url, path) {
   }
 
   /* تعديل حالة أو بوليصة — الإدارة بس */
-  const m = path.match(/^\/api\/orders\/([^/]+)$/);
+  const m = path !== '/api/orders/bulk' ? path.match(/^\/api\/orders\/([^/]+)$/) : null;
   if (m && isStaff(user) && can(user, 'orders')) {
     const id = decodeURIComponent(m[1]);
     if (request.method === 'DELETE') {
@@ -454,14 +483,31 @@ async function handleApi(request, env, url, path) {
     }
     if (request.method === 'PATCH') {
       const p = await request.json();
-      const cur = await env.DB.prepare('SELECT state, awb FROM orders WHERE id = ?').bind(id).first();
+      const cur = await env.DB.prepare(
+        'SELECT state, awb, shipping_cost, other_cost FROM orders WHERE id = ?'
+      ).bind(id).first();
       if (!cur) return json({ error: 'أوردر غير موجود' }, 404);
+
       let st = p.state || cur.state;
       const awb = p.awb !== undefined ? (p.awb || null) : cur.awb;
-      if (p.awb && (cur.state === 'pending' || cur.state === 'confirmed' || cur.state === 'preparing') && !p.state) st = 'shipped';
+      if (p.awb && ['pending','confirmed','preparing'].includes(cur.state) && !p.state) st = 'shipped';
       if (!ORDER_STATES.includes(st)) return json({ error: 'حالة غير معروفة' }, 400);
-      await env.DB.prepare('UPDATE orders SET state = ?, awb = ?, checkpoint = ? WHERE id = ?')
-        .bind(st, awb, STATE_TEXT[st] || '', id).run();
+
+      const num = v => (v === undefined || v === null || v === '') ? null : Number(v);
+      let ship  = p.shippingCost !== undefined ? num(p.shippingCost) : cur.shipping_cost;
+      let other = p.otherCost    !== undefined ? num(p.otherCost)    : cur.other_cost;
+
+      /* التحصيل ما يتسجّلش من غير تكاليفه — وإلا الربح هيطلع أعلى من الحقيقة */
+      if (st === 'collected' && (ship === null || other === null || isNaN(ship) || isNaN(other))) {
+        return json({ error: 'قبل ما تسجّل التحصيل لازم تحدد سعر الشحن والمصاريف الأخرى', needCosts: true }, 400);
+      }
+      const collectedAt = st === 'collected'
+        ? (p.collectedAt || new Date().toISOString().slice(0, 10))
+        : null;
+
+      await env.DB.prepare(
+        'UPDATE orders SET state = ?, awb = ?, checkpoint = ?, shipping_cost = ?, other_cost = ?, collected_at = ? WHERE id = ?'
+      ).bind(st, awb, STATE_TEXT[st] || '', ship, other, collectedAt, id).run();
       return json({ ok: true, state: st });
     }
   }
@@ -556,6 +602,150 @@ async function handleApi(request, env, url, path) {
     }
     await env.DB.prepare('DELETE FROM users WHERE id = ?').bind(id).run();
     return json({ ok: true });
+  }
+
+  /* ---------- منتجات المتجر ---------- */
+  if (path === '/api/products') {
+    if (request.method === 'GET') {
+      return json(await listProducts(env, user.role === 'client' ? me.clientId : url.searchParams.get('clientId')));
+    }
+    if (request.method === 'POST') {
+      const b = await request.json().catch(() => ({}));
+      const clientId = user.role === 'client' ? me.clientId : b.clientId;
+      if (!clientId) return json({ error: 'اختار المتجر' }, 400);
+      if (user.role !== 'client' && !can(user, 'clients') && !can(user, 'orders')) {
+        return json({ error: 'مش مسموح' }, 403);
+      }
+      if (!b.name) return json({ error: 'اسم المنتج مطلوب' }, 400);
+      const id = b.id || 'P-' + crypto.randomUUID().slice(0, 8).toUpperCase();
+      await env.DB.prepare(
+        `INSERT INTO products (${PRODUCT_COLS}) VALUES (?,?,?,?,?,?,?,?)
+         ON CONFLICT(id) DO UPDATE SET
+           name=excluded.name, sku=excluded.sku, price=excluded.price,
+           cost=excluded.cost, active=excluded.active`
+      ).bind(id, clientId, b.name, b.sku || '', Number(b.price) || 0, Number(b.cost) || 0,
+        b.active === false ? 0 : 1, new Date().toISOString()).run();
+      return json({ ok: true, id });
+    }
+  }
+
+  const pm = path.match(/^\/api\/products\/([^/]+)$/);
+  if (pm && request.method === 'DELETE') {
+    const pid = decodeURIComponent(pm[1]);
+    const row = await env.DB.prepare('SELECT client_id FROM products WHERE id = ?').bind(pid).first();
+    if (!row) return json({ error: 'المنتج مش موجود' }, 404);
+    if (user.role === 'client' && row.client_id !== me.clientId) return json({ error: 'مش مسموح' }, 403);
+    await env.DB.prepare('DELETE FROM products WHERE id = ?').bind(pid).run();
+    return json({ ok: true });
+  }
+
+  /* ---------- استيراد شيتات إيزي أوردرز و J&T ---------- */
+  if (path === '/api/orders/bulk' && request.method === 'POST') {
+    if (!can(user, 'orders')) return json({ error: 'مش مسموح' }, 403);
+    const b = await request.json().catch(() => ({}));
+    const rows = Array.isArray(b.rows) ? b.rows.slice(0, 2000) : [];
+    if (!rows.length) return json({ error: 'الملف فاضي' }, 400);
+
+    /* شيت إيزي أوردرز: بينشئ أوردرات أو بيحدّثها */
+    if (b.mode === 'orders') {
+      if (!b.clientId) return json({ error: 'اختار المتجر' }, 400);
+      let created = 0, updated = 0, costed = 0;
+      const skipped = [];
+
+      /* بنجيب كتالوج منتجات العميل مرة واحدة عشان نحسب تكلفة البضاعة —
+         الشيت بيقول سعر البيع بس، والتكلفة عندنا في المنتجات */
+      const catalog = await listProducts(env, b.clientId);
+      const byKey = new Map();
+      catalog.forEach(pr => {
+        if (pr.sku)  byKey.set(String(pr.sku).trim().toLowerCase(), pr);
+        if (pr.name) byKey.set(String(pr.name).trim().toLowerCase(), pr);
+      });
+      const findProduct = r => {
+        const sku = String(r.sku || '').split(',')[0].trim().toLowerCase();
+        if (sku && byKey.has(sku)) return byKey.get(sku);
+        const nm = String(r.product || '').split(' — ')[0].split(' + ')[0].trim().toLowerCase();
+        return nm ? byKey.get(nm) : null;
+      };
+      for (const r of rows) {
+        if (!r.name && !r.phone && !r.id) { skipped.push('صف فاضي'); continue; }
+        const id = String(r.id || '').trim() || 'IM-' + crypto.randomUUID().slice(0, 8).toUpperCase();
+        const exists = await env.DB.prepare('SELECT id FROM orders WHERE id = ?').bind(id).first();
+        const st = r.state && ORDER_STATES.includes(r.state) ? r.state : mapEasyOrdersStatus(r.status);
+        const qty = Number(r.qty) || 1;
+        const match = findProduct(r);
+        let cost = Number(r.productCost) || 0;
+        if (!cost && match) { cost = (Number(match.cost) || 0) * qty; if (cost) costed++; }
+        await insertOrder(env, {
+          id, clientId: b.clientId, ref: r.ref ? String(r.ref).trim() : null,
+          date: (r.date || new Date().toISOString()).slice(0, 10),
+          name: r.name || '', phone: String(r.phone || ''), gov: r.gov || '', address: r.address || '',
+          product: r.product || '', productId: match ? match.id : null, qty,
+          unitPrice: Number(r.unitPrice) || 0, total: Number(r.total) || 0,
+          productCost: cost,
+          shippingCost: r.shippingCost === undefined ? null : Number(r.shippingCost),
+          otherCost: r.otherCost === undefined ? null : Number(r.otherCost),
+          source: r.source || 'شيت إيزي أوردرز', note: r.note || '',
+          awb: r.awb || null, state: st, checkpoint: STATE_TEXT[st] || ''
+        });
+        exists ? updated++ : created++;
+      }
+      return json({ ok: true, created, updated, costed, skipped: skipped.length,
+        noCost: created + updated - costed });
+    }
+
+    /* شيت J&T: بيطابق برقم البوليصة ويحدّث الحالة والتكاليف */
+    if (b.mode === 'tracking') {
+      let matched = 0, collected = 0, byRef = 0;
+      const unmatched = [];
+      for (const r of rows) {
+        const awb = String(r.awb || '').trim();
+        const ref = String(r.ref || '').trim();
+        if (!awb && !ref) continue;
+
+        /* بندوّر بالبوليصة الأول. لو مالقيناش — وده الطبيعي لأن شيت إيزي أوردرز
+           مفيهوش بوليصة أصلاً — بندوّر برقم الطلب جوه نفس المتجر */
+        let o = awb ? await env.DB.prepare(
+          'SELECT id, state, other_cost, awb FROM orders WHERE awb = ?'
+        ).bind(awb).first() : null;
+
+        if (!o && ref && b.clientId) {
+          o = await env.DB.prepare(
+            'SELECT id, state, other_cost, awb FROM orders WHERE ref = ? AND client_id = ?'
+          ).bind(ref, b.clientId).first();
+          if (o) byRef++;
+        }
+        if (!o) { unmatched.push(awb || ('طلب ' + ref)); continue; }
+
+        const st = r.state && ORDER_STATES.includes(r.state) ? r.state : mapJTStatus(r.status);
+        const num = v => (v === undefined || v === null || v === '') ? null : Number(v);
+        const ship  = num(r.shippingCost);
+        const other = num(r.otherCost);
+
+        /* التحصيل محتاج تكاليفه — لو الشيت مجابش سعر الشحن نسيبه "تم الشحن" */
+        if (st === 'collected' && (ship === null || isNaN(ship))) {
+          await env.DB.prepare('UPDATE orders SET state = ?, checkpoint = ?, awb = COALESCE(?, awb) WHERE id = ?')
+            .bind('shipped', 'تم الشحن — ناقص سعر الشحن للتحصيل', awb || null, o.id).run();
+          matched++;
+          continue;
+        }
+        const finalOther = other !== null && !isNaN(other)
+          ? other
+          : (o.other_cost === null || o.other_cost === undefined ? 0 : o.other_cost);
+
+        await env.DB.prepare(
+          `UPDATE orders SET state = ?, checkpoint = ?, awb = COALESCE(?, awb),
+             shipping_cost = COALESCE(?, shipping_cost), other_cost = ?, collected_at = ?
+           WHERE id = ?`
+        ).bind(st, r.status || STATE_TEXT[st] || '', awb || null, ship, finalOther,
+          st === 'collected' ? (r.date || new Date().toISOString().slice(0, 10)) : null, o.id).run();
+        matched++;
+        if (st === 'collected') collected++;
+      }
+      return json({ ok: true, matched, collected, byRef,
+        unmatched: unmatched.slice(0, 50), unmatchedCount: unmatched.length });
+    }
+
+    return json({ error: 'نوع الاستيراد غير معروف' }, 400);
   }
 
   /* ---------- الحسابات: المصاريف والتحصيلات ---------- */
