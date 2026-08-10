@@ -111,6 +111,19 @@ async function recordFail(env, email) {
 const clearFails = (env, email) =>
   env.DB.prepare('DELETE FROM login_attempts WHERE email = ?').bind(email).run();
 
+/* ---------- الأدوار والصلاحيات ---------- */
+/* كل دور بياخد أقل صلاحيات تكفّي شغله — مش أكتر */
+const ROLES = {
+  admin:      { label:'مدير',          perms:['orders','entries','finance','clients','users','settings'] },
+  ops:        { label:'تشغيل وشحن',    perms:['orders','entries'] },
+  support:    { label:'خدمة عملاء',    perms:['orders'] },
+  accountant: { label:'محاسب',         perms:['finance','orders_view'] },
+  client:     { label:'عميل',          perms:[] }
+};
+const permsOf = role => (ROLES[role] || ROLES.client).perms;
+const can = (user, perm) => permsOf(user.role).includes(perm);
+const isStaff = user => user.role !== 'client';
+
 /* ---------- جدول الحسابات ---------- */
 const publicUser = u => ({
   id: u.id, email: u.email, role: u.role, clientId: u.client_id,
@@ -195,33 +208,38 @@ async function insertOrder(env, o) {
 }
 
 /* ---------- توحيد الحالات ---------- */
+const ORDER_STATES = ['pending','confirmed','preparing','shipped','collected','returned','cancelled'];
 const STATE_TEXT = {
-  new: 'أوردر جديد — في انتظار التأكيد', confirmed: 'اتأكد بالتليفون',
-  in_transit: 'خرج للتوزيع مع المندوب', delivered: 'تم التسليم للعميل',
-  returned: 'مرتجع — العميل رفض الاستلام', cancelled: 'ملغي'
+  pending:   'جاري التأكيد',
+  confirmed: 'تم تأكيد الطلب',
+  preparing: 'جاري الشحن',
+  shipped:   'تم الشحن',
+  collected: 'تم التحصيل',
+  returned:  'مرتجع',
+  cancelled: 'تم إلغاء الطلب'
 };
-const FINAL = ['delivered', 'returned', 'cancelled'];
+const FINAL = ['collected', 'returned', 'cancelled'];
 
 function mapEasyOrdersStatus(s) {
   const k = String(s || '').toLowerCase().trim();
   const t = {
-    pending: 'new', new: 'new',
-    confirmed: 'confirmed', paid: 'confirmed', processing: 'confirmed',
-    shipped: 'in_transit', shipping: 'in_transit',
-    delivered: 'delivered', completed: 'delivered',
+    pending: 'pending', new: 'pending',
+    confirmed: 'confirmed', paid: 'confirmed', processing: 'preparing',
+    shipped: 'shipped', shipping: 'shipped',
+    delivered: 'collected', completed: 'collected',
     returned: 'returned', refunded: 'returned', 'مرتجع': 'returned',
     cancelled: 'cancelled', canceled: 'cancelled', rejected: 'cancelled', 'ملغي': 'cancelled'
   };
-  return t[k] || 'new';
+  return t[k] || 'pending';
 }
 
 function mapJTStatus(raw) {
   const t = String(raw || '').toLowerCase();
   const has = (...w) => w.some(x => t.includes(x));
-  if (has('delivered', 'signed', 'تم التسليم', 'تم الاستلام')) return 'delivered';
+  if (has('delivered', 'signed', 'تم التسليم', 'تم الاستلام')) return 'collected';
   if (has('returned', 'return', 'rts', 'مرتجع', 'راجع', 'إرجاع')) return 'returned';
   if (has('cancel', 'ملغي', 'ملغاة')) return 'cancelled';
-  return 'in_transit';
+  return 'shipped';
 }
 
 /* ---------- التتبع ---------- */
@@ -250,7 +268,7 @@ async function fetchTracking(env, awbs) {
 async function syncShipments(env) {
   const { results } = await env.DB.prepare(
     `SELECT id, awb, state FROM orders
-     WHERE awb IS NOT NULL AND state NOT IN ('delivered','returned','cancelled') LIMIT 300`
+     WHERE awb IS NOT NULL AND state NOT IN ('collected','returned','cancelled') LIMIT 300`
   ).all();
   const open = results || [];
   let changed = 0;
@@ -304,8 +322,8 @@ async function handleApi(request, env, url, path) {
     }
     const uid = crypto.randomUUID();
     await env.DB.prepare(
-      'INSERT INTO users (id, email, password, role, client_id, status, created_at) VALUES (?,?,?,?,?,?,?)'
-    ).bind(uid, mail, await hashPassword(password), 'admin', null, 'active',
+      'INSERT INTO users (id, email, name, password, role, client_id, status, created_at) VALUES (?,?,?,?,?,?,?,?)'
+    ).bind(uid, mail, 'الإدارة', await hashPassword(password), 'admin', null, 'active',
       new Date().toISOString()).run();
 
     const state = await loadState(env);
@@ -361,40 +379,66 @@ async function handleApi(request, env, url, path) {
   }
 
   const session = await readSession(request, secret);
-  if (path === '/api/me') {
-    if (session) return json(session);
-    return json({ role: null, needsSetup: (await countUsers(env)) === 0 });
+  if (!session) {
+    if (path === '/api/me') return json({ role: null, needsSetup: (await countUsers(env)) === 0 });
+    return json({ error: 'محتاج تسجّل دخول' }, 401);
   }
-  if (!session) return json({ error: 'محتاج تسجّل دخول' }, 401);
+
+  /* بنقرأ الحساب من قاعدة البيانات مع كل طلب — عشان لو غيّرت صلاحياته
+     أو أوقفته، يتنفّذ فوراً من غير ما يستنى جلسته تنتهي */
+  const user = session.uid
+    ? await env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(session.uid).first()
+    : await findUserByEmail(env, session.email || '');
+  if (!user || user.status !== 'active') {
+    return json({ error: 'الحساب مش نشط. سجّل دخول تاني.' }, 401, {
+      'Set-Cookie': `${COOKIE}=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0`
+    });
+  }
+  const me = {
+    role: user.role, clientId: user.client_id, email: user.email,
+    name: user.name || '', uid: user.id, perms: permsOf(user.role)
+  };
+  if (path === '/api/me') return json(me);
 
   /* قراءة البيانات */
   if (path === '/api/state' && request.method === 'GET') {
     const state = await loadState(env);
-    if (session.role === 'admin') {
-      return json({ ...state, orders: await listOrders(env) });
+    if (isStaff(user)) {
+      return json({ ...state, orders: await listOrders(env), roles: ROLES });
     }
-    const scoped = scopeForClient(state, await listOrders(env, session.clientId), session.clientId);
+    const scoped = scopeForClient(state, await listOrders(env, me.clientId), me.clientId);
     return scoped ? json(scoped) : json({ error: 'الحساب مش موجود' }, 404);
   }
 
   /* حفظ البيانات — الإدارة بس */
   if (path === '/api/state' && request.method === 'PUT') {
-    if (session.role !== 'admin') return json({ error: 'مش مسموح' }, 403);
     const body = await request.json();
-    delete body.orders;
-    /* كلمات المرور مكانها جدول users مش هنا */
+    delete body.orders; delete body.roles;
     (body.clients || []).forEach(c => { delete c.password; delete c.code; });
-    await saveState(env, body);
+
+    if (can(user, 'settings')) {           /* المدير بيحفظ كل حاجة */
+      await saveState(env, body);
+      return json({ ok: true });
+    }
+    /* غير المدير بيعدّل الأجزاء المسموح له بيها بس — والباقي بيفضل زي ما هو */
+    const current = await loadState(env);
+    if (can(user, 'entries')) current.entries = body.entries || current.entries;
+    if (can(user, 'finance')) current.funding = body.funding || current.funding;
+    if (!can(user, 'entries') && !can(user, 'finance')) {
+      return json({ error: 'مش مسموح' }, 403);
+    }
+    await saveState(env, current);
     return json({ ok: true });
   }
 
   /* تسجيل أوردر — العميل لحسابه هو، والإدارة لأي حساب */
   if (path === '/api/orders' && request.method === 'POST') {
     const o = await request.json();
-    if (session.role === 'client') o.clientId = session.clientId;
+    if (user.role === 'client') o.clientId = me.clientId;
+    else if (!can(user, 'orders')) return json({ error: 'مش مسموح' }, 403);
     if (!o.clientId || !o.name || !o.phone) return json({ error: 'بيانات ناقصة' }, 400);
     o.id = o.id || 'MN-' + crypto.randomUUID().slice(0, 8).toUpperCase();
-    o.state = o.state || 'new';
+    o.state = ORDER_STATES.includes(o.state) ? o.state : 'pending';
     o.checkpoint = o.checkpoint || STATE_TEXT.new;
     await insertOrder(env, o);
     return json({ ok: true, order: o });
@@ -402,7 +446,7 @@ async function handleApi(request, env, url, path) {
 
   /* تعديل حالة أو بوليصة — الإدارة بس */
   const m = path.match(/^\/api\/orders\/([^/]+)$/);
-  if (m && session.role === 'admin') {
+  if (m && isStaff(user) && can(user, 'orders')) {
     const id = decodeURIComponent(m[1]);
     if (request.method === 'DELETE') {
       await env.DB.prepare('DELETE FROM orders WHERE id = ?').bind(id).run();
@@ -414,7 +458,8 @@ async function handleApi(request, env, url, path) {
       if (!cur) return json({ error: 'أوردر غير موجود' }, 404);
       let st = p.state || cur.state;
       const awb = p.awb !== undefined ? (p.awb || null) : cur.awb;
-      if (p.awb && cur.state === 'new' && !p.state) st = 'in_transit';
+      if (p.awb && (cur.state === 'pending' || cur.state === 'confirmed' || cur.state === 'preparing') && !p.state) st = 'shipped';
+      if (!ORDER_STATES.includes(st)) return json({ error: 'حالة غير معروفة' }, 400);
       await env.DB.prepare('UPDATE orders SET state = ?, awb = ?, checkpoint = ? WHERE id = ?')
         .bind(st, awb, STATE_TEXT[st] || '', id).run();
       return json({ ok: true, state: st });
@@ -427,11 +472,6 @@ async function handleApi(request, env, url, path) {
     if (String(next).length < MIN_PASSWORD) {
       return json({ error: `كلمة المرور الجديدة لازم تكون ${MIN_PASSWORD} حروف على الأقل` }, 400);
     }
-    /* بندوّر بالمعرّف مش بالإيميل — الإيميل ممكن يكون اتغيّر بعد ما دخل */
-    const user = session.uid
-      ? await env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(session.uid).first()
-      : await findUserByEmail(env, session.email || '');
-    if (!user) return json({ error: 'الحساب مش موجود' }, 404);
     if (!await verifyPassword(current, user.password)) {
       return json({ error: 'كلمة المرور الحالية غير صحيحة' }, 401);
     }
@@ -442,11 +482,11 @@ async function handleApi(request, env, url, path) {
 
   /* إدارة الحسابات — الإدارة بس */
   if (path === '/api/users') {
-    if (session.role !== 'admin') return json({ error: 'مش مسموح' }, 403);
+    if (!can(user, 'users')) return json({ error: 'مش مسموح' }, 403);
 
     if (request.method === 'GET') {
       const { results } = await env.DB.prepare(
-        'SELECT id, email, role, client_id, status, last_login FROM users ORDER BY role, email'
+        'SELECT id, email, name, role, client_id, status, last_login FROM users ORDER BY role, email'
       ).all();
       return json((results || []).map(publicUser));
     }
@@ -454,50 +494,59 @@ async function handleApi(request, env, url, path) {
     if (request.method === 'POST') {
       const b = await request.json().catch(() => ({}));
       const mail = String(b.email || '').trim().toLowerCase();
-      const role = b.role === 'admin' ? 'admin' : 'client';
+      const role = ROLES[b.role] ? b.role : 'client';
       if (!mail.includes('@')) return json({ error: 'اكتب إيميل صحيح' }, 400);
       if (b.password && String(b.password).length < MIN_PASSWORD) {
         return json({ error: `كلمة المرور لازم تكون ${MIN_PASSWORD} حروف على الأقل` }, 400);
       }
 
       /* بندوّر بالعميل الأول عشان لو الإيميل اتغيّر نعدّل نفس الحساب مش نعمل جديد */
-      let user = b.clientId
+      let target = (role === 'client' && b.clientId)
         ? await env.DB.prepare('SELECT * FROM users WHERE client_id = ?').bind(b.clientId).first()
-        : null;
+        : (b.id ? await env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(b.id).first() : null);
 
       const byEmail = await findUserByEmail(env, mail);
 
       /* الإيميل لو موجود، لازم يكون بتاع نفس صاحب الحساب ونفس الدور —
          من غير الشرط ده كنت تقدر تحوّل حساب إدارة لحساب عميل بالغلط */
-      if (!user && byEmail) {
-        const sameOwner = (byEmail.client_id || null) === (b.clientId || null) && byEmail.role === role;
+      if (!target && byEmail) {
+        const sameOwner = (byEmail.client_id || null) === (role === 'client' ? (b.clientId || null) : null)
+          && byEmail.role === role;
         if (!sameOwner) return json({ error: 'الإيميل ده مستخدم في حساب تاني' }, 409);
-        user = byEmail;
+        target = byEmail;
       }
-      if (user && byEmail && byEmail.id !== user.id) {
+      if (target && byEmail && byEmail.id !== target.id) {
         return json({ error: 'الإيميل ده مستخدم في حساب تاني' }, 409);
       }
 
-      if (user) {
-        const pass = b.password ? await hashPassword(b.password) : user.password;
+      if (target) {
+        const pass = b.password ? await hashPassword(b.password) : target.password;
+        /* آخر مدير ما ينفعش ينزل من الإدارة — وإلا يتقفل النظام على الكل */
+        if (target.role === 'admin' && role !== 'admin') {
+          const r = await env.DB.prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'admin'").first();
+          if (((r && r.n) || 0) <= 1) return json({ error: 'ما ينفعش تشيل صلاحية آخر مدير' }, 400);
+        }
         await env.DB.prepare(
-          'UPDATE users SET email = ?, password = ?, role = ?, client_id = ?, status = ? WHERE id = ?'
-        ).bind(mail, pass, role, b.clientId || null, b.status || user.status, user.id).run();
+          'UPDATE users SET email = ?, name = ?, password = ?, role = ?, client_id = ?, status = ? WHERE id = ?'
+        ).bind(mail, b.name || target.name || '', pass, role,
+          role === 'client' ? (b.clientId || null) : null,
+          b.status || target.status, target.id).run();
         if (b.password) await clearFails(env, mail);
         return json({ ok: true, created: false });
       }
 
       if (!b.password) return json({ error: 'الحساب جديد — لازم تحدد كلمة مرور' }, 400);
       await env.DB.prepare(
-        'INSERT INTO users (id, email, password, role, client_id, status, created_at) VALUES (?,?,?,?,?,?,?)'
-      ).bind(crypto.randomUUID(), mail, await hashPassword(b.password), role,
-        b.clientId || null, b.status || 'active', new Date().toISOString()).run();
+        'INSERT INTO users (id, email, name, password, role, client_id, status, created_at) VALUES (?,?,?,?,?,?,?,?)'
+      ).bind(crypto.randomUUID(), mail, b.name || '', await hashPassword(b.password), role,
+        role === 'client' ? (b.clientId || null) : null, b.status || 'active',
+        new Date().toISOString()).run();
       return json({ ok: true, created: true });
     }
   }
 
   const um = path.match(/^\/api\/users\/([^/]+)$/);
-  if (um && session.role === 'admin' && request.method === 'DELETE') {
+  if (um && can(user, 'users') && request.method === 'DELETE') {
     const id = decodeURIComponent(um[1]);
     const target = await env.DB.prepare('SELECT email, role FROM users WHERE id = ?').bind(id).first();
     if (!target) return json({ error: 'الحساب مش موجود' }, 404);
@@ -509,8 +558,54 @@ async function handleApi(request, env, url, path) {
     return json({ ok: true });
   }
 
+  /* ---------- الحسابات: المصاريف والتحصيلات ---------- */
+  const TX_COLS = 'id, type, date, category, amount, currency, method, client_id, note, created_by, created_at';
+  const rowToTx = r => ({
+    id:r.id, type:r.type, date:r.date, category:r.category, amount:r.amount,
+    currency:r.currency, method:r.method, clientId:r.client_id, note:r.note,
+    createdBy:r.created_by
+  });
+
+  if (path === '/api/transactions') {
+    if (!can(user, 'finance')) return json({ error: 'مش مسموح' }, 403);
+
+    if (request.method === 'GET') {
+      const from = url.searchParams.get('from') || '1900-01-01';
+      const to   = url.searchParams.get('to')   || '2999-12-31';
+      const { results } = await env.DB.prepare(
+        `SELECT ${TX_COLS} FROM transactions WHERE date >= ? AND date <= ? ORDER BY date DESC LIMIT 2000`
+      ).bind(from, to).all();
+      return json((results || []).map(rowToTx));
+    }
+
+    if (request.method === 'POST') {
+      const b = await request.json().catch(() => ({}));
+      const amount = Number(b.amount) || 0;
+      if (!['expense','income'].includes(b.type)) return json({ error: 'النوع لازم يكون مصروف أو إيراد' }, 400);
+      if (amount <= 0) return json({ error: 'المبلغ لازم يكون أكبر من صفر' }, 400);
+      if (!b.category) return json({ error: 'اختار البند' }, 400);
+      const id = b.id || 'TX-' + crypto.randomUUID().slice(0, 8).toUpperCase();
+      await env.DB.prepare(
+        `INSERT INTO transactions (${TX_COLS}) VALUES (?,?,?,?,?,?,?,?,?,?,?)
+         ON CONFLICT(id) DO UPDATE SET
+           type=excluded.type, date=excluded.date, category=excluded.category,
+           amount=excluded.amount, currency=excluded.currency, method=excluded.method,
+           client_id=excluded.client_id, note=excluded.note`
+      ).bind(id, b.type, b.date || new Date().toISOString().slice(0,10), b.category, amount,
+        b.currency || 'EGP', b.method || '', b.clientId || null, b.note || '',
+        me.email, new Date().toISOString()).run();
+      return json({ ok: true, id });
+    }
+  }
+
+  const tm = path.match(/^\/api\/transactions\/([^/]+)$/);
+  if (tm && can(user, 'finance') && request.method === 'DELETE') {
+    await env.DB.prepare('DELETE FROM transactions WHERE id = ?').bind(decodeURIComponent(tm[1])).run();
+    return json({ ok: true });
+  }
+
   /* تشغيل التتبع يدوياً */
-  if (path === '/api/track-now' && session.role === 'admin') {
+  if (path === '/api/track-now' && can(user, 'orders')) {
     return json({ ok: true, changed: await syncShipments(env) });
   }
 
