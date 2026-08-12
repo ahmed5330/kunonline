@@ -314,7 +314,7 @@ td.num{font-family:var(--mono);font-variant-numeric:tabular-nums;direction:ltr;t
    ============================================================ */
 
 /* ---------- 1. التخزين ---------- */
-const KEY = 'konline:agency:v5';
+const KEY = 'konline:agency:v6';
 const mem = {};
 const store = {
   async get(k){
@@ -372,7 +372,8 @@ const GOV_BY_MARKET = {
 const ORDER_SOURCES = ['واتساب','صفحة فيسبوك','إنستجرام','مكالمة تليفون','المتجر (إيزي أوردرز)','مصدر آخر'];
 const STATE_TEXT = {
   pending:'جاري التأكيد', confirmed:'تم تأكيد الطلب', preparing:'جاري الشحن',
-  shipped:'تم الشحن', collected:'تم التحصيل', returned:'مرتجع', cancelled:'تم إلغاء الطلب'
+  shipped:'تم الشحن', signed:'تم التسليم — تحصيل منتظر', collected:'تم التحصيل',
+  returned:'مرتجع', cancelled:'تم إلغاء الطلب'
 };
 const ROLE_LABELS = { admin:'مدير', ops:'تشغيل وشحن', support:'خدمة عملاء', accountant:'محاسب', client:'عميل' };
 const ROLE_DESC = {
@@ -502,28 +503,37 @@ function agg(list){
 /* الداشبورد بيتحسب من الأوردرات نفسها — الإيراد والربح من المحصّل بس */
 function orderAgg(list){
   const t = { orders:list.length, pending:0, confirmed:0, preparing:0, shipped:0,
-    collected:0, returned:0, cancelled:0,
-    revenue:0, productCost:0, shipping:0, other:0, returnedShipping:0, pipeline:0 };
+    signed:0, collected:0, returned:0, cancelled:0,
+    revenue:0, productCost:0, shipping:0, other:0, returnedShipping:0, pipeline:0,
+    awaiting:0, awaitingCost:0 };
   list.forEach(o=>{
     t[o.state] = (t[o.state] || 0) + 1;
+    const total = Number(o.total)||0;
     if(o.state === 'collected'){
-      t.revenue      += Number(o.total)||0;
+      /* الفلوس وصلت — دي بس اللي بتدخل الربح */
+      t.revenue      += total;
       t.productCost  += Number(o.productCost)||0;
       t.shipping     += Number(o.shippingCost)||0;
       t.other        += Number(o.otherCost)||0;
+    } else if(o.state === 'signed'){
+      /* J&T سلّم بس الفلوس لسه ما وصلتش — تحصيل منتظر */
+      t.awaiting     += total;
+      t.awaitingCost += (Number(o.productCost)||0) + (Number(o.shippingCost)||0) + (Number(o.otherCost)||0);
     } else if(o.state === 'returned'){
       /* المرتجع مبيجبش إيراد لكن بيكلّف شحن رايح جاي */
       t.returnedShipping += Number(o.shippingCost)||0;
-    } else if(!['cancelled'].includes(o.state)){
-      t.pipeline += Number(o.total)||0;   /* فلوس لسه في الطريق */
+    } else if(o.state !== 'cancelled'){
+      t.pipeline += total;   /* لسه في الطريق */
     }
   });
   t.inProgress = t.pending + t.confirmed + t.preparing + t.shipped;
   t.directCost = t.productCost + t.shipping + t.other + t.returnedShipping;
   t.grossProfit = t.revenue - t.directCost;
+  t.awaitingProfit = t.awaiting - t.awaitingCost;
   t.aov = safeDiv(t.revenue, t.collected);
   t.collectRate = safeDiv(t.collected, t.orders)*100;
-  t.returnRate  = safeDiv(t.returned, t.collected + t.returned)*100;
+  t.deliverRate = safeDiv(t.signed + t.collected, t.orders)*100;
+  t.returnRate  = safeDiv(t.returned, t.signed + t.collected + t.returned)*100;
   t.confirmRate = safeDiv(t.orders - t.pending - t.cancelled, t.orders)*100;
   return t;
 }
@@ -611,6 +621,7 @@ let clientRange = '30';
 let clientTab = 'dash';
 function renderClient(client){
   if(clientTab==='add') return clientAddOrderView(client);
+  if(clientTab==='products') return clientProductsView(client);
   const cur = client.currency;
   const f = fundingState(client.id);
   const listRange = entriesFor(client.id, clientRange);
@@ -638,6 +649,7 @@ function renderClient(client){
       <td>${arDate(d)}</td>
       <td class="num">${num(da.orders)}</td>
       <td class="num">${num(da.collected)}</td>
+      <td class="num">${num(da.signed)}</td>
       <td class="num">${money(ad)}</td>
       <td class="num">${money(safeDiv(ad, da.orders),1)}</td>
       <td class="num">${money(da.revenue)}</td>
@@ -691,9 +703,9 @@ function renderClient(client){
   <div class="section-title">أداء النهارده</div>
   <div class="grid g4">
     <div class="card kpi accent-pine">
-      <div class="k-label"><i class="dot pine"></i>طلبات النهارده</div>
+      <div class="k-label"><i class="dot pine"></i>أوردرات النهارده</div>
       <div class="k-val">${num(tOrd.orders)}</div>
-      <div class="k-foot">${deltaBadge(tOrd.orders, yOrd.orders)} مقارنة بأمس</div>
+      <div class="k-foot">${deltaBadge(tOrd.orders, yOrd.orders)} · إجمالي ${money(tOrd.orders?tOrd.pipeline+tOrd.revenue+tOrd.awaiting:0)} ${cur}</div>
     </div>
     <div class="card kpi accent-gold">
       <div class="k-label"><i class="dot gold"></i>مصروف الإعلانات</div>
@@ -708,7 +720,7 @@ function renderClient(client){
     <div class="card kpi">
       <div class="k-label">تم تحصيله النهارده</div>
       <div class="k-val">${money(tOrd.revenue)}<span class="cur">${cur}</span></div>
-      <div class="k-foot">${num(tOrd.collected)} طلب اتحصّل</div>
+      <div class="k-foot">${num(tOrd.collected)} محصّل · ${num(tOrd.signed)} منتظر</div>
     </div>
   </div>
 
@@ -719,11 +731,40 @@ function renderClient(client){
     <div class="card kpi accent-pine"><div class="k-label">تم التحصيل</div>
       <div class="k-val" style="color:var(--pine)">${num(a.collected)}</div>
       <div class="k-foot">${a.collectRate.toFixed(0)}% من الأوردرات</div></div>
-    <div class="card kpi"><div class="k-label">لسه في الطريق</div><div class="k-val">${num(a.inProgress)}</div>
-      <div class="k-foot">بقيمة ${money(a.pipeline)} ${cur}</div></div>
+    <div class="card kpi ${a.signed?'accent-gold':''}"><div class="k-label"><i class="dot gold"></i>تحصيل منتظر</div>
+      <div class="k-val">${num(a.signed)}</div>
+      <div class="k-foot">اتسلّمت والفلوس في الطريق</div></div>
     <div class="card kpi"><div class="k-label">مرتجع / ملغي</div>
       <div class="k-val" style="color:var(--brick)">${num(a.returned + a.cancelled)}</div>
       <div class="k-foot">${num(a.returned)} مرتجع · ${num(a.cancelled)} ملغي</div></div>
+  </div>
+
+  ${a.signed ? `<div class="card" style="margin-top:12px;background:var(--gold-soft);border-color:#EBDCB2">
+    <div class="chart-head" style="margin-bottom:6px">
+      <h3 style="color:#7A5900">فلوس عند شركة الشحن</h3>
+      <span class="legend" style="font-size:12.5px;color:#5C4400">
+        ${num(a.signed)} شحنة اتسلّمت للعميل والفلوس لسه ما وصلتكش</span>
+    </div>
+    <div class="grid g3" style="margin-top:8px">
+      <div><div class="k-label" style="color:#7A5900">قيمة التحصيلات المنتظرة</div>
+        <div class="k-val mono" style="font-size:22px;color:#5C4400">${money(a.awaiting)} <span class="cur">${cur}</span></div></div>
+      <div><div class="k-label" style="color:#7A5900">تكاليفها</div>
+        <div class="k-val mono" style="font-size:22px;color:#5C4400">${money(a.awaitingCost)} <span class="cur">${cur}</span></div></div>
+      <div><div class="k-label" style="color:#7A5900">ربح منتظر</div>
+        <div class="k-val mono" style="font-size:22px;color:#5C4400">${money(a.awaitingProfit)} <span class="cur">${cur}</span></div></div>
+    </div>
+    <p class="hint" style="margin-top:10px;color:#7A5900">الأرقام دي <b>مش</b> محسوبة في الربح تحت — هتتحسب أول ما تحوّلهم لـ "تم التحصيل".</p>
+  </div>` : ''}
+
+  <div class="grid g4" style="margin-top:12px">
+    <div class="card kpi"><div class="k-label">لسه في الطريق</div><div class="k-val">${num(a.inProgress)}</div>
+      <div class="k-foot">بقيمة ${money(a.pipeline)} ${cur}</div></div>
+    <div class="card kpi"><div class="k-label">معدل التوصيل</div><div class="k-val">${a.deliverRate.toFixed(0)}<span class="cur">%</span></div>
+      <div class="k-foot">${num(a.signed + a.collected)} وصلت للعميل</div></div>
+    <div class="card kpi"><div class="k-label">جاري التأكيد</div><div class="k-val">${num(a.pending)}</div>
+      <div class="k-foot">محتاجة مكالمة</div></div>
+    <div class="card kpi"><div class="k-label">جاري الشحن</div><div class="k-val">${num(a.preparing + a.shipped)}</div>
+      <div class="k-foot">مع شركة الشحن</div></div>
   </div>
 
   <div class="section-title">الفلوس — من الأوردرات المحصّلة بس</div>
@@ -778,7 +819,7 @@ function renderClient(client){
   <div class="section-title">التفاصيل اليومية</div>
   <div class="table-wrap">
     <table>
-      <thead><tr><th>اليوم</th><th>أوردرات</th><th>محصّل</th><th>إعلانات (${cur})</th><th>تكلفة الطلب</th><th>إيراد محصّل</th><th>صافي الربح</th></tr></thead>
+      <thead><tr><th>اليوم</th><th>أوردرات</th><th>محصّل</th><th>منتظر</th><th>إعلانات (${cur})</th><th>تكلفة الطلب</th><th>إيراد محصّل</th><th>صافي الربح</th></tr></thead>
       <tbody>${rows || '<tr><td colspan="7" class="empty">مفيش بيانات في الفترة دي.</td></tr>'}</tbody>
     </table>
   </div>
@@ -792,13 +833,14 @@ function renderClient(client){
 }
 
 const ORDER_STATE = {
-  pending:  { ar:'جاري التأكيد',   cls:'wait' },
-  confirmed:{ ar:'تم تأكيد الطلب', cls:'mid'  },
-  preparing:{ ar:'جاري الشحن',     cls:'mid'  },
-  shipped:  { ar:'تم الشحن',       cls:'mid'  },
-  collected:{ ar:'تم التحصيل',     cls:'on'   },
-  returned: { ar:'مرتجع',          cls:'off'  },
-  cancelled:{ ar:'تم إلغاء الطلب', cls:'off'  }
+  pending:  { ar:'جاري التأكيد',        cls:'wait' },
+  confirmed:{ ar:'تم تأكيد الطلب',      cls:'mid'  },
+  preparing:{ ar:'جاري الشحن',          cls:'mid'  },
+  shipped:  { ar:'تم الشحن',            cls:'mid'  },
+  signed:   { ar:'تحصيل منتظر',         cls:'wait' },
+  collected:{ ar:'تم التحصيل',          cls:'on'   },
+  returned: { ar:'مرتجع',               cls:'off'  },
+  cancelled:{ ar:'تم إلغاء الطلب',      cls:'off'  }
 };
 function ordersFor(clientId, range){
   const [from,to] = rangeDates(range);
@@ -868,14 +910,15 @@ function ordersSection(client, range){
   const cnt = st => list.filter(o=>o.state===st).length;
   const govs = {};
   list.forEach(o=>{ govs[o.gov] = govs[o.gov] || {orders:0, delivered:0, revenue:0};
-    govs[o.gov].orders++; if(o.state==='collected'){ govs[o.gov].delivered++; govs[o.gov].revenue += o.total; } });
+    govs[o.gov].orders++;
+    if(o.state==='collected' || o.state==='signed'){ govs[o.gov].delivered++; govs[o.gov].revenue += o.total; } });
   const top = Object.entries(govs).sort((a,b)=>b[1].orders-a[1].orders).slice(0,6);
   const maxG = top.length ? top[0][1].orders : 1;
   const govRows = top.map(([g,v])=>`<div class="gov-row">
       <span class="g">${esc(g)}</span>
       <span class="bar"><i style="width:${(v.orders/maxG*100).toFixed(0)}%"></i></span>
       <span class="n">${v.orders} طلب</span>
-      <span class="n">${(safeDiv(v.delivered,v.orders)*100).toFixed(0)}% تحصيل</span>
+      <span class="n">${(safeDiv(v.delivered,v.orders)*100).toFixed(0)}% توصيل</span>
     </div>`).join('');
   const rows = list.slice(0,25).map(o=>{
     const st = ORDER_STATE[o.state] || ORDER_STATE.new;
@@ -896,8 +939,8 @@ function ordersSection(client, range){
       <div class="k-foot">جايّة أوتوماتيك من المتجر</div></div>
     <div class="card kpi accent-pine"><div class="k-label">تم التحصيل</div><div class="k-val">${num(cnt('collected'))}</div>
       <div class="k-foot">${(safeDiv(cnt('collected'),list.length)*100).toFixed(0)}% من الأوردرات</div></div>
-    <div class="card kpi"><div class="k-label">مع شركة الشحن</div><div class="k-val">${num(cnt('shipped')+cnt('preparing'))}</div>
-      <div class="k-foot">لسه في الطريق</div></div>
+    <div class="card kpi ${cnt('signed')?'accent-gold':''}"><div class="k-label">تحصيل منتظر</div><div class="k-val">${num(cnt('signed'))}</div>
+      <div class="k-foot">اتسلّمت والفلوس جاية</div></div>
     <div class="card kpi"><div class="k-label">مرتجع / ملغي</div>
       <div class="k-val" style="color:var(--brick)">${num(cnt('returned')+cnt('cancelled'))}</div>
       <div class="k-foot">${num(cnt('returned'))} مرتجع · ${num(cnt('cancelled'))} ملغي</div></div>
@@ -916,6 +959,60 @@ function ordersSection(client, range){
 `;
 }
 
+/* شاشة العميل: منتجاته هو */
+function clientProductsView(client){
+  const cur = client.currency;
+  const list = (DB.products||[]).filter(p=>p.clientId===client.id);
+  const e = editingProduct || {};
+  const rows = list.map(p=>{
+    const profit = (Number(p.price)||0) - (Number(p.cost)||0);
+    return `<tr>
+      <td><b>${esc(p.name)}</b>${p.sku?`<br><span class="hint mono" style="font-size:11px">${esc(p.sku)}</span>`:''}</td>
+      <td class="num">${money(p.price)}</td>
+      <td class="num">${money(p.cost)}</td>
+      <td class="num" style="color:${profit>=0?'var(--pine)':'var(--brick)'}">${money(profit)}</td>
+      <td class="num">${(safeDiv(profit,p.price)*100).toFixed(0)}%</td>
+      <td><span class="pill ${p.active?'on':'off'}">${p.active?'معروض':'موقوف'}</span></td>
+      <td><div class="row-act">
+        <button class="icon-btn" data-editp="${esc(p.id)}">تعديل</button>
+        <button class="icon-btn" data-delp="${esc(p.id)}">حذف</button>
+      </div></td></tr>`;}).join('');
+  return `
+  <div class="page-head">
+    <div><div class="eyebrow">${esc(client.name)}</div><h2>منتجاتي</h2></div>
+    <div class="spacer"></div>
+    <div class="seg" id="clientTabs">
+      <button data-ctab="dash" aria-pressed="false">الداشبورد</button>
+      <button data-ctab="add" aria-pressed="false">أوردر جديد</button>
+      <button data-ctab="products" aria-pressed="true">منتجاتي</button>
+    </div>
+  </div>
+  <div class="card">
+    <p class="hint" style="margin-bottom:14px">
+      حط سعر البيع وتكلفة الشراء لكل منتج. لما تسجّل أوردر وتختار المنتج، السعر بيتحط لوحده،
+      وربحك الحقيقي بيتحسب صح.</p>
+    <div class="form-grid">
+      <div class="field"><label>اسم المنتج</label><input id="p_name" value="${esc(e.name||'')}" placeholder="ترينج شتوي مقاس L"></div>
+      <div class="field"><label>الكود (SKU)</label><input id="p_sku" value="${esc(e.sku||'')}" placeholder="اختياري"></div>
+      <div class="field"><label>سعر البيع (${cur})</label><input id="p_price" type="number" min="0" step="0.01" value="${e.price!==undefined?e.price:''}" placeholder="0"></div>
+      <div class="field"><label>تكلفة الشراء (${cur})</label><input id="p_cost" type="number" min="0" step="0.01" value="${e.cost!==undefined?e.cost:''}" placeholder="0"></div>
+      <div class="field"><label>الحالة</label><select id="p_active">
+        <option value="1" ${e.active!==0?'selected':''}>معروض</option>
+        <option value="0" ${e.active===0?'selected':''}>موقوف</option></select></div>
+    </div>
+    <div class="form-actions">
+      <button class="btn sm" id="saveProduct">${editingProduct?'حفظ التعديل':'إضافة المنتج'}</button>
+      ${editingProduct?'<button class="btn sm line" id="cancelProduct">إلغاء</button>':''}
+      <span class="hint">تكلفة الشراء بتظهر ليك إنت بس — مش بتظهر لأي حد تاني.</span>
+    </div>
+  </div>
+  <div class="section-title">منتجاتك</div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>المنتج</th><th>سعر البيع</th><th>التكلفة</th><th>الربح</th><th>الهامش</th><th>الحالة</th><th></th></tr></thead>
+    <tbody>${rows || '<tr><td colspan="7" class="empty"><b>لسه ما ضفتش منتجات</b>ضيف أول منتج من فوق.</td></tr>'}</tbody>
+  </table></div>`;
+}
+
 /* شاشة العميل: تسجيل أوردر جديد */
 function clientAddOrderView(client){
   const mine = (DB.orders||[]).filter(o=>o.clientId===client.id && String(o.id).startsWith('MN-'))
@@ -932,6 +1029,7 @@ function clientAddOrderView(client){
     <div class="seg" id="clientTabs">
       <button data-ctab="dash" aria-pressed="false">الداشبورد</button>
       <button data-ctab="add" aria-pressed="true">أوردر جديد</button>
+      <button data-ctab="products" aria-pressed="false">منتجاتي</button>
     </div>
   </div>
   <div class="card">
@@ -1148,12 +1246,18 @@ function adminOverview(){
 }
 
 let orderFilter = 'all';
+let orderStateFilter = 'all';
 let orderFormClient = null;
 function adminOrders(){
   const first = DB.clients.find(c=>c.id===orderFormClient) || DB.clients[0];
   let list = (DB.orders||[]).slice();
   if(orderFilter!=='all') list = list.filter(o=>o.clientId===orderFilter);
+  const allForCount = list.slice();
+  if(orderStateFilter!=='all') list = list.filter(o=>o.state===orderStateFilter);
   list.sort((a,b)=> a.date<b.date?1:-1);
+  const cnt = st => allForCount.filter(o=>o.state===st).length;
+  const awaiting = allForCount.filter(o=>o.state==='signed');
+  const awaitingSum = awaiting.reduce((s,o)=>s+(Number(o.total)||0),0);
   const manual = list.filter(o=>String(o.id).startsWith('MN-'));
   const rows = list.slice(0,60).map(o=>{
     const c = DB.clients.find(x=>x.id===o.clientId);
@@ -1175,6 +1279,17 @@ function adminOrders(){
       <td><button class="icon-btn" data-delorder="${o.id}">حذف</button></td>
     </tr>`;}).join('');
   return `
+  ${awaiting.length ? `<div class="card" style="background:var(--gold-soft);border-color:#EBDCB2;margin-top:8px">
+    <div class="chart-head" style="margin-bottom:4px">
+      <h3 style="color:#7A5900">${num(awaiting.length)} شحنة منتظرة التحصيل</h3>
+      <span class="legend" style="font-size:13px;color:#5C4400">بقيمة ${money(awaitingSum)}</span>
+    </div>
+    <p class="hint" style="color:#7A5900;margin-bottom:10px">
+      اتسلّمت للعملاء وفلوسها لسه ما وصلتش. أول ما تستلم تحويل J&amp;T، حوّلهم لـ "تم التحصيل" عشان يدخلوا الربح.</p>
+    <button class="btn sm" id="showAwaiting" style="background:var(--gold)">اعرضهم</button>
+    <button class="btn sm line" id="collectAll" style="margin-inline-start:8px;color:#7A5900;border-color:#D9C48A">حوّلهم كلهم لتم التحصيل</button>
+  </div>` : ''}
+
   <div class="section-title">تسجيل أوردر وصل للإدارة</div>
   <div class="card">
     <p class="hint" style="margin-bottom:14px">لو العميل بعتلك أوردر على واتساب أو تليفون، سجّله هنا وهيظهر في داشبورده فوراً.</p>
@@ -1191,6 +1306,13 @@ function adminOrders(){
     <div class="seg" id="orderFilter">
       <button data-of="all" aria-pressed="${orderFilter==='all'}">الكل</button>
       ${DB.clients.map(c=>`<button data-of="${c.id}" aria-pressed="${orderFilter===c.id}">${esc(c.name.split(' —')[0])}</button>`).join('')}
+    </div>
+  </div>
+  <div class="page-head" style="padding:0 0 12px">
+    <div class="seg" id="stateFilter">
+      <button data-sf="all" aria-pressed="${orderStateFilter==='all'}">كل الحالات</button>
+      ${['pending','shipped','signed','collected','returned'].map(k=>
+        `<button data-sf="${k}" aria-pressed="${orderStateFilter===k}">${ORDER_STATE[k].ar} (${cnt(k)})</button>`).join('')}
     </div>
   </div>
   <div class="table-wrap"><table>
@@ -1356,6 +1478,35 @@ function adminClients(){
 
 let productClient = null;
 let editingProduct = null;
+
+/* نموذج المنتج مشترك بين الإدارة وصاحب المتجر */
+function bindProductForm(refresh, clientIdFn){
+  const $ = id => document.getElementById(id);
+  const sp = $('saveProduct');
+  if(!sp) return;
+  sp.onclick = async ()=>{
+    const name = $('p_name').value.trim();
+    if(!name){ toast('اكتب اسم المنتج'); return; }
+    const body = { name, sku:$('p_sku').value.trim(),
+      price:+$('p_price').value||0, cost:+$('p_cost').value||0,
+      active: $('p_active').value === '1' };
+    if(clientIdFn) body.clientId = clientIdFn();
+    if(editingProduct) body.id = editingProduct.id;
+    try{
+      await api('/api/products',{method:'POST', body:JSON.stringify(body)});
+      editingProduct=null; await refresh(); paint(); toast('اتحفظ');
+    }catch(e){ toast(e.message); }
+  };
+  const cp = $('cancelProduct'); if(cp) cp.onclick = ()=>{ editingProduct=null; paint(); };
+  document.querySelectorAll('[data-editp]').forEach(b=> b.onclick = ()=>{
+    editingProduct = (DB.products||[]).find(x=>x.id===b.dataset.editp); paint(); });
+  document.querySelectorAll('[data-delp]').forEach(b=> b.onclick = async ()=>{
+    if(!confirm('هتمسح المنتج ده. تكمل؟')) return;
+    try{ await api('/api/products/'+encodeURIComponent(b.dataset.delp),{method:'DELETE'});
+      await refresh(); paint(true); toast('اتحذف');
+    }catch(e){ toast(e.message); }
+  });
+}
 function adminProducts(){
   if(!ONLINE) return `<div class="card"><div class="empty"><b>المنتجات محتاجة السيرفر</b>الشاشة دي بتشتغل بعد رفع النظام على الاستضافة.</div></div>`;
   const cid = productClient || (DB.clients[0] && DB.clients[0].id);
@@ -1705,15 +1856,31 @@ function adminUsers(){
 
 function adminSettings(){
   return `
-  <div class="section-title">نسخة احتياطية</div>
+  <div class="section-title">النسخ الاحتياطي</div>
   <div class="card">
-    <p class="hint" style="margin-bottom:12px">نزّل كل البيانات كملف JSON، أو ارفع نسخة قديمة لاستعادتها. مفيد جداً قبل أي تجربة.</p>
+    <p class="hint" style="margin-bottom:14px">
+      النسخة بتشمل الأوردرات والمنتجات والحسابات وبيانات العملاء.
+      <b>كلمات المرور مش بتتحفظ فيها</b> — عشان لو الملف اتسرّب، محدش يقدر يدخل بيه.</p>
     <div class="form-actions">
-      <button class="btn sm line" id="expJSON">تنزيل نسخة</button>
-      <button class="btn sm line" id="impBtn">استعادة نسخة</button>
+      <button class="btn sm" id="expJSON">تنزيل نسخة دلوقتي</button>
+      <button class="btn sm line" id="impBtn">استرجاع نسخة</button>
       <input type="file" id="impFile" accept="application/json" class="hidden">
-      <button class="btn sm danger" id="resetBtn">إعادة البيانات التجريبية</button>
     </div>
+    <div id="restoreBox"></div>
+  </div>
+
+  <div class="card" style="margin-top:12px;background:var(--pine-soft);border-color:#C4E0D8">
+    <h4 style="font-size:13.5px;margin-bottom:8px;color:var(--pine)">خطة حماية من ٣ طبقات</h4>
+    <ul class="cost-list">
+      <li><span class="sw" style="background:var(--pine)"></span>
+        <span class="g"><b>Time Travel</b> — Cloudflare بيرجّع قاعدة البيانات لأي لحظة خلال ٣٠ يوم.
+        شغّال تلقائياً من غير ما تعمل حاجة</span></li>
+      <li><span class="sw" style="background:var(--gold)"></span>
+        <span class="g"><b>نسخة يومية تلقائية</b> — بتتحفظ في Cloudflare R2 لو ربطته (الخطوات في UPGRADE.md)</span></li>
+      <li><span class="sw" style="background:var(--ink-3)"></span>
+        <span class="g"><b>نسخة يدوية</b> — نزّلها من فوق قبل أي تعديل كبير واحتفظ بيها على جهازك</span></li>
+    </ul>
+    <p class="hint" style="margin-top:10px">النسخة اللي على نفس السيرفر مش نسخة احتياطية حقيقية — نزّل واحدة عندك كل أسبوع.</p>
   </div>
   <div class="section-title">إيميل الإدارة</div>
   <div class="card">
@@ -1895,10 +2062,17 @@ function bindProductPicker(){
 
 function bindClient(c){
   document.querySelectorAll('#rangeSeg button').forEach(b=> b.onclick = ()=>{ clientRange=b.dataset.range; paint(); });
-  document.querySelectorAll('#clientTabs button').forEach(b=> b.onclick = ()=>{ clientTab=b.dataset.ctab; paint(); });
+  document.querySelectorAll('#clientTabs button').forEach(b=> b.onclick = async ()=>{
+    clientTab=b.dataset.ctab; editingProduct=null;
+    if(clientTab==='products' && ONLINE){
+      try{ DB.products = await api('/api/products'); }catch(e){ toast(e.message); }
+    }
+    paint();
+  });
   const go = document.getElementById('goAddOrder');
   if(go) go.onclick = ()=>{ clientTab='add'; paint(); };
   bindProductPicker();
+  bindProductForm(async ()=>{ DB.products = await api('/api/products'); });
   const so = document.getElementById('saveOrder');
   if(so) so.onclick = async ()=>{
     const rec = readOrderForm(c.id);
@@ -1937,6 +2111,28 @@ function bindAdmin(){
 
   if(adminTab==='orders'){
     document.querySelectorAll('#orderFilter button').forEach(b=> b.onclick = ()=>{ orderFilter=b.dataset.of; paint(); });
+    document.querySelectorAll('#stateFilter button').forEach(b=> b.onclick = ()=>{ orderStateFilter=b.dataset.sf; paint(); });
+    const sa = $('showAwaiting');
+    if(sa) sa.onclick = ()=>{ orderStateFilter='signed'; paint(); };
+    const ca = $('collectAll');
+    if(ca) ca.onclick = async ()=>{
+      const list = (DB.orders||[]).filter(o=>o.state==='signed'
+        && (orderFilter==='all' || o.clientId===orderFilter));
+      const ready = list.filter(o=>o.shippingCost!=null);
+      if(!ready.length){ toast('مفيش شحنات جاهزة — التكاليف ناقصة'); return; }
+      if(!confirm(`هتحوّل ${ready.length} شحنة لـ "تم التحصيل" وتدخل في الربح. تكمل؟`)) return;
+      ca.disabled = true; ca.textContent = 'بنحوّل...';
+      let done = 0;
+      for(const o of ready){
+        try{
+          await api('/api/orders/'+encodeURIComponent(o.id), {method:'PATCH',
+            body:JSON.stringify({state:'collected', shippingCost:o.shippingCost, otherCost:o.otherCost||0})});
+          o.state = 'collected'; done++;
+        }catch(e){ /* بنكمّل الباقي */ }
+      }
+      ca.disabled = false;
+      paint(); toast(`اتحوّلوا ${done} شحنة لتم التحصيل`);
+    };
     if(nc) nc.onchange = ()=>{ orderFormClient = nc.value; paint(true); };
     bindProductPicker();
     const nc = $('n_client');
@@ -1957,11 +2153,13 @@ function bindAdmin(){
       const o = DB.orders.find(x=>x.id===el.dataset.st);
       const next = el.value;
       const body = { state: next };
-      if(next === 'collected'){
+      if(next === 'collected' && (o.shippingCost == null || o.otherCost == null)){
         const costs = await askCosts(o);
         if(!costs){ paint(true); return; }          /* لغى — نرجّع القايمة زي ما كانت */
         Object.assign(body, costs);
         o.shippingCost = costs.shippingCost; o.otherCost = costs.otherCost;
+      } else if(next === 'collected'){
+        body.shippingCost = o.shippingCost; body.otherCost = o.otherCost;
       }
       o.state = next; o.checkpoint = STATE_TEXT[next] || '';
       try{
@@ -2086,28 +2284,8 @@ function bindAdmin(){
   if(adminTab==='products'){
     document.querySelectorAll('#prodSeg button').forEach(b=> b.onclick = ()=>{
       productClient=b.dataset.pc; editingProduct=null; paint(); });
-    const sp = $('saveProduct');
-    if(sp) sp.onclick = async ()=>{
-      const name = $('p_name').value.trim();
-      if(!name){ toast('اكتب اسم المنتج'); return; }
-      const body = { clientId: productClient || DB.clients[0].id, name,
-        sku:$('p_sku').value.trim(), price:+$('p_price').value||0, cost:+$('p_cost').value||0,
-        active: $('p_active').value === '1' };
-      if(editingProduct) body.id = editingProduct.id;
-      try{
-        await api('/api/products',{method:'POST', body:JSON.stringify(body)});
-        editingProduct=null; DB.products = await api('/api/products'); paint(); toast('اتحفظ');
-      }catch(e){ toast(e.message); }
-    };
-    const cp = $('cancelProduct'); if(cp) cp.onclick = ()=>{ editingProduct=null; paint(); };
-    document.querySelectorAll('[data-editp]').forEach(b=> b.onclick = ()=>{
-      editingProduct = (DB.products||[]).find(x=>x.id===b.dataset.editp); paint(); });
-    document.querySelectorAll('[data-delp]').forEach(b=> b.onclick = async ()=>{
-      if(!confirm('هتمسح المنتج ده. تكمل؟')) return;
-      try{ await api('/api/products/'+encodeURIComponent(b.dataset.delp),{method:'DELETE'});
-        DB.products = await api('/api/products'); paint(true); toast('اتحذف');
-      }catch(e){ toast(e.message); }
-    });
+    bindProductForm(async ()=>{ DB.products = await api('/api/products'); },
+      ()=> productClient || DB.clients[0].id);
   }
 
   if(adminTab==='import'){
@@ -2218,7 +2396,8 @@ function bindAdmin(){
              ${res.noCost ? '\n⚠️ ' + num(res.noCost) + ' أوردر ما لقيناش تكلفة بضاعته — ضيف المنتجات في تبويب المنتجات عشان الربح يطلع صح.' : 'وتكلفة البضاعة اتحسبت من كتالوج المنتجات.'}</p></div>`
           : `<div class="note-card" style="margin-top:14px"><h4>الاستيراد خلص</h4>
              <p>طابقنا ${num(res.matched)} شحنة${res.byRef? ' (منهم '+num(res.byRef)+' بـ Order NO. مش بالبوليصة)':''}،
-             و${num(res.collected)} اتحوّلوا لـ "تم التحصيل" بمصاريف شحنهم.
+             منهم ${num(res.signed||0)} اتسلّموا (تحصيل منتظر)، ${num(res.collected)} اتحصّلوا فعلاً،
+             و${num(res.returned||0)} مرتجع.
              ${res.unmatchedCount? '\n⚠️ '+num(res.unmatchedCount)+' شحنة مالهاش أوردر عندنا: '+res.unmatched.slice(0,8).join(' · ') : ''}</p></div>`;
         toast('الاستيراد خلص');
       }catch(e){ toast(e.message); }
@@ -2295,23 +2474,59 @@ function bindAdmin(){
   }
 
   if(adminTab==='settings'){
-    $('expJSON').onclick = ()=>{ downloadFile('konline-backup.json', JSON.stringify(DB,null,2), 'application/json'); toast('اتنزّلت النسخة'); };
+    $('expJSON').onclick = async ()=>{
+      if(!ONLINE){ downloadFile('konline-backup.json', JSON.stringify(DB,null,2), 'application/json'); return; }
+      const b = $('expJSON'); b.disabled = true; b.textContent = 'بنجهّز النسخة...';
+      try{
+        const r = await fetch('/api/backup', {credentials:'same-origin'});
+        if(!r.ok) throw new Error('فشل التنزيل');
+        const text = await r.text();
+        downloadFile(`konline-backup-${today()}.json`, text, 'application/json');
+        const d = JSON.parse(text);
+        toast(`اتنزّلت النسخة — ${d.orders.length} أوردر`);
+      }catch(e){ toast(e.message); }
+      finally{ b.disabled=false; b.textContent='تنزيل نسخة دلوقتي'; }
+    };
     $('impBtn').onclick = ()=> $('impFile').click();
     $('impFile').onchange = e=>{
       const file = e.target.files[0]; if(!file) return;
       const r = new FileReader();
-      r.onload = async () => {
-        try{
-          const d = JSON.parse(r.result);
-          if(!d.clients||!d.entries) throw new Error('الملف ناقص');
-          DB = d; await persist(); renderDemoAccounts(); paint(); toast('اتستعادت النسخة');
-        }catch(err){ toast('الملف مش سليم — جرّب نسخة تانية'); }
+      r.onload = ()=>{
+        let d;
+        try{ d = JSON.parse(r.result); }
+        catch(err){ toast('الملف مش JSON سليم'); return; }
+        if(!d.state || !Array.isArray(d.orders)){ toast('الملف مش نسخة صالحة'); return; }
+        const box = document.getElementById('restoreBox');
+        box.innerHTML = `
+          <div class="note-card" style="margin-top:14px;background:var(--brick-soft);border-color:#E7C4BC">
+            <h4 style="color:var(--brick)">راجع قبل الاسترجاع</h4>
+            <p style="color:#7A2415">النسخة دي من <b>${esc(String(d.takenAt||'').slice(0,16).replace('T',' '))}</b>
+              وفيها ${num(d.orders.length)} أوردر · ${num((d.products||[]).length)} منتج ·
+              ${num((d.transactions||[]).length)} حركة حسابات.
+
+              الاسترجاع هيمسح الأوردرات والمنتجات والحركات الموجودة دلوقتي ويحط اللي في الملف.
+              حسابات الدخول وكلمات المرور مش هتتأثر.
+
+              <b>الخطوة دي ما بترجعش.</b> نزّل نسخة من الوضع الحالي الأول لو ما عملتش.</p>
+            <div class="form-actions">
+              <button class="btn sm danger" id="doRestore">أنا متأكد — استرجع</button>
+              <button class="btn sm line" id="cancelRestore">إلغاء</button>
+            </div>
+          </div>`;
+        document.getElementById('cancelRestore').onclick = ()=>{ box.innerHTML=''; $('impFile').value=''; };
+        document.getElementById('doRestore').onclick = async ()=>{
+          const btn = document.getElementById('doRestore');
+          btn.disabled = true; btn.textContent = 'بنسترجع...';
+          try{
+            const res = await api('/api/restore', {method:'POST',
+              body: JSON.stringify({...d, confirm:'RESTORE'})});
+            DB = await api('/api/state'); normalizeDB();
+            box.innerHTML = '';
+            paint(); toast(`اتسترجعت النسخة — ${res.orders} أوردر`);
+          }catch(err){ toast(err.message); btn.disabled=false; btn.textContent='أنا متأكد — استرجع'; }
+        };
       };
       r.readAsText(file);
-    };
-    $('resetBtn').onclick = async ()=>{
-      if(!confirm('ده هيمسح كل البيانات ويرجّع البيانات التجريبية. تكمل؟')) return;
-      DB = seedData(); await persist(); renderDemoAccounts(); paint(); toast('رجعت البيانات التجريبية');
     };
     bindPasswordCard();
     $('saveAgency').onclick = async ()=>{
