@@ -178,7 +178,7 @@ async function saveState(env, state) {
   ).bind(JSON.stringify(state), new Date().toISOString()).run();
 }
 
-const ORDER_COLS = 'id, client_id, ref, date, name, phone, gov, address, product, product_id, unit_price, qty, total, product_cost, shipping_cost, other_cost, source, note, awb, state, checkpoint, collected_at, created_at';
+const ORDER_COLS = 'id, client_id, ref, date, name, phone, gov, address, product, product_id, unit_price, qty, total, product_cost, shipping_cost, other_cost, source, note, awb, state, checkpoint, signed_at, collected_at, created_at';
 
 const rowToOrder = r => ({
   id: r.id, clientId: r.client_id, ref: r.ref, date: r.date, name: r.name, phone: r.phone,
@@ -186,7 +186,7 @@ const rowToOrder = r => ({
   unitPrice: r.unit_price, qty: r.qty, total: r.total,
   productCost: r.product_cost || 0, shippingCost: r.shipping_cost, otherCost: r.other_cost,
   source: r.source, note: r.note, awb: r.awb, state: r.state,
-  checkpoint: r.checkpoint, collectedAt: r.collected_at
+  checkpoint: r.checkpoint, signedAt: r.signed_at, collectedAt: r.collected_at
 });
 
 async function listOrders(env, clientId) {
@@ -199,13 +199,14 @@ async function listOrders(env, clientId) {
 
 async function insertOrder(env, o) {
   await env.DB.prepare(
-    `INSERT INTO orders (${ORDER_COLS}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    `INSERT INTO orders (${ORDER_COLS}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
      ON CONFLICT(id) DO UPDATE SET
        state = excluded.state, checkpoint = excluded.checkpoint,
        awb = COALESCE(excluded.awb, orders.awb),
        ref = COALESCE(excluded.ref, orders.ref),
        shipping_cost = COALESCE(excluded.shipping_cost, orders.shipping_cost),
        other_cost = COALESCE(excluded.other_cost, orders.other_cost),
+       signed_at = COALESCE(excluded.signed_at, orders.signed_at),
        collected_at = COALESCE(excluded.collected_at, orders.collected_at)`
   ).bind(
     o.id, o.clientId, o.ref || null, o.date, o.name || '', o.phone || '', o.gov || '', o.address || '',
@@ -214,13 +215,14 @@ async function insertOrder(env, o) {
     o.shippingCost === undefined || o.shippingCost === null ? null : Number(o.shippingCost),
     o.otherCost === undefined || o.otherCost === null ? null : Number(o.otherCost),
     o.source || '', o.note || '', o.awb || null, o.state || 'pending', o.checkpoint || '',
-    o.collectedAt || null, new Date().toISOString()
+    o.signedAt || null, o.collectedAt || null, new Date().toISOString()
   ).run();
   return o;
 }
 
 /* ---------- المنتجات ---------- */
 const PRODUCT_COLS = 'id, client_id, name, sku, price, cost, active, created_at';
+const TX_COLS = 'id, type, date, category, amount, currency, method, client_id, note, created_by, created_at';
 const rowToProduct = r => ({
   id: r.id, clientId: r.client_id, name: r.name, sku: r.sku,
   price: r.price, cost: r.cost, active: r.active
@@ -235,16 +237,18 @@ async function listProducts(env, clientId) {
 }
 
 /* ---------- توحيد الحالات ---------- */
-const ORDER_STATES = ['pending','confirmed','preparing','shipped','collected','returned','cancelled'];
+const ORDER_STATES = ['pending','confirmed','preparing','shipped','signed','collected','returned','cancelled'];
 const STATE_TEXT = {
   pending:   'جاري التأكيد',
   confirmed: 'تم تأكيد الطلب',
   preparing: 'جاري الشحن',
   shipped:   'تم الشحن',
+  signed:    'تم التسليم — تحصيل منتظر',
   collected: 'تم التحصيل',
   returned:  'مرتجع',
   cancelled: 'تم إلغاء الطلب'
 };
+/* signed مش نهائية: J&T سلّم الشحنة بس الفلوس لسه ما وصلتش */
 const FINAL = ['collected', 'returned', 'cancelled'];
 
 function mapEasyOrdersStatus(s) {
@@ -253,7 +257,7 @@ function mapEasyOrdersStatus(s) {
     pending: 'pending', new: 'pending',
     confirmed: 'confirmed', paid: 'confirmed', processing: 'preparing',
     shipped: 'shipped', shipping: 'shipped',
-    delivered: 'collected', completed: 'collected',
+    delivered: 'signed', completed: 'signed',
     returned: 'returned', refunded: 'returned', 'مرتجع': 'returned',
     cancelled: 'cancelled', canceled: 'cancelled', rejected: 'cancelled', 'ملغي': 'cancelled'
   };
@@ -266,7 +270,7 @@ function mapJTStatus(raw) {
   /* الترتيب مهم: "Return Sign" فيها كلمة sign، فلازم نفحص المرتجع الأول */
   if (has('return', 'rts', 'reject', 'مرتجع', 'راجع', 'إرجاع', 'مرفوض')) return 'returned';
   if (has('cancel', 'ملغي', 'ملغاة')) return 'cancelled';
-  if (has('sign', 'delivered', 'تم التسليم', 'تم الاستلام', 'وقّع')) return 'collected';
+  if (has('sign', 'delivered', 'تم التسليم', 'تم الاستلام', 'وقّع')) return 'signed';
   return 'shipped';
 }
 
@@ -296,7 +300,7 @@ async function fetchTracking(env, awbs) {
 async function syncShipments(env) {
   const { results } = await env.DB.prepare(
     `SELECT id, awb, state FROM orders
-     WHERE awb IS NOT NULL AND state NOT IN ('collected','returned','cancelled') LIMIT 300`
+     WHERE awb IS NOT NULL AND state NOT IN ('signed','collected','returned','cancelled') LIMIT 300`
   ).all();
   const open = results || [];
   let changed = 0;
@@ -484,7 +488,7 @@ async function handleApi(request, env, url, path) {
     if (request.method === 'PATCH') {
       const p = await request.json();
       const cur = await env.DB.prepare(
-        'SELECT state, awb, shipping_cost, other_cost FROM orders WHERE id = ?'
+        'SELECT state, awb, shipping_cost, other_cost, signed_at FROM orders WHERE id = ?'
       ).bind(id).first();
       if (!cur) return json({ error: 'أوردر غير موجود' }, 404);
 
@@ -501,13 +505,14 @@ async function handleApi(request, env, url, path) {
       if (st === 'collected' && (ship === null || other === null || isNaN(ship) || isNaN(other))) {
         return json({ error: 'قبل ما تسجّل التحصيل لازم تحدد سعر الشحن والمصاريف الأخرى', needCosts: true }, 400);
       }
-      const collectedAt = st === 'collected'
-        ? (p.collectedAt || new Date().toISOString().slice(0, 10))
-        : null;
+      const stamp = new Date().toISOString().slice(0, 10);
+      const collectedAt = st === 'collected' ? (p.collectedAt || stamp) : null;
+      const signedAt = (st === 'signed' || st === 'collected')
+        ? (p.signedAt || cur.signed_at || stamp) : null;
 
       await env.DB.prepare(
-        'UPDATE orders SET state = ?, awb = ?, checkpoint = ?, shipping_cost = ?, other_cost = ?, collected_at = ? WHERE id = ?'
-      ).bind(st, awb, STATE_TEXT[st] || '', ship, other, collectedAt, id).run();
+        'UPDATE orders SET state = ?, awb = ?, checkpoint = ?, shipping_cost = ?, other_cost = ?, signed_at = ?, collected_at = ? WHERE id = ?'
+      ).bind(st, awb, STATE_TEXT[st] || '', ship, other, signedAt, collectedAt, id).run();
       return json({ ok: true, state: st });
     }
   }
@@ -616,6 +621,7 @@ async function handleApi(request, env, url, path) {
       if (user.role !== 'client' && !can(user, 'clients') && !can(user, 'orders')) {
         return json({ error: 'مش مسموح' }, 403);
       }
+      /* صاحب المتجر بيدير منتجاته هو بس — الـ clientId اتفرض فوق */
       if (!b.name) return json({ error: 'اسم المنتج مطلوب' }, 400);
       const id = b.id || 'P-' + crypto.randomUUID().slice(0, 8).toUpperCase();
       await env.DB.prepare(
@@ -695,7 +701,7 @@ async function handleApi(request, env, url, path) {
 
     /* شيت J&T: بيطابق برقم البوليصة ويحدّث الحالة والتكاليف */
     if (b.mode === 'tracking') {
-      let matched = 0, collected = 0, byRef = 0;
+      let matched = 0, collected = 0, signedCount = 0, byRef = 0, returnedCount = 0;
       const unmatched = [];
       for (const r of rows) {
         const awb = String(r.awb || '').trim();
@@ -721,10 +727,10 @@ async function handleApi(request, env, url, path) {
         const ship  = num(r.shippingCost);
         const other = num(r.otherCost);
 
-        /* التحصيل محتاج تكاليفه — لو الشيت مجابش سعر الشحن نسيبه "تم الشحن" */
-        if (st === 'collected' && (ship === null || isNaN(ship))) {
+        /* التسليم محتاج تكاليفه — لو الشيت مجابش سعر الشحن نسيبه "تم الشحن" */
+        if ((st === 'signed' || st === 'collected') && (ship === null || isNaN(ship))) {
           await env.DB.prepare('UPDATE orders SET state = ?, checkpoint = ?, awb = COALESCE(?, awb) WHERE id = ?')
-            .bind('shipped', 'تم الشحن — ناقص سعر الشحن للتحصيل', awb || null, o.id).run();
+            .bind('shipped', 'تم الشحن — ناقص سعر الشحن', awb || null, o.id).run();
           matched++;
           continue;
         }
@@ -732,16 +738,21 @@ async function handleApi(request, env, url, path) {
           ? other
           : (o.other_cost === null || o.other_cost === undefined ? 0 : o.other_cost);
 
+        /* الشحنة الموقّعة بتاخد تاريخ التسليم، والتحصيل الفعلي بيتسجّل لما الفلوس توصل */
         await env.DB.prepare(
           `UPDATE orders SET state = ?, checkpoint = ?, awb = COALESCE(?, awb),
-             shipping_cost = COALESCE(?, shipping_cost), other_cost = ?, collected_at = ?
+             shipping_cost = COALESCE(?, shipping_cost), other_cost = ?,
+             signed_at = ?, collected_at = ?
            WHERE id = ?`
         ).bind(st, r.status || STATE_TEXT[st] || '', awb || null, ship, finalOther,
+          (st === 'signed' || st === 'collected') ? (r.date || new Date().toISOString().slice(0, 10)) : null,
           st === 'collected' ? (r.date || new Date().toISOString().slice(0, 10)) : null, o.id).run();
         matched++;
+        if (st === 'returned') returnedCount++;
+        if (st === 'signed') signedCount++;
         if (st === 'collected') collected++;
       }
-      return json({ ok: true, matched, collected, byRef,
+      return json({ ok: true, matched, collected, signed: signedCount, returned: returnedCount, byRef,
         unmatched: unmatched.slice(0, 50), unmatchedCount: unmatched.length });
     }
 
@@ -749,7 +760,6 @@ async function handleApi(request, env, url, path) {
   }
 
   /* ---------- الحسابات: المصاريف والتحصيلات ---------- */
-  const TX_COLS = 'id, type, date, category, amount, currency, method, client_id, note, created_by, created_at';
   const rowToTx = r => ({
     id:r.id, type:r.type, date:r.date, category:r.category, amount:r.amount,
     currency:r.currency, method:r.method, clientId:r.client_id, note:r.note,
@@ -792,6 +802,69 @@ async function handleApi(request, env, url, path) {
   if (tm && can(user, 'finance') && request.method === 'DELETE') {
     await env.DB.prepare('DELETE FROM transactions WHERE id = ?').bind(decodeURIComponent(tm[1])).run();
     return json({ ok: true });
+  }
+
+  /* ---------- النسخ الاحتياطي ---------- */
+  /** بيجمع كل الجداول في كائن واحد. كلمات المرور بتتشال — النسخة ما تنفعش
+      تسترجع الحسابات، وده مقصود: ملف نسخة مسروق ما يديش حد دخول للنظام */
+  async function buildBackup(env) {
+    const all = async (sql) => ((await env.DB.prepare(sql).all()).results) || [];
+    return {
+      version: 2,
+      takenAt: new Date().toISOString(),
+      state: await loadState(env),
+      orders: await all(`SELECT ${ORDER_COLS} FROM orders`),
+      products: await all(`SELECT ${PRODUCT_COLS} FROM products`),
+      transactions: await all('SELECT * FROM transactions'),
+      users: await all('SELECT id, email, name, role, client_id, status, created_at, last_login FROM users')
+    };
+  }
+
+  if (path === '/api/backup' && request.method === 'GET') {
+    if (!can(user, 'settings')) return json({ error: 'مش مسموح' }, 403);
+    const data = await buildBackup(env);
+    const name = `konline-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    return new Response(JSON.stringify(data, null, 2), {
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Content-Disposition': `attachment; filename="${name}"`
+      }
+    });
+  }
+
+  /* استرجاع نسخة — بيمسح الأوردرات والمنتجات والحركات ويحط اللي في الملف.
+     الحسابات وكلمات المرور ما بتتلمسش نهائياً */
+  if (path === '/api/restore' && request.method === 'POST') {
+    if (!can(user, 'settings')) return json({ error: 'مش مسموح' }, 403);
+    const b = await request.json().catch(() => null);
+    if (!b || !b.state || !Array.isArray(b.orders)) {
+      return json({ error: 'الملف مش نسخة صالحة' }, 400);
+    }
+    if (b.confirm !== 'RESTORE') {
+      return json({ error: 'محتاجين تأكيد صريح قبل الاسترجاع' }, 400);
+    }
+
+    await saveState(env, b.state);
+    await env.DB.prepare('DELETE FROM orders').run();
+    await env.DB.prepare('DELETE FROM products').run();
+    await env.DB.prepare('DELETE FROM transactions').run();
+
+    for (const o of b.orders) await insertOrder(env, rowToOrder(o));
+    for (const p of (b.products || [])) {
+      await env.DB.prepare(
+        `INSERT INTO products (${PRODUCT_COLS}) VALUES (?,?,?,?,?,?,?,?)`
+      ).bind(p.id, p.client_id || p.clientId, p.name, p.sku || '', p.price || 0,
+        p.cost || 0, p.active === false ? 0 : 1, p.created_at || new Date().toISOString()).run();
+    }
+    for (const t of (b.transactions || [])) {
+      await env.DB.prepare(
+        `INSERT INTO transactions (${TX_COLS}) VALUES (?,?,?,?,?,?,?,?,?,?,?)`
+      ).bind(t.id, t.type, t.date, t.category, t.amount, t.currency || 'EGP',
+        t.method || '', t.client_id || null, t.note || '', t.created_by || '',
+        t.created_at || new Date().toISOString()).run();
+    }
+    return json({ ok: true, orders: b.orders.length,
+      products: (b.products || []).length, transactions: (b.transactions || []).length });
   }
 
   /* تشغيل التتبع يدوياً */
@@ -871,5 +944,26 @@ export default {
 
   async scheduled(event, env, ctx) {
     ctx.waitUntil(syncShipments(env).then(n => console.log('حدّثنا ' + n + ' شحنة')));
+
+    /* نسخة احتياطية يومية في R2 — بتشتغل لو الـ bucket مربوط بس.
+       بنحتفظ بيوم واحد لكل تاريخ، فالتخزين ما بيكبرش */
+    if (env.BACKUPS) {
+      ctx.waitUntil((async () => {
+        try {
+          const all = async (sql) => ((await env.DB.prepare(sql).all()).results) || [];
+          const data = {
+            version: 2, takenAt: new Date().toISOString(),
+            state: await loadState(env),
+            orders: await all(`SELECT ${ORDER_COLS} FROM orders`),
+            products: await all(`SELECT ${PRODUCT_COLS} FROM products`),
+            transactions: await all('SELECT * FROM transactions'),
+            users: await all('SELECT id, email, name, role, client_id, status FROM users')
+          };
+          const key = `backup-${new Date().toISOString().slice(0, 10)}.json`;
+          await env.BACKUPS.put(key, JSON.stringify(data));
+          console.log('اتحفظت نسخة: ' + key);
+        } catch (e) { console.error('فشل النسخ الاحتياطي:', e.message); }
+      })());
+    }
   }
 };
