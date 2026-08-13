@@ -111,6 +111,19 @@ async function recordFail(env, email) {
 const clearFails = (env, email) =>
   env.DB.prepare('DELETE FROM login_attempts WHERE email = ?').bind(email).run();
 
+/* ---------- تطبيع أرقام التليفونات ---------- */
+/** بيرجّع رقم مصري (01xxxxxxxxx) أو سعودي (05xxxxxxxx) نضيف، أو null لو الشكل غلط */
+function normalizePhone(raw) {
+  let d = String(raw || '').replace(/[^\d]/g, '');
+  if (d.startsWith('0020')) d = '0' + d.slice(4);
+  else if (d.startsWith('20') && d.length === 12) d = '0' + d.slice(2);
+  else if (d.startsWith('00966')) d = '0' + d.slice(5);
+  else if (d.startsWith('966') && d.length === 12) d = '0' + d.slice(3);
+  if (/^01[0-9]{9}$/.test(d)) return d;   // مصر: ١١ رقم
+  if (/^05[0-9]{8}$/.test(d)) return d;   // السعودية: ١٠ أرقام
+  return null;
+}
+
 /* ---------- الأدوار والصلاحيات ---------- */
 /* كل دور بياخد أقل صلاحيات تكفّي شغله — مش أكتر */
 const ROLES = {
@@ -297,6 +310,61 @@ async function fetchTracking(env, awbs) {
   return items.map(it => ({ awb: it.trackNo, raw: it.latestEvent || it.trackStatus || '' }));
 }
 
+/** استيراد تتبع J&T — مشتركة بين شاشة الإدارة والإيجنت.
+    كل صف ممكن يجيب clientId بتاعه هو (لو المصدر بيفلتر حسب Sender Name)،
+    أو يرجع لعميل واحد ثابت جاي من الطلب نفسه */
+async function runTrackingImport(env, rows) {
+  let matched = 0, collected = 0, signedCount = 0, byRef = 0, returnedCount = 0;
+  const unmatched = [];
+  for (const r of rows) {
+    const awb = String(r.awb || '').trim();
+    const ref = String(r.ref || '').trim();
+    if (!awb && !ref) continue;
+
+    let o = awb ? await env.DB.prepare(
+      'SELECT id, state, other_cost, awb FROM orders WHERE awb = ?'
+    ).bind(awb).first() : null;
+
+    if (!o && ref && r.clientId) {
+      o = await env.DB.prepare(
+        'SELECT id, state, other_cost, awb FROM orders WHERE ref = ? AND client_id = ?'
+      ).bind(ref, r.clientId).first();
+      if (o) byRef++;
+    }
+    if (!o) { unmatched.push(awb || ('طلب ' + ref)); continue; }
+
+    const st = r.state && ORDER_STATES.includes(r.state) ? r.state : mapJTStatus(r.status);
+    const num = v => (v === undefined || v === null || v === '') ? null : Number(v);
+    const ship = num(r.shippingCost);
+    const other = num(r.otherCost);
+
+    if ((st === 'signed' || st === 'collected') && (ship === null || isNaN(ship))) {
+      await env.DB.prepare('UPDATE orders SET state = ?, checkpoint = ?, awb = COALESCE(?, awb) WHERE id = ?')
+        .bind('shipped', 'تم الشحن — ناقص سعر الشحن', awb || null, o.id).run();
+      matched++;
+      continue;
+    }
+    const finalOther = other !== null && !isNaN(other)
+      ? other
+      : (o.other_cost === null || o.other_cost === undefined ? 0 : o.other_cost);
+
+    await env.DB.prepare(
+      `UPDATE orders SET state = ?, checkpoint = ?, awb = COALESCE(?, awb),
+         shipping_cost = COALESCE(?, shipping_cost), other_cost = ?,
+         signed_at = ?, collected_at = ?
+       WHERE id = ?`
+    ).bind(st, r.status || STATE_TEXT[st] || '', awb || null, ship, finalOther,
+      (st === 'signed' || st === 'collected') ? (r.date || new Date().toISOString().slice(0, 10)) : null,
+      st === 'collected' ? (r.date || new Date().toISOString().slice(0, 10)) : null, o.id).run();
+    matched++;
+    if (st === 'returned') returnedCount++;
+    if (st === 'signed') signedCount++;
+    if (st === 'collected') collected++;
+  }
+  return { matched, collected, signed: signedCount, returned: returnedCount, byRef,
+    unmatched: unmatched.slice(0, 50), unmatchedCount: unmatched.length };
+}
+
 async function syncShipments(env) {
   const { results } = await env.DB.prepare(
     `SELECT id, awb, state FROM orders
@@ -342,6 +410,207 @@ function scopeForClient(state, orders, clientId) {
 async function handleApi(request, env, url, path) {
   const secret = env.SESSION_SECRET;
   if (!secret) return json({ error: 'SESSION_SECRET مش متظبط في إعدادات Cloudflare' }, 500);
+
+  /* ---------- استقبال آلي من أنظمة خارجية (OpenClaw / سكريبت) ----------
+     بتوكن مستقل مش بجلسة متصفح. التوكن ده صلاحيته محدودة جداً:
+     يقرا حسابات الإعلانات، ويكتب مصروف إعلانات. مش أكتر. */
+  const ingestToken = (request.headers.get('authorization') || '').replace(/^Bearer\s+/i, '');
+  const isIngest = env.INGEST_TOKEN && ingestToken && safeEqual(ingestToken, env.INGEST_TOKEN);
+
+  if (path === '/api/ad-accounts' && request.method === 'GET' && isIngest) {
+    const state = await loadState(env);
+    return json((state.clients || [])
+      .filter(c => c.status === 'active' && c.adAccount)
+      .map(c => ({ clientId: c.id, name: c.name, adAccount: c.adAccount, currency: c.currency })));
+  }
+
+  /* قايمة خفيفة بكل المتاجر النشطة — للإيجنتات الخارجية.
+     senderName بتفيد مطابقة كشوف J&T، adAccount بتفيد مصروف الإعلانات */
+  if (path === '/api/clients' && request.method === 'GET' && isIngest) {
+    const state = await loadState(env);
+    return json((state.clients || [])
+      .filter(c => c.status === 'active')
+      .map(c => ({
+        id: c.id, name: c.name, senderName: c.senderName || '',
+        adAccount: c.adAccount || '', currency: c.currency, market: c.market
+      })));
+  }
+
+  /* كتالوج منتجات متجر معيّن — للإيجنت يطابق بيه اسم المنتج في رسالة العميل */
+  if (path === '/api/products' && request.method === 'GET' && isIngest) {
+    const cid = url.searchParams.get('clientId');
+    if (!cid) return json({ error: 'clientId مطلوب' }, 400);
+    return json(await listProducts(env, cid));
+  }
+
+  /* استيراد شحنات J&T بالتوكن — للإيجنتات الخارجية. tracking بس، مش orders —
+     إنشاء الأوردرات ليها مسار مخصص (wa-order) بتحقق أدق */
+  if (path === '/api/orders/bulk' && request.method === 'POST' && isIngest) {
+    const b = await request.json().catch(() => ({}));
+    if (b.mode !== 'tracking') return json({ error: 'التوكن ده مسموح له بشحنات J&T بس' }, 403);
+    const rows = Array.isArray(b.rows) ? b.rows.slice(0, 3000) : [];
+    if (!rows.length) return json({ error: 'مفيش صفوف' }, 400);
+    const result = await runTrackingImport(env, rows);
+    return json({ ok: true, ...result });
+  }
+
+  /* تسجيل أوردر جاي من جروب واتساب. بيتحقق من التليفون والمبلغ بصرامة —
+     الرسائل الحرة عرضة للأخطاء أكتر من شيت منظم */
+  if (path === '/api/wa-order' && request.method === 'POST' && isIngest) {
+    const b = await request.json().catch(() => ({}));
+    if (!b.clientId) return json({ error: 'محتاجين نعرف المتجر', field: 'clientId' }, 400);
+
+    const state = await loadState(env);
+    const client = (state.clients || []).find(c => c.id === b.clientId);
+    if (!client || client.status !== 'active') return json({ error: 'المتجر مش موجود أو موقوف' }, 400);
+
+    const name = String(b.name || '').trim();
+    if (!name) return json({ error: 'اسم المشتري مطلوب', field: 'name' }, 400);
+
+    const phone = normalizePhone(b.phone);
+    if (!phone) {
+      return json({
+        error: 'رقم التليفون مش صحيح — لازم يبدأ بـ 01 (مصر، 11 رقم) أو 05 (السعودية، 10 أرقام)',
+        field: 'phone'
+      }, 400);
+    }
+
+    const qty = Math.max(1, Number(b.qty) || 1);
+    let productRow = null;
+    if (b.productId) {
+      productRow = await env.DB.prepare('SELECT * FROM products WHERE id = ? AND client_id = ?')
+        .bind(b.productId, b.clientId).first();
+    }
+
+    let unitPrice = productRow ? Number(productRow.price) || 0 : (Number(b.unitPrice) || 0);
+    let total = Number(b.total) || (unitPrice ? unitPrice * qty : 0);
+    if (!total || total <= 0) {
+      return json({ error: 'محتاجين سعر الأوردر — اختار منتج من الكتالوج أو ابعت المبلغ', field: 'total' }, 400);
+    }
+
+    const id = 'WA-' + crypto.randomUUID().slice(0, 8).toUpperCase();
+    const order = {
+      id, clientId: b.clientId, ref: b.ref || null,
+      date: new Date().toISOString().slice(0, 10),
+      name, phone, gov: String(b.gov || '').trim(), address: String(b.address || '').trim(),
+      product: productRow ? productRow.name : String(b.product || '').trim(),
+      productId: productRow ? productRow.id : null,
+      unitPrice, qty, total,
+      productCost: productRow ? (Number(productRow.cost) || 0) * qty : 0,
+      source: 'واتساب', note: String(b.note || '').trim(),
+      state: 'pending', checkpoint: STATE_TEXT.pending
+    };
+    await insertOrder(env, order);
+    return json({ ok: true, id, order });
+  }
+
+  /* تعديل أوردر واتساب — بمعرّفه أو بمرجعه (ref) جوه نفس المتجر.
+     مسموح بس للأوردرات اللي مصدرها واتساب ولسه في مراحلها الأولى */
+  if (path === '/api/wa-order' && request.method === 'PATCH' && isIngest) {
+    const b = await request.json().catch(() => ({}));
+    let order = null;
+    if (b.id) order = await env.DB.prepare('SELECT * FROM orders WHERE id = ?').bind(b.id).first();
+    if (!order && b.ref && b.clientId) {
+      order = await env.DB.prepare('SELECT * FROM orders WHERE ref = ? AND client_id = ?')
+        .bind(b.ref, b.clientId).first();
+    }
+    if (!order) return json({ error: 'الأوردر مش موجود — محتاجين id أو ref+clientId' }, 404);
+    if (order.source !== 'واتساب') return json({ error: 'الأوردر ده مصدره مش واتساب — عدّله من لوحة الإدارة' }, 403);
+    if (['collected', 'returned', 'cancelled'].includes(order.state)) {
+      return json({ error: `الأوردر خلاص اتقفل (${STATE_TEXT[order.state]}) — كلّم الإدارة لو محتاج تعديل` }, 409);
+    }
+
+    const fields = {};
+    if (b.name !== undefined) fields.name = String(b.name).trim();
+    if (b.phone !== undefined) {
+      const p = normalizePhone(b.phone);
+      if (!p) return json({ error: 'رقم التليفون مش صحيح', field: 'phone' }, 400);
+      fields.phone = p;
+    }
+    if (b.gov !== undefined) fields.gov = String(b.gov).trim();
+    if (b.address !== undefined) fields.address = String(b.address).trim();
+    if (b.note !== undefined) fields.note = String(b.note).trim();
+    if (b.qty !== undefined) fields.qty = Math.max(1, Number(b.qty) || 1);
+
+    if (b.productId !== undefined) {
+      const pr = await env.DB.prepare('SELECT * FROM products WHERE id = ? AND client_id = ?')
+        .bind(b.productId, order.client_id).first();
+      if (pr) {
+        fields.product_id = pr.id; fields.product = pr.name; fields.unit_price = pr.price;
+        fields.product_cost = (Number(pr.cost) || 0) * (fields.qty || order.qty);
+        if (b.total === undefined) fields.total = Number(pr.price) * (fields.qty || order.qty);
+      }
+    }
+    if (b.total !== undefined) {
+      const t = Number(b.total);
+      if (!t || t <= 0) return json({ error: 'السعر لازم يكون أكبر من صفر', field: 'total' }, 400);
+      fields.total = t;
+    }
+    if (!Object.keys(fields).length) return json({ error: 'مفيش حاجة اتبعتت للتعديل' }, 400);
+
+    const sets = Object.keys(fields).map(k => `${k} = ?`).join(', ');
+    await env.DB.prepare(`UPDATE orders SET ${sets} WHERE id = ?`)
+      .bind(...Object.values(fields), order.id).run();
+    return json({ ok: true, id: order.id });
+  }
+
+  if (path === '/api/ad-spend' && request.method === 'POST') {
+    /* بيقبل التوكن أو جلسة عندها صلاحية الإدخال اليومي */
+    let allowed = isIngest;
+    if (!allowed) {
+      const sess = await readSession(request, secret);
+      if (sess && sess.uid) {
+        const u = await env.DB.prepare('SELECT role, status FROM users WHERE id = ?').bind(sess.uid).first();
+        allowed = u && u.status === 'active' && permsOf(u.role).includes('entries');
+      }
+    }
+    if (!allowed) return json({ error: 'مش مسموح' }, 403);
+
+    const b = await request.json().catch(() => ({}));
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(String(b.date || ''))
+      ? b.date : new Date().toISOString().slice(0, 10);
+    const rows = Array.isArray(b.entries) ? b.entries
+      : (b.clientId || b.adAccount) ? [{ clientId: b.clientId, adAccount: b.adAccount, spend: b.spend }]
+      : [];
+    if (!rows.length) return json({ error: 'مفيش بيانات' }, 400);
+
+    const state = await loadState(env);
+    state.entries = state.entries || [];
+    const applied = [], skipped = [];
+
+    for (const r of rows) {
+      const spend = Number(r.spend);
+      if (!Number.isFinite(spend) || spend < 0) { skipped.push({ ...r, why: 'مبلغ غير صالح' }); continue; }
+
+      /* بندوّر بالعميل أو بحساب الإعلانات — OpenClaw بيعرف حساب الإعلانات بس */
+      const client = r.clientId
+        ? (state.clients || []).find(c => c.id === r.clientId)
+        : (state.clients || []).find(c => String(c.adAccount || '').replace(/^act_/, '')
+            === String(r.adAccount || '').replace(/^act_/, ''));
+      if (!client) { skipped.push({ ...r, why: 'مالقيناش المتجر' }); continue; }
+
+      const existing = state.entries.find(e => e.clientId === client.id && e.date === date);
+      if (existing) {
+        /* الإدخال اليدوي أولى — ما بنكتبش فوقه إلا لو الطلب صريح */
+        if (existing.source === 'manual' && !b.overwrite) {
+          skipped.push({ client: client.name, why: 'فيه إدخال يدوي لنفس اليوم' });
+          continue;
+        }
+        existing.adSpend = spend;
+        existing.source = 'auto';
+        existing.syncedAt = new Date().toISOString();
+      } else {
+        state.entries.push({
+          id: crypto.randomUUID().slice(0, 8), clientId: client.id, date,
+          adSpend: spend, orders: 0, source: 'auto', syncedAt: new Date().toISOString()
+        });
+      }
+      applied.push({ client: client.name, spend });
+    }
+
+    if (applied.length) await saveState(env, state);
+    return json({ ok: true, date, applied, skipped });
+  }
 
   /* أول تشغيل: إنشاء حساب الإدارة — متاح بس لما الجدول يكون فاضي */
   if (path === '/api/setup' && request.method === 'POST') {
@@ -699,61 +968,11 @@ async function handleApi(request, env, url, path) {
         noCost: created + updated - costed });
     }
 
-    /* شيت J&T: بيطابق برقم البوليصة ويحدّث الحالة والتكاليف */
+    /* شيت J&T: بيطابق برقم البوليصة أو Order NO. */
     if (b.mode === 'tracking') {
-      let matched = 0, collected = 0, signedCount = 0, byRef = 0, returnedCount = 0;
-      const unmatched = [];
-      for (const r of rows) {
-        const awb = String(r.awb || '').trim();
-        const ref = String(r.ref || '').trim();
-        if (!awb && !ref) continue;
-
-        /* بندوّر بالبوليصة الأول. لو مالقيناش — وده الطبيعي لأن شيت إيزي أوردرز
-           مفيهوش بوليصة أصلاً — بندوّر برقم الطلب جوه نفس المتجر */
-        let o = awb ? await env.DB.prepare(
-          'SELECT id, state, other_cost, awb FROM orders WHERE awb = ?'
-        ).bind(awb).first() : null;
-
-        if (!o && ref && b.clientId) {
-          o = await env.DB.prepare(
-            'SELECT id, state, other_cost, awb FROM orders WHERE ref = ? AND client_id = ?'
-          ).bind(ref, b.clientId).first();
-          if (o) byRef++;
-        }
-        if (!o) { unmatched.push(awb || ('طلب ' + ref)); continue; }
-
-        const st = r.state && ORDER_STATES.includes(r.state) ? r.state : mapJTStatus(r.status);
-        const num = v => (v === undefined || v === null || v === '') ? null : Number(v);
-        const ship  = num(r.shippingCost);
-        const other = num(r.otherCost);
-
-        /* التسليم محتاج تكاليفه — لو الشيت مجابش سعر الشحن نسيبه "تم الشحن" */
-        if ((st === 'signed' || st === 'collected') && (ship === null || isNaN(ship))) {
-          await env.DB.prepare('UPDATE orders SET state = ?, checkpoint = ?, awb = COALESCE(?, awb) WHERE id = ?')
-            .bind('shipped', 'تم الشحن — ناقص سعر الشحن', awb || null, o.id).run();
-          matched++;
-          continue;
-        }
-        const finalOther = other !== null && !isNaN(other)
-          ? other
-          : (o.other_cost === null || o.other_cost === undefined ? 0 : o.other_cost);
-
-        /* الشحنة الموقّعة بتاخد تاريخ التسليم، والتحصيل الفعلي بيتسجّل لما الفلوس توصل */
-        await env.DB.prepare(
-          `UPDATE orders SET state = ?, checkpoint = ?, awb = COALESCE(?, awb),
-             shipping_cost = COALESCE(?, shipping_cost), other_cost = ?,
-             signed_at = ?, collected_at = ?
-           WHERE id = ?`
-        ).bind(st, r.status || STATE_TEXT[st] || '', awb || null, ship, finalOther,
-          (st === 'signed' || st === 'collected') ? (r.date || new Date().toISOString().slice(0, 10)) : null,
-          st === 'collected' ? (r.date || new Date().toISOString().slice(0, 10)) : null, o.id).run();
-        matched++;
-        if (st === 'returned') returnedCount++;
-        if (st === 'signed') signedCount++;
-        if (st === 'collected') collected++;
-      }
-      return json({ ok: true, matched, collected, signed: signedCount, returned: returnedCount, byRef,
-        unmatched: unmatched.slice(0, 50), unmatchedCount: unmatched.length });
+      const rows2 = rows.map(r => ({ ...r, clientId: r.clientId || b.clientId }));
+      const result = await runTrackingImport(env, rows2);
+      return json({ ok: true, ...result });
     }
 
     return json({ error: 'نوع الاستيراد غير معروف' }, 400);
