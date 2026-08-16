@@ -520,6 +520,18 @@ async function syncShipments(env) {
    ربح الأوردر = الإيراد − تكلفة المنتج − الشحن − مصاريف تانية − مبلغ الإدارة الثابت (تحدده الإدارة لكل متجر).
    منتظرة = وصلت (signed) ولسه ما اتحصّلتش. محصّلة = اتحصّلت فعلاً (collected).
    متوقعة = أرباح كل الأوردرات المرفوعة (غير الملغاة/المرتجعة) × نسبة التسليم. */
+/** تكلفة الشحن المتوقعة لأوردر لسه ما اتسجّلش له تكلفة شحن حقيقية — من إعدادات المتجر */
+function estimateShipping(client, gov) {
+  if (client.shippingMode === 'byGov') {
+    const table = client.shippingByGov || {};
+    const g = String(gov || '').trim();
+    if (g && table[g] != null) return Number(table[g]) || 0;
+    const vals = Object.values(table).map(Number).filter(Number.isFinite);
+    return vals.length ? round2(vals.reduce((s, v) => s + v, 0) / vals.length) : 0;
+  }
+  return Number(client.shippingFixed) || 0;
+}
+
 function computeFinance(state, orders, clientId) {
   const client = state.clients.find(c => c.id === clientId);
   if (!client) return null;
@@ -542,6 +554,10 @@ function computeFinance(state, orders, clientId) {
 
   const profitOf = o => (Number(o.total) || 0) - (Number(o.productCost) || 0)
     - (Number(o.shippingCost) || 0) - (Number(o.otherCost) || 0) - adminFee;
+  /* لأوردرات لسه في الطريق (شحن حقيقي مش متسجّل)، نستخدم تقدير من إعدادات المتجر بدل ما نحسبها صفر */
+  const profitOfEstimated = o => (Number(o.total) || 0) - (Number(o.productCost) || 0)
+    - (o.shippingCost != null ? Number(o.shippingCost) : estimateShipping(client, o.gov))
+    - (Number(o.otherCost) || 0) - adminFee;
 
   const adSpend = round2(state.entries.filter(e => e.clientId === clientId)
     .reduce((s, e) => s + (Number(e.adSpend) || 0), 0));
@@ -552,7 +568,7 @@ function computeFinance(state, orders, clientId) {
 
   const pipeline = nonCancelled.filter(o => o.state !== 'returned');
   const revenueExpected = round2(pipeline.reduce((s, o) => s + (Number(o.total) || 0), 0) * (deliveryRate / 100));
-  const profitExpected = round2(pipeline.reduce((s, o) => s + profitOf(o), 0) * (deliveryRate / 100));
+  const profitExpected = round2(pipeline.reduce((s, o) => s + profitOfEstimated(o), 0) * (deliveryRate / 100));
 
   const today = new Date().toISOString().slice(0, 10);
   const ordersToday = co.filter(o => String(o.date || '').slice(0, 10) === today).length;
@@ -788,6 +804,12 @@ async function handleApi(request, env, url, path) {
         : (state.clients || []).find(c => String(c.adAccount || '').replace(/^act_/, '')
             === String(r.adAccount || '').replace(/^act_/, ''));
       if (!client) { skipped.push({ ...r, why: 'مالقيناش المتجر' }); continue; }
+
+      if (r.balance !== undefined && Number.isFinite(Number(r.balance))) {
+        client.metaBalance = round2(Number(r.balance));
+        client.metaBalanceCurrency = r.balanceCurrency || client.currency || '';
+        client.metaBalanceAt = new Date().toISOString();
+      }
 
       const existing = state.entries.find(e => e.clientId === client.id && e.date === date);
       if (existing) {
@@ -1171,12 +1193,18 @@ async function handleApi(request, env, url, path) {
       clientId: c.id,
       metaAdAccountId: c.adAccount || '',
       metaTokenSet: masked.metaTokenSet, metaTokenTail: masked.metaTokenTail || '',
+      metaBalance: c.metaBalance != null ? c.metaBalance : null,
+      metaBalanceCurrency: c.metaBalanceCurrency || '',
+      metaBalanceAt: c.metaBalanceAt || null,
       taxEnabled: !!c.taxEnabled, taxRate: Number(c.taxRate) || 14,
       easyOrdersStoreId: c.storeId || '',
       easyOrdersTokenSet: masked.easyOrdersTokenSet, easyOrdersTokenTail: masked.easyOrdersTokenTail || '',
       deliveryRateMode: c.deliveryRateMode || 'auto',
       deliveryRateManual: c.deliveryRateManual != null ? c.deliveryRateManual : null,
       adminFee: Number(c.adminFee) || 0,
+      shippingMode: c.shippingMode === 'byGov' ? 'byGov' : 'fixed',
+      shippingFixed: Number(c.shippingFixed) || 0,
+      shippingByGov: c.shippingByGov && typeof c.shippingByGov === 'object' ? c.shippingByGov : {},
       email: {
         enabled: !!c.emailEnabled, host: c.emailHost || '', port: c.emailPort || '',
         secure: c.emailSecure !== false, user: c.emailUser || '',
@@ -1224,6 +1252,19 @@ async function handleApi(request, env, url, path) {
       if (b.adminFee !== undefined && isStaff(user)) {
         const f = Number(b.adminFee);
         client.adminFee = Number.isFinite(f) ? Math.max(0, f) : 0;
+      }
+      if (b.shippingMode !== undefined) client.shippingMode = b.shippingMode === 'byGov' ? 'byGov' : 'fixed';
+      if (b.shippingFixed !== undefined) {
+        const f = Number(b.shippingFixed);
+        client.shippingFixed = Number.isFinite(f) ? Math.max(0, f) : 0;
+      }
+      if (b.shippingByGov !== undefined && b.shippingByGov && typeof b.shippingByGov === 'object') {
+        const clean = {};
+        for (const [gov, rate] of Object.entries(b.shippingByGov)) {
+          const r = Number(rate);
+          if (String(gov).trim() && Number.isFinite(r)) clean[String(gov).trim()] = Math.max(0, r);
+        }
+        client.shippingByGov = clean;
       }
       if (b.emailEnabled !== undefined) client.emailEnabled = !!b.emailEnabled;
       if (b.emailHost !== undefined) client.emailHost = String(b.emailHost).trim();
@@ -1324,6 +1365,90 @@ async function handleApi(request, env, url, path) {
     const fin = computeFinance(state, await listOrders(env), targetId);
     if (!fin) return json({ error: 'العميل مش موجود' }, 404);
     return json(fin);
+  }
+
+  /* ---------- أداء يوم/شهر معيّن — لوحة "أداء النهارده" مع مؤشر التاريخ ----------
+     الأوردرات الجديدة بتتحسب بتاريخ الإنشاء (o.date). الأحداث (تحصيل/مرتجع/إلغاء)
+     بتتحسب بتاريخ حدوثها الفعلي من سجل التاريخ (history) — مش تاريخ إنشاء الأوردر،
+     عشان أوردر اتسجّل الأسبوع اللي فات ولسه اتحصّل النهارده يدخل في أرقام النهارده. */
+  async function dayBreakdown(env, state, orders, clientId, from, to) {
+    const co = orders.filter(o => o.clientId === clientId);
+    const inRange = d => d >= from && d <= to;
+    const newOrders = co.filter(o => inRange(String(o.date || '').slice(0, 10)));
+
+    const byState = {};
+    ORDER_STATES.forEach(s => { byState[s] = newOrders.filter(o => o.state === s).length; });
+
+    const eventOn = st => co.filter(o => (o.history || []).some(h =>
+      h.state === st && inRange(String(h.at || '').slice(0, 10))));
+    const collectedEv = eventOn('collected');
+    const returnedEv = eventOn('returned');
+    const cancelledEv = eventOn('cancelled');
+
+    const adSpend = round2((state.entries || [])
+      .filter(e => e.clientId === clientId && inRange(String(e.date || '').slice(0, 10)))
+      .reduce((s, e) => s + (Number(e.adSpend) || 0), 0));
+
+    const { results: txRows } = await env.DB.prepare(
+      `SELECT amount FROM transactions WHERE client_id = ? AND type = 'expense' AND date >= ? AND date <= ?`
+    ).bind(clientId, from, to).all();
+    const otherExpense = round2((txRows || []).reduce((s, t) => s + (Number(t.amount) || 0), 0));
+
+    return {
+      from, to,
+      newOrders: newOrders.length, byState,
+      adSpend, otherExpense, cpp: newOrders.length ? round2((adSpend + otherExpense) / newOrders.length) : 0,
+      collected: { count: collectedEv.length, amount: round2(collectedEv.reduce((s, o) => s + (Number(o.total) || 0), 0)) },
+      returned: returnedEv.length, cancelled: cancelledEv.length
+    };
+  }
+
+  if (path === '/api/performance' && request.method === 'GET') {
+    const staffAccess = isStaff(user) && can(user, 'clients');
+    const qcid = url.searchParams.get('clientId');
+    if (user.role === 'client' && qcid && qcid !== me.clientId) return json({ error: 'مش مسموح' }, 403);
+    const targetId = user.role === 'client' ? me.clientId : qcid;
+    if (user.role !== 'client' && !staffAccess) return json({ error: 'مش مسموح' }, 403);
+    if (!targetId) return json({ error: 'محتاجين clientId' }, 400);
+
+    const state = await loadState(env);
+    const client = state.clients.find(c => c.id === targetId);
+    if (!client) return json({ error: 'العميل مش موجود' }, 404);
+    const orders = await listOrders(env, targetId);
+
+    const dateParam = /^\d{4}-\d{2}-\d{2}$/.test(url.searchParams.get('date') || '')
+      ? url.searchParams.get('date') : new Date().toISOString().slice(0, 10);
+    const [y, m] = dateParam.split('-').map(Number);
+    const monthStart = `${y}-${String(m).padStart(2, '0')}-01`;
+    const monthEnd = new Date(y, m, 0).toISOString().slice(0, 10);
+    const lastMonthDate = new Date(y, m - 2, 1);
+    const lmY = lastMonthDate.getFullYear(), lmM = lastMonthDate.getMonth() + 1;
+    const lastMonthStart = `${lmY}-${String(lmM).padStart(2, '0')}-01`;
+    const lastMonthEnd = new Date(lmY, lmM, 0).toISOString().slice(0, 10);
+
+    const today = await dayBreakdown(env, state, orders, targetId, dateParam, dateParam);
+    const month = await dayBreakdown(env, state, orders, targetId, monthStart, monthEnd);
+
+    const lastMonthOrders = orders.filter(o => {
+      const d = String(o.date || '').slice(0, 10);
+      return d >= lastMonthStart && d <= lastMonthEnd;
+    });
+    const lmNonCancelled = lastMonthOrders.filter(o => o.state !== 'cancelled');
+    const lmConfirmed = lmNonCancelled.filter(o => o.state !== 'pending');
+    const lmDelivered = lastMonthOrders.filter(o => o.state === 'signed' || o.state === 'collected');
+    const lmReturned = lastMonthOrders.filter(o => o.state === 'returned');
+    const lmFinal = lmDelivered.length + lmReturned.length;
+
+    const fin = computeFinance(state, orders, targetId);
+
+    return json({
+      date: dateParam, today, month,
+      lastMonthConfirmationRatePct: lmNonCancelled.length
+        ? Math.round((lmConfirmed.length / lmNonCancelled.length) * 1000) / 10 : 0,
+      lastMonthDeliveryRatePct: lmFinal ? Math.round((lmDelivered.length / lmFinal) * 1000) / 10 : 0,
+      profitExpected: fin.profitExpected, revenueExpected: fin.revenueExpected,
+      shippingMode: client.shippingMode === 'byGov' ? 'byGov' : 'fixed'
+    });
   }
 
   if (path === '/api/deposits') {
@@ -1466,8 +1591,9 @@ async function handleApi(request, env, url, path) {
     }
 
     if (request.method === 'POST') {
-      if (!staffAccess) return json({ error: 'مش مسموح' }, 403);
       const b = await request.json().catch(() => ({}));
+      const clientId = user.role === 'client' ? me.clientId : (b.clientId || null);
+      if (user.role !== 'client' && !staffAccess) return json({ error: 'مش مسموح' }, 403);
       const amount = Number(b.amount) || 0;
       if (!['expense','income'].includes(b.type)) return json({ error: 'النوع لازم يكون مصروف أو إيراد' }, 400);
       if (amount <= 0) return json({ error: 'المبلغ لازم يكون أكبر من صفر' }, 400);
@@ -1480,15 +1606,23 @@ async function handleApi(request, env, url, path) {
            amount=excluded.amount, currency=excluded.currency, method=excluded.method,
            client_id=excluded.client_id, note=excluded.note`
       ).bind(id, b.type, b.date || new Date().toISOString().slice(0,10), b.category, amount,
-        b.currency || 'EGP', b.method || '', b.clientId || null, b.note || '',
+        b.currency || 'EGP', b.method || '', clientId, b.note || '',
         me.email, new Date().toISOString()).run();
       return json({ ok: true, id });
     }
   }
 
   const tm = path.match(/^\/api\/transactions\/([^/]+)$/);
-  if (tm && can(user, 'finance') && request.method === 'DELETE') {
-    await env.DB.prepare('DELETE FROM transactions WHERE id = ?').bind(decodeURIComponent(tm[1])).run();
+  if (tm && request.method === 'DELETE') {
+    const id = decodeURIComponent(tm[1]);
+    if (user.role === 'client') {
+      const row = await env.DB.prepare('SELECT client_id FROM transactions WHERE id = ?').bind(id).first();
+      if (!row) return json({ error: 'مش موجودة' }, 404);
+      if (row.client_id !== me.clientId) return json({ error: 'مش مسموح' }, 403);
+    } else if (!can(user, 'finance')) {
+      return json({ error: 'مش مسموح' }, 403);
+    }
+    await env.DB.prepare('DELETE FROM transactions WHERE id = ?').bind(id).run();
     return json({ ok: true });
   }
 
