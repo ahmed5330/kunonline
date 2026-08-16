@@ -31,22 +31,32 @@ CREATE TABLE IF NOT EXISTS state (
 
 -- الأوردرات في صفوف مستقلة عشان الويبهوك يكتب فيها من غير تعارض
 CREATE TABLE IF NOT EXISTS orders (
-  id          TEXT PRIMARY KEY,
-  client_id   TEXT NOT NULL,
-  date        TEXT NOT NULL,
-  name        TEXT,
-  phone       TEXT,
-  gov         TEXT,
-  address     TEXT,
-  product     TEXT,
-  qty         INTEGER DEFAULT 1,
-  total       REAL DEFAULT 0,
-  source      TEXT,
-  note        TEXT,
-  awb         TEXT,
-  state       TEXT DEFAULT 'new',
-  checkpoint  TEXT,
-  created_at  TEXT
+  id            TEXT PRIMARY KEY,
+  client_id     TEXT NOT NULL,
+  ref           TEXT,                   -- كود الأوردر الأصلي (إيزي أوردرز مثلاً) قبل ما يتحوّل لكود داخلي
+  date          TEXT NOT NULL,
+  name          TEXT,
+  phone         TEXT,
+  gov           TEXT,
+  address       TEXT,
+  product       TEXT,
+  product_id    TEXT,
+  unit_price    REAL DEFAULT 0,
+  qty           INTEGER DEFAULT 1,
+  total         REAL DEFAULT 0,
+  product_cost  REAL DEFAULT 0,
+  shipping_cost REAL,
+  other_cost    REAL,
+  source        TEXT,
+  note          TEXT,
+  awb           TEXT,
+  state         TEXT DEFAULT 'pending',
+  checkpoint    TEXT,
+  signed_at     TEXT,
+  collected_at  TEXT,
+  contact_log   TEXT DEFAULT '[]',      -- JSON: مواعيد محاولات التواصل مع العميل
+  history       TEXT DEFAULT '[]',      -- JSON: سجل تغييرات الحالة [{state, at}]
+  created_at    TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_orders_client ON orders (client_id, date);

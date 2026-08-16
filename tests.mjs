@@ -31,12 +31,17 @@ const stmt=(sql)=>({
     else if(sql.includes('DELETE FROM login_attempts')) attempts.delete(this.args[0]);
     else if(sql.includes('INSERT INTO orders')){
       const [id,client_id,ref,date,name,phone,gov,address,product,product_id,unit_price,qty,total,
-        product_cost,shipping_cost,other_cost,source,note,awb,state,checkpoint,signed_at,collected_at,created_at]=this.args;
+        product_cost,shipping_cost,other_cost,source,note,awb,state,checkpoint,signed_at,collected_at,
+        contact_log,history,created_at]=this.args;
       orders.set(id,{id,client_id,ref,date,name,phone,gov,address,product,product_id,unit_price,qty,total,
-        product_cost,shipping_cost,other_cost,source,note,awb,state,checkpoint,signed_at,collected_at,created_at});}
-    else if(sql.startsWith('UPDATE orders SET state = ?, awb = ?')){const o=orders.get(this.args[7]);
+        product_cost,shipping_cost,other_cost,source,note,awb,state,checkpoint,signed_at,collected_at,
+        contact_log,history,created_at});}
+    else if(sql.startsWith('UPDATE orders SET state = ?, awb = ?')){const o=orders.get(this.args[8]);
       if(o){o.state=this.args[0];o.awb=this.args[1];o.checkpoint=this.args[2];
-        o.shipping_cost=this.args[3];o.other_cost=this.args[4];o.signed_at=this.args[5];o.collected_at=this.args[6];}}
+        o.shipping_cost=this.args[3];o.other_cost=this.args[4];o.signed_at=this.args[5];
+        o.collected_at=this.args[6];o.history=this.args[7];}}
+    else if(sql.startsWith('UPDATE orders SET contact_log')){const o=orders.get(this.args[1]);
+      if(o) o.contact_log=this.args[0];}
     else if(sql.includes('WHERE awb = ?')){for(const o of orders.values()) if(o.awb===this.args[2]) o.state=this.args[0];}
     else if(sql.includes('UPDATE orders SET state = ?, checkpoint = ? WHERE id')){const o=orders.get(this.args[2]);if(o)o.state=this.args[0];}
     else if(sql.includes('DELETE FROM orders')) orders.delete(this.args[0]);
@@ -206,7 +211,24 @@ check('العميل التاني ممنوع يشوف إيداعات غيره',
 r=await call('/api/deposits/'+dep1.entry.id,{method:'DELETE'},clientCookie);
 check('العميل يقدر يمسح إيداعه', r.status===200);
 
+head('كود الأوردر + الهيستوري + محاولات التواصل');
+let [,newOrder]=await j(await mkOrder(200,50));
+check('كود الأوردر بصيغة أول ٣ حروف + رقم ≥ 200', /^.{3}\d+$/u.test(newOrder.order.id) && +newOrder.order.id.match(/\d+$/)[0]>=200);
+await call('/api/orders/'+newOrder.order.id,{method:'PATCH',body:JSON.stringify({state:'confirmed'})},adminCookie);
+const storedHist = JSON.parse(orders.get(newOrder.order.id).history);
+check('الهيستوري اتسجّل فيه التحول لحالة confirmed', storedHist.some(h=>h.state==='confirmed'));
+check('الهيستوري فيه الحالة الأولى pending كمان', storedHist.some(h=>h.state==='pending'));
 
+r=await call('/api/orders/'+newOrder.order.id+'/contact',{method:'POST'},adminCookie);
+check('محاولة تواصل أولى تنجح', r.status===200);
+await call('/api/orders/'+newOrder.order.id+'/contact',{method:'POST'},adminCookie);
+r=await call('/api/orders/'+newOrder.order.id+'/contact',{method:'POST'},adminCookie);
+check('محاولة تواصل تالتة في نفس اليوم تنجح', r.status===200);
+r=await call('/api/orders/'+newOrder.order.id+'/contact',{method:'POST'},adminCookie);
+let [,contactErr]=await j(r);
+check('محاولة رابعة في نفس اليوم مرفوضة برسالة واضحة', r.status===429 && /تجاوزت/.test(contactErr.error));
+
+head('كلمات المرور والقفل');
 check('تغيير كلمة المرور بالقديمة الغلط مرفوض',
   (await call('/api/change-password',{method:'POST',body:JSON.stringify({current:'wrong1234',next:'NewPass1234'})},clientCookie)).status===401);
 check('العميل غيّر كلمة مروره',
