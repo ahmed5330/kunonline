@@ -35,7 +35,8 @@ const stmt=(sql)=>({
       orders.set(id,{id,client_id,ref,date,name,phone,gov,address,product,product_id,unit_price,qty,total,
         product_cost,shipping_cost,other_cost,source,note,awb,state,checkpoint,signed_at,collected_at,created_at});}
     else if(sql.startsWith('UPDATE orders SET state = ?, awb = ?')){const o=orders.get(this.args[7]);
-      if(o){o.state=this.args[0];o.awb=this.args[1];}}
+      if(o){o.state=this.args[0];o.awb=this.args[1];o.checkpoint=this.args[2];
+        o.shipping_cost=this.args[3];o.other_cost=this.args[4];o.signed_at=this.args[5];o.collected_at=this.args[6];}}
     else if(sql.includes('WHERE awb = ?')){for(const o of orders.values()) if(o.awb===this.args[2]) o.state=this.args[0];}
     else if(sql.includes('UPDATE orders SET state = ?, checkpoint = ? WHERE id')){const o=orders.get(this.args[2]);if(o)o.state=this.args[0];}
     else if(sql.includes('DELETE FROM orders')) orders.delete(this.args[0]);
@@ -163,6 +164,47 @@ check('العميل ممنوع يحط Group ID بنفسه',
 r=await call('/api/wa-groups',{headers:{authorization:'Bearer ingest-secret'}});
 let [,ingestGroups]=await j(r);
 check('الأجنت (ingest) بيقرا خريطة الجروبات المربوطة', ingestGroups.groups && ingestGroups.groups['120363...@g.us']==='c2');
+
+
+head('الربح والخسارة + إيداعات فيسبوك');
+const round2z = n => Math.round(n*100)/100;
+r=await call('/api/integrations?clientId=c2',{method:'PUT',body:JSON.stringify({adminFee:10})},adminCookie);
+check('الإدارة حطت مبلغ ثابت 10ج لكل أوردر لـ c2', r.status===200);
+await call('/api/integrations',{method:'PUT',body:JSON.stringify({adminFee:999})},clientCookie);
+let [,integC2]=await j(await call('/api/integrations?clientId=c2',{},adminCookie));
+check('العميل ممنوع يغيّر المبلغ الثابت بنفسه', integC2.adminFee===10);
+
+let [,finBefore]=await j(await call('/api/finance?clientId=c2',{},adminCookie));
+const mkOrder=(total,productCost)=>call('/api/orders',{method:'POST',body:JSON.stringify({
+  clientId:'c2',name:'ت',phone:'0100',total,productCost,date:'2026-08-16'})},adminCookie);
+let [,o1]=await j(await mkOrder(500,100));
+let [,o2]=await j(await mkOrder(400,80));
+let [,o3]=await j(await mkOrder(300,60));
+await call('/api/orders/'+o1.order.id,{method:'PATCH',body:JSON.stringify({state:'collected',shippingCost:30,otherCost:5})},adminCookie);
+await call('/api/orders/'+o2.order.id,{method:'PATCH',body:JSON.stringify({state:'signed',shippingCost:25,otherCost:0})},adminCookie);
+await call('/api/orders/'+o3.order.id,{method:'PATCH',body:JSON.stringify({state:'returned'})},adminCookie);
+let [,finAfter]=await j(await call('/api/finance?clientId=c2',{},adminCookie));
+check('أرباح محصّلة = الإيراد-تكلفة المنتج-الشحن-مصاريف-المبلغ الثابت',
+  round2z(finAfter.profitCollected-finBefore.profitCollected)===355);
+check('أرباح منتظرة (وصلت ولسه ما اتحصّلتش)',
+  round2z(finAfter.profitPending-finBefore.profitPending)===285);
+check('عدّاد المرتجع اتزود واحد', finAfter.counts.returned-finBefore.counts.returned===1);
+check('عدّاد المُسلَّم اتزود اتنين', finAfter.counts.delivered-finBefore.counts.delivered===2);
+check('نسبة التسليم بتتحسب تلقائي من الحالات', finAfter.deliveryRatePct>0 && finAfter.deliveryRateMode==='auto');
+r=await call('/api/integrations?clientId=c2',{method:'PUT',body:JSON.stringify({deliveryRateMode:'manual',deliveryRateManual:80})},adminCookie);
+let [,finManual]=await j(await call('/api/finance?clientId=c2',{},adminCookie));
+check('نسبة التسليم اليدوية بتتفعّل وتحل محل التلقائية', finManual.deliveryRatePct===80 && finManual.deliveryRateMode==='manual');
+
+r=await call('/api/deposits',{method:'POST',body:JSON.stringify({amount:500,note:'إيداع تجريبي'})},clientCookie);
+let [,dep1]=await j(r);
+check('العميل يقدر يضيف إيداع فيسبوك بنفسه', r.status===200 && dep1.entry.amount===500);
+r=await call('/api/deposits',{},clientCookie);
+let [,depList]=await j(r);
+check('العميل شايف إيداعاته', depList.some(d=>d.id===dep1.entry.id));
+check('العميل التاني ممنوع يشوف إيداعات غيره',
+  (await call('/api/deposits?clientId=c1',{},clientCookie)).status===403);
+r=await call('/api/deposits/'+dep1.entry.id,{method:'DELETE'},clientCookie);
+check('العميل يقدر يمسح إيداعه', r.status===200);
 
 
 check('تغيير كلمة المرور بالقديمة الغلط مرفوض',
