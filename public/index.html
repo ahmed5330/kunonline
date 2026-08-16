@@ -668,6 +668,7 @@ let integData = null;
 let waGroupsList = [];
 let financeData = null;
 let depositsList = [];
+let clientTxList = [];
 function renderClient(client){
   if(clientTab==='add') return clientAddOrderView(client);
   if(clientTab==='products') return clientProductsView(client);
@@ -681,7 +682,7 @@ function renderClient(client){
   const ordersRange = ordersFor(client.id, clientRange);
   const a = orderAgg(ordersRange);
   const adSpend = adSpendFor(client.id, clientRange);
-  const totalCost = a.directCost + adSpend;
+  const totalCost = a.directCost + adSpend + (Number(client.adminFee)||0) * a.collected;
   const netProfit = a.revenue - totalCost;
   const margin = safeDiv(netProfit, a.revenue)*100;
   const tOrd = orderAgg((DB.orders||[]).filter(o=>o.clientId===client.id && o.date===today()));
@@ -695,7 +696,7 @@ function renderClient(client){
   const rows = days.map(d=>{
     const da = orderAgg(ordersRange.filter(o=>o.date===d));
     const ad = listRange.filter(e=>e.date===d).reduce((s,e)=>s+(Number(e.adSpend)||0),0);
-    const profit = da.revenue - da.directCost - ad;
+    const profit = da.revenue - da.directCost - ad - (Number(client.adminFee)||0) * da.collected;
     return `<tr>
       <td>${arDate(d)}</td>
       <td class="num">${num(da.orders)}</td>
@@ -1254,7 +1255,34 @@ function clientFinanceView(client){
     <thead><tr><th>التاريخ</th><th>المبلغ</th><th>ملاحظة</th><th></th></tr></thead>
     <tbody>${depRows || '<tr><td colspan="4" class="empty">لسه مفيش إيداعات مسجّلة.</td></tr>'}</tbody>
     ${depositsList && depositsList.length ? `<tfoot><tr><td><b>الإجمالي</b></td><td class="mono"><b>${money(depositsTotal)} ${cur}</b></td><td></td><td></td></tr></tfoot>` : ''}
-  </table></div>`;
+  </table></div>
+
+  <div class="section-title">كل حركاتي المالية — إيرادات ومصاريف مسجّلة من الإدارة</div>
+  ${(() => {
+    const list = clientTxList || [];
+    const inc = list.filter(t=>t.type==='income'), exp = list.filter(t=>t.type==='expense');
+    const income = inc.reduce((s,t)=>s+Number(t.amount||0),0), expense = exp.reduce((s,t)=>s+Number(t.amount||0),0);
+    const net = income - expense;
+    const txRows = list.slice(0,60).map(t=>`
+      <tr><td>${arDate(t.date)}</td>
+        <td><span class="pill ${t.type==='income'?'on':'off'}">${t.type==='income'?'تحصيل':'مصروف'}</span></td>
+        <td>${esc(t.category)}</td>
+        <td class="num" style="color:${t.type==='income'?'var(--pine)':'var(--brick)'}">${t.type==='income'?'+':'−'}${money(t.amount)} ${esc(t.currency||cur)}</td>
+        <td>${esc(t.note||'')}</td></tr>`).join('');
+    return `
+    <div class="grid g3">
+      <div class="card kpi accent-pine"><div class="k-label">إجمالي التحصيلات</div>
+        <div class="k-val mono" style="color:var(--pine)">${money(income)} <span class="cur">${cur}</span></div></div>
+      <div class="card kpi"><div class="k-label">إجمالي المصاريف</div>
+        <div class="k-val mono" style="color:var(--brick)">${money(expense)} <span class="cur">${cur}</span></div></div>
+      <div class="card kpi ${net>=0?'accent-gold':''}"><div class="k-label">الصافي</div>
+        <div class="k-val mono" style="color:${net>=0?'var(--pine)':'var(--brick)'}">${money(net)} <span class="cur">${cur}</span></div></div>
+    </div>
+    <div class="table-wrap" style="margin-top:10px"><table>
+      <thead><tr><th>التاريخ</th><th>النوع</th><th>البند</th><th>المبلغ</th><th>ملاحظة</th></tr></thead>
+      <tbody>${txRows || '<tr><td colspan="5" class="empty">لسه مفيش حركات مسجّلة.</td></tr>'}</tbody>
+    </table></div>`;
+  })()}`;
 }
 
 /* شاشة العميل: تسجيل أوردر جديد */
@@ -1415,16 +1443,24 @@ function waLink(phone, text){
   return `https://wa.me/${p}?text=${encodeURIComponent(text)}`;
 }
 
+const WA_TEMPLATE_LABEL = { confirm:'رسالة تأكيد الطلب', shipped:'رسالة تأكيد الشحن', review:'رسالة طلب تقييم', other:'رسالة واتساب' };
+
+function historyRowLabel(h){
+  if(h.type==='contact') return 'محاولة تواصل مع العميل';
+  if(h.type==='whatsapp') return 'واتساب: ' + (WA_TEMPLATE_LABEL[h.template]||'رسالة');
+  return ORDER_STATE[h.state] ? ORDER_STATE[h.state].ar : (STATE_TEXT[h.state]||h.state||'—');
+}
+
 function showHistoryModal(order){
   const rows = (order.history||[]).slice().reverse().map(h=>`
-    <tr><td>${ORDER_STATE[h.state]?ORDER_STATE[h.state].ar:(STATE_TEXT[h.state]||h.state)}</td>
+    <tr><td>${historyRowLabel(h)}</td>
       <td class="mono" style="font-size:12px">${new Date(h.at).toLocaleString('ar-EG')}</td></tr>`).join('');
   const wrap = document.createElement('div');
   wrap.style.cssText = 'position:fixed;inset:0;background:rgba(18,33,43,.55);z-index:200;display:grid;place-items:center;padding:18px';
   wrap.innerHTML = `
     <div class="card" style="max-width:420px;width:100%;box-shadow:var(--shadow)">
-      <h3 style="font-size:16px;margin-bottom:10px">تاريخ حالات الأوردر — ${esc(order.name||'')}</h3>
-      <div class="table-wrap"><table><thead><tr><th>الحالة</th><th>الوقت</th></tr></thead>
+      <h3 style="font-size:16px;margin-bottom:10px">تاريخ الأوردر — ${esc(order.name||'')}</h3>
+      <div class="table-wrap"><table><thead><tr><th>الحدث</th><th>الوقت</th></tr></thead>
         <tbody>${rows || '<tr><td colspan="2" class="empty">مفيش سجل لسه</td></tr>'}</tbody></table></div>
       <div class="form-actions" style="margin-top:14px"><button class="btn sm line" id="hist_close">قفل</button></div>
     </div>`;
@@ -1454,7 +1490,7 @@ async function showContactModal(order){
     wrap.querySelector('#ct_add').onclick = async ()=>{
       try{
         const res = await api('/api/orders/'+encodeURIComponent(order.id)+'/contact', {method:'POST'});
-        order.contactLog = res.log; paint2(); toast('اتسجّلت المحاولة');
+        order.contactLog = res.log; order.history = res.history; paint2(); toast('اتسجّلت المحاولة');
       }catch(e){ toast(e.message); }
     };
   };
@@ -1468,6 +1504,14 @@ function showWhatsAppModal(order, clientName){
     confirm: `مرحباً ${order.name||''}، إحنا من ${clientName||'المتجر'}. حابين نأكد طلبك: ${order.product||''} بمبلغ ${money(order.total)} جنيه. تقدر تأكدلنا الطلب؟`,
     shipped: `مرحباً ${order.name||''}، طلبك اتشحن${order.awb?(' ورقم البوليصة '+order.awb):''}. هيوصلك قريب إن شاء الله.`,
     review: `مرحباً ${order.name||''}، نتمنى إن الطلب وصلك بالسلامة. نسعد جداً لو قيّمت تجربتك معانا 🙏`
+  };
+  const send = async (key)=>{
+    window.open(waLink(order.phone, templates[key]), '_blank');
+    try{
+      const res = await api('/api/orders/'+encodeURIComponent(order.id)+'/whatsapp-log',
+        {method:'POST', body:JSON.stringify({template:key})});
+      order.history = res.history;
+    }catch(e){ /* الرسالة اتبعتت برضه حتى لو التسجيل فشل */ }
   };
   const wrap = document.createElement('div');
   wrap.style.cssText = 'position:fixed;inset:0;background:rgba(18,33,43,.55);z-index:200;display:grid;place-items:center;padding:18px';
@@ -1483,9 +1527,9 @@ function showWhatsAppModal(order, clientName){
     </div>`;
   document.body.appendChild(wrap);
   const close = ()=> document.body.removeChild(wrap);
-  wrap.querySelector('#wa_confirm').onclick = ()=>{ window.open(waLink(order.phone, templates.confirm), '_blank'); close(); };
-  wrap.querySelector('#wa_shipped').onclick = ()=>{ window.open(waLink(order.phone, templates.shipped), '_blank'); close(); };
-  wrap.querySelector('#wa_review').onclick  = ()=>{ window.open(waLink(order.phone, templates.review),  '_blank'); close(); };
+  wrap.querySelector('#wa_confirm').onclick = ()=>{ send('confirm'); close(); };
+  wrap.querySelector('#wa_shipped').onclick = ()=>{ send('shipped'); close(); };
+  wrap.querySelector('#wa_review').onclick  = ()=>{ send('review');  close(); };
   wrap.querySelector('#wa_close').onclick = close;
   wrap.onclick = ev => { if(ev.target === wrap) close(); };
 }
@@ -2598,6 +2642,7 @@ function bindClient(c){
       try{
         financeData = await api('/api/finance');
         depositsList = await api('/api/deposits');
+        clientTxList = await api('/api/transactions');
       }catch(e){ toast(e.message); }
     }
     paint();
