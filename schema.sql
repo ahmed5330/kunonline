@@ -4,6 +4,7 @@
 CREATE TABLE IF NOT EXISTS users (
   id            TEXT PRIMARY KEY,
   email         TEXT NOT NULL UNIQUE,   -- حروف صغيرة دايماً
+  name          TEXT,                   -- اسم صاحب الحساب المعروض
   password      TEXT NOT NULL,          -- pbkdf2$تكرارات$ملح$بصمة
   role          TEXT NOT NULL,          -- admin أو client
   client_id     TEXT,                   -- للعميل: أي عميل في النظام

@@ -5,3 +5,5 @@
 SESSION_SECRET=غيّر-ده-لنص-عشوائي-طويل
 EASYORDERS_WEBHOOK_SECRET=
 TRACKING_API_KEY=
+INGEST_TOKEN=غيّر-ده-لنص-عشوائي-طويل-تاني
+TOKEN_ENC_KEY=غيّر-ده-لنص-عشوائي-٣٢-حرف-على-الأقل
