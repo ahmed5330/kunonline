@@ -101,6 +101,35 @@ a{color:inherit}
 }
 .theme-switch button[aria-pressed="true"]{background:rgba(255,255,255,.18);opacity:1}
 .theme-switch button:hover{opacity:.9}
+#chatFab{
+  position:fixed;bottom:22px;inset-inline-start:22px;z-index:150;
+  width:52px;height:52px;border-radius:50%;background:var(--chrome-bg);color:var(--chrome-fg);
+  font-size:22px;display:grid;place-items:center;box-shadow:var(--shadow);border:none;cursor:pointer;
+  transition:transform .15s
+}
+#chatFab:hover{transform:scale(1.06)}
+.chat-badge{
+  position:absolute;top:-4px;inset-inline-end:-4px;background:var(--brick);color:#fff;
+  font-size:11px;font-weight:700;min-width:20px;height:20px;border-radius:10px;
+  display:grid;place-items:center;padding:0 5px;border:2px solid var(--ground)
+}
+.chat-panel{
+  position:fixed;bottom:0;inset-inline-start:0;top:0;z-index:160;width:min(380px,92vw);
+  background:var(--surface);box-shadow:var(--shadow);border-inline-end:1px solid var(--line);
+  display:flex;flex-direction:column
+}
+.chat-panel-head{display:flex;align-items:center;gap:10px;padding:12px;border-bottom:1px solid var(--line)}
+.chat-panel-body{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column}
+.chat-msg{max-width:85%;padding:8px 12px;border-radius:12px;margin-bottom:8px;font-size:13.5px;background:var(--surface-2)}
+.chat-msg.mine{align-self:flex-end;background:var(--pine-soft)}
+.chat-msg .who{font-size:11px;color:var(--ink-3);margin-bottom:2px}
+.chat-msg .when{font-size:10.5px;color:var(--ink-3);margin-top:3px}
+.chat-input-row{display:flex;gap:8px;padding:10px;border-top:1px solid var(--line)}
+.chat-input-row input{flex:1;padding:9px 12px;border:1px solid var(--line);border-radius:10px}
+.task-card{border:1px solid var(--line);border-radius:12px;padding:10px;margin-bottom:8px}
+.task-card.done{opacity:.55}
+.task-card .t-title{font-weight:700;font-size:13.5px}
+.task-card .t-meta{font-size:11.5px;color:var(--ink-3);margin-top:4px}
 
 /* ---------- login ---------- */
 .login-wrap{min-height:100dvh;display:grid;place-items:center;padding:24px;background:
@@ -351,6 +380,20 @@ td.num{font-family:var(--mono);font-variant-numeric:tabular-nums;direction:ltr;t
   <div class="shell" id="viewRoot"></div>
 </div>
 
+<button id="chatFab" class="hidden" title="الشات الداخلي">
+  💬<span id="chatBadge" class="chat-badge hidden">0</span>
+</button>
+<div id="chatPanel" class="chat-panel hidden">
+  <div class="chat-panel-head">
+    <div class="seg" id="chatPanelTabs">
+      <button data-cpt="messages" aria-pressed="true">الشات</button>
+      <button data-cpt="tasks" aria-pressed="false">التاسكات</button>
+    </div>
+    <button class="icon-btn" id="chatPanelClose">✕</button>
+  </div>
+  <div id="chatPanelBody" class="chat-panel-body"></div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -377,6 +420,7 @@ const store = {
 /* ---------- 1ب. الاتصال بالسيرفر ---------- */
 let ONLINE = false;
 let MYPERMS = ['orders','entries','finance','clients','users','settings'];
+let MYUID = null;
 const may = p => MYPERMS.includes(p);
 async function api(path, opts){
   const r = await fetch(path, Object.assign({
@@ -399,7 +443,7 @@ function normalizeDB(){
 
 /* ---------- 2. أدوات ---------- */
 const uid = () => Math.random().toString(36).slice(2,9);
-const iso = d => d.toISOString().slice(0,10);
+const iso = d => { const tz = new Date(d.getTime() - d.getTimezoneOffset()*60000); return tz.toISOString().slice(0,10); };
 const today = () => iso(new Date());
 const addDays = (dstr,n) => { const d=new Date(dstr+'T00:00:00'); d.setDate(d.getDate()+n); return iso(d); };
 const num = (v,d=0) => { const n=Number(v); return Number.isFinite(n)? n.toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d}) : '—'; };
@@ -671,6 +715,10 @@ let depositsList = [];
 let clientTxList = [];
 let perfData = null;
 let perfDate = null;
+let chatPanelTab = 'messages';
+let chatMsgList = [];
+let taskList = [];
+let teamUsers = [];
 
 async function loadPerf(clientIdOverride){
   if(!ONLINE) return;
@@ -809,10 +857,10 @@ function renderClient(client){
     ${stateRow(mo)}
     ${expenseRow(mo)}
     <div class="grid g3" style="margin-top:8px">
-      <div class="card kpi"><div class="k-label">متوسط نسبة التأكيدات — الشهر اللي فات</div>
-        <div class="k-val">${perfData.lastMonthConfirmationRatePct}<span class="cur">%</span></div></div>
-      <div class="card kpi"><div class="k-label">متوسط نسبة التوصيل — الشهر اللي فات</div>
-        <div class="k-val">${perfData.lastMonthDeliveryRatePct}<span class="cur">%</span></div></div>
+      <div class="card kpi"><div class="k-label">متوسط نسبة التأكيدات — آخر ٣٠ يوم</div>
+        <div class="k-val">${perfData.last30ConfirmationRatePct}<span class="cur">%</span></div></div>
+      <div class="card kpi"><div class="k-label">متوسط نسبة التوصيل — آخر ٣٠ يوم</div>
+        <div class="k-val">${perfData.last30DeliveryRatePct}<span class="cur">%</span></div></div>
     </div>
 
     <div class="section-title" style="margin-top:14px">الأرباح والإيرادات المتوقعة</div>
@@ -1622,6 +1670,104 @@ function showWhatsAppModal(order, clientName){
   wrap.onclick = ev => { if(ev.target === wrap) close(); };
 }
 
+/* ---------- الشات الداخلي للفريق + التاسكات ---------- */
+function renderChatPanel(){
+  if(chatPanelTab==='tasks'){
+    const nameOf = uid => { const u = teamUsers.find(x=>x.id===uid); return u ? (u.name||u.email) : '—'; };
+    const rows = taskList.map(t=>`
+      <div class="task-card ${t.status==='done'?'done':''}">
+        <div class="t-title">${esc(t.title)}</div>
+        ${t.description ? `<div class="hint" style="font-size:12px;margin-top:3px">${esc(t.description)}</div>` : ''}
+        <div class="t-meta">موكّل لـ ${esc(nameOf(t.assigned_to))} · من ${esc(nameOf(t.assigned_by))}</div>
+        <div class="form-actions" style="margin-top:8px">
+          <button class="btn sm ${t.status==='done'?'line':''}" data-tasktoggle="${t.id}" data-next="${t.status==='done'?'open':'done'}">
+            ${t.status==='done'?'رجّعها مفتوحة':'خلّصت'}</button>
+        </div>
+      </div>`).join('');
+    return `
+    <div class="card" style="margin-bottom:10px">
+      <div class="form-grid">
+        <div class="field" style="grid-column:1/-1"><label>عنوان التاسك</label><input id="newTaskTitle" placeholder="مثال: راجع أوردرات وفاق"></div>
+        <div class="field"><label>موكّل لـ</label><select id="newTaskAssignee">
+          ${teamUsers.map(u=>`<option value="${u.id}" ${u.id===MYUID?'selected':''}>${esc(u.name||u.email)}</option>`).join('')}
+        </select></div>
+        <div class="field"><label>تفاصيل (اختياري)</label><input id="newTaskDesc"></div>
+      </div>
+      <div class="form-actions"><button class="btn sm" id="addTaskBtn">إضافة تاسك</button></div>
+    </div>
+    ${rows || '<p class="hint">مفيش تاسكات لسه.</p>'}`;
+  }
+  const rows = chatMsgList.map(m=>`
+    <div class="chat-msg ${m.author_id===MYUID?'mine':''}">
+      <div class="who">${esc(m.author_name||'')}</div>
+      <div>${esc(m.body)}</div>
+      <div class="when">${new Date(m.created_at).toLocaleString('ar-EG')}</div>
+    </div>`).join('');
+  return `
+    <div style="flex:1;display:flex;flex-direction:column">${rows || '<p class="hint">مفيش رسايل لسه — ابدأ الكلام مع فريقك.</p>'}</div>
+    <div class="chat-input-row" style="margin:-12px -12px 0"><input id="chatInput" placeholder="اكتب رسالة..."><button class="btn sm" id="chatSendBtn">بعت</button></div>`;
+}
+
+async function openChatPanel(){
+  document.getElementById('chatPanel').classList.remove('hidden');
+  try{
+    if(!teamUsers.length) teamUsers = await api('/api/users');
+    chatMsgList = await api('/api/chat/messages');
+    taskList = await api('/api/tasks');
+    await api('/api/chat/seen',{method:'POST'});
+    await refreshChatBadge();
+  }catch(e){}
+  bindAndRenderChatPanel();
+}
+function closeChatPanel(){ document.getElementById('chatPanel').classList.add('hidden'); }
+function bindAndRenderChatPanel(){
+  document.getElementById('chatPanelBody').innerHTML = renderChatPanel();
+  document.querySelectorAll('#chatPanelTabs button').forEach(b=> b.setAttribute('aria-pressed', b.dataset.cpt===chatPanelTab?'true':'false'));
+  const sendBtn = document.getElementById('chatSendBtn');
+  if(sendBtn) sendBtn.onclick = async ()=>{
+    const input = document.getElementById('chatInput');
+    const text = input.value.trim();
+    if(!text) return;
+    try{
+      await api('/api/chat/messages', {method:'POST', body:JSON.stringify({text})});
+      input.value='';
+      chatMsgList = await api('/api/chat/messages');
+      bindAndRenderChatPanel();
+    }catch(e){ toast(e.message); }
+  };
+  const chatInput = document.getElementById('chatInput');
+  if(chatInput) chatInput.onkeydown = ev=>{ if(ev.key==='Enter') sendBtn.click(); };
+  const addTaskBtn = document.getElementById('addTaskBtn');
+  if(addTaskBtn) addTaskBtn.onclick = async ()=>{
+    const title = document.getElementById('newTaskTitle').value.trim();
+    if(!title){ toast('اكتب عنوان التاسك'); return; }
+    const body = { title, assignedTo: document.getElementById('newTaskAssignee').value,
+      description: document.getElementById('newTaskDesc').value.trim() };
+    try{
+      await api('/api/tasks', {method:'POST', body:JSON.stringify(body)});
+      taskList = await api('/api/tasks');
+      bindAndRenderChatPanel(); toast('اتضاف التاسك');
+    }catch(e){ toast(e.message); }
+  };
+  document.querySelectorAll('[data-tasktoggle]').forEach(b=> b.onclick = async ()=>{
+    try{
+      await api('/api/tasks/'+b.dataset.tasktoggle, {method:'PATCH', body:JSON.stringify({status:b.dataset.next})});
+      taskList = await api('/api/tasks');
+      bindAndRenderChatPanel();
+    }catch(e){ toast(e.message); }
+  });
+}
+
+async function refreshChatBadge(){
+  if(!ONLINE || !session || session.role!=='admin') return;
+  try{
+    const u = await api('/api/chat/unread');
+    const n = (u.unreadMessages||0) + (u.openTasks||0);
+    const badge = document.getElementById('chatBadge');
+    if(badge){ badge.textContent = n>99?'99+':n; badge.classList.toggle('hidden', n===0); }
+  }catch(e){}
+}
+
 function bindPasswordCard(){
   const b = document.getElementById('changePassBtn');
   if(!b) return;
@@ -1747,7 +1893,6 @@ function adminOrders(){
         <button class="icon-btn" data-hist="${o.id}" title="تاريخ الحالات">تاريخ</button>
         <button class="icon-btn" data-contact="${o.id}" title="محاولات التواصل">تواصل</button>
         <button class="icon-btn" data-wa="${o.id}" title="ابعت واتساب">واتساب</button>
-        <button class="icon-btn" data-delorder="${o.id}">حذف</button>
       </div></td>
     </tr>`;}).join('');
   return `
@@ -2606,6 +2751,11 @@ async function boot(){
     if(ONLINE){ try{ await api('/api/logout',{method:'POST'}); }catch(e){} }
     session=null; show('login');
   };
+  document.getElementById('chatFab').onclick = openChatPanel;
+  document.getElementById('chatPanelClose').onclick = closeChatPanel;
+  document.querySelectorAll('#chatPanelTabs button').forEach(b=> b.onclick = ()=>{
+    chatPanelTab = b.dataset.cpt; bindAndRenderChatPanel();
+  });
   setInterval(async ()=>{
     if(!ONLINE || !session || session.role!=='client' || clientTab!=='dash') return;
     try{
@@ -2613,13 +2763,14 @@ async function boot(){
       paint(true);
     }catch(e){}
   }, 30000);
+  setInterval(refreshChatBadge, 25000);
   try{
     const me = await api('/api/me');
     ONLINE = true;
     if(me && me.needsSetup){ show('setup'); return; }
     if(me && me.role){
       session = me.role==='client' ? {role:'client', clientId:me.clientId} : {role:'admin', staffRole:me.role, name:me.name};
-      MYPERMS = me.perms || [];
+      MYPERMS = me.perms || []; MYUID = me.uid || null;
       DB = await api('/api/state'); normalizeDB(); show('app'); return;
     }
     show('login');
@@ -2656,7 +2807,7 @@ async function doLogin(){
     try{
       const res = await api('/api/login', {method:'POST', body:JSON.stringify({email, password})});
       const meNow = await api('/api/me');
-      MYPERMS = meNow.perms || [];
+      MYPERMS = meNow.perms || []; MYUID = meNow.uid || null;
       session = res.role==='client' ? {role:'client', clientId:res.clientId}
                                     : {role:'admin', staffRole:res.role, name:meNow.name};
       DB = await api('/api/state'); normalizeDB();
@@ -2703,17 +2854,21 @@ function show(view){
 function paint(keepScroll){
   const y = window.scrollY;
   const root = document.getElementById('viewRoot');
+  const fab = document.getElementById('chatFab');
   if(session.role==='admin'){
     document.getElementById('roleLabel').textContent='لوحة الإدارة';
     document.getElementById('whoName').textContent=DB.agency.adminEmail;
     root.innerHTML = renderAdmin();
     bindAdmin();
+    fab.classList.remove('hidden');
+    if(fab.dataset.bound!=='1'){ fab.dataset.bound='1'; refreshChatBadge(); }
   } else {
     const c = DB.clients.find(x=>x.id===session.clientId);
     document.getElementById('roleLabel').textContent='لوحة العميل';
     document.getElementById('whoName').textContent=c.name;
     root.innerHTML = renderClient(c);
     bindClient(c);
+    fab.classList.add('hidden');
   }
   if(keepScroll) window.scrollTo({top:y,behavior:'instant'});
   else window.scrollTo({top:0,behavior:'instant'});
@@ -3066,12 +3221,6 @@ function bindAdmin(){
       if(ONLINE) await api('/api/orders/'+encodeURIComponent(o.id), {method:'PATCH', body:JSON.stringify({awb:o.awb, state:o.state})});
       else await persist();
       paint(true); toast('اتحفظ رقم البوليصة');
-    });
-    document.querySelectorAll('[data-delorder]').forEach(b=> b.onclick = async ()=>{
-      if(ONLINE) await api('/api/orders/'+encodeURIComponent(b.dataset.delorder), {method:'DELETE'});
-      DB.orders = DB.orders.filter(o=>o.id!==b.dataset.delorder);
-      if(!ONLINE) await persist();
-      paint(true); toast('اتحذف');
     });
     document.querySelectorAll('[data-hist]').forEach(b=> b.onclick = ()=>{
       const o = DB.orders.find(x=>x.id===b.dataset.hist);
