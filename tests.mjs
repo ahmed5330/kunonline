@@ -1,7 +1,7 @@
 /* اختبارات نظام كن أونلاين — الدخول، العزل، الويبهوك، التتبع */
 import worker from './src/index.js';
 
-let stateRow=null; const orders=new Map(), users=new Map(), attempts=new Map();
+let stateRow=null; const orders=new Map(), users=new Map(), attempts=new Map(), products=new Map(), transactions=new Map();
 const stmt=(sql)=>({
   args:[], bind(...a){this.args=a;return this;},
   async first(){
@@ -40,15 +40,33 @@ const stmt=(sql)=>({
       if(o){o.state=this.args[0];o.awb=this.args[1];o.checkpoint=this.args[2];
         o.shipping_cost=this.args[3];o.other_cost=this.args[4];o.signed_at=this.args[5];
         o.collected_at=this.args[6];o.history=this.args[7];}}
-    else if(sql.startsWith('UPDATE orders SET contact_log')){const o=orders.get(this.args[1]);
-      if(o) o.contact_log=this.args[0];}
+    else if(sql.startsWith('UPDATE orders SET contact_log = ?, history = ?')){const o=orders.get(this.args[2]);
+      if(o){ o.contact_log=this.args[0]; o.history=this.args[1]; }}
+    else if(sql.startsWith('UPDATE orders SET history = ?')){const o=orders.get(this.args[1]);
+      if(o) o.history=this.args[0];}
     else if(sql.includes('WHERE awb = ?')){for(const o of orders.values()) if(o.awb===this.args[2]) o.state=this.args[0];}
     else if(sql.includes('UPDATE orders SET state = ?, checkpoint = ? WHERE id')){const o=orders.get(this.args[2]);if(o)o.state=this.args[0];}
     else if(sql.includes('DELETE FROM orders')) orders.delete(this.args[0]);
+    else if(sql.includes('INSERT INTO products')){
+      const [id,client_id,name,sku,price,cost,active,created_at]=this.args;
+      products.set(id,{id,client_id,name,sku,price,cost,active,created_at});}
+    else if(sql.includes('INSERT INTO transactions')){
+      const [id,type,date,category,amount,currency,method,client_id,note,created_by,created_at]=this.args;
+      transactions.set(id,{id,type,date,category,amount,currency,method,client_id,note,created_by,created_at});}
     return {};
   },
   async all(){
     if(sql.includes('FROM users')) return {results:[...users.values()]};
+    if(sql.includes('FROM products')){
+      let plist=[...products.values()];
+      if(sql.includes('WHERE client_id = ?')) plist=plist.filter(p=>p.client_id===this.args[0]);
+      return {results:plist};
+    }
+    if(sql.includes('FROM transactions')){
+      let tlist=[...transactions.values()];
+      if(sql.includes('WHERE client_id = ?')) tlist=tlist.filter(t=>t.client_id===this.args[0]);
+      return {results:tlist};
+    }
     let list=[...orders.values()];
     if(sql.includes('WHERE client_id = ?')) list=list.filter(o=>o.client_id===this.args[0]);
     if(sql.includes('NOT IN')) list=list.filter(o=>o.awb&&!['delivered','returned','cancelled'].includes(o.state));
@@ -117,6 +135,8 @@ await call('/webhooks/easyorders',{method:'POST',headers:{secret:'eo-secret'},bo
   id:'EO-1',store_id:'store-A',created_at:'2026-08-09T10:00:00+02:00',total_cost:750,status:'pending',
   full_name:'محمود',phone:'0100',government:'أسيوط',cart_items:[{quantity:1,product:{name:'ترينج'}}]})});
 check('الويبهوك سجّل الأوردر لصاحب المتجر', orders.get('EO-1')?.client_id==='c1', '→ '+orders.get('EO-1')?.gov);
+check('منتج إيزي أوردرز اتسجّل تلقائي في كتالوج المتجر',
+  [...products.values()].some(p=>p.client_id==='c1' && p.name==='ترينج'));
 const [,ord]=await j(await call('/api/orders',{method:'POST',
   body:JSON.stringify({clientId:'c1',name:'سارة',phone:'0111',total:300,date:'2026-08-09'})},clientCookie));
 check('أوردر العميل بيتحوّل لحسابه هو', ord.order.clientId==='c2','→ '+ord.order.clientId);
@@ -211,6 +231,15 @@ check('العميل التاني ممنوع يشوف إيداعات غيره',
 r=await call('/api/deposits/'+dep1.entry.id,{method:'DELETE'},clientCookie);
 check('العميل يقدر يمسح إيداعه', r.status===200);
 
+r=await call('/api/transactions',{method:'POST',body:JSON.stringify({
+  type:'income',category:'عمولة لكل أوردر',amount:200,clientId:'c2',date:'2026-08-16'})},adminCookie);
+check('الإدارة تقدر تسجّل حركة مالية لعميل', r.status===200);
+r=await call('/api/transactions',{},clientCookie);
+let [,clientTx]=await j(r);
+check('العميل شايف حركاته المالية هو بس', r.status===200 && clientTx.some(t=>t.category==='عمولة لكل أوردر') && clientTx.every(t=>t.clientId==='c2'));
+check('العميل ممنوع يسجّل حركة مالية بنفسه',
+  (await call('/api/transactions',{method:'POST',body:JSON.stringify({type:'income',category:'x',amount:100})},clientCookie)).status===403);
+
 head('كود الأوردر + الهيستوري + محاولات التواصل');
 let [,newOrder]=await j(await mkOrder(200,50));
 check('كود الأوردر بصيغة أول ٣ حروف + رقم ≥ 200', /^.{3}\d+$/u.test(newOrder.order.id) && +newOrder.order.id.match(/\d+$/)[0]>=200);
@@ -227,6 +256,13 @@ check('محاولة تواصل تالتة في نفس اليوم تنجح', r.st
 r=await call('/api/orders/'+newOrder.order.id+'/contact',{method:'POST'},adminCookie);
 let [,contactErr]=await j(r);
 check('محاولة رابعة في نفس اليوم مرفوضة برسالة واضحة', r.status===429 && /تجاوزت/.test(contactErr.error));
+const storedHist2 = JSON.parse(orders.get(newOrder.order.id).history);
+check('محاولات التواصل الناجحة بتتسجّل في التاريخ', storedHist2.filter(h=>h.type==='contact').length===3);
+
+r=await call('/api/orders/'+newOrder.order.id+'/whatsapp-log',{method:'POST',body:JSON.stringify({template:'confirm'})},adminCookie);
+let [,waLogRes]=await j(r);
+check('إرسال واتساب بيتسجّل في التاريخ', r.status===200 && waLogRes.history.some(h=>h.type==='whatsapp'&&h.template==='confirm'));
+
 
 head('كلمات المرور والقفل');
 check('تغيير كلمة المرور بالقديمة الغلط مرفوض',
