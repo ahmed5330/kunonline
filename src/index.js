@@ -170,6 +170,94 @@ async function readSession(request, secret) {
   } catch { return null; }
 }
 
+/* ---------- تشفير توكنز التكامل (Meta / EasyOrders / كلمة سر الإيميل) ----------
+   AES-GCM بمفتاح مشتق من TOKEN_ENC_KEY. القيم دي بتتخزّن مشفّرة في state
+   وبترجع نص عادي بس جوه الـ Worker وقت الاستخدام — أبداً للمتصفح */
+async function encKeyFrom(env) {
+  if (!env.TOKEN_ENC_KEY) return null;
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(env.TOKEN_ENC_KEY));
+  return crypto.subtle.importKey('raw', digest, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
+}
+
+async function encryptSecret(plain, env) {
+  if (!plain) return plain;
+  const key = await encKeyFrom(env);
+  if (!key) return plain; /* المفتاح مش متظبط لسه — نسيبها زي ما هي بدل ما نفشل الحفظ */
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const buf = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(plain));
+  return 'enc$' + toB64(iv) + '$' + toB64(new Uint8Array(buf));
+}
+
+async function decryptSecret(value, env) {
+  if (!value || !String(value).startsWith('enc$')) return value; /* مش مشفّرة (أو المفتاح ناقص) */
+  const parts = String(value).split('$');
+  if (parts.length !== 3) return null;
+  const key = await encKeyFrom(env);
+  if (!key) return null;
+  try {
+    const iv = fromB64(parts[1]);
+    const buf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, fromB64(parts[2]));
+    return new TextDecoder().decode(buf);
+  } catch { return null; }
+}
+
+/** آخر ٤ حروف بس — كفاية للعميل يتأكد إنه سجّل التوكن الصح من غير ما نعرضه كامل */
+const maskTail = s => s ? '••••' + String(s).slice(-4) : '';
+
+const SECRET_FIELDS = ['metaToken', 'easyOrdersToken', 'emailPassword'];
+
+/** لأي حالة عندها clients: بتشفّر كل حقل سري قبل التخزين */
+async function encryptClientSecrets(state, env) {
+  for (const c of (state.clients || [])) {
+    for (const f of SECRET_FIELDS) {
+      if (c[f] && !String(c[f]).startsWith('enc$')) c[f] = await encryptSecret(c[f], env);
+    }
+  }
+  return state;
+}
+
+/** بيرجّع الحقول السرية لنص عادي — يُستخدم جوه الـ Worker بس بعد القراءة من القاعدة */
+async function decryptClientSecrets(state, env) {
+  for (const c of (state.clients || [])) {
+    for (const f of SECRET_FIELDS) {
+      if (c[f]) c[f] = await decryptSecret(c[f], env);
+    }
+  }
+  return state;
+}
+
+/** نسخة آمنة للمتصفح — الحقول السرية بتتشال وبيتحط مكانها Set:true/false + آخر ٤ حروف */
+function maskClientSecrets(state) {
+  const clone = JSON.parse(JSON.stringify(state));
+  (clone.clients || []).forEach(c => {
+    for (const f of SECRET_FIELDS) {
+      const had = !!c[f];
+      const tail = had ? maskTail(c[f]) : '';
+      delete c[f];
+      c[f + 'Set'] = had;
+      if (had) c[f + 'Tail'] = tail;
+    }
+  });
+  return clone;
+}
+
+/** لو المتصفح ما بعتش قيمة جديدة لحقل سري (سايبه فاضي)، نرجّع القديم بدل ما نمسحه */
+function preserveUntouchedSecrets(newState, oldState) {
+  const oldById = new Map((oldState.clients || []).map(c => [c.id, c]));
+  (newState.clients || []).forEach(c => {
+    const old = oldById.get(c.id);
+    if (!old) return;
+    for (const f of SECRET_FIELDS) {
+      if (c[f] === undefined || c[f] === null) {
+        if (old[f] !== undefined) c[f] = old[f];
+      } else if (c[f] === '') {
+        delete c[f]; /* فاضي صريح = امسح التوكن */
+      }
+    }
+  });
+  return newState;
+}
+
 /* ---------- قاعدة البيانات ---------- */
 const EMPTY_STATE = agencyEmail => ({
   agency: { name: 'كن أونلاين', adminEmail: agencyEmail },
@@ -178,17 +266,18 @@ const EMPTY_STATE = agencyEmail => ({
 
 async function loadState(env) {
   const row = await env.DB.prepare('SELECT json FROM state WHERE id = 1').first();
-  if (row && row.json) return JSON.parse(row.json);
+  if (row && row.json) return decryptClientSecrets(JSON.parse(row.json), env);
   const fresh = EMPTY_STATE('');
   await saveState(env, fresh);
   return fresh;
 }
 
 async function saveState(env, state) {
+  const toStore = await encryptClientSecrets(JSON.parse(JSON.stringify(state)), env);
   await env.DB.prepare(
     `INSERT INTO state (id, json, updated_at) VALUES (1, ?, ?)
      ON CONFLICT(id) DO UPDATE SET json = excluded.json, updated_at = excluded.updated_at`
-  ).bind(JSON.stringify(state), new Date().toISOString()).run();
+  ).bind(JSON.stringify(toStore), new Date().toISOString()).run();
 }
 
 const ORDER_COLS = 'id, client_id, ref, date, name, phone, gov, address, product, product_id, unit_price, qty, total, product_cost, shipping_cost, other_cost, source, note, awb, state, checkpoint, signed_at, collected_at, created_at';
@@ -395,12 +484,20 @@ async function syncShipments(env) {
 function scopeForClient(state, orders, clientId) {
   const client = state.clients.find(c => c.id === clientId);
   if (!client) return null;
-  const safe = { ...client };
-  delete safe.code;
+  const masked = maskClientSecrets({ clients: [client] }).clients[0];
+  delete masked.code;
+
+  const rate = Number(client.taxRate) || 14;
+  const entries = state.entries
+    .filter(e => e.clientId === clientId)
+    .map(e => client.taxEnabled
+      ? { ...e, adSpend: Math.round(e.adSpend * (1 + rate / 100) * 100) / 100, adSpendNet: e.adSpend, taxApplied: true, taxRate: rate }
+      : { ...e, taxApplied: false });
+
   return {
     agency: { name: state.agency.name },
-    clients: [safe],
-    entries: state.entries.filter(e => e.clientId === clientId),
+    clients: [masked],
+    entries,
     funding: state.funding.filter(f => f.clientId === clientId),
     orders: orders.filter(o => o.clientId === clientId)
   };
@@ -421,7 +518,11 @@ async function handleApi(request, env, url, path) {
     const state = await loadState(env);
     return json((state.clients || [])
       .filter(c => c.status === 'active' && c.adAccount)
-      .map(c => ({ clientId: c.id, name: c.name, adAccount: c.adAccount, currency: c.currency })));
+      .map(c => ({
+        clientId: c.id, name: c.name, adAccount: c.adAccount, currency: c.currency,
+        /* لو العميل مسطّب توكن Meta خاص بيه، الأجنت يستخدمه بدل التوكن المركزي */
+        metaToken: c.metaToken || null
+      })));
   }
 
   /* قايمة خفيفة بكل المتاجر النشطة — للإيجنتات الخارجية.
@@ -552,6 +653,18 @@ async function handleApi(request, env, url, path) {
     await env.DB.prepare(`UPDATE orders SET ${sets} WHERE id = ?`)
       .bind(...Object.values(fields), order.id).run();
     return json({ ok: true, id: order.id });
+  }
+
+  if (path === '/api/wa-groups' && request.method === 'GET' && isIngest) {
+    /* للأجنت (OpenClaw) — خريطة Group ID → clientId لكل الجروبات المربوطة والمفعّلة.
+       ده البديل الحي لملف wa-groups.json الثابت */
+    const state = await loadState(env);
+    const groups = {};
+    (state.clients || []).forEach(c => {
+      if (c.status !== 'active') return;
+      (c.whatsappGroups || []).forEach(g => { if (g.groupId) groups[g.groupId] = c.id; });
+    });
+    return json({ groups });
   }
 
   if (path === '/api/ad-spend' && request.method === 'POST') {
@@ -705,7 +818,8 @@ async function handleApi(request, env, url, path) {
   if (path === '/api/state' && request.method === 'GET') {
     const state = await loadState(env);
     if (isStaff(user)) {
-      return json({ ...state, orders: await listOrders(env), products: await listProducts(env), roles: ROLES });
+      const masked = maskClientSecrets(state);
+      return json({ ...masked, orders: await listOrders(env), products: await listProducts(env), roles: ROLES });
     }
     const scoped = scopeForClient(state, await listOrders(env, me.clientId), me.clientId);
     if (scoped) scoped.products = await listProducts(env, me.clientId);
@@ -719,6 +833,8 @@ async function handleApi(request, env, url, path) {
     (body.clients || []).forEach(c => { delete c.password; delete c.code; });
 
     if (can(user, 'settings')) {           /* المدير بيحفظ كل حاجة */
+      const current = await loadState(env);
+      preserveUntouchedSecrets(body, current);
       await saveState(env, body);
       return json({ ok: true });
     }
@@ -912,6 +1028,144 @@ async function handleApi(request, env, url, path) {
     if (user.role === 'client' && row.client_id !== me.clientId) return json({ error: 'مش مسموح' }, 403);
     await env.DB.prepare('DELETE FROM products WHERE id = ?').bind(pid).run();
     return json({ ok: true });
+  }
+
+  /* ---------- التوكن والـ API (Meta + إيزي أوردرز) + ضريبة الـ 14% + ربط الإيميل ----------
+     العميل بيدير بياناته هو بس. الإدارة بتدير أي عميل بصلاحية 'clients' أو 'settings'.
+     التوكنز بترجع Set:true/false + آخر ٤ حروف بس — أبداً القيمة الكاملة */
+  function integrationsView(c) {
+    const masked = maskClientSecrets({ clients: [c] }).clients[0];
+    return {
+      clientId: c.id,
+      metaAdAccountId: c.adAccount || '',
+      metaTokenSet: masked.metaTokenSet, metaTokenTail: masked.metaTokenTail || '',
+      taxEnabled: !!c.taxEnabled, taxRate: Number(c.taxRate) || 14,
+      easyOrdersStoreId: c.storeId || '',
+      easyOrdersTokenSet: masked.easyOrdersTokenSet, easyOrdersTokenTail: masked.easyOrdersTokenTail || '',
+      email: {
+        enabled: !!c.emailEnabled, host: c.emailHost || '', port: c.emailPort || '',
+        secure: c.emailSecure !== false, user: c.emailUser || '',
+        passwordSet: masked.emailPasswordSet, passwordTail: masked.emailPasswordTail || ''
+      }
+    };
+  }
+
+  if (path === '/api/integrations') {
+    const staffAccess = isStaff(user) && (can(user, 'clients') || can(user, 'settings'));
+    const qcid = url.searchParams.get('clientId');
+    if (user.role === 'client' && qcid && qcid !== me.clientId) return json({ error: 'مش مسموح' }, 403);
+    const targetId = user.role === 'client' ? me.clientId : qcid;
+    if (user.role !== 'client' && !staffAccess) return json({ error: 'مش مسموح' }, 403);
+    if (!targetId) return json({ error: 'محتاجين clientId' }, 400);
+
+    const state = await loadState(env);
+    const client = state.clients.find(c => c.id === targetId);
+    if (!client) return json({ error: 'العميل مش موجود' }, 404);
+
+    if (request.method === 'GET') return json(integrationsView(client));
+
+    if (request.method === 'PUT') {
+      const b = await request.json().catch(() => ({}));
+      if (b.metaAdAccountId !== undefined) client.adAccount = String(b.metaAdAccountId).trim();
+      if (b.metaToken !== undefined) {
+        if (String(b.metaToken).trim() === '') delete client.metaToken;
+        else client.metaToken = String(b.metaToken).trim();
+      }
+      if (b.easyOrdersStoreId !== undefined) client.storeId = String(b.easyOrdersStoreId).trim();
+      if (b.easyOrdersToken !== undefined) {
+        if (String(b.easyOrdersToken).trim() === '') delete client.easyOrdersToken;
+        else client.easyOrdersToken = String(b.easyOrdersToken).trim();
+      }
+      if (b.taxEnabled !== undefined) client.taxEnabled = !!b.taxEnabled;
+      if (b.taxRate !== undefined) {
+        const r = Number(b.taxRate);
+        client.taxRate = Number.isFinite(r) ? Math.max(0, Math.min(100, r)) : 14;
+      }
+      if (b.emailEnabled !== undefined) client.emailEnabled = !!b.emailEnabled;
+      if (b.emailHost !== undefined) client.emailHost = String(b.emailHost).trim();
+      if (b.emailPort !== undefined) client.emailPort = String(b.emailPort).trim();
+      if (b.emailSecure !== undefined) client.emailSecure = !!b.emailSecure;
+      if (b.emailUser !== undefined) client.emailUser = String(b.emailUser).trim();
+      if (b.emailPassword !== undefined) {
+        if (String(b.emailPassword).trim() === '') delete client.emailPassword;
+        else client.emailPassword = String(b.emailPassword).trim();
+      }
+      await saveState(env, state);
+      return json({ ok: true, ...integrationsView(client) });
+    }
+  }
+
+  /* ---------- ربط الواتساب — جروبات إضافية تحت رقم الإيجنسي، بدون حد أقصى ----------
+     كل جروب بيتحط له label من العميل (أو الإدارة)، والإدارة/الأجنت هو اللي بيحط
+     الـ Group ID الحقيقي (لازم وصول لواتساب المتصل عشان يجيبه) */
+  const waGroupsOf = c => c.whatsappGroups || [];
+
+  if (path === '/api/wa-groups') {
+    const staffAccess = isStaff(user) && can(user, 'clients');
+    const state = await loadState(env);
+
+    if (request.method === 'GET') {
+      if (user.role === 'client') {
+        const client = state.clients.find(c => c.id === me.clientId);
+        return json(client ? waGroupsOf(client) : []);
+      }
+      if (!staffAccess) return json({ error: 'مش مسموح' }, 403);
+      const cid = url.searchParams.get('clientId');
+      if (cid) {
+        const client = state.clients.find(c => c.id === cid);
+        return json(client ? waGroupsOf(client) : []);
+      }
+      /* بدون clientId: كل الجروبات لكل العملاء — لشاشة الإدارة العامة */
+      return json(state.clients.map(c => ({ clientId: c.id, name: c.name, groups: waGroupsOf(c) })));
+    }
+
+    if (request.method === 'POST') {
+      const b = await request.json().catch(() => ({}));
+      const targetId = user.role === 'client' ? me.clientId : b.clientId;
+      if (user.role !== 'client' && !staffAccess) return json({ error: 'مش مسموح' }, 403);
+      if (!targetId) return json({ error: 'محتاجين clientId' }, 400);
+      const client = state.clients.find(c => c.id === targetId);
+      if (!client) return json({ error: 'العميل مش موجود' }, 404);
+      const label = String(b.label || '').trim();
+      if (!label) return json({ error: 'اكتب اسم/وصف الجروب' }, 400);
+      const groupId = (isStaff(user) && b.groupId) ? String(b.groupId).trim() : null;
+      const entry = {
+        id: crypto.randomUUID().slice(0, 8), label, groupId,
+        status: groupId ? 'linked' : 'pending', requestedAt: new Date().toISOString()
+      };
+      client.whatsappGroups = [...waGroupsOf(client), entry];
+      await saveState(env, state);
+      return json({ ok: true, entry });
+    }
+  }
+
+  const wgm = path.match(/^\/api\/wa-groups\/([^/]+)$/);
+  if (wgm) {
+    const gid = decodeURIComponent(wgm[1]);
+    const state = await loadState(env);
+    const client = user.role === 'client'
+      ? state.clients.find(c => c.id === me.clientId)
+      : state.clients.find(c => waGroupsOf(c).some(g => g.id === gid));
+    if (!client) return json({ error: 'مش موجود' }, 404);
+    if (user.role !== 'client' && !(isStaff(user) && can(user, 'clients'))) {
+      return json({ error: 'مش مسموح' }, 403);
+    }
+    const entry = waGroupsOf(client).find(g => g.id === gid);
+    if (!entry) return json({ error: 'الجروب مش موجود' }, 404);
+
+    if (request.method === 'PATCH') {
+      if (!isStaff(user)) return json({ error: 'الإدارة بس اللي بتحط Group ID' }, 403);
+      const b = await request.json().catch(() => ({}));
+      if (b.groupId !== undefined) { entry.groupId = String(b.groupId).trim() || null; entry.status = entry.groupId ? 'linked' : 'pending'; }
+      if (b.label !== undefined) entry.label = String(b.label).trim() || entry.label;
+      await saveState(env, state);
+      return json({ ok: true, entry });
+    }
+    if (request.method === 'DELETE') {
+      client.whatsappGroups = waGroupsOf(client).filter(g => g.id !== gid);
+      await saveState(env, state);
+      return json({ ok: true });
+    }
   }
 
   /* ---------- استيراد شيتات إيزي أوردرز و J&T ---------- */
