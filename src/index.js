@@ -281,7 +281,9 @@ async function saveState(env, state) {
   ).bind(JSON.stringify(toStore), new Date().toISOString()).run();
 }
 
-const ORDER_COLS = 'id, client_id, ref, date, name, phone, gov, address, product, product_id, unit_price, qty, total, product_cost, shipping_cost, other_cost, source, note, awb, state, checkpoint, signed_at, collected_at, created_at';
+const ORDER_COLS = 'id, client_id, ref, date, name, phone, gov, address, product, product_id, unit_price, qty, total, product_cost, shipping_cost, other_cost, source, note, awb, state, checkpoint, signed_at, collected_at, contact_log, history, created_at';
+
+const parseJsonArr = s => { try { const v = JSON.parse(s); return Array.isArray(v) ? v : []; } catch { return []; } };
 
 const rowToOrder = r => ({
   id: r.id, clientId: r.client_id, ref: r.ref, date: r.date, name: r.name, phone: r.phone,
@@ -289,7 +291,8 @@ const rowToOrder = r => ({
   unitPrice: r.unit_price, qty: r.qty, total: r.total,
   productCost: r.product_cost || 0, shippingCost: r.shipping_cost, otherCost: r.other_cost,
   source: r.source, note: r.note, awb: r.awb, state: r.state,
-  checkpoint: r.checkpoint, signedAt: r.signed_at, collectedAt: r.collected_at
+  checkpoint: r.checkpoint, signedAt: r.signed_at, collectedAt: r.collected_at,
+  contactLog: parseJsonArr(r.contact_log), history: parseJsonArr(r.history)
 });
 
 async function listOrders(env, clientId) {
@@ -301,8 +304,9 @@ async function listOrders(env, clientId) {
 }
 
 async function insertOrder(env, o) {
+  const initialHistory = o.history || [{ state: o.state || 'pending', at: new Date().toISOString() }];
   await env.DB.prepare(
-    `INSERT INTO orders (${ORDER_COLS}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    `INSERT INTO orders (${ORDER_COLS}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
      ON CONFLICT(id) DO UPDATE SET
        state = excluded.state, checkpoint = excluded.checkpoint,
        awb = COALESCE(excluded.awb, orders.awb),
@@ -318,9 +322,22 @@ async function insertOrder(env, o) {
     o.shippingCost === undefined || o.shippingCost === null ? null : Number(o.shippingCost),
     o.otherCost === undefined || o.otherCost === null ? null : Number(o.otherCost),
     o.source || '', o.note || '', o.awb || null, o.state || 'pending', o.checkpoint || '',
-    o.signedAt || null, o.collectedAt || null, new Date().toISOString()
+    o.signedAt || null, o.collectedAt || null,
+    JSON.stringify(o.contactLog || []), JSON.stringify(initialHistory), new Date().toISOString()
   ).run();
   return o;
+}
+
+/** أول ٣ حروف من الاسم + رقم تسلسلي عالمي يبدأ من ٢٠٠ — لكود الأوردر اليدوي */
+function orderNamePrefix(name) {
+  const letters = String(name || '').replace(/[^\p{L}]/gu, '').toUpperCase().slice(0, 3);
+  return (letters || 'ORD').padEnd(3, 'X');
+}
+async function nextOrderCode(env, name) {
+  const state = await loadState(env);
+  state.orderCodeCounter = (Number(state.orderCodeCounter) || 199) + 1;
+  await saveState(env, state);
+  return orderNamePrefix(name) + state.orderCodeCounter;
 }
 
 /* ---------- المنتجات ---------- */
@@ -909,9 +926,9 @@ async function handleApi(request, env, url, path) {
     if (user.role === 'client') o.clientId = me.clientId;
     else if (!can(user, 'orders')) return json({ error: 'مش مسموح' }, 403);
     if (!o.clientId || !o.name || !o.phone) return json({ error: 'بيانات ناقصة' }, 400);
-    o.id = o.id || 'MN-' + crypto.randomUUID().slice(0, 8).toUpperCase();
+    o.id = await nextOrderCode(env, o.name);
     o.state = ORDER_STATES.includes(o.state) ? o.state : 'pending';
-    o.checkpoint = o.checkpoint || STATE_TEXT.new;
+    o.checkpoint = o.checkpoint || STATE_TEXT.pending;
     await insertOrder(env, o);
     return json({ ok: true, order: o });
   }
@@ -927,7 +944,7 @@ async function handleApi(request, env, url, path) {
     if (request.method === 'PATCH') {
       const p = await request.json();
       const cur = await env.DB.prepare(
-        'SELECT state, awb, shipping_cost, other_cost, signed_at FROM orders WHERE id = ?'
+        'SELECT state, awb, shipping_cost, other_cost, signed_at, history FROM orders WHERE id = ?'
       ).bind(id).first();
       if (!cur) return json({ error: 'أوردر غير موجود' }, 404);
 
@@ -949,11 +966,39 @@ async function handleApi(request, env, url, path) {
       const signedAt = (st === 'signed' || st === 'collected')
         ? (p.signedAt || cur.signed_at || stamp) : null;
 
+      const history = parseJsonArr(cur.history);
+      if (st !== cur.state) history.push({ state: st, at: new Date().toISOString() });
+
       await env.DB.prepare(
-        'UPDATE orders SET state = ?, awb = ?, checkpoint = ?, shipping_cost = ?, other_cost = ?, signed_at = ?, collected_at = ? WHERE id = ?'
-      ).bind(st, awb, STATE_TEXT[st] || '', ship, other, signedAt, collectedAt, id).run();
-      return json({ ok: true, state: st });
+        'UPDATE orders SET state = ?, awb = ?, checkpoint = ?, shipping_cost = ?, other_cost = ?, signed_at = ?, collected_at = ?, history = ? WHERE id = ?'
+      ).bind(st, awb, STATE_TEXT[st] || '', ship, other, signedAt, collectedAt, JSON.stringify(history), id).run();
+      return json({ ok: true, state: st, history });
     }
+  }
+
+  /* محاولات التواصل مع العميل — أقصى ٣ في اليوم و١٠ خلال ٣ أيام */
+  const cm = path.match(/^\/api\/orders\/([^/]+)\/contact$/);
+  if (cm && request.method === 'POST' && isStaff(user) && can(user, 'orders')) {
+    const id = decodeURIComponent(cm[1]);
+    const cur = await env.DB.prepare('SELECT contact_log FROM orders WHERE id = ?').bind(id).first();
+    if (!cur) return json({ error: 'أوردر غير موجود' }, 404);
+
+    const log = parseJsonArr(cur.contact_log);
+    const now = new Date();
+    const today = now.toISOString().slice(0, 10);
+    const threeDaysAgo = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000);
+    const todayCount = log.filter(t => String(t).slice(0, 10) === today).length;
+    const last3DaysCount = log.filter(t => new Date(t) >= threeDaysAgo).length;
+
+    if (todayCount >= 3) {
+      return json({ error: 'تجاوزت عدد مرات التواصل المسموح بها لهذا اليوم (٣ محاولات)', log }, 429);
+    }
+    if (last3DaysCount >= 10) {
+      return json({ error: 'تجاوزت الحد الأقصى لمحاولات التواصل خلال ٣ أيام (١٠ محاولات)', log }, 429);
+    }
+    log.push(now.toISOString());
+    await env.DB.prepare('UPDATE orders SET contact_log = ? WHERE id = ?').bind(JSON.stringify(log), id).run();
+    return json({ ok: true, log, todayCount: todayCount + 1 });
   }
 
   /* أي حد داخل يقدر يغيّر كلمة مروره هو */
