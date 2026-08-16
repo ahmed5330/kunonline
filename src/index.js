@@ -1421,31 +1421,28 @@ async function handleApi(request, env, url, path) {
     const [y, m] = dateParam.split('-').map(Number);
     const monthStart = `${y}-${String(m).padStart(2, '0')}-01`;
     const monthEnd = new Date(y, m, 0).toISOString().slice(0, 10);
-    const lastMonthDate = new Date(y, m - 2, 1);
-    const lmY = lastMonthDate.getFullYear(), lmM = lastMonthDate.getMonth() + 1;
-    const lastMonthStart = `${lmY}-${String(lmM).padStart(2, '0')}-01`;
-    const lastMonthEnd = new Date(lmY, lmM, 0).toISOString().slice(0, 10);
+    const last30Start = new Date(new Date(dateParam).getTime() - 29 * 86400000).toISOString().slice(0, 10);
 
     const today = await dayBreakdown(env, state, orders, targetId, dateParam, dateParam);
     const month = await dayBreakdown(env, state, orders, targetId, monthStart, monthEnd);
 
-    const lastMonthOrders = orders.filter(o => {
+    const last30Orders = orders.filter(o => {
       const d = String(o.date || '').slice(0, 10);
-      return d >= lastMonthStart && d <= lastMonthEnd;
+      return d >= last30Start && d <= dateParam;
     });
-    const lmNonCancelled = lastMonthOrders.filter(o => o.state !== 'cancelled');
-    const lmConfirmed = lmNonCancelled.filter(o => o.state !== 'pending');
-    const lmDelivered = lastMonthOrders.filter(o => o.state === 'signed' || o.state === 'collected');
-    const lmReturned = lastMonthOrders.filter(o => o.state === 'returned');
-    const lmFinal = lmDelivered.length + lmReturned.length;
+    const l30NonCancelled = last30Orders.filter(o => o.state !== 'cancelled');
+    const l30Confirmed = l30NonCancelled.filter(o => o.state !== 'pending');
+    const l30Delivered = last30Orders.filter(o => o.state === 'signed' || o.state === 'collected');
+    const l30Returned = last30Orders.filter(o => o.state === 'returned');
+    const l30Final = l30Delivered.length + l30Returned.length;
 
     const fin = computeFinance(state, orders, targetId);
 
     return json({
       date: dateParam, today, month,
-      lastMonthConfirmationRatePct: lmNonCancelled.length
-        ? Math.round((lmConfirmed.length / lmNonCancelled.length) * 1000) / 10 : 0,
-      lastMonthDeliveryRatePct: lmFinal ? Math.round((lmDelivered.length / lmFinal) * 1000) / 10 : 0,
+      last30ConfirmationRatePct: l30NonCancelled.length
+        ? Math.round((l30Confirmed.length / l30NonCancelled.length) * 1000) / 10 : 0,
+      last30DeliveryRatePct: l30Final ? Math.round((l30Delivered.length / l30Final) * 1000) / 10 : 0,
       profitExpected: fin.profitExpected, revenueExpected: fin.revenueExpected,
       shippingMode: client.shippingMode === 'byGov' ? 'byGov' : 'fixed'
     });
@@ -1498,6 +1495,95 @@ async function handleApi(request, env, url, path) {
     state.deposits = state.deposits.filter(d => d.id !== depm[1]);
     await saveState(env, state);
     return json({ ok: true });
+  }
+
+  /* ---------- الشات الداخلي للفريق + التاسكات — الإدارة والموظفين بس ---------- */
+  if (path === '/api/chat/messages') {
+    if (!isStaff(user)) return json({ error: 'مش مسموح' }, 403);
+    if (request.method === 'GET') {
+      const after = url.searchParams.get('after');
+      const q = after
+        ? env.DB.prepare('SELECT id, author_id, author_name, body, created_at FROM chat_messages WHERE created_at > ? ORDER BY created_at ASC LIMIT 300').bind(after)
+        : env.DB.prepare('SELECT id, author_id, author_name, body, created_at FROM chat_messages ORDER BY created_at DESC LIMIT 100');
+      const { results } = await q.all();
+      return json(after ? (results || []) : (results || []).reverse());
+    }
+    if (request.method === 'POST') {
+      const b = await request.json().catch(() => ({}));
+      const body = String(b.text || '').trim();
+      if (!body) return json({ error: 'اكتب رسالة' }, 400);
+      const msg = {
+        id: 'MSG-' + crypto.randomUUID().slice(0, 10).toUpperCase(),
+        author_id: me.uid, author_name: me.name || me.email, body, created_at: new Date().toISOString()
+      };
+      await env.DB.prepare('INSERT INTO chat_messages (id, author_id, author_name, body, created_at) VALUES (?,?,?,?,?)')
+        .bind(msg.id, msg.author_id, msg.author_name, msg.body, msg.created_at).run();
+      return json({ ok: true, message: msg });
+    }
+  }
+
+  if (path === '/api/chat/seen' && request.method === 'POST') {
+    if (!isStaff(user)) return json({ error: 'مش مسموح' }, 403);
+    await env.DB.prepare('UPDATE users SET chat_last_seen = ? WHERE id = ?').bind(new Date().toISOString(), me.uid).run();
+    return json({ ok: true });
+  }
+
+  if (path === '/api/chat/unread' && request.method === 'GET') {
+    if (!isStaff(user)) return json({ error: 'مش مسموح' }, 403);
+    const row = await env.DB.prepare('SELECT chat_last_seen FROM users WHERE id = ?').bind(me.uid).first();
+    const since = (row && row.chat_last_seen) || '1970-01-01T00:00:00.000Z';
+    const msgCount = await env.DB.prepare('SELECT COUNT(*) AS n FROM chat_messages WHERE created_at > ? AND author_id != ?')
+      .bind(since, me.uid).first();
+    const taskCount = await env.DB.prepare("SELECT COUNT(*) AS n FROM tasks WHERE assigned_to = ? AND status = 'open'")
+      .bind(me.uid).first();
+    return json({ unreadMessages: (msgCount && msgCount.n) || 0, openTasks: (taskCount && taskCount.n) || 0 });
+  }
+
+  if (path === '/api/tasks') {
+    if (!isStaff(user)) return json({ error: 'مش مسموح' }, 403);
+    if (request.method === 'GET') {
+      const { results } = await env.DB.prepare(
+        'SELECT id, title, description, assigned_to, assigned_by, status, created_at, updated_at FROM tasks ORDER BY (status = "done"), created_at DESC LIMIT 300'
+      ).all();
+      return json(results || []);
+    }
+    if (request.method === 'POST') {
+      const b = await request.json().catch(() => ({}));
+      const title = String(b.title || '').trim();
+      if (!title) return json({ error: 'اكتب عنوان التاسك' }, 400);
+      const task = {
+        id: 'TSK-' + crypto.randomUUID().slice(0, 8).toUpperCase(),
+        title, description: String(b.description || '').trim(),
+        assigned_to: b.assignedTo || null, assigned_by: me.uid,
+        status: 'open', created_at: new Date().toISOString(), updated_at: new Date().toISOString()
+      };
+      await env.DB.prepare(
+        'INSERT INTO tasks (id, title, description, assigned_to, assigned_by, status, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)'
+      ).bind(task.id, task.title, task.description, task.assigned_to, task.assigned_by, task.status, task.created_at, task.updated_at).run();
+      return json({ ok: true, task });
+    }
+  }
+
+  const tskm = path.match(/^\/api\/tasks\/([^/]+)$/);
+  if (tskm && isStaff(user)) {
+    const id = decodeURIComponent(tskm[1]);
+    if (request.method === 'PATCH') {
+      const b = await request.json().catch(() => ({}));
+      const sets = [], vals = [];
+      if (b.status !== undefined) { sets.push('status = ?'); vals.push(b.status === 'done' ? 'done' : 'open'); }
+      if (b.assignedTo !== undefined) { sets.push('assigned_to = ?'); vals.push(b.assignedTo || null); }
+      if (b.title !== undefined) { sets.push('title = ?'); vals.push(String(b.title).trim()); }
+      if (b.description !== undefined) { sets.push('description = ?'); vals.push(String(b.description).trim()); }
+      if (!sets.length) return json({ error: 'مفيش حاجة تتحدث' }, 400);
+      sets.push('updated_at = ?'); vals.push(new Date().toISOString());
+      vals.push(id);
+      await env.DB.prepare(`UPDATE tasks SET ${sets.join(', ')} WHERE id = ?`).bind(...vals).run();
+      return json({ ok: true });
+    }
+    if (request.method === 'DELETE') {
+      await env.DB.prepare('DELETE FROM tasks WHERE id = ?').bind(id).run();
+      return json({ ok: true });
+    }
   }
 
   /* ---------- استيراد شيتات إيزي أوردرز و J&T ---------- */
