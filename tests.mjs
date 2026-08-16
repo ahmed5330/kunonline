@@ -16,6 +16,7 @@ const stmt=(sql)=>({
     if(sql.includes('FROM orders WHERE awb = ?')) return [...orders.values()].find(o=>o.awb===this.args[0])||null;
     if(sql.includes('FROM orders WHERE ref = ? AND client_id = ?'))
       return [...orders.values()].find(o=>o.ref===this.args[0]&&o.client_id===this.args[1])||null;
+    if(sql.includes('FROM transactions WHERE id = ?')) return transactions.get(this.args[0])||null;
     return null;
   },
   async run(){
@@ -47,6 +48,7 @@ const stmt=(sql)=>({
     else if(sql.includes('WHERE awb = ?')){for(const o of orders.values()) if(o.awb===this.args[2]) o.state=this.args[0];}
     else if(sql.includes('UPDATE orders SET state = ?, checkpoint = ? WHERE id')){const o=orders.get(this.args[2]);if(o)o.state=this.args[0];}
     else if(sql.includes('DELETE FROM orders')) orders.delete(this.args[0]);
+    else if(sql.includes('DELETE FROM transactions')) transactions.delete(this.args[0]);
     else if(sql.includes('INSERT INTO products')){
       const [id,client_id,name,sku,price,cost,active,created_at]=this.args;
       products.set(id,{id,client_id,name,sku,price,cost,active,created_at});}
@@ -237,8 +239,15 @@ check('الإدارة تقدر تسجّل حركة مالية لعميل', r.sta
 r=await call('/api/transactions',{},clientCookie);
 let [,clientTx]=await j(r);
 check('العميل شايف حركاته المالية هو بس', r.status===200 && clientTx.some(t=>t.category==='عمولة لكل أوردر') && clientTx.every(t=>t.clientId==='c2'));
-check('العميل ممنوع يسجّل حركة مالية بنفسه',
-  (await call('/api/transactions',{method:'POST',body:JSON.stringify({type:'income',category:'x',amount:100})},clientCookie)).status===403);
+r=await call('/api/transactions',{method:'POST',body:JSON.stringify({type:'expense',category:'أخرى',amount:50,clientId:'c1'})},clientCookie);
+let [,clientTxNew]=await j(r);
+check('العميل يقدر يسجّل حركة مالية بنفسه', r.status===200);
+check('حركة العميل بتتسجّل على حسابه هو دايماً — حتى لو حاول يبعت clientId مختلف', transactions.get(clientTxNew.id).client_id==='c2');
+r=await call('/api/transactions/'+clientTxNew.id,{method:'DELETE'},clientCookie);
+check('العميل يقدر يمسح حركته هو', r.status===200);
+let [,otherTx]=await j(await call('/api/transactions',{method:'POST',body:JSON.stringify({type:'expense',category:'أخرى',amount:20,clientId:'c1'})},adminCookie));
+check('العميل ممنوع يمسح حركة عميل تاني',
+  (await call('/api/transactions/'+otherTx.id,{method:'DELETE'},clientCookie)).status===403);
 
 head('كود الأوردر + الهيستوري + محاولات التواصل');
 let [,newOrder]=await j(await mkOrder(200,50));
@@ -263,6 +272,32 @@ r=await call('/api/orders/'+newOrder.order.id+'/whatsapp-log',{method:'POST',bod
 let [,waLogRes]=await j(r);
 check('إرسال واتساب بيتسجّل في التاريخ', r.status===200 && waLogRes.history.some(h=>h.type==='whatsapp'&&h.template==='confirm'));
 
+head('أداء يوم معيّن + إعدادات الشحن');
+r=await call('/api/performance?clientId=c2&date=2026-08-16',{},adminCookie);
+let [,perf]=await j(r);
+check('endpoint الأداء بيرجّع بنجاح', r.status===200);
+check('أوردرات اليوم مقسّمة بالحالة الحالية', perf.today.byState.collected>=1 && perf.today.byState.signed>=1 && perf.today.byState.returned>=1);
+check('التحصيل بيتحسب بتاريخ الحدث مش تاريخ إنشاء الأوردر', perf.today.collected.count>=1);
+check('المرتجع بيتحسب بتاريخ الحدث', perf.today.returned>=1);
+check('نسبة تأكيدات وتوصيل الشهر اللي فات أرقام صحيحة', typeof perf.lastMonthConfirmationRatePct==='number' && typeof perf.lastMonthDeliveryRatePct==='number');
+check('الأرباح والإيرادات المتوقعة موجودة في نفس الرد', typeof perf.profitExpected==='number' && typeof perf.revenueExpected==='number');
+check('العميل ممنوع يشوف أداء عميل تاني',
+  (await call('/api/performance?clientId=c1&date=2026-08-16',{},clientCookie)).status===403);
+
+r=await call('/api/integrations?clientId=c2',{method:'PUT',body:JSON.stringify({
+  shippingMode:'byGov', shippingByGov:{'أسيوط':35,'القاهرة':45}})},adminCookie);
+check('حفظ إعدادات الشحن حسب المحافظة', r.status===200);
+let [,shipInteg]=await j(await call('/api/integrations?clientId=c2',{},adminCookie));
+check('إعدادات الشحن رجعت صح', shipInteg.shippingMode==='byGov' && shipInteg.shippingByGov['أسيوط']===35);
+
+
+
+head('رصيد ميتا المتبقي');
+r=await call('/api/ad-spend',{method:'POST',headers:{authorization:'Bearer ingest-secret'},body:JSON.stringify({
+  date:'2026-08-16', entries:[{clientId:'c2', spend:120, balance:857.5, balanceCurrency:'EGP'}]})});
+check('الأجنت يقدر يرفع رصيد ميتا مع الصرف اليومي', r.status===200);
+let [,balInteg]=await j(await call('/api/integrations?clientId=c2',{},adminCookie));
+check('الرصيد المتبقي بيتحفظ ويظهر في التكاملات', balInteg.metaBalance===857.5 && balInteg.metaBalanceCurrency==='EGP');
 
 head('كلمات المرور والقفل');
 check('تغيير كلمة المرور بالقديمة الغلط مرفوض',
