@@ -55,6 +55,7 @@ const LOCK_MINUTES = 15;
 
 const toB64 = bytes => btoa(String.fromCharCode(...bytes));
 const fromB64 = str => Uint8Array.from(atob(str), c => c.charCodeAt(0));
+const round2 = n => Math.round((Number(n) || 0) * 100) / 100;
 
 async function derive(password, salt, iterations) {
   const key = await crypto.subtle.importKey(
@@ -481,6 +482,59 @@ async function syncShipments(env) {
 
 /* ---------- الصلاحيات ---------- */
 /** العميل بياخد بياناته هو بس — الفلترة هنا على السيرفر مش في المتصفح */
+/* ---------- الربح والخسارة لكل عميل ----------
+   نسبة التسليم: تلقائي = مُسلَّم ÷ (مُسلَّم + مرتجع) من سجل الحالات الفعلي، أو نسبة يدوية يحطها العميل.
+   ربح الأوردر = الإيراد − تكلفة المنتج − الشحن − مصاريف تانية − مبلغ الإدارة الثابت (تحدده الإدارة لكل متجر).
+   منتظرة = وصلت (signed) ولسه ما اتحصّلتش. محصّلة = اتحصّلت فعلاً (collected).
+   متوقعة = أرباح كل الأوردرات المرفوعة (غير الملغاة/المرتجعة) × نسبة التسليم. */
+function computeFinance(state, orders, clientId) {
+  const client = state.clients.find(c => c.id === clientId);
+  if (!client) return null;
+  const co = orders.filter(o => o.clientId === clientId);
+  const adminFee = Number(client.adminFee) || 0;
+
+  const delivered = co.filter(o => o.state === 'signed' || o.state === 'collected');
+  const returned = co.filter(o => o.state === 'returned');
+  const collected = co.filter(o => o.state === 'collected');
+  const pendingCollection = co.filter(o => o.state === 'signed');
+  const nonCancelled = co.filter(o => o.state !== 'cancelled');
+
+  let deliveryRate;
+  if (client.deliveryRateMode === 'manual' && client.deliveryRateManual != null) {
+    deliveryRate = Math.max(0, Math.min(100, Number(client.deliveryRateManual) || 0));
+  } else {
+    const finalCount = delivered.length + returned.length;
+    deliveryRate = finalCount > 0 ? Math.round((delivered.length / finalCount) * 1000) / 10 : 0;
+  }
+
+  const profitOf = o => (Number(o.total) || 0) - (Number(o.productCost) || 0)
+    - (Number(o.shippingCost) || 0) - (Number(o.otherCost) || 0) - adminFee;
+
+  const adSpend = round2(state.entries.filter(e => e.clientId === clientId)
+    .reduce((s, e) => s + (Number(e.adSpend) || 0), 0));
+  const uploaded = nonCancelled.length;
+  const cpaBeforeRate = uploaded > 0 ? round2(adSpend / uploaded) : 0;
+  const expectedDelivered = uploaded * (deliveryRate / 100);
+  const cpaAfterRate = expectedDelivered > 0 ? round2(adSpend / expectedDelivered) : 0;
+
+  const pipeline = nonCancelled.filter(o => o.state !== 'returned');
+  const revenueExpected = round2(pipeline.reduce((s, o) => s + (Number(o.total) || 0), 0) * (deliveryRate / 100));
+  const profitExpected = round2(pipeline.reduce((s, o) => s + profitOf(o), 0) * (deliveryRate / 100));
+
+  const today = new Date().toISOString().slice(0, 10);
+  const ordersToday = co.filter(o => String(o.date || '').slice(0, 10) === today).length;
+
+  return {
+    deliveryRatePct: deliveryRate, deliveryRateMode: client.deliveryRateMode || 'auto',
+    ordersToday, adminFee, adSpend, cpaBeforeRate, cpaAfterRate, revenueExpected,
+    profitPending: round2(pendingCollection.reduce((s, o) => s + profitOf(o), 0)),
+    profitCollected: round2(collected.reduce((s, o) => s + profitOf(o), 0)),
+    profitExpected,
+    counts: { delivered: delivered.length, returned: returned.length, collected: collected.length,
+      pendingCollection: pendingCollection.length, uploaded }
+  };
+}
+
 function scopeForClient(state, orders, clientId) {
   const client = state.clients.find(c => c.id === clientId);
   if (!client) return null;
@@ -1042,6 +1096,9 @@ async function handleApi(request, env, url, path) {
       taxEnabled: !!c.taxEnabled, taxRate: Number(c.taxRate) || 14,
       easyOrdersStoreId: c.storeId || '',
       easyOrdersTokenSet: masked.easyOrdersTokenSet, easyOrdersTokenTail: masked.easyOrdersTokenTail || '',
+      deliveryRateMode: c.deliveryRateMode || 'auto',
+      deliveryRateManual: c.deliveryRateManual != null ? c.deliveryRateManual : null,
+      adminFee: Number(c.adminFee) || 0,
       email: {
         enabled: !!c.emailEnabled, host: c.emailHost || '', port: c.emailPort || '',
         secure: c.emailSecure !== false, user: c.emailUser || '',
@@ -1080,6 +1137,15 @@ async function handleApi(request, env, url, path) {
       if (b.taxRate !== undefined) {
         const r = Number(b.taxRate);
         client.taxRate = Number.isFinite(r) ? Math.max(0, Math.min(100, r)) : 14;
+      }
+      if (b.deliveryRateMode !== undefined) client.deliveryRateMode = b.deliveryRateMode === 'manual' ? 'manual' : 'auto';
+      if (b.deliveryRateManual !== undefined) {
+        const r = Number(b.deliveryRateManual);
+        client.deliveryRateManual = Number.isFinite(r) ? Math.max(0, Math.min(100, r)) : null;
+      }
+      if (b.adminFee !== undefined && isStaff(user)) {
+        const f = Number(b.adminFee);
+        client.adminFee = Number.isFinite(f) ? Math.max(0, f) : 0;
       }
       if (b.emailEnabled !== undefined) client.emailEnabled = !!b.emailEnabled;
       if (b.emailHost !== undefined) client.emailHost = String(b.emailHost).trim();
@@ -1166,6 +1232,69 @@ async function handleApi(request, env, url, path) {
       await saveState(env, state);
       return json({ ok: true });
     }
+  }
+
+  /* ---------- الربح والخسارة + إيداعات فيسبوك ---------- */
+  if (path === '/api/finance' && request.method === 'GET') {
+    const staffAccess = isStaff(user) && can(user, 'clients');
+    const qcid = url.searchParams.get('clientId');
+    if (user.role === 'client' && qcid && qcid !== me.clientId) return json({ error: 'مش مسموح' }, 403);
+    const targetId = user.role === 'client' ? me.clientId : qcid;
+    if (user.role !== 'client' && !staffAccess) return json({ error: 'مش مسموح' }, 403);
+    if (!targetId) return json({ error: 'محتاجين clientId' }, 400);
+    const state = await loadState(env);
+    const fin = computeFinance(state, await listOrders(env), targetId);
+    if (!fin) return json({ error: 'العميل مش موجود' }, 404);
+    return json(fin);
+  }
+
+  if (path === '/api/deposits') {
+    const staffAccess = isStaff(user) && can(user, 'clients');
+    const state = await loadState(env);
+    state.deposits = state.deposits || [];
+
+    if (request.method === 'GET') {
+      if (user.role === 'client') {
+        const qcid = url.searchParams.get('clientId');
+        if (qcid && qcid !== me.clientId) return json({ error: 'مش مسموح' }, 403);
+        return json(state.deposits.filter(d => d.clientId === me.clientId));
+      }
+      if (!staffAccess) return json({ error: 'مش مسموح' }, 403);
+      const cid = url.searchParams.get('clientId');
+      return json(cid ? state.deposits.filter(d => d.clientId === cid) : state.deposits);
+    }
+
+    if (request.method === 'POST') {
+      const b = await request.json().catch(() => ({}));
+      const targetId = user.role === 'client' ? me.clientId : b.clientId;
+      if (user.role !== 'client' && !staffAccess) return json({ error: 'مش مسموح' }, 403);
+      if (!targetId) return json({ error: 'محتاجين clientId' }, 400);
+      const amount = Number(b.amount);
+      if (!amount || amount <= 0) return json({ error: 'المبلغ لازم يكون أكبر من صفر' }, 400);
+      const entry = {
+        id: crypto.randomUUID().slice(0, 8), clientId: targetId,
+        date: b.date || new Date().toISOString().slice(0, 10),
+        amount: round2(amount), note: String(b.note || '').trim(),
+        createdAt: new Date().toISOString()
+      };
+      state.deposits.push(entry);
+      await saveState(env, state);
+      return json({ ok: true, entry });
+    }
+  }
+
+  const depm = path.match(/^\/api\/deposits\/([^/]+)$/);
+  if (depm && request.method === 'DELETE') {
+    const state = await loadState(env);
+    state.deposits = state.deposits || [];
+    const entry = state.deposits.find(d => d.id === depm[1]);
+    if (!entry) return json({ error: 'مش موجود' }, 404);
+    const allowed = (user.role === 'client' && entry.clientId === me.clientId)
+      || (isStaff(user) && can(user, 'clients'));
+    if (!allowed) return json({ error: 'مش مسموح' }, 403);
+    state.deposits = state.deposits.filter(d => d.id !== depm[1]);
+    await saveState(env, state);
+    return json({ ok: true });
   }
 
   /* ---------- استيراد شيتات إيزي أوردرز و J&T ---------- */
