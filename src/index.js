@@ -356,6 +356,22 @@ async function listProducts(env, clientId) {
   return (results || []).map(rowToProduct);
 }
 
+/** منتجات إيزي أوردرز — لو مش موجودة في كتالوج المتجر، تتسجّل تلقائي (بدون تكلفة، الإدارة تحطها بعدين) */
+async function ensureProductsFromCart(env, clientId, cartItems) {
+  const existing = await listProducts(env, clientId);
+  const byName = new Map(existing.map(p => [String(p.name || '').trim().toLowerCase(), p]));
+  for (const item of (cartItems || [])) {
+    const name = item.product && item.product.name ? String(item.product.name).trim() : '';
+    if (!name || byName.has(name.toLowerCase())) continue;
+    const price = Number(item.product.price ?? item.unit_price ?? item.price) || 0;
+    const id = 'P-' + crypto.randomUUID().slice(0, 8).toUpperCase();
+    await env.DB.prepare(
+      `INSERT INTO products (${PRODUCT_COLS}) VALUES (?,?,?,?,?,?,?,?)`
+    ).bind(id, clientId, name, '', price, 0, 1, new Date().toISOString()).run();
+    byName.set(name.toLowerCase(), { id, name });
+  }
+}
+
 /* ---------- توحيد الحالات ---------- */
 const ORDER_STATES = ['pending','confirmed','preparing','shipped','signed','collected','returned','cancelled'];
 const STATE_TEXT = {
@@ -980,7 +996,7 @@ async function handleApi(request, env, url, path) {
   const cm = path.match(/^\/api\/orders\/([^/]+)\/contact$/);
   if (cm && request.method === 'POST' && isStaff(user) && can(user, 'orders')) {
     const id = decodeURIComponent(cm[1]);
-    const cur = await env.DB.prepare('SELECT contact_log FROM orders WHERE id = ?').bind(id).first();
+    const cur = await env.DB.prepare('SELECT contact_log, history FROM orders WHERE id = ?').bind(id).first();
     if (!cur) return json({ error: 'أوردر غير موجود' }, 404);
 
     const log = parseJsonArr(cur.contact_log);
@@ -997,8 +1013,25 @@ async function handleApi(request, env, url, path) {
       return json({ error: 'تجاوزت الحد الأقصى لمحاولات التواصل خلال ٣ أيام (١٠ محاولات)', log }, 429);
     }
     log.push(now.toISOString());
-    await env.DB.prepare('UPDATE orders SET contact_log = ? WHERE id = ?').bind(JSON.stringify(log), id).run();
-    return json({ ok: true, log, todayCount: todayCount + 1 });
+    const history = parseJsonArr(cur.history);
+    history.push({ type: 'contact', at: now.toISOString(), by: user.email || user.role });
+    await env.DB.prepare('UPDATE orders SET contact_log = ?, history = ? WHERE id = ?')
+      .bind(JSON.stringify(log), JSON.stringify(history), id).run();
+    return json({ ok: true, log, history, todayCount: todayCount + 1 });
+  }
+
+  /* تسجيل إرسال رسالة واتساب في تاريخ الأوردر */
+  const wm = path.match(/^\/api\/orders\/([^/]+)\/whatsapp-log$/);
+  if (wm && request.method === 'POST' && isStaff(user) && can(user, 'orders')) {
+    const id = decodeURIComponent(wm[1]);
+    const b = await request.json().catch(() => ({}));
+    const cur = await env.DB.prepare('SELECT history FROM orders WHERE id = ?').bind(id).first();
+    if (!cur) return json({ error: 'أوردر غير موجود' }, 404);
+    const history = parseJsonArr(cur.history);
+    const template = ['confirm', 'shipped', 'review'].includes(b.template) ? b.template : 'other';
+    history.push({ type: 'whatsapp', template, at: new Date().toISOString(), by: user.email || user.role });
+    await env.DB.prepare('UPDATE orders SET history = ? WHERE id = ?').bind(JSON.stringify(history), id).run();
+    return json({ ok: true, history });
   }
 
   /* أي حد داخل يقدر يغيّر كلمة مروره هو */
@@ -1414,11 +1447,18 @@ async function handleApi(request, env, url, path) {
   });
 
   if (path === '/api/transactions') {
-    if (!can(user, 'finance')) return json({ error: 'مش مسموح' }, 403);
+    const staffAccess = can(user, 'finance');
+    const from = url.searchParams.get('from') || '1900-01-01';
+    const to   = url.searchParams.get('to')   || '2999-12-31';
 
     if (request.method === 'GET') {
-      const from = url.searchParams.get('from') || '1900-01-01';
-      const to   = url.searchParams.get('to')   || '2999-12-31';
+      if (user.role === 'client') {
+        const { results } = await env.DB.prepare(
+          `SELECT ${TX_COLS} FROM transactions WHERE client_id = ? AND date >= ? AND date <= ? ORDER BY date DESC LIMIT 2000`
+        ).bind(me.clientId, from, to).all();
+        return json((results || []).map(rowToTx));
+      }
+      if (!staffAccess) return json({ error: 'مش مسموح' }, 403);
       const { results } = await env.DB.prepare(
         `SELECT ${TX_COLS} FROM transactions WHERE date >= ? AND date <= ? ORDER BY date DESC LIMIT 2000`
       ).bind(from, to).all();
@@ -1426,6 +1466,7 @@ async function handleApi(request, env, url, path) {
     }
 
     if (request.method === 'POST') {
+      if (!staffAccess) return json({ error: 'مش مسموح' }, 403);
       const b = await request.json().catch(() => ({}));
       const amount = Number(b.amount) || 0;
       if (!['expense','income'].includes(b.type)) return json({ error: 'النوع لازم يكون مصروف أو إيراد' }, 400);
@@ -1542,6 +1583,8 @@ async function handleWebhook(request, env, path) {
     const state = await loadState(env);
     const client = state.clients.find(c => c.storeId === p.store_id);
     if (!client) return json({ ok: true, note: 'store_id مش مربوط بعميل — اربطه من تبويب العملاء' });
+
+    await ensureProductsFromCart(env, client.id, p.cart_items);
 
     await insertOrder(env, {
       id: p.id, clientId: client.id,
