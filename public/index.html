@@ -14,17 +14,50 @@
   --ink-3:#7C929E;
   --ground:#E9EFEC;
   --surface:#FFFFFF;
+  --surface-2:#F5F8F7;
   --line:#D3DEDA;
   --pine:#0E7C66;
   --pine-soft:#E3F1ED;
+  --pine-line:#C4E0D8;
   --gold:#C08A00;
   --gold-soft:#FBF0D6;
+  --gold-line:#EBDCB2;
+  --gold-line-2:#D9C48A;
+  --gold-ink:#7A5900;
+  --gold-ink-2:#5C4400;
   --brick:#A8321D;
   --brick-soft:#FAE6E1;
+  --brick-line:#E7C4BC;
+  --chrome-bg:#12212B;
+  --chrome-fg:#fff;
   --radius:14px;
   --shadow:0 1px 2px rgba(18,33,43,.06), 0 8px 24px -12px rgba(18,33,43,.18);
   --mono:'IBM Plex Mono', ui-monospace, monospace;
   --sans:'Tajawal', system-ui, 'Segoe UI', sans-serif;
+}
+/* الوضع المظلم */
+[data-theme="dark"]{
+  --ink:#EAF1EE; --ink-2:#B7C6C2; --ink-3:#84958F;
+  --ground:#0E1512; --surface:#182019; --surface-2:#1E2823;
+  --line:#2B362F;
+  --pine:#3FCDA8; --pine-soft:#16332B; --pine-line:#28493D;
+  --gold:#E3B646; --gold-soft:#332A11; --gold-line:#4A3C18; --gold-line-2:#5C4B1E;
+  --gold-ink:#E8C776; --gold-ink-2:#F0D89A;
+  --brick:#E8836C; --brick-soft:#3A211B; --brick-line:#52302A;
+  --chrome-bg:#0A0F0D; --chrome-fg:#EAF1EE;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6);
+}
+/* الوضع الرمادي — بدرجات الرمادي بس، من غير أي لون */
+[data-theme="gray"]{
+  --ink:#1C1C1C; --ink-2:#4B4B4B; --ink-3:#7A7A7A;
+  --ground:#E2E2E2; --surface:#F3F3F3; --surface-2:#EAEAEA;
+  --line:#C7C7C7;
+  --pine:#3F3F3F; --pine-soft:#DCDCDC; --pine-line:#C7C7C7;
+  --gold:#4B4B4B; --gold-soft:#DEDEDE; --gold-line:#C7C7C7; --gold-line-2:#B5B5B5;
+  --gold-ink:#3A3A3A; --gold-ink-2:#2A2A2A;
+  --brick:#333333; --brick-soft:#D9D9D9; --brick-line:#BFBFBF;
+  --chrome-bg:#2B2B2B; --chrome-fg:#F3F3F3;
+  --shadow:0 1px 2px rgba(0,0,0,.08), 0 8px 24px -12px rgba(0,0,0,.22);
 }
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%}
@@ -45,7 +78,7 @@ a{color:inherit}
 /* ---------- shell ---------- */
 .shell{max-width:1180px;margin:0 auto;padding:0 16px 64px}
 .topbar{
-  background:var(--ink);color:#fff;position:sticky;top:0;z-index:40;
+  background:var(--chrome-bg);color:var(--chrome-fg);position:sticky;top:0;z-index:40;
 }
 .topbar-in{max-width:1180px;margin:0 auto;padding:12px 16px;display:flex;align-items:center;gap:14px}
 .brand{display:flex;align-items:center;gap:9px;font-weight:800;letter-spacing:-.2px}
@@ -61,6 +94,13 @@ a{color:inherit}
   transition:background .15s
 }
 .ghost-btn:hover{background:rgba(255,255,255,.1)}
+.theme-switch{display:flex;gap:2px;background:rgba(255,255,255,.08);border-radius:9px;padding:2px}
+.theme-switch button{
+  width:28px;height:28px;border-radius:7px;font-size:14px;color:var(--chrome-fg);opacity:.55;
+  display:grid;place-items:center;transition:background .15s,opacity .15s
+}
+.theme-switch button[aria-pressed="true"]{background:rgba(255,255,255,.18);opacity:1}
+.theme-switch button:hover{opacity:.9}
 
 /* ---------- login ---------- */
 .login-wrap{min-height:100dvh;display:grid;place-items:center;padding:24px;background:
@@ -72,7 +112,7 @@ a{color:inherit}
 .field{margin-bottom:14px}
 .field label{display:block;font-size:13px;font-weight:500;color:var(--ink-2);margin-bottom:6px}
 .field input,.field select,.field textarea{
-  width:100%;padding:11px 13px;border:1px solid var(--line);border-radius:10px;background:#FBFDFC;
+  width:100%;padding:11px 13px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);
   transition:border-color .15s, background .15s
 }
 .field input:focus,.field select:focus,.field textarea:focus{border-color:var(--pine);background:#fff;outline:none}
@@ -84,8 +124,8 @@ a{color:inherit}
 .btn:active{transform:translateY(1px)}
 .btn.sm{width:auto;padding:9px 16px;font-size:14px;font-weight:500}
 .btn.line{background:transparent;color:var(--pine);border:1px solid var(--pine)}
-.btn.dark{background:var(--ink)}
-.btn.danger{background:transparent;color:var(--brick);border:1px solid #E7C4BC}
+.btn.dark{background:var(--chrome-bg)}
+.btn.danger{background:transparent;color:var(--brick);border:1px solid var(--brick-line)}
 .demo-list{margin-top:20px;border-top:1px dashed var(--line);padding-top:16px}
 .demo-list h4{font-size:12px;color:var(--ink-3);font-weight:500;letter-spacing:.08em;margin-bottom:9px}
 .demo-chip{
@@ -108,7 +148,7 @@ a{color:inherit}
 
 /* ---------- funding gauge (signature) ---------- */
 .gauge{
-  background:var(--ink);color:#fff;border-radius:var(--radius);padding:18px 20px;margin-bottom:16px;
+  background:var(--chrome-bg);color:var(--chrome-fg);border-radius:var(--radius);padding:18px 20px;margin-bottom:16px;
   position:relative;overflow:hidden
 }
 .gauge-top{display:flex;flex-wrap:wrap;gap:12px;align-items:baseline;margin-bottom:14px}
@@ -143,9 +183,9 @@ a{color:inherit}
 .delta{font-family:var(--mono);font-size:11.5px;padding:1px 6px;border-radius:99px;font-weight:500}
 .delta.up{background:var(--pine-soft);color:var(--pine)}
 .delta.down{background:var(--brick-soft);color:var(--brick)}
-.delta.flat{background:#EDF1F0;color:var(--ink-3)}
-.kpi.accent-gold{background:var(--gold-soft);border-color:#EBDCB2}
-.kpi.accent-pine{background:var(--pine-soft);border-color:#C4E0D8}
+.delta.flat{background:var(--surface-2);color:var(--ink-3)}
+.kpi.accent-gold{background:var(--gold-soft);border-color:var(--gold-line)}
+.kpi.accent-pine{background:var(--pine-soft);border-color:var(--pine-line)}
 .dot{width:7px;height:7px;border-radius:99px;display:inline-block}
 .dot.pine{background:var(--pine)} .dot.gold{background:var(--gold)} .dot.brick{background:var(--brick)}
 
@@ -162,11 +202,11 @@ svg.chart{width:100%;height:auto;display:block;overflow:visible}
 table{width:100%;border-collapse:collapse;font-size:13.5px;min-width:640px}
 th{
   text-align:right;font-size:11.5px;color:var(--ink-3);font-weight:500;letter-spacing:.04em;
-  padding:11px 13px;background:#F5F8F7;border-bottom:1px solid var(--line);white-space:nowrap
+  padding:11px 13px;background:var(--surface-2);border-bottom:1px solid var(--line);white-space:nowrap
 }
 td{padding:11px 13px;border-bottom:1px solid #EDF2F0;white-space:nowrap}
 tbody tr:last-child td{border-bottom:none}
-tbody tr:hover{background:#FAFCFB}
+tbody tr:hover{background:var(--surface-2)}
 td.num{font-family:var(--mono);font-variant-numeric:tabular-nums;direction:ltr;text-align:left}
 .pill{font-size:11.5px;padding:2px 9px;border-radius:99px;background:#EDF2F0;color:var(--ink-2)}
 .pill.on{background:var(--pine-soft);color:var(--pine)}
@@ -176,9 +216,9 @@ td.num{font-family:var(--mono);font-variant-numeric:tabular-nums;direction:ltr;t
 .icon-btn:hover{border-color:var(--pine);color:var(--pine)}
 
 /* ---------- note ---------- */
-.note-card{background:var(--gold-soft);border:1px solid #EBDCB2;border-radius:var(--radius);padding:16px}
-.note-card h4{font-size:13px;margin-bottom:6px;color:#7A5900}
-.note-card p{font-size:14px;color:#5C4400;white-space:pre-wrap}
+.note-card{background:var(--gold-soft);border:1px solid var(--gold-line);border-radius:var(--radius);padding:16px}
+.note-card h4{font-size:13px;margin-bottom:6px;color:var(--gold-ink)}
+.note-card p{font-size:14px;color:var(--gold-ink-2);white-space:pre-wrap}
 
 /* ---------- admin nav ---------- */
 .admin-nav{display:flex;gap:6px;overflow-x:auto;padding:14px 0 4px;-webkit-overflow-scrolling:touch}
@@ -186,7 +226,7 @@ td.num{font-family:var(--mono);font-variant-numeric:tabular-nums;direction:ltr;t
   padding:8px 15px;border-radius:99px;font-size:14px;color:var(--ink-2);white-space:nowrap;
   border:1px solid transparent
 }
-.admin-nav button[aria-pressed="true"]{background:var(--ink);color:#fff}
+.admin-nav button[aria-pressed="true"]{background:var(--chrome-bg);color:var(--chrome-fg)}
 .admin-nav button:not([aria-pressed="true"]):hover{border-color:var(--line);background:#fff}
 
 /* ---------- forms ---------- */
@@ -195,7 +235,7 @@ td.num{font-family:var(--mono);font-variant-numeric:tabular-nums;direction:ltr;t
 .hint{font-size:12.5px;color:var(--ink-3)}
 .toast{
   position:fixed;inset-block-end:20px;inset-inline-start:50%;transform:translateX(50%) translateY(20px);
-  background:var(--ink);color:#fff;padding:11px 18px;border-radius:10px;font-size:14px;
+  background:var(--chrome-bg);color:var(--chrome-fg);padding:11px 18px;border-radius:10px;font-size:14px;
   opacity:0;pointer-events:none;transition:.25s;z-index:99;box-shadow:var(--shadow)
 }
 .toast.show{opacity:1;transform:translateX(50%) translateY(0)}
@@ -214,9 +254,9 @@ td.num{font-family:var(--mono);font-variant-numeric:tabular-nums;direction:ltr;t
 .cost-list li .g{flex:1}
 .cost-list li .v{font-family:var(--mono);font-variant-numeric:tabular-nums;direction:ltr}
 .cost-list li .p{font-family:var(--mono);font-size:11.5px;color:var(--ink-3);width:44px;text-align:left;direction:ltr}
-.cost-list li.sum{background:#F5F8F7;font-weight:700}
+.cost-list li.sum{background:var(--surface-2);font-weight:700}
 .sub-head{font-size:12px;color:var(--ink-3);margin:16px 0 8px;font-weight:500}
-.pill.wait{background:var(--gold-soft);color:#7A5900}
+.pill.wait{background:var(--gold-soft);color:var(--gold-ink)}
 .pill.mid{background:#E4EDF1;color:#2F5A70}
 .gov-row{display:flex;align-items:center;gap:10px;font-size:13.5px;margin-bottom:9px}
 .gov-row .g{width:96px;flex:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -300,6 +340,11 @@ td.num{font-family:var(--mono);font-variant-numeric:tabular-nums;direction:ltr;t
     <div class="topbar-in">
       <div class="brand"><span class="brand-mark">ك</span><span>كن أونلاين<small id="roleLabel">لوحة العميل</small></span></div>
       <div class="spacer"></div>
+      <div class="theme-switch" id="themeSwitch" role="group" aria-label="وضع العرض">
+        <button data-theme-btn="light" aria-pressed="true" title="مضيء">☀</button>
+        <button data-theme-btn="dark" aria-pressed="false" title="مظلم">☾</button>
+        <button data-theme-btn="gray" aria-pressed="false" title="رمادي">◐</button>
+      </div>
       <div class="who"><span id="whoName"></span><button class="ghost-btn" id="logoutBtn">خروج</button></div>
     </div>
   </div>
@@ -599,10 +644,10 @@ function chartSVG(list, currency){
   let bars='', line='', dots='', labels='';
   list.forEach((e,i)=>{
     const h = (e.revenue/maxRev)*ih;
-    bars += `<rect x="${(x(i)-bw/2).toFixed(1)}" y="${(pad.t+ih-h).toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" rx="2.5" fill="#C4E0D8"><title>${arDate(e.date)} — إيراد ${money(e.revenue)} ${currency}</title></rect>`;
+    bars += `<rect x="${(x(i)-bw/2).toFixed(1)}" y="${(pad.t+ih-h).toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" rx="2.5" fill="var(--pine-line)"><title>${arDate(e.date)} — إيراد ${money(e.revenue)} ${currency}</title></rect>`;
     const ly = pad.t + ih - (e.adSpend/maxAd)*ih*0.9;
     line += `${i?'L':'M'}${x(i).toFixed(1)},${ly.toFixed(1)}`;
-    dots += `<circle cx="${x(i).toFixed(1)}" cy="${ly.toFixed(1)}" r="2.6" fill="#C08A00"><title>${arDate(e.date)} — إعلانات ${money(e.adSpend)} ${currency}</title></circle>`;
+    dots += `<circle cx="${x(i).toFixed(1)}" cy="${ly.toFixed(1)}" r="2.6" fill="var(--gold)"><title>${arDate(e.date)} — إعلانات ${money(e.adSpend)} ${currency}</title></circle>`;
   });
   const step = Math.ceil(n/6);
   list.forEach((e,i)=>{ if(i%step===0 || i===n-1)
@@ -611,7 +656,7 @@ function chartSVG(list, currency){
   for(let g=0;g<=3;g++){ const y = pad.t + (ih/3)*g; grid += `<line x1="${pad.l}" y1="${y}" x2="${W-pad.r}" y2="${y}" stroke="#EDF2F0" stroke-width="1"/>`; }
   return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="الإيراد والإنفاق الإعلاني يومياً">
     ${grid}${bars}
-    <path d="${line}" fill="none" stroke="#C08A00" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+    <path d="${line}" fill="none" stroke="var(--gold)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
     ${dots}${labels}
   </svg>`;
 }
@@ -621,9 +666,12 @@ let clientRange = '30';
 let clientTab = 'dash';
 let integData = null;
 let waGroupsList = [];
+let financeData = null;
+let depositsList = [];
 function renderClient(client){
   if(clientTab==='add') return clientAddOrderView(client);
   if(clientTab==='products') return clientProductsView(client);
+  if(clientTab==='finance') return clientFinanceView(client);
   if(clientTab==='integrations') return clientIntegrationsView(client);
   const cur = client.currency;
   const f = fundingState(client.id);
@@ -670,6 +718,7 @@ function renderClient(client){
       <button data-ctab="dash" aria-pressed="true">الداشبورد</button>
       <button data-ctab="add" aria-pressed="false">أوردر جديد</button>
       <button data-ctab="products" aria-pressed="false">منتجاتي</button>
+      <button data-ctab="finance" aria-pressed="false">الحسابات</button>
       <button data-ctab="integrations" aria-pressed="false">التكاملات</button>
     </div>
     <div class="seg" id="rangeSeg">
@@ -748,21 +797,21 @@ function renderClient(client){
       <div class="k-foot">${num(a.returned)} مرتجع · ${num(a.cancelled)} ملغي</div></div>
   </div>
 
-  ${a.signed ? `<div class="card" style="margin-top:12px;background:var(--gold-soft);border-color:#EBDCB2">
+  ${a.signed ? `<div class="card" style="margin-top:12px;background:var(--gold-soft);border-color:var(--gold-line)">
     <div class="chart-head" style="margin-bottom:6px">
-      <h3 style="color:#7A5900">فلوس عند شركة الشحن</h3>
-      <span class="legend" style="font-size:12.5px;color:#5C4400">
+      <h3 style="color:var(--gold-ink)">فلوس عند شركة الشحن</h3>
+      <span class="legend" style="font-size:12.5px;color:var(--gold-ink-2)">
         ${num(a.signed)} شحنة اتسلّمت للعميل والفلوس لسه ما وصلتكش</span>
     </div>
     <div class="grid g3" style="margin-top:8px">
-      <div><div class="k-label" style="color:#7A5900">قيمة التحصيلات المنتظرة</div>
-        <div class="k-val mono" style="font-size:22px;color:#5C4400">${money(a.awaiting)} <span class="cur">${cur}</span></div></div>
-      <div><div class="k-label" style="color:#7A5900">تكاليفها</div>
-        <div class="k-val mono" style="font-size:22px;color:#5C4400">${money(a.awaitingCost)} <span class="cur">${cur}</span></div></div>
-      <div><div class="k-label" style="color:#7A5900">ربح منتظر</div>
-        <div class="k-val mono" style="font-size:22px;color:#5C4400">${money(a.awaitingProfit)} <span class="cur">${cur}</span></div></div>
+      <div><div class="k-label" style="color:var(--gold-ink)">قيمة التحصيلات المنتظرة</div>
+        <div class="k-val mono" style="font-size:22px;color:var(--gold-ink-2)">${money(a.awaiting)} <span class="cur">${cur}</span></div></div>
+      <div><div class="k-label" style="color:var(--gold-ink)">تكاليفها</div>
+        <div class="k-val mono" style="font-size:22px;color:var(--gold-ink-2)">${money(a.awaitingCost)} <span class="cur">${cur}</span></div></div>
+      <div><div class="k-label" style="color:var(--gold-ink)">ربح منتظر</div>
+        <div class="k-val mono" style="font-size:22px;color:var(--gold-ink-2)">${money(a.awaitingProfit)} <span class="cur">${cur}</span></div></div>
     </div>
-    <p class="hint" style="margin-top:10px;color:#7A5900">الأرقام دي <b>مش</b> محسوبة في الربح تحت — هتتحسب أول ما تحوّلهم لـ "تم التحصيل".</p>
+    <p class="hint" style="margin-top:10px;color:var(--gold-ink)">الأرقام دي <b>مش</b> محسوبة في الربح تحت — هتتحسب أول ما تحوّلهم لـ "تم التحصيل".</p>
   </div>` : ''}
 
   <div class="grid g4" style="margin-top:12px">
@@ -813,8 +862,8 @@ function renderClient(client){
     <div class="chart-head">
       <h3>يوم بيوم</h3>
       <div class="legend">
-        <span><i style="background:#C4E0D8"></i>الإيراد</span>
-        <span><i style="background:#C08A00"></i>الإنفاق الإعلاني</span>
+        <span><i style="background:var(--pine-line)"></i>الإيراد</span>
+        <span><i style="background:var(--gold)"></i>الإنفاق الإعلاني</span>
       </div>
     </div>
     ${chartSVG(listRange, cur)}
@@ -994,6 +1043,7 @@ function clientProductsView(client){
       <button data-ctab="dash" aria-pressed="false">الداشبورد</button>
       <button data-ctab="add" aria-pressed="false">أوردر جديد</button>
       <button data-ctab="products" aria-pressed="true">منتجاتي</button>
+      <button data-ctab="finance" aria-pressed="false">الحسابات</button>
       <button data-ctab="integrations" aria-pressed="false">التكاملات</button>
     </div>
   </div>
@@ -1043,6 +1093,7 @@ function clientIntegrationsView(client){
       <button data-ctab="dash" aria-pressed="false">الداشبورد</button>
       <button data-ctab="add" aria-pressed="false">أوردر جديد</button>
       <button data-ctab="products" aria-pressed="false">منتجاتي</button>
+      <button data-ctab="finance" aria-pressed="false">الحسابات</button>
       <button data-ctab="integrations" aria-pressed="true">التكاملات</button>
     </div>
   </div>
@@ -1121,8 +1172,91 @@ function clientIntegrationsView(client){
   </table></div>`;
 }
 
+/* شاشة العميل: الحسابات — الربح والخسارة، نسبة التسليم، إيداعات فيسبوك */
+function clientFinanceView(client){
+  if(!financeData){
+    return `<div class="page-head"><div><h2>الحسابات</h2></div></div>
+    <div class="card"><p class="hint">بنحسبلك...</p></div>`;
+  }
+  const f = financeData, cur = client.currency;
+  const depRows = (depositsList||[]).map(d=>`
+    <tr><td>${arDate(d.date)}</td><td class="mono">${money(d.amount)} <span class="cur">${cur}</span></td>
+      <td>${esc(d.note||'')}</td>
+      <td><button class="icon-btn" data-deldeposit="${d.id}">حذف</button></td></tr>`).join('');
+  const depositsTotal = (depositsList||[]).reduce((s,d)=>s+(Number(d.amount)||0),0);
+  return `
+  <div class="page-head">
+    <div><div class="eyebrow">${esc(client.name)}</div><h2>الحسابات</h2></div>
+    <div class="spacer"></div>
+    <div class="seg" id="clientTabs">
+      <button data-ctab="dash" aria-pressed="false">الداشبورد</button>
+      <button data-ctab="add" aria-pressed="false">أوردر جديد</button>
+      <button data-ctab="products" aria-pressed="false">منتجاتي</button>
+      <button data-ctab="finance" aria-pressed="true">الحسابات</button>
+      <button data-ctab="integrations" aria-pressed="false">التكاملات</button>
+    </div>
+  </div>
+
+  <div class="grid g4">
+    <div class="card kpi"><div class="k-label">أوردرات النهارده</div>
+      <div class="k-val mono" id="liveOrderCount">${num(f.ordersToday)}</div></div>
+    <div class="card kpi"><div class="k-label">نسبة التسليم</div>
+      <div class="k-val mono">${f.deliveryRatePct}<span class="cur">%</span></div>
+      <div class="k-foot">${f.deliveryRateMode==='manual'?'يدوية':'تلقائية من سجل الحالات'}</div></div>
+    <div class="card kpi"><div class="k-label">تكلفة الأوردر — قبل نسبة التسليم</div>
+      <div class="k-val mono">${money(f.cpaBeforeRate)} <span class="cur">${cur}</span></div></div>
+    <div class="card kpi"><div class="k-label">تكلفة الأوردر — بعد نسبة التسليم</div>
+      <div class="k-val mono">${money(f.cpaAfterRate)} <span class="cur">${cur}</span></div></div>
+  </div>
+
+  <div class="section-title">الأرباح</div>
+  <div class="grid g3">
+    <div class="card kpi accent-gold"><div class="k-label">أرباح منتظرة (وصلت ولسه ما اتحصّلتش)</div>
+      <div class="k-val mono">${money(f.profitPending)} <span class="cur">${cur}</span></div>
+      <div class="k-foot">${num(f.counts.pendingCollection)} أوردر</div></div>
+    <div class="card kpi accent-pine"><div class="k-label">أرباح محصّلة فعلاً</div>
+      <div class="k-val mono">${money(f.profitCollected)} <span class="cur">${cur}</span></div>
+      <div class="k-foot">${num(f.counts.collected)} أوردر</div></div>
+    <div class="card kpi"><div class="k-label">أرباح متوقعة (كل المرفوع × نسبة التسليم)</div>
+      <div class="k-val mono">${money(f.profitExpected)} <span class="cur">${cur}</span></div>
+      <div class="k-foot">إيراد متوقع ${money(f.revenueExpected)} ${cur}</div></div>
+  </div>
+
+  <div class="section-title">نسبة التسليم اليدوية (اختياري)</div>
+  <div class="card">
+    <div class="form-grid">
+      <div class="field" style="display:flex;align-items:center;gap:8px;padding-top:22px">
+        <input type="checkbox" id="f_rate_manual" style="width:auto" ${f.deliveryRateMode==='manual'?'checked':''}>
+        <label style="margin:0" for="f_rate_manual">استخدم نسبة أحطها بنفسي بدل التلقائية</label>
+      </div>
+      <div class="field"><label>النسبة %</label>
+        <input id="f_rate_value" type="number" min="0" max="100" step="0.1"
+          value="${f.deliveryRateMode==='manual'?f.deliveryRatePct:''}" placeholder="مثال: 75"></div>
+    </div>
+    <div class="form-actions"><button class="btn sm" id="saveDeliveryRate">حفظ</button>
+      <span class="hint">مبلغ الإدارة الثابت لكل أوردر: ${money(f.adminFee)} ${cur}</span></div>
+  </div>
+
+  <div class="section-title">إيداعات فيسبوك</div>
+  <div class="card">
+    <div class="form-grid">
+      <div class="field"><label>المبلغ</label><input id="dep_amount" type="number" min="0" step="0.01" placeholder="0"></div>
+      <div class="field"><label>التاريخ</label><input id="dep_date" type="date" value="${new Date().toISOString().slice(0,10)}"></div>
+      <div class="field" style="grid-column:1/-1"><label>ملاحظة (اختياري)</label><input id="dep_note" placeholder="مثال: شحن رصيد الحملة"></div>
+    </div>
+    <div class="form-actions"><button class="btn sm" id="addDeposit">إضافة إيداع</button></div>
+  </div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>التاريخ</th><th>المبلغ</th><th>ملاحظة</th><th></th></tr></thead>
+    <tbody>${depRows || '<tr><td colspan="4" class="empty">لسه مفيش إيداعات مسجّلة.</td></tr>'}</tbody>
+    ${depositsList && depositsList.length ? `<tfoot><tr><td><b>الإجمالي</b></td><td class="mono"><b>${money(depositsTotal)} ${cur}</b></td><td></td><td></td></tr></tfoot>` : ''}
+  </table></div>`;
+}
+
 /* شاشة العميل: تسجيل أوردر جديد */
 function clientAddOrderView(client){
+
+
 
 
   const mine = (DB.orders||[]).filter(o=>o.clientId===client.id && String(o.id).startsWith('MN-'))
@@ -1140,6 +1274,7 @@ function clientAddOrderView(client){
       <button data-ctab="dash" aria-pressed="false">الداشبورد</button>
       <button data-ctab="add" aria-pressed="true">أوردر جديد</button>
       <button data-ctab="products" aria-pressed="false">منتجاتي</button>
+      <button data-ctab="finance" aria-pressed="false">الحسابات</button>
       <button data-ctab="integrations" aria-pressed="false">التكاملات</button>
     </div>
   </div>
@@ -1393,15 +1528,15 @@ function adminOrders(){
       <td><button class="icon-btn" data-delorder="${o.id}">حذف</button></td>
     </tr>`;}).join('');
   return `
-  ${awaiting.length ? `<div class="card" style="background:var(--gold-soft);border-color:#EBDCB2;margin-top:8px">
+  ${awaiting.length ? `<div class="card" style="background:var(--gold-soft);border-color:var(--gold-line);margin-top:8px">
     <div class="chart-head" style="margin-bottom:4px">
-      <h3 style="color:#7A5900">${num(awaiting.length)} شحنة منتظرة التحصيل</h3>
-      <span class="legend" style="font-size:13px;color:#5C4400">بقيمة ${money(awaitingSum)}</span>
+      <h3 style="color:var(--gold-ink)">${num(awaiting.length)} شحنة منتظرة التحصيل</h3>
+      <span class="legend" style="font-size:13px;color:var(--gold-ink-2)">بقيمة ${money(awaitingSum)}</span>
     </div>
-    <p class="hint" style="color:#7A5900;margin-bottom:10px">
+    <p class="hint" style="color:var(--gold-ink);margin-bottom:10px">
       اتسلّمت للعملاء وفلوسها لسه ما وصلتش. أول ما تستلم تحويل J&amp;T، حوّلهم لـ "تم التحصيل" عشان يدخلوا الربح.</p>
     <button class="btn sm" id="showAwaiting" style="background:var(--gold)">اعرضهم</button>
-    <button class="btn sm line" id="collectAll" style="margin-inline-start:8px;color:#7A5900;border-color:#D9C48A">حوّلهم كلهم لتم التحصيل</button>
+    <button class="btn sm line" id="collectAll" style="margin-inline-start:8px;color:var(--gold-ink);border-color:var(--gold-line-2)">حوّلهم كلهم لتم التحصيل</button>
   </div>` : ''}
 
   <div class="section-title">تسجيل أوردر وصل للإدارة</div>
@@ -1532,9 +1667,15 @@ function adminIntegrations(){
   const client = DB.clients.find(c=>c.id===cid);
   const d = integData || {};
   const em = d.email || {};
+  const f = financeData || null;
+  const cur = client ? client.currency : 'EGP';
+  const depRows = (depositsList||[]).map(dep=>`
+    <tr><td>${arDate(dep.date)}</td><td class="mono">${money(dep.amount)} <span class="cur">${cur}</span></td>
+      <td>${esc(dep.note||'')}</td>
+      <td><button class="icon-btn" data-adeldeposit="${dep.id}">حذف</button></td></tr>`).join('');
   return `
   <div class="page-head" style="padding:8px 0 12px">
-    <div class="eyebrow">تكاملات ميتا وإيزي أوردرز والإيميل — لكل عميل على حدة</div>
+    <div class="eyebrow">تكاملات ميتا وإيزي أوردرز والإيميل والحسابات — لكل عميل على حدة</div>
     <div class="spacer"></div>
     <div class="seg" id="integSeg">
       ${DB.clients.map(c=>`<button data-ic="${c.id}" aria-pressed="${cid===c.id}">${esc(c.name.split(' —')[0])}</button>`).join('')}
@@ -1595,7 +1736,44 @@ function adminIntegrations(){
           placeholder="${em.passwordSet?('محفوظة '+esc(em.passwordTail)):'كلمة سر التطبيق'}"></div>
     </div>
     <div class="form-actions"><button class="btn sm" id="adminSaveEmail">حفظ</button></div>
-  </div>`}`;
+  </div>
+
+  <div class="section-title">مبلغ الإدارة الثابت لكل أوردر</div>
+  <div class="card">
+    <div class="form-grid">
+      <div class="field"><label>المبلغ (${esc(cur)}) لكل أوردر</label>
+        <input id="ai_admin_fee" type="number" min="0" step="0.01" value="${d.adminFee!=null?d.adminFee:0}"></div>
+    </div>
+    <div class="form-actions"><button class="btn sm" id="adminSaveFee">حفظ</button>
+      <span class="hint">بيتخصم من ربح كل أوردر بتاع المتجر ده.</span></div>
+  </div>
+
+  ${f ? `
+  <div class="section-title">الربح والخسارة — ${esc(client.name)}</div>
+  <div class="grid g3">
+    <div class="card kpi"><div class="k-label">أوردرات النهارده</div>
+      <div class="k-val mono">${num(f.ordersToday)}</div></div>
+    <div class="card kpi"><div class="k-label">نسبة التسليم</div>
+      <div class="k-val mono">${f.deliveryRatePct}<span class="cur">%</span></div>
+      <div class="k-foot">${f.deliveryRateMode==='manual'?'يدوية من العميل':'تلقائية من سجل الحالات'}</div></div>
+    <div class="card kpi"><div class="k-label">تكلفة الأوردر قبل/بعد نسبة التسليم</div>
+      <div class="k-val mono" style="font-size:16px">${money(f.cpaBeforeRate)} ← ${money(f.cpaAfterRate)} <span class="cur">${cur}</span></div></div>
+  </div>
+  <div class="grid g3">
+    <div class="card kpi accent-gold"><div class="k-label">أرباح منتظرة</div>
+      <div class="k-val mono">${money(f.profitPending)} <span class="cur">${cur}</span></div></div>
+    <div class="card kpi accent-pine"><div class="k-label">أرباح محصّلة</div>
+      <div class="k-val mono">${money(f.profitCollected)} <span class="cur">${cur}</span></div></div>
+    <div class="card kpi"><div class="k-label">أرباح متوقعة</div>
+      <div class="k-val mono">${money(f.profitExpected)} <span class="cur">${cur}</span></div></div>
+  </div>
+
+  <div class="section-title">إيداعات فيسبوك — ${esc(client.name)}</div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>التاريخ</th><th>المبلغ</th><th>ملاحظة</th><th></th></tr></thead>
+    <tbody>${depRows || '<tr><td colspan="4" class="empty">لسه مفيش إيداعات مسجّلة لهذا العميل.</td></tr>'}</tbody>
+  </table></div>` : ''}
+  `}`;
 }
 
 /* لوحة الإدارة: كل جروبات الواتساب المطلوبة/المربوطة لكل العملاء */
@@ -2095,7 +2273,7 @@ function adminSettings(){
     <div id="restoreBox"></div>
   </div>
 
-  <div class="card" style="margin-top:12px;background:var(--pine-soft);border-color:#C4E0D8">
+  <div class="card" style="margin-top:12px;background:var(--pine-soft);border-color:var(--pine-line)">
     <h4 style="font-size:13.5px;margin-bottom:8px;color:var(--pine)">خطة حماية من ٣ طبقات</h4>
     <ul class="cost-list">
       <li><span class="sw" style="background:var(--pine)"></span>
@@ -2145,6 +2323,18 @@ let DB = null;
 let session = null;
 
 async function boot(){
+  const savedTheme = (() => { try { return localStorage.getItem('konline-theme'); } catch { return null; } })();
+  document.documentElement.dataset.theme = savedTheme === 'dark' || savedTheme === 'gray' ? savedTheme : 'light';
+  document.querySelectorAll('#themeSwitch [data-theme-btn]').forEach(b=>{
+    b.setAttribute('aria-pressed', b.dataset.themeBtn === document.documentElement.dataset.theme ? 'true' : 'false');
+    b.onclick = ()=>{
+      const t = b.dataset.themeBtn;
+      document.documentElement.dataset.theme = t;
+      try{ localStorage.setItem('konline-theme', t); }catch{}
+      document.querySelectorAll('#themeSwitch [data-theme-btn]').forEach(x=>
+        x.setAttribute('aria-pressed', x===b ? 'true' : 'false'));
+    };
+  });
   document.getElementById('loginBtn').onclick = doLogin;
   document.getElementById('setupBtn').onclick = doSetup;
   ['setupEmail','setupPass','setupPass2'].forEach(id=>
@@ -2155,6 +2345,13 @@ async function boot(){
     if(ONLINE){ try{ await api('/api/logout',{method:'POST'}); }catch(e){} }
     session=null; show('login');
   };
+  setInterval(async ()=>{
+    if(!ONLINE || !session || session.role!=='client' || clientTab!=='dash') return;
+    try{
+      DB = await api('/api/state'); normalizeDB();
+      paint(true);
+    }catch(e){}
+  }, 30000);
   try{
     const me = await api('/api/me');
     ONLINE = true;
@@ -2299,9 +2496,16 @@ function bindClient(c){
         waGroupsList = await api('/api/wa-groups');
       }catch(e){ toast(e.message); }
     }
+    if(clientTab==='finance' && ONLINE){
+      try{
+        financeData = await api('/api/finance');
+        depositsList = await api('/api/deposits');
+      }catch(e){ toast(e.message); }
+    }
     paint();
   });
   if(clientTab==='integrations') bindClientIntegrations();
+  if(clientTab==='finance') bindClientFinance();
   const go = document.getElementById('goAddOrder');
   if(go) go.onclick = ()=>{ clientTab='add'; paint(); };
   bindProductPicker();
@@ -2384,6 +2588,44 @@ function bindClientIntegrations(){
   });
 }
 
+function bindClientFinance(){
+  const $ = id => document.getElementById(id);
+  const sr = $('saveDeliveryRate');
+  if(sr) sr.onclick = async ()=>{
+    const manual = $('f_rate_manual').checked;
+    const body = { deliveryRateMode: manual ? 'manual' : 'auto' };
+    if(manual){
+      const v = +$('f_rate_value').value;
+      if(!Number.isFinite(v) || v<0 || v>100){ toast('اكتب نسبة بين 0 و 100'); return; }
+      body.deliveryRateManual = v;
+    }
+    try{
+      await api('/api/integrations', {method:'PUT', body:JSON.stringify(body)});
+      financeData = await api('/api/finance');
+      toast('اتحفظت نسبة التسليم'); paint();
+    }catch(e){ toast(e.message); }
+  };
+  const ad = $('addDeposit');
+  if(ad) ad.onclick = async ()=>{
+    const amount = +$('dep_amount').value;
+    if(!amount || amount<=0){ toast('اكتب مبلغ صحيح'); return; }
+    const body = { amount, date: $('dep_date').value, note: $('dep_note').value.trim() };
+    try{
+      await api('/api/deposits', {method:'POST', body:JSON.stringify(body)});
+      depositsList = await api('/api/deposits');
+      financeData = await api('/api/finance');
+      toast('اتضاف الإيداع'); paint();
+    }catch(e){ toast(e.message); }
+  };
+  document.querySelectorAll('[data-deldeposit]').forEach(b=> b.onclick = async ()=>{
+    try{
+      await api('/api/deposits/'+b.dataset.deldeposit, {method:'DELETE'});
+      depositsList = await api('/api/deposits');
+      toast('اتحذف'); paint();
+    }catch(e){ toast(e.message); }
+  });
+}
+
 function bindAdmin(){
   document.querySelectorAll('.admin-nav button').forEach(b=> b.onclick = async ()=>{
     adminTab=b.dataset.tab; editingEntry=null; editingClient=null; editingUser=null;
@@ -2399,7 +2641,11 @@ function bindAdmin(){
     if(adminTab==='integrations' && ONLINE){
       try{
         const cid = integClient || (DB.clients[0] && DB.clients[0].id);
-        integData = cid ? await api('/api/integrations?clientId='+encodeURIComponent(cid)) : null;
+        if(cid){
+          integData = await api('/api/integrations?clientId='+encodeURIComponent(cid));
+          financeData = await api('/api/finance?clientId='+encodeURIComponent(cid));
+          depositsList = await api('/api/deposits?clientId='+encodeURIComponent(cid));
+        } else { integData=null; financeData=null; depositsList=[]; }
       }catch(e){ toast(e.message); }
     }
     if(adminTab==='whatsapp' && ONLINE){
@@ -2594,8 +2840,11 @@ function bindAdmin(){
   if(adminTab==='integrations'){
     document.querySelectorAll('#integSeg button').forEach(b=> b.onclick = async ()=>{
       integClient = b.dataset.ic;
-      try{ integData = await api('/api/integrations?clientId='+encodeURIComponent(integClient)); }
-      catch(e){ toast(e.message); }
+      try{
+        integData = await api('/api/integrations?clientId='+encodeURIComponent(integClient));
+        financeData = await api('/api/finance?clientId='+encodeURIComponent(integClient));
+        depositsList = await api('/api/deposits?clientId='+encodeURIComponent(integClient));
+      }catch(e){ toast(e.message); }
       paint();
     });
     const cid = () => integClient || (DB.clients[0] && DB.clients[0].id);
@@ -2626,6 +2875,23 @@ function bindAdmin(){
       try{ await api('/api/integrations',{method:'PUT', body:JSON.stringify(body)}); await reload(); toast('اتحفظ'); paint(); }
       catch(e){ toast(e.message); }
     };
+    const sf = $('adminSaveFee');
+    if(sf) sf.onclick = async ()=>{
+      const body = { clientId: cid(), adminFee: +$('ai_admin_fee').value || 0 };
+      try{
+        await api('/api/integrations',{method:'PUT', body:JSON.stringify(body)});
+        integData = await api('/api/integrations?clientId='+encodeURIComponent(cid()));
+        financeData = await api('/api/finance?clientId='+encodeURIComponent(cid()));
+        toast('اتحفظ المبلغ الثابت'); paint();
+      }catch(e){ toast(e.message); }
+    };
+    document.querySelectorAll('[data-adeldeposit]').forEach(b=> b.onclick = async ()=>{
+      try{
+        await api('/api/deposits/'+b.dataset.adeldeposit, {method:'DELETE'});
+        depositsList = await api('/api/deposits?clientId='+encodeURIComponent(cid()));
+        toast('اتحذف'); paint();
+      }catch(e){ toast(e.message); }
+    });
   }
 
   if(adminTab==='whatsapp'){
@@ -2868,7 +3134,7 @@ function bindAdmin(){
         if(!d.state || !Array.isArray(d.orders)){ toast('الملف مش نسخة صالحة'); return; }
         const box = document.getElementById('restoreBox');
         box.innerHTML = `
-          <div class="note-card" style="margin-top:14px;background:var(--brick-soft);border-color:#E7C4BC">
+          <div class="note-card" style="margin-top:14px;background:var(--brick-soft);border-color:var(--brick-line)">
             <h4 style="color:var(--brick)">راجع قبل الاسترجاع</h4>
             <p style="color:#7A2415">النسخة دي من <b>${esc(String(d.takenAt||'').slice(0,16).replace('T',' '))}</b>
               وفيها ${num(d.orders.length)} أوردر · ${num((d.products||[]).length)} منتج ·
