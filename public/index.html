@@ -488,7 +488,7 @@ function seedData(){
   // أوردرات فردية — بالشكل اللي بييجي من ويبهوك إيزي أوردرز وبيتتبّع مع J&T
   const NAMES = ['محمود سيد','سارة عبد الرحمن','أحمد فتحي','منى إبراهيم','كريم مصطفى','هبة السيد','عمرو زكي','نورا حسن','طارق يوسف','دينا سمير','مصطفى العربي','ياسمين فؤاد'];
   const STATES = [['collected',.5],['shipped',.18],['preparing',.06],['confirmed',.07],['pending',.06],['returned',.06],['cancelled',.07]];
-  const pickState = () => { let r=rnd(), acc=0; for(const [k,w] of STATES){ acc+=w; if(r<=acc) return k; } return 'delivered'; };
+  const pickState = () => { let r=rnd(), acc=0; for(const [k,w] of STATES){ acc+=w; if(r<=acc) return k; } return 'collected'; };
   const orders=[];
   clients.forEach(c=>{
     const govs = govList(c.market);
@@ -979,7 +979,7 @@ function ordersSection(client, range){
       <span class="n">${(safeDiv(v.delivered,v.orders)*100).toFixed(0)}% توصيل</span>
     </div>`).join('');
   const rows = list.slice(0,25).map(o=>{
-    const st = ORDER_STATE[o.state] || ORDER_STATE.new;
+    const st = ORDER_STATE[o.state] || ORDER_STATE.pending;
     return `<tr>
       <td>${arDate(o.date)}</td>
       <td>${esc(o.name)}</td>
@@ -989,6 +989,10 @@ function ordersSection(client, range){
       <td class="mono" style="font-size:11.5px">${o.awb?esc(o.awb):'—'}</td>
       <td><span class="pill ${st.cls}">${st.ar}</span></td>
       <td><span class="hint">${esc(o.checkpoint)}</span></td>
+      <td><div class="row-act" style="flex-wrap:wrap;gap:4px">
+        <button class="icon-btn" data-chist="${o.id}">تاريخ</button>
+        <button class="icon-btn" data-cwa="${o.id}">واتساب</button>
+      </div></td>
     </tr>`;}).join('');
   return `
   <div class="section-title">أوردرات المشترين وحالة الشحن</div>
@@ -1009,7 +1013,7 @@ function ordersSection(client, range){
     ${govRows}
   </div>
   <div class="table-wrap" style="margin-top:12px"><table>
-    <thead><tr><th>التاريخ</th><th>المشتري</th><th>التليفون</th><th>المحافظة</th><th>الإجمالي (${cur})</th><th>بوليصة J&amp;T</th><th>الحالة</th><th>آخر تحديث</th></tr></thead>
+    <thead><tr><th>التاريخ</th><th>المشتري</th><th>التليفون</th><th>المحافظة</th><th>الإجمالي (${cur})</th><th>بوليصة J&amp;T</th><th>الحالة</th><th>آخر تحديث</th><th></th></tr></thead>
     <tbody>${rows}</tbody>
   </table></div>
   <p class="hint" style="margin-top:10px">آخر ${Math.min(25,list.length)} أوردر من ${num(list.length)}. الحالة بتتحدّث من تتبّع J&amp;T مصر.</p>
@@ -1259,10 +1263,10 @@ function clientAddOrderView(client){
 
 
 
-  const mine = (DB.orders||[]).filter(o=>o.clientId===client.id && String(o.id).startsWith('MN-'))
+  const mine = (DB.orders||[]).filter(o=>o.clientId===client.id && !/^(EO-|WA-)/.test(o.id))
     .sort((a,b)=> a.date<b.date?1:-1).slice(0,12);
   const rows = mine.map(o=>{
-    const st = ORDER_STATE[o.state] || ORDER_STATE.new;
+    const st = ORDER_STATE[o.state] || ORDER_STATE.pending;
     return `<tr><td>${arDate(o.date)}</td><td>${esc(o.name)}</td><td class="num">${esc(o.phone)}</td>
       <td>${esc(o.gov)}</td><td><span class="pill mid">${esc(o.source||'—')}</span></td>
       <td class="num">${money(o.total)}</td><td><span class="pill ${st.cls}">${st.ar}</span></td></tr>`;}).join('');
@@ -1404,6 +1408,88 @@ function askCosts(order){
   });
 }
 
+function waLink(phone, text){
+  let p = String(phone||'').replace(/[^\d]/g,'');
+  if(p.startsWith('0')) p = '20' + p.slice(1);
+  else if(!p.startsWith('20')) p = '20' + p;
+  return `https://wa.me/${p}?text=${encodeURIComponent(text)}`;
+}
+
+function showHistoryModal(order){
+  const rows = (order.history||[]).slice().reverse().map(h=>`
+    <tr><td>${ORDER_STATE[h.state]?ORDER_STATE[h.state].ar:(STATE_TEXT[h.state]||h.state)}</td>
+      <td class="mono" style="font-size:12px">${new Date(h.at).toLocaleString('ar-EG')}</td></tr>`).join('');
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'position:fixed;inset:0;background:rgba(18,33,43,.55);z-index:200;display:grid;place-items:center;padding:18px';
+  wrap.innerHTML = `
+    <div class="card" style="max-width:420px;width:100%;box-shadow:var(--shadow)">
+      <h3 style="font-size:16px;margin-bottom:10px">تاريخ حالات الأوردر — ${esc(order.name||'')}</h3>
+      <div class="table-wrap"><table><thead><tr><th>الحالة</th><th>الوقت</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="2" class="empty">مفيش سجل لسه</td></tr>'}</tbody></table></div>
+      <div class="form-actions" style="margin-top:14px"><button class="btn sm line" id="hist_close">قفل</button></div>
+    </div>`;
+  document.body.appendChild(wrap);
+  const close = ()=> document.body.removeChild(wrap);
+  wrap.querySelector('#hist_close').onclick = close;
+  wrap.onclick = ev => { if(ev.target === wrap) close(); };
+}
+
+async function showContactModal(order){
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'position:fixed;inset:0;background:rgba(18,33,43,.55);z-index:200;display:grid;place-items:center;padding:18px';
+  const today = new Date().toISOString().slice(0,10);
+  const paint2 = ()=>{
+    const log = order.contactLog||[];
+    const todayCount = log.filter(t=>String(t).slice(0,10)===today).length;
+    wrap.innerHTML = `
+      <div class="card" style="max-width:380px;width:100%;box-shadow:var(--shadow)">
+        <h3 style="font-size:16px;margin-bottom:4px">محاولات التواصل — ${esc(order.name||'')}</h3>
+        <p class="hint" style="margin-bottom:14px">النهارده: ${todayCount} من ٣ · إجمالي مسجّل: ${log.length}</p>
+        <div class="form-actions">
+          <button class="btn sm" id="ct_add" ${todayCount>=3?'disabled':''}>سجّل محاولة تواصل دلوقتي</button>
+          <button class="btn sm line" id="ct_close">قفل</button>
+        </div>
+      </div>`;
+    wrap.querySelector('#ct_close').onclick = ()=> document.body.removeChild(wrap);
+    wrap.querySelector('#ct_add').onclick = async ()=>{
+      try{
+        const res = await api('/api/orders/'+encodeURIComponent(order.id)+'/contact', {method:'POST'});
+        order.contactLog = res.log; paint2(); toast('اتسجّلت المحاولة');
+      }catch(e){ toast(e.message); }
+    };
+  };
+  paint2();
+  document.body.appendChild(wrap);
+  wrap.onclick = ev => { if(ev.target === wrap) document.body.removeChild(wrap); };
+}
+
+function showWhatsAppModal(order, clientName){
+  const templates = {
+    confirm: `مرحباً ${order.name||''}، إحنا من ${clientName||'المتجر'}. حابين نأكد طلبك: ${order.product||''} بمبلغ ${money(order.total)} جنيه. تقدر تأكدلنا الطلب؟`,
+    shipped: `مرحباً ${order.name||''}، طلبك اتشحن${order.awb?(' ورقم البوليصة '+order.awb):''}. هيوصلك قريب إن شاء الله.`,
+    review: `مرحباً ${order.name||''}، نتمنى إن الطلب وصلك بالسلامة. نسعد جداً لو قيّمت تجربتك معانا 🙏`
+  };
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'position:fixed;inset:0;background:rgba(18,33,43,.55);z-index:200;display:grid;place-items:center;padding:18px';
+  wrap.innerHTML = `
+    <div class="card" style="max-width:380px;width:100%;box-shadow:var(--shadow)">
+      <h3 style="font-size:16px;margin-bottom:14px">ابعت واتساب — ${esc(order.name||'')}</h3>
+      <div class="form-actions" style="flex-direction:column;align-items:stretch;gap:8px">
+        <button class="btn sm" id="wa_confirm">رسالة تأكيد الطلب</button>
+        <button class="btn sm" id="wa_shipped">رسالة تأكيد الشحن</button>
+        <button class="btn sm" id="wa_review">رسالة طلب تقييم</button>
+        <button class="btn sm line" id="wa_close">إلغاء</button>
+      </div>
+    </div>`;
+  document.body.appendChild(wrap);
+  const close = ()=> document.body.removeChild(wrap);
+  wrap.querySelector('#wa_confirm').onclick = ()=>{ window.open(waLink(order.phone, templates.confirm), '_blank'); close(); };
+  wrap.querySelector('#wa_shipped').onclick = ()=>{ window.open(waLink(order.phone, templates.shipped), '_blank'); close(); };
+  wrap.querySelector('#wa_review').onclick  = ()=>{ window.open(waLink(order.phone, templates.review),  '_blank'); close(); };
+  wrap.querySelector('#wa_close').onclick = close;
+  wrap.onclick = ev => { if(ev.target === wrap) close(); };
+}
+
 function bindPasswordCard(){
   const b = document.getElementById('changePassBtn');
   if(!b) return;
@@ -1507,27 +1593,39 @@ function adminOrders(){
   const cnt = st => allForCount.filter(o=>o.state===st).length;
   const awaiting = allForCount.filter(o=>o.state==='signed');
   const awaitingSum = awaiting.reduce((s,o)=>s+(Number(o.total)||0),0);
-  const manual = list.filter(o=>String(o.id).startsWith('MN-'));
+  const unconfirmed = allForCount.filter(o=>o.state==='pending');
+  const manual = list.filter(o=>!/^(EO-|WA-)/.test(o.id));
   const rows = list.slice(0,60).map(o=>{
     const c = DB.clients.find(x=>x.id===o.clientId);
     const stOpts = Object.keys(ORDER_STATE).map(k=>
       `<option value="${k}" ${o.state===k?'selected':''}>${ORDER_STATE[k].ar}</option>`).join('');
     return `<tr>
       <td>${arDate(o.date)}<br><span class="hint mono" style="font-size:10.5px">${esc(o.id)}</span></td>
-      <td>${esc(c?c.name:'—')}</td>
-      <td>${esc(o.name)}<br><span class="hint">${esc(o.gov||'')}</span></td>
-      <td class="num">${esc(o.phone)}</td>
-      <td><span class="pill ${String(o.id).startsWith('MN-')?'wait':'mid'}">${esc(o.source||'المتجر')}</span></td>
-      <td class="num">${money(o.total)} ${c?c.currency:''}</td>
-      <td class="num">${o.shippingCost!=null?money(o.shippingCost):'—'}</td>
+      <td><span class="hint" style="font-size:11px">${esc(c?c.name:'—')}</span><br>
+        <b>${esc(o.name)}</b><br><span class="hint">${esc(o.gov||'')} · ${esc(o.phone)}</span></td>
+      <td><span class="pill ${!/^(EO-|WA-)/.test(o.id)?'wait':'mid'}">${esc(o.source||'المتجر')}</span></td>
+      <td class="num">${money(o.total)} ${c?c.currency:''}<br>
+        <span class="hint" style="font-size:11px">شحن ${o.shippingCost!=null?money(o.shippingCost):'—'}</span></td>
       <td class="num" style="color:${o.state==='collected'?((o.total-(o.productCost||0)-(o.shippingCost||0)-(o.otherCost||0))>=0?'var(--pine)':'var(--brick)'):'var(--ink-3)'}">
         ${o.state==='collected'?money(o.total-(o.productCost||0)-(o.shippingCost||0)-(o.otherCost||0)):'—'}</td>
       <td><input class="mono" data-awb="${o.id}" value="${esc(o.awb||'')}" placeholder="رقم البوليصة"
-           style="width:132px;padding:5px 8px;border:1px solid var(--line);border-radius:7px;font-size:12px"></td>
-      <td><select data-st="${o.id}" style="padding:5px 8px;border:1px solid var(--line);border-radius:7px;font-size:12.5px">${stOpts}</select></td>
-      <td><button class="icon-btn" data-delorder="${o.id}">حذف</button></td>
+           style="width:120px;padding:5px 8px;border:1px solid var(--line);border-radius:7px;font-size:12px;margin-bottom:5px"><br>
+        <select data-st="${o.id}" style="padding:5px 8px;border:1px solid var(--line);border-radius:7px;font-size:12.5px;width:120px">${stOpts}</select></td>
+      <td><div class="row-act" style="flex-wrap:wrap;gap:4px">
+        <button class="icon-btn" data-hist="${o.id}" title="تاريخ الحالات">تاريخ</button>
+        <button class="icon-btn" data-contact="${o.id}" title="محاولات التواصل">تواصل</button>
+        <button class="icon-btn" data-wa="${o.id}" title="ابعت واتساب">واتساب</button>
+        <button class="icon-btn" data-delorder="${o.id}">حذف</button>
+      </div></td>
     </tr>`;}).join('');
   return `
+  ${unconfirmed.length ? `<div class="card" style="background:var(--brick-soft);border-color:var(--brick-line);margin-top:8px">
+    <div class="chart-head" style="margin-bottom:4px">
+      <h3 style="color:var(--brick)">${num(unconfirmed.length)} أوردر لسه ما اتأكدش</h3>
+    </div>
+    <p class="hint" style="margin-bottom:10px">لسه في حالة "جاري التأكيد" — بيختفوا من هنا أول ما تتحول لـ"تم تأكيد الطلب" أو "جاري الشحن".</p>
+    <button class="btn sm line" id="showUnconfirmed">اعرضهم</button>
+  </div>` : ''}
   ${awaiting.length ? `<div class="card" style="background:var(--gold-soft);border-color:var(--gold-line);margin-top:8px">
     <div class="chart-head" style="margin-bottom:4px">
       <h3 style="color:var(--gold-ink)">${num(awaiting.length)} شحنة منتظرة التحصيل</h3>
@@ -1545,7 +1643,7 @@ function adminOrders(){
     ${orderFormFields(first, true)}
     <div class="form-actions">
       <button class="btn sm" id="adminSaveOrder">تسجيل الأوردر</button>
-      <span class="hint">الحالة بتبدأ "جديد" — غيّرها من الجدول تحت مع رقم البوليصة.</span>
+      <span class="hint">الحالة بتبدأ "جاري التأكيد" — غيّرها من الجدول تحت مع رقم البوليصة.</span>
     </div>
   </div>
   <div class="section-title">كل الأوردرات</div>
@@ -1565,8 +1663,8 @@ function adminOrders(){
     </div>
   </div>
   <div class="table-wrap"><table>
-    <thead><tr><th>التاريخ</th><th>المتجر</th><th>المشتري</th><th>التليفون</th><th>المصدر</th><th>الإجمالي</th><th>الشحن</th><th>ربح الأوردر</th><th>بوليصة J&amp;T</th><th>الحالة</th><th></th></tr></thead>
-    <tbody>${rows || '<tr><td colspan="11" class="empty">مفيش أوردرات.</td></tr>'}</tbody>
+    <thead><tr><th>التاريخ</th><th>العميل</th><th>المصدر</th><th>الإجمالي</th><th>ربح الأوردر</th><th>الشحن والحالة</th><th></th></tr></thead>
+    <tbody>${rows || '<tr><td colspan="7" class="empty">مفيش أوردرات.</td></tr>'}</tbody>
   </table></div>
   <p class="hint" style="margin-top:10px">أول ٦٠ أوردر. تغيير الحالة أو رقم البوليصة بيتحفظ على طول.</p>`;
 }
@@ -2506,6 +2604,14 @@ function bindClient(c){
   });
   if(clientTab==='integrations') bindClientIntegrations();
   if(clientTab==='finance') bindClientFinance();
+  document.querySelectorAll('[data-chist]').forEach(b=> b.onclick = ()=>{
+    const o = (DB.orders||[]).find(x=>x.id===b.dataset.chist);
+    if(o) showHistoryModal(o);
+  });
+  document.querySelectorAll('[data-cwa]').forEach(b=> b.onclick = ()=>{
+    const o = (DB.orders||[]).find(x=>x.id===b.dataset.cwa);
+    if(o) showWhatsAppModal(o, c.name);
+  });
   const go = document.getElementById('goAddOrder');
   if(go) go.onclick = ()=>{ clientTab='add'; paint(); };
   bindProductPicker();
@@ -2663,6 +2769,8 @@ function bindAdmin(){
     document.querySelectorAll('#stateFilter button').forEach(b=> b.onclick = ()=>{ orderStateFilter=b.dataset.sf; paint(); });
     const sa = $('showAwaiting');
     if(sa) sa.onclick = ()=>{ orderStateFilter='signed'; paint(); };
+    const su = $('showUnconfirmed');
+    if(su) su.onclick = ()=>{ orderStateFilter='pending'; paint(); };
     const ca = $('collectAll');
     if(ca) ca.onclick = async ()=>{
       const list = (DB.orders||[]).filter(o=>o.state==='signed'
@@ -2682,10 +2790,9 @@ function bindAdmin(){
       ca.disabled = false;
       paint(); toast(`اتحوّلوا ${done} شحنة لتم التحصيل`);
     };
+    const nc = $('n_client');
     if(nc) nc.onchange = ()=>{ orderFormClient = nc.value; paint(true); };
     bindProductPicker();
-    const nc = $('n_client');
-    if(nc) nc.onchange = ()=>{ paint(true); };
     $('adminSaveOrder').onclick = async ()=>{
       const cid = $('n_client').value;
       const rec = readOrderForm(cid);
@@ -2720,7 +2827,7 @@ function bindAdmin(){
     document.querySelectorAll('[data-awb]').forEach(el=> el.onchange = async ()=>{
       const o = DB.orders.find(x=>x.id===el.dataset.awb);
       o.awb = el.value.trim() || null;
-      if(o.awb && o.state==='new'){ o.state='in_transit'; o.checkpoint=STATE_TEXT.in_transit; }
+      if(o.awb && o.state==='pending'){ o.state='shipped'; o.checkpoint=STATE_TEXT.shipped; }
       if(ONLINE) await api('/api/orders/'+encodeURIComponent(o.id), {method:'PATCH', body:JSON.stringify({awb:o.awb, state:o.state})});
       else await persist();
       paint(true); toast('اتحفظ رقم البوليصة');
@@ -2730,6 +2837,19 @@ function bindAdmin(){
       DB.orders = DB.orders.filter(o=>o.id!==b.dataset.delorder);
       if(!ONLINE) await persist();
       paint(true); toast('اتحذف');
+    });
+    document.querySelectorAll('[data-hist]').forEach(b=> b.onclick = ()=>{
+      const o = DB.orders.find(x=>x.id===b.dataset.hist);
+      if(o) showHistoryModal(o);
+    });
+    document.querySelectorAll('[data-contact]').forEach(b=> b.onclick = ()=>{
+      const o = DB.orders.find(x=>x.id===b.dataset.contact);
+      if(o) showContactModal(o);
+    });
+    document.querySelectorAll('[data-wa]').forEach(b=> b.onclick = ()=>{
+      const o = DB.orders.find(x=>x.id===b.dataset.wa);
+      const c = o && DB.clients.find(x=>x.id===o.clientId);
+      if(o) showWhatsAppModal(o, c && c.name);
     });
   }
 
