@@ -2,11 +2,12 @@
 """
 ad-spend-sync.py
 -----------------
-بيشغّل meta_ads_spend.py بتاعك ويرفع النتيجة على نظام كن أونلاين.
+بيشغّل meta_ads_spend.py بتاعك ويرفع النتيجة على نظام كن أونلاين،
+وكمان بيجيب الرصيد المتبقي في كل حساب إعلانات مباشرة من ميتا (حسابات الدفع المقدّم في مصر).
 مصمم يشتغل من OpenClaw كمهمة يومية، أو تجربه بإيدك من الطرفية.
 
 الاستخدام:
-    python3 ad-spend-sync.py                  # مصروف أمس
+    python3 ad-spend-sync.py                  # مصروف النهاردة
     python3 ad-spend-sync.py 2026-08-09        # يوم معيّن
 
 محتاج ملف ~/konline/.env فيه:
@@ -76,6 +77,22 @@ def api(path, method="GET", body=None, token=None, base=None):
             raise RuntimeError(f"HTTP {e.code} من النظام")
 
 
+def fetch_balance(account_id):
+    """بيرجع الرصيد المتبقي (بالقروش/السنتات) من ميتا مباشرة، أو None لو فشل"""
+    url = (
+        f"https://graph.facebook.com/v21.0/{account_id}"
+        f"?fields=balance,currency&access_token={os.environ['META_ACCESS_TOKEN']}"
+    )
+    try:
+        with urllib.request.urlopen(url, timeout=15) as r:
+            data = json.loads(r.read().decode())
+        if "balance" not in data:
+            return None
+        return {"amount": round(int(data["balance"]) / 100, 2), "currency": data.get("currency", "")}
+    except Exception:
+        return None
+
+
 def fail(msg, **extra):
     print(json.dumps({"error": msg, **extra}, ensure_ascii=False))
     sys.exit(1)
@@ -98,7 +115,7 @@ def main():
 
     date_arg = sys.argv[1] if len(sys.argv) > 1 else None
     cmd = [sys.executable, meta_script, "--account", "all", "--json"]
-    cmd += ["--since", date_arg, "--until", date_arg] if date_arg else ["--date_preset", "yesterday"]
+    cmd += ["--since", date_arg, "--until", date_arg] if date_arg else ["--date_preset", "today"]
 
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60, env=os.environ.copy())
@@ -125,6 +142,12 @@ def main():
         except (TypeError, ValueError):
             spend = 0.0
         entries.append({"adAccount": acct_id, "spend": spend})
+
+    for e in entries:
+        bal = fetch_balance(e["adAccount"])
+        if bal:
+            e["balance"] = bal["amount"]
+            e["balanceCurrency"] = bal["currency"]
 
     if not entries:
         fail("مفيش بيانات نرفعها", problems=problems)
