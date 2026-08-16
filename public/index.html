@@ -1913,6 +1913,11 @@ function adminIntegrations(){
   </div>
   ${!client ? '<div class="card"><p class="empty">ضيف عميل الأول من تبويب العملاء.</p></div>' : `
   <div class="section-title">توكن ميتا (Meta Ads) + الضريبة — ${esc(client.name)}</div>
+  ${d.metaBalance!=null ? `<div class="card kpi accent-gold" style="margin-bottom:10px">
+    <div class="k-label">الرصيد المتبقي في حساب الإعلانات</div>
+    <div class="k-val">${money(d.metaBalance)}<span class="cur">${esc(d.metaBalanceCurrency||'')}</span></div>
+    <div class="k-foot">${d.metaBalanceAt?('آخر تحديث '+new Date(d.metaBalanceAt).toLocaleString('ar-EG')):''}</div>
+  </div>` : ''}
   <div class="card">
     <div class="form-grid">
       <div class="field"><label>معرّف حساب الإعلانات</label>
@@ -1942,6 +1947,32 @@ function adminIntegrations(){
           placeholder="${d.easyOrdersTokenSet?('محفوظ '+esc(d.easyOrdersTokenTail)):'اختياري'}"></div>
     </div>
     <div class="form-actions"><button class="btn sm" id="adminSaveEO">حفظ</button></div>
+  </div>
+
+  <div class="section-title">سعر الشحن</div>
+  <div class="card">
+    <div class="form-grid">
+      <div class="field"><label>طريقة الحساب</label>
+        <select id="ai_ship_mode">
+          <option value="fixed" ${d.shippingMode!=='byGov'?'selected':''}>سعر ثابت لكل الأوردرات</option>
+          <option value="byGov" ${d.shippingMode==='byGov'?'selected':''}>يختلف حسب المحافظة</option>
+        </select></div>
+      <div class="field" id="ai_ship_fixed_wrap" style="${d.shippingMode==='byGov'?'display:none':''}">
+        <label>سعر الشحن الثابت (${cur})</label>
+        <input id="ai_ship_fixed" type="number" min="0" step="0.01" value="${d.shippingFixed||0}"></div>
+    </div>
+    <div id="ai_ship_gov_wrap" style="${d.shippingMode!=='byGov'?'display:none':''}">
+      <div class="form-grid" id="ai_ship_gov_rows">
+        ${Object.entries(d.shippingByGov||{}).map(([g,r])=>`
+        <div class="field" style="display:flex;gap:6px;align-items:flex-end">
+          <div style="flex:1"><label>المحافظة</label><input class="ship-gov-name" value="${esc(g)}"></div>
+          <div style="flex:1"><label>السعر (${cur})</label><input class="ship-gov-rate" type="number" min="0" step="0.01" value="${r}"></div>
+          <button class="icon-btn" data-rmgovrow>حذف</button>
+        </div>`).join('')}
+      </div>
+      <button class="btn sm line" id="ai_ship_addgov" style="margin-top:8px">+ ضيف محافظة</button>
+    </div>
+    <div class="form-actions"><button class="btn sm" id="adminSaveShipping">حفظ سعر الشحن</button></div>
   </div>
 
   <div class="section-title">ربط الإيميل</div>
@@ -3187,6 +3218,40 @@ function bindAdmin(){
       const body = { clientId: cid(), easyOrdersStoreId: $('ai_eo_store').value.trim() };
       const tok = $('ai_eo_token').value.trim(); if(tok) body.easyOrdersToken = tok;
       try{ await api('/api/integrations',{method:'PUT', body:JSON.stringify(body)}); await reload(); toast('اتحفظ'); paint(); }
+      catch(e){ toast(e.message); }
+    };
+    const aiShipMode = $('ai_ship_mode');
+    if(aiShipMode) aiShipMode.onchange = ()=>{
+      const byGov = aiShipMode.value==='byGov';
+      $('ai_ship_fixed_wrap').style.display = byGov?'none':'';
+      $('ai_ship_gov_wrap').style.display = byGov?'':'none';
+    };
+    const aiAddGovBtn = $('ai_ship_addgov');
+    if(aiAddGovBtn) aiAddGovBtn.onclick = ()=>{
+      const row = document.createElement('div');
+      row.className = 'field'; row.style.cssText = 'display:flex;gap:6px;align-items:flex-end';
+      row.innerHTML = `<div style="flex:1"><label>المحافظة</label><input class="ship-gov-name"></div>
+        <div style="flex:1"><label>السعر</label><input class="ship-gov-rate" type="number" min="0" step="0.01" value="0"></div>
+        <button class="icon-btn" data-rmgovrow>حذف</button>`;
+      $('ai_ship_gov_rows').appendChild(row);
+      row.querySelector('[data-rmgovrow]').onclick = ()=> row.remove();
+    };
+    document.querySelectorAll('#ai_ship_gov_rows [data-rmgovrow]').forEach(b=> b.onclick = ()=> b.closest('.field').remove());
+    const aiSaveShip = $('adminSaveShipping');
+    if(aiSaveShip) aiSaveShip.onclick = async ()=>{
+      const mode = $('ai_ship_mode').value;
+      const body = { clientId: cid(), shippingMode: mode };
+      if(mode==='fixed'){ body.shippingFixed = +$('ai_ship_fixed').value || 0; }
+      else{
+        const table = {};
+        document.querySelectorAll('#ai_ship_gov_rows .field').forEach(row=>{
+          const g = row.querySelector('.ship-gov-name').value.trim();
+          const r = +row.querySelector('.ship-gov-rate').value || 0;
+          if(g) table[g] = r;
+        });
+        body.shippingByGov = table;
+      }
+      try{ await api('/api/integrations',{method:'PUT', body:JSON.stringify(body)}); await reload(); toast('اتحفظ سعر الشحن'); paint(); }
       catch(e){ toast(e.message); }
     };
     const sem = $('adminSaveEmail');
