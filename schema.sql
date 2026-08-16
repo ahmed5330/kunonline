@@ -10,7 +10,8 @@ CREATE TABLE IF NOT EXISTS users (
   client_id     TEXT,                   -- للعميل: أي عميل في النظام
   status        TEXT DEFAULT 'active',
   created_at    TEXT,
-  last_login    TEXT
+  last_login    TEXT,
+  chat_last_seen TEXT                   -- آخر مرة فتح فيها الشات الداخلي (لعدّاد الإشعارات)
 );
 
 CREATE INDEX IF NOT EXISTS idx_users_client ON users (client_id);
@@ -61,3 +62,26 @@ CREATE TABLE IF NOT EXISTS orders (
 
 CREATE INDEX IF NOT EXISTS idx_orders_client ON orders (client_id, date);
 CREATE INDEX IF NOT EXISTS idx_orders_awb    ON orders (awb);
+
+-- الشات الداخلي للفريق (الإدارة والموظفين بس — مفيش وصول للعملاء)
+CREATE TABLE IF NOT EXISTS chat_messages (
+  id          TEXT PRIMARY KEY,
+  author_id   TEXT NOT NULL,
+  author_name TEXT,
+  body        TEXT NOT NULL,
+  created_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_chat_created ON chat_messages (created_at);
+
+-- تاسكات الفريق — أي موظف يقدر يوكّل تاسك لزميل
+CREATE TABLE IF NOT EXISTS tasks (
+  id           TEXT PRIMARY KEY,
+  title        TEXT NOT NULL,
+  description  TEXT,
+  assigned_to  TEXT,                    -- user id
+  assigned_by  TEXT,                    -- user id
+  status       TEXT DEFAULT 'open',     -- open أو done
+  created_at   TEXT,
+  updated_at   TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_tasks_assignee ON tasks (assigned_to, status);

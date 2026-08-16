@@ -1,7 +1,7 @@
 /* اختبارات نظام كن أونلاين — الدخول، العزل، الويبهوك، التتبع */
 import worker from './src/index.js';
 
-let stateRow=null; const orders=new Map(), users=new Map(), attempts=new Map(), products=new Map(), transactions=new Map();
+let stateRow=null; const orders=new Map(), users=new Map(), attempts=new Map(), products=new Map(), transactions=new Map(), chatMessages=new Map(), tasks=new Map();
 const stmt=(sql)=>({
   args:[], bind(...a){this.args=a;return this;},
   async first(){
@@ -17,6 +17,15 @@ const stmt=(sql)=>({
     if(sql.includes('FROM orders WHERE ref = ? AND client_id = ?'))
       return [...orders.values()].find(o=>o.ref===this.args[0]&&o.client_id===this.args[1])||null;
     if(sql.includes('FROM transactions WHERE id = ?')) return transactions.get(this.args[0])||null;
+    if(sql.includes('chat_last_seen FROM users')) return {chat_last_seen: (users.get(this.args[0])||{}).chat_last_seen||null};
+    if(sql.includes('COUNT(*) AS n FROM chat_messages')){
+      const since=this.args[0], me=this.args[1];
+      return {n:[...chatMessages.values()].filter(m=>m.created_at>since && m.author_id!==me).length};
+    }
+    if(sql.includes('COUNT(*) AS n FROM tasks')){
+      const me=this.args[0];
+      return {n:[...tasks.values()].filter(t=>t.assigned_to===me && t.status==='open').length};
+    }
     return null;
   },
   async run(){
@@ -27,6 +36,7 @@ const stmt=(sql)=>({
       if(u)Object.assign(u,{email:this.args[0],name:this.args[1],password:this.args[2],role:this.args[3],client_id:this.args[4],status:this.args[5]});}
     else if(sql.includes('UPDATE users SET password')){const u=users.get(this.args[1]);if(u)u.password=this.args[0];}
     else if(sql.includes('UPDATE users SET last_login')){const u=users.get(this.args[1]);if(u)u.last_login=this.args[0];}
+    else if(sql.includes('UPDATE users SET chat_last_seen')){const u=users.get(this.args[1]);if(u)u.chat_last_seen=this.args[0];}
     else if(sql.includes('DELETE FROM users')) users.delete(this.args[0]);
     else if(sql.includes('INSERT INTO login_attempts')) attempts.set(this.args[0],{email:this.args[0],fails:this.args[1],locked_until:this.args[2]});
     else if(sql.includes('DELETE FROM login_attempts')) attempts.delete(this.args[0]);
@@ -55,6 +65,19 @@ const stmt=(sql)=>({
     else if(sql.includes('INSERT INTO transactions')){
       const [id,type,date,category,amount,currency,method,client_id,note,created_by,created_at]=this.args;
       transactions.set(id,{id,type,date,category,amount,currency,method,client_id,note,created_by,created_at});}
+    else if(sql.includes('INSERT INTO chat_messages')){
+      const [id,author_id,author_name,body,created_at]=this.args;
+      chatMessages.set(id,{id,author_id,author_name,body,created_at});}
+    else if(sql.includes('INSERT INTO tasks')){
+      const [id,title,description,assigned_to,assigned_by,status,created_at,updated_at]=this.args;
+      tasks.set(id,{id,title,description,assigned_to,assigned_by,status,created_at,updated_at});}
+    else if(sql.startsWith('UPDATE tasks SET')){
+      const id=this.args[this.args.length-1]; const t=tasks.get(id); if(!t) return {};
+      const setPart=sql.slice('UPDATE tasks SET '.length, sql.indexOf(' WHERE'));
+      const cols=setPart.split(',').map(s=>s.trim().split('=')[0].trim());
+      cols.forEach((c,i)=>{ t[c]=this.args[i]; });
+    }
+    else if(sql.includes('DELETE FROM tasks')) tasks.delete(this.args[0]);
     return {};
   },
   async all(){
@@ -67,6 +90,16 @@ const stmt=(sql)=>({
     if(sql.includes('FROM transactions')){
       let tlist=[...transactions.values()];
       if(sql.includes('WHERE client_id = ?')) tlist=tlist.filter(t=>t.client_id===this.args[0]);
+      return {results:tlist};
+    }
+    if(sql.includes('FROM chat_messages')){
+      let mlist=[...chatMessages.values()].sort((a,b)=>a.created_at<b.created_at?-1:1);
+      if(sql.includes('WHERE created_at > ?')) mlist=mlist.filter(m=>m.created_at>this.args[0]);
+      if(sql.includes('ORDER BY created_at DESC')) mlist=mlist.slice().reverse();
+      return {results:mlist};
+    }
+    if(sql.includes('FROM tasks')){
+      const tlist=[...tasks.values()].sort((a,b)=>a.created_at<b.created_at?1:-1);
       return {results:tlist};
     }
     let list=[...orders.values()];
@@ -279,7 +312,7 @@ check('endpoint الأداء بيرجّع بنجاح', r.status===200);
 check('أوردرات اليوم مقسّمة بالحالة الحالية', perf.today.byState.collected>=1 && perf.today.byState.signed>=1 && perf.today.byState.returned>=1);
 check('التحصيل بيتحسب بتاريخ الحدث مش تاريخ إنشاء الأوردر', perf.today.collected.count>=1);
 check('المرتجع بيتحسب بتاريخ الحدث', perf.today.returned>=1);
-check('نسبة تأكيدات وتوصيل الشهر اللي فات أرقام صحيحة', typeof perf.lastMonthConfirmationRatePct==='number' && typeof perf.lastMonthDeliveryRatePct==='number');
+check('نسبة تأكيدات وتوصيل آخر ٣٠ يوم أرقام صحيحة', typeof perf.last30ConfirmationRatePct==='number' && typeof perf.last30DeliveryRatePct==='number');
 check('الأرباح والإيرادات المتوقعة موجودة في نفس الرد', typeof perf.profitExpected==='number' && typeof perf.revenueExpected==='number');
 check('العميل ممنوع يشوف أداء عميل تاني',
   (await call('/api/performance?clientId=c1&date=2026-08-16',{},clientCookie)).status===403);
@@ -298,6 +331,37 @@ r=await call('/api/ad-spend',{method:'POST',headers:{authorization:'Bearer inges
 check('الأجنت يقدر يرفع رصيد ميتا مع الصرف اليومي', r.status===200);
 let [,balInteg]=await j(await call('/api/integrations?clientId=c2',{},adminCookie));
 check('الرصيد المتبقي بيتحفظ ويظهر في التكاملات', balInteg.metaBalance===857.5 && balInteg.metaBalanceCurrency==='EGP');
+
+head('الشات الداخلي + التاسكات');
+let [,colleague]=await j(await call('/api/users',{method:'POST',body:JSON.stringify({
+  email:'colleague@x.com', role:'admin', password:'ColleaguePass1', name:'زميل'})},adminCookie));
+check('اتعمل حساب زميل تاني في الفريق', colleague.role==='admin' || colleague.ok!==false);
+const colleagueId=[...users.values()].find(u=>u.email==='colleague@x.com').id;
+
+check('العميل ممنوع يوصل للشات الداخلي خالص',
+  (await call('/api/chat/messages',{},clientCookie)).status===403);
+r=await call('/api/chat/messages',{method:'POST',body:JSON.stringify({text:'صباح الخير يا فريق'})},adminCookie);
+check('عضو فريق يقدر يبعت رسالة', r.status===200);
+let [,msgs]=await j(await call('/api/chat/messages',{},adminCookie));
+check('الرسالة بترجع في القائمة', msgs.some(m=>m.body==='صباح الخير يا فريق'));
+
+r=await call('/api/tasks',{method:'POST',body:JSON.stringify({
+  title:'راجع طلبات وفاق النهاردة', assignedTo:colleagueId})},adminCookie);
+let [,taskRes]=await j(r);
+check('عضو فريق يقدر يوكّل تاسك لزميله', r.status===200 && !!taskRes.task);
+check('التاسك اتسجّل بالمُوكَّل له الصح', tasks.get(taskRes.task.id).assigned_to===colleagueId);
+
+const colleagueLogin=await call('/api/login',{method:'POST',body:JSON.stringify({email:'colleague@x.com',password:'ColleaguePass1'})});
+const colleagueCookie=colleagueLogin.headers.get('Set-Cookie').split(';')[0];
+let [,unread]=await j(await call('/api/chat/unread',{},colleagueCookie));
+check('الزميل شايف رسالة وتاسك جديدين لسه ما شافهمش', unread.unreadMessages>=1 && unread.openTasks>=1);
+await call('/api/chat/seen',{method:'POST'},colleagueCookie);
+let [,unread2]=await j(await call('/api/chat/unread',{},colleagueCookie));
+check('بعد فتح الشات، عدّاد الرسايل غير المقروءة يترجع لصفر', unread2.unreadMessages===0);
+
+r=await call('/api/tasks/'+taskRes.task.id,{method:'PATCH',body:JSON.stringify({status:'done'})},colleagueCookie);
+check('الزميل يقدر يقفل التاسك بتاعه', r.status===200 && tasks.get(taskRes.task.id).status==='done');
+await call('/api/users/'+colleagueId,{method:'DELETE'},adminCookie);
 
 head('كلمات المرور والقفل');
 check('تغيير كلمة المرور بالقديمة الغلط مرفوض',
