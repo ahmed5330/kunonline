@@ -619,9 +619,12 @@ function chartSVG(list, currency){
 /* ---------- 6. لوحة العميل ---------- */
 let clientRange = '30';
 let clientTab = 'dash';
+let integData = null;
+let waGroupsList = [];
 function renderClient(client){
   if(clientTab==='add') return clientAddOrderView(client);
   if(clientTab==='products') return clientProductsView(client);
+  if(clientTab==='integrations') return clientIntegrationsView(client);
   const cur = client.currency;
   const f = fundingState(client.id);
   const listRange = entriesFor(client.id, clientRange);
@@ -663,6 +666,12 @@ function renderClient(client){
       <h2>${esc(client.name)}</h2>
     </div>
     <div class="spacer"></div>
+    <div class="seg" id="clientTabs">
+      <button data-ctab="dash" aria-pressed="true">الداشبورد</button>
+      <button data-ctab="add" aria-pressed="false">أوردر جديد</button>
+      <button data-ctab="products" aria-pressed="false">منتجاتي</button>
+      <button data-ctab="integrations" aria-pressed="false">التكاملات</button>
+    </div>
     <div class="seg" id="rangeSeg">
       ${[['today','النهارده'],['7','٧ أيام'],['30','٣٠ يوم'],['all','كل الفترة']]
         .map(([v,l])=>`<button data-range="${v}" aria-pressed="${clientRange===v}">${l}</button>`).join('')}
@@ -985,6 +994,7 @@ function clientProductsView(client){
       <button data-ctab="dash" aria-pressed="false">الداشبورد</button>
       <button data-ctab="add" aria-pressed="false">أوردر جديد</button>
       <button data-ctab="products" aria-pressed="true">منتجاتي</button>
+      <button data-ctab="integrations" aria-pressed="false">التكاملات</button>
     </div>
   </div>
   <div class="card">
@@ -1013,8 +1023,108 @@ function clientProductsView(client){
   </table></div>`;
 }
 
+/* شاشة العميل: التوكن والـ API + ضريبة الـ 14% + ربط الإيميل + ربط الواتساب */
+function clientIntegrationsView(client){
+  if(!integData){
+    return `<div class="page-head"><div><h2>التكاملات</h2></div></div>
+    <div class="card"><p class="hint">بنجيب بياناتك...</p></div>`;
+  }
+  const d = integData, em = d.email || {};
+  const groupsRows = (waGroupsList||[]).map(g=>`
+    <tr><td>${esc(g.label)}</td>
+      <td><span class="pill ${g.status==='linked'?'on':''}">${g.status==='linked'?'متصل':'في انتظار الربط'}</span></td>
+      <td>${g.status==='linked' ? `<button class="icon-btn" data-delgroup="${g.id}">إلغاء</button>` : `<span class="hint">هيتم ربطه من الإدارة قريب</span>`}</td>
+    </tr>`).join('');
+  return `
+  <div class="page-head">
+    <div><div class="eyebrow">${esc(client.name)}</div><h2>التكاملات</h2></div>
+    <div class="spacer"></div>
+    <div class="seg" id="clientTabs">
+      <button data-ctab="dash" aria-pressed="false">الداشبورد</button>
+      <button data-ctab="add" aria-pressed="false">أوردر جديد</button>
+      <button data-ctab="products" aria-pressed="false">منتجاتي</button>
+      <button data-ctab="integrations" aria-pressed="true">التكاملات</button>
+    </div>
+  </div>
+
+  <div class="section-title">توكن ميتا (Meta Ads) + الضريبة</div>
+  <div class="card">
+    <div class="form-grid">
+      <div class="field"><label>معرّف حساب الإعلانات</label>
+        <input id="i_meta_account" value="${esc(d.metaAdAccountId||'')}" placeholder="act_..."></div>
+      <div class="field"><label>توكن Meta Access Token</label>
+        <input id="i_meta_token" type="password" autocomplete="off"
+          placeholder="${d.metaTokenSet?('محفوظ '+esc(d.metaTokenTail)+' — اكتب توكن جديد لتغييره'):'الصقه هنا'}"></div>
+    </div>
+    <div class="form-grid">
+      <div class="field" style="display:flex;align-items:center;gap:8px;padding-top:22px">
+        <input type="checkbox" id="i_tax_enabled" style="width:auto" ${d.taxEnabled?'checked':''}>
+        <label style="margin:0" for="i_tax_enabled">إضافة ضريبة على الصرف الإعلاني المعروض</label>
+      </div>
+      <div class="field"><label>نسبة الضريبة %</label>
+        <input id="i_tax_rate" type="number" min="0" max="100" step="0.1" value="${d.taxRate!=null?d.taxRate:14}"></div>
+    </div>
+    <div class="form-actions"><button class="btn sm" id="saveMeta">حفظ بيانات ميتا</button>
+      <span class="hint">التوكن بيتشفّر وبيتخزّن آمن — محدش بيشوفه كامل تاني حتى إحنا.</span></div>
+  </div>
+
+  <div class="section-title">توكن إيزي أوردرز</div>
+  <div class="card">
+    <div class="form-grid">
+      <div class="field"><label>معرّف المتجر (Store ID)</label>
+        <input id="i_eo_store" value="${esc(d.easyOrdersStoreId||'')}" placeholder="store_id"></div>
+      <div class="field"><label>توكن API (لو محتاجه مستقبلاً)</label>
+        <input id="i_eo_token" type="password" autocomplete="off"
+          placeholder="${d.easyOrdersTokenSet?('محفوظ '+esc(d.easyOrdersTokenTail)+' — اكتب جديد لتغييره'):'اختياري'}"></div>
+    </div>
+    <div class="form-actions"><button class="btn sm" id="saveEO">حفظ بيانات إيزي أوردرز</button>
+      <span class="hint">حاليًا الطلبات بتوصل تلقائي عن طريق ويبهوك إيزي أوردرز باستخدام Store ID بس.</span></div>
+  </div>
+
+  <div class="section-title">ربط الإيميل — لاستقبال إيميلات شركة الشحن</div>
+  <div class="card">
+    <div class="form-grid">
+      <div class="field" style="display:flex;align-items:center;gap:8px;padding-top:22px">
+        <input type="checkbox" id="i_email_enabled" style="width:auto" ${em.enabled?'checked':''}>
+        <label style="margin:0" for="i_email_enabled">تفعيل استقبال الإيميلات</label>
+      </div>
+      <div class="field"><label>سيرفر الاستقبال (IMAP Host)</label>
+        <input id="i_email_host" value="${esc(em.host||'')}" placeholder="imap.gmail.com"></div>
+      <div class="field"><label>البورت</label>
+        <input id="i_email_port" value="${esc(em.port||'')}" placeholder="993"></div>
+      <div class="field" style="display:flex;align-items:center;gap:8px;padding-top:22px">
+        <input type="checkbox" id="i_email_secure" style="width:auto" ${em.secure!==false?'checked':''}>
+        <label style="margin:0" for="i_email_secure">اتصال آمن (SSL/TLS)</label>
+      </div>
+      <div class="field"><label>الإيميل</label>
+        <input id="i_email_user" value="${esc(em.user||'')}" placeholder="shipping@yourstore.com"></div>
+      <div class="field"><label>كلمة السر</label>
+        <input id="i_email_password" type="password" autocomplete="off"
+          placeholder="${em.passwordSet?('محفوظة '+esc(em.passwordTail)+' — اكتب جديدة لتغييرها'):'كلمة سر التطبيق'}"></div>
+    </div>
+    <div class="form-actions"><button class="btn sm" id="saveEmail">حفظ إعدادات الإيميل</button>
+      <span class="hint">لو بتستخدم Gmail، هتحتاج "App Password" مش كلمة مرور حسابك العادية.</span></div>
+  </div>
+
+  <div class="section-title">ربط الواتساب — استقبال الطلبات</div>
+  <div class="card">
+    <div class="form-grid">
+      <div class="field" style="grid-column:1/-1"><label>اسم/وصف الجروب</label>
+        <input id="i_wa_label" placeholder="مثال: جروب استلام أوردرات المتجر"></div>
+    </div>
+    <div class="form-actions"><button class="btn sm" id="requestWaGroup">طلب ربط جروب جديد</button>
+      <span class="hint">هتحدد اسم الجروب بس — فريق كن أونلاين هو اللي هيربطه تقنيًا من واتساب الإيجنسي.</span></div>
+  </div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>الجروب</th><th>الحالة</th><th></th></tr></thead>
+    <tbody>${groupsRows || '<tr><td colspan="3" class="empty">لسه مفيش جروبات مطلوبة.</td></tr>'}</tbody>
+  </table></div>`;
+}
+
 /* شاشة العميل: تسجيل أوردر جديد */
 function clientAddOrderView(client){
+
+
   const mine = (DB.orders||[]).filter(o=>o.clientId===client.id && String(o.id).startsWith('MN-'))
     .sort((a,b)=> a.date<b.date?1:-1).slice(0,12);
   const rows = mine.map(o=>{
@@ -1030,6 +1140,7 @@ function clientAddOrderView(client){
       <button data-ctab="dash" aria-pressed="false">الداشبورد</button>
       <button data-ctab="add" aria-pressed="true">أوردر جديد</button>
       <button data-ctab="products" aria-pressed="false">منتجاتي</button>
+      <button data-ctab="integrations" aria-pressed="false">التكاملات</button>
     </div>
   </div>
   <div class="card">
@@ -1186,6 +1297,7 @@ function renderAdmin(){
     ['entry','الإدخال اليومي','entries'], ['products','المنتجات','orders'],
     ['import','استيراد شيت','orders'], ['finance','الحسابات','finance'],
     ['funding','التمويلات','finance'], ['clients','العملاء','clients'],
+    ['integrations','التكاملات','clients'], ['whatsapp','الواتساب','clients'],
     ['users','الفريق','users'], ['settings','الإعدادات','settings']
   ];
   const tabs = allTabs.filter(([,,p])=> !p || may(p) || (p==='orders' && may('orders_view')));
@@ -1205,6 +1317,8 @@ function renderAdmin(){
     adminTab==='entry'   ? adminEntry() :
     adminTab==='funding' ? adminFunding() :
     adminTab==='clients' ? adminClients() :
+    adminTab==='integrations' ? adminIntegrations() :
+    adminTab==='whatsapp' ? adminWhatsapp() :
     adminTab==='users'   ? adminUsers() : adminSettings()
   }</div>`;
 }
@@ -1406,6 +1520,114 @@ function adminFunding(){
   <div class="table-wrap"><table>
     <thead><tr><th>التاريخ</th><th>العميل</th><th>النوع</th><th>المبلغ</th><th>ملاحظة</th><th></th></tr></thead>
     <tbody>${rows || '<tr><td colspan="6" class="empty">مفيش حركات.</td></tr>'}</tbody>
+  </table></div>`;
+}
+
+let integClient = null;
+
+/* لوحة الإدارة: توكن ميتا/إيزي أوردرز + ضريبة الـ 14% + ربط الإيميل — لأي عميل تختاره */
+function adminIntegrations(){
+  if(!ONLINE) return `<div class="card"><div class="empty"><b>محتاجة السيرفر</b>الشاشة دي بتشتغل بعد رفع النظام.</div></div>`;
+  const cid = integClient || (DB.clients[0] && DB.clients[0].id);
+  const client = DB.clients.find(c=>c.id===cid);
+  const d = integData || {};
+  const em = d.email || {};
+  return `
+  <div class="page-head" style="padding:8px 0 12px">
+    <div class="eyebrow">تكاملات ميتا وإيزي أوردرز والإيميل — لكل عميل على حدة</div>
+    <div class="spacer"></div>
+    <div class="seg" id="integSeg">
+      ${DB.clients.map(c=>`<button data-ic="${c.id}" aria-pressed="${cid===c.id}">${esc(c.name.split(' —')[0])}</button>`).join('')}
+    </div>
+  </div>
+  ${!client ? '<div class="card"><p class="empty">ضيف عميل الأول من تبويب العملاء.</p></div>' : `
+  <div class="section-title">توكن ميتا (Meta Ads) + الضريبة — ${esc(client.name)}</div>
+  <div class="card">
+    <div class="form-grid">
+      <div class="field"><label>معرّف حساب الإعلانات</label>
+        <input id="ai_meta_account" value="${esc(d.metaAdAccountId||'')}" placeholder="act_..."></div>
+      <div class="field"><label>توكن Meta Access Token</label>
+        <input id="ai_meta_token" type="password" autocomplete="off"
+          placeholder="${d.metaTokenSet?('محفوظ '+esc(d.metaTokenTail)+' — اكتب جديد لتغييره'):'اختياري — لو العميل عنده توكن خاص بيه'}"></div>
+    </div>
+    <div class="form-grid">
+      <div class="field" style="display:flex;align-items:center;gap:8px;padding-top:22px">
+        <input type="checkbox" id="ai_tax_enabled" style="width:auto" ${d.taxEnabled?'checked':''}>
+        <label style="margin:0" for="ai_tax_enabled">إضافة ضريبة على الصرف المعروض للعميل</label>
+      </div>
+      <div class="field"><label>نسبة الضريبة %</label>
+        <input id="ai_tax_rate" type="number" min="0" max="100" step="0.1" value="${d.taxRate!=null?d.taxRate:14}"></div>
+    </div>
+    <div class="form-actions"><button class="btn sm" id="adminSaveMeta">حفظ</button></div>
+  </div>
+
+  <div class="section-title">توكن إيزي أوردرز</div>
+  <div class="card">
+    <div class="form-grid">
+      <div class="field"><label>معرّف المتجر (Store ID)</label>
+        <input id="ai_eo_store" value="${esc(d.easyOrdersStoreId||'')}" placeholder="store_id"></div>
+      <div class="field"><label>توكن API</label>
+        <input id="ai_eo_token" type="password" autocomplete="off"
+          placeholder="${d.easyOrdersTokenSet?('محفوظ '+esc(d.easyOrdersTokenTail)):'اختياري'}"></div>
+    </div>
+    <div class="form-actions"><button class="btn sm" id="adminSaveEO">حفظ</button></div>
+  </div>
+
+  <div class="section-title">ربط الإيميل</div>
+  <div class="card">
+    <div class="form-grid">
+      <div class="field" style="display:flex;align-items:center;gap:8px;padding-top:22px">
+        <input type="checkbox" id="ai_email_enabled" style="width:auto" ${em.enabled?'checked':''}>
+        <label style="margin:0" for="ai_email_enabled">تفعيل استقبال الإيميلات</label>
+      </div>
+      <div class="field"><label>سيرفر الاستقبال (IMAP Host)</label>
+        <input id="ai_email_host" value="${esc(em.host||'')}" placeholder="imap.gmail.com"></div>
+      <div class="field"><label>البورت</label>
+        <input id="ai_email_port" value="${esc(em.port||'')}" placeholder="993"></div>
+      <div class="field" style="display:flex;align-items:center;gap:8px;padding-top:22px">
+        <input type="checkbox" id="ai_email_secure" style="width:auto" ${em.secure!==false?'checked':''}>
+        <label style="margin:0" for="ai_email_secure">اتصال آمن (SSL/TLS)</label>
+      </div>
+      <div class="field"><label>الإيميل</label>
+        <input id="ai_email_user" value="${esc(em.user||'')}" placeholder="shipping@yourstore.com"></div>
+      <div class="field"><label>كلمة السر</label>
+        <input id="ai_email_password" type="password" autocomplete="off"
+          placeholder="${em.passwordSet?('محفوظة '+esc(em.passwordTail)):'كلمة سر التطبيق'}"></div>
+    </div>
+    <div class="form-actions"><button class="btn sm" id="adminSaveEmail">حفظ</button></div>
+  </div>`}`;
+}
+
+/* لوحة الإدارة: كل جروبات الواتساب المطلوبة/المربوطة لكل العملاء */
+function adminWhatsapp(){
+  if(!ONLINE) return `<div class="card"><div class="empty"><b>محتاجة السيرفر</b></div></div>`;
+  const rows = (waGroupsList||[]).flatMap(entry =>
+    (entry.groups||[]).map(g => `<tr>
+      <td><b>${esc(entry.name)}</b></td>
+      <td>${esc(g.label)}</td>
+      <td class="mono" style="font-size:11.5px">${g.groupId?esc(g.groupId):'—'}</td>
+      <td><span class="pill ${g.status==='linked'?'on':''}">${g.status==='linked'?'متصل':'في انتظار الربط'}</span></td>
+      <td><div class="row-act">
+        ${g.status!=='linked' ? `<button class="icon-btn" data-linkgroup="${entry.clientId}:${g.id}">حط Group ID</button>` : ''}
+        <button class="icon-btn" data-delwagroup="${entry.clientId}:${g.id}">حذف</button>
+      </div></td>
+    </tr>`)
+  ).join('');
+  return `
+  <div class="section-title">جروبات الواتساب المطلوبة والمربوطة — كل العملاء</div>
+  <div class="card">
+    <div class="form-grid">
+      <div class="field"><label>العميل</label>
+        <select id="wa_client">${DB.clients.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select></div>
+      <div class="field"><label>اسم/وصف الجروب</label><input id="wa_label" placeholder="مثال: جروب استلام الطلبات"></div>
+      <div class="field"><label>Group ID (لو معروف)</label><input id="wa_groupid" placeholder="120363...@g.us" class="mono"></div>
+    </div>
+    <div class="form-actions"><button class="btn sm" id="addWaGroup">إضافة جروب</button>
+      <span class="hint">Group ID بتاخده من واتساب المتصل بالأجنت مباشرة — سيبه فاضي لو لسه مش عارفه.</span></div>
+  </div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>العميل</th><th>الجروب</th><th>Group ID</th><th>الحالة</th><th></th></tr></thead>
+    <tbody>${rows || '<tr><td colspan="5" class="empty">لسه مفيش جروبات مطلوبة من أي عميل.</td></tr>'}</tbody>
   </table></div>`;
 }
 
@@ -2071,8 +2293,15 @@ function bindClient(c){
     if(clientTab==='products' && ONLINE){
       try{ DB.products = await api('/api/products'); }catch(e){ toast(e.message); }
     }
+    if(clientTab==='integrations' && ONLINE){
+      try{
+        integData = await api('/api/integrations');
+        waGroupsList = await api('/api/wa-groups');
+      }catch(e){ toast(e.message); }
+    }
     paint();
   });
+  if(clientTab==='integrations') bindClientIntegrations();
   const go = document.getElementById('goAddOrder');
   if(go) go.onclick = ()=>{ clientTab='add'; paint(); };
   bindProductPicker();
@@ -2094,6 +2323,67 @@ function bindClient(c){
   if(ex) ex.onclick = ()=>{ downloadFile(`${c.email}-report.csv`, clientCSV(c), 'text/csv;charset=utf-8'); toast('اتنزّل الملف'); };
 }
 
+function bindClientIntegrations(){
+  const $ = id => document.getElementById(id);
+  const saveMeta = $('saveMeta');
+  if(saveMeta) saveMeta.onclick = async ()=>{
+    const body = {
+      metaAdAccountId: $('i_meta_account').value.trim(),
+      taxEnabled: $('i_tax_enabled').checked,
+      taxRate: +$('i_tax_rate').value || 0
+    };
+    const tok = $('i_meta_token').value.trim();
+    if(tok) body.metaToken = tok;
+    try{
+      integData = await api('/api/integrations', {method:'PUT', body:JSON.stringify(body)});
+      toast('اتحفظت بيانات ميتا'); paint();
+    }catch(e){ toast(e.message); }
+  };
+  const saveEO = $('saveEO');
+  if(saveEO) saveEO.onclick = async ()=>{
+    const body = { easyOrdersStoreId: $('i_eo_store').value.trim() };
+    const tok = $('i_eo_token').value.trim();
+    if(tok) body.easyOrdersToken = tok;
+    try{
+      integData = await api('/api/integrations', {method:'PUT', body:JSON.stringify(body)});
+      toast('اتحفظت بيانات إيزي أوردرز'); paint();
+    }catch(e){ toast(e.message); }
+  };
+  const saveEmail = $('saveEmail');
+  if(saveEmail) saveEmail.onclick = async ()=>{
+    const body = {
+      emailEnabled: $('i_email_enabled').checked,
+      emailHost: $('i_email_host').value.trim(),
+      emailPort: $('i_email_port').value.trim(),
+      emailSecure: $('i_email_secure').checked,
+      emailUser: $('i_email_user').value.trim()
+    };
+    const pass = $('i_email_password').value.trim();
+    if(pass) body.emailPassword = pass;
+    try{
+      integData = await api('/api/integrations', {method:'PUT', body:JSON.stringify(body)});
+      toast('اتحفظت إعدادات الإيميل'); paint();
+    }catch(e){ toast(e.message); }
+  };
+  const reqWa = $('requestWaGroup');
+  if(reqWa) reqWa.onclick = async ()=>{
+    const label = $('i_wa_label').value.trim();
+    if(!label){ toast('اكتب اسم الجروب'); return; }
+    try{
+      await api('/api/wa-groups', {method:'POST', body:JSON.stringify({label})});
+      waGroupsList = await api('/api/wa-groups');
+      toast('اتبعت الطلب — الإدارة هتربطه قريب'); paint();
+    }catch(e){ toast(e.message); }
+  };
+  document.querySelectorAll('[data-delgroup]').forEach(b=> b.onclick = async ()=>{
+    try{
+      await api('/api/wa-groups/'+b.dataset.delgroup, {method:'DELETE'});
+      waGroupsList = await api('/api/wa-groups');
+      toast('اتحذف'); paint();
+    }catch(e){ toast(e.message); }
+  });
+}
+
 function bindAdmin(){
   document.querySelectorAll('.admin-nav button').forEach(b=> b.onclick = async ()=>{
     adminTab=b.dataset.tab; editingEntry=null; editingClient=null; editingUser=null;
@@ -2105,6 +2395,15 @@ function bindAdmin(){
     }
     if(adminTab==='products' && ONLINE){
       try{ DB.products = await api('/api/products'); }catch(e){ toast(e.message); }
+    }
+    if(adminTab==='integrations' && ONLINE){
+      try{
+        const cid = integClient || (DB.clients[0] && DB.clients[0].id);
+        integData = cid ? await api('/api/integrations?clientId='+encodeURIComponent(cid)) : null;
+      }catch(e){ toast(e.message); }
+    }
+    if(adminTab==='whatsapp' && ONLINE){
+      try{ waGroupsList = await api('/api/wa-groups'); }catch(e){ toast(e.message); }
     }
     if(adminTab==='import'){ importRows=[]; importHeaders=[]; importMap={}; }
     paint();
@@ -2290,6 +2589,73 @@ function bindAdmin(){
       productClient=b.dataset.pc; editingProduct=null; paint(); });
     bindProductForm(async ()=>{ DB.products = await api('/api/products'); },
       ()=> productClient || DB.clients[0].id);
+  }
+
+  if(adminTab==='integrations'){
+    document.querySelectorAll('#integSeg button').forEach(b=> b.onclick = async ()=>{
+      integClient = b.dataset.ic;
+      try{ integData = await api('/api/integrations?clientId='+encodeURIComponent(integClient)); }
+      catch(e){ toast(e.message); }
+      paint();
+    });
+    const cid = () => integClient || (DB.clients[0] && DB.clients[0].id);
+    const reload = async ()=>{ integData = await api('/api/integrations?clientId='+encodeURIComponent(cid())); };
+    const sm = $('adminSaveMeta');
+    if(sm) sm.onclick = async ()=>{
+      const body = { clientId: cid(),
+        metaAdAccountId: $('ai_meta_account').value.trim(),
+        taxEnabled: $('ai_tax_enabled').checked, taxRate: +$('ai_tax_rate').value || 0 };
+      const tok = $('ai_meta_token').value.trim(); if(tok) body.metaToken = tok;
+      try{ await api('/api/integrations',{method:'PUT', body:JSON.stringify(body)}); await reload(); toast('اتحفظ'); paint(); }
+      catch(e){ toast(e.message); }
+    };
+    const se = $('adminSaveEO');
+    if(se) se.onclick = async ()=>{
+      const body = { clientId: cid(), easyOrdersStoreId: $('ai_eo_store').value.trim() };
+      const tok = $('ai_eo_token').value.trim(); if(tok) body.easyOrdersToken = tok;
+      try{ await api('/api/integrations',{method:'PUT', body:JSON.stringify(body)}); await reload(); toast('اتحفظ'); paint(); }
+      catch(e){ toast(e.message); }
+    };
+    const sem = $('adminSaveEmail');
+    if(sem) sem.onclick = async ()=>{
+      const body = { clientId: cid(),
+        emailEnabled: $('ai_email_enabled').checked, emailHost: $('ai_email_host').value.trim(),
+        emailPort: $('ai_email_port').value.trim(), emailSecure: $('ai_email_secure').checked,
+        emailUser: $('ai_email_user').value.trim() };
+      const pass = $('ai_email_password').value.trim(); if(pass) body.emailPassword = pass;
+      try{ await api('/api/integrations',{method:'PUT', body:JSON.stringify(body)}); await reload(); toast('اتحفظ'); paint(); }
+      catch(e){ toast(e.message); }
+    };
+  }
+
+  if(adminTab==='whatsapp'){
+    const aw = $('addWaGroup');
+    if(aw) aw.onclick = async ()=>{
+      const label = $('wa_label').value.trim();
+      if(!label){ toast('اكتب اسم الجروب'); return; }
+      const body = { clientId: $('wa_client').value, label };
+      const gid = $('wa_groupid').value.trim(); if(gid) body.groupId = gid;
+      try{
+        await api('/api/wa-groups',{method:'POST', body:JSON.stringify(body)});
+        waGroupsList = await api('/api/wa-groups'); toast('اتضاف'); paint();
+      }catch(e){ toast(e.message); }
+    };
+    document.querySelectorAll('[data-linkgroup]').forEach(b=> b.onclick = async ()=>{
+      const [, gid] = b.dataset.linkgroup.split(':');
+      const groupId = prompt('Group ID من واتساب:');
+      if(!groupId) return;
+      try{
+        await api('/api/wa-groups/'+encodeURIComponent(gid),{method:'PATCH', body:JSON.stringify({groupId})});
+        waGroupsList = await api('/api/wa-groups'); toast('اترابط'); paint();
+      }catch(e){ toast(e.message); }
+    });
+    document.querySelectorAll('[data-delwagroup]').forEach(b=> b.onclick = async ()=>{
+      const [, gid] = b.dataset.delwagroup.split(':');
+      try{
+        await api('/api/wa-groups/'+encodeURIComponent(gid),{method:'DELETE'});
+        waGroupsList = await api('/api/wa-groups'); toast('اتحذف'); paint();
+      }catch(e){ toast(e.message); }
+    });
   }
 
   if(adminTab==='import'){
