@@ -327,6 +327,9 @@ check('التحصيل بيتحسب بتاريخ الحدث مش تاريخ إن�
 check('المرتجع بيتحسب بتاريخ الحدث', perf.today.returned>=1);
 check('نسبة تأكيدات وتوصيل آخر ٣٠ يوم أرقام صحيحة', typeof perf.last30ConfirmationRatePct==='number' && typeof perf.last30DeliveryRatePct==='number');
 check('الأرباح والإيرادات المتوقعة موجودة في نفس الرد', typeof perf.profitExpected==='number' && typeof perf.revenueExpected==='number');
+r=await call('/api/performance?clientId=c2&date='+TODAY+'&periodFrom=2026-01-01&periodTo='+TODAY,{},adminCookie);
+let [,perfCustom]=await j(r);
+check('فترة مخصّصة (periodFrom/periodTo) بتحل محل الشهر الافتراضي', r.status===200 && perfCustom.month.from==='2026-01-01' && perfCustom.month.to===TODAY);
 check('العميل ممنوع يشوف أداء عميل تاني',
   (await call('/api/performance?clientId=c1&date='+TODAY+'',{},clientCookie)).status===403);
 
