@@ -358,6 +358,23 @@ check('بعد التفعيل، العميل يقدر ينقل من "تم الت�
 check('العميل لسه ممنوع يسجّل تحصيل (خارج نطاق التخزين والشحن)',
   (await call('/api/orders/'+invOrder.order.id,{method:'PATCH',body:JSON.stringify({state:'collected',shippingCost:10,otherCost:0})},clientCookie)).status===403);
 
+head('خدمة العملاء — صلاحية العميل المحدودة');
+await call('/api/integrations?clientId=c2',{method:'PUT',body:JSON.stringify({inventoryEnabled:false})},adminCookie);
+let [,svcOrder]=await j(await mkOrder(250,60));
+check('العميل ممنوع يأكّد الأوردر لو قسم خدمة العملاء مش مفعّل ليه',
+  (await call('/api/orders/'+svcOrder.order.id,{method:'PATCH',body:JSON.stringify({state:'confirmed'})},clientCookie)).status===403);
+await call('/api/integrations?clientId=c2',{method:'PUT',body:JSON.stringify({customerServiceEnabled:true})},adminCookie);
+r=await call('/api/orders/'+svcOrder.order.id,{method:'PATCH',body:JSON.stringify({state:'confirmed'})},clientCookie);
+check('بعد التفعيل، العميل يقدر يأكّد الأوردر', r.status===200 && orders.get(svcOrder.order.id).state==='confirmed');
+r=await call('/api/orders/'+svcOrder.order.id,{method:'PATCH',body:JSON.stringify({state:'preparing'})},clientCookie);
+check('وينقله لـ"جاري الشحن" (preparing) كمان', r.status===200 && orders.get(svcOrder.order.id).state==='preparing');
+check('بس برضه ممنوع يسجّل شحن فعلي (خارج نطاق خدمة العملاء)',
+  (await call('/api/orders/'+svcOrder.order.id,{method:'PATCH',body:JSON.stringify({state:'shipped'})},clientCookie)).status===403);
+r=await call('/api/orders/'+svcOrder.order.id+'/contact',{method:'POST'},clientCookie);
+check('عميل خدمة العملاء يقدر يسجّل محاولة تواصل', r.status===200);
+r=await call('/api/orders/'+svcOrder.order.id+'/whatsapp-log',{method:'POST',body:JSON.stringify({template:'confirm'})},clientCookie);
+check('عميل خدمة العملاء يقدر يسجّل إرسال واتساب', r.status===200);
+
 head('الشات الداخلي + التاسكات');
 let [,colleague]=await j(await call('/api/users',{method:'POST',body:JSON.stringify({
   email:'colleague@x.com', role:'admin', password:'ColleaguePass1', name:'زميل'})},adminCookie));
