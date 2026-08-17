@@ -1237,7 +1237,9 @@ async function handleApi(request, env, url, path) {
 
   if (path === '/api/integrations') {
     const staffAccess = isStaff(user) && (can(user, 'clients') || can(user, 'settings'));
-    const qcid = url.searchParams.get('clientId');
+    let bodyForPut = null;
+    if (request.method === 'PUT') bodyForPut = await request.json().catch(() => ({}));
+    const qcid = url.searchParams.get('clientId') || (bodyForPut && bodyForPut.clientId) || null;
     if (user.role === 'client' && qcid && qcid !== me.clientId) return json({ error: 'مش مسموح' }, 403);
     const targetId = user.role === 'client' ? me.clientId : qcid;
     if (user.role !== 'client' && !staffAccess) return json({ error: 'مش مسموح' }, 403);
@@ -1250,7 +1252,7 @@ async function handleApi(request, env, url, path) {
     if (request.method === 'GET') return json(integrationsView(client));
 
     if (request.method === 'PUT') {
-      const b = await request.json().catch(() => ({}));
+      const b = bodyForPut || {};
       if (b.metaAdAccountId !== undefined) client.adAccount = String(b.metaAdAccountId).trim();
       if (b.metaToken !== undefined) {
         if (String(b.metaToken).trim() === '') delete client.metaToken;
