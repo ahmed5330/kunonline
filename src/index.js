@@ -973,22 +973,43 @@ async function handleApi(request, env, url, path) {
 
   /* تعديل حالة أو بوليصة — الإدارة بس */
   const m = path !== '/api/orders/bulk' ? path.match(/^\/api\/orders\/([^/]+)$/) : null;
-  if (m && isStaff(user) && can(user, 'orders')) {
+  if (m) {
     const id = decodeURIComponent(m[1]);
+    const isOrderStaff = isStaff(user) && can(user, 'orders');
+
     if (request.method === 'DELETE') {
+      if (!isOrderStaff) return json({ error: 'مش مسموح' }, 403);
       await env.DB.prepare('DELETE FROM orders WHERE id = ?').bind(id).run();
       return json({ ok: true });
     }
+
     if (request.method === 'PATCH') {
       const p = await request.json();
       const cur = await env.DB.prepare(
-        'SELECT state, awb, shipping_cost, other_cost, signed_at, history FROM orders WHERE id = ?'
+        'SELECT client_id, state, awb, shipping_cost, other_cost, signed_at, history FROM orders WHERE id = ?'
       ).bind(id).first();
       if (!cur) return json({ error: 'أوردر غير موجود' }, 404);
+
+      /* فريق التخزين/الشحن بتاع العميل (مفعّل ليهم القسم من الإدارة) — بس ينقل
+         الأوردر من "تم التأكيد" لـ"جاري الشحن" أو "تم الشحن"، ولا حاجة تانية */
+      let isInventoryClient = false;
+      if (!isOrderStaff) {
+        if (user.role !== 'client' || cur.client_id !== me.clientId) return json({ error: 'مش مسموح' }, 403);
+        const state = await loadState(env);
+        const client = state.clients.find(c => c.id === me.clientId);
+        if (!client || !client.inventoryEnabled) return json({ error: 'مش مسموح' }, 403);
+        isInventoryClient = true;
+      }
 
       let st = p.state || cur.state;
       const awb = p.awb !== undefined ? (p.awb || null) : cur.awb;
       if (p.awb && ['pending','confirmed','preparing'].includes(cur.state) && !p.state) st = 'shipped';
+
+      if (isInventoryClient) {
+        if (!['confirmed', 'preparing'].includes(cur.state) || !['preparing', 'shipped'].includes(st)) {
+          return json({ error: 'مسموح بس تنقل الأوردر من "تم التأكيد" لـ"جاري الشحن" أو "تم الشحن"' }, 403);
+        }
+      }
       if (!ORDER_STATES.includes(st)) return json({ error: 'حالة غير معروفة' }, 400);
 
       const num = v => (v === undefined || v === null || v === '') ? null : Number(v);
@@ -1203,6 +1224,7 @@ async function handleApi(request, env, url, path) {
       deliveryRateManual: c.deliveryRateManual != null ? c.deliveryRateManual : null,
       adminFee: Number(c.adminFee) || 0,
       shippingMode: c.shippingMode === 'byGov' ? 'byGov' : 'fixed',
+      inventoryEnabled: !!c.inventoryEnabled,
       shippingFixed: Number(c.shippingFixed) || 0,
       shippingByGov: c.shippingByGov && typeof c.shippingByGov === 'object' ? c.shippingByGov : {},
       email: {
@@ -1252,6 +1274,9 @@ async function handleApi(request, env, url, path) {
       if (b.adminFee !== undefined && isStaff(user)) {
         const f = Number(b.adminFee);
         client.adminFee = Number.isFinite(f) ? Math.max(0, f) : 0;
+      }
+      if (b.inventoryEnabled !== undefined && isStaff(user)) {
+        client.inventoryEnabled = !!b.inventoryEnabled;
       }
       if (b.shippingMode !== undefined) client.shippingMode = b.shippingMode === 'byGov' ? 'byGov' : 'fixed';
       if (b.shippingFixed !== undefined) {
@@ -1444,7 +1469,10 @@ async function handleApi(request, env, url, path) {
         ? Math.round((l30Confirmed.length / l30NonCancelled.length) * 1000) / 10 : 0,
       last30DeliveryRatePct: l30Final ? Math.round((l30Delivered.length / l30Final) * 1000) / 10 : 0,
       profitExpected: fin.profitExpected, revenueExpected: fin.revenueExpected,
-      shippingMode: client.shippingMode === 'byGov' ? 'byGov' : 'fixed'
+      shippingMode: client.shippingMode === 'byGov' ? 'byGov' : 'fixed',
+      metaBalance: client.metaBalance != null ? client.metaBalance : null,
+      metaBalanceCurrency: client.metaBalanceCurrency || '',
+      metaBalanceAt: client.metaBalanceAt || null
     });
   }
 
@@ -1500,11 +1528,15 @@ async function handleApi(request, env, url, path) {
   /* ---------- الشات الداخلي للفريق + التاسكات — الإدارة والموظفين بس ---------- */
   if (path === '/api/chat/messages') {
     if (!isStaff(user)) return json({ error: 'مش مسموح' }, 403);
+    const chanId = url.searchParams.get('clientId') || null;
     if (request.method === 'GET') {
       const after = url.searchParams.get('after');
+      const chanCond = chanId ? 'client_id = ?' : 'client_id IS NULL';
       const q = after
-        ? env.DB.prepare('SELECT id, author_id, author_name, body, created_at FROM chat_messages WHERE created_at > ? ORDER BY created_at ASC LIMIT 300').bind(after)
-        : env.DB.prepare('SELECT id, author_id, author_name, body, created_at FROM chat_messages ORDER BY created_at DESC LIMIT 100');
+        ? env.DB.prepare(`SELECT id, client_id, author_id, author_name, body, created_at FROM chat_messages WHERE ${chanCond} AND created_at > ? ORDER BY created_at ASC LIMIT 300`)
+            .bind(...(chanId ? [chanId, after] : [after]))
+        : env.DB.prepare(`SELECT id, client_id, author_id, author_name, body, created_at FROM chat_messages WHERE ${chanCond} ORDER BY created_at DESC LIMIT 100`)
+            .bind(...(chanId ? [chanId] : []));
       const { results } = await q.all();
       return json(after ? (results || []) : (results || []).reverse());
     }
@@ -1513,11 +1545,11 @@ async function handleApi(request, env, url, path) {
       const body = String(b.text || '').trim();
       if (!body) return json({ error: 'اكتب رسالة' }, 400);
       const msg = {
-        id: 'MSG-' + crypto.randomUUID().slice(0, 10).toUpperCase(),
+        id: 'MSG-' + crypto.randomUUID().slice(0, 10).toUpperCase(), client_id: chanId,
         author_id: me.uid, author_name: me.name || me.email, body, created_at: new Date().toISOString()
       };
-      await env.DB.prepare('INSERT INTO chat_messages (id, author_id, author_name, body, created_at) VALUES (?,?,?,?,?)')
-        .bind(msg.id, msg.author_id, msg.author_name, msg.body, msg.created_at).run();
+      await env.DB.prepare('INSERT INTO chat_messages (id, client_id, author_id, author_name, body, created_at) VALUES (?,?,?,?,?,?)')
+        .bind(msg.id, msg.client_id, msg.author_id, msg.author_name, msg.body, msg.created_at).run();
       return json({ ok: true, message: msg });
     }
   }
