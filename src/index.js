@@ -990,24 +990,29 @@ async function handleApi(request, env, url, path) {
       ).bind(id).first();
       if (!cur) return json({ error: 'أوردر غير موجود' }, 404);
 
-      /* فريق التخزين/الشحن بتاع العميل (مفعّل ليهم القسم من الإدارة) — بس ينقل
-         الأوردر من "تم التأكيد" لـ"جاري الشحن" أو "تم الشحن"، ولا حاجة تانية */
-      let isInventoryClient = false;
+      /* فريق التخزين/الشحن (confirmed→preparing/shipped) وفريق خدمة العملاء
+         (pending↔confirmed↔preparing) — كل واحد مفعّل ليه نطاق مختلف من الإدارة */
+      let isInventoryClient = false, isServiceClient = false;
       if (!isOrderStaff) {
         if (user.role !== 'client' || cur.client_id !== me.clientId) return json({ error: 'مش مسموح' }, 403);
         const state = await loadState(env);
         const client = state.clients.find(c => c.id === me.clientId);
-        if (!client || !client.inventoryEnabled) return json({ error: 'مش مسموح' }, 403);
-        isInventoryClient = true;
+        isInventoryClient = !!(client && client.inventoryEnabled);
+        isServiceClient = !!(client && client.customerServiceEnabled);
+        if (!isInventoryClient && !isServiceClient) return json({ error: 'مش مسموح' }, 403);
       }
 
       let st = p.state || cur.state;
       const awb = p.awb !== undefined ? (p.awb || null) : cur.awb;
       if (p.awb && ['pending','confirmed','preparing'].includes(cur.state) && !p.state) st = 'shipped';
 
-      if (isInventoryClient) {
-        if (!['confirmed', 'preparing'].includes(cur.state) || !['preparing', 'shipped'].includes(st)) {
-          return json({ error: 'مسموح بس تنقل الأوردر من "تم التأكيد" لـ"جاري الشحن" أو "تم الشحن"' }, 403);
+      if (isInventoryClient || isServiceClient) {
+        const inventoryOk = isInventoryClient
+          && ['confirmed', 'preparing'].includes(cur.state) && ['preparing', 'shipped'].includes(st);
+        const serviceOk = isServiceClient
+          && ['pending', 'confirmed', 'preparing'].includes(cur.state) && ['pending', 'confirmed', 'preparing'].includes(st);
+        if (!inventoryOk && !serviceOk) {
+          return json({ error: 'الحالة دي برّه الصلاحية المتاحة ليك' }, 403);
         }
       }
       if (!ORDER_STATES.includes(st)) return json({ error: 'حالة غير معروفة' }, 400);
@@ -1035,12 +1040,22 @@ async function handleApi(request, env, url, path) {
     }
   }
 
+  /* موظف أوردرات، أو عميل مفعّل ليه "خدمة العملاء" وبيتصرف في أوردر بتاعه هو بس */
+  async function canActOnOrder(env, user, me, clientIdOfOrder) {
+    if (isStaff(user) && can(user, 'orders')) return true;
+    if (user.role !== 'client' || clientIdOfOrder !== me.clientId) return false;
+    const state = await loadState(env);
+    const client = state.clients.find(c => c.id === me.clientId);
+    return !!(client && client.customerServiceEnabled);
+  }
+
   /* محاولات التواصل مع العميل — أقصى ٣ في اليوم و١٠ خلال ٣ أيام */
   const cm = path.match(/^\/api\/orders\/([^/]+)\/contact$/);
-  if (cm && request.method === 'POST' && isStaff(user) && can(user, 'orders')) {
+  if (cm && request.method === 'POST') {
     const id = decodeURIComponent(cm[1]);
-    const cur = await env.DB.prepare('SELECT contact_log, history FROM orders WHERE id = ?').bind(id).first();
+    const cur = await env.DB.prepare('SELECT client_id, contact_log, history FROM orders WHERE id = ?').bind(id).first();
     if (!cur) return json({ error: 'أوردر غير موجود' }, 404);
+    if (!await canActOnOrder(env, user, me, cur.client_id)) return json({ error: 'مش مسموح' }, 403);
 
     const log = parseJsonArr(cur.contact_log);
     const now = new Date();
@@ -1065,11 +1080,12 @@ async function handleApi(request, env, url, path) {
 
   /* تسجيل إرسال رسالة واتساب في تاريخ الأوردر */
   const wm = path.match(/^\/api\/orders\/([^/]+)\/whatsapp-log$/);
-  if (wm && request.method === 'POST' && isStaff(user) && can(user, 'orders')) {
+  if (wm && request.method === 'POST') {
     const id = decodeURIComponent(wm[1]);
-    const b = await request.json().catch(() => ({}));
-    const cur = await env.DB.prepare('SELECT history FROM orders WHERE id = ?').bind(id).first();
+    const cur = await env.DB.prepare('SELECT client_id, history FROM orders WHERE id = ?').bind(id).first();
     if (!cur) return json({ error: 'أوردر غير موجود' }, 404);
+    if (!await canActOnOrder(env, user, me, cur.client_id)) return json({ error: 'مش مسموح' }, 403);
+    const b = await request.json().catch(() => ({}));
     const history = parseJsonArr(cur.history);
     const template = ['confirm', 'shipped', 'review'].includes(b.template) ? b.template : 'other';
     history.push({ type: 'whatsapp', template, at: new Date().toISOString(), by: user.email || user.role });
@@ -1225,6 +1241,7 @@ async function handleApi(request, env, url, path) {
       adminFee: Number(c.adminFee) || 0,
       shippingMode: c.shippingMode === 'byGov' ? 'byGov' : 'fixed',
       inventoryEnabled: !!c.inventoryEnabled,
+      customerServiceEnabled: !!c.customerServiceEnabled,
       shippingFixed: Number(c.shippingFixed) || 0,
       shippingByGov: c.shippingByGov && typeof c.shippingByGov === 'object' ? c.shippingByGov : {},
       email: {
@@ -1279,6 +1296,9 @@ async function handleApi(request, env, url, path) {
       }
       if (b.inventoryEnabled !== undefined && isStaff(user)) {
         client.inventoryEnabled = !!b.inventoryEnabled;
+      }
+      if (b.customerServiceEnabled !== undefined && isStaff(user)) {
+        client.customerServiceEnabled = !!b.customerServiceEnabled;
       }
       if (b.shippingMode !== undefined) client.shippingMode = b.shippingMode === 'byGov' ? 'byGov' : 'fixed';
       if (b.shippingFixed !== undefined) {
