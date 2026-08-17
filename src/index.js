@@ -1466,8 +1466,10 @@ async function handleApi(request, env, url, path) {
     const dateParam = /^\d{4}-\d{2}-\d{2}$/.test(url.searchParams.get('date') || '')
       ? url.searchParams.get('date') : new Date().toISOString().slice(0, 10);
     const [y, m] = dateParam.split('-').map(Number);
-    const monthStart = `${y}-${String(m).padStart(2, '0')}-01`;
-    const monthEnd = new Date(y, m, 0).toISOString().slice(0, 10);
+    const isDate = s => /^\d{4}-\d{2}-\d{2}$/.test(s || '');
+    const pFrom = url.searchParams.get('periodFrom'), pTo = url.searchParams.get('periodTo');
+    const monthStart = isDate(pFrom) ? pFrom : `${y}-${String(m).padStart(2, '0')}-01`;
+    const monthEnd = isDate(pTo) ? pTo : new Date(y, m, 0).toISOString().slice(0, 10);
     const last30Start = new Date(new Date(dateParam).getTime() - 29 * 86400000).toISOString().slice(0, 10);
 
     const today = await dayBreakdown(env, state, orders, targetId, dateParam, dateParam);
