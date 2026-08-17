@@ -1,5 +1,6 @@
 /* اختبارات نظام كن أونلاين — الدخول، العزل، الويبهوك، التتبع */
 import worker from './src/index.js';
+const TODAY = new Date().toISOString().slice(0,10);
 
 let stateRow=null; const orders=new Map(), users=new Map(), attempts=new Map(), products=new Map(), transactions=new Map(), chatMessages=new Map(), tasks=new Map();
 const stmt=(sql)=>({
@@ -66,8 +67,8 @@ const stmt=(sql)=>({
       const [id,type,date,category,amount,currency,method,client_id,note,created_by,created_at]=this.args;
       transactions.set(id,{id,type,date,category,amount,currency,method,client_id,note,created_by,created_at});}
     else if(sql.includes('INSERT INTO chat_messages')){
-      const [id,author_id,author_name,body,created_at]=this.args;
-      chatMessages.set(id,{id,author_id,author_name,body,created_at});}
+      const [id,client_id,author_id,author_name,body,created_at]=this.args;
+      chatMessages.set(id,{id,client_id,author_id,author_name,body,created_at});}
     else if(sql.includes('INSERT INTO tasks')){
       const [id,title,description,assigned_to,assigned_by,status,created_at,updated_at]=this.args;
       tasks.set(id,{id,title,description,assigned_to,assigned_by,status,created_at,updated_at});}
@@ -94,7 +95,14 @@ const stmt=(sql)=>({
     }
     if(sql.includes('FROM chat_messages')){
       let mlist=[...chatMessages.values()].sort((a,b)=>a.created_at<b.created_at?-1:1);
-      if(sql.includes('WHERE created_at > ?')) mlist=mlist.filter(m=>m.created_at>this.args[0]);
+      const hasChan = sql.includes('client_id = ?');
+      const chanId = hasChan ? this.args[0] : null;
+      if(sql.includes('client_id IS NULL')) mlist=mlist.filter(m=>!m.client_id);
+      else if(hasChan) mlist=mlist.filter(m=>m.client_id===chanId);
+      if(sql.includes('created_at > ?')){
+        const after = hasChan ? this.args[1] : this.args[0];
+        mlist=mlist.filter(m=>m.created_at>after);
+      }
       if(sql.includes('ORDER BY created_at DESC')) mlist=mlist.slice().reverse();
       return {results:mlist};
     }
@@ -178,7 +186,7 @@ check('أوردر العميل بيتحوّل لحسابه هو', ord.order.clie
 await call('/api/orders/EO-1',{method:'PATCH',body:JSON.stringify({awb:'JT123EG'})},adminCookie);
 check('البوليصة بتنقل الحالة تلقائياً', orders.get('EO-1').awb==='JT123EG'&&orders.get('EO-1').state==='shipped');
 check('العميل ممنوع يعدّل الأوردر',
-  (await call('/api/orders/EO-1',{method:'PATCH',body:JSON.stringify({state:'delivered'})},clientCookie)).status===404);
+  (await call('/api/orders/EO-1',{method:'PATCH',body:JSON.stringify({state:'delivered'})},clientCookie)).status===403);
 await call('/webhooks/tracking',{method:'POST',body:JSON.stringify({trackNo:'JT123EG',latestEvent:'تم التسليم للعميل'})});
 check('تتبع J&T حدّث الحالة', orders.get('EO-1').state==='signed');
 
@@ -236,7 +244,7 @@ check('العميل ممنوع يغيّر المبلغ الثابت بنفسه',
 
 let [,finBefore]=await j(await call('/api/finance?clientId=c2',{},adminCookie));
 const mkOrder=(total,productCost)=>call('/api/orders',{method:'POST',body:JSON.stringify({
-  clientId:'c2',name:'ت',phone:'0100',total,productCost,date:'2026-08-16'})},adminCookie);
+  clientId:'c2',name:'ت',phone:'0100',total,productCost,date:TODAY})},adminCookie);
 let [,o1]=await j(await mkOrder(500,100));
 let [,o2]=await j(await mkOrder(400,80));
 let [,o3]=await j(await mkOrder(300,60));
@@ -267,7 +275,7 @@ r=await call('/api/deposits/'+dep1.entry.id,{method:'DELETE'},clientCookie);
 check('العميل يقدر يمسح إيداعه', r.status===200);
 
 r=await call('/api/transactions',{method:'POST',body:JSON.stringify({
-  type:'income',category:'عمولة لكل أوردر',amount:200,clientId:'c2',date:'2026-08-16'})},adminCookie);
+  type:'income',category:'عمولة لكل أوردر',amount:200,clientId:'c2',date:TODAY})},adminCookie);
 check('الإدارة تقدر تسجّل حركة مالية لعميل', r.status===200);
 r=await call('/api/transactions',{},clientCookie);
 let [,clientTx]=await j(r);
@@ -306,7 +314,7 @@ let [,waLogRes]=await j(r);
 check('إرسال واتساب بيتسجّل في التاريخ', r.status===200 && waLogRes.history.some(h=>h.type==='whatsapp'&&h.template==='confirm'));
 
 head('أداء يوم معيّن + إعدادات الشحن');
-r=await call('/api/performance?clientId=c2&date=2026-08-16',{},adminCookie);
+r=await call('/api/performance?clientId=c2&date='+TODAY+'',{},adminCookie);
 let [,perf]=await j(r);
 check('endpoint الأداء بيرجّع بنجاح', r.status===200);
 check('أوردرات اليوم مقسّمة بالحالة الحالية', perf.today.byState.collected>=1 && perf.today.byState.signed>=1 && perf.today.byState.returned>=1);
@@ -315,7 +323,7 @@ check('المرتجع بيتحسب بتاريخ الحدث', perf.today.returned
 check('نسبة تأكيدات وتوصيل آخر ٣٠ يوم أرقام صحيحة', typeof perf.last30ConfirmationRatePct==='number' && typeof perf.last30DeliveryRatePct==='number');
 check('الأرباح والإيرادات المتوقعة موجودة في نفس الرد', typeof perf.profitExpected==='number' && typeof perf.revenueExpected==='number');
 check('العميل ممنوع يشوف أداء عميل تاني',
-  (await call('/api/performance?clientId=c1&date=2026-08-16',{},clientCookie)).status===403);
+  (await call('/api/performance?clientId=c1&date='+TODAY+'',{},clientCookie)).status===403);
 
 r=await call('/api/integrations?clientId=c2',{method:'PUT',body:JSON.stringify({
   shippingMode:'byGov', shippingByGov:{'أسيوط':35,'القاهرة':45}})},adminCookie);
@@ -327,10 +335,23 @@ check('إعدادات الشحن رجعت صح', shipInteg.shippingMode==='byGov
 
 head('رصيد ميتا المتبقي');
 r=await call('/api/ad-spend',{method:'POST',headers:{authorization:'Bearer ingest-secret'},body:JSON.stringify({
-  date:'2026-08-16', entries:[{clientId:'c2', spend:120, balance:857.5, balanceCurrency:'EGP'}]})});
+  date:TODAY, entries:[{clientId:'c2', spend:120, balance:857.5, balanceCurrency:'EGP'}]})});
 check('الأجنت يقدر يرفع رصيد ميتا مع الصرف اليومي', r.status===200);
 let [,balInteg]=await j(await call('/api/integrations?clientId=c2',{},adminCookie));
 check('الرصيد المتبقي بيتحفظ ويظهر في التكاملات', balInteg.metaBalance===857.5 && balInteg.metaBalanceCurrency==='EGP');
+let [,perfWithBalance]=await j(await call('/api/performance?clientId=c2&date='+TODAY,{},adminCookie));
+check('الرصيد المتبقي ظاهر برضه في endpoint الداشبورد', perfWithBalance.metaBalance===857.5);
+
+head('إدارة التخزين والشحن — صلاحية العميل المحدودة');
+let [,invOrder]=await j(await mkOrder(400,80));
+await call('/api/orders/'+invOrder.order.id,{method:'PATCH',body:JSON.stringify({state:'confirmed'})},adminCookie);
+check('العميل ممنوع ينقل الأوردر لو القسم مش مفعّل ليه',
+  (await call('/api/orders/'+invOrder.order.id,{method:'PATCH',body:JSON.stringify({state:'shipped',awb:'JT999'})},clientCookie)).status===403);
+await call('/api/integrations?clientId=c2',{method:'PUT',body:JSON.stringify({inventoryEnabled:true})},adminCookie);
+r=await call('/api/orders/'+invOrder.order.id,{method:'PATCH',body:JSON.stringify({state:'shipped',awb:'JT999'})},clientCookie);
+check('بعد التفعيل، العميل يقدر ينقل من "تم التأكيد" لـ"تم الشحن" ويحط البوليصة', r.status===200 && orders.get(invOrder.order.id).state==='shipped');
+check('العميل لسه ممنوع يسجّل تحصيل (خارج نطاق التخزين والشحن)',
+  (await call('/api/orders/'+invOrder.order.id,{method:'PATCH',body:JSON.stringify({state:'collected',shippingCost:10,otherCost:0})},clientCookie)).status===403);
 
 head('الشات الداخلي + التاسكات');
 let [,colleague]=await j(await call('/api/users',{method:'POST',body:JSON.stringify({
@@ -344,6 +365,14 @@ r=await call('/api/chat/messages',{method:'POST',body:JSON.stringify({text:'صب
 check('عضو فريق يقدر يبعت رسالة', r.status===200);
 let [,msgs]=await j(await call('/api/chat/messages',{},adminCookie));
 check('الرسالة بترجع في القائمة', msgs.some(m=>m.body==='صباح الخير يا فريق'));
+
+r=await call('/api/chat/messages?clientId=c2',{method:'POST',body:JSON.stringify({text:'أوردرات وفاق النهاردة كتير'})},adminCookie);
+check('يقدر يبعت رسالة في قناة عميل معيّن', r.status===200);
+let [,generalMsgs]=await j(await call('/api/chat/messages',{},adminCookie));
+let [,c2Msgs]=await j(await call('/api/chat/messages?clientId=c2',{},adminCookie));
+check('رسالة قناة العميل مش ظاهرة في القناة العامة', !generalMsgs.some(m=>m.body==='أوردرات وفاق النهاردة كتير'));
+check('رسالة القناة العامة مش ظاهرة في قناة العميل', !c2Msgs.some(m=>m.body==='صباح الخير يا فريق'));
+check('رسالة قناة العميل ظاهرة في قناته هو', c2Msgs.some(m=>m.body==='أوردرات وفاق النهاردة كتير'));
 
 r=await call('/api/tasks',{method:'POST',body:JSON.stringify({
   title:'راجع طلبات وفاق النهاردة', assignedTo:colleagueId})},adminCookie);

@@ -64,14 +64,16 @@ CREATE INDEX IF NOT EXISTS idx_orders_client ON orders (client_id, date);
 CREATE INDEX IF NOT EXISTS idx_orders_awb    ON orders (awb);
 
 -- الشات الداخلي للفريق (الإدارة والموظفين بس — مفيش وصول للعملاء)
+-- client_id فاضي = القناة العامة للإيجنسي كلها. لو متحدد = قناة خاصة بفريق العميل ده
 CREATE TABLE IF NOT EXISTS chat_messages (
   id          TEXT PRIMARY KEY,
+  client_id   TEXT,
   author_id   TEXT NOT NULL,
   author_name TEXT,
   body        TEXT NOT NULL,
   created_at  TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_chat_created ON chat_messages (created_at);
+CREATE INDEX IF NOT EXISTS idx_chat_created ON chat_messages (client_id, created_at);
 
 -- تاسكات الفريق — أي موظف يقدر يوكّل تاسك لزميل
 CREATE TABLE IF NOT EXISTS tasks (
