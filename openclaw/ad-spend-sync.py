@@ -22,6 +22,7 @@ import json
 import subprocess
 import urllib.request
 import urllib.error
+from datetime import datetime
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__)) or "/root/.openclaw/workspace"
 META_SCRIPT_PATHS = [
@@ -117,6 +118,15 @@ def main():
     cmd = [sys.executable, meta_script, "--account", "all", "--json"]
     cmd += ["--since", date_arg, "--until", date_arg] if date_arg else ["--date_preset", "today"]
 
+    def cairo_today():
+        """تاريخ اليوم بتوقيت القاهرة — السيرفر نفسه شغال بتوقيت UTC، فلازم نحسبها بنفسنا"""
+        try:
+            from zoneinfo import ZoneInfo
+            return datetime.now(ZoneInfo("Africa/Cairo")).strftime("%Y-%m-%d")
+        except Exception:
+            from datetime import timedelta
+            return (datetime.utcnow() + timedelta(hours=2)).strftime("%Y-%m-%d")
+
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60, env=os.environ.copy())
     except subprocess.TimeoutExpired:
@@ -152,9 +162,7 @@ def main():
     if not entries:
         fail("مفيش بيانات نرفعها", problems=problems)
 
-    payload = {"entries": entries}
-    if date_arg:
-        payload["date"] = date_arg
+    payload = {"entries": entries, "date": date_arg or cairo_today()}
 
     try:
         result = api("/api/ad-spend", "POST", payload, os.environ["INGEST_TOKEN"])
