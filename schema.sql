@@ -63,6 +63,19 @@ CREATE TABLE IF NOT EXISTS orders (
 CREATE INDEX IF NOT EXISTS idx_orders_client ON orders (client_id, date);
 CREATE INDEX IF NOT EXISTS idx_orders_awb    ON orders (awb);
 
+-- محفظة الاشتراك — سجل كل شحن رصيد وكل خصم تلقائي لكل أوردر
+CREATE TABLE IF NOT EXISTS wallet_log (
+  id            TEXT PRIMARY KEY,
+  client_id     TEXT NOT NULL,
+  type          TEXT NOT NULL,       -- topup أو deduct
+  amount        REAL NOT NULL,
+  balance_after REAL,
+  note          TEXT,
+  created_at    TEXT,
+  created_by    TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_wallet_client ON wallet_log (client_id, created_at);
+
 -- الشات الداخلي للفريق (الإدارة والموظفين بس — مفيش وصول للعملاء)
 -- client_id فاضي = القناة العامة للإيجنسي كلها. لو متحدد = قناة خاصة بفريق العميل ده
 CREATE TABLE IF NOT EXISTS chat_messages (

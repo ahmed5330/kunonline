@@ -2,7 +2,7 @@
 import worker from './src/index.js';
 const TODAY = new Date().toISOString().slice(0,10);
 
-let stateRow=null; const orders=new Map(), users=new Map(), attempts=new Map(), products=new Map(), transactions=new Map(), chatMessages=new Map(), tasks=new Map();
+let stateRow=null; const orders=new Map(), users=new Map(), attempts=new Map(), products=new Map(), transactions=new Map(), chatMessages=new Map(), tasks=new Map(), walletLog=new Map();
 const stmt=(sql)=>({
   args:[], bind(...a){this.args=a;return this;},
   async first(){
@@ -72,6 +72,9 @@ const stmt=(sql)=>({
     else if(sql.includes('INSERT INTO tasks')){
       const [id,title,description,assigned_to,assigned_by,status,created_at,updated_at]=this.args;
       tasks.set(id,{id,title,description,assigned_to,assigned_by,status,created_at,updated_at});}
+    else if(sql.includes('INSERT INTO wallet_log')){
+      const [id,client_id,type,amount,balance_after,note,created_at,created_by]=this.args;
+      walletLog.set(id,{id,client_id,type,amount,balance_after,note,created_at,created_by});}
     else if(sql.startsWith('UPDATE tasks SET')){
       const id=this.args[this.args.length-1]; const t=tasks.get(id); if(!t) return {};
       const setPart=sql.slice('UPDATE tasks SET '.length, sql.indexOf(' WHERE'));
@@ -109,6 +112,11 @@ const stmt=(sql)=>({
     if(sql.includes('FROM tasks')){
       const tlist=[...tasks.values()].sort((a,b)=>a.created_at<b.created_at?1:-1);
       return {results:tlist};
+    }
+    if(sql.includes('FROM wallet_log')){
+      const wlist=[...walletLog.values()].filter(w=>w.client_id===this.args[0])
+        .sort((a,b)=>a.created_at<b.created_at?1:-1);
+      return {results:wlist};
     }
     let list=[...orders.values()];
     if(sql.includes('WHERE client_id = ?')) list=list.filter(o=>o.client_id===this.args[0]);
@@ -330,8 +338,51 @@ check('الأرباح والإيرادات المتوقعة موجودة في ن
 r=await call('/api/performance?clientId=c2&date='+TODAY+'&periodFrom=2026-01-01&periodTo='+TODAY,{},adminCookie);
 let [,perfCustom]=await j(r);
 check('فترة مخصّصة (periodFrom/periodTo) بتحل محل الشهر الافتراضي', r.status===200 && perfCustom.month.from==='2026-01-01' && perfCustom.month.to===TODAY);
+
+r=await call('/api/performance?clientId=c2&date='+TODAY,{},adminCookie);
+let [,perfCppCheck]=await j(r);
+check('CPP بيتحسب من صرف الإعلانات بس (من غير مصاريف تانية)',
+  Math.abs(perfCppCheck.today.cpp*perfCppCheck.today.newOrders - perfCppCheck.today.adSpend) < 0.5);
+
+let [,marginCheck]=await j(await call('/api/finance?clientId=c2',{},adminCookie));
+check('هامش الربح المتوقع = صافي الربح المتوقع ÷ الإيراد المتوقع × ١٠٠',
+  marginCheck.revenueExpected>0
+    ? Math.abs(marginCheck.profitMarginExpectedPct - round2z(marginCheck.profitExpected/marginCheck.revenueExpected*100)) < 0.2
+    : marginCheck.profitMarginExpectedPct===0);
+
+let [,finBeforeResolve]=await j(await call('/api/finance?clientId=c2',{},adminCookie));
+let [,pendingOrder]=await j(await mkOrder(500,100));
+let [,finAfterPending]=await j(await call('/api/finance?clientId=c2',{},adminCookie));
+check('أوردر لسه معلّق بيدخل في الإيراد المتوقع', finAfterPending.revenueExpected > finBeforeResolve.revenueExpected);
+await call('/api/orders/'+pendingOrder.order.id,{method:'PATCH',body:JSON.stringify({state:'collected',shippingCost:20,otherCost:0})},adminCookie);
+let [,finAfterCollect]=await j(await call('/api/finance?clientId=c2',{},adminCookie));
+check('أول ما يتحصّل، بيخرج من الإيراد المتوقع (رجع للرقم اللي قبله)',
+  Math.abs(finAfterCollect.revenueExpected - finBeforeResolve.revenueExpected) < 0.5);
 check('العميل ممنوع يشوف أداء عميل تاني',
   (await call('/api/performance?clientId=c1&date='+TODAY+'',{},clientCookie)).status===403);
+
+head('محفظة الاشتراك');
+r=await call('/api/integrations?clientId=c2',{method:'PUT',body:JSON.stringify({walletFeePerOrder:15})},adminCookie);
+check('الإدارة تقدر تحدد مبلغ الخصم لكل أوردر', r.status===200);
+r=await call('/api/wallet/topup',{method:'POST',body:JSON.stringify({clientId:'c2',amount:500,note:'شحن أول'})},adminCookie);
+check('الإدارة تقدر تشحن رصيد للعميل', r.status===200);
+let [,walletAfterTopup]=await j(await call('/api/integrations?clientId=c2',{},adminCookie));
+check('الرصيد بعد الشحن صح', walletAfterTopup.walletBalance===500);
+
+let [,walletOrder]=await j(await mkOrder(300,50));
+let [,walletAfterOrder]=await j(await call('/api/integrations?clientId=c2',{},adminCookie));
+check('كل أوردر جديد بيخصم مبلغ الاشتراك تلقائي من المحفظة', walletAfterOrder.walletBalance===485);
+
+await call('/api/orders/'+walletOrder.order.id,{method:'PATCH',body:JSON.stringify({state:'confirmed'})},adminCookie);
+let [,walletAfterUpdate]=await j(await call('/api/integrations?clientId=c2',{},adminCookie));
+check('تحديث حالة أوردر موجود مش بيخصم تاني (مش أوردر جديد)', walletAfterUpdate.walletBalance===485);
+
+r=await call('/api/wallet/log?clientId=c2',{},adminCookie);
+let [,walletLogList]=await j(r);
+check('سجل المحفظة فيه الشحن والخصم', walletLogList.some(w=>w.type==='topup') && walletLogList.some(w=>w.type==='deduct'));
+check('العميل يقدر يشوف سجل محفظته هو', (await call('/api/wallet/log',{},clientCookie)).status===200);
+check('العميل ممنوع يشحن لنفسه رصيد',
+  (await call('/api/wallet/topup',{method:'POST',body:JSON.stringify({clientId:'c2',amount:100})},clientCookie)).status===403);
 
 r=await call('/api/integrations?clientId=c2',{method:'PUT',body:JSON.stringify({
   shippingMode:'byGov', shippingByGov:{'أسيوط':35,'القاهرة':45}})},adminCookie);
