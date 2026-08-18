@@ -254,7 +254,7 @@ td.num{font-family:var(--mono);font-variant-numeric:tabular-nums;direction:ltr;t
 .pill.on{background:var(--pine-soft);color:var(--pine)}
 .pill.off{background:var(--brick-soft);color:var(--brick)}
 .row-act{display:flex;gap:6px}
-.icon-btn{padding:4px 9px;border:1px solid var(--line);border-radius:7px;font-size:12px;color:var(--ink-2);background:#fff}
+.icon-btn{padding:4px 9px;border:1px solid var(--line);border-radius:7px;font-size:12px;color:var(--ink-2);background:#fff;text-decoration:none;display:inline-block}
 .icon-btn:hover{border-color:var(--pine);color:var(--pine)}
 
 /* ---------- note ---------- */
@@ -743,6 +743,7 @@ let chatChannel = null;
 let chatMsgList = [];
 let taskList = [];
 let teamUsers = [];
+let walletLogList = [];
 
 async function loadPerf(clientIdOverride){
   if(!ONLINE) return;
@@ -1132,6 +1133,7 @@ function ordersSection(client, range){
       <td><span class="hint">${esc(o.checkpoint)}</span></td>
       <td><div class="row-act" style="flex-wrap:wrap;gap:4px">
         <button class="icon-btn" data-chist="${o.id}">تاريخ</button>
+        <a class="icon-btn" href="${telLink(o.phone)}">مكالمة</a>
         <button class="icon-btn" data-cwa="${o.id}">واتساب</button>
       </div></td>
     </tr>`;}).join('');
@@ -1544,6 +1546,7 @@ function clientServiceView(client){
       <div class="row-act" style="flex-wrap:wrap;gap:4px">
         <button class="icon-btn" data-svchist="${o.id}">تاريخ</button>
         <button class="icon-btn" data-svccontact="${o.id}">تواصل</button>
+        <a class="icon-btn" href="${telLink(o.phone)}">مكالمة</a>
         <button class="icon-btn" data-svcwa="${o.id}">واتساب</button>
       </div>
     </div>`;
@@ -1736,6 +1739,12 @@ function waLink(phone, text){
   if(p.startsWith('0')) p = '20' + p.slice(1);
   else if(!p.startsWith('20')) p = '20' + p;
   return `https://wa.me/${p}?text=${encodeURIComponent(text)}`;
+}
+function telLink(phone){
+  let p = String(phone||'').replace(/[^\d]/g,'');
+  if(p.startsWith('0')) p = '20' + p.slice(1);
+  else if(!p.startsWith('20')) p = '20' + p;
+  return `tel:+${p}`;
 }
 
 const WA_TEMPLATE_LABEL = { confirm:'رسالة تأكيد الطلب', shipped:'رسالة تأكيد الشحن', review:'رسالة طلب تقييم', other:'رسالة واتساب' };
@@ -2094,6 +2103,7 @@ function adminCustomerService(){
       <div class="row-act" style="flex-wrap:wrap;gap:4px">
         <button class="icon-btn" data-hist="${o.id}">تاريخ</button>
         <button class="icon-btn" data-contact="${o.id}">تواصل</button>
+        <a class="icon-btn" href="${telLink(o.phone)}">مكالمة</a>
         <button class="icon-btn" data-wa="${o.id}">واتساب</button>
       </div>
     </div>`;
@@ -2149,6 +2159,7 @@ function adminOrders(){
       <td><div class="row-act" style="flex-wrap:wrap;gap:4px">
         <button class="icon-btn" data-hist="${o.id}" title="تاريخ الحالات">تاريخ</button>
         <button class="icon-btn" data-contact="${o.id}" title="محاولات التواصل">تواصل</button>
+        <a class="icon-btn" href="${telLink(o.phone)}" title="اتصال">مكالمة</a>
         <button class="icon-btn" data-wa="${o.id}" title="ابعت واتساب">واتساب</button>
       </div></td>
     </tr>`;}).join('');
@@ -2430,6 +2441,38 @@ function adminIntegrations(){
     <p class="hint" style="margin-top:8px">لما يتفعّل، فريق العميل يقدر يأكّد الأوردرات الجديدة وينقلها بين "في انتظار التأكيد" و"التجهيز والتغليف" و"جاري الشحن"، ويسجّل محاولات تواصل ورسائل واتساب — من غير صلاحية الشحن الفعلي أو التحصيل.</p>
     <div class="form-actions"><button class="btn sm" id="adminSaveService">حفظ</button></div>
   </div>
+
+  <div class="section-title">محفظة الاشتراك</div>
+  <div class="card kpi ${d.walletBalance>0?'accent-pine':'accent-gold'}" style="margin-bottom:10px">
+    <div class="k-label">الرصيد الحالي</div>
+    <div class="k-val" style="color:${d.walletBalance>0?'var(--pine)':'var(--brick)'}">${money(d.walletBalance)}<span class="cur">${cur}</span></div>
+    <div class="k-foot">${d.walletFeePerOrder>0?('بيتخصم '+money(d.walletFeePerOrder)+' '+cur+' لكل أوردر جديد'):'مفيش خصم مفعّل حاليًا'}</div>
+  </div>
+  <div class="card">
+    <div class="form-grid">
+      <div class="field"><label>مبلغ الخصم لكل أوردر جديد (${cur})</label>
+        <input id="ai_wallet_fee" type="number" min="0" step="0.01" value="${d.walletFeePerOrder||0}"></div>
+    </div>
+    <div class="form-actions"><button class="btn sm" id="adminSaveWalletFee">حفظ</button>
+      <span class="hint">لو ٠، مفيش خصم أصلاً ومفيش قفل على التواصل/واتساب.</span></div>
+  </div>
+  <div class="card" style="margin-top:10px">
+    <div class="form-grid">
+      <div class="field"><label>شحن رصيد (${cur})</label>
+        <input id="ai_wallet_topup" type="number" min="0" step="0.01" placeholder="0"></div>
+      <div class="field" style="grid-column:1/-1"><label>ملاحظة (اختياري)</label><input id="ai_wallet_note" placeholder="مثال: دفعة شهر أغسطس"></div>
+    </div>
+    <div class="form-actions"><button class="btn sm" id="adminWalletTopup">شحن الرصيد</button></div>
+  </div>
+  <div class="table-wrap" style="margin-top:10px"><table>
+    <thead><tr><th>التاريخ</th><th>النوع</th><th>المبلغ</th><th>الرصيد بعدها</th><th>ملاحظة</th></tr></thead>
+    <tbody>${(walletLogList||[]).map(w=>`
+      <tr><td>${new Date(w.created_at).toLocaleString('ar-EG')}</td>
+        <td><span class="pill ${w.type==='topup'?'on':'off'}">${w.type==='topup'?'شحن':'خصم'}</span></td>
+        <td class="num" style="color:${w.type==='topup'?'var(--pine)':'var(--brick)'}">${w.type==='topup'?'+':'−'}${money(w.amount)} ${cur}</td>
+        <td class="num">${money(w.balance_after)} ${cur}</td>
+        <td>${esc(w.note||'')}</td></tr>`).join('') || '<tr><td colspan="5" class="empty">لسه مفيش حركات في المحفظة.</td></tr>'}</tbody>
+  </table></div>
 
   ${f ? `
   <div class="section-title">الربح والخسارة — ${esc(client.name)}</div>
@@ -3525,7 +3568,8 @@ function bindAdmin(){
           integData = await api('/api/integrations?clientId='+encodeURIComponent(cid));
           financeData = await api('/api/finance?clientId='+encodeURIComponent(cid));
           depositsList = await api('/api/deposits?clientId='+encodeURIComponent(cid));
-        } else { integData=null; financeData=null; depositsList=[]; }
+          walletLogList = await api('/api/wallet/log?clientId='+encodeURIComponent(cid));
+        } else { integData=null; financeData=null; depositsList=[]; walletLogList=[]; }
       }catch(e){ toast(e.message); }
     }
     if(adminTab==='whatsapp' && ONLINE){
@@ -3701,6 +3745,7 @@ function bindAdmin(){
         integData = await api('/api/integrations?clientId='+encodeURIComponent(integClient));
         financeData = await api('/api/finance?clientId='+encodeURIComponent(integClient));
         depositsList = await api('/api/deposits?clientId='+encodeURIComponent(integClient));
+        walletLogList = await api('/api/wallet/log?clientId='+encodeURIComponent(integClient));
       }catch(e){ toast(e.message); }
       paint();
     });
@@ -3792,6 +3837,27 @@ function bindAdmin(){
         await api('/api/integrations',{method:'PUT', body:JSON.stringify(body)});
         integData = await api('/api/integrations?clientId='+encodeURIComponent(cid()));
         toast('اتحفظ'); paint();
+      }catch(e){ toast(e.message); }
+    };
+    const wfee = $('adminSaveWalletFee');
+    if(wfee) wfee.onclick = async ()=>{
+      const body = { clientId: cid(), walletFeePerOrder: +$('ai_wallet_fee').value || 0 };
+      try{
+        await api('/api/integrations',{method:'PUT', body:JSON.stringify(body)});
+        integData = await api('/api/integrations?clientId='+encodeURIComponent(cid()));
+        toast('اتحفظ مبلغ الخصم'); paint();
+      }catch(e){ toast(e.message); }
+    };
+    const wtop = $('adminWalletTopup');
+    if(wtop) wtop.onclick = async ()=>{
+      const amount = +$('ai_wallet_topup').value;
+      if(!amount || amount<=0){ toast('اكتب مبلغ صحيح'); return; }
+      const body = { clientId: cid(), amount, note: $('ai_wallet_note').value.trim() };
+      try{
+        await api('/api/wallet/topup',{method:'POST', body:JSON.stringify(body)});
+        integData = await api('/api/integrations?clientId='+encodeURIComponent(cid()));
+        walletLogList = await api('/api/wallet/log?clientId='+encodeURIComponent(cid()));
+        toast('اتشحن الرصيد'); paint();
       }catch(e){ toast(e.message); }
     };
     document.querySelectorAll('[data-adeldeposit]').forEach(b=> b.onclick = async ()=>{
