@@ -328,6 +328,31 @@ async function insertOrder(env, o) {
   return o;
 }
 
+/** محفظة الاشتراك — بتخصم رسم ثابت لكل أوردر جديد بيدخل النظام (مش تحديثات لأوردر موجود) */
+async function chargeWalletForOrder(env, clientId) {
+  try {
+    const state = await loadState(env);
+    const client = state.clients.find(c => c.id === clientId);
+    if (!client) return;
+    const fee = Number(client.walletFeePerOrder) || 0;
+    if (fee <= 0) return;
+    client.walletBalance = round2((Number(client.walletBalance) || 0) - fee);
+    await saveState(env, state);
+    await env.DB.prepare(
+      'INSERT INTO wallet_log (id, client_id, type, amount, balance_after, note, created_at, created_by) VALUES (?,?,?,?,?,?,?,?)'
+    ).bind('WLG-' + crypto.randomUUID().slice(0, 8).toUpperCase(), clientId, 'deduct', fee,
+      client.walletBalance, 'خصم تلقائي — أوردر جديد', new Date().toISOString(), 'system').run();
+  } catch (e) { console.error('chargeWalletForOrder failed', e); }
+}
+
+/** بتسجّل الأوردر وتخصم من المحفظة بس لو فعلاً جديد (مش تحديث/إعادة مزامنة لأوردر موجود أصلاً) */
+async function insertOrderAndCharge(env, o) {
+  const existing = await env.DB.prepare('SELECT id FROM orders WHERE id = ?').bind(o.id).first();
+  await insertOrder(env, o);
+  if (!existing) await chargeWalletForOrder(env, o.clientId);
+  return o;
+}
+
 /** أول ٣ حروف من الاسم + رقم تسلسلي عالمي يبدأ من ٢٠٠ — لكود الأوردر اليدوي */
 function orderNamePrefix(name) {
   const letters = String(name || '').replace(/[^\p{L}]/gu, '').toUpperCase().slice(0, 3);
@@ -566,9 +591,14 @@ function computeFinance(state, orders, clientId) {
   const expectedDelivered = uploaded * (deliveryRate / 100);
   const cpaAfterRate = expectedDelivered > 0 ? round2(adSpend / expectedDelivered) : 0;
 
-  const pipeline = nonCancelled.filter(o => o.state !== 'returned');
+  /* الأوردرات "المتوقعة" هي بس اللي لسه مصيرها معلّق — أول ما تتحول لتم التحصيل
+     أو مرتجع أو إلغاء، تخرج من الحساب ده خالص (بقى مصيرها معروف، مش متوقع) */
+  const pipeline = co.filter(o => !['collected', 'returned', 'cancelled'].includes(o.state));
   const revenueExpected = round2(pipeline.reduce((s, o) => s + (Number(o.total) || 0), 0) * (deliveryRate / 100));
   const profitExpected = round2(pipeline.reduce((s, o) => s + profitOfEstimated(o), 0) * (deliveryRate / 100));
+  /* هامش الربح المتوقع = صافي الربح المتوقع ÷ الإيراد المتوقع × ١٠٠ */
+  const profitMarginExpectedPct = revenueExpected > 0
+    ? Math.round((profitExpected / revenueExpected) * 1000) / 10 : 0;
 
   const today = new Date().toISOString().slice(0, 10);
   const ordersToday = co.filter(o => String(o.date || '').slice(0, 10) === today).length;
@@ -578,7 +608,7 @@ function computeFinance(state, orders, clientId) {
     ordersToday, adminFee, adSpend, cpaBeforeRate, cpaAfterRate, revenueExpected,
     profitPending: round2(pendingCollection.reduce((s, o) => s + profitOf(o), 0)),
     profitCollected: round2(collected.reduce((s, o) => s + profitOf(o), 0)),
-    profitExpected,
+    profitExpected, profitMarginExpectedPct,
     counts: { delivered: delivered.length, returned: returned.length, collected: collected.length,
       pendingCollection: pendingCollection.length, uploaded }
   };
@@ -704,7 +734,7 @@ async function handleApi(request, env, url, path) {
       source: 'واتساب', note: String(b.note || '').trim(),
       state: 'pending', checkpoint: STATE_TEXT.pending
     };
-    await insertOrder(env, order);
+    await insertOrderAndCharge(env, order);
     return json({ ok: true, id, order });
   }
 
@@ -967,7 +997,7 @@ async function handleApi(request, env, url, path) {
     o.id = await nextOrderCode(env, o.name);
     o.state = ORDER_STATES.includes(o.state) ? o.state : 'pending';
     o.checkpoint = o.checkpoint || STATE_TEXT.pending;
-    await insertOrder(env, o);
+    await insertOrderAndCharge(env, o);
     return json({ ok: true, order: o });
   }
 
@@ -1241,6 +1271,8 @@ async function handleApi(request, env, url, path) {
       adminFee: Number(c.adminFee) || 0,
       shippingMode: c.shippingMode === 'byGov' ? 'byGov' : 'fixed',
       inventoryEnabled: !!c.inventoryEnabled,
+      walletBalance: round2(Number(c.walletBalance) || 0),
+      walletFeePerOrder: Number(c.walletFeePerOrder) || 0,
       customerServiceEnabled: !!c.customerServiceEnabled,
       shippingFixed: Number(c.shippingFixed) || 0,
       shippingByGov: c.shippingByGov && typeof c.shippingByGov === 'object' ? c.shippingByGov : {},
@@ -1299,6 +1331,10 @@ async function handleApi(request, env, url, path) {
       }
       if (b.customerServiceEnabled !== undefined && isStaff(user)) {
         client.customerServiceEnabled = !!b.customerServiceEnabled;
+      }
+      if (b.walletFeePerOrder !== undefined && isStaff(user)) {
+        const f = Number(b.walletFeePerOrder);
+        client.walletFeePerOrder = Number.isFinite(f) ? Math.max(0, f) : 0;
       }
       if (b.shippingMode !== undefined) client.shippingMode = b.shippingMode === 'byGov' ? 'byGov' : 'fixed';
       if (b.shippingFixed !== undefined) {
@@ -1444,7 +1480,7 @@ async function handleApi(request, env, url, path) {
     return {
       from, to,
       newOrders: newOrders.length, byState,
-      adSpend, otherExpense, cpp: newOrders.length ? round2((adSpend + otherExpense) / newOrders.length) : 0,
+      adSpend, otherExpense, cpp: newOrders.length ? round2(adSpend / newOrders.length) : 0,
       collected: { count: collectedEv.length, amount: round2(collectedEv.reduce((s, o) => s + (Number(o.total) || 0), 0)) },
       returned: returnedEv.length, cancelled: cancelledEv.length
     };
@@ -1493,6 +1529,8 @@ async function handleApi(request, env, url, path) {
         ? Math.round((l30Confirmed.length / l30NonCancelled.length) * 1000) / 10 : 0,
       last30DeliveryRatePct: l30Final ? Math.round((l30Delivered.length / l30Final) * 1000) / 10 : 0,
       profitExpected: fin.profitExpected, revenueExpected: fin.revenueExpected,
+      profitMarginExpectedPct: fin.profitMarginExpectedPct,
+      profitCollected: fin.profitCollected,
       shippingMode: client.shippingMode === 'byGov' ? 'byGov' : 'fixed',
       metaBalance: client.metaBalance != null ? client.metaBalance : null,
       metaBalanceCurrency: client.metaBalanceCurrency || '',
@@ -1547,6 +1585,38 @@ async function handleApi(request, env, url, path) {
     state.deposits = state.deposits.filter(d => d.id !== depm[1]);
     await saveState(env, state);
     return json({ ok: true });
+  }
+
+  /* ---------- محفظة الاشتراك — شحن رصيد + سجل الحركات ---------- */
+  if (path === '/api/wallet/topup' && request.method === 'POST') {
+    if (!(isStaff(user) && can(user, 'clients'))) return json({ error: 'مش مسموح' }, 403);
+    const b = await request.json().catch(() => ({}));
+    const amount = Number(b.amount);
+    if (!amount || amount <= 0) return json({ error: 'المبلغ لازم يكون أكبر من صفر' }, 400);
+    if (!b.clientId) return json({ error: 'محتاجين clientId' }, 400);
+    const state = await loadState(env);
+    const client = state.clients.find(c => c.id === b.clientId);
+    if (!client) return json({ error: 'العميل مش موجود' }, 404);
+    client.walletBalance = round2((Number(client.walletBalance) || 0) + amount);
+    await saveState(env, state);
+    await env.DB.prepare(
+      'INSERT INTO wallet_log (id, client_id, type, amount, balance_after, note, created_at, created_by) VALUES (?,?,?,?,?,?,?,?)'
+    ).bind('WLG-' + crypto.randomUUID().slice(0, 8).toUpperCase(), b.clientId, 'topup', amount,
+      client.walletBalance, String(b.note || '').trim(), new Date().toISOString(), me.email || me.role).run();
+    return json({ ok: true, walletBalance: client.walletBalance });
+  }
+
+  if (path === '/api/wallet/log' && request.method === 'GET') {
+    const staffAccess = isStaff(user) && can(user, 'clients');
+    const qcid = url.searchParams.get('clientId');
+    if (user.role === 'client' && qcid && qcid !== me.clientId) return json({ error: 'مش مسموح' }, 403);
+    const targetId = user.role === 'client' ? me.clientId : qcid;
+    if (user.role !== 'client' && !staffAccess) return json({ error: 'مش مسموح' }, 403);
+    if (!targetId) return json({ error: 'محتاجين clientId' }, 400);
+    const { results } = await env.DB.prepare(
+      'SELECT id, type, amount, balance_after, note, created_at FROM wallet_log WHERE client_id = ? ORDER BY created_at DESC LIMIT 200'
+    ).bind(targetId).all();
+    return json(results || []);
   }
 
   /* ---------- الشات الداخلي للفريق + التاسكات — الإدارة والموظفين بس ---------- */
@@ -1678,7 +1748,7 @@ async function handleApi(request, env, url, path) {
         const match = findProduct(r);
         let cost = Number(r.productCost) || 0;
         if (!cost && match) { cost = (Number(match.cost) || 0) * qty; if (cost) costed++; }
-        await insertOrder(env, {
+        await insertOrderAndCharge(env, {
           id, clientId: b.clientId, ref: r.ref ? String(r.ref).trim() : null,
           date: (r.date || new Date().toISOString()).slice(0, 10),
           name: r.name || '', phone: String(r.phone || ''), gov: r.gov || '', address: r.address || '',
@@ -1862,7 +1932,7 @@ async function handleWebhook(request, env, path) {
 
     await ensureProductsFromCart(env, client.id, p.cart_items);
 
-    await insertOrder(env, {
+    await insertOrderAndCharge(env, {
       id: p.id, clientId: client.id,
       date: String(p.created_at || new Date().toISOString()).slice(0, 10),
       name: p.full_name || '', phone: p.phone || '', gov: p.government || '', address: p.address || '',
