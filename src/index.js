@@ -1070,13 +1070,19 @@ async function handleApi(request, env, url, path) {
     }
   }
 
-  /* موظف أوردرات، أو عميل مفعّل ليه "خدمة العملاء" وبيتصرف في أوردر بتاعه هو بس */
+  /* موظف أوردرات، أو عميل مفعّل ليه "خدمة العملاء" وبيتصرف في أوردر بتاعه هو بس.
+     لو العميل مشترك في نظام المحفظة وخلص رصيده، بتتقفل أزرار التواصل/واتساب لحد ما يشحن —
+     الأوردرات نفسها بتفضل توصل وتتسجّل عادي، القفل ده على "التعامل" بس */
   async function canActOnOrder(env, user, me, clientIdOfOrder) {
-    if (isStaff(user) && can(user, 'orders')) return true;
-    if (user.role !== 'client' || clientIdOfOrder !== me.clientId) return false;
     const state = await loadState(env);
-    const client = state.clients.find(c => c.id === me.clientId);
-    return !!(client && client.customerServiceEnabled);
+    const client = state.clients.find(c => c.id === clientIdOfOrder);
+    if (client && Number(client.walletFeePerOrder) > 0 && Number(client.walletBalance || 0) <= 0) {
+      return { ok: false, code: 402, reason: 'رصيد محفظة الاشتراك خلص — لازم تشحن رصيد عشان تقدر تتواصل مع العملاء' };
+    }
+    if (isStaff(user) && can(user, 'orders')) return { ok: true };
+    if (user.role !== 'client' || clientIdOfOrder !== me.clientId) return { ok: false, code: 403, reason: 'مش مسموح' };
+    return client && client.customerServiceEnabled
+      ? { ok: true } : { ok: false, code: 403, reason: 'مش مسموح' };
   }
 
   /* محاولات التواصل مع العميل — أقصى ٣ في اليوم و١٠ خلال ٣ أيام */
@@ -1085,7 +1091,8 @@ async function handleApi(request, env, url, path) {
     const id = decodeURIComponent(cm[1]);
     const cur = await env.DB.prepare('SELECT client_id, contact_log, history FROM orders WHERE id = ?').bind(id).first();
     if (!cur) return json({ error: 'أوردر غير موجود' }, 404);
-    if (!await canActOnOrder(env, user, me, cur.client_id)) return json({ error: 'مش مسموح' }, 403);
+    const access = await canActOnOrder(env, user, me, cur.client_id);
+    if (!access.ok) return json({ error: access.reason }, access.code);
 
     const log = parseJsonArr(cur.contact_log);
     const now = new Date();
@@ -1114,7 +1121,8 @@ async function handleApi(request, env, url, path) {
     const id = decodeURIComponent(wm[1]);
     const cur = await env.DB.prepare('SELECT client_id, history FROM orders WHERE id = ?').bind(id).first();
     if (!cur) return json({ error: 'أوردر غير موجود' }, 404);
-    if (!await canActOnOrder(env, user, me, cur.client_id)) return json({ error: 'مش مسموح' }, 403);
+    const access = await canActOnOrder(env, user, me, cur.client_id);
+    if (!access.ok) return json({ error: access.reason }, access.code);
     const b = await request.json().catch(() => ({}));
     const history = parseJsonArr(cur.history);
     const template = ['confirm', 'shipped', 'review'].includes(b.template) ? b.template : 'other';
