@@ -384,6 +384,19 @@ check('العميل يقدر يشوف سجل محفظته هو', (await call('/a
 check('العميل ممنوع يشحن لنفسه رصيد',
   (await call('/api/wallet/topup',{method:'POST',body:JSON.stringify({clientId:'c2',amount:100})},clientCookie)).status===403);
 
+head('قفل التعامل عند نفاد رصيد المحفظة');
+await call('/api/integrations?clientId=c2',{method:'PUT',body:JSON.stringify({walletFeePerOrder:1000})},adminCookie);
+let [,drainOrder]=await j(await mkOrder(100,20));
+let [,walletDrained]=await j(await call('/api/integrations?clientId=c2',{},adminCookie));
+check('الرصيد بقى سالب/صفر بعد أوردر بمبلغ خصم كبير', walletDrained.walletBalance<=0);
+r=await call('/api/orders/'+drainOrder.order.id+'/contact',{method:'POST'},adminCookie);
+check('زرار التواصل بيتقفل لما الرصيد يخلص', r.status===402);
+r=await call('/api/orders/'+drainOrder.order.id+'/whatsapp-log',{method:'POST',body:JSON.stringify({template:'confirm'})},adminCookie);
+check('زرار الواتساب بيتقفل برضه', r.status===402);
+r=await mkOrder(200,40);
+check('الأوردرات لسه بتتسجّل عادي رغم قفل التعامل (الاستقبال مش بيتوقف)', r.status===200);
+await call('/api/integrations?clientId=c2',{method:'PUT',body:JSON.stringify({walletFeePerOrder:0})},adminCookie);
+
 r=await call('/api/integrations?clientId=c2',{method:'PUT',body:JSON.stringify({
   shippingMode:'byGov', shippingByGov:{'أسيوط':35,'القاهرة':45}})},adminCookie);
 check('حفظ إعدادات الشحن حسب المحافظة', r.status===200);
