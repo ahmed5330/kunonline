@@ -4,6 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>كن أونلاين — نظام إدارة متاجر العملاء</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#0E5095">
+<link rel="icon" href="/logo.png">
+<link rel="apple-touch-icon" href="/logo.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="كن أونلاين">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -16,9 +23,9 @@
   --surface:#FFFFFF;
   --surface-2:#F5F8F7;
   --line:#D3DEDA;
-  --pine:#0E7C66;
-  --pine-soft:#E3F1ED;
-  --pine-line:#C4E0D8;
+  --pine:#3F8F2B;
+  --pine-soft:#E8F7E1;
+  --pine-line:#C3E8B0;
   --gold:#C08A00;
   --gold-soft:#FBF0D6;
   --gold-line:#EBDCB2;
@@ -28,7 +35,7 @@
   --brick:#A8321D;
   --brick-soft:#FAE6E1;
   --brick-line:#E7C4BC;
-  --chrome-bg:#12212B;
+  --chrome-bg:#0E5095;
   --chrome-fg:#fff;
   --radius:14px;
   --shadow:0 1px 2px rgba(18,33,43,.06), 0 8px 24px -12px rgba(18,33,43,.18);
@@ -40,11 +47,11 @@
   --ink:#EAF1EE; --ink-2:#B7C6C2; --ink-3:#84958F;
   --ground:#0E1512; --surface:#182019; --surface-2:#1E2823;
   --line:#2B362F;
-  --pine:#3FCDA8; --pine-soft:#16332B; --pine-line:#28493D;
+  --pine:#7ED957; --pine-soft:#1E3313; --pine-line:#345823;
   --gold:#E3B646; --gold-soft:#332A11; --gold-line:#4A3C18; --gold-line-2:#5C4B1E;
   --gold-ink:#E8C776; --gold-ink-2:#F0D89A;
   --brick:#E8836C; --brick-soft:#3A211B; --brick-line:#52302A;
-  --chrome-bg:#0A0F0D; --chrome-fg:#EAF1EE;
+  --chrome-bg:#0A2C52; --chrome-fg:#EAF1EE;
   --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6);
 }
 /* الوضع الرمادي — بدرجات الرمادي بس، من غير أي لون */
@@ -83,9 +90,10 @@ a{color:inherit}
 .topbar-in{max-width:1180px;margin:0 auto;padding:12px 16px;display:flex;align-items:center;gap:14px}
 .brand{display:flex;align-items:center;gap:9px;font-weight:800;letter-spacing:-.2px}
 .brand-mark{
-  width:26px;height:26px;border-radius:7px;background:var(--pine);
-  display:grid;place-items:center;font-family:var(--mono);font-size:13px;font-weight:600;color:#fff
+  width:28px;height:28px;border-radius:50%;background:#fff;overflow:hidden;
+  display:grid;place-items:center;box-shadow:0 0 0 1px rgba(255,255,255,.4)
 }
+.brand-mark img{width:100%;height:100%;object-fit:cover}
 .brand small{display:block;font-weight:400;font-size:11px;color:#9DB4B0;letter-spacing:.06em}
 .topbar .spacer{flex:1}
 .who{font-size:13px;color:#A9BEC4;display:flex;align-items:center;gap:10px}
@@ -325,7 +333,7 @@ td.num{font-family:var(--mono);font-variant-numeric:tabular-nums;direction:ltr;t
 <div id="loginView" class="login-wrap">
   <div class="login">
     <div class="brand" style="justify-content:center;margin-bottom:18px;color:var(--ink)">
-      <span class="brand-mark">ك</span>
+      <span class="brand-mark"><img src="/logo.png" alt="كن أونلاين"></span>
       <span>كن أونلاين<small>لوحة متابعة المتاجر</small></span>
     </div>
     <div class="login-card">
@@ -352,7 +360,7 @@ td.num{font-family:var(--mono);font-variant-numeric:tabular-nums;direction:ltr;t
 <div id="setupView" class="login-wrap hidden">
   <div class="login">
     <div class="brand" style="justify-content:center;margin-bottom:18px;color:var(--ink)">
-      <span class="brand-mark">ك</span><span>كن أونلاين<small>أول تشغيل</small></span>
+      <span class="brand-mark"><img src="/logo.png" alt="كن أونلاين"></span><span>كن أونلاين<small>أول تشغيل</small></span>
     </div>
     <div class="login-card">
       <h1>اعمل حساب الإدارة</h1>
@@ -372,7 +380,7 @@ td.num{font-family:var(--mono);font-variant-numeric:tabular-nums;direction:ltr;t
 <div id="appView" class="hidden">
   <div class="topbar">
     <div class="topbar-in">
-      <div class="brand"><span class="brand-mark">ك</span><span>كن أونلاين<small id="roleLabel">لوحة العميل</small></span></div>
+      <div class="brand"><span class="brand-mark"><img src="/logo.png" alt="كن أونلاين"></span><span>كن أونلاين<small id="roleLabel">لوحة العميل</small></span></div>
       <div class="spacer"></div>
       <div class="theme-switch" id="themeSwitch" role="group" aria-label="وضع العرض">
         <button data-theme-btn="light" aria-pressed="true" title="مضيء">☀</button>
@@ -836,8 +844,7 @@ function renderClient(client){
     <div><div class="dt">تواصل</div><div class="dd mono" style="font-size:12px">${esc(client.phone||'—')}</div></div>
   </div>
 
-  <div class="section-title">الأداء اليومي</div>
-  ${!perfData ? `<div class="card"><p class="hint" style="margin-bottom:10px">بنحسبلك...</p><button class="btn sm line" id="perfRetryBtn">إعادة المحاولة</button></div>` : (() => {
+  ${!perfData ? `<div class="section-title">الأداء</div><div class="card"><p class="hint" style="margin-bottom:10px">بنحسبلك...</p><button class="btn sm line" id="perfRetryBtn">إعادة المحاولة</button></div>` : (() => {
     const t = perfData.today, mo = perfData.month;
     const stateRow = (data) => `
       <div class="grid g4" style="margin-top:8px">
@@ -864,7 +871,25 @@ function renderClient(client){
         <div class="card kpi"><div class="k-label">إجمالي أوردرات الفترة</div><div class="k-val">${num(data.newOrders)}</div></div>
       </div>`;
     return `
-    <div class="section-title" style="margin-top:14px">أداء ${arDate(perfData.date)}</div>
+    <div class="section-title">الأرباح المتوقعة</div>
+    <div class="grid g3">
+      <div class="card kpi"><div class="k-label">الإيراد المتوقع</div>
+        <div class="k-val">${money(perfData.revenueExpected)}<span class="cur">${cur}</span></div>
+        <div class="k-foot">الأوردرات اللي مصيرها لسه معلّق بس</div></div>
+      <div class="card kpi ${perfData.profitMarginExpectedPct>=0?'accent-pine':''}">
+        <div class="k-label">هامش الربح المتوقع</div>
+        <div class="k-val" style="color:${perfData.profitMarginExpectedPct>=0?'var(--pine)':'var(--brick)'}">${perfData.profitMarginExpectedPct}<span class="cur">%</span></div>
+        <div class="k-foot">بعد خصم كل المصاريف وتكلفة المنتج</div></div>
+      <div class="card kpi accent-pine"><div class="k-label">أرباح متاحة للصرف</div>
+        <div class="k-val" style="color:var(--pine)">${money(perfData.profitCollected)}<span class="cur">${cur}</span></div>
+        <div class="k-foot">من الأوردرات المحصّلة فعليًا</div></div>
+    </div>
+
+    <div class="page-head" style="padding:14px 0 0">
+      <div class="section-title" style="margin:0">أداء ${arDate(perfData.date)}</div>
+      <div class="spacer"></div>
+      <button class="icon-btn" id="perfReloadBtn" title="تحديث">↻</button>
+    </div>
     ${perfData.metaBalance!=null ? `<div class="card kpi accent-gold" style="margin-top:8px">
       <div class="k-label">الرصيد المتبقي في حساب الإعلانات</div>
       <div class="k-val">${money(perfData.metaBalance)}<span class="cur">${esc(perfData.metaBalanceCurrency||'')}</span></div>
@@ -895,14 +920,6 @@ function renderClient(client){
         <div class="k-val">${perfData.last30ConfirmationRatePct}<span class="cur">%</span></div></div>
       <div class="card kpi"><div class="k-label">متوسط نسبة التوصيل — آخر ٣٠ يوم</div>
         <div class="k-val">${perfData.last30DeliveryRatePct}<span class="cur">%</span></div></div>
-    </div>
-
-    <div class="section-title" style="margin-top:14px">الأرباح والإيرادات المتوقعة</div>
-    <div class="grid g3">
-      <div class="card kpi accent-pine"><div class="k-label">الربح المتوقع</div>
-        <div class="k-val">${money(perfData.profitExpected)}<span class="cur">${cur}</span></div></div>
-      <div class="card kpi"><div class="k-label">الإيراد المتوقع</div>
-        <div class="k-val">${money(perfData.revenueExpected)}<span class="cur">${cur}</span></div></div>
     </div>`;
   })()}
 
@@ -1389,6 +1406,15 @@ function clientFinanceView(client){
       <div class="k-foot">إيراد متوقع ${money(f.revenueExpected)} ${cur}</div></div>
   </div>
 
+  <div class="section-title">هامش ربح متوقع</div>
+  <div class="grid g3">
+    <div class="card kpi ${f.profitMarginExpectedPct>=0?'accent-pine':''}">
+      <div class="k-label">هامش الربح المتوقع</div>
+      <div class="k-val mono" style="color:${f.profitMarginExpectedPct>=0?'var(--pine)':'var(--brick)'}">${f.profitMarginExpectedPct} <span class="cur">%</span></div>
+      <div class="k-foot">صافي الربح المتوقع ÷ الإيراد المتوقع</div>
+    </div>
+  </div>
+
   <div class="section-title">نسبة التسليم اليدوية (اختياري)</div>
   <div class="card">
     <div class="form-grid">
@@ -1481,6 +1507,16 @@ function clientInventoryView(client){
   return `
   <div class="page-head">
     <div><div class="eyebrow">${esc(client.name)}</div><h2>إدارة التخزين والشحن</h2></div>
+    <div class="spacer"></div>
+    <div class="seg" id="clientTabs">
+      <button data-ctab="dash" aria-pressed="false">الداشبورد</button>
+      <button data-ctab="add" aria-pressed="false">الأوردرات</button>
+      <button data-ctab="inventory" aria-pressed="true">المخزون</button>
+      ${client.customerServiceEnabled ? `<button data-ctab="service" aria-pressed="false">خدمة العملاء</button>` : ''}
+      <button data-ctab="products" aria-pressed="false">منتجاتي</button>
+      <button data-ctab="finance" aria-pressed="false">الحسابات</button>
+      <button data-ctab="integrations" aria-pressed="false">التكاملات</button>
+    </div>
   </div>
   <p class="hint" style="margin-bottom:14px">الأوردرات اللي "تم تأكيدها" وجاهزة للتغليف والشحن. أدخل رقم البوليصة ودوس "تم الشحن" عشان تتحول للمرحلة الجاية.</p>
   <div class="table-wrap"><table>
@@ -1515,6 +1551,16 @@ function clientServiceView(client){
   return `
   <div class="page-head">
     <div><div class="eyebrow">${esc(client.name)}</div><h2>خدمة العملاء</h2></div>
+    <div class="spacer"></div>
+    <div class="seg" id="clientTabs">
+      <button data-ctab="dash" aria-pressed="false">الداشبورد</button>
+      <button data-ctab="add" aria-pressed="false">الأوردرات</button>
+      ${client.inventoryEnabled ? `<button data-ctab="inventory" aria-pressed="false">المخزون</button>` : ''}
+      <button data-ctab="service" aria-pressed="true">خدمة العملاء</button>
+      <button data-ctab="products" aria-pressed="false">منتجاتي</button>
+      <button data-ctab="finance" aria-pressed="false">الحسابات</button>
+      <button data-ctab="integrations" aria-pressed="false">التكاملات</button>
+    </div>
   </div>
   <p class="hint" style="margin-bottom:14px">أكّد الأوردرات الجديدة وتابعها لحد ما تتجهّز للشحن. الأوردر بيتنقل تلقائي بين الأعمدة.</p>
   <div class="grid g3">
@@ -1750,7 +1796,12 @@ async function showContactModal(order){
 
 function showWhatsAppModal(order, clientName){
   const templates = {
-    confirm: `مرحباً ${order.name||''}، إحنا من ${clientName||'المتجر'}. حابين نأكد طلبك: ${order.product||''} بمبلغ ${money(order.total)} جنيه. تقدر تأكدلنا الطلب؟`,
+    confirm: `مرحباً ${order.name||''}، إحنا من ${clientName||'المتجر'}. حابين نأكد طلبك:\n`
+      + `المنتج: ${order.product||''}${(order.qty&&order.qty>1)?(' × '+order.qty):''}\n`
+      + `الإجمالي: ${money(order.total)} جنيه\n`
+      + `العنوان: ${order.address||order.gov||''}\n`
+      + `كود الطلب: ${order.id}\n`
+      + `تقدر تأكدلنا الطلب؟`,
     shipped: `مرحباً ${order.name||''}، طلبك اتشحن${order.awb?(' ورقم البوليصة '+order.awb):''}. هيوصلك قريب إن شاء الله.`,
     review: `مرحباً ${order.name||''}، نتمنى إن الطلب وصلك بالسلامة. نسعد جداً لو قيّمت تجربتك معانا 🙏`
   };
@@ -3155,6 +3206,8 @@ function bindClient(c){
   if(clientTab==='service') bindClientService();
   const perfRetry = document.getElementById('perfRetryBtn');
   if(perfRetry) perfRetry.onclick = async ()=>{ await loadPerf(c.id); paint(true); };
+  const perfReload = document.getElementById('perfReloadBtn');
+  if(perfReload) perfReload.onclick = async ()=>{ perfData=null; paint(); await loadPerf(c.id); paint(true); toast('اتحدّث'); };
   document.querySelectorAll('#periodSeg button').forEach(b=> b.onclick = async ()=>{
     clientRange = b.dataset.period;
     if(clientRange==='custom'){
