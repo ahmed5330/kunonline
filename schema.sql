@@ -63,6 +63,51 @@ CREATE TABLE IF NOT EXISTS orders (
 CREATE INDEX IF NOT EXISTS idx_orders_client ON orders (client_id, date);
 CREATE INDEX IF NOT EXISTS idx_orders_awb    ON orders (awb);
 
+-- كتالوج المنتجات لكل عميل — بما فيه إدارة المخزون (الكمية المتاحة وحد التنبيه)
+CREATE TABLE IF NOT EXISTS products (
+  id                   TEXT PRIMARY KEY,
+  client_id            TEXT NOT NULL,
+  name                 TEXT NOT NULL,
+  sku                  TEXT,
+  price                REAL DEFAULT 0,
+  cost                 REAL DEFAULT 0,
+  active               INTEGER DEFAULT 1,
+  stock                INTEGER DEFAULT 0,     -- الكمية المتاحة حاليًا
+  low_stock_threshold  INTEGER DEFAULT 5,     -- تحت الرقم ده يظهر تنبيه "قرب يخلص"
+  created_at           TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_products_client ON products (client_id);
+
+-- الحركات المالية العامة (مصاريف وإيرادات مش مرتبطة بأوردر بعينه)
+CREATE TABLE IF NOT EXISTS transactions (
+  id          TEXT PRIMARY KEY,
+  type        TEXT NOT NULL,        -- expense أو income
+  date        TEXT NOT NULL,
+  category    TEXT,
+  amount      REAL NOT NULL,
+  currency    TEXT DEFAULT 'EGP',
+  method      TEXT,
+  client_id   TEXT,                 -- فاضي = حركة عامة للإيجنسي كلها
+  note        TEXT,
+  created_by  TEXT,
+  created_at  TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_tx_client ON transactions (client_id, date);
+
+-- طابور رسائل الواتساب التلقائية (تأكيد الطلب + تنبيهات تغيير الحالة) — بينتظر أجنت الواتساب يرسلها
+CREATE TABLE IF NOT EXISTS whatsapp_outbox (
+  id          TEXT PRIMARY KEY,
+  client_id   TEXT NOT NULL,
+  order_id    TEXT NOT NULL,
+  phone       TEXT NOT NULL,
+  message     TEXT NOT NULL,
+  kind        TEXT,                 -- confirm أو shipping أو غيرها لاحقاً
+  status      TEXT DEFAULT 'pending', -- pending أو sent أو failed
+  created_at  TEXT,
+  sent_at     TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_wa_outbox_status ON whatsapp_outbox (status, created_at);
+
 -- محفظة الاشتراك — سجل كل شحن رصيد وكل خصم تلقائي لكل أوردر
 CREATE TABLE IF NOT EXISTS wallet_log (
   id            TEXT PRIMARY KEY,

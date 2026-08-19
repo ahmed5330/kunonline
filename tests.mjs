@@ -18,6 +18,7 @@ const stmt=(sql)=>({
     if(sql.includes('FROM orders WHERE ref = ? AND client_id = ?'))
       return [...orders.values()].find(o=>o.ref===this.args[0]&&o.client_id===this.args[1])||null;
     if(sql.includes('FROM transactions WHERE id = ?')) return transactions.get(this.args[0])||null;
+    if(sql.includes('FROM products WHERE id = ?')) return products.get(this.args[0])||null;
     if(sql.includes('chat_last_seen FROM users')) return {chat_last_seen: (users.get(this.args[0])||{}).chat_last_seen||null};
     if(sql.includes('COUNT(*) AS n FROM chat_messages')){
       const since=this.args[0], me=this.args[1];
@@ -61,8 +62,9 @@ const stmt=(sql)=>({
     else if(sql.includes('DELETE FROM orders')) orders.delete(this.args[0]);
     else if(sql.includes('DELETE FROM transactions')) transactions.delete(this.args[0]);
     else if(sql.includes('INSERT INTO products')){
-      const [id,client_id,name,sku,price,cost,active,created_at]=this.args;
-      products.set(id,{id,client_id,name,sku,price,cost,active,created_at});}
+      const [id,client_id,name,sku,price,cost,active,stock,low_stock_threshold,created_at]=this.args;
+      products.set(id,{id,client_id,name,sku,price,cost,active,stock,low_stock_threshold,created_at});}
+    else if(sql.startsWith('UPDATE products SET stock')){const p=products.get(this.args[1]);if(p)p.stock=this.args[0];}
     else if(sql.includes('INSERT INTO transactions')){
       const [id,type,date,category,amount,currency,method,client_id,note,created_by,created_at]=this.args;
       transactions.set(id,{id,type,date,category,amount,currency,method,client_id,note,created_by,created_at});}
@@ -188,6 +190,15 @@ await call('/webhooks/easyorders',{method:'POST',headers:{secret:'eo-secret'},bo
 check('الويبهوك سجّل الأوردر لصاحب المتجر', orders.get('EO-1')?.client_id==='c1', '→ '+orders.get('EO-1')?.gov);
 check('منتج إيزي أوردرز اتسجّل تلقائي في كتالوج المتجر',
   [...products.values()].some(p=>p.client_id==='c1' && p.name==='ترينج'));
+
+head('إدارة المخزون — كميات المنتجات');
+r=await call('/api/products',{method:'POST',body:JSON.stringify({
+  name:'سماعة بلوتوث',price:500,cost:200,stock:3,lowStockThreshold:5})},clientCookie);
+let [,stockProd]=await j(r);
+check('العميل يقدر يسجّل منتج بكمية مخزون وحد تنبيه', r.status===200);
+check('المنتج اتسجّل بالكمية والحد الصح', products.get(stockProd.id).stock===3 && products.get(stockProd.id).low_stock_threshold===5);
+r=await call('/api/products/'+stockProd.id+'/stock',{method:'PATCH',body:JSON.stringify({stock:20})},clientCookie);
+check('تحديث سريع للكمية بيشتغل', r.status===200 && products.get(stockProd.id).stock===20);
 const [,ord]=await j(await call('/api/orders',{method:'POST',
   body:JSON.stringify({clientId:'c1',name:'سارة',phone:'0111',total:300,date:'2026-08-09'})},clientCookie));
 check('أوردر العميل بيتحوّل لحسابه هو', ord.order.clientId==='c2','→ '+ord.order.clientId);
@@ -335,6 +346,13 @@ check('التحصيل بيتحسب بتاريخ الحدث مش تاريخ إن�
 check('المرتجع بيتحسب بتاريخ الحدث', perf.today.returned>=1);
 check('نسبة تأكيدات وتوصيل آخر ٣٠ يوم أرقام صحيحة', typeof perf.last30ConfirmationRatePct==='number' && typeof perf.last30DeliveryRatePct==='number');
 check('الأرباح والإيرادات المتوقعة موجودة في نفس الرد', typeof perf.profitExpected==='number' && typeof perf.revenueExpected==='number');
+
+let [,perfBeforeNet]=await j(await call('/api/performance?clientId=c2&date='+TODAY,{},adminCookie));
+let [,netTestOrder]=await j(await mkOrder(400,80));
+await call('/api/orders/'+netTestOrder.order.id,{method:'PATCH',body:JSON.stringify({state:'collected',shippingCost:20,otherCost:10})},adminCookie);
+let [,perfAfterNet]=await j(await call('/api/performance?clientId=c2&date='+TODAY,{},adminCookie));
+check('صافي الربح اليومي بيتحسب صح (إيراد - تكلفة منتج - شحن - مصاريف - مبلغ الإدارة)',
+  Math.abs((perfAfterNet.today.netProfit - perfBeforeNet.today.netProfit) - 280) < 0.5);
 r=await call('/api/performance?clientId=c2&date='+TODAY+'&periodFrom=2026-01-01&periodTo='+TODAY,{},adminCookie);
 let [,perfCustom]=await j(r);
 check('فترة مخصّصة (periodFrom/periodTo) بتحل محل الشهر الافتراضي', r.status===200 && perfCustom.month.from==='2026-01-01' && perfCustom.month.to===TODAY);
@@ -383,6 +401,10 @@ check('سجل المحفظة فيه الشحن والخصم', walletLogList.some
 check('العميل يقدر يشوف سجل محفظته هو', (await call('/api/wallet/log',{},clientCookie)).status===200);
 check('العميل ممنوع يشحن لنفسه رصيد',
   (await call('/api/wallet/topup',{method:'POST',body:JSON.stringify({clientId:'c2',amount:100})},clientCookie)).status===403);
+r=await call('/api/wallet/overview',{},adminCookie);
+let [,walletOverview]=await j(r);
+check('نظرة عامة على رصيد كل العملاء مرة واحدة', r.status===200 && walletOverview.some(w=>w.clientId==='c2'));
+check('العميل ممنوع يشوف نظرة عامة على كل العملاء', (await call('/api/wallet/overview',{},clientCookie)).status===403);
 
 head('قفل التعامل عند نفاد رصيد المحفظة');
 await call('/api/integrations?clientId=c2',{method:'PUT',body:JSON.stringify({walletFeePerOrder:1000})},adminCookie);
