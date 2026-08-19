@@ -966,6 +966,18 @@ function renderClient(client){
         <div class="k-val">${perfData.last30ConfirmationRatePct}<span class="cur">%</span></div></div>
       <div class="card kpi"><div class="k-label">متوسط نسبة التوصيل — آخر ٣٠ يوم</div>
         <div class="k-val">${perfData.last30DeliveryRatePct}<span class="cur">%</span></div></div>
+    </div>
+
+    <div class="section-title">تحليلات وتوصيات</div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      ${(perfData.insights||[]).map(ins=>{
+        const color = ins.type==='danger'?'var(--brick)':ins.type==='warning'?'var(--gold-ink)':'var(--pine)';
+        const bg = ins.type==='danger'?'var(--brick-soft)':ins.type==='warning'?'var(--gold-soft)':'var(--pine-soft)';
+        const icon = ins.type==='danger'?'🔴':ins.type==='warning'?'🟡':'🟢';
+        return `<div class="card" style="background:${bg};border-color:${color};padding:10px 14px;display:flex;gap:10px;align-items:flex-start">
+          <span>${icon}</span><span style="color:${color};font-size:13.5px">${esc(ins.text)}</span>
+        </div>`;
+      }).join('')}
     </div>`;
   })()}
 
