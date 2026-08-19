@@ -366,11 +366,13 @@ async function nextOrderCode(env, name) {
 }
 
 /* ---------- المنتجات ---------- */
-const PRODUCT_COLS = 'id, client_id, name, sku, price, cost, active, created_at';
+const PRODUCT_COLS = 'id, client_id, name, sku, price, cost, active, stock, low_stock_threshold, created_at';
 const TX_COLS = 'id, type, date, category, amount, currency, method, client_id, note, created_by, created_at';
 const rowToProduct = r => ({
   id: r.id, clientId: r.client_id, name: r.name, sku: r.sku,
-  price: r.price, cost: r.cost, active: r.active
+  price: r.price, cost: r.cost, active: r.active,
+  stock: r.stock != null ? r.stock : 0,
+  lowStockThreshold: r.low_stock_threshold != null ? r.low_stock_threshold : 5
 });
 
 async function listProducts(env, clientId) {
@@ -391,8 +393,8 @@ async function ensureProductsFromCart(env, clientId, cartItems) {
     const price = Number(item.product.price ?? item.unit_price ?? item.price) || 0;
     const id = 'P-' + crypto.randomUUID().slice(0, 8).toUpperCase();
     await env.DB.prepare(
-      `INSERT INTO products (${PRODUCT_COLS}) VALUES (?,?,?,?,?,?,?,?)`
-    ).bind(id, clientId, name, '', price, 0, 1, new Date().toISOString()).run();
+      `INSERT INTO products (${PRODUCT_COLS}) VALUES (?,?,?,?,?,?,?,?,?,?)`
+    ).bind(id, clientId, name, '', price, 0, 1, 0, 5, new Date().toISOString()).run();
     byName.set(name.toLowerCase(), { id, name });
   }
 }
@@ -1239,14 +1241,32 @@ async function handleApi(request, env, url, path) {
       if (!b.name) return json({ error: 'اسم المنتج مطلوب' }, 400);
       const id = b.id || 'P-' + crypto.randomUUID().slice(0, 8).toUpperCase();
       await env.DB.prepare(
-        `INSERT INTO products (${PRODUCT_COLS}) VALUES (?,?,?,?,?,?,?,?)
+        `INSERT INTO products (${PRODUCT_COLS}) VALUES (?,?,?,?,?,?,?,?,?,?)
          ON CONFLICT(id) DO UPDATE SET
            name=excluded.name, sku=excluded.sku, price=excluded.price,
-           cost=excluded.cost, active=excluded.active`
+           cost=excluded.cost, active=excluded.active,
+           stock=excluded.stock, low_stock_threshold=excluded.low_stock_threshold`
       ).bind(id, clientId, b.name, b.sku || '', Number(b.price) || 0, Number(b.cost) || 0,
-        b.active === false ? 0 : 1, new Date().toISOString()).run();
+        b.active === false ? 0 : 1, Math.max(0, Number(b.stock) || 0),
+        Math.max(0, Number(b.lowStockThreshold) || 5), new Date().toISOString()).run();
       return json({ ok: true, id });
     }
+  }
+
+  /* تحديث سريع لكمية المخزون بس — مش محتاج تبعت باقي بيانات المنتج */
+  const pstock = path.match(/^\/api\/products\/([^/]+)\/stock$/);
+  if (pstock && request.method === 'PATCH') {
+    const pid = decodeURIComponent(pstock[1]);
+    const row = await env.DB.prepare('SELECT client_id FROM products WHERE id = ?').bind(pid).first();
+    if (!row) return json({ error: 'المنتج مش موجود' }, 404);
+    if (user.role === 'client' && row.client_id !== me.clientId) return json({ error: 'مش مسموح' }, 403);
+    if (user.role !== 'client' && !can(user, 'clients') && !can(user, 'orders')) {
+      return json({ error: 'مش مسموح' }, 403);
+    }
+    const b = await request.json().catch(() => ({}));
+    const stock = Math.max(0, Number(b.stock) || 0);
+    await env.DB.prepare('UPDATE products SET stock = ? WHERE id = ?').bind(stock, pid).run();
+    return json({ ok: true, stock });
   }
 
   const pm = path.match(/^\/api\/products\/([^/]+)$/);
@@ -1463,6 +1483,8 @@ async function handleApi(request, env, url, path) {
      بتتحسب بتاريخ حدوثها الفعلي من سجل التاريخ (history) — مش تاريخ إنشاء الأوردر،
      عشان أوردر اتسجّل الأسبوع اللي فات ولسه اتحصّل النهارده يدخل في أرقام النهارده. */
   async function dayBreakdown(env, state, orders, clientId, from, to) {
+    const client = state.clients.find(c => c.id === clientId);
+    const adminFee = Number(client && client.adminFee) || 0;
     const co = orders.filter(o => o.clientId === clientId);
     const inRange = d => d >= from && d <= to;
     const newOrders = co.filter(o => inRange(String(o.date || '').slice(0, 10)));
@@ -1485,12 +1507,21 @@ async function handleApi(request, env, url, path) {
     ).bind(clientId, from, to).all();
     const otherExpense = round2((txRows || []).reduce((s, t) => s + (Number(t.amount) || 0), 0));
 
+    /* صافي الربح الحقيقي للفترة: إيراد الأوردرات المحصّلة فيها ناقص تكلفة كل أوردر
+       (منتج + شحن + مصاريف أخرى + المبلغ الثابت)، ناقص مصاريف الإعلانات والمصاريف العامة للفترة */
+    const collectedRevenue = round2(collectedEv.reduce((s, o) => s + (Number(o.total) || 0), 0));
+    const collectedCosts = round2(collectedEv.reduce((s, o) =>
+      s + (Number(o.productCost) || 0) + (Number(o.shippingCost) || 0) + (Number(o.otherCost) || 0) + adminFee, 0));
+    const netProfit = round2(collectedRevenue - collectedCosts - adSpend - otherExpense);
+    const profitMarginPct = collectedRevenue > 0 ? Math.round((netProfit / collectedRevenue) * 1000) / 10 : 0;
+
     return {
       from, to,
       newOrders: newOrders.length, byState,
       adSpend, otherExpense, cpp: newOrders.length ? round2(adSpend / newOrders.length) : 0,
-      collected: { count: collectedEv.length, amount: round2(collectedEv.reduce((s, o) => s + (Number(o.total) || 0), 0)) },
-      returned: returnedEv.length, cancelled: cancelledEv.length
+      collected: { count: collectedEv.length, amount: collectedRevenue },
+      returned: returnedEv.length, cancelled: cancelledEv.length,
+      netProfit, profitMarginPct
     };
   }
 
@@ -1625,6 +1656,18 @@ async function handleApi(request, env, url, path) {
       'SELECT id, type, amount, balance_after, note, created_at FROM wallet_log WHERE client_id = ? ORDER BY created_at DESC LIMIT 200'
     ).bind(targetId).all();
     return json(results || []);
+  }
+
+  /* نظرة عامة على رصيد كل العملاء مرة واحدة — لزرار المحفظة في القائمة العلوية */
+  if (path === '/api/wallet/overview' && request.method === 'GET') {
+    if (!(isStaff(user) && can(user, 'clients'))) return json({ error: 'مش مسموح' }, 403);
+    const state = await loadState(env);
+    const rows = state.clients.map(c => ({
+      clientId: c.id, name: c.name,
+      walletBalance: round2(Number(c.walletBalance) || 0),
+      walletFeePerOrder: Number(c.walletFeePerOrder) || 0
+    }));
+    return json(rows);
   }
 
   /* ---------- الشات الداخلي للفريق + التاسكات — الإدارة والموظفين بس ---------- */
@@ -1894,9 +1937,11 @@ async function handleApi(request, env, url, path) {
     for (const o of b.orders) await insertOrder(env, rowToOrder(o));
     for (const p of (b.products || [])) {
       await env.DB.prepare(
-        `INSERT INTO products (${PRODUCT_COLS}) VALUES (?,?,?,?,?,?,?,?)`
+        `INSERT INTO products (${PRODUCT_COLS}) VALUES (?,?,?,?,?,?,?,?,?,?)`
       ).bind(p.id, p.client_id || p.clientId, p.name, p.sku || '', p.price || 0,
-        p.cost || 0, p.active === false ? 0 : 1, p.created_at || new Date().toISOString()).run();
+        p.cost || 0, p.active === false ? 0 : 1, Math.max(0, Number(p.stock) || 0),
+        Math.max(0, Number(p.lowStockThreshold ?? p.low_stock_threshold) || 5),
+        p.created_at || new Date().toISOString()).run();
     }
     for (const t of (b.transactions || [])) {
       await env.DB.prepare(
