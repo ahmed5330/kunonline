@@ -688,6 +688,14 @@ function fundingState(clientId){
   const left = dep - spent;
   return { deposited:dep, spent, left, avgDaily, days: avgDaily>0 ? left/avgDaily : Infinity, pct: dep>0 ? Math.max(0,Math.min(100,left/dep*100)) : 0 };
 }
+/** بديل fundingState القديم — بيستخدم رصيد ميتا الحقيقي المتزامن تلقائي بدل التمويل اليدوي اللي محدّش بيحدّثه */
+function realBalanceState(client){
+  const last7 = entriesFor(client.id,'7');
+  const avgDaily = safeDiv(last7.reduce((s,e)=>s+Number(e.adSpend||0),0), last7.length||1);
+  const bal = client.metaBalance;
+  const days = (bal!=null && avgDaily>0) ? bal/avgDaily : Infinity;
+  return { balance: bal, avgDaily, days };
+}
 const ECON_DEFAULTS = { price:0, productCost:0, shipping:0, packaging:0, codFeePct:0, confirmCost:0, otherCost:0, returnCost:0 };
 const COST_COLORS = ['#3D5563','#5E7684','#8FA3AD','#B9C7CE','#CBD6DB','#DDE5E8'];
 
@@ -791,12 +799,11 @@ function renderClient(client){
   if(clientTab==='finance') return clientFinanceView(client);
   if(clientTab==='inventory') return clientInventoryView(client);
   if(clientTab==='service') return clientServiceView(client);
+  if(clientTab==='wallet') return clientWalletView(client);
   if(clientTab==='integrations') return clientIntegrationsView(client);
   const cur = client.currency;
-  const f = fundingState(client.id);
   const listRange = entriesFor(client.id, clientRange);
   const allOrders = ordersFor(client.id, 'all');
-  const lowClass = f.days<3 ? 'crit' : f.days<7 ? 'low' : '';
   const ordersRange = ordersFor(client.id, clientRange);
   const a = orderAgg(ordersRange);
   const adSpend = adSpendFor(client.id, clientRange);
@@ -836,28 +843,40 @@ function renderClient(client){
       ${client.customerServiceEnabled ? `<button data-ctab="service" aria-pressed="${clientTab==='service'}">خدمة العملاء</button>` : ''}
       <button data-ctab="products" aria-pressed="false">منتجاتي</button>
       <button data-ctab="finance" aria-pressed="false">الحسابات</button>
+      <button data-ctab="wallet" aria-pressed="${clientTab==='wallet'}">المحفظة</button>
       <button data-ctab="integrations" aria-pressed="false">التكاملات</button>
     </div>
     <button class="btn sm dark" id="goAddOrder" style="border-radius:10px">+ أوردر جديد</button>
   </div>
 
-  <div class="gauge">
-    <div class="gauge-top">
-      <div>
-        <div class="gauge-label">المتبقي من التمويل الإعلاني</div>
-        <div class="gauge-amount">${money(f.left)}<span class="cur">${cur}</span></div>
+  ${(() => {
+    if(client.metaBalance==null) return `
+    <div class="gauge">
+      <div class="gauge-label">رصيد حساب الإعلانات</div>
+      <p class="hint" style="margin-top:6px">لسه ما اتزامنش رصيد فعلي من ميتا — تأكّد إن حساب الإعلانات متربط صح من تبويب "التكاملات".</p>
+    </div>`;
+    const last7 = entriesFor(client.id,'7');
+    const avgDaily = safeDiv(last7.reduce((s,e)=>s+Number(e.adSpend||0),0), last7.length||1);
+    const days = avgDaily>0 ? client.metaBalance/avgDaily : Infinity;
+    const lowClass = days<3 ? 'crit' : days<7 ? 'low' : '';
+    return `
+    <div class="gauge">
+      <div class="gauge-top">
+        <div>
+          <div class="gauge-label">الرصيد المتبقي في حساب الإعلانات</div>
+          <div class="gauge-amount">${money(client.metaBalance)}<span class="cur">${esc(client.metaBalanceCurrency||cur)}</span></div>
+        </div>
+        <div class="spacer"></div>
+        <div class="gauge-days">
+          يكفي تقريباً
+          <b>${days===Infinity?'—':Math.floor(days)} يوم</b>
+          بمعدل ${money(avgDaily)} ${cur}/يوم (آخر ٧ أيام)
+        </div>
       </div>
-      <div class="spacer"></div>
-      <div class="gauge-days">
-        يكفي تقريباً
-        <b>${f.days===Infinity?'—':Math.floor(f.days)} يوم</b>
-        بمعدل ${money(f.avgDaily)} ${cur}/يوم
-      </div>
-    </div>
-    <div class="track"><i class="${lowClass}" style="width:${f.pct.toFixed(1)}%"></i></div>
-    <div class="gauge-foot"><span>مصروف: ${money(f.spent)} ${cur}</span><span>إجمالي التمويل: ${money(f.deposited)} ${cur}</span></div>
-    ${f.days<7 ? `<div class="gauge-alert">الرصيد قارب على الانتهاء — محتاج تمويل جديد خلال ${Math.max(0,Math.floor(f.days))} يوم عشان الحملات ما تقفش.</div>`:''}
-  </div>
+      <div class="gauge-foot"><span>آخر تحديث: ${client.metaBalanceAt?new Date(client.metaBalanceAt).toLocaleString('ar-EG'):'—'}</span></div>
+      ${days<7 ? `<div class="gauge-alert">الرصيد قارب على الانتهاء — محتاج شحن جديد خلال ${Math.max(0,Math.floor(days))} يوم عشان الحملات ما تقفش.</div>`:''}
+    </div>`;
+  })()}
 
   <div class="section-title">تفاصيل الحساب</div>
   <div class="detail-strip">
@@ -1265,6 +1284,7 @@ function clientProductsView(client){
       ${client.customerServiceEnabled ? `<button data-ctab="service" aria-pressed="${clientTab==='service'}">خدمة العملاء</button>` : ''}
       <button data-ctab="products" aria-pressed="true">منتجاتي</button>
       <button data-ctab="finance" aria-pressed="false">الحسابات</button>
+      <button data-ctab="wallet" aria-pressed="${clientTab==='wallet'}">المحفظة</button>
       <button data-ctab="integrations" aria-pressed="false">التكاملات</button>
     </div>
   </div>
@@ -1320,6 +1340,7 @@ function clientIntegrationsView(client){
       ${client.customerServiceEnabled ? `<button data-ctab="service" aria-pressed="${clientTab==='service'}">خدمة العملاء</button>` : ''}
       <button data-ctab="products" aria-pressed="false">منتجاتي</button>
       <button data-ctab="finance" aria-pressed="false">الحسابات</button>
+      <button data-ctab="wallet" aria-pressed="${clientTab==='wallet'}">المحفظة</button>
       <button data-ctab="integrations" aria-pressed="true">التكاملات</button>
     </div>
   </div>
@@ -1453,6 +1474,7 @@ function clientFinanceView(client){
       ${client.customerServiceEnabled ? `<button data-ctab="service" aria-pressed="${clientTab==='service'}">خدمة العملاء</button>` : ''}
       <button data-ctab="products" aria-pressed="false">منتجاتي</button>
       <button data-ctab="finance" aria-pressed="true">الحسابات</button>
+      <button data-ctab="wallet" aria-pressed="${clientTab==='wallet'}">المحفظة</button>
       <button data-ctab="integrations" aria-pressed="false">التكاملات</button>
     </div>
   </div>
@@ -1597,7 +1619,7 @@ function clientInventoryView(client){
   ready.sort((a,b)=> a.date<b.date?1:-1);
   const rows = ready.map(o=>`
     <tr>
-      <td>${arDate(o.date)}<br><span class="hint mono" style="font-size:10.5px">${esc(o.id)}</span></td>
+      <td>${arDate(o.date)}<br><span class="hint mono" style="font-size:10.5px">${esc(shortOrderRef(o.id))}</span></td>
       <td><b>${esc(o.name)}</b><br><span class="hint">${esc(o.gov||'')} · ${esc(o.phone)}</span></td>
       <td>${esc(o.product||'')}<br><span class="hint">×${num(o.qty||1)}</span></td>
       <td><span class="pill ${o.state==='preparing'?'mid':'wait'}">${ORDER_STATE[o.state].ar}</span></td>
@@ -1619,6 +1641,7 @@ function clientInventoryView(client){
       ${client.customerServiceEnabled ? `<button data-ctab="service" aria-pressed="false">خدمة العملاء</button>` : ''}
       <button data-ctab="products" aria-pressed="false">منتجاتي</button>
       <button data-ctab="finance" aria-pressed="false">الحسابات</button>
+      <button data-ctab="wallet" aria-pressed="${clientTab==='wallet'}">المحفظة</button>
       <button data-ctab="integrations" aria-pressed="false">التكاملات</button>
     </div>
   </div>
@@ -1654,7 +1677,9 @@ function clientServiceView(client){
     return `<div class="card" style="margin-bottom:8px;padding:10px 12px">
       <div style="font-weight:700;font-size:13px">${esc(o.name)}</div>
       <div class="hint" style="font-size:11.5px">${esc(o.gov||'')} · ${esc(o.phone)}</div>
-      <div class="hint mono" style="font-size:10.5px;margin:3px 0 8px">${esc(o.id)} · ${arDate(o.date)}</div>
+      ${o.address ? `<div class="hint" style="font-size:11.5px;margin-top:2px">📍 ${esc(o.address)}</div>` : ''}
+      ${o.note ? `<div class="hint" style="font-size:11.5px;margin-top:2px;color:var(--gold-ink)">📝 ${esc(o.note)}</div>` : ''}
+      <div class="hint mono" style="font-size:10.5px;margin:3px 0 8px">${esc(shortOrderRef(o.id))} · ${arDate(o.date)}</div>
       <select data-svcst="${o.id}" style="width:100%;padding:5px 8px;border:1px solid var(--line);border-radius:7px;font-size:12px;margin-bottom:6px">${stOpts}</select>
       <div class="row-act" style="flex-wrap:wrap;gap:4px">
         <button class="icon-btn" data-svchist="${o.id}">تاريخ</button>
@@ -1675,6 +1700,7 @@ function clientServiceView(client){
       <button data-ctab="service" aria-pressed="true">خدمة العملاء</button>
       <button data-ctab="products" aria-pressed="false">منتجاتي</button>
       <button data-ctab="finance" aria-pressed="false">الحسابات</button>
+      <button data-ctab="wallet" aria-pressed="${clientTab==='wallet'}">المحفظة</button>
       <button data-ctab="integrations" aria-pressed="false">التكاملات</button>
     </div>
   </div>
@@ -1694,6 +1720,49 @@ function clientServiceView(client){
   </div>`;
 }
 
+/* شاشة العميل: محفظة الاشتراك */
+function clientWalletView(client){
+  if(!integData){
+    return `<div class="page-head"><div><h2>المحفظة</h2></div></div>
+    <div class="card"><p class="hint">بنجيب بياناتك...</p></div>`;
+  }
+  const d = integData, cur = client.currency;
+  const rows = (walletLogList||[]).map(w=>`
+    <tr><td>${new Date(w.created_at).toLocaleString('ar-EG')}</td>
+      <td><span class="pill ${w.type==='topup'?'on':'off'}">${w.type==='topup'?'شحن':'خصم'}</span></td>
+      <td class="num" style="color:${w.type==='topup'?'var(--pine)':'var(--brick)'}">${w.type==='topup'?'+':'−'}${money(w.amount)} ${cur}</td>
+      <td class="num">${money(w.balance_after)} ${cur}</td>
+      <td>${esc(w.note||'')}</td></tr>`).join('');
+  return `
+  <div class="page-head">
+    <div><div class="eyebrow">${esc(client.name)}</div><h2>المحفظة</h2></div>
+    <div class="spacer"></div>
+    <div class="seg" id="clientTabs">
+      <button data-ctab="dash" aria-pressed="false">الداشبورد</button>
+      <button data-ctab="add" aria-pressed="false">الأوردرات</button>
+      ${client.inventoryEnabled ? `<button data-ctab="inventory" aria-pressed="false">المخزون</button>` : ''}
+      ${client.customerServiceEnabled ? `<button data-ctab="service" aria-pressed="false">خدمة العملاء</button>` : ''}
+      <button data-ctab="products" aria-pressed="false">منتجاتي</button>
+      <button data-ctab="finance" aria-pressed="false">الحسابات</button>
+      <button data-ctab="wallet" aria-pressed="true">المحفظة</button>
+      <button data-ctab="integrations" aria-pressed="false">التكاملات</button>
+    </div>
+  </div>
+  <div class="card kpi ${d.walletBalance>0?'accent-pine':'accent-gold'}" style="margin-bottom:10px">
+    <div class="k-label">الرصيد الحالي</div>
+    <div class="k-val" style="color:${d.walletBalance>0?'var(--pine)':'var(--brick)'}">${money(d.walletBalance)}<span class="cur">${cur}</span></div>
+    <div class="k-foot">${d.walletFeePerOrder>0?('بيتخصم '+money(d.walletFeePerOrder)+' '+cur+' لكل أوردر جديد'):'مفيش خصم مفعّل حاليًا'}</div>
+  </div>
+  ${d.walletFeePerOrder>0 && d.walletBalance<=0 ? `<div class="card" style="background:var(--brick-soft);border-color:var(--brick);margin-bottom:10px">
+    <p class="hint" style="color:var(--brick)">الرصيد خلص — أزرار "تواصل" و"واتساب" على الأوردرات متوقفة لحد ما يتشحن رصيد جديد. تواصل مع فريق كن أونلاين لشحن الرصيد.</p>
+  </div>` : ''}
+  <div class="section-title">سجل الحركات</div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>الوقت</th><th>النوع</th><th>المبلغ</th><th>الرصيد بعدها</th><th>ملاحظة</th></tr></thead>
+    <tbody>${rows || '<tr><td colspan="5" class="empty">لسه مفيش حركات في المحفظة.</td></tr>'}</tbody>
+  </table></div>`;
+}
+
 /* شاشة العميل: تسجيل أوردر جديد */
 function clientAddOrderView(client){
   if(!orderViewDate) orderViewDate = today();
@@ -1701,7 +1770,9 @@ function clientAddOrderView(client){
     .sort((a,b)=> a.date<b.date?1:-1).slice(0,150);
   const rows = mine.map(o=>{
     const st = ORDER_STATE[o.state] || ORDER_STATE.pending;
-    return `<tr><td>${arDate(o.date)}</td><td>${esc(o.name)}</td><td class="num">${esc(o.phone)}</td>
+    return `<tr><td>${arDate(o.date)}<br><span class="hint mono" style="font-size:10px">${esc(shortOrderRef(o.id))}</span></td>
+      <td>${esc(o.name)}${o.address?`<br><span class="hint" style="font-size:11px">📍 ${esc(o.address)}</span>`:''}${o.note?`<br><span class="hint" style="font-size:11px;color:var(--gold-ink)">📝 ${esc(o.note)}</span>`:''}</td>
+      <td class="num">${esc(o.phone)}</td>
       <td>${esc(o.gov)}</td><td><span class="pill mid">${esc(o.source||'—')}</span></td>
       <td class="num">${money(o.total)}</td><td><span class="pill ${st.cls}">${st.ar}</span></td></tr>`;}).join('');
   return `
@@ -1715,6 +1786,7 @@ function clientAddOrderView(client){
       ${client.customerServiceEnabled ? `<button data-ctab="service" aria-pressed="${clientTab==='service'}">خدمة العملاء</button>` : ''}
       <button data-ctab="products" aria-pressed="false">منتجاتي</button>
       <button data-ctab="finance" aria-pressed="false">الحسابات</button>
+      <button data-ctab="wallet" aria-pressed="${clientTab==='wallet'}">المحفظة</button>
       <button data-ctab="integrations" aria-pressed="false">التكاملات</button>
     </div>
   </div>
@@ -1862,6 +1934,11 @@ function telLink(phone){
   if(p.startsWith('0')) p = '20' + p.slice(1);
   else if(!p.startsWith('20')) p = '20' + p;
   return `tel:+${p}`;
+}
+/** أكواد إيزي أوردرز بتيجي أحيانًا UUID طويل — نعرضه مختصر، من غير ما نلمس المعرّف الحقيقي المستخدم في الأزرار */
+function shortOrderRef(id){
+  const s = String(id||'');
+  return s.length>14 ? ('…'+s.slice(-8)) : s;
 }
 
 const WA_TEMPLATE_LABEL = { confirm:'رسالة تأكيد الطلب', shipped:'رسالة تأكيد الشحن', review:'رسالة طلب تقييم', other:'رسالة واتساب' };
@@ -2280,7 +2357,7 @@ function renderAdmin(){
 function adminOverview(){
   const rows = DB.clients.map(c=>{
     const a = agg(entriesFor(c.id,'30'));
-    const f = fundingState(c.id);
+    const f = realBalanceState(c);
     const risk = f.days<3 ? 'off' : f.days<7 ? '' : 'on';
     return `<tr>
       <td><b>${esc(c.name)}</b><br><span class="hint">${esc(c.market)}</span></td>
@@ -2290,14 +2367,14 @@ function adminOverview(){
       <td class="num">${money(a.revenue)}</td>
       <td class="num">${money(a.roas,2)}</td>
       <td class="num" style="color:${a.profit>=0?'var(--pine)':'var(--brick)'}">${money(a.profit)}</td>
-      <td class="num">${money(f.left)}</td>
+      <td class="num">${f.balance!=null?money(f.balance):'—'}</td>
       <td><span class="pill ${risk}">${f.days===Infinity?'—':Math.floor(f.days)} يوم</span></td>
       <td><button class="icon-btn" data-view="${c.id}">افتح لوحته</button></td>
     </tr>`;
   }).join('');
   const totals = DB.clients.map(c=>agg(entriesFor(c.id,'30')));
   const tOrders = totals.reduce((s,x)=>s+x.orders,0);
-  const lowCount = DB.clients.filter(c=>fundingState(c.id).days<7).length;
+  const lowCount = DB.clients.filter(c=>realBalanceState(c).days<7).length;
   return `
   <div class="grid g4" style="margin-top:8px">
     <div class="card kpi"><div class="k-label">عملاء نشطين</div><div class="k-val">${num(DB.clients.filter(c=>c.status==='active').length)}</div><div class="k-foot">من ${num(DB.clients.length)} عميل</div></div>
@@ -2332,7 +2409,9 @@ function adminCustomerService(){
     return `<div class="card" style="margin-bottom:8px;padding:10px 12px">
       <div style="font-weight:700;font-size:13px">${esc(o.name)}</div>
       <div class="hint" style="font-size:11.5px">${esc(c?c.name.split(' —')[0]:'—')} · ${esc(o.gov||'')} · ${esc(o.phone)}</div>
-      <div class="hint mono" style="font-size:10.5px;margin:3px 0 8px">${esc(o.id)} · ${arDate(o.date)}</div>
+      ${o.address ? `<div class="hint" style="font-size:11.5px;margin-top:2px">📍 ${esc(o.address)}</div>` : ''}
+      ${o.note ? `<div class="hint" style="font-size:11.5px;margin-top:2px;color:var(--gold-ink)">📝 ${esc(o.note)}</div>` : ''}
+      <div class="hint mono" style="font-size:10.5px;margin:3px 0 8px">${esc(shortOrderRef(o.id))} · ${arDate(o.date)}</div>
       <select data-st="${o.id}" style="width:100%;padding:5px 8px;border:1px solid var(--line);border-radius:7px;font-size:12px;margin-bottom:5px">${stOpts}</select>
       <input class="mono" data-awb="${o.id}" value="${esc(o.awb||'')}" placeholder="رقم البوليصة"
         style="width:100%;padding:5px 8px;border:1px solid var(--line);border-radius:7px;font-size:12px;margin-bottom:6px">
@@ -2381,9 +2460,11 @@ function adminOrders(){
     const stOpts = Object.keys(ORDER_STATE).map(k=>
       `<option value="${k}" ${o.state===k?'selected':''}>${ORDER_STATE[k].ar}</option>`).join('');
     return `<tr>
-      <td>${arDate(o.date)}<br><span class="hint mono" style="font-size:10.5px">${esc(o.id)}</span></td>
+      <td>${arDate(o.date)}<br><span class="hint mono" style="font-size:10.5px">${esc(shortOrderRef(o.id))}</span></td>
       <td><span class="hint" style="font-size:11px">${esc(c?c.name:'—')}</span><br>
-        <b>${esc(o.name)}</b><br><span class="hint">${esc(o.gov||'')} · ${esc(o.phone)}</span></td>
+        <b>${esc(o.name)}</b><br><span class="hint">${esc(o.gov||'')} · ${esc(o.phone)}</span>
+        ${o.address ? `<br><span class="hint" style="font-size:11px">📍 ${esc(o.address)}</span>` : ''}
+        ${o.note ? `<br><span class="hint" style="font-size:11px;color:var(--gold-ink)">📝 ${esc(o.note)}</span>` : ''}</td>
       <td><span class="pill ${!/^(EO-|WA-)/.test(o.id)?'wait':'mid'}">${esc(o.source||'المتجر')}</span></td>
       <td class="num">${money(o.total)} ${c?c.currency:''}<br>
         <span class="hint" style="font-size:11px">شحن ${o.shippingCost!=null?money(o.shippingCost):'—'}</span></td>
@@ -2508,10 +2589,10 @@ function adminFunding(){
     </tr>`;
   }).join('');
   const balances = DB.clients.map(c=>{
-    const f = fundingState(c.id);
+    const f = realBalanceState(c);
     return `<div class="card kpi">
       <div class="k-label">${esc(c.name)}</div>
-      <div class="k-val" style="color:${f.days<7?'var(--brick)':'inherit'}">${money(f.left)}<span class="cur">${c.currency}</span></div>
+      <div class="k-val" style="color:${f.days<7?'var(--brick)':'inherit'}">${f.balance!=null?money(f.balance):'—'}<span class="cur">${c.currency}</span></div>
       <div class="k-foot">يكفي ${f.days===Infinity?'—':Math.floor(f.days)} يوم بمعدل ${money(f.avgDaily)}/يوم</div>
     </div>`;
   }).join('');
@@ -3507,6 +3588,12 @@ function bindClient(c){
         financeData = await api('/api/finance');
         depositsList = await api('/api/deposits');
         clientTxList = await api('/api/transactions');
+      }catch(e){ toast(e.message); }
+    }
+    if(clientTab==='wallet' && ONLINE){
+      try{
+        integData = await api('/api/integrations');
+        walletLogList = await api('/api/wallet/log');
       }catch(e){ toast(e.message); }
     }
     if(clientTab==='dash' && ONLINE){ await loadPerf(c.id); }
