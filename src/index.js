@@ -328,6 +328,29 @@ async function insertOrder(env, o) {
   return o;
 }
 
+/** بيحط رسالة في طابور الواتساب — أجنت خارجي (متصل بنفس رقم واتساب الوكالة) بيسحبها ويبعتها */
+async function queueWhatsAppMessage(env, { clientId, orderId, phone, message, kind }) {
+  if (!phone) return;
+  try {
+    await env.DB.prepare(
+      'INSERT INTO whatsapp_outbox (id, client_id, order_id, phone, message, kind, status, created_at) VALUES (?,?,?,?,?,?,?,?)'
+    ).bind('WAO-' + crypto.randomUUID().slice(0, 10).toUpperCase(), clientId, orderId, phone, message,
+      kind, 'pending', new Date().toISOString()).run();
+  } catch (e) { console.error('queueWhatsAppMessage failed', e); }
+}
+
+function confirmMessageFor(o, clientName) {
+  return `مرحباً ${o.name || ''}، إحنا من ${clientName || 'المتجر'}. حابين نأكد طلبك:\n`
+    + `المنتج: ${o.product || ''}${(o.qty && o.qty > 1) ? (' × ' + o.qty) : ''}\n`
+    + `الإجمالي: ${o.total || 0} جنيه\n`
+    + `العنوان: ${o.address || o.gov || ''}\n`
+    + `كود الطلب: ${o.id}\n`
+    + `تقدر تأكدلنا الطلب؟`;
+}
+function shippingMessageFor(o) {
+  return `يا ${o.name || ''}، جاري شحن طلبك رقم ${o.id}${o.awb ? (' (رقم البوليصة ' + o.awb + ')') : ''}. هيوصلك قريب إن شاء الله 📦`;
+}
+
 /** محفظة الاشتراك — بتخصم رسم ثابت لكل أوردر جديد بيدخل النظام (مش تحديثات لأوردر موجود) */
 async function chargeWalletForOrder(env, clientId) {
   try {
@@ -345,11 +368,20 @@ async function chargeWalletForOrder(env, clientId) {
   } catch (e) { console.error('chargeWalletForOrder failed', e); }
 }
 
-/** بتسجّل الأوردر وتخصم من المحفظة بس لو فعلاً جديد (مش تحديث/إعادة مزامنة لأوردر موجود أصلاً) */
-async function insertOrderAndCharge(env, o) {
+/** بتسجّل الأوردر، تخصم من المحفظة، وتحط رسالة تأكيد في الطابور — بس لو فعلاً أوردر جديد.
+    opts.skipWhatsApp: للاستيراد الجماعي، عشان ماينفعش نبعت "تأكيد طلب" لمئات الأوردرات القديمة مرة واحدة */
+async function insertOrderAndCharge(env, o, clientName, opts) {
   const existing = await env.DB.prepare('SELECT id FROM orders WHERE id = ?').bind(o.id).first();
   await insertOrder(env, o);
-  if (!existing) await chargeWalletForOrder(env, o.clientId);
+  if (!existing) {
+    await chargeWalletForOrder(env, o.clientId);
+    if (!(opts && opts.skipWhatsApp)) {
+      await queueWhatsAppMessage(env, {
+        clientId: o.clientId, orderId: o.id, phone: o.phone,
+        message: confirmMessageFor(o, clientName), kind: 'confirm'
+      });
+    }
+  }
   return o;
 }
 
@@ -736,7 +768,9 @@ async function handleApi(request, env, url, path) {
       source: 'واتساب', note: String(b.note || '').trim(),
       state: 'pending', checkpoint: STATE_TEXT.pending
     };
-    await insertOrderAndCharge(env, order);
+    const waOrderState = await loadState(env);
+    const waOrderClient = waOrderState.clients.find(c => c.id === b.clientId);
+    await insertOrderAndCharge(env, order, waOrderClient && waOrderClient.name);
     return json({ ok: true, id, order });
   }
 
@@ -800,6 +834,22 @@ async function handleApi(request, env, url, path) {
       (c.whatsappGroups || []).forEach(g => { if (g.groupId) groups[g.groupId] = c.id; });
     });
     return json({ groups });
+  }
+
+  /* طابور رسائل الواتساب التلقائية — أجنت OpenClaw بيسحب الرسايل المعلّقة ويبعتها بنفس رقمه المتصل */
+  if (path === '/api/whatsapp/outbox' && request.method === 'GET' && isIngest) {
+    const { results } = await env.DB.prepare(
+      "SELECT id, client_id, order_id, phone, message, kind, created_at FROM whatsapp_outbox WHERE status = 'pending' ORDER BY created_at ASC LIMIT 50"
+    ).all();
+    return json(results || []);
+  }
+
+  const waoSent = path.match(/^\/api\/whatsapp\/outbox\/([^/]+)\/(sent|failed)$/);
+  if (waoSent && request.method === 'POST' && isIngest) {
+    const [, oid, outcome] = waoSent;
+    await env.DB.prepare('UPDATE whatsapp_outbox SET status = ?, sent_at = ? WHERE id = ?')
+      .bind(outcome, new Date().toISOString(), decodeURIComponent(oid)).run();
+    return json({ ok: true });
   }
 
   if (path === '/api/ad-spend' && request.method === 'POST') {
@@ -999,7 +1049,9 @@ async function handleApi(request, env, url, path) {
     o.id = await nextOrderCode(env, o.name);
     o.state = ORDER_STATES.includes(o.state) ? o.state : 'pending';
     o.checkpoint = o.checkpoint || STATE_TEXT.pending;
-    await insertOrderAndCharge(env, o);
+    const manualOrderState = await loadState(env);
+    const manualOrderClient = manualOrderState.clients.find(c => c.id === o.clientId);
+    await insertOrderAndCharge(env, o, manualOrderClient && manualOrderClient.name);
     return json({ ok: true, order: o });
   }
 
@@ -1018,7 +1070,7 @@ async function handleApi(request, env, url, path) {
     if (request.method === 'PATCH') {
       const p = await request.json();
       const cur = await env.DB.prepare(
-        'SELECT client_id, state, awb, shipping_cost, other_cost, signed_at, history FROM orders WHERE id = ?'
+        'SELECT client_id, state, awb, shipping_cost, other_cost, signed_at, history, name, phone FROM orders WHERE id = ?'
       ).bind(id).first();
       if (!cur) return json({ error: 'أوردر غير موجود' }, 404);
 
@@ -1068,6 +1120,14 @@ async function handleApi(request, env, url, path) {
       await env.DB.prepare(
         'UPDATE orders SET state = ?, awb = ?, checkpoint = ?, shipping_cost = ?, other_cost = ?, signed_at = ?, collected_at = ?, history = ? WHERE id = ?'
       ).bind(st, awb, STATE_TEXT[st] || '', ship, other, signedAt, collectedAt, JSON.stringify(history), id).run();
+
+      /* رسالة "جاري شحن طلبك" لما الأوردر يتحول لـ"جاري الشحن" */
+      if (st === 'preparing' && cur.state !== 'preparing') {
+        await queueWhatsAppMessage(env, {
+          clientId: cur.client_id, orderId: id, phone: cur.phone,
+          message: shippingMessageFor({ id, name: cur.name, awb }), kind: 'shipping'
+        });
+      }
       return json({ ok: true, state: st, history });
     }
   }
@@ -1478,6 +1538,53 @@ async function handleApi(request, env, url, path) {
     return json(fin);
   }
 
+  /* تحليلات وتوصيات — محرك قواعد ذكي (مش استدعاء AI خارجي)، بيحلل أرقام العميل الحقيقية */
+  function generateInsights({ last30ConfPct, last30DelPct, month, lowStockCount, walletEnabled, walletBalance }) {
+    const tips = [];
+    if (month.newOrders >= 5) {
+      if (last30DelPct > 0 && last30DelPct < 60) {
+        tips.push({ type: 'warning', text: `نسبة التوصيل آخر ٣٠ يوم ${last30DelPct}% — أقل من المتوسط الصحي (٦٠٪+). راجع سياسة تأكيد الأوردرات وجودة عناوين الشحن.` });
+      } else if (last30DelPct >= 80) {
+        tips.push({ type: 'success', text: `نسبة التوصيل ممتازة (${last30DelPct}%) — استمر على نفس الأداء.` });
+      }
+      if (last30ConfPct > 0 && last30ConfPct < 50) {
+        tips.push({ type: 'warning', text: `نسبة التأكيد آخر ٣٠ يوم ${last30ConfPct}% بس — جرب تزود محاولات التواصل أو تراجع سرعة الرد على العملاء.` });
+      }
+    }
+    if (month.newOrders > 0) {
+      const returnRate = Math.round((month.returned / month.newOrders) * 1000) / 10;
+      if (returnRate > 15) {
+        tips.push({ type: 'warning', text: `نسبة المرتجع الشهر ده ${returnRate}% — راجع وصف المنتج والصور، أو جودة التغليف.` });
+      }
+    }
+    if (month.profitMarginPct !== undefined && month.collected && month.collected.amount > 0) {
+      if (month.profitMarginPct < 0) {
+        tips.push({ type: 'danger', text: `هامش الربح الشهري سالب (${month.profitMarginPct}%) — المصاريف أعلى من الإيراد المحصّل، محتاج مراجعة عاجلة للتكاليف أو الأسعار.` });
+      } else if (month.profitMarginPct < 10) {
+        tips.push({ type: 'warning', text: `هامش الربح الشهري منخفض (${month.profitMarginPct}%) — راجع تكلفة الإعلانات أو سعر المنتج.` });
+      }
+    }
+    if (month.adSpend > 0 && month.newOrders > 0) {
+      const cppRatio = month.cpp / (month.collected.amount / Math.max(month.collected.count, 1) || month.cpp || 1);
+      if (month.collected.count > 0 && cppRatio > 0.4) {
+        tips.push({ type: 'warning', text: `تكلفة الطلب (${money2(month.cpp)} ج.م) مرتفعة نسبة لمتوسط قيمة الأوردر — راجع استهداف الإعلانات.` });
+      }
+    }
+    if (lowStockCount > 0) {
+      tips.push({ type: 'warning', text: `${lowStockCount} منتج قرب يخلص من المخزون — جهّز طلب تجديد قبل ما يوقف البيع.` });
+    }
+    if (walletEnabled && walletBalance <= 0) {
+      tips.push({ type: 'danger', text: 'رصيد محفظة الاشتراك خلص — التواصل مع العملاء عبر النظام متوقف لحد ما تشحن رصيد.' });
+    } else if (walletEnabled && walletBalance > 0 && walletBalance < 100) {
+      tips.push({ type: 'warning', text: `رصيد المحفظة قرب يخلص (${money2(walletBalance)} ج.م متبقي) — جهّز شحنة جديدة.` });
+    }
+    if (!tips.length) {
+      tips.push({ type: 'success', text: 'الأرقام مستقرة دلوقتي، مفيش تنبيهات محتاجة انتباه فوري.' });
+    }
+    return tips;
+  }
+  const money2 = n => Math.round((Number(n) || 0) * 100) / 100;
+
   /* ---------- أداء يوم/شهر معيّن — لوحة "أداء النهارده" مع مؤشر التاريخ ----------
      الأوردرات الجديدة بتتحسب بتاريخ الإنشاء (o.date). الأحداث (تحصيل/مرتجع/إلغاء)
      بتتحسب بتاريخ حدوثها الفعلي من سجل التاريخ (history) — مش تاريخ إنشاء الأوردر،
@@ -1562,18 +1669,31 @@ async function handleApi(request, env, url, path) {
 
     const fin = computeFinance(state, orders, targetId);
 
+    const { results: lowStockRows } = await env.DB.prepare(
+      'SELECT COUNT(*) AS n FROM products WHERE client_id = ? AND active = 1 AND stock <= low_stock_threshold'
+    ).bind(targetId).all();
+    const lowStockCount = (lowStockRows && lowStockRows[0] && lowStockRows[0].n) || 0;
+
+    const last30ConfPct = l30NonCancelled.length ? Math.round((l30Confirmed.length / l30NonCancelled.length) * 1000) / 10 : 0;
+    const last30DelPct = l30Final ? Math.round((l30Delivered.length / l30Final) * 1000) / 10 : 0;
+    const insights = generateInsights({
+      last30ConfPct, last30DelPct, month, lowStockCount,
+      walletEnabled: Number(client.walletFeePerOrder) > 0,
+      walletBalance: Number(client.walletBalance) || 0
+    });
+
     return json({
       date: dateParam, today, month,
-      last30ConfirmationRatePct: l30NonCancelled.length
-        ? Math.round((l30Confirmed.length / l30NonCancelled.length) * 1000) / 10 : 0,
-      last30DeliveryRatePct: l30Final ? Math.round((l30Delivered.length / l30Final) * 1000) / 10 : 0,
+      last30ConfirmationRatePct: last30ConfPct,
+      last30DeliveryRatePct: last30DelPct,
       profitExpected: fin.profitExpected, revenueExpected: fin.revenueExpected,
       profitMarginExpectedPct: fin.profitMarginExpectedPct,
       profitCollected: fin.profitCollected,
       shippingMode: client.shippingMode === 'byGov' ? 'byGov' : 'fixed',
       metaBalance: client.metaBalance != null ? client.metaBalance : null,
       metaBalanceCurrency: client.metaBalanceCurrency || '',
-      metaBalanceAt: client.metaBalanceAt || null
+      metaBalanceAt: client.metaBalanceAt || null,
+      insights
     });
   }
 
@@ -1810,7 +1930,7 @@ async function handleApi(request, env, url, path) {
           otherCost: r.otherCost === undefined ? null : Number(r.otherCost),
           source: r.source || 'شيت إيزي أوردرز', note: r.note || '',
           awb: r.awb || null, state: st, checkpoint: STATE_TEXT[st] || ''
-        });
+        }, null, { skipWhatsApp: true });
         exists ? updated++ : created++;
       }
       return json({ ok: true, created, updated, costed, skipped: skipped.length,
@@ -1993,7 +2113,7 @@ async function handleWebhook(request, env, path) {
       qty: (p.cart_items || []).reduce((s, c) => s + (Number(c.quantity) || 1), 0) || 1,
       total: Number(p.total_cost) || 0, source: 'المتجر (إيزي أوردرز)', note: '',
       awb: null, state: mapEasyOrdersStatus(p.status), checkpoint: STATE_TEXT[mapEasyOrdersStatus(p.status)]
-    });
+    }, client.name);
     return json({ ok: true, event: 'order-created', id: p.id });
   }
 
