@@ -2,7 +2,7 @@
 import worker from './src/index.js';
 const TODAY = new Date().toISOString().slice(0,10);
 
-let stateRow=null; const orders=new Map(), users=new Map(), attempts=new Map(), products=new Map(), transactions=new Map(), chatMessages=new Map(), tasks=new Map(), walletLog=new Map();
+let stateRow=null; const orders=new Map(), users=new Map(), attempts=new Map(), products=new Map(), transactions=new Map(), chatMessages=new Map(), tasks=new Map(), walletLog=new Map(), waOutbox=new Map();
 const stmt=(sql)=>({
   args:[], bind(...a){this.args=a;return this;},
   async first(){
@@ -13,12 +13,12 @@ const stmt=(sql)=>({
     if(sql.includes('FROM users WHERE client_id = ?')) return [...users.values()].find(u=>u.client_id===this.args[0])||null;
     if(sql.includes('FROM users WHERE id = ?')) return users.get(this.args[0])||null;
     if(sql.includes('FROM login_attempts')) return attempts.get(this.args[0])||null;
-    if(sql.includes('FROM orders WHERE id = ?')) return orders.get(this.args[0])||null;
+    if(sql.includes('FROM orders WHERE id = ?')){ const o=orders.get(this.args[0]); return o?{...o}:null; }
     if(sql.includes('FROM orders WHERE awb = ?')) return [...orders.values()].find(o=>o.awb===this.args[0])||null;
     if(sql.includes('FROM orders WHERE ref = ? AND client_id = ?'))
       return [...orders.values()].find(o=>o.ref===this.args[0]&&o.client_id===this.args[1])||null;
     if(sql.includes('FROM transactions WHERE id = ?')) return transactions.get(this.args[0])||null;
-    if(sql.includes('FROM products WHERE id = ?')) return products.get(this.args[0])||null;
+    if(sql.includes('FROM products WHERE id = ?')){ const p=products.get(this.args[0]); return p?{...p}:null; }
     if(sql.includes('chat_last_seen FROM users')) return {chat_last_seen: (users.get(this.args[0])||{}).chat_last_seen||null};
     if(sql.includes('COUNT(*) AS n FROM chat_messages')){
       const since=this.args[0], me=this.args[1];
@@ -77,6 +77,11 @@ const stmt=(sql)=>({
     else if(sql.includes('INSERT INTO wallet_log')){
       const [id,client_id,type,amount,balance_after,note,created_at,created_by]=this.args;
       walletLog.set(id,{id,client_id,type,amount,balance_after,note,created_at,created_by});}
+    else if(sql.includes('INSERT INTO whatsapp_outbox')){
+      const [id,client_id,order_id,phone,message,kind,status,created_at]=this.args;
+      waOutbox.set(id,{id,client_id,order_id,phone,message,kind,status,created_at});}
+    else if(sql.startsWith('UPDATE whatsapp_outbox SET status')){
+      const [status,sent_at,id]=this.args; const w=waOutbox.get(id); if(w){w.status=status;w.sent_at=sent_at;}}
     else if(sql.startsWith('UPDATE tasks SET')){
       const id=this.args[this.args.length-1]; const t=tasks.get(id); if(!t) return {};
       const setPart=sql.slice('UPDATE tasks SET '.length, sql.indexOf(' WHERE'));
@@ -119,6 +124,11 @@ const stmt=(sql)=>({
       const wlist=[...walletLog.values()].filter(w=>w.client_id===this.args[0])
         .sort((a,b)=>a.created_at<b.created_at?1:-1);
       return {results:wlist};
+    }
+    if(sql.includes('FROM whatsapp_outbox')){
+      const olist=[...waOutbox.values()].filter(w=>w.status==='pending')
+        .sort((a,b)=>a.created_at<b.created_at?-1:1);
+      return {results:olist};
     }
     let list=[...orders.values()];
     if(sql.includes('WHERE client_id = ?')) list=list.filter(o=>o.client_id===this.args[0]);
@@ -190,6 +200,26 @@ await call('/webhooks/easyorders',{method:'POST',headers:{secret:'eo-secret'},bo
 check('الويبهوك سجّل الأوردر لصاحب المتجر', orders.get('EO-1')?.client_id==='c1', '→ '+orders.get('EO-1')?.gov);
 check('منتج إيزي أوردرز اتسجّل تلقائي في كتالوج المتجر',
   [...products.values()].some(p=>p.client_id==='c1' && p.name==='ترينج'));
+
+head('طابور رسائل الواتساب التلقائية');
+check('رسالة تأكيد الطلب اتحطّت في الطابور أول ما الأوردر اتسجّل',
+  [...waOutbox.values()].some(w=>w.order_id==='EO-1' && w.kind==='confirm' && w.status==='pending'));
+r=await call('/api/whatsapp/outbox',{headers:{authorization:'Bearer ingest-secret'}});
+let [,outboxList]=await j(r);
+check('الأجنت يقدر يسحب الرسايل المعلّقة', r.status===200 && outboxList.some(w=>w.order_id==='EO-1'));
+const confirmMsg = outboxList.find(w=>w.order_id==='EO-1');
+r=await call('/api/whatsapp/outbox/'+confirmMsg.id+'/sent',{method:'POST',headers:{authorization:'Bearer ingest-secret'}});
+check('الأجنت يقدر يأكّد إنه بعتها', r.status===200 && waOutbox.get(confirmMsg.id).status==='sent');
+let [,outboxAfterSent]=await j(await call('/api/whatsapp/outbox',{headers:{authorization:'Bearer ingest-secret'}}));
+check('الرسالة اللي اتبعتت مابقتش تظهر في قائمة المعلّق', !outboxAfterSent.some(w=>w.id===confirmMsg.id));
+
+let [,shipTestOrder]=await j(await call('/api/orders',{method:'POST',body:JSON.stringify({
+  clientId:'c1',name:'ت',phone:'0100',total:300,productCost:60,date:TODAY})},adminCookie));
+await call('/api/orders/'+shipTestOrder.order.id,{method:'PATCH',body:JSON.stringify({state:'confirmed'})},adminCookie);
+r=await call('/api/orders/'+shipTestOrder.order.id,{method:'PATCH',body:JSON.stringify({state:'preparing'})},adminCookie);
+check('التحويل لجاري الشحن نجح', r.status===200);
+check('رسالة "جاري شحن طلبك" اتحطّت في الطابور',
+  [...waOutbox.values()].some(w=>w.order_id===shipTestOrder.order.id && w.kind==='shipping'));
 
 head('إدارة المخزون — كميات المنتجات');
 r=await call('/api/products',{method:'POST',body:JSON.stringify({
@@ -356,6 +386,7 @@ check('صافي الربح اليومي بيتحسب صح (إيراد - تكلف
 r=await call('/api/performance?clientId=c2&date='+TODAY+'&periodFrom=2026-01-01&periodTo='+TODAY,{},adminCookie);
 let [,perfCustom]=await j(r);
 check('فترة مخصّصة (periodFrom/periodTo) بتحل محل الشهر الافتراضي', r.status===200 && perfCustom.month.from==='2026-01-01' && perfCustom.month.to===TODAY);
+check('تحليلات وتوصيات — القسم موجود ومليان', Array.isArray(perf.insights) && perf.insights.length>0 && perf.insights[0].text);
 
 r=await call('/api/performance?clientId=c2&date='+TODAY,{},adminCookie);
 let [,perfCppCheck]=await j(r);
