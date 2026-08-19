@@ -87,7 +87,7 @@ a{color:inherit}
 .topbar{
   background:var(--chrome-bg);color:var(--chrome-fg);position:sticky;top:0;z-index:40;
 }
-.topbar-in{max-width:1180px;margin:0 auto;padding:12px 16px;display:flex;align-items:center;gap:14px}
+.topbar-in{max-width:1180px;margin:0 auto;padding:12px 16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
 .brand{display:flex;align-items:center;gap:9px;font-weight:800;letter-spacing:-.2px}
 .brand-mark{
   width:28px;height:28px;border-radius:50%;background:#fff;overflow:hidden;
@@ -96,7 +96,8 @@ a{color:inherit}
 .brand-mark img{width:100%;height:100%;object-fit:cover}
 .brand small{display:block;font-weight:400;font-size:11px;color:#9DB4B0;letter-spacing:.06em}
 .topbar .spacer{flex:1}
-.who{font-size:13px;color:#A9BEC4;display:flex;align-items:center;gap:10px}
+.who{font-size:13px;color:#A9BEC4;display:flex;align-items:center;gap:10px;max-width:100%}
+.who span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:140px}
 .ghost-btn{
   border:1px solid rgba(255,255,255,.22);color:#fff;padding:6px 12px;border-radius:8px;font-size:13px;
   transition:background .15s
@@ -326,6 +327,17 @@ td.num{font-family:var(--mono);font-variant-numeric:tabular-nums;direction:ltr;t
   .gauge-amount{font-size:26px}
   .kpi .k-val{font-size:21px}
   .shell{padding-inline:12px}
+  .topbar-in{gap:8px;padding:10px 12px}
+  .brand small{display:none}
+  .brand>span{font-size:14px}
+  .who span{max-width:80px;font-size:12px}
+  .ghost-btn{padding:6px 9px;font-size:12px}
+  #installAppBtn .btn-label,#walletTopBtn .btn-label{display:none}
+  .theme-switch{order:3;flex:1 0 100%;justify-content:center}
+  .wallet-top-panel{inset-inline-end:auto;inset-inline-start:0;width:min(280px,88vw)}
+  .seg{overflow-x:auto;flex-wrap:nowrap;-webkit-overflow-scrolling:touch}
+  .seg button{white-space:nowrap}
+  .page-head{flex-wrap:wrap}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none !important;animation:none !important}}
 @media print{
@@ -395,9 +407,10 @@ td.num{font-family:var(--mono);font-variant-numeric:tabular-nums;direction:ltr;t
         <button data-theme-btn="gray" aria-pressed="false" title="رمادي">◐</button>
       </div>
       <div style="position:relative">
-        <button id="walletTopBtn" class="ghost-btn hidden" title="المحفظة">💰 المحفظة</button>
+        <button id="walletTopBtn" class="ghost-btn hidden" title="المحفظة">💰 <span class="btn-label">المحفظة</span></button>
         <div id="walletTopPanel" class="wallet-top-panel hidden"></div>
       </div>
+      <button id="installAppBtn" class="ghost-btn hidden" title="تحميل التطبيق">⬇ <span class="btn-label">تحميل التطبيق</span></button>
       <div class="who"><span id="whoName"></span><button class="ghost-btn" id="logoutBtn">خروج</button></div>
     </div>
   </div>
@@ -908,10 +921,10 @@ function renderClient(client){
       <div class="card kpi"><div class="k-label">الإيراد المتوقع</div>
         <div class="k-val">${money(perfData.revenueExpected)}<span class="cur">${cur}</span></div>
         <div class="k-foot">الأوردرات اللي مصيرها لسه معلّق بس</div></div>
-      <div class="card kpi ${perfData.profitMarginExpectedPct>=0?'accent-pine':''}">
+      <div class="card kpi ${perfData.profitExpected>=0?'accent-pine':''}">
         <div class="k-label">هامش الربح المتوقع</div>
-        <div class="k-val" style="color:${perfData.profitMarginExpectedPct>=0?'var(--pine)':'var(--brick)'}">${perfData.profitMarginExpectedPct}<span class="cur">%</span></div>
-        <div class="k-foot">بعد خصم كل المصاريف وتكلفة المنتج</div></div>
+        <div class="k-val" style="color:${perfData.profitExpected>=0?'var(--pine)':'var(--brick)'}">${money(perfData.profitExpected)}<span class="cur">${cur}</span></div>
+        <div class="k-foot">بعد خصم كل المصاريف وتكلفة المنتج (${perfData.profitMarginExpectedPct}%)</div></div>
       <div class="card kpi accent-pine"><div class="k-label">أرباح متاحة للصرف</div>
         <div class="k-val" style="color:var(--pine)">${money(perfData.profitCollected)}<span class="cur">${cur}</span></div>
         <div class="k-foot">من الأوردرات المحصّلة فعليًا</div></div>
@@ -1610,7 +1623,12 @@ function clientInventoryView(client){
     </div>
   </div>
 
-  <div class="section-title" style="margin-top:0">كميات المنتجات</div>
+  <div class="page-head" style="padding:0 0 12px">
+    <div class="section-title" style="margin:0">كميات المنتجات</div>
+    <div class="spacer"></div>
+    <button class="btn sm" id="openRestockBtn">+ إضافة كميات جديدة</button>
+    <button class="btn sm line" id="openStockLogBtn">تاريخ الإضافات</button>
+  </div>
   ${lowStockSection}
   ${okStock.map(stockRow).join('') || (lowStock.length ? '' : '<p class="hint">لسه مفيش منتجات مسجّلة — ضيفها من تبويب "منتجاتي".</p>')}
 
@@ -1942,6 +1960,78 @@ function showWhatsAppModal(order, clientName){
   wrap.onclick = ev => { if(ev.target === wrap) close(); };
 }
 
+/* ---------- إضافة كميات جديدة للمخزون + سجل الإضافات ---------- */
+function showRestockModal(client){
+  const products = (DB.products||[]).filter(p=>p.clientId===client.id && p.active!==0)
+    .sort((a,b)=> a.name.localeCompare(b.name,'ar'));
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'position:fixed;inset:0;background:rgba(18,33,43,.55);z-index:200;display:grid;place-items:center;padding:18px;overflow-y:auto';
+  wrap.innerHTML = `
+    <div class="card" style="max-width:480px;width:100%;box-shadow:var(--shadow);max-height:85vh;overflow-y:auto">
+      <h3 style="font-size:16px;margin-bottom:4px">إضافة كميات جديدة</h3>
+      <p class="hint" style="margin-bottom:12px">اكتب الكمية اللي وصلتك لكل منتج (هتتضاف فوق الرصيد الحالي، مش تستبدله).</p>
+      ${products.map(p=>`
+      <div class="field" style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <div style="flex:1"><b>${esc(p.name)}</b><br><span class="hint" style="font-size:11px">الرصيد الحالي: ${num(p.stock)}</span></div>
+        <input type="number" min="0" class="mono" data-restockinput="${p.id}" placeholder="0"
+          style="width:90px;padding:6px 8px;border:1px solid var(--line);border-radius:7px;text-align:center">
+      </div>`).join('') || '<p class="hint">مفيش منتجات مسجّلة لسه.</p>'}
+      <div class="field" style="margin-top:8px"><label>ملاحظة (اختياري)</label><input id="restockNote" placeholder="مثال: توريد أغسطس"></div>
+      <div class="form-actions" style="margin-top:10px">
+        <button class="btn sm" id="restockSave">حفظ الإضافات</button>
+        <button class="btn sm line" id="restockClose">إلغاء</button>
+      </div>
+    </div>`;
+  document.body.appendChild(wrap);
+  const close = ()=> document.body.removeChild(wrap);
+  wrap.querySelector('#restockClose').onclick = close;
+  wrap.onclick = ev => { if(ev.target === wrap) close(); };
+  wrap.querySelector('#restockSave').onclick = async ()=>{
+    const note = wrap.querySelector('#restockNote').value.trim();
+    const inputs = wrap.querySelectorAll('[data-restockinput]');
+    let anyAdded = false;
+    for(const inp of inputs){
+      const delta = +inp.value || 0;
+      if(delta <= 0) continue;
+      anyAdded = true;
+      try{
+        const res = await api('/api/products/'+encodeURIComponent(inp.dataset.restockinput)+'/stock/add',
+          {method:'POST', body:JSON.stringify({delta, note})});
+        const p = DB.products.find(x=>x.id===inp.dataset.restockinput);
+        if(p) p.stock = res.stock;
+      }catch(e){ toast(e.message); }
+    }
+    if(!anyAdded){ toast('اكتب كمية في منتج واحد على الأقل'); return; }
+    close(); paint(true); toast('اتضافت الكميات');
+  };
+}
+
+async function showStockLogModal(client){
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'position:fixed;inset:0;background:rgba(18,33,43,.55);z-index:200;display:grid;place-items:center;padding:18px';
+  wrap.innerHTML = `<div class="card" style="max-width:480px;width:100%;box-shadow:var(--shadow)"><p class="hint">بنجيب السجل...</p></div>`;
+  document.body.appendChild(wrap);
+  const close = ()=> document.body.removeChild(wrap);
+  wrap.onclick = ev => { if(ev.target === wrap) close(); };
+  try{
+    const log = await api('/api/products/stock-log');
+    const rows = log.map(s=>`
+      <tr><td>${new Date(s.created_at).toLocaleString('ar-EG')}</td>
+        <td>${esc(s.product_name||'')}</td>
+        <td class="num" style="color:var(--pine)">+${num(s.delta)}</td>
+        <td class="num">${num(s.new_stock)}</td>
+        <td>${esc(s.note||'')}</td></tr>`).join('');
+    wrap.innerHTML = `
+      <div class="card" style="max-width:520px;width:100%;box-shadow:var(--shadow);max-height:80vh;overflow-y:auto">
+        <h3 style="font-size:16px;margin-bottom:10px">تاريخ إضافات المخزون</h3>
+        <div class="table-wrap"><table><thead><tr><th>الوقت</th><th>المنتج</th><th>الكمية المضافة</th><th>الرصيد بعدها</th><th>ملاحظة</th></tr></thead>
+          <tbody>${rows || '<tr><td colspan="5" class="empty">لسه مفيش إضافات مسجّلة.</td></tr>'}</tbody></table></div>
+        <div class="form-actions" style="margin-top:12px"><button class="btn sm line" id="stockLogClose">قفل</button></div>
+      </div>`;
+    wrap.querySelector('#stockLogClose').onclick = close;
+  }catch(e){ wrap.innerHTML = `<div class="card"><p class="hint">${esc(e.message)}</p></div>`; }
+}
+
 /* ---------- الشات الداخلي للفريق + التاسكات ---------- */
 function renderMentions(text){
   let out = esc(text);
@@ -2082,6 +2172,53 @@ async function refreshChatBadge(){
     const badge = document.getElementById('chatBadge');
     if(badge){ badge.textContent = n>99?'99+':n; badge.classList.toggle('hidden', n===0); }
   }catch(e){}
+}
+
+let deferredInstallPrompt = null;
+function setupInstallButton(){
+  const btn = document.getElementById('installAppBtn');
+  if(!btn) return;
+  const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+  if(isStandalone) return; /* متثبت بالفعل */
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+
+  window.addEventListener('beforeinstallprompt', e=>{
+    e.preventDefault();
+    deferredInstallPrompt = e;
+    btn.classList.remove('hidden');
+  });
+
+  if(isIOS){ btn.classList.remove('hidden'); } /* آبل مابتدعمش الزرار البرمجي، فنوريه دايمًا مع تعليمات يدوية */
+
+  btn.onclick = async ()=>{
+    if(deferredInstallPrompt){
+      deferredInstallPrompt.prompt();
+      const choice = await deferredInstallPrompt.userChoice;
+      deferredInstallPrompt = null;
+      if(choice.outcome==='accepted') btn.classList.add('hidden');
+      return;
+    }
+    if(isIOS){
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'position:fixed;inset:0;background:rgba(18,33,43,.55);z-index:200;display:grid;place-items:center;padding:18px';
+      wrap.innerHTML = `
+        <div class="card" style="max-width:340px;width:100%;box-shadow:var(--shadow)">
+          <h3 style="font-size:16px;margin-bottom:10px">تثبيت التطبيق على آيفون</h3>
+          <ol style="padding-inline-start:20px;font-size:13.5px;line-height:2">
+            <li>دوس زرار المشاركة <span class="mono">⬆️</span> تحت في سفاري</li>
+            <li>اختار "Add to Home Screen" / "إضافة إلى الشاشة الرئيسية"</li>
+            <li>دوس "إضافة" فوق يمين</li>
+          </ol>
+          <div class="form-actions" style="margin-top:12px"><button class="btn sm" id="iosInstallClose">تمام</button></div>
+        </div>`;
+      document.body.appendChild(wrap);
+      const close = ()=> document.body.removeChild(wrap);
+      wrap.querySelector('#iosInstallClose').onclick = close;
+      wrap.onclick = ev => { if(ev.target === wrap) close(); };
+      return;
+    }
+    toast('التطبيق متثبت بالفعل أو المتصفح مش بيدعم التثبيت المباشر');
+  };
 }
 
 function bindPasswordCard(){
@@ -3175,6 +3312,7 @@ async function boot(){
     if(ONLINE){ try{ await api('/api/logout',{method:'POST'}); }catch(e){} }
     session=null; show('login');
   };
+  setupInstallButton();
   document.getElementById('chatFab').onclick = openChatPanel;
   document.getElementById('chatPanelClose').onclick = closeChatPanel;
   document.querySelectorAll('#chatPanelTabs button').forEach(b=> b.onclick = ()=>{
@@ -3376,7 +3514,7 @@ function bindClient(c){
   });
   if(clientTab==='integrations') bindClientIntegrations();
   if(clientTab==='finance') bindClientFinance();
-  if(clientTab==='inventory') bindClientInventory();
+  if(clientTab==='inventory') bindClientInventory(c);
   if(clientTab==='service') bindClientService();
   const perfRetry = document.getElementById('perfRetryBtn');
   if(perfRetry) perfRetry.onclick = async ()=>{ await loadPerf(c.id); paint(true); };
@@ -3593,7 +3731,11 @@ function bindClientFinance(){
   });
 }
 
-function bindClientInventory(){
+function bindClientInventory(client){
+  const openRestock = document.getElementById('openRestockBtn');
+  if(openRestock) openRestock.onclick = ()=> showRestockModal(client);
+  const openLog = document.getElementById('openStockLogBtn');
+  if(openLog) openLog.onclick = ()=> showStockLogModal(client);
   document.querySelectorAll('[data-invawb]').forEach(el=> el.onchange = ()=>{
     const o = DB.orders.find(x=>x.id===el.dataset.invawb);
     if(o) o.awb = el.value.trim() || null;

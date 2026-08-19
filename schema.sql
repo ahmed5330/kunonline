@@ -108,6 +108,20 @@ CREATE TABLE IF NOT EXISTS whatsapp_outbox (
 );
 CREATE INDEX IF NOT EXISTS idx_wa_outbox_status ON whatsapp_outbox (status, created_at);
 
+-- سجل إضافات المخزون — كل مرة حد يضيف كمية جديدة لمنتج
+CREATE TABLE IF NOT EXISTS stock_log (
+  id            TEXT PRIMARY KEY,
+  client_id     TEXT NOT NULL,
+  product_id    TEXT NOT NULL,
+  product_name  TEXT,
+  delta         INTEGER NOT NULL,
+  new_stock     INTEGER,
+  note          TEXT,
+  created_at    TEXT,
+  created_by    TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_stocklog_client ON stock_log (client_id, created_at);
+
 -- محفظة الاشتراك — سجل كل شحن رصيد وكل خصم تلقائي لكل أوردر
 CREATE TABLE IF NOT EXISTS wallet_log (
   id            TEXT PRIMARY KEY,

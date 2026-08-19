@@ -2,7 +2,7 @@
 import worker from './src/index.js';
 const TODAY = new Date().toISOString().slice(0,10);
 
-let stateRow=null; const orders=new Map(), users=new Map(), attempts=new Map(), products=new Map(), transactions=new Map(), chatMessages=new Map(), tasks=new Map(), walletLog=new Map(), waOutbox=new Map();
+let stateRow=null; const orders=new Map(), users=new Map(), attempts=new Map(), products=new Map(), transactions=new Map(), chatMessages=new Map(), tasks=new Map(), walletLog=new Map(), waOutbox=new Map(), stockLog=new Map();
 const stmt=(sql)=>({
   args:[], bind(...a){this.args=a;return this;},
   async first(){
@@ -77,6 +77,9 @@ const stmt=(sql)=>({
     else if(sql.includes('INSERT INTO wallet_log')){
       const [id,client_id,type,amount,balance_after,note,created_at,created_by]=this.args;
       walletLog.set(id,{id,client_id,type,amount,balance_after,note,created_at,created_by});}
+    else if(sql.includes('INSERT INTO stock_log')){
+      const [id,client_id,product_id,product_name,delta,new_stock,note,created_at,created_by]=this.args;
+      stockLog.set(id,{id,client_id,product_id,product_name,delta,new_stock,note,created_at,created_by});}
     else if(sql.includes('INSERT INTO whatsapp_outbox')){
       const [id,client_id,order_id,phone,message,kind,status,created_at]=this.args;
       waOutbox.set(id,{id,client_id,order_id,phone,message,kind,status,created_at});}
@@ -124,6 +127,11 @@ const stmt=(sql)=>({
       const wlist=[...walletLog.values()].filter(w=>w.client_id===this.args[0])
         .sort((a,b)=>a.created_at<b.created_at?1:-1);
       return {results:wlist};
+    }
+    if(sql.includes('FROM stock_log')){
+      const slist=[...stockLog.values()].filter(s=>s.client_id===this.args[0])
+        .sort((a,b)=>a.created_at<b.created_at?1:-1);
+      return {results:slist};
     }
     if(sql.includes('FROM whatsapp_outbox')){
       const olist=[...waOutbox.values()].filter(w=>w.status==='pending')
@@ -229,6 +237,16 @@ check('العميل يقدر يسجّل منتج بكمية مخزون وحد ت
 check('المنتج اتسجّل بالكمية والحد الصح', products.get(stockProd.id).stock===3 && products.get(stockProd.id).low_stock_threshold===5);
 r=await call('/api/products/'+stockProd.id+'/stock',{method:'PATCH',body:JSON.stringify({stock:20})},clientCookie);
 check('تحديث سريع للكمية بيشتغل', r.status===200 && products.get(stockProd.id).stock===20);
+
+head('إضافة كميات جديدة للمخزون + سجلها');
+r=await call('/api/products/'+stockProd.id+'/stock/add',{method:'POST',body:JSON.stringify({delta:15,note:'توريد جديد'})},clientCookie);
+let [,addStockRes]=await j(r);
+check('إضافة كمية بتزود على الرصيد الموجود (مش تستبدله)', r.status===200 && addStockRes.stock===35);
+check('عملية الإضافة اتسجّلت في سجل المخزون', stockLog.size>0 &&
+  [...stockLog.values()].some(s=>s.product_id===stockProd.id && s.delta===15 && s.new_stock===35));
+r=await call('/api/products/stock-log',{},clientCookie);
+let [,stockLogList]=await j(r);
+check('العميل يقدر يشوف سجل إضافات مخزونه', r.status===200 && stockLogList.some(s=>s.product_id===stockProd.id));
 const [,ord]=await j(await call('/api/orders',{method:'POST',
   body:JSON.stringify({clientId:'c1',name:'سارة',phone:'0111',total:300,date:'2026-08-09'})},clientCookie));
 check('أوردر العميل بيتحوّل لحسابه هو', ord.order.clientId==='c2','→ '+ord.order.clientId);

@@ -1329,6 +1329,42 @@ async function handleApi(request, env, url, path) {
     return json({ ok: true, stock });
   }
 
+  /* إضافة كمية جديدة (توريد/تجديد مخزون) — دلتا بتتضاف فوق الرصيد الحالي، ومسجّلة في سجل منفصل */
+  const pstockAdd = path.match(/^\/api\/products\/([^/]+)\/stock\/add$/);
+  if (pstockAdd && request.method === 'POST') {
+    const pid = decodeURIComponent(pstockAdd[1]);
+    const row = await env.DB.prepare('SELECT client_id, name, stock FROM products WHERE id = ?').bind(pid).first();
+    if (!row) return json({ error: 'المنتج مش موجود' }, 404);
+    if (user.role === 'client' && row.client_id !== me.clientId) return json({ error: 'مش مسموح' }, 403);
+    if (user.role !== 'client' && !can(user, 'clients') && !can(user, 'orders')) {
+      return json({ error: 'مش مسموح' }, 403);
+    }
+    const b = await request.json().catch(() => ({}));
+    const delta = Number(b.delta);
+    if (!delta || delta === 0) return json({ error: 'اكتب كمية أكبر من صفر' }, 400);
+    const newStock = Math.max(0, (Number(row.stock) || 0) + delta);
+    await env.DB.prepare('UPDATE products SET stock = ? WHERE id = ?').bind(newStock, pid).run();
+    await env.DB.prepare(
+      'INSERT INTO stock_log (id, client_id, product_id, product_name, delta, new_stock, note, created_at, created_by) VALUES (?,?,?,?,?,?,?,?,?)'
+    ).bind('STK-' + crypto.randomUUID().slice(0, 8).toUpperCase(), row.client_id, pid, row.name, delta,
+      newStock, String(b.note || '').trim(), new Date().toISOString(), me.email || me.role).run();
+    return json({ ok: true, stock: newStock });
+  }
+
+  /* سجل كل إضافات المخزون */
+  if (path === '/api/products/stock-log' && request.method === 'GET') {
+    const staffAccess = isStaff(user) && (can(user, 'clients') || can(user, 'orders'));
+    const qcid = url.searchParams.get('clientId');
+    if (user.role === 'client' && qcid && qcid !== me.clientId) return json({ error: 'مش مسموح' }, 403);
+    const targetId = user.role === 'client' ? me.clientId : qcid;
+    if (user.role !== 'client' && !staffAccess) return json({ error: 'مش مسموح' }, 403);
+    if (!targetId) return json({ error: 'محتاجين clientId' }, 400);
+    const { results } = await env.DB.prepare(
+      'SELECT id, product_id, product_name, delta, new_stock, note, created_at, created_by FROM stock_log WHERE client_id = ? ORDER BY created_at DESC LIMIT 200'
+    ).bind(targetId).all();
+    return json(results || []);
+  }
+
   const pm = path.match(/^\/api\/products\/([^/]+)$/);
   if (pm && request.method === 'DELETE') {
     const pid = decodeURIComponent(pm[1]);
