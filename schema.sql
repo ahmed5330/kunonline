@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS orders (
   address       TEXT,
   product       TEXT,
   product_id    TEXT,
+  product_note  TEXT,                   -- ملاحظات المنتج (لون/مقاس/اختيارات) — تيجي تلقائي من إيزي أوردرز أو تتكتب يدوي
   unit_price    REAL DEFAULT 0,
   qty           INTEGER DEFAULT 1,
   total         REAL DEFAULT 0,
@@ -55,6 +56,7 @@ CREATE TABLE IF NOT EXISTS orders (
   checkpoint    TEXT,
   signed_at     TEXT,
   collected_at  TEXT,
+  defer_until   TEXT,                   -- تاريخ رجوع الأوردر المؤجل — لما حالته deferred
   contact_log   TEXT DEFAULT '[]',      -- JSON: مواعيد محاولات التواصل مع العميل
   history       TEXT DEFAULT '[]',      -- JSON: سجل تغييرات الحالة [{state, at}]
   created_at    TEXT

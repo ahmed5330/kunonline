@@ -43,16 +43,21 @@ const stmt=(sql)=>({
     else if(sql.includes('INSERT INTO login_attempts')) attempts.set(this.args[0],{email:this.args[0],fails:this.args[1],locked_until:this.args[2]});
     else if(sql.includes('DELETE FROM login_attempts')) attempts.delete(this.args[0]);
     else if(sql.includes('INSERT INTO orders')){
-      const [id,client_id,ref,date,name,phone,gov,address,product,product_id,unit_price,qty,total,
-        product_cost,shipping_cost,other_cost,source,note,awb,state,checkpoint,signed_at,collected_at,
+      const [id,client_id,ref,date,name,phone,gov,address,product,product_id,product_note,unit_price,qty,total,
+        product_cost,shipping_cost,other_cost,source,note,awb,state,checkpoint,signed_at,collected_at,defer_until,
         contact_log,history,created_at]=this.args;
-      orders.set(id,{id,client_id,ref,date,name,phone,gov,address,product,product_id,unit_price,qty,total,
-        product_cost,shipping_cost,other_cost,source,note,awb,state,checkpoint,signed_at,collected_at,
+      orders.set(id,{id,client_id,ref,date,name,phone,gov,address,product,product_id,product_note,unit_price,qty,total,
+        product_cost,shipping_cost,other_cost,source,note,awb,state,checkpoint,signed_at,collected_at,defer_until,
         contact_log,history,created_at});}
-    else if(sql.startsWith('UPDATE orders SET state = ?, awb = ?')){const o=orders.get(this.args[8]);
-      if(o){o.state=this.args[0];o.awb=this.args[1];o.checkpoint=this.args[2];
-        o.shipping_cost=this.args[3];o.other_cost=this.args[4];o.signed_at=this.args[5];
-        o.collected_at=this.args[6];o.history=this.args[7];}}
+    else if(sql.includes('UPDATE orders SET state = ?, awb = ?')){
+      const [state,awb,checkpoint,shipping_cost,other_cost,signed_at,collected_at,defer_until,history,id]=this.args;
+      const o=orders.get(id);
+      if(o){o.state=state;o.awb=awb;o.checkpoint=checkpoint;
+        o.shipping_cost=shipping_cost;o.other_cost=other_cost;o.signed_at=signed_at;
+        o.collected_at=collected_at;o.defer_until=defer_until;o.history=history;}}
+    else if(sql.startsWith('UPDATE orders SET state = ?, checkpoint = ?, history = ?')){
+      const [state,checkpoint,history,id]=this.args; const o=orders.get(id);
+      if(o){o.state=state;o.checkpoint=checkpoint;o.history=history;}}
     else if(sql.startsWith('UPDATE orders SET contact_log = ?, history = ?')){const o=orders.get(this.args[2]);
       if(o){ o.contact_log=this.args[0]; o.history=this.args[1]; }}
     else if(sql.startsWith('UPDATE orders SET history = ?')){const o=orders.get(this.args[1]);
@@ -64,7 +69,11 @@ const stmt=(sql)=>({
     else if(sql.includes('INSERT INTO products')){
       const [id,client_id,name,sku,price,cost,active,stock,low_stock_threshold,created_at]=this.args;
       products.set(id,{id,client_id,name,sku,price,cost,active,stock,low_stock_threshold,created_at});}
+    else if(sql.startsWith('UPDATE products SET stock = ?, low_stock_threshold = ?')){
+      const [stock,low_stock_threshold,id]=this.args; const p=products.get(id);
+      if(p){p.stock=stock;p.low_stock_threshold=low_stock_threshold;}}
     else if(sql.startsWith('UPDATE products SET stock')){const p=products.get(this.args[1]);if(p)p.stock=this.args[0];}
+    else if(sql.startsWith('UPDATE products SET price')){const [price,id]=this.args; const p=products.get(id); if(p)p.price=price;}
     else if(sql.includes('INSERT INTO transactions')){
       const [id,type,date,category,amount,currency,method,client_id,note,created_by,created_at]=this.args;
       transactions.set(id,{id,type,date,category,amount,currency,method,client_id,note,created_by,created_at});}
@@ -139,6 +148,10 @@ const stmt=(sql)=>({
       return {results:olist};
     }
     let list=[...orders.values()];
+    if(sql.includes("state = 'deferred' AND defer_until")){
+      const cutoff=this.args[0];
+      return {results:list.filter(o=>o.state==='deferred' && o.defer_until && o.defer_until<=cutoff)};
+    }
     if(sql.includes('WHERE client_id = ?')) list=list.filter(o=>o.client_id===this.args[0]);
     if(sql.includes('NOT IN')) list=list.filter(o=>o.awb&&!['delivered','returned','cancelled'].includes(o.state));
     return {results:list};
@@ -565,6 +578,39 @@ check('قفل مؤقت بعد ٥ محاولات فاشلة',
 const adminId=[...users.values()].find(u=>u.role==='admin').id;
 check('ما ينفعش تمسح آخر حساب إدارة',
   (await call('/api/users/'+adminId,{method:'DELETE'},adminCookie)).status===400);
+
+head('صلاحية حذف الأوردر — مدير مقابل خدمة عملاء');
+r=await call('/api/users',{method:'POST',body:JSON.stringify({
+  email:'support@x.com', role:'support', password:'SupportPass1', name:'خدمة عملاء'})},adminCookie);
+check('اتعمل حساب خدمة عملاء', r.status===200);
+const supportLogin=await call('/api/login',{method:'POST',body:JSON.stringify({email:'support@x.com',password:'SupportPass1'})});
+const supportCookie=ck(supportLogin);
+let [,delTestOrder]=await j(await call('/api/orders',{method:'POST',body:JSON.stringify({
+  clientId:'c1',name:'أوردر للحذف',phone:'0100',total:100,date:TODAY})},adminCookie));
+r=await call('/api/orders/'+delTestOrder.order.id,{method:'DELETE'},supportCookie);
+check('خدمة العملاء ممنوعة تحذف أوردر — الصلاحية دي للمدير بس', r.status===403);
+check('الأوردر لسه موجود', orders.has(delTestOrder.order.id));
+r=await call('/api/orders/'+delTestOrder.order.id,{method:'DELETE'},adminCookie);
+check('المدير يقدر يحذف الأوردر', r.status===200);
+check('الأوردر اتشال فعلاً', !orders.has(delTestOrder.order.id));
+
+head('تأجيل الأوردر ورجوعه التلقائي');
+let [,deferOrder]=await j(await call('/api/orders',{method:'POST',body:JSON.stringify({
+  clientId:'c1',name:'مؤجل',phone:'0100',total:150,date:TODAY,productNote:'أحمر — مقاس L'})},adminCookie));
+check('ملاحظة المنتج (لون/مقاس) اتسجّلت مع الأوردر', orders.get(deferOrder.order.id).product_note==='أحمر — مقاس L');
+r=await call('/api/orders/'+deferOrder.order.id,{method:'PATCH',body:JSON.stringify({state:'deferred'})},adminCookie);
+check('التأجيل من غير تاريخ مرفوض', r.status===400);
+const futureDate='2099-01-01';
+r=await call('/api/orders/'+deferOrder.order.id,{method:'PATCH',body:JSON.stringify({state:'deferred',deferUntil:futureDate})},adminCookie);
+check('التأجيل بتاريخ صحيح بينجح', r.status===200 && orders.get(deferOrder.order.id).state==='deferred');
+check('تاريخ الرجوع اتسجّل', orders.get(deferOrder.order.id).defer_until===futureDate);
+let [,stillDeferred]=await j(await call('/api/state',{},adminCookie));
+check('الأوردر لسه مؤجل — معاده لسه ما وصلش', stillDeferred.orders.find(o=>o.id===deferOrder.order.id).state==='deferred');
+orders.get(deferOrder.order.id).defer_until='2020-01-01';   /* نحاكي إن معاده فات */
+let [,returnedState]=await j(await call('/api/state',{},adminCookie));
+const returnedOrder=returnedState.orders.find(o=>o.id===deferOrder.order.id);
+check('رجع تلقائي لـ"جاري التأكيد" لما معاده وصل', returnedOrder.state==='pending');
+check('تاريخ التأجيل القديم فضل محفوظ كعلامة إنه رجع من تأجيل', returnedOrder.deferUntil==='2020-01-01');
 
 console.log(`\n${pass} نجحوا · ${fail} فشلوا`);
 process.exit(fail?1:0);
