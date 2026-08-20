@@ -812,6 +812,22 @@ function renderClient(client){
   const margin = safeDiv(netProfit, a.revenue)*100;
   const ec = orderEconomics(client, safeDiv(adSpend, a.orders));
 
+  /* هامش الربح المتوقع — بيتحسب أول ما الأوردر يبقى "تم تأكيده" فما فوق (لسه ما اتحصّلش فعلياً)،
+     بنطرح تكلفة المنتج + شحن متوقع (متوسط شحن الأوردرات المحصّلة فعلياً) + نصيبه من الإعلانات + رسم الإدارة */
+  const expectedOrders = ordersRange.filter(o=>['confirmed','preparing','shipped','signed'].includes(o.state));
+  const collectedWithShip = ordersRange.filter(o=>o.state==='collected' && o.shippingCost!=null);
+  const avgShip = collectedWithShip.length
+    ? collectedWithShip.reduce((s,o)=>s+Number(o.shippingCost||0),0)/collectedWithShip.length
+    : (Number(ec.e.shipping)||0);
+  const cpoExpected = safeDiv(adSpend, a.orders);
+  const expectedRevenue = expectedOrders.reduce((s,o)=>s+(Number(o.total)||0),0);
+  const expectedProductCost = expectedOrders.reduce((s,o)=>s+(Number(o.productCost)||0),0);
+  const expectedShipping = avgShip * expectedOrders.length;
+  const expectedAdSpend = cpoExpected * expectedOrders.length;
+  const expectedAdminFee = (Number(client.adminFee)||0) * expectedOrders.length;
+  const expectedProfit = expectedRevenue - expectedProductCost - expectedShipping - expectedAdSpend - expectedAdminFee;
+  const expectedMargin = safeDiv(expectedProfit, expectedRevenue)*100;
+
   /* كل يوم: أوردراته من جدول الأوردرات + إنفاقه الإعلاني من الإدخال اليومي */
   const days = [...new Set(ordersRange.map(o=>o.date).concat(listRange.map(e=>e.date)))].sort().reverse();
   const rows = days.map(d=>{
@@ -1028,6 +1044,23 @@ function renderClient(client){
       <div class="k-foot">${num(a.returned)} مرتجع · ${num(a.cancelled)} ملغي</div></div>
   </div>
 
+  ${expectedOrders.length ? `<div class="card" style="margin-top:12px;background:var(--pine-soft);border-color:var(--pine-line)">
+    <div class="chart-head" style="margin-bottom:6px">
+      <h3 style="color:var(--pine)">هامش الربح المتوقع</h3>
+      <span class="legend" style="font-size:12.5px;color:var(--ink-2)">
+        ${num(expectedOrders.length)} أوردر "تم تأكيده" فما فوق ولسه ما اتحصّلش</span>
+    </div>
+    <div class="grid g3" style="margin-top:8px">
+      <div><div class="k-label">الربح المتوقع</div>
+        <div class="k-val mono" style="font-size:22px;color:${expectedProfit>=0?'var(--pine)':'var(--brick)'}">${money(expectedProfit)} <span class="cur">${cur}</span></div></div>
+      <div><div class="k-label">هامش الربح المتوقع</div>
+        <div class="k-val mono" style="font-size:22px;color:${expectedProfit>=0?'var(--pine)':'var(--brick)'}">${expectedMargin.toFixed(1)}<span class="cur">%</span></div></div>
+      <div><div class="k-label">الإيراد المتوقع</div>
+        <div class="k-val mono" style="font-size:22px">${money(expectedRevenue)} <span class="cur">${cur}</span></div></div>
+    </div>
+    <p class="hint" style="margin-top:8px">بعد خصم تكلفة المنتج + شحن متوقع (${money(avgShip)} للأوردر) + نصيب الإعلانات (${money(cpoExpected)} للأوردر) + رسم الإدارة.</p>
+  </div>` : ''}
+
   ${a.signed ? `<div class="card" style="margin-top:12px;background:var(--gold-soft);border-color:var(--gold-line)">
     <div class="chart-head" style="margin-bottom:6px">
       <h3 style="color:var(--gold-ink)">فلوس عند شركة الشحن</h3>
@@ -1129,7 +1162,8 @@ const ORDER_STATE = {
   signed:   { ar:'تحصيل منتظر',         cls:'wait' },
   collected:{ ar:'تم التحصيل',          cls:'on'   },
   returned: { ar:'مرتجع',               cls:'off'  },
-  cancelled:{ ar:'تم إلغاء الطلب',      cls:'off'  }
+  cancelled:{ ar:'تم إلغاء الطلب',      cls:'off'  },
+  deferred: { ar:'مؤجل',                cls:'off'  }
 };
 function ordersFor(clientId, range){
   const [from,to] = rangeDates(range);
@@ -1160,11 +1194,12 @@ function orderFormFields(client, withClientPicker){
       </select></div>
       <div class="field"><label>أو اكتب اسم المنتج</label><input id="n_product" placeholder="لو مش في القايمة"></div>
       <div class="field"><label>الكمية</label><input id="n_qty" type="number" min="1" value="1"></div>
+      <div class="field" style="grid-column:span 2"><label>ملاحظات المنتج (لون / مقاس)</label><input id="n_product_note" placeholder="مثلاً: أحمر — مقاس L"></div>
       <div class="field"><label>الإجمالي المطلوب${client?' ('+client.currency+')':''}</label>
         <input id="n_total" type="number" min="0" step="0.01" placeholder="0">
         <span class="hint" id="totalHint">بيتحسب لوحده لما تختار منتج</span></div>
       <div class="field"><label>تاريخ الأوردر</label><input id="n_date" type="date" value="${today()}"></div>
-      <div class="field" style="grid-column:1/-1"><label>ملاحظة</label><input id="n_note" placeholder="مثلاً: يفضّل التسليم بعد ٥ العصر"></div>
+      <div class="field" style="grid-column:1/-1"><label>ملاحظة على الأوردر</label><input id="n_note" placeholder="مثلاً: يفضّل التسليم بعد ٥ العصر"></div>
     </div>`;
 }
 /** بيقرأ النموذج ويرجّع أوردر جاهز — أو null لو في نقص */
@@ -1183,6 +1218,7 @@ function readOrderForm(clientId){
     name, phone, gov:g('n_gov').trim()||'غير محدد', address:g('n_address').trim(),
     product: pr ? pr.name : g('n_product').trim(),
     productId: pid || null,
+    productNote: g('n_product_note').trim(),
     unitPrice: pr ? pr.price : safeDiv(total, qty),
     productCost: pr ? (Number(pr.cost)||0)*qty : 0,
     qty, total,
@@ -1590,13 +1626,18 @@ function clientInventoryView(client){
   const products = (DB.products||[]).filter(p=>p.clientId===client.id && p.active!==0);
   const lowStock = products.filter(p=>Number(p.stock)<=Number(p.lowStockThreshold));
   const okStock = products.filter(p=>Number(p.stock)>Number(p.lowStockThreshold));
+  const thresholdInput = p => `
+        <span class="hint">الحد الأدنى</span>
+        <input type="number" min="0" class="mono" data-thresholdedit="${p.id}" value="${num(p.lowStockThreshold)}"
+          style="width:64px;padding:5px 8px;border:1px solid var(--line);border-radius:7px;font-size:13px;text-align:center">`;
   const stockRow = p => `
     <div class="card" style="margin-bottom:8px;padding:10px 12px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
       <div><b>${esc(p.name)}</b>${p.sku?` <span class="hint mono" style="font-size:11px">${esc(p.sku)}</span>`:''}</div>
-      <div style="display:flex;align-items:center;gap:6px">
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
         <input type="number" min="0" class="mono" data-stockedit="${p.id}" value="${num(p.stock)}"
           style="width:80px;padding:5px 8px;border:1px solid var(--line);border-radius:7px;font-size:13px;text-align:center">
         <span class="hint">قطعة</span>
+        ${thresholdInput(p)}
         <button class="btn sm" data-savestock="${p.id}">حفظ</button>
       </div>
     </div>`;
@@ -1607,32 +1648,18 @@ function clientInventoryView(client){
       <div class="card" style="margin-bottom:8px;padding:10px 12px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;border-color:var(--brick)">
         <div><b style="color:var(--brick)">${esc(p.name)}</b>
           <span class="pill off" style="margin-inline-start:6px">متبقي ${num(p.stock)} بس</span></div>
-        <div style="display:flex;align-items:center;gap:6px">
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
           <input type="number" min="0" class="mono" data-stockedit="${p.id}" value="${num(p.stock)}"
             style="width:80px;padding:5px 8px;border:1px solid var(--brick-line);border-radius:7px;font-size:13px;text-align:center">
           <span class="hint">قطعة</span>
+          ${thresholdInput(p)}
           <button class="btn sm" data-savestock="${p.id}">حفظ</button>
         </div>
       </div>`).join('')}
     </div>` : '';
-  const ready = (DB.orders||[]).filter(o=>o.clientId===client.id && (o.state==='confirmed' || o.state==='preparing'));
-  ready.sort((a,b)=> a.date<b.date?1:-1);
-  const rows = ready.map(o=>`
-    <tr>
-      <td>${arDate(o.date)}<br><span class="hint mono" style="font-size:10.5px">${esc(shortOrderRef(o.id))}</span></td>
-      <td><b>${esc(o.name)}</b><br><span class="hint">${esc(o.gov||'')} · ${esc(o.phone)}</span></td>
-      <td>${esc(o.product||'')}<br><span class="hint">×${num(o.qty||1)}</span></td>
-      <td><span class="pill ${o.state==='preparing'?'mid':'wait'}">${ORDER_STATE[o.state].ar}</span></td>
-      <td><input class="mono" data-invawb="${o.id}" value="${esc(o.awb||'')}" placeholder="رقم البوليصة"
-           style="width:130px;padding:5px 8px;border:1px solid var(--line);border-radius:7px;font-size:12px"></td>
-      <td><div class="row-act" style="flex-wrap:wrap;gap:4px">
-        ${o.state==='confirmed' ? `<button class="btn sm line" data-startprep="${o.id}">بدء التجهيز</button>` : ''}
-        <button class="btn sm" data-markshipped="${o.id}">تم الشحن</button>
-      </div></td>
-    </tr>`).join('');
   return `
   <div class="page-head">
-    <div><div class="eyebrow">${esc(client.name)}</div><h2>إدارة المخزون والشحن</h2></div>
+    <div><div class="eyebrow">${esc(client.name)}</div><h2>إدارة المخزون</h2></div>
     <div class="spacer"></div>
     <div class="seg" id="clientTabs">
       <button data-ctab="dash" aria-pressed="false">الداشبورد</button>
@@ -1652,15 +1679,9 @@ function clientInventoryView(client){
     <button class="btn sm" id="openRestockBtn">+ إضافة كميات جديدة</button>
     <button class="btn sm line" id="openStockLogBtn">تاريخ الإضافات</button>
   </div>
+  <p class="hint" style="margin-bottom:14px">"الحد الأدنى" هو الرقم اللي تحته بيظهر تحذير نقص الكمية — عدّله حسب كل منتج.</p>
   ${lowStockSection}
-  ${okStock.map(stockRow).join('') || (lowStock.length ? '' : '<p class="hint">لسه مفيش منتجات مسجّلة — ضيفها من تبويب "منتجاتي".</p>')}
-
-  <div class="section-title">جاهز للتغليف والشحن</div>
-  <p class="hint" style="margin-bottom:14px">الأوردرات اللي "تم تأكيدها" وجاهزة للتغليف والشحن. أدخل رقم البوليصة ودوس "تم الشحن" عشان تتحول للمرحلة الجاية.</p>
-  <div class="table-wrap"><table>
-    <thead><tr><th>التاريخ</th><th>العميل</th><th>المنتج</th><th>الحالة</th><th>رقم البوليصة</th><th></th></tr></thead>
-    <tbody>${rows || '<tr><td colspan="6" class="empty">مفيش أوردرات جاهزة للتغليف/الشحن دلوقتي.</td></tr>'}</tbody>
-  </table></div>`;
+  ${okStock.map(stockRow).join('') || (lowStock.length ? '' : '<p class="hint">لسه مفيش منتجات مسجّلة — ضيفها من تبويب "منتجاتي".</p>')}`;
 }
 
 /* شاشة العميل: خدمة العملاء — تأكيد الأوردرات ومتابعتها لحد ما تتجهّز للشحن */
@@ -1919,6 +1940,36 @@ function askCosts(order){
       const sv = ship.value, ov = wrap.querySelector('#ac_other').value;
       if(sv === ''){ toast('اكتب سعر الشحن'); return; }
       close({ shippingCost: Number(sv)||0, otherCost: Number(ov)||0 });
+    };
+  });
+}
+
+/** بيفتح تاريخ التأجيل فوراً أول ما تختار حالة "مؤجل" — من غير التاريخ ما ينفعش نأجّل */
+function askDeferDate(order){
+  return new Promise(resolve=>{
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'position:fixed;inset:0;background:rgba(18,33,43,.55);z-index:200;display:grid;place-items:center;padding:18px';
+    const minDate = today();
+    wrap.innerHTML = `
+      <div class="card" style="max-width:380px;width:100%;box-shadow:var(--shadow)">
+        <h3 style="font-size:16px;margin-bottom:4px">تأجيل الأوردر</h3>
+        <p class="hint" style="margin-bottom:14px">${esc(order.name||'')} — اختار اليوم اللي هيرجع فيه الأوردر تلقائي لـ"في انتظار التأكيد".</p>
+        <div class="field"><label>تاريخ الرجوع</label>
+          <input id="df_date" type="date" min="${minDate}" value="${minDate}"></div>
+        <div class="form-actions">
+          <button class="btn sm" id="df_ok">تأجيل</button>
+          <button class="btn sm line" id="df_cancel">إلغاء</button>
+        </div>
+      </div>`;
+    document.body.appendChild(wrap);
+    const close = v => { document.body.removeChild(wrap); resolve(v); };
+    wrap.querySelector('#df_cancel').onclick = ()=> close(null);
+    wrap.onclick = ev => { if(ev.target === wrap) close(null); };
+    const dt = wrap.querySelector('#df_date');
+    dt.focus();
+    wrap.querySelector('#df_ok').onclick = ()=>{
+      if(!dt.value){ toast('اختار تاريخ الرجوع'); return; }
+      close(dt.value);
     };
   });
 }
@@ -2393,26 +2444,40 @@ function adminOverview(){
 let orderFilter = 'all';
 let orderStateFilter = 'all';
 let orderFormClient = null;
-/* قسم خدمة العملاء — عرض ثلاثي: في انتظار التأكيد / التجهيز والتغليف / جاري الشحن
-   القسم ده عرض بس — التغيير الفعلي بيحصل من تبويب "الأوردرات" العادي، وأي أوردر
-   بيختفي تلقائي من عموده أول ما حالته تتغيّر (مفيش زرارات تحرك هنا خالص) */
+let csClientFilter = null;
+/* رمز مميز لكل متجر في شريط الأيقونات — بيدور حسب ترتيب العملاء */
+const STORE_ICONS = ['🏬','🛍️','📦','🧵','👗','🧴','🧸','💄','👜','⌚'];
+function storeIcon(idx){ return STORE_ICONS[idx % STORE_ICONS.length]; }
+
+/* قسم خدمة العملاء — أيقونة لكل متجر فوق، واختيار متجر يعرض أوردراته بمراحله.
+   التغيير الفعلي بيحصل من الكارت نفسه، وأي أوردر بيختفي تلقائي من عموده أول ما حالته تتغيّر */
 function adminCustomerService(){
+  if(csClientFilter===null) csClientFilter = (DB.clients[0] && DB.clients[0].id) || 'all';
   const cols = [
     ['pending', 'في انتظار التأكيد', 'wait'],
     ['confirmed', 'التجهيز والتغليف', 'mid'],
     ['preparing', 'جاري الشحن', 'mid']
   ];
+  const scoped = (DB.orders||[]).filter(o=> csClientFilter==='all' || o.clientId===csClientFilter);
+  const deferredList = scoped.filter(o=>o.state==='deferred')
+    .sort((a,b)=> String(a.deferUntil||'') < String(b.deferUntil||'') ? -1 : 1);
+  const stOpts = o => Object.keys(ORDER_STATE).map(k=>
+      `<option value="${k}" ${o.state===k?'selected':''}>${ORDER_STATE[k].ar}</option>`).join('');
   const cardFor = o => {
     const c = DB.clients.find(x=>x.id===o.clientId);
-    const stOpts = Object.keys(ORDER_STATE).map(k=>
-      `<option value="${k}" ${o.state===k?'selected':''}>${ORDER_STATE[k].ar}</option>`).join('');
-    return `<div class="card" style="margin-bottom:8px;padding:10px 12px">
+    const returnedFromDefer = o.state==='pending' && o.deferUntil && o.deferUntil<=today();
+    return `<div class="card" style="margin-bottom:8px;padding:10px 12px;${returnedFromDefer?'border:2px solid var(--gold);background:var(--gold-soft)':''}">
+      ${returnedFromDefer ? `<div class="pill" style="background:var(--gold);color:#fff;margin-bottom:6px">⏰ رجع من التأجيل (كان لحد ${arDate(o.deferUntil)})</div>` : ''}
       <div style="font-weight:700;font-size:13px">${esc(o.name)}</div>
-      <div class="hint" style="font-size:11.5px">${esc(c?c.name.split(' —')[0]:'—')} · ${esc(o.gov||'')} · ${esc(o.phone)}</div>
-      ${o.address ? `<div class="hint" style="font-size:11.5px;margin-top:2px">📍 ${esc(o.address)}</div>` : ''}
-      ${o.note ? `<div class="hint" style="font-size:11.5px;margin-top:2px;color:var(--gold-ink)">📝 ${esc(o.note)}</div>` : ''}
-      <div class="hint mono" style="font-size:10.5px;margin:3px 0 8px">${esc(shortOrderRef(o.id))} · ${arDate(o.date)}</div>
-      <select data-st="${o.id}" style="width:100%;padding:5px 8px;border:1px solid var(--line);border-radius:7px;font-size:12px;margin-bottom:5px">${stOpts}</select>
+      <div class="hint mono" style="font-size:11.5px">${esc(o.phone)}</div>
+      <div class="hint" style="font-size:11.5px;margin-top:2px">📍 ${esc(o.gov||'')}${o.gov&&o.address?' — ':''}${esc(o.address||'')}</div>
+      <div style="font-size:12.5px;margin-top:4px"><b>${esc(o.product||'')}</b>${o.qty>1?` × ${num(o.qty)}`:''}
+        ${o.productNote?`<div class="hint" style="font-size:11px">${esc(o.productNote)}</div>`:''}</div>
+      ${csClientFilter==='all' ? `<div class="hint" style="font-size:11px;margin-top:2px">${esc(c?c.name.split(' —')[0]:'—')}</div>` : ''}
+      <div class="hint mono" style="font-size:10.5px;margin:3px 0 6px">${esc(shortOrderRef(o.id))} · ${arDate(o.date)}</div>
+      <input data-noteinput="${o.id}" value="${esc(o.note||'')}" placeholder="ملاحظة على الأوردر"
+        style="width:100%;padding:5px 8px;border:1px solid var(--line);border-radius:7px;font-size:12px;margin-bottom:5px">
+      <select data-st="${o.id}" style="width:100%;padding:5px 8px;border:1px solid var(--line);border-radius:7px;font-size:12px;margin-bottom:5px">${stOpts(o)}</select>
       <input class="mono" data-awb="${o.id}" value="${esc(o.awb||'')}" placeholder="رقم البوليصة"
         style="width:100%;padding:5px 8px;border:1px solid var(--line);border-radius:7px;font-size:12px;margin-bottom:6px">
       <div class="row-act" style="flex-wrap:wrap;gap:4px">
@@ -2420,6 +2485,22 @@ function adminCustomerService(){
         <button class="icon-btn" data-contact="${o.id}">تواصل</button>
         <a class="icon-btn" href="${telLink(o.phone)}">مكالمة</a>
         <button class="icon-btn" data-wa="${o.id}">واتساب</button>
+        <button class="icon-btn" data-notesave="${o.id}">حفظ الملاحظة</button>
+        ${may('orders_delete') ? `<button class="icon-btn" data-delorder="${o.id}" style="color:var(--brick)">حذف</button>` : ''}
+      </div>
+    </div>`;
+  };
+  const deferredCardFor = o => {
+    const c = DB.clients.find(x=>x.id===o.clientId);
+    return `<div class="card" style="margin-bottom:8px;padding:10px 12px">
+      <div style="font-weight:700;font-size:13px">${esc(o.name)}</div>
+      <div class="hint mono" style="font-size:11.5px">${esc(o.phone)}</div>
+      ${csClientFilter==='all' ? `<div class="hint" style="font-size:11px">${esc(c?c.name.split(' —')[0]:'—')}</div>` : ''}
+      <div style="font-size:12.5px;margin-top:4px"><b>${esc(o.product||'')}</b>${o.qty>1?` × ${num(o.qty)}`:''}</div>
+      <div class="pill wait" style="margin-top:6px">هيرجع يوم ${arDate(o.deferUntil)}</div>
+      <div class="row-act" style="flex-wrap:wrap;gap:4px;margin-top:8px">
+        <select data-st="${o.id}" style="padding:5px 8px;border:1px solid var(--line);border-radius:7px;font-size:12px">${stOpts(o)}</select>
+        <button class="icon-btn" data-hist="${o.id}">تاريخ</button>
       </div>
     </div>`;
   };
@@ -2427,10 +2508,14 @@ function adminCustomerService(){
   <div class="page-head">
     <div><h2>خدمة العملاء</h2></div>
   </div>
+  <div class="seg" id="csStoreTabs" style="flex-wrap:wrap;margin-bottom:14px">
+    <button data-cs="all" aria-pressed="${csClientFilter==='all'}">🗂️ كل المتاجر</button>
+    ${DB.clients.map((c,i)=>`<button data-cs="${c.id}" aria-pressed="${csClientFilter===c.id}">${storeIcon(i)} ${esc(c.name.split(' —')[0])}</button>`).join('')}
+  </div>
   <p class="hint" style="margin-bottom:14px">غيّر حالة أي أوردر من أي كارت — بينتقل تلقائي للعمود الصح، ويختفي من مكانه القديم.</p>
   <div class="grid g3">
     ${cols.map(([state,label,cls])=>{
-      const list = (DB.orders||[]).filter(o=>o.state===state).sort((a,b)=> a.date<b.date?1:-1);
+      const list = scoped.filter(o=>o.state===state).sort((a,b)=> a.date<b.date?1:-1);
       return `<div>
         <div class="section-title" style="margin-top:0;display:flex;align-items:center;gap:8px">
           ${esc(label)} <span class="pill ${cls}">${num(list.length)}</span>
@@ -2440,6 +2525,12 @@ function adminCustomerService(){
         </div>
       </div>`;
     }).join('')}
+  </div>
+  <div class="section-title" style="display:flex;align-items:center;gap:8px">
+    الطلبات المؤجلة <span class="pill off">${num(deferredList.length)}</span>
+  </div>
+  <div class="grid g3">
+    ${deferredList.map(deferredCardFor).join('') || '<p class="hint">مفيش طلبات مؤجلة دلوقتي.</p>'}
   </div>`;
 }
 
@@ -2464,7 +2555,8 @@ function adminOrders(){
       <td><span class="hint" style="font-size:11px">${esc(c?c.name:'—')}</span><br>
         <b>${esc(o.name)}</b><br><span class="hint">${esc(o.gov||'')} · ${esc(o.phone)}</span>
         ${o.address ? `<br><span class="hint" style="font-size:11px">📍 ${esc(o.address)}</span>` : ''}
-        ${o.note ? `<br><span class="hint" style="font-size:11px;color:var(--gold-ink)">📝 ${esc(o.note)}</span>` : ''}</td>
+        ${o.note ? `<br><span class="hint" style="font-size:11px;color:var(--gold-ink)">📝 ${esc(o.note)}</span>` : ''}
+        ${o.product ? `<br><span class="hint" style="font-size:11px">${esc(o.product)}${o.qty>1?` × ${num(o.qty)}`:''}${o.productNote?' — '+esc(o.productNote):''}</span>` : ''}</td>
       <td><span class="pill ${!/^(EO-|WA-)/.test(o.id)?'wait':'mid'}">${esc(o.source||'المتجر')}</span></td>
       <td class="num">${money(o.total)} ${c?c.currency:''}<br>
         <span class="hint" style="font-size:11px">شحن ${o.shippingCost!=null?money(o.shippingCost):'—'}</span></td>
@@ -2478,6 +2570,7 @@ function adminOrders(){
         <button class="icon-btn" data-contact="${o.id}" title="محاولات التواصل">تواصل</button>
         <a class="icon-btn" href="${telLink(o.phone)}" title="اتصال">مكالمة</a>
         <button class="icon-btn" data-wa="${o.id}" title="ابعت واتساب">واتساب</button>
+        ${may('orders_delete') ? `<button class="icon-btn" data-delorder="${o.id}" title="حذف الأوردر" style="color:var(--brick)">حذف</button>` : ''}
       </div></td>
     </tr>`;}).join('');
   return `
@@ -3846,11 +3939,14 @@ function bindClientInventory(client){
   });
   document.querySelectorAll('[data-savestock]').forEach(b=> b.onclick = async ()=>{
     const input = document.querySelector('[data-stockedit="'+b.dataset.savestock+'"]');
+    const thresholdInput = document.querySelector('[data-thresholdedit="'+b.dataset.savestock+'"]');
     const stock = Math.max(0, +input.value || 0);
+    const body = { stock };
+    if(thresholdInput) body.lowStockThreshold = Math.max(0, +thresholdInput.value || 0);
     try{
-      await api('/api/products/'+encodeURIComponent(b.dataset.savestock)+'/stock', {method:'PATCH', body:JSON.stringify({stock})});
+      await api('/api/products/'+encodeURIComponent(b.dataset.savestock)+'/stock', {method:'PATCH', body:JSON.stringify(body)});
       const p = DB.products.find(x=>x.id===b.dataset.savestock);
-      if(p) p.stock = stock;
+      if(p){ p.stock = stock; if(thresholdInput) p.lowStockThreshold = body.lowStockThreshold; }
       paint(true); toast('اتحفظت الكمية');
     }catch(e){ toast(e.message); }
   });
@@ -3860,10 +3956,17 @@ function bindClientService(){
   document.querySelectorAll('[data-svcst]').forEach(el=> el.onchange = async ()=>{
     const o = DB.orders.find(x=>x.id===el.dataset.svcst);
     const next = el.value;
+    const body = { state: next };
+    if(next === 'deferred'){
+      const deferUntil = await askDeferDate(o);
+      if(!deferUntil){ paint(true); return; }
+      body.deferUntil = deferUntil;
+      o.deferUntil = deferUntil;
+    }
     try{
-      await api('/api/orders/'+encodeURIComponent(o.id), {method:'PATCH', body:JSON.stringify({state:next})});
+      await api('/api/orders/'+encodeURIComponent(o.id), {method:'PATCH', body:JSON.stringify(body)});
       o.state = next; o.checkpoint = STATE_TEXT[next] || '';
-      paint(true); toast('الحالة اتغيّرت');
+      paint(true); toast(next==='deferred' ? 'اتأجّل الأوردر لحد '+arDate(body.deferUntil) : 'الحالة اتغيّرت');
     }catch(e){ toast(e.message); paint(true); }
   });
   document.querySelectorAll('[data-svchist]').forEach(b=> b.onclick = ()=>{
@@ -3877,6 +3980,15 @@ function bindClientService(){
   document.querySelectorAll('[data-svcwa]').forEach(b=> b.onclick = ()=>{
     const o = DB.orders.find(x=>x.id===b.dataset.svcwa);
     if(o) showWhatsAppModal(o, null);
+  });
+  document.querySelectorAll('[data-notesave]').forEach(b=> b.onclick = async ()=>{
+    const o = DB.orders.find(x=>x.id===b.dataset.notesave);
+    const input = document.querySelector('[data-noteinput="'+b.dataset.notesave+'"]');
+    const note = input ? input.value.trim() : '';
+    try{
+      await api('/api/orders/'+encodeURIComponent(o.id), {method:'PATCH', body:JSON.stringify({note})});
+      o.note = note; paint(true); toast('اتحفظت الملاحظة');
+    }catch(e){ toast(e.message); }
   });
 }
 
@@ -3892,12 +4004,17 @@ function bindOrderActionButtons(){
       o.shippingCost = costs.shippingCost; o.otherCost = costs.otherCost;
     } else if(next === 'collected'){
       body.shippingCost = o.shippingCost; body.otherCost = o.otherCost;
+    } else if(next === 'deferred'){
+      const deferUntil = await askDeferDate(o);
+      if(!deferUntil){ paint(true); return; }      /* لغى — نرجّع القايمة زي ما كانت */
+      body.deferUntil = deferUntil;
+      o.deferUntil = deferUntil;
     }
     o.state = next; o.checkpoint = STATE_TEXT[next] || '';
     try{
       if(ONLINE) await api('/api/orders/'+encodeURIComponent(o.id), {method:'PATCH', body:JSON.stringify(body)});
       else await persist();
-      paint(true); toast('الحالة اتغيّرت');
+      paint(true); toast(next==='deferred' ? 'اتأجّل الأوردر لحد '+arDate(body.deferUntil) : 'الحالة اتغيّرت');
     }catch(e){ toast(e.message); paint(true); }
   });
   document.querySelectorAll('[data-awb]').forEach(el=> el.onchange = async ()=>{
@@ -3920,6 +4037,25 @@ function bindOrderActionButtons(){
     const o = DB.orders.find(x=>x.id===b.dataset.wa);
     const c = o && DB.clients.find(x=>x.id===o.clientId);
     if(o) showWhatsAppModal(o, c && c.name);
+  });
+  document.querySelectorAll('[data-notesave]').forEach(b=> b.onclick = async ()=>{
+    const o = DB.orders.find(x=>x.id===b.dataset.notesave);
+    const input = document.querySelector('[data-noteinput="'+b.dataset.notesave+'"]');
+    const note = input ? input.value.trim() : '';
+    try{
+      await api('/api/orders/'+encodeURIComponent(o.id), {method:'PATCH', body:JSON.stringify({note})});
+      o.note = note; paint(true); toast('اتحفظت الملاحظة');
+    }catch(e){ toast(e.message); }
+  });
+  document.querySelectorAll('[data-delorder]').forEach(b=> b.onclick = async ()=>{
+    const o = DB.orders.find(x=>x.id===b.dataset.delorder);
+    if(!o) return;
+    if(!confirm(`متأكد إنك عايز تحذف أوردر "${o.name||''}"؟ الخطوة دي نهائية.`)) return;
+    try{
+      await api('/api/orders/'+encodeURIComponent(o.id), {method:'DELETE'});
+      DB.orders = DB.orders.filter(x=>x.id!==o.id);
+      paint(true); toast('اتحذف الأوردر');
+    }catch(e){ toast(e.message); }
   });
 }
 
@@ -4005,6 +4141,7 @@ function bindAdmin(){
   }
 
   if(adminTab==='service'){
+    document.querySelectorAll('#csStoreTabs button').forEach(b=> b.onclick = ()=>{ csClientFilter=b.dataset.cs; paint(); });
     bindOrderActionButtons();
   }
 
