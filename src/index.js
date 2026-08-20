@@ -128,7 +128,7 @@ function normalizePhone(raw) {
 /* ---------- الأدوار والصلاحيات ---------- */
 /* كل دور بياخد أقل صلاحيات تكفّي شغله — مش أكتر */
 const ROLES = {
-  admin:      { label:'مدير',          perms:['orders','entries','finance','clients','users','settings'] },
+  admin:      { label:'مدير',          perms:['orders','orders_delete','entries','finance','clients','users','settings'] },
   ops:        { label:'تشغيل وشحن',    perms:['orders','entries'] },
   support:    { label:'خدمة عملاء',    perms:['orders'] },
   accountant: { label:'محاسب',         perms:['finance','orders_view'] },
@@ -281,21 +281,37 @@ async function saveState(env, state) {
   ).bind(JSON.stringify(toStore), new Date().toISOString()).run();
 }
 
-const ORDER_COLS = 'id, client_id, ref, date, name, phone, gov, address, product, product_id, unit_price, qty, total, product_cost, shipping_cost, other_cost, source, note, awb, state, checkpoint, signed_at, collected_at, contact_log, history, created_at';
+const ORDER_COLS = 'id, client_id, ref, date, name, phone, gov, address, product, product_id, product_note, unit_price, qty, total, product_cost, shipping_cost, other_cost, source, note, awb, state, checkpoint, signed_at, collected_at, defer_until, contact_log, history, created_at';
 
 const parseJsonArr = s => { try { const v = JSON.parse(s); return Array.isArray(v) ? v : []; } catch { return []; } };
 
 const rowToOrder = r => ({
   id: r.id, clientId: r.client_id, ref: r.ref, date: r.date, name: r.name, phone: r.phone,
-  gov: r.gov, address: r.address, product: r.product, productId: r.product_id,
+  gov: r.gov, address: r.address, product: r.product, productId: r.product_id, productNote: r.product_note,
   unitPrice: r.unit_price, qty: r.qty, total: r.total,
   productCost: r.product_cost || 0, shippingCost: r.shipping_cost, otherCost: r.other_cost,
   source: r.source, note: r.note, awb: r.awb, state: r.state,
-  checkpoint: r.checkpoint, signedAt: r.signed_at, collectedAt: r.collected_at,
+  checkpoint: r.checkpoint, signedAt: r.signed_at, collectedAt: r.collected_at, deferUntil: r.defer_until,
   contactLog: parseJsonArr(r.contact_log), history: parseJsonArr(r.history)
 });
 
+/** الأوردرات اللي كانت مؤجّلة ووصل معادها ترجع تلقائي لـ"جاري التأكيد" —
+    بيتنفّذ في أول أي قراءة عشان محتاجين مجدول (cron) منفصل */
+async function returnDueDeferredOrders(env) {
+  const today = new Date().toISOString().slice(0, 10);
+  const { results } = await env.DB.prepare(
+    "SELECT id, history FROM orders WHERE state = 'deferred' AND defer_until IS NOT NULL AND defer_until <= ?"
+  ).bind(today).all();
+  for (const r of (results || [])) {
+    const history = parseJsonArr(r.history);
+    history.push({ state: 'pending', at: new Date().toISOString(), note: 'رجع تلقائي من التأجيل' });
+    await env.DB.prepare('UPDATE orders SET state = ?, checkpoint = ?, history = ? WHERE id = ?')
+      .bind('pending', STATE_TEXT.pending, JSON.stringify(history), r.id).run();
+  }
+}
+
 async function listOrders(env, clientId) {
+  await returnDueDeferredOrders(env);
   const q = clientId
     ? env.DB.prepare(`SELECT ${ORDER_COLS} FROM orders WHERE client_id = ? ORDER BY date DESC LIMIT 2000`).bind(clientId)
     : env.DB.prepare(`SELECT ${ORDER_COLS} FROM orders ORDER BY date DESC LIMIT 2000`);
@@ -306,7 +322,7 @@ async function listOrders(env, clientId) {
 async function insertOrder(env, o) {
   const initialHistory = o.history || [{ state: o.state || 'pending', at: new Date().toISOString() }];
   await env.DB.prepare(
-    `INSERT INTO orders (${ORDER_COLS}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    `INSERT INTO orders (${ORDER_COLS}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
      ON CONFLICT(id) DO UPDATE SET
        state = excluded.state, checkpoint = excluded.checkpoint,
        awb = COALESCE(excluded.awb, orders.awb),
@@ -314,15 +330,17 @@ async function insertOrder(env, o) {
        shipping_cost = COALESCE(excluded.shipping_cost, orders.shipping_cost),
        other_cost = COALESCE(excluded.other_cost, orders.other_cost),
        signed_at = COALESCE(excluded.signed_at, orders.signed_at),
-       collected_at = COALESCE(excluded.collected_at, orders.collected_at)`
+       collected_at = COALESCE(excluded.collected_at, orders.collected_at),
+       product_note = COALESCE(excluded.product_note, orders.product_note),
+       defer_until = COALESCE(excluded.defer_until, orders.defer_until)`
   ).bind(
     o.id, o.clientId, o.ref || null, o.date, o.name || '', o.phone || '', o.gov || '', o.address || '',
-    o.product || '', o.productId || null, o.unitPrice || 0, o.qty || 1, o.total || 0,
+    o.product || '', o.productId || null, o.productNote || null, o.unitPrice || 0, o.qty || 1, o.total || 0,
     o.productCost || 0,
     o.shippingCost === undefined || o.shippingCost === null ? null : Number(o.shippingCost),
     o.otherCost === undefined || o.otherCost === null ? null : Number(o.otherCost),
     o.source || '', o.note || '', o.awb || null, o.state || 'pending', o.checkpoint || '',
-    o.signedAt || null, o.collectedAt || null,
+    o.signedAt || null, o.collectedAt || null, o.deferUntil || null,
     JSON.stringify(o.contactLog || []), JSON.stringify(initialHistory), new Date().toISOString()
   ).run();
   return o;
@@ -415,24 +433,60 @@ async function listProducts(env, clientId) {
   return (results || []).map(rowToProduct);
 }
 
-/** منتجات إيزي أوردرز — لو مش موجودة في كتالوج المتجر، تتسجّل تلقائي (بدون تكلفة، الإدارة تحطها بعدين) */
+/** منتجات إيزي أوردرز — لو مش موجودة في كتالوج المتجر تتسجّل تلقائي (بدون تكلفة، الإدارة تحطها بعدين)،
+    ولو موجودة وسعرها اتغيّر في إيزي أوردرز بيتحدّث هنا كمان (التكلفة والمخزون بيفضلوا زي ما هم — دول بيتحكم فيهم يدوي) */
 async function ensureProductsFromCart(env, clientId, cartItems) {
   const existing = await listProducts(env, clientId);
   const byName = new Map(existing.map(p => [String(p.name || '').trim().toLowerCase(), p]));
   for (const item of (cartItems || [])) {
     const name = item.product && item.product.name ? String(item.product.name).trim() : '';
-    if (!name || byName.has(name.toLowerCase())) continue;
+    if (!name) continue;
     const price = Number(item.product.price ?? item.unit_price ?? item.price) || 0;
-    const id = 'P-' + crypto.randomUUID().slice(0, 8).toUpperCase();
-    await env.DB.prepare(
-      `INSERT INTO products (${PRODUCT_COLS}) VALUES (?,?,?,?,?,?,?,?,?,?)`
-    ).bind(id, clientId, name, '', price, 0, 1, 0, 5, new Date().toISOString()).run();
-    byName.set(name.toLowerCase(), { id, name });
+    const match = byName.get(name.toLowerCase());
+    if (!match) {
+      const id = 'P-' + crypto.randomUUID().slice(0, 8).toUpperCase();
+      await env.DB.prepare(
+        `INSERT INTO products (${PRODUCT_COLS}) VALUES (?,?,?,?,?,?,?,?,?,?)`
+      ).bind(id, clientId, name, '', price, 0, 1, 0, 5, new Date().toISOString()).run();
+      byName.set(name.toLowerCase(), { id, name, price });
+    } else if (price && Number(match.price) !== price) {
+      await env.DB.prepare('UPDATE products SET price = ? WHERE id = ?').bind(price, match.id).run();
+      match.price = price;
+    }
   }
 }
 
+/** بيلمّ ملاحظات المنتج (لون/مقاس/اختيارات) من عناصر السلة لأي شكل بيبعته إيزي أوردرز،
+    ويرجّعها كسطر واحد يتحط على الأوردر */
+function productNoteFromCart(cartItems) {
+  const parts = [];
+  for (const item of (cartItems || [])) {
+    const name = item.product && item.product.name ? String(item.product.name).trim() : '';
+    const variantBits = [];
+    const variantSources = [].concat(
+      item.variations || item.variation || item.attributes || item.options || item.selected_options || []
+    );
+    if (Array.isArray(variantSources)) {
+      variantSources.forEach(v => {
+        if (!v) return;
+        if (typeof v === 'string') variantBits.push(v);
+        else {
+          const label = v.name || v.attribute || v.option || '';
+          const value = v.value || v.option_value || v.selected || '';
+          if (label || value) variantBits.push([label, value].filter(Boolean).join(': '));
+        }
+      });
+    }
+    if (item.color) variantBits.push(`اللون: ${item.color}`);
+    if (item.size) variantBits.push(`المقاس: ${item.size}`);
+    if (item.notes || item.note) variantBits.push(String(item.notes || item.note));
+    if (variantBits.length) parts.push(`${name ? name + ' — ' : ''}${variantBits.join(' / ')}`);
+  }
+  return parts.join(' | ');
+}
+
 /* ---------- توحيد الحالات ---------- */
-const ORDER_STATES = ['pending','confirmed','preparing','shipped','signed','collected','returned','cancelled'];
+const ORDER_STATES = ['pending','confirmed','preparing','shipped','signed','collected','returned','cancelled','deferred'];
 const STATE_TEXT = {
   pending:   'جاري التأكيد',
   confirmed: 'تم تأكيد الطلب',
@@ -441,7 +495,8 @@ const STATE_TEXT = {
   signed:    'تم التسليم — تحصيل منتظر',
   collected: 'تم التحصيل',
   returned:  'مرتجع',
-  cancelled: 'تم إلغاء الطلب'
+  cancelled: 'تم إلغاء الطلب',
+  deferred:  'مؤجل'
 };
 /* signed مش نهائية: J&T سلّم الشحنة بس الفلوس لسه ما وصلتش */
 const FINAL = ['collected', 'returned', 'cancelled'];
@@ -1062,7 +1117,7 @@ async function handleApi(request, env, url, path) {
     const isOrderStaff = isStaff(user) && can(user, 'orders');
 
     if (request.method === 'DELETE') {
-      if (!isOrderStaff) return json({ error: 'مش مسموح' }, 403);
+      if (!isStaff(user) || !can(user, 'orders_delete')) return json({ error: 'مش مسموح — محتاج صلاحية حذف الأوردرات' }, 403);
       await env.DB.prepare('DELETE FROM orders WHERE id = ?').bind(id).run();
       return json({ ok: true });
     }
@@ -1070,7 +1125,7 @@ async function handleApi(request, env, url, path) {
     if (request.method === 'PATCH') {
       const p = await request.json();
       const cur = await env.DB.prepare(
-        'SELECT client_id, state, awb, shipping_cost, other_cost, signed_at, history, name, phone FROM orders WHERE id = ?'
+        'SELECT client_id, state, awb, shipping_cost, other_cost, signed_at, history, name, phone, defer_until FROM orders WHERE id = ?'
       ).bind(id).first();
       if (!cur) return json({ error: 'أوردر غير موجود' }, 404);
 
@@ -1094,12 +1149,22 @@ async function handleApi(request, env, url, path) {
         const inventoryOk = isInventoryClient
           && ['confirmed', 'preparing'].includes(cur.state) && ['preparing', 'shipped'].includes(st);
         const serviceOk = isServiceClient
-          && ['pending', 'confirmed', 'preparing'].includes(cur.state) && ['pending', 'confirmed', 'preparing'].includes(st);
+          && ['pending', 'confirmed', 'preparing', 'deferred'].includes(cur.state)
+          && ['pending', 'confirmed', 'preparing', 'deferred'].includes(st);
         if (!inventoryOk && !serviceOk) {
           return json({ error: 'الحالة دي برّه الصلاحية المتاحة ليك' }, 403);
         }
       }
       if (!ORDER_STATES.includes(st)) return json({ error: 'حالة غير معروفة' }, 400);
+
+      /* التأجيل لازم يجيله تاريخ رجوع صحيح */
+      let deferUntil = cur.defer_until || null;
+      if (st === 'deferred') {
+        if (!p.deferUntil || !/^\d{4}-\d{2}-\d{2}$/.test(p.deferUntil)) {
+          return json({ error: 'حدد تاريخ التأجيل الأول' }, 400);
+        }
+        deferUntil = p.deferUntil;
+      }
 
       const num = v => (v === undefined || v === null || v === '') ? null : Number(v);
       let ship  = p.shippingCost !== undefined ? num(p.shippingCost) : cur.shipping_cost;
@@ -1115,11 +1180,14 @@ async function handleApi(request, env, url, path) {
         ? (p.signedAt || cur.signed_at || stamp) : null;
 
       const history = parseJsonArr(cur.history);
-      if (st !== cur.state) history.push({ state: st, at: new Date().toISOString() });
+      if (st !== cur.state) history.push({
+        state: st, at: new Date().toISOString(),
+        note: st === 'deferred' ? `مؤجل لحد ${deferUntil}` : undefined
+      });
 
       await env.DB.prepare(
-        'UPDATE orders SET state = ?, awb = ?, checkpoint = ?, shipping_cost = ?, other_cost = ?, signed_at = ?, collected_at = ?, history = ? WHERE id = ?'
-      ).bind(st, awb, STATE_TEXT[st] || '', ship, other, signedAt, collectedAt, JSON.stringify(history), id).run();
+        'UPDATE orders SET state = ?, awb = ?, checkpoint = ?, shipping_cost = ?, other_cost = ?, signed_at = ?, collected_at = ?, defer_until = ?, history = ? WHERE id = ?'
+      ).bind(st, awb, STATE_TEXT[st] || '', ship, other, signedAt, collectedAt, deferUntil, JSON.stringify(history), id).run();
 
       /* رسالة "جاري شحن طلبك" لما الأوردر يتحول لـ"جاري الشحن" */
       if (st === 'preparing' && cur.state !== 'preparing') {
@@ -1128,7 +1196,7 @@ async function handleApi(request, env, url, path) {
           message: shippingMessageFor({ id, name: cur.name, awb }), kind: 'shipping'
         });
       }
-      return json({ ok: true, state: st, history });
+      return json({ ok: true, state: st, history, deferUntil });
     }
   }
 
@@ -1325,6 +1393,12 @@ async function handleApi(request, env, url, path) {
     }
     const b = await request.json().catch(() => ({}));
     const stock = Math.max(0, Number(b.stock) || 0);
+    if (b.lowStockThreshold !== undefined) {
+      const threshold = Math.max(0, Number(b.lowStockThreshold) || 0);
+      await env.DB.prepare('UPDATE products SET stock = ?, low_stock_threshold = ? WHERE id = ?')
+        .bind(stock, threshold, pid).run();
+      return json({ ok: true, stock, lowStockThreshold: threshold });
+    }
     await env.DB.prepare('UPDATE products SET stock = ? WHERE id = ?').bind(stock, pid).run();
     return json({ ok: true, stock });
   }
@@ -1959,7 +2033,7 @@ async function handleApi(request, env, url, path) {
           id, clientId: b.clientId, ref: r.ref ? String(r.ref).trim() : null,
           date: (r.date || new Date().toISOString()).slice(0, 10),
           name: r.name || '', phone: String(r.phone || ''), gov: r.gov || '', address: r.address || '',
-          product: r.product || '', productId: match ? match.id : null, qty,
+          product: r.product || '', productId: match ? match.id : null, productNote: r.productNote || '', qty,
           unitPrice: Number(r.unitPrice) || 0, total: Number(r.total) || 0,
           productCost: cost,
           shippingCost: r.shippingCost === undefined ? null : Number(r.shippingCost),
@@ -2146,6 +2220,7 @@ async function handleWebhook(request, env, path) {
       date: String(p.created_at || new Date().toISOString()).slice(0, 10),
       name: p.full_name || '', phone: p.phone || '', gov: p.government || '', address: p.address || '',
       product: (p.cart_items || []).map(c => c.product && c.product.name).filter(Boolean).join(' + '),
+      productNote: productNoteFromCart(p.cart_items),
       qty: (p.cart_items || []).reduce((s, c) => s + (Number(c.quantity) || 1), 0) || 1,
       total: Number(p.total_cost) || 0, source: 'المتجر (إيزي أوردرز)', note: '',
       awb: null, state: mapEasyOrdersStatus(p.status), checkpoint: STATE_TEXT[mapEasyOrdersStatus(p.status)]
