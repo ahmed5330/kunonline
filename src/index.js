@@ -281,13 +281,13 @@ async function saveState(env, state) {
   ).bind(JSON.stringify(toStore), new Date().toISOString()).run();
 }
 
-const ORDER_COLS = 'id, client_id, ref, customer_id, date, name, phone, gov, address, product, product_id, product_note, unit_price, qty, total, discount_amount, coupon_code, product_cost, shipping_cost, other_cost, source, note, awb, state, checkpoint, signed_at, collected_at, defer_until, refund_amount, return_type, restocked, contact_log, history, created_at';
+const ORDER_COLS = 'id, client_id, ref, customer_id, date, name, phone, gov, address, product, product_id, variant_id, product_note, unit_price, qty, total, discount_amount, coupon_code, product_cost, shipping_cost, other_cost, source, note, awb, state, checkpoint, signed_at, collected_at, defer_until, refund_amount, return_type, restocked, contact_log, history, created_at';
 
 const parseJsonArr = s => { try { const v = JSON.parse(s); return Array.isArray(v) ? v : []; } catch { return []; } };
 
 const rowToOrder = r => ({
   id: r.id, clientId: r.client_id, ref: r.ref, customerId: r.customer_id, date: r.date, name: r.name, phone: r.phone,
-  gov: r.gov, address: r.address, product: r.product, productId: r.product_id, productNote: r.product_note,
+  gov: r.gov, address: r.address, product: r.product, productId: r.product_id, variantId: r.variant_id, productNote: r.product_note,
   unitPrice: r.unit_price, qty: r.qty, total: r.total,
   discountAmount: r.discount_amount || 0, couponCode: r.coupon_code,
   productCost: r.product_cost || 0, shippingCost: r.shipping_cost, otherCost: r.other_cost,
@@ -324,12 +324,13 @@ async function listOrders(env, clientId) {
 async function insertOrder(env, o) {
   const initialHistory = o.history || [{ state: o.state || 'pending', at: new Date().toISOString() }];
   await env.DB.prepare(
-    `INSERT INTO orders (${ORDER_COLS}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    `INSERT INTO orders (${ORDER_COLS}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
      ON CONFLICT(id) DO UPDATE SET
        state = excluded.state, checkpoint = excluded.checkpoint,
        awb = COALESCE(excluded.awb, orders.awb),
        ref = COALESCE(excluded.ref, orders.ref),
        customer_id = COALESCE(excluded.customer_id, orders.customer_id),
+       variant_id = COALESCE(excluded.variant_id, orders.variant_id),
        shipping_cost = COALESCE(excluded.shipping_cost, orders.shipping_cost),
        other_cost = COALESCE(excluded.other_cost, orders.other_cost),
        signed_at = COALESCE(excluded.signed_at, orders.signed_at),
@@ -343,7 +344,7 @@ async function insertOrder(env, o) {
        coupon_code = COALESCE(excluded.coupon_code, orders.coupon_code)`
   ).bind(
     o.id, o.clientId, o.ref || null, o.customerId || null, o.date, o.name || '', o.phone || '', o.gov || '', o.address || '',
-    o.product || '', o.productId || null, o.productNote || null, o.unitPrice || 0, o.qty || 1, o.total || 0,
+    o.product || '', o.productId || null, o.variantId || null, o.productNote || null, o.unitPrice || 0, o.qty || 1, o.total || 0,
     o.discountAmount ? Number(o.discountAmount) : 0, o.couponCode || null,
     o.productCost || 0,
     o.shippingCost === undefined || o.shippingCost === null ? null : Number(o.shippingCost),
@@ -463,13 +464,17 @@ async function nextOrderCode(env, name) {
 }
 
 /* ---------- المنتجات ---------- */
-const PRODUCT_COLS = 'id, client_id, name, sku, price, cost, active, stock, low_stock_threshold, created_at';
+const PRODUCT_COLS = 'id, client_id, name, sku, category, price, cost, active, stock, low_stock_threshold, created_at';
 const TX_COLS = 'id, type, date, category, amount, currency, method, client_id, note, created_by, created_at';
 const rowToProduct = r => ({
-  id: r.id, clientId: r.client_id, name: r.name, sku: r.sku,
+  id: r.id, clientId: r.client_id, name: r.name, sku: r.sku, category: r.category || '',
   price: r.price, cost: r.cost, active: r.active,
   stock: r.stock != null ? r.stock : 0,
   lowStockThreshold: r.low_stock_threshold != null ? r.low_stock_threshold : 5
+});
+const rowToVariant = r => ({
+  id: r.id, productId: r.product_id, name: r.name, sku: r.sku,
+  stock: r.stock != null ? r.stock : 0, price: r.price, active: r.active
 });
 
 async function listProducts(env, clientId) {
@@ -493,8 +498,8 @@ async function ensureProductsFromCart(env, clientId, cartItems) {
     if (!match) {
       const id = 'P-' + crypto.randomUUID().slice(0, 8).toUpperCase();
       await env.DB.prepare(
-        `INSERT INTO products (${PRODUCT_COLS}) VALUES (?,?,?,?,?,?,?,?,?,?)`
-      ).bind(id, clientId, name, '', price, 0, 1, 0, 5, new Date().toISOString()).run();
+        `INSERT INTO products (${PRODUCT_COLS}) VALUES (?,?,?,?,?,?,?,?,?,?,?)`
+      ).bind(id, clientId, name, '', '', price, 0, 1, 0, 5, new Date().toISOString()).run();
       byName.set(name.toLowerCase(), { id, name, price });
     } else if (price && Number(match.price) !== price) {
       await env.DB.prepare('UPDATE products SET price = ? WHERE id = ?').bind(price, match.id).run();
@@ -1193,7 +1198,7 @@ async function handleApi(request, env, url, path) {
       const p = await request.json();
       const cur = await env.DB.prepare(
         `SELECT client_id, state, awb, shipping_cost, other_cost, signed_at, history, name, phone, defer_until,
-                product_id, qty, total, restocked, refund_amount, return_type
+                product_id, variant_id, qty, total, restocked, refund_amount, return_type
          FROM orders WHERE id = ?`
       ).bind(id).first();
       if (!cur) return json({ error: 'أوردر غير موجود' }, 404);
@@ -1262,32 +1267,65 @@ async function handleApi(request, env, url, path) {
         if (refundAmount === null || refundAmount === undefined) refundAmount = Number(cur.total) || 0;
 
         if (cur.product_id && !restocked) {
-          const prod = await env.DB.prepare('SELECT name, stock FROM products WHERE id = ?').bind(cur.product_id).first();
-          if (prod) {
-            const qty = Number(cur.qty) || 1;
-            const newStock = Math.max(0, (Number(prod.stock) || 0) + qty);
-            await env.DB.prepare('UPDATE products SET stock = ? WHERE id = ?').bind(newStock, cur.product_id).run();
-            await env.DB.prepare(
-              `INSERT INTO stock_log (id, client_id, product_id, product_name, delta, new_stock, note, supplier_id, supplier_name, created_at, created_by)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?)`
-            ).bind('STK-' + crypto.randomUUID().slice(0, 8).toUpperCase(), cur.client_id, cur.product_id, prod.name, qty,
-              newStock, `مرتجع من أوردر ${id}`, null, null, new Date().toISOString(), user.email || user.role).run();
-            restocked = true;
+          if (cur.variant_id) {
+            const variant = await env.DB.prepare('SELECT name, stock, product_id FROM product_variants WHERE id = ?').bind(cur.variant_id).first();
+            if (variant) {
+              const qty = Number(cur.qty) || 1;
+              const newStock = Math.max(0, (Number(variant.stock) || 0) + qty);
+              await env.DB.prepare('UPDATE product_variants SET stock = ? WHERE id = ?').bind(newStock, cur.variant_id).run();
+              const prodRow = await env.DB.prepare('SELECT name FROM products WHERE id = ?').bind(cur.product_id).first();
+              await env.DB.prepare(
+                `INSERT INTO stock_log (id, client_id, product_id, variant_id, product_name, delta, new_stock, note, supplier_id, supplier_name, created_at, created_by)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`
+              ).bind('STK-' + crypto.randomUUID().slice(0, 8).toUpperCase(), cur.client_id, cur.product_id, cur.variant_id,
+                `${(prodRow && prodRow.name) || ''} — ${variant.name}`, qty, newStock, `مرتجع من أوردر ${id}`,
+                null, null, new Date().toISOString(), user.email || user.role).run();
+              restocked = true;
+            }
+          } else {
+            const prod = await env.DB.prepare('SELECT name, stock FROM products WHERE id = ?').bind(cur.product_id).first();
+            if (prod) {
+              const qty = Number(cur.qty) || 1;
+              const newStock = Math.max(0, (Number(prod.stock) || 0) + qty);
+              await env.DB.prepare('UPDATE products SET stock = ? WHERE id = ?').bind(newStock, cur.product_id).run();
+              await env.DB.prepare(
+                `INSERT INTO stock_log (id, client_id, product_id, variant_id, product_name, delta, new_stock, note, supplier_id, supplier_name, created_at, created_by)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`
+              ).bind('STK-' + crypto.randomUUID().slice(0, 8).toUpperCase(), cur.client_id, cur.product_id, null, prod.name, qty,
+                newStock, `مرتجع من أوردر ${id}`, null, null, new Date().toISOString(), user.email || user.role).run();
+              restocked = true;
+            }
           }
         }
       } else if (leavingReturn) {
         /* تصحيح غلطة: الأوردر كان متسجل مرتجع وبيرجع لحالة تانية — نلغي إضافة المخزون اللي كانت حصلت */
         if (cur.product_id && restocked) {
-          const prod = await env.DB.prepare('SELECT name, stock FROM products WHERE id = ?').bind(cur.product_id).first();
-          if (prod) {
-            const qty = Number(cur.qty) || 1;
-            const newStock = Math.max(0, (Number(prod.stock) || 0) - qty);
-            await env.DB.prepare('UPDATE products SET stock = ? WHERE id = ?').bind(newStock, cur.product_id).run();
-            await env.DB.prepare(
-              `INSERT INTO stock_log (id, client_id, product_id, product_name, delta, new_stock, note, supplier_id, supplier_name, created_at, created_by)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?)`
-            ).bind('STK-' + crypto.randomUUID().slice(0, 8).toUpperCase(), cur.client_id, cur.product_id, prod.name, -qty,
-              newStock, `إلغاء مرتجع — أوردر ${id} رجع لحالة تانية`, null, null, new Date().toISOString(), user.email || user.role).run();
+          if (cur.variant_id) {
+            const variant = await env.DB.prepare('SELECT name, stock FROM product_variants WHERE id = ?').bind(cur.variant_id).first();
+            if (variant) {
+              const qty = Number(cur.qty) || 1;
+              const newStock = Math.max(0, (Number(variant.stock) || 0) - qty);
+              await env.DB.prepare('UPDATE product_variants SET stock = ? WHERE id = ?').bind(newStock, cur.variant_id).run();
+              const prodRow = await env.DB.prepare('SELECT name FROM products WHERE id = ?').bind(cur.product_id).first();
+              await env.DB.prepare(
+                `INSERT INTO stock_log (id, client_id, product_id, variant_id, product_name, delta, new_stock, note, supplier_id, supplier_name, created_at, created_by)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`
+              ).bind('STK-' + crypto.randomUUID().slice(0, 8).toUpperCase(), cur.client_id, cur.product_id, cur.variant_id,
+                `${(prodRow && prodRow.name) || ''} — ${variant.name}`, -qty, newStock,
+                `إلغاء مرتجع — أوردر ${id} رجع لحالة تانية`, null, null, new Date().toISOString(), user.email || user.role).run();
+            }
+          } else {
+            const prod = await env.DB.prepare('SELECT name, stock FROM products WHERE id = ?').bind(cur.product_id).first();
+            if (prod) {
+              const qty = Number(cur.qty) || 1;
+              const newStock = Math.max(0, (Number(prod.stock) || 0) - qty);
+              await env.DB.prepare('UPDATE products SET stock = ? WHERE id = ?').bind(newStock, cur.product_id).run();
+              await env.DB.prepare(
+                `INSERT INTO stock_log (id, client_id, product_id, variant_id, product_name, delta, new_stock, note, supplier_id, supplier_name, created_at, created_by)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`
+              ).bind('STK-' + crypto.randomUUID().slice(0, 8).toUpperCase(), cur.client_id, cur.product_id, null, prod.name, -qty,
+                newStock, `إلغاء مرتجع — أوردر ${id} رجع لحالة تانية`, null, null, new Date().toISOString(), user.email || user.role).run();
+            }
           }
         }
         restocked = false;
@@ -1494,12 +1532,12 @@ async function handleApi(request, env, url, path) {
       if (!b.name) return json({ error: 'اسم المنتج مطلوب' }, 400);
       const id = b.id || 'P-' + crypto.randomUUID().slice(0, 8).toUpperCase();
       await env.DB.prepare(
-        `INSERT INTO products (${PRODUCT_COLS}) VALUES (?,?,?,?,?,?,?,?,?,?)
+        `INSERT INTO products (${PRODUCT_COLS}) VALUES (?,?,?,?,?,?,?,?,?,?,?)
          ON CONFLICT(id) DO UPDATE SET
-           name=excluded.name, sku=excluded.sku, price=excluded.price,
+           name=excluded.name, sku=excluded.sku, category=excluded.category, price=excluded.price,
            cost=excluded.cost, active=excluded.active,
            stock=excluded.stock, low_stock_threshold=excluded.low_stock_threshold`
-      ).bind(id, clientId, b.name, b.sku || '', Number(b.price) || 0, Number(b.cost) || 0,
+      ).bind(id, clientId, b.name, b.sku || '', b.category || '', Number(b.price) || 0, Number(b.cost) || 0,
         b.active === false ? 0 : 1, Math.max(0, Number(b.stock) || 0),
         Math.max(0, Number(b.lowStockThreshold) || 5), new Date().toISOString()).run();
       return json({ ok: true, id });
@@ -1550,10 +1588,42 @@ async function handleApi(request, env, url, path) {
     const newStock = Math.max(0, (Number(row.stock) || 0) + delta);
     await env.DB.prepare('UPDATE products SET stock = ? WHERE id = ?').bind(newStock, pid).run();
     await env.DB.prepare(
-      `INSERT INTO stock_log (id, client_id, product_id, product_name, delta, new_stock, note, supplier_id, supplier_name, created_at, created_by)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?)`
-    ).bind('STK-' + crypto.randomUUID().slice(0, 8).toUpperCase(), row.client_id, pid, row.name, delta,
+      `INSERT INTO stock_log (id, client_id, product_id, variant_id, product_name, delta, new_stock, note, supplier_id, supplier_name, created_at, created_by)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`
+    ).bind('STK-' + crypto.randomUUID().slice(0, 8).toUpperCase(), row.client_id, pid, null, row.name, delta,
       newStock, String(b.note || '').trim(), supplierId, supplierName, new Date().toISOString(), me.email || me.role).run();
+    return json({ ok: true, stock: newStock });
+  }
+
+  /* إضافة كمية لمتغير محدد (لون/مقاس) بدل المنتج العام */
+  const varStockAdd = path.match(/^\/api\/variants\/([^/]+)\/stock\/add$/);
+  if (varStockAdd && request.method === 'POST') {
+    const vid = decodeURIComponent(varStockAdd[1]);
+    const row = await env.DB.prepare(
+      'SELECT client_id, product_id, name, stock FROM product_variants WHERE id = ?'
+    ).bind(vid).first();
+    if (!row) return json({ error: 'المتغير مش موجود' }, 404);
+    if (user.role === 'client' && row.client_id !== me.clientId) return json({ error: 'مش مسموح' }, 403);
+    if (user.role !== 'client' && !can(user, 'clients') && !can(user, 'orders')) {
+      return json({ error: 'مش مسموح' }, 403);
+    }
+    const b = await request.json().catch(() => ({}));
+    const delta = Number(b.delta);
+    if (!delta || delta === 0) return json({ error: 'اكتب كمية أكبر من صفر' }, 400);
+    let supplierId = null, supplierName = null;
+    if (b.supplierId) {
+      const sup = await env.DB.prepare('SELECT client_id, name FROM suppliers WHERE id = ?').bind(b.supplierId).first();
+      if (sup && sup.client_id === row.client_id) { supplierId = b.supplierId; supplierName = sup.name; }
+    }
+    const newStock = Math.max(0, (Number(row.stock) || 0) + delta);
+    await env.DB.prepare('UPDATE product_variants SET stock = ? WHERE id = ?').bind(newStock, vid).run();
+    const prodRow = await env.DB.prepare('SELECT name FROM products WHERE id = ?').bind(row.product_id).first();
+    await env.DB.prepare(
+      `INSERT INTO stock_log (id, client_id, product_id, variant_id, product_name, delta, new_stock, note, supplier_id, supplier_name, created_at, created_by)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`
+    ).bind('STK-' + crypto.randomUUID().slice(0, 8).toUpperCase(), row.client_id, row.product_id, vid,
+      `${(prodRow && prodRow.name) || ''} — ${row.name}`, delta, newStock, String(b.note || '').trim(),
+      supplierId, supplierName, new Date().toISOString(), me.email || me.role).run();
     return json({ ok: true, stock: newStock });
   }
 
@@ -1566,7 +1636,7 @@ async function handleApi(request, env, url, path) {
     if (user.role !== 'client' && !staffAccess) return json({ error: 'مش مسموح' }, 403);
     if (!targetId) return json({ error: 'محتاجين clientId' }, 400);
     const { results } = await env.DB.prepare(
-      `SELECT id, product_id, product_name, delta, new_stock, note, supplier_id, supplier_name, created_at, created_by
+      `SELECT id, product_id, variant_id, product_name, delta, new_stock, note, supplier_id, supplier_name, created_at, created_by
        FROM stock_log WHERE client_id = ? ORDER BY created_at DESC LIMIT 200`
     ).bind(targetId).all();
     return json(results || []);
@@ -1750,7 +1820,52 @@ async function handleApi(request, env, url, path) {
     const row = await env.DB.prepare('SELECT client_id FROM products WHERE id = ?').bind(pid).first();
     if (!row) return json({ error: 'المنتج مش موجود' }, 404);
     if (user.role === 'client' && row.client_id !== me.clientId) return json({ error: 'مش مسموح' }, 403);
+    await env.DB.prepare('DELETE FROM product_variants WHERE product_id = ?').bind(pid).run();
     await env.DB.prepare('DELETE FROM products WHERE id = ?').bind(pid).run();
+    return json({ ok: true });
+  }
+
+  /* ---------- متغيرات المنتج (لون/مقاس) ---------- */
+  const pv = path.match(/^\/api\/products\/([^/]+)\/variants$/);
+  if (pv) {
+    const pid = decodeURIComponent(pv[1]);
+    const prod = await env.DB.prepare('SELECT client_id FROM products WHERE id = ?').bind(pid).first();
+    if (!prod) return json({ error: 'المنتج مش موجود' }, 404);
+    if (user.role === 'client' && prod.client_id !== me.clientId) return json({ error: 'مش مسموح' }, 403);
+    if (user.role !== 'client' && !can(user, 'clients') && !can(user, 'orders')) {
+      return json({ error: 'مش مسموح' }, 403);
+    }
+    if (request.method === 'GET') {
+      const { results } = await env.DB.prepare(
+        'SELECT id, product_id, name, sku, stock, price, active FROM product_variants WHERE product_id = ? ORDER BY name'
+      ).bind(pid).all();
+      return json((results || []).map(rowToVariant));
+    }
+    if (request.method === 'POST') {
+      const b = await request.json().catch(() => ({}));
+      if (!b.name || !String(b.name).trim()) return json({ error: 'اسم المتغير مطلوب (مثلاً: أحمر — مقاس L)' }, 400);
+      const id = b.id || 'VAR-' + crypto.randomUUID().slice(0, 8).toUpperCase();
+      await env.DB.prepare(
+        `INSERT INTO product_variants (id, product_id, client_id, name, sku, stock, price, active, created_at) VALUES (?,?,?,?,?,?,?,?,?)
+         ON CONFLICT(id) DO UPDATE SET name=excluded.name, sku=excluded.sku, stock=excluded.stock,
+           price=excluded.price, active=excluded.active`
+      ).bind(id, pid, prod.client_id, String(b.name).trim(), b.sku || '',
+        Math.max(0, Number(b.stock) || 0), b.price !== undefined && b.price !== null && b.price !== '' ? Number(b.price) : null,
+        b.active === false ? 0 : 1, new Date().toISOString()).run();
+      return json({ ok: true, id });
+    }
+  }
+
+  const vm = path.match(/^\/api\/variants\/([^/]+)$/);
+  if (vm && request.method === 'DELETE') {
+    const vid = decodeURIComponent(vm[1]);
+    const row = await env.DB.prepare('SELECT client_id FROM product_variants WHERE id = ?').bind(vid).first();
+    if (!row) return json({ error: 'المتغير مش موجود' }, 404);
+    if (user.role === 'client' && row.client_id !== me.clientId) return json({ error: 'مش مسموح' }, 403);
+    if (user.role !== 'client' && !can(user, 'clients') && !can(user, 'orders')) {
+      return json({ error: 'مش مسموح' }, 403);
+    }
+    await env.DB.prepare('DELETE FROM product_variants WHERE id = ?').bind(vid).run();
     return json({ ok: true });
   }
 
@@ -2435,6 +2550,7 @@ async function handleApi(request, env, url, path) {
       state: await loadState(env),
       orders: await all(`SELECT ${ORDER_COLS} FROM orders`),
       products: await all(`SELECT ${PRODUCT_COLS} FROM products`),
+      variants: await all('SELECT id, product_id, client_id, name, sku, stock, price, active, created_at FROM product_variants'),
       suppliers: await all('SELECT id, client_id, name, phone, note, active, created_at FROM suppliers'),
       customers: await all('SELECT id, client_id, name, phone, gov, address, tags, note, created_at FROM customers'),
       coupons: await all('SELECT id, client_id, code, type, value, active, expires_at, note, created_at FROM coupons'),
@@ -2470,6 +2586,7 @@ async function handleApi(request, env, url, path) {
     await saveState(env, b.state);
     await env.DB.prepare('DELETE FROM orders').run();
     await env.DB.prepare('DELETE FROM products').run();
+    await env.DB.prepare('DELETE FROM product_variants').run();
     await env.DB.prepare('DELETE FROM suppliers').run();
     await env.DB.prepare('DELETE FROM customers').run();
     await env.DB.prepare('DELETE FROM coupons').run();
@@ -2484,11 +2601,18 @@ async function handleApi(request, env, url, path) {
     for (const o of b.orders) await insertOrder(env, rowToOrder(o));
     for (const p of (b.products || [])) {
       await env.DB.prepare(
-        `INSERT INTO products (${PRODUCT_COLS}) VALUES (?,?,?,?,?,?,?,?,?,?)`
-      ).bind(p.id, p.client_id || p.clientId, p.name, p.sku || '', p.price || 0,
+        `INSERT INTO products (${PRODUCT_COLS}) VALUES (?,?,?,?,?,?,?,?,?,?,?)`
+      ).bind(p.id, p.client_id || p.clientId, p.name, p.sku || '', p.category || '', p.price || 0,
         p.cost || 0, p.active === false ? 0 : 1, Math.max(0, Number(p.stock) || 0),
         Math.max(0, Number(p.lowStockThreshold ?? p.low_stock_threshold) || 5),
         p.created_at || new Date().toISOString()).run();
+    }
+    for (const v of (b.variants || [])) {
+      await env.DB.prepare(
+        'INSERT INTO product_variants (id, product_id, client_id, name, sku, stock, price, active, created_at) VALUES (?,?,?,?,?,?,?,?,?)'
+      ).bind(v.id, v.product_id || v.productId, v.client_id || v.clientId, v.name, v.sku || '',
+        Math.max(0, Number(v.stock) || 0), v.price != null ? Number(v.price) : null,
+        v.active === false ? 0 : 1, v.created_at || new Date().toISOString()).run();
     }
     for (const s of (b.suppliers || [])) {
       await env.DB.prepare(
@@ -2605,6 +2729,7 @@ export default {
             state: await loadState(env),
             orders: await all(`SELECT ${ORDER_COLS} FROM orders`),
             products: await all(`SELECT ${PRODUCT_COLS} FROM products`),
+            variants: await all('SELECT id, product_id, client_id, name, sku, stock, price, active, created_at FROM product_variants'),
             suppliers: await all('SELECT id, client_id, name, phone, note, active, created_at FROM suppliers'),
             customers: await all('SELECT id, client_id, name, phone, gov, address, tags, note, created_at FROM customers'),
             coupons: await all('SELECT id, client_id, code, type, value, active, expires_at, note, created_at FROM coupons'),

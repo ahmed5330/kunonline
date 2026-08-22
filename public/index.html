@@ -1197,6 +1197,9 @@ function orderFormFields(client, withClientPicker){
         ${(DB.products||[]).filter(pr=>!client||pr.clientId===client.id).map(pr=>
           `<option value="${esc(pr.id)}" data-price="${pr.price}" data-cost="${pr.cost}" data-name="${esc(pr.name)}">${esc(pr.name)} — ${money(pr.price)}</option>`).join('')}
       </select></div>
+      <div class="field" id="n_variant_field" style="display:none"><label>اللون/المقاس</label><select id="n_variant_id">
+        <option value="">— بدون متغير —</option>
+      </select></div>
       <div class="field"><label>أو اكتب اسم المنتج</label><input id="n_product" placeholder="لو مش في القايمة"></div>
       <div class="field"><label>الكمية</label><input id="n_qty" type="number" min="1" value="1"></div>
       <div class="field" style="grid-column:span 2"><label>ملاحظات المنتج (لون / مقاس)</label><input id="n_product_note" placeholder="مثلاً: أحمر — مقاس L"></div>
@@ -1219,13 +1222,18 @@ function readOrderForm(clientId){
   const pid = sel ? sel.value : '';
   const qty = +g('n_qty')||1;
   const pr  = (DB.products||[]).find(x=>x.id===pid);
+  const varSel = document.getElementById('n_variant_id');
+  const varOpt = varSel && varSel.value ? varSel.selectedOptions[0] : null;
+  const variantId = varOpt ? varOpt.value : null;
+  const variantPrice = varOpt && varOpt.dataset.price !== '' ? Number(varOpt.dataset.price) : null;
   return {
     id:'MN-'+uid().toUpperCase(), clientId, date:g('n_date')||today(),
     name, phone, gov:g('n_gov').trim()||'غير محدد', address:g('n_address').trim(),
-    product: pr ? pr.name : g('n_product').trim(),
+    product: pr ? (variantId ? pr.name+' — '+varOpt.textContent.trim() : pr.name) : g('n_product').trim(),
     productId: pid || null,
-    productNote: g('n_product_note').trim(),
-    unitPrice: pr ? pr.price : safeDiv(total, qty),
+    variantId: variantId || null,
+    productNote: g('n_product_note').trim() || (variantId ? varOpt.textContent.trim() : ''),
+    unitPrice: variantPrice != null ? variantPrice : (pr ? pr.price : safeDiv(total, qty)),
     productCost: pr ? (Number(pr.cost)||0)*qty : 0,
     qty, total,
     couponCode: g('n_coupon').trim() || undefined,
@@ -1300,12 +1308,14 @@ function ordersSection(client, range){
 function clientProductsView(client){
   const cur = client.currency;
   const list = (DB.products||[]).filter(p=>p.clientId===client.id);
+  const categories = [...new Set(list.map(p=>p.category).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'ar'));
   const e = editingProduct || {};
   const rows = list.map(p=>{
     const profit = (Number(p.price)||0) - (Number(p.cost)||0);
     const low = Number(p.stock)<=Number(p.lowStockThreshold);
     return `<tr>
-      <td><b>${esc(p.name)}</b>${p.sku?`<br><span class="hint mono" style="font-size:11px">${esc(p.sku)}</span>`:''}</td>
+      <td><b>${esc(p.name)}</b>${p.sku?`<br><span class="hint mono" style="font-size:11px">${esc(p.sku)}</span>`:''}
+        ${p.category?`<br><span class="pill mid" style="font-size:10.5px">${esc(p.category)}</span>`:''}</td>
       <td class="num">${money(p.price)}</td>
       <td class="num">${money(p.cost)}</td>
       <td class="num" style="color:${profit>=0?'var(--pine)':'var(--brick)'}">${money(profit)}</td>
@@ -1313,6 +1323,7 @@ function clientProductsView(client){
       <td class="num" style="color:${low?'var(--brick)':'inherit'};font-weight:${low?'700':'400'}">${num(p.stock)}${low?' ⚠️':''}</td>
       <td><span class="pill ${p.active?'on':'off'}">${p.active?'معروض':'موقوف'}</span></td>
       <td><div class="row-act">
+        <button class="icon-btn" data-variants="${esc(p.id)}">المتغيرات</button>
         <button class="icon-btn" data-editp="${esc(p.id)}">تعديل</button>
         <button class="icon-btn" data-delp="${esc(p.id)}">حذف</button>
       </div></td></tr>`;}).join('');
@@ -1335,10 +1346,12 @@ function clientProductsView(client){
   <div class="card">
     <p class="hint" style="margin-bottom:14px">
       حط سعر البيع وتكلفة الشراء لكل منتج. لما تسجّل أوردر وتختار المنتج، السعر بيتحط لوحده،
-      وربحك الحقيقي بيتحسب صح.</p>
+      وربحك الحقيقي بيتحسب صح. لو المنتج ليه ألوان/مقاسات مختلفة، احفظه الأول وبعدين دوس "المتغيرات".</p>
     <div class="form-grid">
-      <div class="field"><label>اسم المنتج</label><input id="p_name" value="${esc(e.name||'')}" placeholder="ترينج شتوي مقاس L"></div>
+      <div class="field"><label>اسم المنتج</label><input id="p_name" value="${esc(e.name||'')}" placeholder="ترينج شتوي"></div>
       <div class="field"><label>الكود (SKU)</label><input id="p_sku" value="${esc(e.sku||'')}" placeholder="اختياري"></div>
+      <div class="field"><label>التصنيف</label><input id="p_category" list="categorylist" value="${esc(e.category||'')}" placeholder="مثال: تيشيرتات">
+        <datalist id="categorylist">${categories.map(c=>`<option value="${esc(c)}">`).join('')}</datalist></div>
       <div class="field"><label>سعر البيع (${cur})</label><input id="p_price" type="number" min="0" step="0.01" value="${e.price!==undefined?e.price:''}" placeholder="0"></div>
       <div class="field"><label>تكلفة الشراء (${cur})</label><input id="p_cost" type="number" min="0" step="0.01" value="${e.cost!==undefined?e.cost:''}" placeholder="0"></div>
       <div class="field"><label>الكمية المتاحة</label><input id="p_stock" type="number" min="0" value="${e.stock!==undefined?e.stock:0}" placeholder="0"></div>
@@ -3308,7 +3321,7 @@ function bindProductForm(refresh, clientIdFn){
   sp.onclick = async ()=>{
     const name = $('p_name').value.trim();
     if(!name){ toast('اكتب اسم المنتج'); return; }
-    const body = { name, sku:$('p_sku').value.trim(),
+    const body = { name, sku:$('p_sku').value.trim(), category:($('p_category')?$('p_category').value.trim():''),
       price:+$('p_price').value||0, cost:+$('p_cost').value||0,
       stock: Math.max(0, +$('p_stock').value||0), lowStockThreshold: Math.max(0, +$('p_lowstock').value||5),
       active: $('p_active').value === '1' };
@@ -3328,19 +3341,106 @@ function bindProductForm(refresh, clientIdFn){
       await refresh(); paint(true); toast('اتحذف');
     }catch(e){ toast(e.message); }
   });
+  document.querySelectorAll('[data-variants]').forEach(b=> b.onclick = ()=>{
+    const p = (DB.products||[]).find(x=>x.id===b.dataset.variants);
+    if(p) showVariantsModal(p);
+  });
 }
+
+/* ---------- متغيرات المنتج (لون/مقاس) ---------- */
+async function showVariantsModal(product){
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'position:fixed;inset:0;background:rgba(18,33,43,.55);z-index:200;display:grid;place-items:center;padding:18px;overflow-y:auto';
+  wrap.innerHTML = `<div class="card" style="max-width:480px;width:100%;box-shadow:var(--shadow)"><p class="hint">بنجيب المتغيرات...</p></div>`;
+  document.body.appendChild(wrap);
+  const close = ()=> document.body.removeChild(wrap);
+  wrap.onclick = ev => { if(ev.target === wrap) close(); };
+  let list = [];
+  try{ list = await api('/api/products/'+encodeURIComponent(product.id)+'/variants'); }catch(e){ toast(e.message); }
+
+  const variantRow = v => `
+    <div class="card" style="margin-bottom:8px;padding:10px 12px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+      <div><b>${esc(v.name)}</b>${v.sku?` <span class="hint mono" style="font-size:11px">· ${esc(v.sku)}</span>`:''}
+        <div class="hint" style="font-size:11px">الكمية: ${num(v.stock)}${v.price!=null?' · سعر خاص: '+money(v.price):''}</div></div>
+      <div style="display:flex;gap:6px">
+        <button class="icon-btn" data-addstockvar="${v.id}">+ كمية</button>
+        <button class="icon-btn" data-delvar="${v.id}">حذف</button>
+      </div>
+    </div>`;
+  const paintList = () => {
+    const box = wrap.querySelector('#varList');
+    box.innerHTML = list.map(variantRow).join('') || '<p class="hint">لسه مفيش متغيرات (ألوان/مقاسات) لهذا المنتج.</p>';
+    box.querySelectorAll('[data-delvar]').forEach(b=> b.onclick = async ()=>{
+      if(!confirm('متأكد إنك عايز تحذف المتغير ده؟')) return;
+      try{
+        await api('/api/variants/'+encodeURIComponent(b.dataset.delvar), {method:'DELETE'});
+        list = list.filter(x=>x.id!==b.dataset.delvar);
+        paintList(); toast('اتحذف المتغير');
+      }catch(e){ toast(e.message); }
+    });
+    box.querySelectorAll('[data-addstockvar]').forEach(b=> b.onclick = async ()=>{
+      const delta = +prompt('هتضيف كام قطعة؟') || 0;
+      if(delta<=0) return;
+      try{
+        await api('/api/variants/'+encodeURIComponent(b.dataset.addstockvar)+'/stock/add',
+          {method:'POST', body:JSON.stringify({delta, note:'إضافة يدوية'})});
+        list = await api('/api/products/'+encodeURIComponent(product.id)+'/variants');
+        paintList(); toast('اتضافت الكمية');
+      }catch(e){ toast(e.message); }
+    });
+  };
+  wrap.innerHTML = `
+    <div class="card" style="max-width:480px;width:100%;box-shadow:var(--shadow);max-height:85vh;overflow-y:auto">
+      <h3 style="font-size:16px;margin-bottom:2px">متغيرات: ${esc(product.name)}</h3>
+      <p class="hint" style="margin-bottom:12px">كل متغير له مخزون مستقل، ولو محتاج سعر مختلف عن المنتج الأصلي اكتبه.</p>
+      <div id="varList"></div>
+      <div class="form-grid" style="margin-top:10px">
+        <div class="field" style="grid-column:span 2"><label>اسم المتغير</label><input id="varName" placeholder="مثال: أحمر — مقاس L"></div>
+        <div class="field"><label>الكود (SKU) اختياري</label><input id="varSku"></div>
+        <div class="field"><label>الكمية</label><input id="varStock" type="number" min="0" value="0"></div>
+        <div class="field" style="grid-column:span 2"><label>سعر خاص (اختياري — سيبه فاضي يستخدم سعر المنتج)</label>
+          <input id="varPrice" type="number" min="0" step="0.01" placeholder="${product.price}"></div>
+      </div>
+      <div class="form-actions" style="margin-top:10px">
+        <button class="btn sm" id="varSave">إضافة متغير</button>
+        <button class="btn sm line" id="varClose">قفل</button>
+      </div>
+    </div>`;
+  paintList();
+  wrap.querySelector('#varClose').onclick = close;
+  wrap.onclick = ev => { if(ev.target === wrap) close(); };
+  wrap.querySelector('#varSave').onclick = async ()=>{
+    const name = wrap.querySelector('#varName').value.trim();
+    if(!name){ toast('اكتب اسم المتغير'); return; }
+    const sku = wrap.querySelector('#varSku').value.trim();
+    const stock = Math.max(0, +wrap.querySelector('#varStock').value || 0);
+    const priceRaw = wrap.querySelector('#varPrice').value;
+    const price = priceRaw === '' ? null : Math.max(0, +priceRaw || 0);
+    try{
+      await api('/api/products/'+encodeURIComponent(product.id)+'/variants',
+        {method:'POST', body:JSON.stringify({name, sku, stock, price})});
+      list = await api('/api/products/'+encodeURIComponent(product.id)+'/variants');
+      wrap.querySelector('#varName').value=''; wrap.querySelector('#varSku').value='';
+      wrap.querySelector('#varStock').value='0'; wrap.querySelector('#varPrice').value='';
+      paintList(); toast('اتضاف المتغير');
+    }catch(e){ toast(e.message); }
+  };
+}
+
 function adminProducts(){
   if(!ONLINE) return `<div class="card"><div class="empty"><b>المنتجات محتاجة السيرفر</b>الشاشة دي بتشتغل بعد رفع النظام على الاستضافة.</div></div>`;
   const cid = productClient || (DB.clients[0] && DB.clients[0].id);
   const client = DB.clients.find(c=>c.id===cid);
   const cur = client ? client.currency : 'EGP';
   const list = (DB.products||[]).filter(p=>p.clientId===cid);
+  const categories = [...new Set(list.map(p=>p.category).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'ar'));
   const e = editingProduct || {};
   const rows = list.map(p=>{
     const profit = (Number(p.price)||0) - (Number(p.cost)||0);
     const low = Number(p.stock)<=Number(p.lowStockThreshold);
     return `<tr>
-      <td><b>${esc(p.name)}</b>${p.sku?`<br><span class="hint mono" style="font-size:11px">${esc(p.sku)}</span>`:''}</td>
+      <td><b>${esc(p.name)}</b>${p.sku?`<br><span class="hint mono" style="font-size:11px">${esc(p.sku)}</span>`:''}
+        ${p.category?`<br><span class="pill mid" style="font-size:10.5px">${esc(p.category)}</span>`:''}</td>
       <td class="num">${money(p.price)}</td>
       <td class="num">${money(p.cost)}</td>
       <td class="num" style="color:${profit>=0?'var(--pine)':'var(--brick)'}">${money(profit)}</td>
@@ -3348,6 +3448,7 @@ function adminProducts(){
       <td class="num" style="color:${low?'var(--brick)':'inherit'};font-weight:${low?'700':'400'}">${num(p.stock)}${low?' ⚠️':''}</td>
       <td><span class="pill ${p.active?'on':'off'}">${p.active?'معروض':'موقوف'}</span></td>
       <td><div class="row-act">
+        <button class="icon-btn" data-variants="${esc(p.id)}">المتغيرات</button>
         <button class="icon-btn" data-editp="${esc(p.id)}">تعديل</button>
         <button class="icon-btn" data-delp="${esc(p.id)}">حذف</button>
       </div></td></tr>`;}).join('');
@@ -3362,8 +3463,10 @@ function adminProducts(){
   <div class="section-title">${editingProduct?'تعديل: '+esc(e.name):'إضافة منتج'}</div>
   <div class="card">
     <div class="form-grid">
-      <div class="field"><label>اسم المنتج</label><input id="p_name" value="${esc(e.name||'')}" placeholder="ترينج شتوي مقاس L"></div>
+      <div class="field"><label>اسم المنتج</label><input id="p_name" value="${esc(e.name||'')}" placeholder="ترينج شتوي"></div>
       <div class="field"><label>الكود (SKU)</label><input id="p_sku" value="${esc(e.sku||'')}" placeholder="اختياري"></div>
+      <div class="field"><label>التصنيف</label><input id="p_category" list="categorylist" value="${esc(e.category||'')}" placeholder="مثال: تيشيرتات">
+        <datalist id="categorylist">${categories.map(c=>`<option value="${esc(c)}">`).join('')}</datalist></div>
       <div class="field"><label>سعر البيع (${cur})</label><input id="p_price" type="number" min="0" step="0.01" value="${e.price!==undefined?e.price:''}" placeholder="0"></div>
       <div class="field"><label>تكلفة الشراء (${cur})</label><input id="p_cost" type="number" min="0" step="0.01" value="${e.cost!==undefined?e.cost:''}" placeholder="0"></div>
       <div class="field"><label>الكمية المتاحة</label><input id="p_stock" type="number" min="0" value="${e.stock!==undefined?e.stock:0}" placeholder="0"></div>
@@ -3930,16 +4033,33 @@ function bindProductPicker(){
   const qty = document.getElementById('n_qty');
   const total = document.getElementById('n_total');
   const hint = document.getElementById('totalHint');
+  const varField = document.getElementById('n_variant_field');
+  const varSel = document.getElementById('n_variant_id');
   const recalc = ()=>{
     const opt = sel.selectedOptions[0];
+    const varOpt = varSel && varSel.value ? varSel.selectedOptions[0] : null;
     if(!opt || !sel.value){ if(hint) hint.textContent='اكتب الإجمالي بإيدك'; return; }
-    const price = Number(opt.dataset.price)||0;
+    const price = varOpt && varOpt.dataset.price !== '' ? Number(varOpt.dataset.price) : (Number(opt.dataset.price)||0);
     const q = Number(qty.value)||1;
     total.value = Math.round(price*q*100)/100;
     if(hint) hint.textContent = `${money(price)} × ${q} — تقدر تعدّله`;
   };
-  sel.onchange = recalc;
+  const loadVariants = async ()=>{
+    if(!varField || !varSel) return;
+    const pid = sel.value;
+    if(!pid){ varField.style.display='none'; varSel.innerHTML='<option value="">— بدون متغير —</option>'; return; }
+    try{
+      const list = await api('/api/products/'+encodeURIComponent(pid)+'/variants');
+      if(!list.length){ varField.style.display='none'; varSel.innerHTML='<option value="">— بدون متغير —</option>'; return; }
+      varSel.innerHTML = '<option value="">— اختار —</option>' +
+        list.map(v=>`<option value="${esc(v.id)}" data-price="${v.price!=null?v.price:''}">${esc(v.name)} (متاح: ${num(v.stock)})</option>`).join('');
+      varField.style.display='';
+    }catch(e){ varField.style.display='none'; }
+  };
+  sel.onchange = async ()=>{ await loadVariants(); recalc(); };
   qty.oninput = recalc;
+  if(varSel) varSel.onchange = recalc;
+  if(sel.value) loadVariants();
 }
 
 function bindClient(c){

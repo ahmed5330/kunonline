@@ -2,7 +2,7 @@
 import worker from './src/index.js';
 const TODAY = new Date().toISOString().slice(0,10);
 
-let stateRow=null; const orders=new Map(), users=new Map(), attempts=new Map(), products=new Map(), transactions=new Map(), chatMessages=new Map(), tasks=new Map(), walletLog=new Map(), waOutbox=new Map(), stockLog=new Map(), suppliers=new Map(), customers=new Map(), coupons=new Map();
+let stateRow=null; const orders=new Map(), users=new Map(), attempts=new Map(), products=new Map(), transactions=new Map(), chatMessages=new Map(), tasks=new Map(), walletLog=new Map(), waOutbox=new Map(), stockLog=new Map(), suppliers=new Map(), customers=new Map(), coupons=new Map(), variants=new Map();
 const stmt=(sql)=>({
   args:[], bind(...a){this.args=a;return this;},
   async first(){
@@ -20,6 +20,7 @@ const stmt=(sql)=>({
     if(sql.includes('SELECT name, note, tags FROM customers WHERE id = ?')){
       const c=customers.get(this.args[0]); return c?{name:c.name,note:c.note,tags:c.tags}:null;
     }
+    if(sql.includes('FROM product_variants WHERE id = ?')){ const v=variants.get(this.args[0]); return v?{...v}:null; }
     if(sql.includes('FROM customers WHERE id = ?')){ const c=customers.get(this.args[0]); return c?{...c}:null; }
     if(sql.includes('FROM coupons WHERE client_id = ? AND code = ?'))
       return [...coupons.values()].find(c=>c.client_id===this.args[0]&&c.code===this.args[1])||null;
@@ -53,10 +54,10 @@ const stmt=(sql)=>({
     else if(sql.includes('INSERT INTO login_attempts')) attempts.set(this.args[0],{email:this.args[0],fails:this.args[1],locked_until:this.args[2]});
     else if(sql.includes('DELETE FROM login_attempts')) attempts.delete(this.args[0]);
     else if(sql.includes('INSERT INTO orders')){
-      const [id,client_id,ref,customer_id,date,name,phone,gov,address,product,product_id,product_note,unit_price,qty,total,
+      const [id,client_id,ref,customer_id,date,name,phone,gov,address,product,product_id,variant_id,product_note,unit_price,qty,total,
         discount_amount,coupon_code,product_cost,shipping_cost,other_cost,source,note,awb,state,checkpoint,signed_at,collected_at,defer_until,
         refund_amount,return_type,restocked,contact_log,history,created_at]=this.args;
-      orders.set(id,{id,client_id,ref,customer_id,date,name,phone,gov,address,product,product_id,product_note,unit_price,qty,total,
+      orders.set(id,{id,client_id,ref,customer_id,date,name,phone,gov,address,product,product_id,variant_id,product_note,unit_price,qty,total,
         discount_amount,coupon_code,product_cost,shipping_cost,other_cost,source,note,awb,state,checkpoint,signed_at,collected_at,defer_until,
         refund_amount,return_type,restocked,contact_log,history,created_at});}
     else if(sql.includes('UPDATE orders SET state = ?, awb = ?')){
@@ -79,8 +80,8 @@ const stmt=(sql)=>({
     else if(sql.includes('DELETE FROM orders')) orders.delete(this.args[0]);
     else if(sql.includes('DELETE FROM transactions')) transactions.delete(this.args[0]);
     else if(sql.includes('INSERT INTO products')){
-      const [id,client_id,name,sku,price,cost,active,stock,low_stock_threshold,created_at]=this.args;
-      products.set(id,{id,client_id,name,sku,price,cost,active,stock,low_stock_threshold,created_at});}
+      const [id,client_id,name,sku,category,price,cost,active,stock,low_stock_threshold,created_at]=this.args;
+      products.set(id,{id,client_id,name,sku,category,price,cost,active,stock,low_stock_threshold,created_at});}
     else if(sql.startsWith('UPDATE products SET stock = ?, low_stock_threshold = ?')){
       const [stock,low_stock_threshold,id]=this.args; const p=products.get(id);
       if(p){p.stock=stock;p.low_stock_threshold=low_stock_threshold;}}
@@ -99,8 +100,17 @@ const stmt=(sql)=>({
       const [id,client_id,type,amount,balance_after,note,created_at,created_by]=this.args;
       walletLog.set(id,{id,client_id,type,amount,balance_after,note,created_at,created_by});}
     else if(sql.includes('INSERT INTO stock_log')){
-      const [id,client_id,product_id,product_name,delta,new_stock,note,supplier_id,supplier_name,created_at,created_by]=this.args;
-      stockLog.set(id,{id,client_id,product_id,product_name,delta,new_stock,note,supplier_id,supplier_name,created_at,created_by});}
+      const [id,client_id,product_id,variant_id,product_name,delta,new_stock,note,supplier_id,supplier_name,created_at,created_by]=this.args;
+      stockLog.set(id,{id,client_id,product_id,variant_id,product_name,delta,new_stock,note,supplier_id,supplier_name,created_at,created_by});}
+    else if(sql.includes('INSERT INTO product_variants')){
+      const [id,product_id,client_id,name,sku,stock,price,active,created_at]=this.args;
+      variants.set(id,{id,product_id,client_id,name,sku,stock,price,active,created_at});}
+    else if(sql.startsWith('UPDATE product_variants SET stock')){
+      const p=variants.get(this.args[1]); if(p) p.stock=this.args[0];}
+    else if(sql.startsWith('DELETE FROM product_variants WHERE product_id')){
+      for(const [k,v] of [...variants.entries()]) if(v.product_id===this.args[0]) variants.delete(k);}
+    else if(sql.startsWith('DELETE FROM product_variants WHERE id')) variants.delete(this.args[0]);
+    else if(sql.includes('DELETE FROM product_variants')) variants.clear();
     else if(sql.includes('INSERT INTO suppliers')){
       const [id,client_id,name,phone,note,active,created_at]=this.args;
       suppliers.set(id,{id,client_id,name,phone,note,active,created_at});}
@@ -183,6 +193,14 @@ const stmt=(sql)=>({
       const clist=[...coupons.values()].filter(c=>c.client_id===this.args[0])
         .sort((a,b)=>a.created_at<b.created_at?1:-1);
       return {results:clist};
+    }
+    if(sql.includes('FROM product_variants')){
+      if(sql.includes('WHERE product_id = ?')){
+        const vlist=[...variants.values()].filter(v=>v.product_id===this.args[0])
+          .sort((a,b)=>a.name.localeCompare(b.name,'ar'));
+        return {results:vlist};
+      }
+      return {results:[...variants.values()]};
     }
     if(sql.includes('LEFT JOIN orders o ON o.customer_id = c.id')){
       const clientId=this.args[0];
@@ -308,6 +326,53 @@ check('العميل يقدر يسجّل منتج بكمية مخزون وحد ت
 check('المنتج اتسجّل بالكمية والحد الصح', products.get(stockProd.id).stock===3 && products.get(stockProd.id).low_stock_threshold===5);
 r=await call('/api/products/'+stockProd.id+'/stock',{method:'PATCH',body:JSON.stringify({stock:20})},clientCookie);
 check('تحديث سريع للكمية بيشتغل', r.status===200 && products.get(stockProd.id).stock===20);
+
+head('التصنيفات ومتغيرات المنتج (لون/مقاس)');
+r=await call('/api/products',{method:'POST',body:JSON.stringify({
+  name:'قميص كاجوال',price:300,cost:120,stock:0,category:'قمصان'})},clientCookie);
+let [,shirtProd]=await j(r);
+check('المنتج بيتسجل بتصنيف صحيح', products.get(shirtProd.id).category==='قمصان');
+
+check('اسم المتغير مطلوب',
+  (await call('/api/products/'+shirtProd.id+'/variants',{method:'POST',body:JSON.stringify({stock:5})},clientCookie)).status===400);
+r=await call('/api/products/'+shirtProd.id+'/variants',{method:'POST',body:JSON.stringify({
+  name:'أحمر — L', sku:'SHIRT-RED-L', stock:10})},clientCookie);
+let [,varRed]=await j(r);
+check('إضافة متغير أول (أحمر L)', r.status===200);
+r=await call('/api/products/'+shirtProd.id+'/variants',{method:'POST',body:JSON.stringify({
+  name:'أزرق — M', stock:4, price:280})},clientCookie);
+let [,varBlue]=await j(r);
+check('إضافة متغير تاني بسعر خاص (أزرق M)', r.status===200);
+
+r=await call('/api/products/'+shirtProd.id+'/variants',{},clientCookie);
+let [,varList]=await j(r);
+check('قائمة متغيرات المنتج فيها الاتنين', varList.length===2);
+check('السعر الخاص محفوظ صح للمتغير الأزرق', varList.find(v=>v.id===varBlue.id).price===280);
+check('المتغير الأحمر من غير سعر خاص (يستخدم سعر المنتج)', varList.find(v=>v.id===varRed.id).price==null);
+
+r=await call('/api/variants/'+varRed.id+'/stock/add',{method:'POST',body:JSON.stringify({delta:5,note:'توريد'})},clientCookie);
+let [,varStockRes]=await j(r);
+check('إضافة كمية لمتغير محدد بتزود عليه مش على المنتج الأب', r.status===200 && varStockRes.stock===15);
+check('المنتج الأب ما اتأثرش', products.get(shirtProd.id).stock===0);
+check('حركة المخزون اتسجّلت مربوطة بالمتغير الصح',
+  [...stockLog.values()].some(s=>s.variant_id===varRed.id && s.delta===5));
+
+let [,varOrder]=await j(await call('/api/orders',{method:'POST',body:JSON.stringify({
+  name:'عميل متغير', phone:'01066677788', productId:shirtProd.id, variantId:varRed.id,
+  qty:2, total:600, date:'2026-08-20'})},clientCookie));
+check('الأوردر اتسجل مربوط بالمتغير الصح', orders.get(varOrder.order.id).variant_id===varRed.id);
+
+r=await call('/api/orders/'+varOrder.order.id,{method:'PATCH',body:JSON.stringify({state:'returned'})},adminCookie);
+check('مرتجع على أوردر فيه متغير بينجح', r.status===200);
+r=await call('/api/products/'+shirtProd.id+'/variants',{},clientCookie);
+let [,varListAfterReturn]=await j(r);
+check('الكمية رجعت للمتغير الصح (مش للمنتج الأب)',
+  varListAfterReturn.find(v=>v.id===varRed.id).stock===17 && products.get(shirtProd.id).stock===0);
+
+r=await call('/api/variants/'+varBlue.id,{method:'DELETE'},clientCookie);
+check('العميل يقدر يحذف متغير', r.status===200 && !variants.has(varBlue.id));
+r=await call('/api/products/'+shirtProd.id,{method:'DELETE'},clientCookie);
+check('حذف المنتج بيمسح متغيراته كمان', r.status===200 && !variants.has(varRed.id));
 
 head('إضافة كميات جديدة للمخزون + سجلها');
 r=await call('/api/products/'+stockProd.id+'/stock/add',{method:'POST',body:JSON.stringify({delta:15,note:'توريد جديد'})},clientCookie);

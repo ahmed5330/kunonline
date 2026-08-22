@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS orders (
   address       TEXT,
   product       TEXT,
   product_id    TEXT,
+  variant_id    TEXT,                    -- لو الأوردر على متغير معيّن (لون/مقاس) بدل المنتج العام
   product_note  TEXT,                   -- ملاحظات المنتج (لون/مقاس/اختيارات) — تيجي تلقائي من إيزي أوردرز أو تتكتب يدوي
   unit_price    REAL DEFAULT 0,
   qty           INTEGER DEFAULT 1,
@@ -107,14 +108,30 @@ CREATE TABLE IF NOT EXISTS products (
   client_id            TEXT NOT NULL,
   name                 TEXT NOT NULL,
   sku                  TEXT,
+  category             TEXT,                  -- تصنيف حر (تيشيرتات، إكسسوارات...) لتصفية المنتجات والتقارير
   price                REAL DEFAULT 0,
   cost                 REAL DEFAULT 0,
   active               INTEGER DEFAULT 1,
-  stock                INTEGER DEFAULT 0,     -- الكمية المتاحة حاليًا
+  stock                INTEGER DEFAULT 0,     -- الكمية المتاحة حاليًا — لو المنتج له متغيرات (variants)، الرقم ده بيبقى إجمالي تقريبي بس، والدقيق في جدول المتغيرات
   low_stock_threshold  INTEGER DEFAULT 5,     -- تحت الرقم ده يظهر تنبيه "قرب يخلص"
   created_at           TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_products_client ON products (client_id);
+
+-- متغيرات المنتج (لون/مقاس) — كل متغير له مخزون وSKU مستقل، وسعر اختياري يختلف عن المنتج الأصلي
+CREATE TABLE IF NOT EXISTS product_variants (
+  id          TEXT PRIMARY KEY,
+  product_id  TEXT NOT NULL,
+  client_id   TEXT NOT NULL,
+  name        TEXT NOT NULL,               -- مثال: "أحمر — مقاس L"
+  sku         TEXT,
+  stock       INTEGER DEFAULT 0,
+  price       REAL,                        -- NULL = يستخدم سعر المنتج الأصلي
+  active      INTEGER DEFAULT 1,
+  created_at  TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_variants_product ON product_variants (product_id);
+CREATE INDEX IF NOT EXISTS idx_variants_client ON product_variants (client_id);
 
 -- الحركات المالية العامة (مصاريف وإيرادات مش مرتبطة بأوردر بعينه)
 CREATE TABLE IF NOT EXISTS transactions (
@@ -152,6 +169,7 @@ CREATE TABLE IF NOT EXISTS stock_log (
   id            TEXT PRIMARY KEY,
   client_id     TEXT NOT NULL,
   product_id    TEXT NOT NULL,
+  variant_id    TEXT,                   -- لو التوريد/التصحيح كان على متغير معيّن بدل المنتج العام
   product_name  TEXT,
   delta         INTEGER NOT NULL,
   new_stock     INTEGER,
@@ -163,6 +181,7 @@ CREATE TABLE IF NOT EXISTS stock_log (
 );
 CREATE INDEX IF NOT EXISTS idx_stocklog_client ON stock_log (client_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_stocklog_supplier ON stock_log (supplier_id);
+CREATE INDEX IF NOT EXISTS idx_stocklog_variant ON stock_log (variant_id);
 
 -- الموردين — كل مورد بيوصل بضاعة لعميل معيّن (المتجر)
 CREATE TABLE IF NOT EXISTS suppliers (
