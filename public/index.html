@@ -1169,6 +1169,7 @@ const ORDER_STATE = {
   cancelled:{ ar:'تم إلغاء الطلب',      cls:'off'  },
   deferred: { ar:'مؤجل',                cls:'off'  }
 };
+const RETURN_TYPE_LABEL = { full:'مرتجع كامل', partial:'مرتجع جزئي', exchange:'استبدال' };
 function ordersFor(clientId, range){
   const [from,to] = rangeDates(range);
   return (DB.orders||[]).filter(o=>o.clientId===clientId && o.date>=from && o.date<=to)
@@ -1202,6 +1203,7 @@ function orderFormFields(client, withClientPicker){
       <div class="field"><label>الإجمالي المطلوب${client?' ('+client.currency+')':''}</label>
         <input id="n_total" type="number" min="0" step="0.01" placeholder="0">
         <span class="hint" id="totalHint">بيتحسب لوحده لما تختار منتج</span></div>
+      <div class="field"><label>كود كوبون (اختياري)</label><input id="n_coupon" placeholder="مثال: SAVE50" style="text-transform:uppercase"></div>
       <div class="field"><label>تاريخ الأوردر</label><input id="n_date" type="date" value="${today()}"></div>
       <div class="field" style="grid-column:1/-1"><label>ملاحظة على الأوردر</label><input id="n_note" placeholder="مثلاً: يفضّل التسليم بعد ٥ العصر"></div>
     </div>`;
@@ -1226,6 +1228,7 @@ function readOrderForm(clientId){
     unitPrice: pr ? pr.price : safeDiv(total, qty),
     productCost: pr ? (Number(pr.cost)||0)*qty : 0,
     qty, total,
+    couponCode: g('n_coupon').trim() || undefined,
     source:g('n_source')||'واتساب', note:g('n_note').trim(),
     awb:null, state:'pending', checkpoint:STATE_TEXT.pending
   };
@@ -1903,6 +1906,7 @@ function clientAddOrderView(client){
   </div>
   <div class="card">
     <p class="hint" style="margin-bottom:14px">الأوردرات اللي بتيجي من واتساب أو من الصفحة سجّلها هنا، وهتدخل في أرقام الداشبورد زيها زي أوردرات المتجر بالظبط.</p>
+    <div style="margin-bottom:10px"><button class="btn sm line" id="openCouponsBtn">إدارة كوبونات الخصم</button></div>
     ${orderFormFields(client, false)}
     <div class="form-actions">
       <button class="btn sm" id="saveOrder">تسجيل الأوردر</button>
@@ -2064,6 +2068,55 @@ function askDeferDate(order){
   });
 }
 
+/** بيفتح فوراً أول ما تختار حالة "مرتجع" — لازم تحدد نوع المرتجع (وقيمة الاسترداد لو جزئي)
+    قبل ما نأكّد، عشان تحديث المخزون وتسجيل الاسترداد يبقوا صح من أول مرة */
+function askReturnDetails(order){
+  return new Promise(resolve=>{
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'position:fixed;inset:0;background:rgba(18,33,43,.55);z-index:200;display:grid;place-items:center;padding:18px';
+    wrap.innerHTML = `
+      <div class="card" style="max-width:420px;width:100%;box-shadow:var(--shadow)">
+        <h3 style="font-size:16px;margin-bottom:4px">تسجيل مرتجع</h3>
+        <p class="hint" style="margin-bottom:14px">${esc(order.name||'')} — إجمالي الأوردر ${money(order.total)}.
+          ${order.productId ? 'الكمية هترجع تلقائي للمخزون.' : ''}</p>
+        <div class="field"><label>نوع المرتجع</label>
+          <select id="rt_type">
+            <option value="full">مرتجع كامل — استرداد المبلغ بالكامل</option>
+            <option value="partial">مرتجع جزئي — استرداد جزء من المبلغ</option>
+            <option value="exchange">استبدال — العميل هياخد منتج بدل الأوردر</option>
+          </select>
+        </div>
+        <div class="field" id="rt_amount_field"><label>قيمة الاسترداد</label>
+          <input id="rt_amount" type="number" min="0" step="0.01" value="${money(order.total)}"></div>
+        <div class="form-actions">
+          <button class="btn sm" id="rt_ok">تأكيد المرتجع</button>
+          <button class="btn sm line" id="rt_cancel">إلغاء</button>
+        </div>
+      </div>`;
+    document.body.appendChild(wrap);
+    const close = v => { document.body.removeChild(wrap); resolve(v); };
+    wrap.querySelector('#rt_cancel').onclick = ()=> close(null);
+    wrap.onclick = ev => { if(ev.target === wrap) close(null); };
+    const typeSel = wrap.querySelector('#rt_type');
+    const amountField = wrap.querySelector('#rt_amount_field');
+    const amountInput = wrap.querySelector('#rt_amount');
+    const syncAmountField = ()=>{
+      if(typeSel.value==='full'){ amountInput.value = money(order.total); amountField.style.opacity='0.55'; amountInput.disabled=true; }
+      else if(typeSel.value==='exchange'){ amountField.style.opacity='0.55'; amountInput.disabled=true; }
+      else { amountField.style.opacity='1'; amountInput.disabled=false; }
+    };
+    typeSel.onchange = syncAmountField;
+    syncAmountField();
+    wrap.querySelector('#rt_ok').onclick = ()=>{
+      const returnType = typeSel.value;
+      if(returnType==='partial' && (amountInput.value===''||Number(amountInput.value)<0)){
+        toast('اكتب قيمة الاسترداد'); return;
+      }
+      close({ returnType, refundAmount: returnType==='exchange' ? 0 : (Number(amountInput.value)||0) });
+    };
+  });
+}
+
 function waLink(phone, text){
   let p = String(phone||'').replace(/[^\d]/g,'');
   if(p.startsWith('0')) p = '20' + p.slice(1);
@@ -2092,7 +2145,7 @@ function historyRowLabel(h){
 
 function showHistoryModal(order){
   const rows = (order.history||[]).slice().reverse().map(h=>`
-    <tr><td>${historyRowLabel(h)}</td>
+    <tr><td>${historyRowLabel(h)}${h.note?`<div class="hint" style="font-size:11px">${esc(h.note)}</div>`:''}</td>
       <td class="mono" style="font-size:12px">${new Date(h.at).toLocaleString('ar-EG')}</td></tr>`).join('');
   const wrap = document.createElement('div');
   wrap.style.cssText = 'position:fixed;inset:0;background:rgba(18,33,43,.55);z-index:200;display:grid;place-items:center;padding:18px';
@@ -2176,6 +2229,78 @@ function showWhatsAppModal(order, clientName){
   wrap.querySelector('#wa_review').onclick  = ()=>{ send('review');  close(); };
   wrap.querySelector('#wa_close').onclick = close;
   wrap.onclick = ev => { if(ev.target === wrap) close(); };
+}
+
+/* ---------- كوبونات الخصم ---------- */
+async function showCouponsModal(client){
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'position:fixed;inset:0;background:rgba(18,33,43,.55);z-index:200;display:grid;place-items:center;padding:18px;overflow-y:auto';
+  wrap.innerHTML = `<div class="card" style="max-width:480px;width:100%;box-shadow:var(--shadow)"><p class="hint">بنجيب الكوبونات...</p></div>`;
+  document.body.appendChild(wrap);
+  const close = ()=> document.body.removeChild(wrap);
+  wrap.onclick = ev => { if(ev.target === wrap) close(); };
+  let list = [];
+  try{ list = await api('/api/coupons'); }catch(e){ toast(e.message); }
+
+  const couponRow = c => `
+    <div class="card" style="margin-bottom:8px;padding:10px 12px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+      <div><b class="mono">${esc(c.code)}</b>
+        <span class="pill ${c.active?'on':'off'}" style="margin-inline-start:6px">${c.type==='percent'?num(c.value)+'٪':money(c.value)}</span>
+        ${c.expires_at?`<div class="hint" style="font-size:11px">لحد ${arDate(c.expires_at)}</div>`:''}
+        ${c.note?`<div class="hint" style="font-size:11px">${esc(c.note)}</div>`:''}</div>
+      <button class="icon-btn" data-delcpn="${c.id}">حذف</button>
+    </div>`;
+  const paintList = () => {
+    const box = wrap.querySelector('#cpnList');
+    box.innerHTML = list.map(couponRow).join('') || '<p class="hint">لسه مفيش كوبونات مسجّلة.</p>';
+    box.querySelectorAll('[data-delcpn]').forEach(b=> b.onclick = async ()=>{
+      if(!confirm('متأكد إنك عايز تحذف الكوبون ده؟')) return;
+      try{
+        await api('/api/coupons/'+encodeURIComponent(b.dataset.delcpn), {method:'DELETE'});
+        list = list.filter(x=>x.id!==b.dataset.delcpn);
+        paintList(); toast('اتحذف الكوبون');
+      }catch(e){ toast(e.message); }
+    });
+  };
+  wrap.innerHTML = `
+    <div class="card" style="max-width:480px;width:100%;box-shadow:var(--shadow);max-height:85vh;overflow-y:auto">
+      <h3 style="font-size:16px;margin-bottom:4px">كوبونات الخصم</h3>
+      <p class="hint" style="margin-bottom:12px">أي كود هنا تقدر تكتبه وقت تسجيل الأوردر، والخصم هيتحسب ويتسجل تلقائي.</p>
+      <div id="cpnList"></div>
+      <div class="form-grid" style="margin-top:10px">
+        <div class="field"><label>الكود</label><input id="cpnCode" placeholder="مثال: SAVE50" style="text-transform:uppercase"></div>
+        <div class="field"><label>النوع</label><select id="cpnType">
+          <option value="fixed">قيمة ثابتة</option>
+          <option value="percent">نسبة من الإجمالي</option>
+        </select></div>
+        <div class="field"><label>القيمة</label><input id="cpnValue" type="number" min="0" step="0.01" placeholder="0"></div>
+        <div class="field"><label>تاريخ الانتهاء (اختياري)</label><input id="cpnExpires" type="date"></div>
+        <div class="field" style="grid-column:span 2"><label>ملاحظة (اختياري)</label><input id="cpnNote" placeholder="مثلاً: كوبون رمضان"></div>
+      </div>
+      <div class="form-actions" style="margin-top:10px">
+        <button class="btn sm" id="cpnSave">إضافة كوبون</button>
+        <button class="btn sm line" id="cpnClose">قفل</button>
+      </div>
+    </div>`;
+  paintList();
+  wrap.querySelector('#cpnClose').onclick = close;
+  wrap.onclick = ev => { if(ev.target === wrap) close(); };
+  wrap.querySelector('#cpnSave').onclick = async ()=>{
+    const code = wrap.querySelector('#cpnCode').value.trim();
+    if(!code){ toast('اكتب كود الكوبون'); return; }
+    const type = wrap.querySelector('#cpnType').value;
+    const value = +wrap.querySelector('#cpnValue').value || 0;
+    if(value<=0){ toast('اكتب قيمة أكبر من صفر'); return; }
+    const expiresAt = wrap.querySelector('#cpnExpires').value || null;
+    const note = wrap.querySelector('#cpnNote').value.trim();
+    try{
+      await api('/api/coupons', {method:'POST', body:JSON.stringify({code, type, value, expiresAt, note})});
+      list = await api('/api/coupons');
+      wrap.querySelector('#cpnCode').value=''; wrap.querySelector('#cpnValue').value='';
+      wrap.querySelector('#cpnExpires').value=''; wrap.querySelector('#cpnNote').value='';
+      paintList(); toast('اتضاف الكوبون');
+    }catch(e){ toast(e.message); }
+  };
 }
 
 /* ---------- إضافة كميات جديدة للمخزون + سجل الإضافات ---------- */
@@ -2716,7 +2841,8 @@ function adminOrders(){
       <td class="num">${money(o.total)} ${c?c.currency:''}<br>
         <span class="hint" style="font-size:11px">شحن ${o.shippingCost!=null?money(o.shippingCost):'—'}</span></td>
       <td class="num" style="color:${o.state==='collected'?((o.total-(o.productCost||0)-(o.shippingCost||0)-(o.otherCost||0))>=0?'var(--pine)':'var(--brick)'):'var(--ink-3)'}">
-        ${o.state==='collected'?money(o.total-(o.productCost||0)-(o.shippingCost||0)-(o.otherCost||0)):'—'}</td>
+        ${o.state==='collected'?money(o.total-(o.productCost||0)-(o.shippingCost||0)-(o.otherCost||0)):
+          o.state==='returned'?`<span style="color:var(--brick)">${RETURN_TYPE_LABEL[o.returnType]||'مرتجع'}</span><br><span class="hint" style="font-size:11px">استرداد ${money(o.refundAmount||0)}</span>`:'—'}</td>
       <td><input class="mono" data-awb="${o.id}" value="${esc(o.awb||'')}" placeholder="رقم البوليصة"
            style="width:120px;padding:5px 8px;border:1px solid var(--line);border-radius:7px;font-size:12px;margin-bottom:5px"><br>
         <select data-st="${o.id}" style="padding:5px 8px;border:1px solid var(--line);border-radius:7px;font-size:12.5px;width:120px">${stOpts}</select></td>
@@ -3904,6 +4030,8 @@ function bindClient(c){
       paint(); toast('الأوردر اتسجّل');
     }catch(e){ toast('ما اتسجّلش: '+e.message); }
   };
+  const ocb = document.getElementById('openCouponsBtn');
+  if(ocb) ocb.onclick = ()=> showCouponsModal(c);
   bindPasswordCard();
   const ex = document.getElementById('expClient');
   if(ex) ex.onclick = ()=>{ downloadFile(`${c.email}-report.csv`, clientCSV(c), 'text/csv;charset=utf-8'); toast('اتنزّل الملف'); };
@@ -4177,6 +4305,11 @@ function bindOrderActionButtons(){
       if(!deferUntil){ paint(true); return; }      /* لغى — نرجّع القايمة زي ما كانت */
       body.deferUntil = deferUntil;
       o.deferUntil = deferUntil;
+    } else if(next === 'returned' && o.state !== 'returned'){
+      const ret = await askReturnDetails(o);
+      if(!ret){ paint(true); return; }              /* لغى — نرجّع القايمة زي ما كانت */
+      Object.assign(body, ret);
+      o.returnType = ret.returnType; o.refundAmount = ret.refundAmount;
     }
     o.state = next; o.checkpoint = STATE_TEXT[next] || '';
     try{

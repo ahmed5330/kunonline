@@ -2,7 +2,7 @@
 import worker from './src/index.js';
 const TODAY = new Date().toISOString().slice(0,10);
 
-let stateRow=null; const orders=new Map(), users=new Map(), attempts=new Map(), products=new Map(), transactions=new Map(), chatMessages=new Map(), tasks=new Map(), walletLog=new Map(), waOutbox=new Map(), stockLog=new Map(), suppliers=new Map(), customers=new Map();
+let stateRow=null; const orders=new Map(), users=new Map(), attempts=new Map(), products=new Map(), transactions=new Map(), chatMessages=new Map(), tasks=new Map(), walletLog=new Map(), waOutbox=new Map(), stockLog=new Map(), suppliers=new Map(), customers=new Map(), coupons=new Map();
 const stmt=(sql)=>({
   args:[], bind(...a){this.args=a;return this;},
   async first(){
@@ -21,6 +21,9 @@ const stmt=(sql)=>({
       const c=customers.get(this.args[0]); return c?{name:c.name,note:c.note,tags:c.tags}:null;
     }
     if(sql.includes('FROM customers WHERE id = ?')){ const c=customers.get(this.args[0]); return c?{...c}:null; }
+    if(sql.includes('FROM coupons WHERE client_id = ? AND code = ?'))
+      return [...coupons.values()].find(c=>c.client_id===this.args[0]&&c.code===this.args[1])||null;
+    if(sql.includes('FROM coupons WHERE id = ?')){ const c=coupons.get(this.args[0]); return c?{...c}:null; }
     if(sql.includes('FROM orders WHERE ref = ? AND client_id = ?'))
       return [...orders.values()].find(o=>o.ref===this.args[0]&&o.client_id===this.args[1])||null;
     if(sql.includes('FROM transactions WHERE id = ?')) return transactions.get(this.args[0])||null;
@@ -51,17 +54,19 @@ const stmt=(sql)=>({
     else if(sql.includes('DELETE FROM login_attempts')) attempts.delete(this.args[0]);
     else if(sql.includes('INSERT INTO orders')){
       const [id,client_id,ref,customer_id,date,name,phone,gov,address,product,product_id,product_note,unit_price,qty,total,
-        product_cost,shipping_cost,other_cost,source,note,awb,state,checkpoint,signed_at,collected_at,defer_until,
-        contact_log,history,created_at]=this.args;
+        discount_amount,coupon_code,product_cost,shipping_cost,other_cost,source,note,awb,state,checkpoint,signed_at,collected_at,defer_until,
+        refund_amount,return_type,restocked,contact_log,history,created_at]=this.args;
       orders.set(id,{id,client_id,ref,customer_id,date,name,phone,gov,address,product,product_id,product_note,unit_price,qty,total,
-        product_cost,shipping_cost,other_cost,source,note,awb,state,checkpoint,signed_at,collected_at,defer_until,
-        contact_log,history,created_at});}
+        discount_amount,coupon_code,product_cost,shipping_cost,other_cost,source,note,awb,state,checkpoint,signed_at,collected_at,defer_until,
+        refund_amount,return_type,restocked,contact_log,history,created_at});}
     else if(sql.includes('UPDATE orders SET state = ?, awb = ?')){
-      const [state,awb,checkpoint,shipping_cost,other_cost,signed_at,collected_at,defer_until,history,id]=this.args;
+      const [state,awb,checkpoint,shipping_cost,other_cost,signed_at,collected_at,defer_until,
+        refund_amount,return_type,restocked,history,id]=this.args;
       const o=orders.get(id);
       if(o){o.state=state;o.awb=awb;o.checkpoint=checkpoint;
         o.shipping_cost=shipping_cost;o.other_cost=other_cost;o.signed_at=signed_at;
-        o.collected_at=collected_at;o.defer_until=defer_until;o.history=history;}}
+        o.collected_at=collected_at;o.defer_until=defer_until;
+        o.refund_amount=refund_amount;o.return_type=return_type;o.restocked=restocked;o.history=history;}}
     else if(sql.startsWith('UPDATE orders SET state = ?, checkpoint = ?, history = ?')){
       const [state,checkpoint,history,id]=this.args; const o=orders.get(id);
       if(o){o.state=state;o.checkpoint=checkpoint;o.history=history;}}
@@ -110,6 +115,12 @@ const stmt=(sql)=>({
       const [name,note,tags,id]=this.args; const c=customers.get(id);
       if(c){c.name=name;c.note=note;c.tags=tags;}}
     else if(sql.includes('DELETE FROM customers')) customers.clear();
+    else if(sql.includes('INSERT INTO coupons')){
+      const [id,client_id,code,type,value,active,expires_at,note,created_at]=this.args;
+      const dup=[...coupons.values()].find(c=>c.client_id===client_id && c.code===code && c.id!==id);
+      if(dup) throw new Error('UNIQUE constraint failed: coupons.client_id, coupons.code');
+      coupons.set(id,{id,client_id,code,type,value,active,expires_at,note,created_at});}
+    else if(sql.includes('DELETE FROM coupons')) sql.includes('WHERE id') ? coupons.delete(this.args[0]) : coupons.clear();
     else if(sql.includes('INSERT INTO whatsapp_outbox')){
       const [id,client_id,order_id,phone,message,kind,status,created_at]=this.args;
       waOutbox.set(id,{id,client_id,order_id,phone,message,kind,status,created_at});}
@@ -167,6 +178,11 @@ const stmt=(sql)=>({
       const slist=[...suppliers.values()].filter(s=>s.client_id===this.args[0])
         .sort((a,b)=>a.name.localeCompare(b.name,'ar'));
       return {results:slist};
+    }
+    if(sql.includes('FROM coupons')){
+      const clist=[...coupons.values()].filter(c=>c.client_id===this.args[0])
+        .sort((a,b)=>a.created_at<b.created_at?1:-1);
+      return {results:clist};
     }
     if(sql.includes('LEFT JOIN orders o ON o.customer_id = c.id')){
       const clientId=this.args[0];
@@ -335,6 +351,46 @@ check('العميل مش شايف موردين العميل التاني',
 r=await call('/api/suppliers/'+supRes.id,{method:'DELETE'},clientCookie);
 check('العميل يقدر يحذف مورده', r.status===200 && !suppliers.has(supRes.id));
 
+head('كوبونات الخصم');
+check('كوبون بقيمة صفر مرفوض',
+  (await call('/api/coupons',{method:'POST',body:JSON.stringify({code:'ZERO',type:'fixed',value:0})},clientCookie)).status===400);
+check('كوبون نسبة أكتر من ١٠٠٪ مرفوض',
+  (await call('/api/coupons',{method:'POST',body:JSON.stringify({code:'BIG',type:'percent',value:150})},clientCookie)).status===400);
+r=await call('/api/coupons',{method:'POST',body:JSON.stringify({code:'save50',type:'fixed',value:50})},clientCookie);
+let [,cpnFixed]=await j(r);
+check('العميل يقدر يضيف كوبون قيمة ثابتة', r.status===200);
+r=await call('/api/coupons',{},clientCookie);
+let [,cpnList]=await j(r);
+check('الكود اتخزن بحروف كبيرة (توحيد المطابقة)', cpnList.some(c=>c.id===cpnFixed.id && c.code==='SAVE50'));
+
+r=await call('/api/coupons',{method:'POST',body:JSON.stringify({code:'SAVE50',type:'percent',value:10})},clientCookie);
+check('كوبون بنفس الكود لنفس المتجر مرفوض (تكرار)', r.status===409);
+
+r=await call('/api/coupons',{method:'POST',body:JSON.stringify({code:'PCT10',type:'percent',value:10})},clientCookie);
+let [,cpnPct]=await j(r);
+check('العميل يقدر يضيف كوبون نسبة', r.status===200);
+
+let [,ordBadCoupon]=await j(await call('/api/orders',{method:'POST',body:JSON.stringify({
+  name:'تجربة كوبون غلط', phone:'01055501234', total:200, date:'2026-08-19', couponCode:'NOTREAL'})},clientCookie));
+check('كود كوبون مش موجود بيترفض إنشاء الأوردر', ordBadCoupon.error!=null);
+
+let [,ordFixedCoupon]=await j(await call('/api/orders',{method:'POST',body:JSON.stringify({
+  name:'عميل كوبون ثابت', phone:'01055501234', total:200, date:'2026-08-19', couponCode:'save50'})},clientCookie));
+check('كوبون ثابت بيتطبّق ويحسب الخصم صح', orders.get(ordFixedCoupon.order.id).discount_amount===50);
+check('كود الكوبون بيتسجل بحروف كبيرة مع الأوردر', orders.get(ordFixedCoupon.order.id).coupon_code==='SAVE50');
+
+let [,ordPctCoupon]=await j(await call('/api/orders',{method:'POST',body:JSON.stringify({
+  name:'عميل كوبون نسبة', phone:'01055501234', total:300, date:'2026-08-19', couponCode:'PCT10'})},clientCookie));
+check('كوبون نسبة بيتحسب من الإجمالي (١٠٪ من ٣٠٠ = ٣٠)', orders.get(ordPctCoupon.order.id).discount_amount===30);
+
+let [,ordManualDiscount]=await j(await call('/api/orders',{method:'POST',body:JSON.stringify({
+  name:'خصم يدوي بلا كوبون', phone:'01055501234', total:150, discountAmount:20, date:'2026-08-19'})},clientCookie));
+check('خصم يدوي من غير كوبون بيتسجل عادي', orders.get(ordManualDiscount.order.id).discount_amount===20);
+
+check('عميل ب (c2) ممنوع يشوف كوبونات عميل تاني', (await call('/api/coupons?clientId=c1',{},clientCookie)).status===403);
+r=await call('/api/coupons/'+cpnPct.id,{method:'DELETE'},clientCookie);
+check('العميل يقدر يحذف كوبون بتاعه', r.status===200 && !coupons.has(cpnPct.id));
+
 head('العملاء (Customer 360) — ربط تلقائي حسب رقم التليفون');
 let [,custOrder1]=await j(await call('/api/orders',{method:'POST',body:JSON.stringify({
   name:'هدير محمد', phone:'01099988877', gov:'أسيوط', total:400, date:'2026-08-10'})},clientCookie));
@@ -392,6 +448,52 @@ check('العميل ممنوع يعدّل الأوردر',
   (await call('/api/orders/EO-1',{method:'PATCH',body:JSON.stringify({state:'delivered'})},clientCookie)).status===403);
 await call('/webhooks/tracking',{method:'POST',body:JSON.stringify({trackNo:'JT123EG',latestEvent:'تم التسليم للعميل'})});
 check('تتبع J&T حدّث الحالة', orders.get('EO-1').state==='signed');
+
+head('المرتجعات — رجوع المخزون تلقائي + نوع المرتجع + قيمة الاسترداد');
+const stockBeforeReturn = products.get(stockProd.id).stock;
+let [,retOrder]=await j(await call('/api/orders',{method:'POST',body:JSON.stringify({
+  name:'عميل هيرجع الأوردر', phone:'01033322211', productId:stockProd.id, qty:3, total:900, date:'2026-08-18'
+})},clientCookie));
+const retId = retOrder.order.id;
+
+r=await call('/api/orders/'+retId,{method:'PATCH',body:JSON.stringify({state:'returned',returnType:'nonsense'})},adminCookie);
+check('نوع مرتجع غير معروف مرفوض', r.status===400);
+
+r=await call('/api/orders/'+retId,{method:'PATCH',body:JSON.stringify({state:'returned',returnType:'partial'})},adminCookie);
+let [,partialErr]=await j(r);
+check('مرتجع جزئي من غير قيمة استرداد مرفوض', r.status===400);
+check('الرد بيوضح إنه محتاج قيمة استرداد', partialErr.needRefundAmount===true);
+
+r=await call('/api/orders/'+retId,{method:'PATCH',body:JSON.stringify({state:'returned'})},adminCookie);
+let [,retRes]=await j(r);
+check('مرتجع كامل (من غير تحديد نوع) بيتسجل بنجاح', r.status===200);
+check('نوع المرتجع الافتراضي = كامل', retRes.returnType==='full');
+check('قيمة الاسترداد الافتراضية = إجمالي الأوردر', retRes.refundAmount===900);
+check('المخزون رجع بالكمية (٣ قطع)', products.get(stockProd.id).stock===stockBeforeReturn+3);
+check('الأوردر اتعلّم إنه اترجّع مخزونه', orders.get(retId).restocked===1);
+check('حركة المخزون اتسجّلت باسم الأوردر',
+  [...stockLog.values()].some(s=>s.product_id===stockProd.id && s.delta===3 && s.note.includes(retId)));
+
+r=await call('/api/orders/'+retId,{method:'PATCH',body:JSON.stringify({state:'returned',returnType:'partial',refundAmount:400})},adminCookie);
+check('تعديل بيانات مرتجع موجود (نوع/قيمة) من غير إعادة إضافة للمخزون تاني', r.status===200);
+check('المخزون ما اتزودش تاني (لسه نفس القيمة)', products.get(stockProd.id).stock===stockBeforeReturn+3);
+check('قيمة الاسترداد اتحدّثت للجزئي الجديد', orders.get(retId).refund_amount===400);
+check('نوع المرتجع اتحدّث لجزئي', orders.get(retId).return_type==='partial');
+
+r=await call('/api/orders/'+retId,{method:'PATCH',body:JSON.stringify({state:'confirmed'})},adminCookie);
+check('تصحيح غلطة: رجّعنا الأوردر من مرتجع لحالة تانية', r.status===200);
+check('المخزون اتخصم تاني (رجع لأصله قبل المرتجع)', products.get(stockProd.id).stock===stockBeforeReturn);
+check('علامة restocked اتصفّرت', orders.get(retId).restocked===0);
+check('قيمة الاسترداد ونوع المرتجع اتمسحوا بعد التصحيح',
+  orders.get(retId).refund_amount==null && orders.get(retId).return_type==null);
+
+let [,exchOrder]=await j(await call('/api/orders',{method:'POST',body:JSON.stringify({
+  name:'عميل استبدال', phone:'01044455566', productId:stockProd.id, qty:1, total:300, date:'2026-08-19'
+})},clientCookie));
+r=await call('/api/orders/'+exchOrder.order.id,{method:'PATCH',body:JSON.stringify({state:'returned',returnType:'exchange'})},adminCookie);
+let [,exchRes]=await j(r);
+check('استبدال بيتسجل كنوع مرتجع صحيح', r.status===200 && exchRes.returnType==='exchange');
+check('المخزون رجع بقطعة الاستبدال', products.get(stockProd.id).stock===stockBeforeReturn+1);
 
 head('التوكن والـ API + ضريبة الـ 14%');
 check('العميل يقدر يقرا التكاملات بتاعته',

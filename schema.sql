@@ -47,6 +47,8 @@ CREATE TABLE IF NOT EXISTS orders (
   unit_price    REAL DEFAULT 0,
   qty           INTEGER DEFAULT 1,
   total         REAL DEFAULT 0,
+  discount_amount REAL DEFAULT 0,        -- قيمة الخصم اللي اتطبقت (مش بتغيّر total، بس بتتسجل لتقارير الربح)
+  coupon_code   TEXT,                    -- كود الكوبون لو العميل استخدم واحد
   product_cost  REAL DEFAULT 0,
   shipping_cost REAL,
   other_cost    REAL,
@@ -58,6 +60,9 @@ CREATE TABLE IF NOT EXISTS orders (
   signed_at     TEXT,
   collected_at  TEXT,
   defer_until   TEXT,                   -- تاريخ رجوع الأوردر المؤجل — لما حالته deferred
+  refund_amount REAL,                   -- المبلغ اللي فعلاً رجع للعميل — مختلف عن total (ممكن يكون جزء بس)
+  return_type   TEXT,                   -- full / partial / exchange — لما الحالة تبقى returned
+  restocked     INTEGER DEFAULT 0,      -- 1 لو المنتج رجع للمخزون بالفعل (عشان ميتزودش مرتين)
   contact_log   TEXT DEFAULT '[]',      -- JSON: مواعيد محاولات التواصل مع العميل
   history       TEXT DEFAULT '[]',      -- JSON: سجل تغييرات الحالة [{state, at}]
   created_at    TEXT
@@ -81,6 +86,20 @@ CREATE TABLE IF NOT EXISTS customers (
   created_at  TEXT
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_customers_client_phone ON customers (client_id, phone);
+
+-- كوبونات الخصم — كود واحد بيتكرر استخدامه على أوردرات كتير، لكل متجر كوباناته الخاصة
+CREATE TABLE IF NOT EXISTS coupons (
+  id          TEXT PRIMARY KEY,
+  client_id   TEXT NOT NULL,
+  code        TEXT NOT NULL,             -- بيتخزن بحروف كبيرة (UPPER) عشان المطابقة تبقى موحّدة
+  type        TEXT NOT NULL DEFAULT 'fixed',  -- fixed (قيمة ثابتة) أو percent (نسبة من الإجمالي)
+  value       REAL NOT NULL DEFAULT 0,
+  active      INTEGER DEFAULT 1,
+  expires_at  TEXT,                      -- تاريخ انتهاء اختياري (YYYY-MM-DD)
+  note        TEXT,
+  created_at  TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_coupons_client_code ON coupons (client_id, code);
 
 -- كتالوج المنتجات لكل عميل — بما فيه إدارة المخزون (الكمية المتاحة وحد التنبيه)
 CREATE TABLE IF NOT EXISTS products (

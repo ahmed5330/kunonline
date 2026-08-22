@@ -281,7 +281,7 @@ async function saveState(env, state) {
   ).bind(JSON.stringify(toStore), new Date().toISOString()).run();
 }
 
-const ORDER_COLS = 'id, client_id, ref, customer_id, date, name, phone, gov, address, product, product_id, product_note, unit_price, qty, total, product_cost, shipping_cost, other_cost, source, note, awb, state, checkpoint, signed_at, collected_at, defer_until, contact_log, history, created_at';
+const ORDER_COLS = 'id, client_id, ref, customer_id, date, name, phone, gov, address, product, product_id, product_note, unit_price, qty, total, discount_amount, coupon_code, product_cost, shipping_cost, other_cost, source, note, awb, state, checkpoint, signed_at, collected_at, defer_until, refund_amount, return_type, restocked, contact_log, history, created_at';
 
 const parseJsonArr = s => { try { const v = JSON.parse(s); return Array.isArray(v) ? v : []; } catch { return []; } };
 
@@ -289,9 +289,11 @@ const rowToOrder = r => ({
   id: r.id, clientId: r.client_id, ref: r.ref, customerId: r.customer_id, date: r.date, name: r.name, phone: r.phone,
   gov: r.gov, address: r.address, product: r.product, productId: r.product_id, productNote: r.product_note,
   unitPrice: r.unit_price, qty: r.qty, total: r.total,
+  discountAmount: r.discount_amount || 0, couponCode: r.coupon_code,
   productCost: r.product_cost || 0, shippingCost: r.shipping_cost, otherCost: r.other_cost,
   source: r.source, note: r.note, awb: r.awb, state: r.state,
   checkpoint: r.checkpoint, signedAt: r.signed_at, collectedAt: r.collected_at, deferUntil: r.defer_until,
+  refundAmount: r.refund_amount, returnType: r.return_type, restocked: !!r.restocked,
   contactLog: parseJsonArr(r.contact_log), history: parseJsonArr(r.history)
 });
 
@@ -322,7 +324,7 @@ async function listOrders(env, clientId) {
 async function insertOrder(env, o) {
   const initialHistory = o.history || [{ state: o.state || 'pending', at: new Date().toISOString() }];
   await env.DB.prepare(
-    `INSERT INTO orders (${ORDER_COLS}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    `INSERT INTO orders (${ORDER_COLS}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
      ON CONFLICT(id) DO UPDATE SET
        state = excluded.state, checkpoint = excluded.checkpoint,
        awb = COALESCE(excluded.awb, orders.awb),
@@ -333,15 +335,23 @@ async function insertOrder(env, o) {
        signed_at = COALESCE(excluded.signed_at, orders.signed_at),
        collected_at = COALESCE(excluded.collected_at, orders.collected_at),
        product_note = COALESCE(excluded.product_note, orders.product_note),
-       defer_until = COALESCE(excluded.defer_until, orders.defer_until)`
+       defer_until = COALESCE(excluded.defer_until, orders.defer_until),
+       refund_amount = COALESCE(excluded.refund_amount, orders.refund_amount),
+       return_type = COALESCE(excluded.return_type, orders.return_type),
+       restocked = COALESCE(excluded.restocked, orders.restocked),
+       discount_amount = COALESCE(excluded.discount_amount, orders.discount_amount),
+       coupon_code = COALESCE(excluded.coupon_code, orders.coupon_code)`
   ).bind(
     o.id, o.clientId, o.ref || null, o.customerId || null, o.date, o.name || '', o.phone || '', o.gov || '', o.address || '',
     o.product || '', o.productId || null, o.productNote || null, o.unitPrice || 0, o.qty || 1, o.total || 0,
+    o.discountAmount ? Number(o.discountAmount) : 0, o.couponCode || null,
     o.productCost || 0,
     o.shippingCost === undefined || o.shippingCost === null ? null : Number(o.shippingCost),
     o.otherCost === undefined || o.otherCost === null ? null : Number(o.otherCost),
     o.source || '', o.note || '', o.awb || null, o.state || 'pending', o.checkpoint || '',
     o.signedAt || null, o.collectedAt || null, o.deferUntil || null,
+    o.refundAmount === undefined || o.refundAmount === null ? null : Number(o.refundAmount),
+    o.returnType || null, o.restocked ? 1 : 0,
     JSON.stringify(o.contactLog || []), JSON.stringify(initialHistory), new Date().toISOString()
   ).run();
   return o;
@@ -1141,6 +1151,26 @@ async function handleApi(request, env, url, path) {
     o.id = await nextOrderCode(env, o.name);
     o.state = ORDER_STATES.includes(o.state) ? o.state : 'pending';
     o.checkpoint = o.checkpoint || STATE_TEXT.pending;
+
+    /* لو جالنا كود كوبون، نتحقق منه ونحسب قيمة الخصم تلقائي (مفيش حاجة تتحسب لو الكود مش موجود/منتهي) */
+    if (o.couponCode) {
+      const code = String(o.couponCode).trim().toUpperCase();
+      const coupon = await env.DB.prepare(
+        'SELECT type, value, active, expires_at FROM coupons WHERE client_id = ? AND code = ?'
+      ).bind(o.clientId, code).first();
+      const today = new Date().toISOString().slice(0, 10);
+      if (coupon && coupon.active && (!coupon.expires_at || coupon.expires_at >= today)) {
+        o.couponCode = code;
+        if (o.discountAmount === undefined || o.discountAmount === null) {
+          o.discountAmount = coupon.type === 'percent'
+            ? round2((Number(o.total) || 0) * (Number(coupon.value) || 0) / 100)
+            : Number(coupon.value) || 0;
+        }
+      } else {
+        return json({ error: 'كود الكوبون مش صالح أو منتهي' }, 400);
+      }
+    }
+
     const manualOrderState = await loadState(env);
     const manualOrderClient = manualOrderState.clients.find(c => c.id === o.clientId);
     await insertOrderAndCharge(env, o, manualOrderClient && manualOrderClient.name);
@@ -1162,7 +1192,9 @@ async function handleApi(request, env, url, path) {
     if (request.method === 'PATCH') {
       const p = await request.json();
       const cur = await env.DB.prepare(
-        'SELECT client_id, state, awb, shipping_cost, other_cost, signed_at, history, name, phone, defer_until FROM orders WHERE id = ?'
+        `SELECT client_id, state, awb, shipping_cost, other_cost, signed_at, history, name, phone, defer_until,
+                product_id, qty, total, restocked, refund_amount, return_type
+         FROM orders WHERE id = ?`
       ).bind(id).first();
       if (!cur) return json({ error: 'أوردر غير موجود' }, 404);
 
@@ -1211,6 +1243,58 @@ async function handleApi(request, env, url, path) {
       if (st === 'collected' && (ship === null || other === null || isNaN(ship) || isNaN(other))) {
         return json({ error: 'قبل ما تسجّل التحصيل لازم تحدد سعر الشحن والمصاريف الأخرى', needCosts: true }, 400);
       }
+
+      /* ---------- المرتجعات: نوع المرتجع + قيمة الاسترداد + رجوع المنتج للمخزون تلقائي ---------- */
+      let refundAmount = p.refundAmount !== undefined ? num(p.refundAmount) : cur.refund_amount;
+      let returnType = p.returnType !== undefined ? (p.returnType || null) : cur.return_type;
+      let restocked = !!cur.restocked;
+      const enteringReturn = st === 'returned' && cur.state !== 'returned';
+      const leavingReturn  = st !== 'returned' && cur.state === 'returned';
+
+      if (enteringReturn) {
+        if (!returnType) returnType = 'full';
+        if (!['full', 'partial', 'exchange'].includes(returnType)) {
+          return json({ error: 'نوع المرتجع لازم يكون: مرتجع كامل، مرتجع جزئي، أو استبدال' }, 400);
+        }
+        if (returnType === 'partial' && (p.refundAmount === undefined || p.refundAmount === null || p.refundAmount === '')) {
+          return json({ error: 'حدد قيمة الاسترداد الجزئي الأول', needRefundAmount: true }, 400);
+        }
+        if (refundAmount === null || refundAmount === undefined) refundAmount = Number(cur.total) || 0;
+
+        if (cur.product_id && !restocked) {
+          const prod = await env.DB.prepare('SELECT name, stock FROM products WHERE id = ?').bind(cur.product_id).first();
+          if (prod) {
+            const qty = Number(cur.qty) || 1;
+            const newStock = Math.max(0, (Number(prod.stock) || 0) + qty);
+            await env.DB.prepare('UPDATE products SET stock = ? WHERE id = ?').bind(newStock, cur.product_id).run();
+            await env.DB.prepare(
+              `INSERT INTO stock_log (id, client_id, product_id, product_name, delta, new_stock, note, supplier_id, supplier_name, created_at, created_by)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?)`
+            ).bind('STK-' + crypto.randomUUID().slice(0, 8).toUpperCase(), cur.client_id, cur.product_id, prod.name, qty,
+              newStock, `مرتجع من أوردر ${id}`, null, null, new Date().toISOString(), user.email || user.role).run();
+            restocked = true;
+          }
+        }
+      } else if (leavingReturn) {
+        /* تصحيح غلطة: الأوردر كان متسجل مرتجع وبيرجع لحالة تانية — نلغي إضافة المخزون اللي كانت حصلت */
+        if (cur.product_id && restocked) {
+          const prod = await env.DB.prepare('SELECT name, stock FROM products WHERE id = ?').bind(cur.product_id).first();
+          if (prod) {
+            const qty = Number(cur.qty) || 1;
+            const newStock = Math.max(0, (Number(prod.stock) || 0) - qty);
+            await env.DB.prepare('UPDATE products SET stock = ? WHERE id = ?').bind(newStock, cur.product_id).run();
+            await env.DB.prepare(
+              `INSERT INTO stock_log (id, client_id, product_id, product_name, delta, new_stock, note, supplier_id, supplier_name, created_at, created_by)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?)`
+            ).bind('STK-' + crypto.randomUUID().slice(0, 8).toUpperCase(), cur.client_id, cur.product_id, prod.name, -qty,
+              newStock, `إلغاء مرتجع — أوردر ${id} رجع لحالة تانية`, null, null, new Date().toISOString(), user.email || user.role).run();
+          }
+        }
+        restocked = false;
+        refundAmount = null;
+        returnType = null;
+      }
+
       const stamp = new Date().toISOString().slice(0, 10);
       const collectedAt = st === 'collected' ? (p.collectedAt || stamp) : null;
       const signedAt = (st === 'signed' || st === 'collected')
@@ -1219,12 +1303,16 @@ async function handleApi(request, env, url, path) {
       const history = parseJsonArr(cur.history);
       if (st !== cur.state) history.push({
         state: st, at: new Date().toISOString(),
-        note: st === 'deferred' ? `مؤجل لحد ${deferUntil}` : undefined
+        note: st === 'deferred' ? `مؤجل لحد ${deferUntil}`
+          : enteringReturn ? `${returnType === 'exchange' ? 'استبدال' : returnType === 'partial' ? 'مرتجع جزئي' : 'مرتجع كامل'} — استرداد ${refundAmount || 0}`
+          : undefined
       });
 
       await env.DB.prepare(
-        'UPDATE orders SET state = ?, awb = ?, checkpoint = ?, shipping_cost = ?, other_cost = ?, signed_at = ?, collected_at = ?, defer_until = ?, history = ? WHERE id = ?'
-      ).bind(st, awb, STATE_TEXT[st] || '', ship, other, signedAt, collectedAt, deferUntil, JSON.stringify(history), id).run();
+        `UPDATE orders SET state = ?, awb = ?, checkpoint = ?, shipping_cost = ?, other_cost = ?, signed_at = ?, collected_at = ?,
+           defer_until = ?, refund_amount = ?, return_type = ?, restocked = ?, history = ? WHERE id = ?`
+      ).bind(st, awb, STATE_TEXT[st] || '', ship, other, signedAt, collectedAt, deferUntil,
+        refundAmount, returnType, restocked ? 1 : 0, JSON.stringify(history), id).run();
 
       /* رسالة "جاري شحن طلبك" لما الأوردر يتحول لـ"جاري الشحن" */
       if (st === 'preparing' && cur.state !== 'preparing') {
@@ -1233,7 +1321,7 @@ async function handleApi(request, env, url, path) {
           message: shippingMessageFor({ id, name: cur.name, awb }), kind: 'shipping'
         });
       }
-      return json({ ok: true, state: st, history, deferUntil });
+      return json({ ok: true, state: st, history, deferUntil, refundAmount, returnType, restocked });
     }
   }
 
@@ -1600,6 +1688,59 @@ async function handleApi(request, env, url, path) {
     const tags = Array.isArray(b.tags) ? JSON.stringify(b.tags.map(String)) : current.tags;
     await env.DB.prepare('UPDATE customers SET name = ?, note = ?, tags = ? WHERE id = ?')
       .bind(name, note, tags, cid).run();
+    return json({ ok: true });
+  }
+
+  /* ---------- كوبونات الخصم ---------- */
+  if (path === '/api/coupons') {
+    const staffAccess = isStaff(user) && (can(user, 'clients') || can(user, 'orders'));
+    if (request.method === 'GET') {
+      const qcid = url.searchParams.get('clientId');
+      if (user.role === 'client' && qcid && qcid !== me.clientId) return json({ error: 'مش مسموح' }, 403);
+      const targetId = user.role === 'client' ? me.clientId : qcid;
+      if (user.role !== 'client' && !staffAccess) return json({ error: 'مش مسموح' }, 403);
+      if (!targetId) return json({ error: 'محتاجين clientId' }, 400);
+      const { results } = await env.DB.prepare(
+        'SELECT id, code, type, value, active, expires_at, note, created_at FROM coupons WHERE client_id = ? ORDER BY created_at DESC'
+      ).bind(targetId).all();
+      return json(results || []);
+    }
+    if (request.method === 'POST') {
+      const b = await request.json().catch(() => ({}));
+      const clientId = user.role === 'client' ? me.clientId : b.clientId;
+      if (!clientId) return json({ error: 'اختار المتجر' }, 400);
+      if (user.role !== 'client' && !staffAccess) return json({ error: 'مش مسموح' }, 403);
+      const code = String(b.code || '').trim().toUpperCase();
+      if (!code) return json({ error: 'كود الكوبون مطلوب' }, 400);
+      const type = b.type === 'percent' ? 'percent' : 'fixed';
+      const value = Number(b.value) || 0;
+      if (value <= 0) return json({ error: 'قيمة الكوبون لازم تكون أكبر من صفر' }, 400);
+      if (type === 'percent' && value > 100) return json({ error: 'نسبة الخصم ما تزيدش عن ١٠٠٪' }, 400);
+      const id = b.id || 'CPN-' + crypto.randomUUID().slice(0, 8).toUpperCase();
+      try {
+        await env.DB.prepare(
+          `INSERT INTO coupons (id, client_id, code, type, value, active, expires_at, note, created_at) VALUES (?,?,?,?,?,?,?,?,?)
+           ON CONFLICT(id) DO UPDATE SET code=excluded.code, type=excluded.type, value=excluded.value,
+             active=excluded.active, expires_at=excluded.expires_at, note=excluded.note`
+        ).bind(id, clientId, code, type, value, b.active === false ? 0 : 1,
+          b.expiresAt || null, String(b.note || '').trim(), new Date().toISOString()).run();
+      } catch (e) {
+        return json({ error: 'في كوبون بنفس الكود ده موجود بالفعل لنفس المتجر' }, 409);
+      }
+      return json({ ok: true, id });
+    }
+  }
+
+  const cpm = path.match(/^\/api\/coupons\/([^/]+)$/);
+  if (cpm && request.method === 'DELETE') {
+    const cid2 = decodeURIComponent(cpm[1]);
+    const row = await env.DB.prepare('SELECT client_id FROM coupons WHERE id = ?').bind(cid2).first();
+    if (!row) return json({ error: 'الكوبون مش موجود' }, 404);
+    if (user.role === 'client' && row.client_id !== me.clientId) return json({ error: 'مش مسموح' }, 403);
+    if (user.role !== 'client' && !can(user, 'clients') && !can(user, 'orders')) {
+      return json({ error: 'مش مسموح' }, 403);
+    }
+    await env.DB.prepare('DELETE FROM coupons WHERE id = ?').bind(cid2).run();
     return json({ ok: true });
   }
 
@@ -2296,6 +2437,7 @@ async function handleApi(request, env, url, path) {
       products: await all(`SELECT ${PRODUCT_COLS} FROM products`),
       suppliers: await all('SELECT id, client_id, name, phone, note, active, created_at FROM suppliers'),
       customers: await all('SELECT id, client_id, name, phone, gov, address, tags, note, created_at FROM customers'),
+      coupons: await all('SELECT id, client_id, code, type, value, active, expires_at, note, created_at FROM coupons'),
       transactions: await all('SELECT * FROM transactions'),
       users: await all('SELECT id, email, name, role, client_id, status, created_at, last_login FROM users')
     };
@@ -2330,6 +2472,7 @@ async function handleApi(request, env, url, path) {
     await env.DB.prepare('DELETE FROM products').run();
     await env.DB.prepare('DELETE FROM suppliers').run();
     await env.DB.prepare('DELETE FROM customers').run();
+    await env.DB.prepare('DELETE FROM coupons').run();
     await env.DB.prepare('DELETE FROM transactions').run();
 
     for (const c of (b.customers || [])) {
@@ -2352,6 +2495,12 @@ async function handleApi(request, env, url, path) {
         'INSERT INTO suppliers (id, client_id, name, phone, note, active, created_at) VALUES (?,?,?,?,?,?,?)'
       ).bind(s.id, s.client_id || s.clientId, s.name, s.phone || '', s.note || '',
         s.active === false ? 0 : 1, s.created_at || new Date().toISOString()).run();
+    }
+    for (const cp of (b.coupons || [])) {
+      await env.DB.prepare(
+        'INSERT INTO coupons (id, client_id, code, type, value, active, expires_at, note, created_at) VALUES (?,?,?,?,?,?,?,?,?)'
+      ).bind(cp.id, cp.client_id || cp.clientId, cp.code, cp.type || 'fixed', Number(cp.value) || 0,
+        cp.active === false ? 0 : 1, cp.expires_at || null, cp.note || '', cp.created_at || new Date().toISOString()).run();
     }
     for (const t of (b.transactions || [])) {
       await env.DB.prepare(
@@ -2458,6 +2607,7 @@ export default {
             products: await all(`SELECT ${PRODUCT_COLS} FROM products`),
             suppliers: await all('SELECT id, client_id, name, phone, note, active, created_at FROM suppliers'),
             customers: await all('SELECT id, client_id, name, phone, gov, address, tags, note, created_at FROM customers'),
+            coupons: await all('SELECT id, client_id, code, type, value, active, expires_at, note, created_at FROM coupons'),
             transactions: await all('SELECT * FROM transactions'),
             users: await all('SELECT id, email, name, role, client_id, status FROM users')
           };
