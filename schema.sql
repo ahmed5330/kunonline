@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS orders (
   id            TEXT PRIMARY KEY,
   client_id     TEXT NOT NULL,
   ref           TEXT,                   -- كود الأوردر الأصلي (إيزي أوردرز مثلاً) قبل ما يتحوّل لكود داخلي
+  customer_id   TEXT,                   -- ربط تلقائي بملف العميل (customers) حسب رقم التليفون
   date          TEXT NOT NULL,
   name          TEXT,
   phone         TEXT,
@@ -64,6 +65,22 @@ CREATE TABLE IF NOT EXISTS orders (
 
 CREATE INDEX IF NOT EXISTS idx_orders_client ON orders (client_id, date);
 CREATE INDEX IF NOT EXISTS idx_orders_awb    ON orders (awb);
+CREATE INDEX IF NOT EXISTS idx_orders_customer ON orders (customer_id);
+
+-- ملف العميل (Customer 360) — بيتربط تلقائي بالأوردر حسب رقم التليفون لكل متجر
+-- إجمالي المصروف وعدد الأوردرات بيتحسبوا لايف من جدول orders، مش متخزّنين هنا عشان ميحصلش تعارض
+CREATE TABLE IF NOT EXISTS customers (
+  id          TEXT PRIMARY KEY,
+  client_id   TEXT NOT NULL,
+  name        TEXT,
+  phone       TEXT NOT NULL,
+  gov         TEXT,
+  address     TEXT,
+  tags        TEXT DEFAULT '[]',        -- JSON: ["VIP", "بيرجع كتير"]
+  note        TEXT,
+  created_at  TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_customers_client_phone ON customers (client_id, phone);
 
 -- كتالوج المنتجات لكل عميل — بما فيه إدارة المخزون (الكمية المتاحة وحد التنبيه)
 CREATE TABLE IF NOT EXISTS products (
@@ -111,6 +128,7 @@ CREATE TABLE IF NOT EXISTS whatsapp_outbox (
 CREATE INDEX IF NOT EXISTS idx_wa_outbox_status ON whatsapp_outbox (status, created_at);
 
 -- سجل إضافات المخزون — كل مرة حد يضيف كمية جديدة لمنتج
+-- supplier_id/supplier_name اختياريين: التوريد ممكن يتسجّل من غير ما يتربط بمورد محدد
 CREATE TABLE IF NOT EXISTS stock_log (
   id            TEXT PRIMARY KEY,
   client_id     TEXT NOT NULL,
@@ -119,10 +137,25 @@ CREATE TABLE IF NOT EXISTS stock_log (
   delta         INTEGER NOT NULL,
   new_stock     INTEGER,
   note          TEXT,
+  supplier_id   TEXT,
+  supplier_name TEXT,
   created_at    TEXT,
   created_by    TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_stocklog_client ON stock_log (client_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_stocklog_supplier ON stock_log (supplier_id);
+
+-- الموردين — كل مورد بيوصل بضاعة لعميل معيّن (المتجر)
+CREATE TABLE IF NOT EXISTS suppliers (
+  id          TEXT PRIMARY KEY,
+  client_id   TEXT NOT NULL,
+  name        TEXT NOT NULL,
+  phone       TEXT,
+  note        TEXT,
+  active      INTEGER DEFAULT 1,
+  created_at  TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_suppliers_client ON suppliers (client_id);
 
 -- محفظة الاشتراك — سجل كل شحن رصيد وكل خصم تلقائي لكل أوردر
 CREATE TABLE IF NOT EXISTS wallet_log (

@@ -2,7 +2,7 @@
 import worker from './src/index.js';
 const TODAY = new Date().toISOString().slice(0,10);
 
-let stateRow=null; const orders=new Map(), users=new Map(), attempts=new Map(), products=new Map(), transactions=new Map(), chatMessages=new Map(), tasks=new Map(), walletLog=new Map(), waOutbox=new Map(), stockLog=new Map();
+let stateRow=null; const orders=new Map(), users=new Map(), attempts=new Map(), products=new Map(), transactions=new Map(), chatMessages=new Map(), tasks=new Map(), walletLog=new Map(), waOutbox=new Map(), stockLog=new Map(), suppliers=new Map(), customers=new Map();
 const stmt=(sql)=>({
   args:[], bind(...a){this.args=a;return this;},
   async first(){
@@ -15,10 +15,17 @@ const stmt=(sql)=>({
     if(sql.includes('FROM login_attempts')) return attempts.get(this.args[0])||null;
     if(sql.includes('FROM orders WHERE id = ?')){ const o=orders.get(this.args[0]); return o?{...o}:null; }
     if(sql.includes('FROM orders WHERE awb = ?')) return [...orders.values()].find(o=>o.awb===this.args[0])||null;
+    if(sql.includes('FROM customers WHERE client_id = ? AND phone = ?'))
+      return [...customers.values()].find(c=>c.client_id===this.args[0]&&c.phone===this.args[1])||null;
+    if(sql.includes('SELECT name, note, tags FROM customers WHERE id = ?')){
+      const c=customers.get(this.args[0]); return c?{name:c.name,note:c.note,tags:c.tags}:null;
+    }
+    if(sql.includes('FROM customers WHERE id = ?')){ const c=customers.get(this.args[0]); return c?{...c}:null; }
     if(sql.includes('FROM orders WHERE ref = ? AND client_id = ?'))
       return [...orders.values()].find(o=>o.ref===this.args[0]&&o.client_id===this.args[1])||null;
     if(sql.includes('FROM transactions WHERE id = ?')) return transactions.get(this.args[0])||null;
     if(sql.includes('FROM products WHERE id = ?')){ const p=products.get(this.args[0]); return p?{...p}:null; }
+    if(sql.includes('FROM suppliers WHERE id = ?')){ const s=suppliers.get(this.args[0]); return s?{...s}:null; }
     if(sql.includes('chat_last_seen FROM users')) return {chat_last_seen: (users.get(this.args[0])||{}).chat_last_seen||null};
     if(sql.includes('COUNT(*) AS n FROM chat_messages')){
       const since=this.args[0], me=this.args[1];
@@ -43,10 +50,10 @@ const stmt=(sql)=>({
     else if(sql.includes('INSERT INTO login_attempts')) attempts.set(this.args[0],{email:this.args[0],fails:this.args[1],locked_until:this.args[2]});
     else if(sql.includes('DELETE FROM login_attempts')) attempts.delete(this.args[0]);
     else if(sql.includes('INSERT INTO orders')){
-      const [id,client_id,ref,date,name,phone,gov,address,product,product_id,product_note,unit_price,qty,total,
+      const [id,client_id,ref,customer_id,date,name,phone,gov,address,product,product_id,product_note,unit_price,qty,total,
         product_cost,shipping_cost,other_cost,source,note,awb,state,checkpoint,signed_at,collected_at,defer_until,
         contact_log,history,created_at]=this.args;
-      orders.set(id,{id,client_id,ref,date,name,phone,gov,address,product,product_id,product_note,unit_price,qty,total,
+      orders.set(id,{id,client_id,ref,customer_id,date,name,phone,gov,address,product,product_id,product_note,unit_price,qty,total,
         product_cost,shipping_cost,other_cost,source,note,awb,state,checkpoint,signed_at,collected_at,defer_until,
         contact_log,history,created_at});}
     else if(sql.includes('UPDATE orders SET state = ?, awb = ?')){
@@ -87,8 +94,22 @@ const stmt=(sql)=>({
       const [id,client_id,type,amount,balance_after,note,created_at,created_by]=this.args;
       walletLog.set(id,{id,client_id,type,amount,balance_after,note,created_at,created_by});}
     else if(sql.includes('INSERT INTO stock_log')){
-      const [id,client_id,product_id,product_name,delta,new_stock,note,created_at,created_by]=this.args;
-      stockLog.set(id,{id,client_id,product_id,product_name,delta,new_stock,note,created_at,created_by});}
+      const [id,client_id,product_id,product_name,delta,new_stock,note,supplier_id,supplier_name,created_at,created_by]=this.args;
+      stockLog.set(id,{id,client_id,product_id,product_name,delta,new_stock,note,supplier_id,supplier_name,created_at,created_by});}
+    else if(sql.includes('INSERT INTO suppliers')){
+      const [id,client_id,name,phone,note,active,created_at]=this.args;
+      suppliers.set(id,{id,client_id,name,phone,note,active,created_at});}
+    else if(sql.includes('DELETE FROM suppliers')) suppliers.delete(this.args[0]);
+    else if(sql.includes('INSERT INTO customers')){
+      const [id,client_id,name,phone,gov,address,tags,note,created_at]=this.args;
+      customers.set(id,{id,client_id,name,phone,gov,address,tags,note,created_at});}
+    else if(sql.startsWith('UPDATE customers SET name = ?, gov = ?, address = ?')){
+      const [name,gov,address,id]=this.args; const c=customers.get(id);
+      if(c){c.name=name;c.gov=gov;c.address=address;}}
+    else if(sql.startsWith('UPDATE customers SET name = ?, note = ?, tags = ?')){
+      const [name,note,tags,id]=this.args; const c=customers.get(id);
+      if(c){c.name=name;c.note=note;c.tags=tags;}}
+    else if(sql.includes('DELETE FROM customers')) customers.clear();
     else if(sql.includes('INSERT INTO whatsapp_outbox')){
       const [id,client_id,order_id,phone,message,kind,status,created_at]=this.args;
       waOutbox.set(id,{id,client_id,order_id,phone,message,kind,status,created_at});}
@@ -142,6 +163,25 @@ const stmt=(sql)=>({
         .sort((a,b)=>a.created_at<b.created_at?1:-1);
       return {results:slist};
     }
+    if(sql.includes('FROM suppliers')){
+      const slist=[...suppliers.values()].filter(s=>s.client_id===this.args[0])
+        .sort((a,b)=>a.name.localeCompare(b.name,'ar'));
+      return {results:slist};
+    }
+    if(sql.includes('LEFT JOIN orders o ON o.customer_id = c.id')){
+      const clientId=this.args[0];
+      const clist=[...customers.values()].filter(c=>c.client_id===clientId);
+      const rows=clist.map(c=>{
+        const os=[...orders.values()].filter(o=>o.customer_id===c.id);
+        const total_orders=os.length;
+        const total_spent=os.filter(o=>!['cancelled','returned'].includes(o.state))
+          .reduce((s,o)=>s+(Number(o.total)||0),0);
+        const last_order_date=os.length ? os.map(o=>o.date).sort().slice(-1)[0] : null;
+        return {id:c.id,name:c.name,phone:c.phone,gov:c.gov,address:c.address,tags:c.tags,note:c.note,
+          created_at:c.created_at,total_orders,total_spent,last_order_date};
+      }).sort((a,b)=>b.total_spent-a.total_spent);
+      return {results:rows};
+    }
     if(sql.includes('FROM whatsapp_outbox')){
       const olist=[...waOutbox.values()].filter(w=>w.status==='pending')
         .sort((a,b)=>a.created_at<b.created_at?-1:1);
@@ -152,7 +192,9 @@ const stmt=(sql)=>({
       const cutoff=this.args[0];
       return {results:list.filter(o=>o.state==='deferred' && o.defer_until && o.defer_until<=cutoff)};
     }
-    if(sql.includes('WHERE client_id = ?')) list=list.filter(o=>o.client_id===this.args[0]);
+    if(sql.includes('WHERE customer_id = ?')) list=list.filter(o=>o.customer_id===this.args[0])
+      .sort((a,b)=>a.date<b.date?1:-1);
+    else if(sql.includes('WHERE client_id = ?')) list=list.filter(o=>o.client_id===this.args[0]);
     if(sql.includes('NOT IN')) list=list.filter(o=>o.awb&&!['delivered','returned','cancelled'].includes(o.state));
     return {results:list};
   }
@@ -260,6 +302,87 @@ check('عملية الإضافة اتسجّلت في سجل المخزون', sto
 r=await call('/api/products/stock-log',{},clientCookie);
 let [,stockLogList]=await j(r);
 check('العميل يقدر يشوف سجل إضافات مخزونه', r.status===200 && stockLogList.some(s=>s.product_id===stockProd.id));
+
+head('الموردين');
+check('اسم المورد مطلوب',
+  (await call('/api/suppliers',{method:'POST',body:JSON.stringify({phone:'01000000'})},clientCookie)).status===400);
+r=await call('/api/suppliers',{method:'POST',body:JSON.stringify({name:'مصنع الأقمشة',phone:'01055500000'})},clientCookie);
+let [,supRes]=await j(r);
+check('العميل يقدر يضيف مورد', r.status===200);
+r=await call('/api/suppliers',{},clientCookie);
+let [,supList]=await j(r);
+check('المورد ظاهر في قائمة العميل', supList.some(s=>s.id===supRes.id && s.name==='مصنع الأقمشة'));
+
+r=await call('/api/products/'+stockProd.id+'/stock/add',
+  {method:'POST',body:JSON.stringify({delta:10,note:'توريد من المصنع',supplierId:supRes.id})},clientCookie);
+let [,addWithSup]=await j(r);
+check('التوريد بمورد بيزوّد الرصيد صح', r.status===200 && addWithSup.stock===45);
+check('حركة المخزون اتسجّلت باسم المورد',
+  [...stockLog.values()].some(s=>s.product_id===stockProd.id && s.delta===10 && s.supplier_name==='مصنع الأقمشة'));
+
+/* مورد عميل تاني (c1) اتضاف عن طريق الإدارة — التحقق إن العميل c2 ميقدرش يربطه بمخزونه */
+r=await call('/api/suppliers',{method:'POST',body:JSON.stringify({clientId:'c1',name:'مورد عميل تاني'})},adminCookie);
+let [,otherSup]=await j(r);
+check('الإدارة تقدر تضيف مورد لعميل محدد', r.status===200);
+r=await call('/api/products/'+stockProd.id+'/stock/add',
+  {method:'POST',body:JSON.stringify({delta:5,supplierId:otherSup.id})},clientCookie);
+let [,crossRes]=await j(r);
+check('مورد عميل تاني اتجاهل بصمت ومفيش ربط خاطئ', r.status===200 && crossRes.stock===50 &&
+  [...stockLog.values()].some(s=>s.product_id===stockProd.id && s.delta===5 && !s.supplier_id));
+check('العميل مش شايف موردين العميل التاني',
+  !supList.some(s=>s.id===otherSup.id));
+
+r=await call('/api/suppliers/'+supRes.id,{method:'DELETE'},clientCookie);
+check('العميل يقدر يحذف مورده', r.status===200 && !suppliers.has(supRes.id));
+
+head('العملاء (Customer 360) — ربط تلقائي حسب رقم التليفون');
+let [,custOrder1]=await j(await call('/api/orders',{method:'POST',body:JSON.stringify({
+  name:'هدير محمد', phone:'01099988877', gov:'أسيوط', total:400, date:'2026-08-10'})},clientCookie));
+check('أوردر بتليفون صحيح بيتربط بعميل تلقائي', !!custOrder1.order.customerId, custOrder1.order.customerId);
+const custId = custOrder1.order.customerId;
+check('العميل اتسجّل بنفس رقم التليفون', customers.get(custId).phone==='01099988877');
+
+let [,custOrder2]=await j(await call('/api/orders',{method:'POST',body:JSON.stringify({
+  name:'هدير م.', phone:'01099988877', total:250, date:'2026-08-15'})},clientCookie));
+check('أوردر تاني بنفس الرقم بيترجّع لنفس العميل (مش عميل جديد)', custOrder2.order.customerId===custId);
+
+let [,custOrderOther]=await j(await call('/api/orders',{method:'POST',body:JSON.stringify({
+  name:'سيف الدين', phone:'01122233344', total:100, date:'2026-08-16'})},clientCookie));
+check('عميل تاني برقم مختلف بيتسجّل بملف مستقل', custOrderOther.order.customerId!==custId);
+
+let [,custOrderBadPhone]=await j(await call('/api/orders',{method:'POST',body:JSON.stringify({
+  name:'رقم غلط', phone:'0100', total:50, date:'2026-08-17'})},clientCookie));
+check('رقم تليفون مش صحيح — الأوردر بيتسجّل من غير ربط عميل (من غير ما يفشل)',
+  custOrderBadPhone.order.customerId==null);
+
+r=await call('/api/customers',{},clientCookie);
+let [,custList]=await j(r);
+const heidi = custList.find(c=>c.id===custId);
+check('العميل يشوف قائمة عملاؤه', r.status===200);
+check('إجمالي عدد الأوردرات محسوب صح', heidi && heidi.totalOrders===2, JSON.stringify(heidi));
+check('إجمالي المصروف = مجموع الأوردرين (400+250)', heidi && heidi.totalSpent===650);
+check('آخر أوردر بتاريخ الأحدث', heidi && heidi.lastOrderDate==='2026-08-15');
+
+r=await call('/api/customers/'+custId,{},clientCookie);
+let [,custDetail]=await j(r);
+check('تفاصيل العميل فيها كل أوردراته', r.status===200 && custDetail.orders.length===2);
+
+r=await call('/api/customers/'+custId,{method:'PATCH',body:JSON.stringify({
+  name:'هدير محمد (VIP)', tags:['VIP','بتشتري كتير'], note:'بتفضل تدفع كاش عند الاستلام'})},clientCookie);
+check('العميل يقدر يعدّل بيانات ملف عميله (اسم/تاجات/ملاحظة)', r.status===200);
+check('التعديل اتحفظ فعلاً', customers.get(custId).name==='هدير محمد (VIP)');
+
+check('عميل ب (c2) ممنوع يشوف عملاء عميل تاني بالـ clientId',
+  (await call('/api/customers?clientId=c1',{},clientCookie)).status===403);
+check('الإدارة تقدر تشوف عملاء أي متجر', (await call('/api/customers?clientId=c1',{},adminCookie)).status===200);
+r=await call('/api/users',{method:'POST',body:JSON.stringify({email:'a@x.com',clientId:'c1',role:'client',password:'ClientAPass9'})},adminCookie);
+check('اتعمل حساب لعميل c1 عشان اختبار العزل', r.status===200);
+r=await call('/api/login',{method:'POST',body:JSON.stringify({email:'a@x.com',password:'ClientAPass9'})});
+const clientACookie=ck(r);
+check('دخول عميل c1', r.status===200);
+check('عميل c1 ممنوع يفتح ملف عميل تابع لـ c2', (await call('/api/customers/'+custId,{},clientACookie)).status===403);
+check('عميل c1 ممنوع يعدّل ملف عميل تابع لـ c2',
+  (await call('/api/customers/'+custId,{method:'PATCH',body:JSON.stringify({name:'اختراق'})},clientACookie)).status===403);
 const [,ord]=await j(await call('/api/orders',{method:'POST',
   body:JSON.stringify({clientId:'c1',name:'سارة',phone:'0111',total:300,date:'2026-08-09'})},clientCookie));
 check('أوردر العميل بيتحوّل لحسابه هو', ord.order.clientId==='c2','→ '+ord.order.clientId);

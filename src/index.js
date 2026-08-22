@@ -281,12 +281,12 @@ async function saveState(env, state) {
   ).bind(JSON.stringify(toStore), new Date().toISOString()).run();
 }
 
-const ORDER_COLS = 'id, client_id, ref, date, name, phone, gov, address, product, product_id, product_note, unit_price, qty, total, product_cost, shipping_cost, other_cost, source, note, awb, state, checkpoint, signed_at, collected_at, defer_until, contact_log, history, created_at';
+const ORDER_COLS = 'id, client_id, ref, customer_id, date, name, phone, gov, address, product, product_id, product_note, unit_price, qty, total, product_cost, shipping_cost, other_cost, source, note, awb, state, checkpoint, signed_at, collected_at, defer_until, contact_log, history, created_at';
 
 const parseJsonArr = s => { try { const v = JSON.parse(s); return Array.isArray(v) ? v : []; } catch { return []; } };
 
 const rowToOrder = r => ({
-  id: r.id, clientId: r.client_id, ref: r.ref, date: r.date, name: r.name, phone: r.phone,
+  id: r.id, clientId: r.client_id, ref: r.ref, customerId: r.customer_id, date: r.date, name: r.name, phone: r.phone,
   gov: r.gov, address: r.address, product: r.product, productId: r.product_id, productNote: r.product_note,
   unitPrice: r.unit_price, qty: r.qty, total: r.total,
   productCost: r.product_cost || 0, shippingCost: r.shipping_cost, otherCost: r.other_cost,
@@ -322,11 +322,12 @@ async function listOrders(env, clientId) {
 async function insertOrder(env, o) {
   const initialHistory = o.history || [{ state: o.state || 'pending', at: new Date().toISOString() }];
   await env.DB.prepare(
-    `INSERT INTO orders (${ORDER_COLS}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    `INSERT INTO orders (${ORDER_COLS}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
      ON CONFLICT(id) DO UPDATE SET
        state = excluded.state, checkpoint = excluded.checkpoint,
        awb = COALESCE(excluded.awb, orders.awb),
        ref = COALESCE(excluded.ref, orders.ref),
+       customer_id = COALESCE(excluded.customer_id, orders.customer_id),
        shipping_cost = COALESCE(excluded.shipping_cost, orders.shipping_cost),
        other_cost = COALESCE(excluded.other_cost, orders.other_cost),
        signed_at = COALESCE(excluded.signed_at, orders.signed_at),
@@ -334,7 +335,7 @@ async function insertOrder(env, o) {
        product_note = COALESCE(excluded.product_note, orders.product_note),
        defer_until = COALESCE(excluded.defer_until, orders.defer_until)`
   ).bind(
-    o.id, o.clientId, o.ref || null, o.date, o.name || '', o.phone || '', o.gov || '', o.address || '',
+    o.id, o.clientId, o.ref || null, o.customerId || null, o.date, o.name || '', o.phone || '', o.gov || '', o.address || '',
     o.product || '', o.productId || null, o.productNote || null, o.unitPrice || 0, o.qty || 1, o.total || 0,
     o.productCost || 0,
     o.shippingCost === undefined || o.shippingCost === null ? null : Number(o.shippingCost),
@@ -344,6 +345,34 @@ async function insertOrder(env, o) {
     JSON.stringify(o.contactLog || []), JSON.stringify(initialHistory), new Date().toISOString()
   ).run();
   return o;
+}
+
+/** بتدوّر على عميل بنفس رقم التليفون لنفس المتجر — لو موجود بترجّعه (وتكمّل أي بيانات ناقصة)،
+    لو مش موجود بتعمل واحد جديد. لو الرقم مش صالح بترجّع null وتفضل الأوردر من غير ربط. */
+async function findOrCreateCustomer(env, clientId, { name, phone, gov, address }) {
+  const normalized = normalizePhone(phone);
+  if (!normalized) return null;
+  const existing = await env.DB.prepare(
+    'SELECT id, name, gov, address FROM customers WHERE client_id = ? AND phone = ?'
+  ).bind(clientId, normalized).first();
+  if (existing) {
+    /* لو أول مرة اتسجل العميل من غير اسم/عنوان وجالنا دلوقتي، نكمّلهم من غير ما نمسح حاجة موجودة */
+    const patches = {};
+    if (!existing.name && name) patches.name = name;
+    if (!existing.gov && gov) patches.gov = gov;
+    if (!existing.address && address) patches.address = address;
+    if (Object.keys(patches).length) {
+      await env.DB.prepare('UPDATE customers SET name = ?, gov = ?, address = ? WHERE id = ?')
+        .bind(patches.name || existing.name, patches.gov || existing.gov,
+          patches.address || existing.address, existing.id).run();
+    }
+    return existing.id;
+  }
+  const id = 'CUS-' + crypto.randomUUID().slice(0, 8).toUpperCase();
+  await env.DB.prepare(
+    'INSERT INTO customers (id, client_id, name, phone, gov, address, tags, note, created_at) VALUES (?,?,?,?,?,?,?,?,?)'
+  ).bind(id, clientId, name || '', normalized, gov || '', address || '', '[]', '', new Date().toISOString()).run();
+  return id;
 }
 
 /** بيحط رسالة في طابور الواتساب — أجنت خارجي (متصل بنفس رقم واتساب الوكالة) بيسحبها ويبعتها */
@@ -386,10 +415,18 @@ async function chargeWalletForOrder(env, clientId) {
   } catch (e) { console.error('chargeWalletForOrder failed', e); }
 }
 
-/** بتسجّل الأوردر، تخصم من المحفظة، وتحط رسالة تأكيد في الطابور — بس لو فعلاً أوردر جديد.
+/** بتسجّل الأوردر، تربطه بملف العميل (حسب رقم التليفون)، تخصم من المحفظة، وتحط رسالة تأكيد في الطابور —
+    بس لو فعلاً أوردر جديد.
     opts.skipWhatsApp: للاستيراد الجماعي، عشان ماينفعش نبعت "تأكيد طلب" لمئات الأوردرات القديمة مرة واحدة */
 async function insertOrderAndCharge(env, o, clientName, opts) {
   const existing = await env.DB.prepare('SELECT id FROM orders WHERE id = ?').bind(o.id).first();
+  if (!o.customerId) {
+    try {
+      o.customerId = await findOrCreateCustomer(env, o.clientId, {
+        name: o.name, phone: o.phone, gov: o.gov, address: o.address
+      });
+    } catch (e) { console.error('findOrCreateCustomer failed', e); }
+  }
   await insertOrder(env, o);
   if (!existing) {
     await chargeWalletForOrder(env, o.clientId);
@@ -1403,7 +1440,8 @@ async function handleApi(request, env, url, path) {
     return json({ ok: true, stock });
   }
 
-  /* إضافة كمية جديدة (توريد/تجديد مخزون) — دلتا بتتضاف فوق الرصيد الحالي، ومسجّلة في سجل منفصل */
+  /* إضافة كمية جديدة (توريد/تجديد مخزون) — دلتا بتتضاف فوق الرصيد الحالي، ومسجّلة في سجل منفصل
+     supplierId اختياري: لو اتبعت بنتحقق إنه لنفس العميل ونسجّل اسمه مع الحركة */
   const pstockAdd = path.match(/^\/api\/products\/([^/]+)\/stock\/add$/);
   if (pstockAdd && request.method === 'POST') {
     const pid = decodeURIComponent(pstockAdd[1]);
@@ -1416,12 +1454,18 @@ async function handleApi(request, env, url, path) {
     const b = await request.json().catch(() => ({}));
     const delta = Number(b.delta);
     if (!delta || delta === 0) return json({ error: 'اكتب كمية أكبر من صفر' }, 400);
+    let supplierId = null, supplierName = null;
+    if (b.supplierId) {
+      const sup = await env.DB.prepare('SELECT client_id, name FROM suppliers WHERE id = ?').bind(b.supplierId).first();
+      if (sup && sup.client_id === row.client_id) { supplierId = b.supplierId; supplierName = sup.name; }
+    }
     const newStock = Math.max(0, (Number(row.stock) || 0) + delta);
     await env.DB.prepare('UPDATE products SET stock = ? WHERE id = ?').bind(newStock, pid).run();
     await env.DB.prepare(
-      'INSERT INTO stock_log (id, client_id, product_id, product_name, delta, new_stock, note, created_at, created_by) VALUES (?,?,?,?,?,?,?,?,?)'
+      `INSERT INTO stock_log (id, client_id, product_id, product_name, delta, new_stock, note, supplier_id, supplier_name, created_at, created_by)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?)`
     ).bind('STK-' + crypto.randomUUID().slice(0, 8).toUpperCase(), row.client_id, pid, row.name, delta,
-      newStock, String(b.note || '').trim(), new Date().toISOString(), me.email || me.role).run();
+      newStock, String(b.note || '').trim(), supplierId, supplierName, new Date().toISOString(), me.email || me.role).run();
     return json({ ok: true, stock: newStock });
   }
 
@@ -1434,9 +1478,129 @@ async function handleApi(request, env, url, path) {
     if (user.role !== 'client' && !staffAccess) return json({ error: 'مش مسموح' }, 403);
     if (!targetId) return json({ error: 'محتاجين clientId' }, 400);
     const { results } = await env.DB.prepare(
-      'SELECT id, product_id, product_name, delta, new_stock, note, created_at, created_by FROM stock_log WHERE client_id = ? ORDER BY created_at DESC LIMIT 200'
+      `SELECT id, product_id, product_name, delta, new_stock, note, supplier_id, supplier_name, created_at, created_by
+       FROM stock_log WHERE client_id = ? ORDER BY created_at DESC LIMIT 200`
     ).bind(targetId).all();
     return json(results || []);
+  }
+
+  /* ---------- الموردين ---------- */
+  /* كل عميل (متجر) بيدير موردينه هو بس. الإدارة بتقدر تديرهم بصلاحية clients أو orders، زي المخزون بالظبط */
+  if (path === '/api/suppliers') {
+    const staffAccess = isStaff(user) && (can(user, 'clients') || can(user, 'orders'));
+    if (request.method === 'GET') {
+      const qcid = url.searchParams.get('clientId');
+      if (user.role === 'client' && qcid && qcid !== me.clientId) return json({ error: 'مش مسموح' }, 403);
+      const targetId = user.role === 'client' ? me.clientId : qcid;
+      if (user.role !== 'client' && !staffAccess) return json({ error: 'مش مسموح' }, 403);
+      if (!targetId) return json({ error: 'محتاجين clientId' }, 400);
+      const { results } = await env.DB.prepare(
+        'SELECT id, name, phone, note, active, created_at FROM suppliers WHERE client_id = ? ORDER BY name'
+      ).bind(targetId).all();
+      return json(results || []);
+    }
+    if (request.method === 'POST') {
+      const b = await request.json().catch(() => ({}));
+      const clientId = user.role === 'client' ? me.clientId : b.clientId;
+      if (!clientId) return json({ error: 'اختار المتجر' }, 400);
+      if (user.role !== 'client' && !staffAccess) return json({ error: 'مش مسموح' }, 403);
+      if (!b.name || !String(b.name).trim()) return json({ error: 'اسم المورد مطلوب' }, 400);
+      const id = b.id || 'SUP-' + crypto.randomUUID().slice(0, 8).toUpperCase();
+      await env.DB.prepare(
+        `INSERT INTO suppliers (id, client_id, name, phone, note, active, created_at) VALUES (?,?,?,?,?,?,?)
+         ON CONFLICT(id) DO UPDATE SET name=excluded.name, phone=excluded.phone, note=excluded.note, active=excluded.active`
+      ).bind(id, clientId, String(b.name).trim(), String(b.phone || '').trim(), String(b.note || '').trim(),
+        b.active === false ? 0 : 1, new Date().toISOString()).run();
+      return json({ ok: true, id });
+    }
+  }
+
+  const sm = path.match(/^\/api\/suppliers\/([^/]+)$/);
+  if (sm && request.method === 'DELETE') {
+    const sid = decodeURIComponent(sm[1]);
+    const row = await env.DB.prepare('SELECT client_id FROM suppliers WHERE id = ?').bind(sid).first();
+    if (!row) return json({ error: 'المورد مش موجود' }, 404);
+    if (user.role === 'client' && row.client_id !== me.clientId) return json({ error: 'مش مسموح' }, 403);
+    if (user.role !== 'client' && !can(user, 'clients') && !can(user, 'orders')) {
+      return json({ error: 'مش مسموح' }, 403);
+    }
+    await env.DB.prepare('DELETE FROM suppliers WHERE id = ?').bind(sid).run();
+    return json({ ok: true });
+  }
+
+  /* ---------- العملاء (Customer 360) ----------
+     كل عميل (متجر) بيشوف عملاؤه هو بس. الإدارة بتقدر تشوف عملاء أي متجر بصلاحية clients/orders.
+     إجمالي المصروف وعدد الأوردرات وتاريخ آخر أوردر بيتحسبوا لايف من جدول orders — مفيش تخزين مكرر ممكن يفرق. */
+  async function listCustomersWithStats(env, clientId) {
+    const { results } = await env.DB.prepare(
+      `SELECT c.id, c.name, c.phone, c.gov, c.address, c.tags, c.note, c.created_at,
+              COUNT(o.id) AS total_orders,
+              COALESCE(SUM(CASE WHEN o.state NOT IN ('cancelled','returned') THEN o.total ELSE 0 END), 0) AS total_spent,
+              MAX(o.date) AS last_order_date
+       FROM customers c
+       LEFT JOIN orders o ON o.customer_id = c.id
+       WHERE c.client_id = ?
+       GROUP BY c.id
+       ORDER BY total_spent DESC`
+    ).bind(clientId).all();
+    return (results || []).map(r => ({
+      id: r.id, name: r.name, phone: r.phone, gov: r.gov, address: r.address,
+      tags: parseJsonArr(r.tags), note: r.note, createdAt: r.created_at,
+      totalOrders: r.total_orders || 0, totalSpent: round2(r.total_spent || 0),
+      lastOrderDate: r.last_order_date || null
+    }));
+  }
+
+  if (path === '/api/customers') {
+    const staffAccess = isStaff(user) && (can(user, 'clients') || can(user, 'orders'));
+    if (request.method === 'GET') {
+      const qcid = url.searchParams.get('clientId');
+      if (user.role === 'client' && qcid && qcid !== me.clientId) return json({ error: 'مش مسموح' }, 403);
+      const targetId = user.role === 'client' ? me.clientId : qcid;
+      if (user.role !== 'client' && !staffAccess) return json({ error: 'مش مسموح' }, 403);
+      if (!targetId) return json({ error: 'محتاجين clientId' }, 400);
+      return json(await listCustomersWithStats(env, targetId));
+    }
+  }
+
+  const cmDetail = path.match(/^\/api\/customers\/([^/]+)$/);
+  if (cmDetail && request.method === 'GET') {
+    const cid = decodeURIComponent(cmDetail[1]);
+    const row = await env.DB.prepare(
+      'SELECT id, client_id, name, phone, gov, address, tags, note, created_at FROM customers WHERE id = ?'
+    ).bind(cid).first();
+    if (!row) return json({ error: 'العميل مش موجود' }, 404);
+    if (user.role === 'client' && row.client_id !== me.clientId) return json({ error: 'مش مسموح' }, 403);
+    if (user.role !== 'client' && !isStaff(user)) return json({ error: 'مش مسموح' }, 403);
+    if (user.role !== 'client' && !(can(user, 'clients') || can(user, 'orders'))) {
+      return json({ error: 'مش مسموح' }, 403);
+    }
+    const { results } = await env.DB.prepare(
+      `SELECT ${ORDER_COLS} FROM orders WHERE customer_id = ? ORDER BY date DESC LIMIT 500`
+    ).bind(cid).all();
+    return json({
+      id: row.id, name: row.name, phone: row.phone, gov: row.gov, address: row.address,
+      tags: parseJsonArr(row.tags), note: row.note, createdAt: row.created_at,
+      orders: (results || []).map(rowToOrder)
+    });
+  }
+
+  if (cmDetail && request.method === 'PATCH') {
+    const cid = decodeURIComponent(cmDetail[1]);
+    const row = await env.DB.prepare('SELECT client_id FROM customers WHERE id = ?').bind(cid).first();
+    if (!row) return json({ error: 'العميل مش موجود' }, 404);
+    if (user.role === 'client' && row.client_id !== me.clientId) return json({ error: 'مش مسموح' }, 403);
+    if (user.role !== 'client' && !can(user, 'clients') && !can(user, 'orders')) {
+      return json({ error: 'مش مسموح' }, 403);
+    }
+    const b = await request.json().catch(() => ({}));
+    const current = await env.DB.prepare('SELECT name, note, tags FROM customers WHERE id = ?').bind(cid).first();
+    const name = b.name !== undefined ? String(b.name).trim() : current.name;
+    const note = b.note !== undefined ? String(b.note).trim() : current.note;
+    const tags = Array.isArray(b.tags) ? JSON.stringify(b.tags.map(String)) : current.tags;
+    await env.DB.prepare('UPDATE customers SET name = ?, note = ?, tags = ? WHERE id = ?')
+      .bind(name, note, tags, cid).run();
+    return json({ ok: true });
   }
 
   const pm = path.match(/^\/api\/products\/([^/]+)$/);
@@ -2130,6 +2294,8 @@ async function handleApi(request, env, url, path) {
       state: await loadState(env),
       orders: await all(`SELECT ${ORDER_COLS} FROM orders`),
       products: await all(`SELECT ${PRODUCT_COLS} FROM products`),
+      suppliers: await all('SELECT id, client_id, name, phone, note, active, created_at FROM suppliers'),
+      customers: await all('SELECT id, client_id, name, phone, gov, address, tags, note, created_at FROM customers'),
       transactions: await all('SELECT * FROM transactions'),
       users: await all('SELECT id, email, name, role, client_id, status, created_at, last_login FROM users')
     };
@@ -2162,8 +2328,16 @@ async function handleApi(request, env, url, path) {
     await saveState(env, b.state);
     await env.DB.prepare('DELETE FROM orders').run();
     await env.DB.prepare('DELETE FROM products').run();
+    await env.DB.prepare('DELETE FROM suppliers').run();
+    await env.DB.prepare('DELETE FROM customers').run();
     await env.DB.prepare('DELETE FROM transactions').run();
 
+    for (const c of (b.customers || [])) {
+      await env.DB.prepare(
+        'INSERT INTO customers (id, client_id, name, phone, gov, address, tags, note, created_at) VALUES (?,?,?,?,?,?,?,?,?)'
+      ).bind(c.id, c.client_id || c.clientId, c.name || '', c.phone, c.gov || '', c.address || '',
+        c.tags || '[]', c.note || '', c.created_at || new Date().toISOString()).run();
+    }
     for (const o of b.orders) await insertOrder(env, rowToOrder(o));
     for (const p of (b.products || [])) {
       await env.DB.prepare(
@@ -2172,6 +2346,12 @@ async function handleApi(request, env, url, path) {
         p.cost || 0, p.active === false ? 0 : 1, Math.max(0, Number(p.stock) || 0),
         Math.max(0, Number(p.lowStockThreshold ?? p.low_stock_threshold) || 5),
         p.created_at || new Date().toISOString()).run();
+    }
+    for (const s of (b.suppliers || [])) {
+      await env.DB.prepare(
+        'INSERT INTO suppliers (id, client_id, name, phone, note, active, created_at) VALUES (?,?,?,?,?,?,?)'
+      ).bind(s.id, s.client_id || s.clientId, s.name, s.phone || '', s.note || '',
+        s.active === false ? 0 : 1, s.created_at || new Date().toISOString()).run();
     }
     for (const t of (b.transactions || [])) {
       await env.DB.prepare(
@@ -2276,6 +2456,8 @@ export default {
             state: await loadState(env),
             orders: await all(`SELECT ${ORDER_COLS} FROM orders`),
             products: await all(`SELECT ${PRODUCT_COLS} FROM products`),
+            suppliers: await all('SELECT id, client_id, name, phone, note, active, created_at FROM suppliers'),
+            customers: await all('SELECT id, client_id, name, phone, gov, address, tags, note, created_at FROM customers'),
             transactions: await all('SELECT * FROM transactions'),
             users: await all('SELECT id, email, name, role, client_id, status FROM users')
           };

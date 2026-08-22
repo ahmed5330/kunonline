@@ -476,6 +476,8 @@ function normalizeDB(){
   DB.funding = DB.funding || [];
   DB.orders  = DB.orders  || [];
   DB.products = DB.products || [];
+  DB.suppliers = DB.suppliers || [];
+  DB.customers = DB.customers || [];
 }
 
 /* ---------- 2. أدوات ---------- */
@@ -801,6 +803,7 @@ function renderClient(client){
   if(clientTab==='service') return clientServiceView(client);
   if(clientTab==='wallet') return clientWalletView(client);
   if(clientTab==='integrations') return clientIntegrationsView(client);
+  if(clientTab==='customers') return clientCustomersView(client);
   const cur = client.currency;
   const listRange = entriesFor(client.id, clientRange);
   const allOrders = ordersFor(client.id, 'all');
@@ -858,6 +861,7 @@ function renderClient(client){
       ${client.inventoryEnabled ? `<button data-ctab="inventory" aria-pressed="${clientTab==='inventory'}">المخزون</button>` : ''}
       ${client.customerServiceEnabled ? `<button data-ctab="service" aria-pressed="${clientTab==='service'}">خدمة العملاء</button>` : ''}
       <button data-ctab="products" aria-pressed="false">منتجاتي</button>
+      <button data-ctab="customers" aria-pressed="${clientTab==='customers'}">العملاء</button>
       <button data-ctab="finance" aria-pressed="false">الحسابات</button>
       <button data-ctab="wallet" aria-pressed="${clientTab==='wallet'}">المحفظة</button>
       <button data-ctab="integrations" aria-pressed="false">التكاملات</button>
@@ -1319,6 +1323,7 @@ function clientProductsView(client){
       ${client.inventoryEnabled ? `<button data-ctab="inventory" aria-pressed="${clientTab==='inventory'}">المخزون</button>` : ''}
       ${client.customerServiceEnabled ? `<button data-ctab="service" aria-pressed="${clientTab==='service'}">خدمة العملاء</button>` : ''}
       <button data-ctab="products" aria-pressed="true">منتجاتي</button>
+      <button data-ctab="customers" aria-pressed="${clientTab==='customers'}">العملاء</button>
       <button data-ctab="finance" aria-pressed="false">الحسابات</button>
       <button data-ctab="wallet" aria-pressed="${clientTab==='wallet'}">المحفظة</button>
       <button data-ctab="integrations" aria-pressed="false">التكاملات</button>
@@ -1375,6 +1380,7 @@ function clientIntegrationsView(client){
       ${client.inventoryEnabled ? `<button data-ctab="inventory" aria-pressed="${clientTab==='inventory'}">المخزون</button>` : ''}
       ${client.customerServiceEnabled ? `<button data-ctab="service" aria-pressed="${clientTab==='service'}">خدمة العملاء</button>` : ''}
       <button data-ctab="products" aria-pressed="false">منتجاتي</button>
+      <button data-ctab="customers" aria-pressed="${clientTab==='customers'}">العملاء</button>
       <button data-ctab="finance" aria-pressed="false">الحسابات</button>
       <button data-ctab="wallet" aria-pressed="${clientTab==='wallet'}">المحفظة</button>
       <button data-ctab="integrations" aria-pressed="true">التكاملات</button>
@@ -1509,6 +1515,7 @@ function clientFinanceView(client){
       ${client.inventoryEnabled ? `<button data-ctab="inventory" aria-pressed="${clientTab==='inventory'}">المخزون</button>` : ''}
       ${client.customerServiceEnabled ? `<button data-ctab="service" aria-pressed="${clientTab==='service'}">خدمة العملاء</button>` : ''}
       <button data-ctab="products" aria-pressed="false">منتجاتي</button>
+      <button data-ctab="customers" aria-pressed="${clientTab==='customers'}">العملاء</button>
       <button data-ctab="finance" aria-pressed="true">الحسابات</button>
       <button data-ctab="wallet" aria-pressed="${clientTab==='wallet'}">المحفظة</button>
       <button data-ctab="integrations" aria-pressed="false">التكاملات</button>
@@ -1667,6 +1674,7 @@ function clientInventoryView(client){
       <button data-ctab="inventory" aria-pressed="true">المخزون</button>
       ${client.customerServiceEnabled ? `<button data-ctab="service" aria-pressed="false">خدمة العملاء</button>` : ''}
       <button data-ctab="products" aria-pressed="false">منتجاتي</button>
+      <button data-ctab="customers" aria-pressed="${clientTab==='customers'}">العملاء</button>
       <button data-ctab="finance" aria-pressed="false">الحسابات</button>
       <button data-ctab="wallet" aria-pressed="${clientTab==='wallet'}">المحفظة</button>
       <button data-ctab="integrations" aria-pressed="false">التكاملات</button>
@@ -1676,6 +1684,7 @@ function clientInventoryView(client){
   <div class="page-head" style="padding:0 0 12px">
     <div class="section-title" style="margin:0">كميات المنتجات</div>
     <div class="spacer"></div>
+    <button class="btn sm line" id="openSuppliersBtn">الموردين</button>
     <button class="btn sm" id="openRestockBtn">+ إضافة كميات جديدة</button>
     <button class="btn sm line" id="openStockLogBtn">تاريخ الإضافات</button>
   </div>
@@ -1720,6 +1729,7 @@ function clientServiceView(client){
       ${client.inventoryEnabled ? `<button data-ctab="inventory" aria-pressed="false">المخزون</button>` : ''}
       <button data-ctab="service" aria-pressed="true">خدمة العملاء</button>
       <button data-ctab="products" aria-pressed="false">منتجاتي</button>
+      <button data-ctab="customers" aria-pressed="${clientTab==='customers'}">العملاء</button>
       <button data-ctab="finance" aria-pressed="false">الحسابات</button>
       <button data-ctab="wallet" aria-pressed="${clientTab==='wallet'}">المحفظة</button>
       <button data-ctab="integrations" aria-pressed="false">التكاملات</button>
@@ -1741,7 +1751,85 @@ function clientServiceView(client){
   </div>`;
 }
 
-/* شاشة العميل: محفظة الاشتراك */
+/* شاشة العميل: قائمة العملاء (Customer 360) — بيتربطوا تلقائي من رقم التليفون في كل أوردر */
+function clientCustomersView(client){
+  const list = (DB.customers||[]).slice();
+  const rows = list.map(c=>`
+    <div class="card" style="margin-bottom:8px;padding:10px 12px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;cursor:pointer" data-opencust="${c.id}">
+      <div>
+        <b>${esc(c.name||'بدون اسم')}</b>
+        <span class="hint mono" style="font-size:11.5px"> · ${esc(c.phone)}</span>
+        ${(c.tags||[]).map(t=>`<span class="pill" style="margin-inline-start:4px">${esc(t)}</span>`).join('')}
+      </div>
+      <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+        <div style="text-align:center"><div class="hint" style="font-size:10.5px">عدد الأوردرات</div><b class="mono">${num(c.totalOrders)}</b></div>
+        <div style="text-align:center"><div class="hint" style="font-size:10.5px">إجمالي المصروف</div><b class="mono">${money(c.totalSpent)}</b></div>
+        <div style="text-align:center"><div class="hint" style="font-size:10.5px">آخر أوردر</div><b class="mono">${c.lastOrderDate?arDate(c.lastOrderDate):'—'}</b></div>
+      </div>
+    </div>`).join('');
+  return `
+  <div class="page-head">
+    <div><div class="eyebrow">${esc(client.name)}</div><h2>العملاء</h2></div>
+    <div class="spacer"></div>
+    <div class="seg" id="clientTabs">
+      <button data-ctab="dash" aria-pressed="false">الداشبورد</button>
+      <button data-ctab="add" aria-pressed="false">الأوردرات</button>
+      ${client.inventoryEnabled ? `<button data-ctab="inventory" aria-pressed="false">المخزون</button>` : ''}
+      ${client.customerServiceEnabled ? `<button data-ctab="service" aria-pressed="false">خدمة العملاء</button>` : ''}
+      <button data-ctab="products" aria-pressed="false">منتجاتي</button>
+      <button data-ctab="customers" aria-pressed="true">العملاء</button>
+      <button data-ctab="finance" aria-pressed="false">الحسابات</button>
+      <button data-ctab="wallet" aria-pressed="${clientTab==='wallet'}">المحفظة</button>
+      <button data-ctab="integrations" aria-pressed="false">التكاملات</button>
+    </div>
+  </div>
+  <p class="hint" style="margin-bottom:14px">بيتسجّلوا تلقائي من رقم التليفون في كل أوردر — العملاء اللي عندهم أكتر من أوردر بيتجمّعوا هنا لوحدهم.</p>
+  ${rows || '<p class="hint">لسه مفيش عملاء اتسجّلوا — هيظهروا تلقائي أول ما تيجي أوردرات برقم تليفون صحيح.</p>'}`;
+}
+
+async function showCustomerModal(customerId){
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'position:fixed;inset:0;background:rgba(18,33,43,.55);z-index:200;display:grid;place-items:center;padding:18px;overflow-y:auto';
+  wrap.innerHTML = `<div class="card" style="max-width:560px;width:100%;box-shadow:var(--shadow)"><p class="hint">بنجيب بيانات العميل...</p></div>`;
+  document.body.appendChild(wrap);
+  const close = ()=> document.body.removeChild(wrap);
+  wrap.onclick = ev => { if(ev.target === wrap) close(); };
+  try{
+    const c = await api('/api/customers/'+encodeURIComponent(customerId));
+    const orderRow = o => `
+      <tr><td>${arDate(o.date)}</td><td>${esc(o.product||'')}</td>
+        <td class="num">${money(o.total)}</td>
+        <td><span class="pill ${ORDER_STATE[o.state]?ORDER_STATE[o.state].cls:''}">${ORDER_STATE[o.state]?ORDER_STATE[o.state].ar:esc(o.state)}</span></td></tr>`;
+    wrap.innerHTML = `
+      <div class="card" style="max-width:560px;width:100%;box-shadow:var(--shadow);max-height:85vh;overflow-y:auto">
+        <h3 style="font-size:16px;margin-bottom:2px">${esc(c.name||'بدون اسم')}</h3>
+        <p class="hint mono" style="margin-bottom:12px">${esc(c.phone)}${c.gov?' · '+esc(c.gov):''}${c.address?' · '+esc(c.address):''}</p>
+        <div class="field"><label>اسم العميل</label><input id="custName" value="${esc(c.name||'')}"></div>
+        <div class="field"><label>تاجات (افصل بفاصلة)</label><input id="custTags" value="${esc((c.tags||[]).join('، '))}" placeholder="مثال: VIP، بيرجع كتير"></div>
+        <div class="field"><label>ملاحظة</label><input id="custNote" value="${esc(c.note||'')}"></div>
+        <div class="form-actions" style="margin-top:8px;margin-bottom:14px">
+          <button class="btn sm" id="custSave">حفظ</button>
+        </div>
+        <div class="section-title" style="margin:0 0 8px">تاريخ الأوردرات (${num(c.orders.length)})</div>
+        <div class="table-wrap"><table><thead><tr><th>التاريخ</th><th>المنتج</th><th>الإجمالي</th><th>الحالة</th></tr></thead>
+          <tbody>${c.orders.map(orderRow).join('') || '<tr><td colspan="4" class="empty">مفيش أوردرات.</td></tr>'}</tbody></table></div>
+        <div class="form-actions" style="margin-top:12px"><button class="btn sm line" id="custClose">قفل</button></div>
+      </div>`;
+    wrap.querySelector('#custClose').onclick = close;
+    wrap.querySelector('#custSave').onclick = async ()=>{
+      const name = wrap.querySelector('#custName').value.trim();
+      const note = wrap.querySelector('#custNote').value.trim();
+      const tags = wrap.querySelector('#custTags').value.split(/[،,]/).map(s=>s.trim()).filter(Boolean);
+      try{
+        await api('/api/customers/'+encodeURIComponent(customerId), {method:'PATCH', body:JSON.stringify({name, note, tags})});
+        DB.customers = await api('/api/customers');
+        toast('اتحفظت بيانات العميل'); close(); paint(true);
+      }catch(e){ toast(e.message); }
+    };
+  }catch(e){ wrap.innerHTML = `<div class="card"><p class="hint">${esc(e.message)}</p></div>`; }
+}
+
+
 function clientWalletView(client){
   if(!integData){
     return `<div class="page-head"><div><h2>المحفظة</h2></div></div>
@@ -1764,6 +1852,7 @@ function clientWalletView(client){
       ${client.inventoryEnabled ? `<button data-ctab="inventory" aria-pressed="false">المخزون</button>` : ''}
       ${client.customerServiceEnabled ? `<button data-ctab="service" aria-pressed="false">خدمة العملاء</button>` : ''}
       <button data-ctab="products" aria-pressed="false">منتجاتي</button>
+      <button data-ctab="customers" aria-pressed="${clientTab==='customers'}">العملاء</button>
       <button data-ctab="finance" aria-pressed="false">الحسابات</button>
       <button data-ctab="wallet" aria-pressed="true">المحفظة</button>
       <button data-ctab="integrations" aria-pressed="false">التكاملات</button>
@@ -1806,6 +1895,7 @@ function clientAddOrderView(client){
       ${client.inventoryEnabled ? `<button data-ctab="inventory" aria-pressed="${clientTab==='inventory'}">المخزون</button>` : ''}
       ${client.customerServiceEnabled ? `<button data-ctab="service" aria-pressed="${clientTab==='service'}">خدمة العملاء</button>` : ''}
       <button data-ctab="products" aria-pressed="false">منتجاتي</button>
+      <button data-ctab="customers" aria-pressed="${clientTab==='customers'}">العملاء</button>
       <button data-ctab="finance" aria-pressed="false">الحسابات</button>
       <button data-ctab="wallet" aria-pressed="${clientTab==='wallet'}">المحفظة</button>
       <button data-ctab="integrations" aria-pressed="false">التكاملات</button>
@@ -2089,9 +2179,66 @@ function showWhatsAppModal(order, clientName){
 }
 
 /* ---------- إضافة كميات جديدة للمخزون + سجل الإضافات ---------- */
+function showSuppliersModal(client){
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'position:fixed;inset:0;background:rgba(18,33,43,.55);z-index:200;display:grid;place-items:center;padding:18px;overflow-y:auto';
+  const supplierRow = s => `
+    <div class="card" style="margin-bottom:8px;padding:10px 12px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+      <div><b>${esc(s.name)}</b>${s.phone?` <span class="hint" style="font-size:11.5px">· ${esc(s.phone)}</span>`:''}
+        ${s.note?`<br><span class="hint" style="font-size:11px">${esc(s.note)}</span>`:''}</div>
+      <button class="icon-btn" data-delsup="${s.id}">حذف</button>
+    </div>`;
+  const paintList = () => {
+    const list = wrap.querySelector('#supList');
+    const items = (DB.suppliers||[]).slice().sort((a,b)=>a.name.localeCompare(b.name,'ar'));
+    list.innerHTML = items.map(supplierRow).join('') || '<p class="hint">لسه مفيش موردين مسجّلين.</p>';
+    list.querySelectorAll('[data-delsup]').forEach(b=> b.onclick = async ()=>{
+      if(!confirm('متأكد إنك عايز تحذف المورد ده؟')) return;
+      try{
+        await api('/api/suppliers/'+encodeURIComponent(b.dataset.delsup), {method:'DELETE'});
+        DB.suppliers = (DB.suppliers||[]).filter(x=>x.id!==b.dataset.delsup);
+        paintList(); toast('اتحذف المورد');
+      }catch(e){ toast(e.message); }
+    });
+  };
+  wrap.innerHTML = `
+    <div class="card" style="max-width:480px;width:100%;box-shadow:var(--shadow);max-height:85vh;overflow-y:auto">
+      <h3 style="font-size:16px;margin-bottom:4px">الموردين</h3>
+      <p class="hint" style="margin-bottom:12px">ضيف موردينك عشان تقدر تربط كل توريد مخزون بمين جابهولك.</p>
+      <div id="supList"></div>
+      <div class="form-grid" style="margin-top:10px">
+        <div class="field"><label>اسم المورد</label><input id="supName" placeholder="مثال: مصنع الأقمشة"></div>
+        <div class="field"><label>تليفون (اختياري)</label><input id="supPhone" placeholder="01xxxxxxxxx"></div>
+        <div class="field" style="grid-column:span 2"><label>ملاحظة (اختياري)</label><input id="supNote" placeholder="عنوان أو تفاصيل"></div>
+      </div>
+      <div class="form-actions" style="margin-top:10px">
+        <button class="btn sm" id="supSave">إضافة مورد</button>
+        <button class="btn sm line" id="supClose">قفل</button>
+      </div>
+    </div>`;
+  document.body.appendChild(wrap);
+  paintList();
+  const close = ()=> document.body.removeChild(wrap);
+  wrap.querySelector('#supClose').onclick = close;
+  wrap.onclick = ev => { if(ev.target === wrap) close(); };
+  wrap.querySelector('#supSave').onclick = async ()=>{
+    const name = wrap.querySelector('#supName').value.trim();
+    if(!name){ toast('اكتب اسم المورد'); return; }
+    const phone = wrap.querySelector('#supPhone').value.trim();
+    const note = wrap.querySelector('#supNote').value.trim();
+    try{
+      await api('/api/suppliers', {method:'POST', body:JSON.stringify({name, phone, note})});
+      DB.suppliers = await api('/api/suppliers');
+      wrap.querySelector('#supName').value=''; wrap.querySelector('#supPhone').value=''; wrap.querySelector('#supNote').value='';
+      paintList(); toast('اتضاف المورد');
+    }catch(e){ toast(e.message); }
+  };
+}
+
 function showRestockModal(client){
   const products = (DB.products||[]).filter(p=>p.clientId===client.id && p.active!==0)
     .sort((a,b)=> a.name.localeCompare(b.name,'ar'));
+  const suppliers = (DB.suppliers||[]).slice().sort((a,b)=>a.name.localeCompare(b.name,'ar'));
   const wrap = document.createElement('div');
   wrap.style.cssText = 'position:fixed;inset:0;background:rgba(18,33,43,.55);z-index:200;display:grid;place-items:center;padding:18px;overflow-y:auto';
   wrap.innerHTML = `
@@ -2104,6 +2251,12 @@ function showRestockModal(client){
         <input type="number" min="0" class="mono" data-restockinput="${p.id}" placeholder="0"
           style="width:90px;padding:6px 8px;border:1px solid var(--line);border-radius:7px;text-align:center">
       </div>`).join('') || '<p class="hint">مفيش منتجات مسجّلة لسه.</p>'}
+      <div class="field" style="margin-top:8px"><label>المورد (اختياري)</label>
+        <select id="restockSupplier">
+          <option value="">— من غير مورد محدد —</option>
+          ${suppliers.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('')}
+        </select>
+      </div>
       <div class="field" style="margin-top:8px"><label>ملاحظة (اختياري)</label><input id="restockNote" placeholder="مثال: توريد أغسطس"></div>
       <div class="form-actions" style="margin-top:10px">
         <button class="btn sm" id="restockSave">حفظ الإضافات</button>
@@ -2116,6 +2269,7 @@ function showRestockModal(client){
   wrap.onclick = ev => { if(ev.target === wrap) close(); };
   wrap.querySelector('#restockSave').onclick = async ()=>{
     const note = wrap.querySelector('#restockNote').value.trim();
+    const supplierId = wrap.querySelector('#restockSupplier').value || null;
     const inputs = wrap.querySelectorAll('[data-restockinput]');
     let anyAdded = false;
     for(const inp of inputs){
@@ -2124,7 +2278,7 @@ function showRestockModal(client){
       anyAdded = true;
       try{
         const res = await api('/api/products/'+encodeURIComponent(inp.dataset.restockinput)+'/stock/add',
-          {method:'POST', body:JSON.stringify({delta, note})});
+          {method:'POST', body:JSON.stringify({delta, note, supplierId})});
         const p = DB.products.find(x=>x.id===inp.dataset.restockinput);
         if(p) p.stock = res.stock;
       }catch(e){ toast(e.message); }
@@ -2148,12 +2302,13 @@ async function showStockLogModal(client){
         <td>${esc(s.product_name||'')}</td>
         <td class="num" style="color:var(--pine)">+${num(s.delta)}</td>
         <td class="num">${num(s.new_stock)}</td>
+        <td>${esc(s.supplier_name||'—')}</td>
         <td>${esc(s.note||'')}</td></tr>`).join('');
     wrap.innerHTML = `
-      <div class="card" style="max-width:520px;width:100%;box-shadow:var(--shadow);max-height:80vh;overflow-y:auto">
+      <div class="card" style="max-width:560px;width:100%;box-shadow:var(--shadow);max-height:80vh;overflow-y:auto">
         <h3 style="font-size:16px;margin-bottom:10px">تاريخ إضافات المخزون</h3>
-        <div class="table-wrap"><table><thead><tr><th>الوقت</th><th>المنتج</th><th>الكمية المضافة</th><th>الرصيد بعدها</th><th>ملاحظة</th></tr></thead>
-          <tbody>${rows || '<tr><td colspan="5" class="empty">لسه مفيش إضافات مسجّلة.</td></tr>'}</tbody></table></div>
+        <div class="table-wrap"><table><thead><tr><th>الوقت</th><th>المنتج</th><th>الكمية المضافة</th><th>الرصيد بعدها</th><th>المورد</th><th>ملاحظة</th></tr></thead>
+          <tbody>${rows || '<tr><td colspan="6" class="empty">لسه مفيش إضافات مسجّلة.</td></tr>'}</tbody></table></div>
         <div class="form-actions" style="margin-top:12px"><button class="btn sm line" id="stockLogClose">قفل</button></div>
       </div>`;
     wrap.querySelector('#stockLogClose').onclick = close;
@@ -3668,7 +3823,10 @@ function bindClient(c){
       try{ DB.products = await api('/api/products'); }catch(e){ toast(e.message); }
     }
     if(clientTab==='inventory' && ONLINE){
-      try{ DB.products = await api('/api/products'); }catch(e){ toast(e.message); }
+      try{
+        DB.products = await api('/api/products');
+        DB.suppliers = await api('/api/suppliers');
+      }catch(e){ toast(e.message); }
     }
     if(clientTab==='integrations' && ONLINE){
       try{
@@ -3689,6 +3847,9 @@ function bindClient(c){
         walletLogList = await api('/api/wallet/log');
       }catch(e){ toast(e.message); }
     }
+    if(clientTab==='customers' && ONLINE){
+      try{ DB.customers = await api('/api/customers'); }catch(e){ toast(e.message); }
+    }
     if(clientTab==='dash' && ONLINE){ await loadPerf(c.id); }
     paint();
   });
@@ -3696,6 +3857,7 @@ function bindClient(c){
   if(clientTab==='finance') bindClientFinance();
   if(clientTab==='inventory') bindClientInventory(c);
   if(clientTab==='service') bindClientService();
+  if(clientTab==='customers') bindClientCustomers();
   const perfRetry = document.getElementById('perfRetryBtn');
   if(perfRetry) perfRetry.onclick = async ()=>{ await loadPerf(c.id); paint(true); };
   const perfReload = document.getElementById('perfReloadBtn');
@@ -3916,6 +4078,8 @@ function bindClientInventory(client){
   if(openRestock) openRestock.onclick = ()=> showRestockModal(client);
   const openLog = document.getElementById('openStockLogBtn');
   if(openLog) openLog.onclick = ()=> showStockLogModal(client);
+  const openSuppliers = document.getElementById('openSuppliersBtn');
+  if(openSuppliers) openSuppliers.onclick = ()=> showSuppliersModal(client);
   document.querySelectorAll('[data-invawb]').forEach(el=> el.onchange = ()=>{
     const o = DB.orders.find(x=>x.id===el.dataset.invawb);
     if(o) o.awb = el.value.trim() || null;
@@ -3950,6 +4114,10 @@ function bindClientInventory(client){
       paint(true); toast('اتحفظت الكمية');
     }catch(e){ toast(e.message); }
   });
+}
+
+function bindClientCustomers(){
+  document.querySelectorAll('[data-opencust]').forEach(el=> el.onclick = ()=> showCustomerModal(el.dataset.opencust));
 }
 
 function bindClientService(){
