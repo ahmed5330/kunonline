@@ -7,9 +7,10 @@ const auditJs = await readFile(new URL('../public/v2/modules-v8.js', import.meta
 const opsJs = await readFile(new URL('../public/v2/modules-v10.js', import.meta.url), 'utf8');
 const controlJs = await readFile(new URL('../public/v2/modules-v11.js', import.meta.url), 'utf8');
 const channelsJs = await readFile(new URL('../public/v2/modules-v12.js', import.meta.url), 'utf8');
+const posJs = await readFile(new URL('../public/v2/modules-v13.js', import.meta.url), 'utf8');
 
 const must = (ok, message) => { if (!ok) throw new Error(message); };
-for (const asset of ['/v2/kun-v7.css','/v2/modules-v7.js','/v2/modules-v8.js','/v2/modules-v10.js','/v2/modules-v11.js','/v2/modules-v12.js']) must(index.includes(asset), `Missing ${asset} from v2 index`);
+for (const asset of ['/v2/kun-v7.css','/v2/modules-v7.js','/v2/modules-v8.js','/v2/modules-v10.js','/v2/modules-v11.js','/v2/modules-v12.js','/v2/modules-v13.js']) must(index.includes(asset), `Missing ${asset} from v2 index`);
 for (const theme of ['light','gray','dark']) must(themeJs.includes(`'${theme}'`) || themeJs.includes(`\"${theme}\"`), `Theme ${theme} is missing from switcher`);
 must(css.includes('body[data-theme="gray"]'), 'Gray theme CSS missing');
 must(css.includes('body[data-theme="dark"]'), 'Dark theme CSS missing');
@@ -21,7 +22,7 @@ must(css.includes(':focus-visible'), 'Keyboard focus styles missing');
 must(themeJs.includes('mobileMenuBtn'), 'Mobile navigation control missing');
 must(themeJs.includes("localStorage.setItem(storageKey,theme)"), 'Theme persistence missing');
 must(index.includes('viewport-fit=cover'), 'Safe-area capable viewport missing');
-for (const view of ['audit','ops','control','inbox','campaigns']) must(index.includes(`data-view="${view}"`), `Navigation entry missing: ${view}`);
+for (const view of ['audit','ops','control','inbox','campaigns','pos']) must(index.includes(`data-view="${view}"`), `Navigation entry missing: ${view}`);
 must(auditJs.includes('/api/audit-log'), 'Audit UI must use audit API');
 must(auditJs.includes('/api/access/snapshot'), 'Audit UI must show effective access snapshot');
 must(opsJs.includes('/api/system-status'), 'Operations UI must use system status API');
@@ -32,4 +33,6 @@ must(controlJs.includes('/api/store-connections'), 'Control center must show sto
 must(controlJs.includes('/api/support-tickets'), 'Control center must show support tickets');
 must(channelsJs.includes('/api/inbox/conversations'), 'Unified inbox must use conversations API');
 must(channelsJs.includes('/api/campaigns/summary'), 'Campaign view must use campaign summary API');
-console.log('UI contract checks passed: responsive themes, accessibility, operations, SaaS, inbox and campaigns.');
+must(posJs.includes('/api/pos/sessions'), 'POS UI must use sessions API');
+must(posJs.includes('/api/pos/sales'), 'POS UI must use sales API');
+console.log('UI contract checks passed: responsive themes, accessibility, operations, SaaS, inbox, campaigns and POS.');
