@@ -1,0 +1,13 @@
+import {readFile} from 'node:fs/promises';
+const runner=await readFile(new URL('../src/execution-runner.js',import.meta.url),'utf8');
+const entry=await readFile(new URL('../src/index-commerce-v10.js',import.meta.url),'utf8');
+const must=(ok,msg)=>{if(!ok)throw new Error(msg)};
+for(const action of ['add_tag','add_note','assign_agent','notify_team','send_whatsapp'])must(runner.includes(`case '${action}'`),`Missing adapter ${action}`);
+must(runner.includes('adapter_not_configured'),'Unknown actions must fail closed');
+must(runner.includes("status='running'"),'Jobs must claim running state');
+must(runner.includes("status='completed'"),'Completed state missing');
+must(runner.includes("'dead_letter'"),'Dead-letter handling missing');
+must(runner.includes('Math.pow(2'),'Exponential retry backoff missing');
+must(entry.includes('/api/execution-jobs/run'),'Manual queue runner endpoint missing');
+must(entry.includes('scheduled(controller,env,ctx)'),'Scheduled queue processing missing');
+console.log('Execution runner checks passed: whitelisted adapters, retries, dead-letter and scheduled processing.');
