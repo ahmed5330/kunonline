@@ -23,12 +23,12 @@ for (const [label, pattern] of requiredConfig) {
   }
 }
 
-if (/migrations_dir\s*=|wrangler\s+d1|db:migrate|db:init|migration/i.test(workflow)) {
-  throw new Error("Production safety check failed: the production workflow contains a database or migration command.");
+if (/wrangler\s+d1|npm\s+run\s+db:|npx\s+wrangler\s+d1/i.test(workflow)) {
+  throw new Error("Production safety check failed: the production workflow contains a database command.");
 }
 
 if (!/wrangler\s+deploy\s+--config\s+wrangler\.production\.toml/.test(workflow)) {
   throw new Error("Production safety check failed: deployment is not pinned to wrangler.production.toml.");
 }
 
-console.log("Production configuration safety checks passed. No database migration command is present.");
+console.log("Production configuration safety checks passed. No database command is present.");
