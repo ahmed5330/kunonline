@@ -9,7 +9,8 @@ must(migration.includes('ciphertext_b64')&&migration.includes('iv_b64'),'Ciphert
 must(helper.includes("name:'AES-GCM'")||helper.includes("name: 'AES-GCM'"),'AES-GCM encryption missing');
 must(helper.includes('bytes.length!==32'),'Encryption key length validation missing');
 must(helper.includes('INTEGRATION_ENCRYPTION_KEY'),'Encryption key must come from environment secret');
-must(api.includes('/api/integration-secrets/'),'Integration secret API missing');
+must(api.includes('integration-secrets')&&api.includes('secretName'),'Integration secret API route missing');
+must(api.includes("method==='PUT'")&&api.includes("method==='DELETE'")&&api.includes("method==='GET'"),'Integration secret API must support metadata read, secure write and delete');
 must(api.includes('SELECT secret_name,created_at,updated_at'),'Secret list must return metadata only');
 must(!api.includes('decryptSecret('),'Secret API must not expose plaintext decryption endpoint');
 must(!api.includes('ciphertext_b64,iv_b64 FROM integration_secrets'),'Secret API must not return ciphertext payloads to browser');
