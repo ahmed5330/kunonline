@@ -1,11 +1,13 @@
-import { readFile } from "node:fs/promises";
+import { readFile } from 'node:fs/promises';
 
-const configPath = "wrangler.production.toml";
-const workflowPath = ".github/workflows/production.yml";
+const configPath = 'wrangler.production.toml';
+const deployWorkflowPath = '.github/workflows/production.yml';
+const rollbackWorkflowPath = '.github/workflows/production-rollback.yml';
 
-const [config, workflow] = await Promise.all([
-  readFile(configPath, "utf8"),
-  readFile(workflowPath, "utf8"),
+const [config, deployWorkflow, rollbackWorkflow] = await Promise.all([
+  readFile(configPath, 'utf8'),
+  readFile(deployWorkflowPath, 'utf8'),
+  readFile(rollbackWorkflowPath, 'utf8'),
 ]);
 
 const requiredConfig = [
@@ -23,12 +25,35 @@ for (const [label, pattern] of requiredConfig) {
   }
 }
 
-if (/wrangler\s+d1|npm\s+run\s+db:|npx\s+wrangler\s+d1/i.test(workflow)) {
-  throw new Error("Production safety check failed: the production workflow contains a database command.");
+if (/migrations_dir\s*=/.test(config)) {
+  throw new Error('Production safety check failed: migrations_dir must not exist in Production config.');
 }
 
-if (!/wrangler\s+deploy\s+--config\s+wrangler\.production\.toml/.test(workflow)) {
-  throw new Error("Production safety check failed: deployment is not pinned to wrangler.production.toml.");
+const workflows = [
+  ['Production deploy', deployWorkflow],
+  ['Production rollback', rollbackWorkflow],
+];
+
+for (const [label, workflow] of workflows) {
+  if (/wrangler\s+d1|npm\s+run\s+db:/i.test(workflow)) {
+    throw new Error(`${label} safety check failed: database commands are forbidden.`);
+  }
+  if (/wrangler\.preview\.toml|kunonline-preview/i.test(workflow)) {
+    throw new Error(`${label} safety check failed: Preview resources are forbidden.`);
+  }
+  if (/\bwrangler\s+secret\s+(?:put|bulk|delete)\b/i.test(workflow)) {
+    throw new Error(`${label} safety check failed: secret mutation is forbidden.`);
+  }
+  if (!/environment:\s*\n\s*name:\s*production\b/m.test(workflow)) {
+    throw new Error(`${label} safety check failed: production GitHub Environment is required.`);
+  }
 }
 
-console.log("Production configuration safety checks passed. No database command is present.");
+if (!/wrangler\s+deploy\s+--config\s+wrangler\.production\.toml/.test(deployWorkflow)) {
+  throw new Error('Production safety check failed: deployment is not pinned to wrangler.production.toml.');
+}
+if (!/wrangler\s+rollback\s+"\$\{\{ inputs\.version_id \}\}"\s+--config\s+wrangler\.production\.toml/.test(rollbackWorkflow)) {
+  throw new Error('Production rollback safety check failed: rollback is not pinned to a requested version and Production config.');
+}
+
+console.log('Production deploy and rollback safety checks passed. No database command is present.');

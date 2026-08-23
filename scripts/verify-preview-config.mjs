@@ -1,24 +1,64 @@
 import { readFileSync } from 'node:fs';
 
 const config = readFileSync(new URL('../wrangler.preview.toml', import.meta.url), 'utf8');
+const workflow = readFileSync(new URL('../.github/workflows/preview.yml', import.meta.url), 'utf8');
+const packageJson = readFileSync(new URL('../package.json', import.meta.url), 'utf8');
 const d1Block = config.match(/\[\[d1_databases\]\]([\s\S]*?)(?=\n\[|$)/)?.[1] || '';
+
 const expected = {
   worker: 'kunonline-preview',
   database: 'kunonline-preview',
   databaseId: '31cd5cdf-fc01-42d7-ba1e-571f3dd58495',
   binding: 'DB',
 };
-const value = (source, key) => source.match(new RegExp(`^\\s*${key}\\s*=\\s*"([^"]+)"`, 'm'))?.[1];
+
+const value = (source, key) =>
+  source.match(new RegExp(`^\\s*${key}\\s*=\\s*"([^"]+)"`, 'm'))?.[1];
+
 const actual = {
   worker: value(config, 'name'),
   database: value(d1Block, 'database_name'),
   databaseId: value(d1Block, 'database_id'),
   binding: value(d1Block, 'binding'),
 };
+
 for (const [key, expectedValue] of Object.entries(expected)) {
-  if (actual[key] !== expectedValue) throw new Error(`Preview safety check failed: ${key} must be ${expectedValue}; got ${actual[key] ?? 'missing'}`);
+  if (actual[key] !== expectedValue) {
+    throw new Error(
+      `Preview safety check failed: ${key} must be ${expectedValue}; got ${actual[key] ?? 'missing'}`,
+    );
+  }
 }
+
 if (/database_name\s*=\s*"kunonline"/m.test(config) || /^name\s*=\s*"kunonline"/m.test(config)) {
-  throw new Error('Preview safety check failed: production resource detected');
+  throw new Error('Preview safety check failed: Production resource detected in Preview config.');
 }
-console.log('Preview config safety check passed.');
+
+const automation = `${workflow}\n${packageJson}`;
+const forbiddenAutomation = [
+  ['Production Wrangler config', /wrangler\.production\.toml/i],
+  ['Production D1 command', /\bwrangler\s+d1\b[^\n]*\bkunonline\b(?!-preview)/i],
+  ['Production database script', /"db:[^"]*production[^"]*"\s*:/i],
+  ['Cloudflare secret mutation', /\bwrangler\s+secret\s+(?:put|bulk|delete)\b/i],
+];
+
+for (const [label, pattern] of forbiddenAutomation) {
+  if (pattern.test(automation)) {
+    throw new Error(`Preview safety check failed: ${label} is forbidden.`);
+  }
+}
+
+if (!/environment:\s*\n\s*name:\s*preview\b/m.test(workflow)) {
+  throw new Error('Preview safety check failed: workflow must use the preview GitHub Environment.');
+}
+if (!/npm run db:migrate:preview/.test(workflow)) {
+  throw new Error('Preview safety check failed: Preview migration step is missing.');
+}
+if (!/wrangler d1 migrations apply kunonline-preview --remote --config wrangler\.preview\.toml/.test(packageJson)) {
+  throw new Error('Preview safety check failed: migration command is not pinned to Preview D1/config.');
+}
+if (!/wrangler deploy --config wrangler\.preview\.toml/.test(packageJson)) {
+  throw new Error('Preview safety check failed: deployment is not pinned to Preview config.');
+}
+
+console.log('Preview config and workflow safety checks passed.');
