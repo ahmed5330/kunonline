@@ -1,7 +1,7 @@
 # إعدادات النشر على Cloudflare — Preview environment
 
 name = "kunonline-preview"
-main = "src/index-commerce.js"
+main = "src/index-commerce-v2.js"
 compatibility_date = "2026-05-01"
 
 [assets]
