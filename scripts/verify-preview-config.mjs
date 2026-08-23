@@ -60,5 +60,14 @@ if (!/wrangler d1 migrations apply kunonline-preview --remote --config wrangler\
 if (!/wrangler deploy --config wrangler\.preview\.toml/.test(packageJson)) {
   throw new Error('Preview safety check failed: deployment is not pinned to Preview config.');
 }
+if (!/wrangler rollback --config wrangler\.preview\.toml --message/.test(packageJson)) {
+  throw new Error('Preview safety check failed: rollback is not pinned to Preview config.');
+}
+if (!/if:\s*steps\.smoke\.outcome == 'failure'[\s\S]*npm run rollback:preview/.test(workflow)) {
+  throw new Error('Preview safety check failed: automatic rollback after smoke failure is missing.');
+}
+if (!/"wrangler"\s*:\s*"4\.125\.0"/.test(packageJson)) {
+  throw new Error('Preview safety check failed: Wrangler must be pinned to 4.125.0.');
+}
 
 console.log('Preview config and workflow safety checks passed.');

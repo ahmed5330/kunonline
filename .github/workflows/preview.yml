@@ -35,4 +35,17 @@ jobs:
       - name: Deploy preview Worker
         run: npm run deploy:preview
       - name: Smoke test deployed preview
+        id: smoke
+        continue-on-error: true
         run: npm run smoke:preview
+      - name: Roll back Preview code after failed smoke test
+        if: steps.smoke.outcome == 'failure'
+        run: npm run rollback:preview
+      - name: Verify restored Preview
+        if: steps.smoke.outcome == 'failure'
+        run: npm run smoke:preview
+      - name: Mark failed deployment
+        if: steps.smoke.outcome == 'failure'
+        run: |
+          echo "The new Preview failed smoke tests and was rolled back."
+          exit 1
