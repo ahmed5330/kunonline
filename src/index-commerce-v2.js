@@ -59,6 +59,10 @@ async function dryRun(request,env,ctx,workflowId){
 async function fetchV2(request,env,ctx){
   const url=new URL(request.url),path=url.pathname;
   try{
+    if(path==='/healthz'&&request.method==='GET'){
+      await env.DB.prepare('SELECT 1').first();
+      return json({ok:true,service:'kunonline-preview',environment:env.APP_ENV||'unknown',database:'reachable'});
+    }
     let m=path.match(/^\/api\/workflows\/([^/]+)\/plan$/);
     if(m&&request.method==='POST')return planRun(request,env,ctx,decodeURIComponent(m[1]));
     m=path.match(/^\/api\/workflows\/([^/]+)\/dry-run$/);
