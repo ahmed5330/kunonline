@@ -36,4 +36,4 @@ jobs:
           node-version: 22
       - run: npm install --ignore-scripts
       - name: Deploy production Worker only
-        run: npx wrangler deploy
+        run: npx wrangler deploy --config wrangler.production.toml
