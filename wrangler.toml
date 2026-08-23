@@ -1,25 +1,20 @@
-# إعدادات النشر على Cloudflare
-# بعد أول نشر، حط database_id اللي هيطلعلك من الأمر:
-#   npx wrangler d1 create konline
+# إعدادات النشر على Cloudflare — Preview environment
 
-name = "konline-system"
+name = "kunonline-preview"
 main = "src/index-commerce.js"
 compatibility_date = "2026-05-01"
 
-# الداشبورد نفسه — أي مسار مش /api أو /webhooks بيتقدّم من هنا
 [assets]
 directory = "./public"
 binding = "ASSETS"
 
-# قاعدة البيانات
 [[d1_databases]]
 binding = "DB"
-database_name = "kunonline"
-database_id = "c426601d-182f-486e-a5c1-bb1bca0ecb0b"
-# تتبع شحنات J&T كل ساعتين (بتوقيت UTC)
+database_name = "kunonline-preview"
+database_id = "31cd5cdf-fc01-42d7-ba1e-571f3dd58495"
+
 [triggers]
 crons = ["0 */2 * * *"]
 
-# متغيرات عادية (مش أسرار) — الأسرار تتحط بأمر wrangler secret put
 [vars]
 TRACKING_PROVIDER = "track123"
