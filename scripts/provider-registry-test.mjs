@@ -1,0 +1,12 @@
+import {readFile} from 'node:fs/promises';
+const registry=await readFile(new URL('../src/provider-registry.js',import.meta.url),'utf8');
+const worker=await readFile(new URL('../src/index-commerce-v13.js',import.meta.url),'utf8');
+const must=(ok,msg)=>{if(!ok)throw new Error(msg)};
+for(const p of ['shopify','woocommerce','easyorders','meta_whatsapp','meta_messenger','instagram','meta_ads','google_ads','tiktok_ads','jt','track123'])must(registry.includes(`id:'${p}'`),`Provider missing: ${p}`);
+for(const category of ['commerce','social','marketing','shipping'])must(registry.includes(`category:'${category}'`),`Provider category missing: ${category}`);
+must(worker.includes('/api/integrations/catalog'),'Integration catalog endpoint missing');
+must(worker.includes('/api/integrations/readiness'),'Integration readiness endpoint missing');
+must(worker.includes('missingSecrets'),'Readiness must identify missing credentials');
+must(worker.includes("readiness:'disconnected'"),'Disconnected readiness state missing');
+must(worker.includes("'needs_secrets'"),'Needs-secrets readiness state missing');
+console.log('Provider registry checks passed: commerce, social, ads and shipping readiness catalog.');
