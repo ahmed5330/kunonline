@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
-    "test": "node tests.mjs",
+    "test:core": "node tests.mjs",
+    "test:ui": "node scripts/ui-contract-test.mjs",
+    "test": "npm run test:core && npm run test:ui",
     "check:preview-config": "node scripts/verify-preview-config.mjs",
     "check:production-config": "node scripts/verify-production-config.mjs",
     "check:deploy": "npm run check:preview-config && wrangler deploy --dry-run --config wrangler.preview.toml",
