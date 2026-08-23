@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 
-const config = readFileSync(new URL('../wrangler.toml', import.meta.url), 'utf8');
+const config = readFileSync(new URL('../wrangler.preview.toml', import.meta.url), 'utf8');
 const d1Block = config.match(/\[\[d1_databases\]\]([\s\S]*?)(?=\n\[|$)/)?.[1] || '';
 const expected = {
   worker: 'kunonline-preview',
