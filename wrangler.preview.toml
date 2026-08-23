@@ -1,6 +1,6 @@
 # Preview resources only.
 name = "kunonline-preview"
-main = "src/index-commerce-v16.js"
+main = "src/index-commerce-v17.js"
 compatibility_date = "2026-08-23"
 
 [assets]
