@@ -1,0 +1,16 @@
+import {readFile} from 'node:fs/promises';
+const worker=await readFile(new URL('./src/index-commerce-v5.js',import.meta.url),'utf8');
+const migration=await readFile(new URL('./migrations/0003_approvals_ai_gateway.sql',import.meta.url),'utf8');
+const ui=await readFile(new URL('./public/v2/modules-v9.js',import.meta.url),'utf8');
+const must=(ok,msg)=>{if(!ok)throw new Error(msg)};
+must(worker.includes("idempotency_key"),'Approval idempotency support missing');
+must(worker.includes("approval.request"),'Approval audit event missing');
+must(worker.includes("approval.approved")||worker.includes('approval.${status}'),'Approval decision audit missing');
+must(worker.includes("risk==='sensitive'"),'Sensitive AI actions must require approval');
+must(worker.includes("requirePermission(me,'automation','approve')"),'Approval permission gate missing');
+must(migration.includes('CREATE TABLE IF NOT EXISTS approval_requests'),'Approval table missing');
+must(migration.includes('CREATE UNIQUE INDEX IF NOT EXISTS idx_approval_idempotency'),'Approval idempotency index missing');
+must(migration.includes('CREATE TABLE IF NOT EXISTS ai_action_requests'),'AI action table missing');
+must(ui.includes('/api/approvals'),'Approval Center UI API missing');
+must(ui.includes('/api/ai-actions'),'AI governance UI API missing');
+console.log('Approval + AI governance contract checks passed.');
