@@ -7,6 +7,7 @@
     "dev": "wrangler dev",
     "test": "node tests.mjs",
     "check:preview-config": "node scripts/verify-preview-config.mjs",
+    "check:production-config": "node scripts/verify-production-config.mjs",
     "check:deploy": "npm run check:preview-config && wrangler deploy --dry-run --config wrangler.preview.toml",
     "deploy:preview": "npm run check:preview-config && wrangler deploy --config wrangler.preview.toml",
     "db:migrate:preview": "npm run check:preview-config && wrangler d1 migrations apply kunonline-preview --remote --config wrangler.preview.toml",
