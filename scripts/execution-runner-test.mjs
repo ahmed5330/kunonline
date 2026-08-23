@@ -1,6 +1,7 @@
 import {readFile} from 'node:fs/promises';
 const runner=await readFile(new URL('../src/execution-runner.js',import.meta.url),'utf8');
 const entry=await readFile(new URL('../src/index-commerce-v10.js',import.meta.url),'utf8');
+const wrangler=await readFile(new URL('../wrangler.preview.toml',import.meta.url),'utf8');
 const must=(ok,msg)=>{if(!ok)throw new Error(msg)};
 for(const action of ['add_tag','add_note','assign_agent','notify_team','send_whatsapp'])must(runner.includes(`case '${action}'`),`Missing adapter ${action}`);
 must(runner.includes('adapter_not_configured'),'Unknown actions must fail closed');
@@ -10,5 +11,7 @@ must(runner.includes("'dead_letter'"),'Dead-letter handling missing');
 must(runner.includes("status IN ('queued','failed')"),'Failed jobs must become eligible for scheduled retries');
 must(runner.includes('Math.pow(2'),'Exponential retry backoff missing');
 must(entry.includes('/api/execution-jobs/run'),'Manual queue runner endpoint missing');
-must(entry.includes('scheduled(controller,env,ctx)'),'Scheduled queue processing missing');
-console.log('Execution runner checks passed: whitelisted adapters, automatic retries, dead-letter and scheduled processing.');
+must(entry.includes("controller?.cron==='*/5 * * * *'"),'Queue cron must be isolated from shipping tracking cron');
+must(wrangler.includes('"*/5 * * * *"'),'Five-minute queue cron missing');
+must(wrangler.includes('"0 */2 * * *"'),'Shipping tracking cron missing');
+console.log('Execution runner checks passed: adapters, retries, dead-letter, five-minute queue and shipping cron isolation.');
