@@ -7,32 +7,25 @@ const d1Block = config.match(/\[\[d1_databases\]\]([\s\S]*?)(?=\n\[|$)/)?.[1] ||
 
 const expected = {
   worker: 'kunonline-preview',
+  entrypoint: 'src/index-commerce-v11.js',
   database: 'kunonline-preview',
   databaseId: '31cd5cdf-fc01-42d7-ba1e-571f3dd58495',
   binding: 'DB',
 };
 
-const value = (source, key) =>
-  source.match(new RegExp(`^\\s*${key}\\s*=\\s*"([^"]+)"`, 'm'))?.[1];
-
+const value = (source, key) => source.match(new RegExp(`^\\s*${key}\\s*=\\s*"([^"]+)"`, 'm'))?.[1];
 const actual = {
   worker: value(config, 'name'),
+  entrypoint: value(config, 'main'),
   database: value(d1Block, 'database_name'),
   databaseId: value(d1Block, 'database_id'),
   binding: value(d1Block, 'binding'),
 };
-
 for (const [key, expectedValue] of Object.entries(expected)) {
-  if (actual[key] !== expectedValue) {
-    throw new Error(
-      `Preview safety check failed: ${key} must be ${expectedValue}; got ${actual[key] ?? 'missing'}`,
-    );
-  }
+  if (actual[key] !== expectedValue) throw new Error(`Preview safety check failed: ${key} must be ${expectedValue}; got ${actual[key] ?? 'missing'}`);
 }
-
-if (/database_name\s*=\s*"kunonline"/m.test(config) || /^name\s*=\s*"kunonline"/m.test(config)) {
-  throw new Error('Preview safety check failed: Production resource detected in Preview config.');
-}
+if (/database_name\s*=\s*"kunonline"/m.test(config) || /^name\s*=\s*"kunonline"/m.test(config)) throw new Error('Preview safety check failed: Production resource detected in Preview config.');
+if (!/crons\s*=\s*\[[^\]]*"\*\/5 \* \* \* \*"[^\]]*"0 \*\/2 \* \* \*"[^\]]*\]/m.test(config)) throw new Error('Preview safety check failed: expected queue and shipping crons are missing.');
 
 const automation = `${workflow}\n${packageJson}`;
 const forbiddenAutomation = [
@@ -41,33 +34,12 @@ const forbiddenAutomation = [
   ['Production database script', /"db:[^"]*production[^"]*"\s*:/i],
   ['Cloudflare secret mutation', /\bwrangler\s+secret\s+(?:put|bulk|delete)\b/i],
 ];
-
-for (const [label, pattern] of forbiddenAutomation) {
-  if (pattern.test(automation)) {
-    throw new Error(`Preview safety check failed: ${label} is forbidden.`);
-  }
-}
-
-if (!/environment:\s*\n\s*name:\s*preview\b/m.test(workflow)) {
-  throw new Error('Preview safety check failed: workflow must use the preview GitHub Environment.');
-}
-if (!/npm run db:migrate:preview/.test(workflow)) {
-  throw new Error('Preview safety check failed: Preview migration step is missing.');
-}
-if (!/wrangler d1 migrations apply kunonline-preview --remote --config wrangler\.preview\.toml/.test(packageJson)) {
-  throw new Error('Preview safety check failed: migration command is not pinned to Preview D1/config.');
-}
-if (!/wrangler deploy --config wrangler\.preview\.toml/.test(packageJson)) {
-  throw new Error('Preview safety check failed: deployment is not pinned to Preview config.');
-}
-if (!/wrangler rollback --config wrangler\.preview\.toml --message/.test(packageJson)) {
-  throw new Error('Preview safety check failed: rollback is not pinned to Preview config.');
-}
-if (!/if:\s*steps\.smoke\.outcome == 'failure'[\s\S]*npm run rollback:preview/.test(workflow)) {
-  throw new Error('Preview safety check failed: automatic rollback after smoke failure is missing.');
-}
-if (!/"wrangler"\s*:\s*"4\.125\.0"/.test(packageJson)) {
-  throw new Error('Preview safety check failed: Wrangler must be pinned to 4.125.0.');
-}
-
+for (const [label, pattern] of forbiddenAutomation) if (pattern.test(automation)) throw new Error(`Preview safety check failed: ${label} is forbidden.`);
+if (!/environment:\s*\n\s*name:\s*preview\b/m.test(workflow)) throw new Error('Preview safety check failed: workflow must use the preview GitHub Environment.');
+if (!/npm run db:migrate:preview/.test(workflow)) throw new Error('Preview safety check failed: Preview migration step is missing.');
+if (!/wrangler d1 migrations apply kunonline-preview --remote --config wrangler\.preview\.toml/.test(packageJson)) throw new Error('Preview safety check failed: migration command is not pinned to Preview D1/config.');
+if (!/wrangler deploy --config wrangler\.preview\.toml/.test(packageJson)) throw new Error('Preview safety check failed: deployment is not pinned to Preview config.');
+if (!/wrangler rollback --config wrangler\.preview\.toml --message/.test(packageJson)) throw new Error('Preview safety check failed: rollback is not pinned to Preview config.');
+if (!/if:\s*steps\.smoke\.outcome == 'failure'[\s\S]*npm run rollback:preview/.test(workflow)) throw new Error('Preview safety check failed: automatic rollback after smoke failure is missing.');
+if (!/"wrangler"\s*:\s*"4\.125\.0"/.test(packageJson)) throw new Error('Preview safety check failed: Wrangler must be pinned to 4.125.0.');
 console.log('Preview config and workflow safety checks passed.');
