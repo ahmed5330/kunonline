@@ -1,0 +1,14 @@
+import {readFile} from 'node:fs/promises';
+const worker=await readFile(new URL('../src/index-commerce-v17.js',import.meta.url),'utf8');
+const accessWorker=await readFile(new URL('../src/index-commerce-v16.js',import.meta.url),'utf8');
+const ui=await readFile(new URL('../public/v2/modules-v18.js',import.meta.url),'utf8');
+const index=await readFile(new URL('../public/v2/index.html',import.meta.url),'utf8');
+const must=(ok,msg)=>{if(!ok)throw new Error(msg)};
+for(const endpoint of ['/api/onboarding/status','/api/team-members'])must(worker.includes(endpoint),`Missing ${endpoint}`);
+for(const endpoint of ['/api/store-access'])must(accessWorker.includes(endpoint),`Missing ${endpoint}`);
+must(accessWorker.includes('AND client_id=?'),'Store access writes must be tenant scoped');
+must(worker.includes("requirePermission(m,'settings','read')"),'Onboarding/team APIs require settings.read');
+for(const endpoint of ['/api/onboarding/status','/api/team-members','/api/stores','/api/store-access'])must(ui.includes(endpoint),`UI missing ${endpoint}`);
+for(const view of ['onboarding','store-access'])must(index.includes(`data-view="${view}"`),`Navigation missing ${view}`);
+must(index.includes('/v2/modules-v18.js'),'modules-v18.js missing from index');
+console.log('Onboarding + store access contract checks passed.');
