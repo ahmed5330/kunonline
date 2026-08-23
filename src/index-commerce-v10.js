@@ -7,6 +7,10 @@ async function fetchV10(request,env,ctx){const url=new URL(request.url),path=url
 export default {
   fetch:fetchV10,
   async scheduled(controller,env,ctx){
+    if(controller?.cron==='*/5 * * * *'){
+      ctx.waitUntil(processExecutionJobs(env,{limit:20}).catch(()=>[]));
+      return;
+    }
     ctx.waitUntil(processExecutionJobs(env,{limit:20}).catch(()=>[]));
     return commerceV9.scheduled?.(controller,env,ctx);
   }
