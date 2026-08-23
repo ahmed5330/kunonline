@@ -12,4 +12,6 @@ for(const asset of ['modules-v10.js','modules-v11.js','modules-v12.js','modules-
 for(const view of ['dashboard','onboarding','stores','store-access','pos','orders','customers','inbox','inventory','procurement','supplier-finance','shipping','cod','campaigns','finance','profit','analytics','automation','ai','integrations','access','approvals','ops','audit','control','readiness'])must(index.includes(`data-view="${view}"`),`Release navigation view missing: ${view}`);
 for(const header of ['Content-Security-Policy','X-Content-Type-Options','X-Frame-Options','Referrer-Policy','Permissions-Policy','Cross-Origin-Opener-Policy'])must(security.includes(header),`Security header missing: ${header}`);
 must(security.includes("Cache-Control','no-store"),'API no-store cache policy missing');
+must(security.includes("legacy-state:${env.INTEGRATION_ENCRYPTION_KEY}"),'Legacy integration secrets must derive encryption from the integration key when TOKEN_ENC_KEY is absent');
+must(security.includes("legacy-state:${env.SESSION_SECRET}"),'Legacy integration secrets must have a stable secret fallback and never silently persist plaintext');
 console.log(`Release readiness checks passed with ${migrations.length} migrations, v21 security-hardened API entry and current v2 assets.`);
