@@ -1,4 +1,5 @@
 name: Preview CI/CD
+# Preview-only automation; production resources are forbidden.
 on:
   push:
     branches: [develop/ux-system-upgrade]
