@@ -5,14 +5,18 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
+    "test": "node tests.mjs",
+    "check:preview-config": "node scripts/verify-preview-config.mjs",
+    "check:deploy": "npm run check:preview-config && wrangler deploy --dry-run",
+    "deploy:preview": "npm run check:preview-config && wrangler deploy",
+    "db:migrate:preview": "npm run check:preview-config && wrangler d1 migrations apply DB --remote",
+    "smoke:preview": "node scripts/smoke-test.mjs https://kunonline-preview.mr-a-mnaa.workers.dev",
     "db:init": "wrangler d1 execute kunonline-preview --remote --file=./schema.sql",
     "db:init-local": "wrangler d1 execute kunonline-preview --local --file=./schema.sql",
     "db:commerce": "wrangler d1 execute kunonline-preview --remote --file=./migration_2026-08-23_commerce_os.sql",
     "db:commerce-local": "wrangler d1 execute kunonline-preview --local --file=./migration_2026-08-23_commerce_os.sql",
     "db:preview:setup": "npm run db:init && npm run db:commerce"
   },
-  "devDependencies": {
-    "wrangler": "^4.0.0"
-  }
+  "devDependencies": { "wrangler": "^4.0.0" }
 }
+
