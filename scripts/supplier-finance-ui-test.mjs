@@ -1,0 +1,14 @@
+import {readFile} from 'node:fs/promises';
+const api=await readFile(new URL('../src/index-commerce-v14.js',import.meta.url),'utf8');
+const ui=await readFile(new URL('../public/v2/modules-v15.js',import.meta.url),'utf8');
+const integrations=await readFile(new URL('../public/v2/modules-v16.js',import.meta.url),'utf8');
+const must=(ok,msg)=>{if(!ok)throw new Error(msg)};
+must(api.includes('/api/procurement/supplier-balances'),'Supplier balances API missing');
+must(api.includes('WHERE s.client_id=? AND s.active=1'),'Supplier balance query must be tenant scoped');
+must(api.includes("requirePermission(me,'finance','read')"),'Supplier balance permission gate missing');
+must(ui.includes('/api/procurement/supplier-balances'),'Supplier finance UI must use aggregate balances API');
+for(const id of ['sfKpis','sfBalances','sfInv','sfPay','sfRet'])must(ui.includes(id),`Supplier finance UI state missing: ${id}`);
+must(integrations.includes('/api/integrations/readiness'),'Integrations center must use readiness API');
+must(integrations.includes('missingSecrets'),'Integrations center must show missing credential names only');
+must(!integrations.includes('access_token='),'Integrations UI must never embed credential values');
+console.log('Supplier finance + integrations UI checks passed.');
