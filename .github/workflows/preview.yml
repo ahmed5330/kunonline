@@ -1,0 +1,35 @@
+name: Preview CI/CD
+on:
+  push:
+    branches: [develop/ux-system-upgrade]
+  workflow_dispatch:
+concurrency:
+  group: kunonline-preview
+  cancel-in-progress: false
+permissions:
+  contents: read
+jobs:
+  test-build-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: preview
+      url: https://kunonline-preview.mr-a-mnaa.workers.dev/v2/
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --ignore-scripts
+      - run: npm test
+      - run: npm run check:deploy
+      - name: Apply preview migrations only
+        run: npm run db:migrate:preview
+      - name: Deploy preview Worker
+        run: npm run deploy:preview
+      - name: Smoke test deployed preview
+        run: npm run smoke:preview
+
