@@ -13,9 +13,10 @@ const helpJs = await readFile(new URL('../public/v2/modules-v14.js', import.meta
 const supplierJs = await readFile(new URL('../public/v2/modules-v15.js', import.meta.url), 'utf8');
 const integrationsJs = await readFile(new URL('../public/v2/modules-v16.js', import.meta.url), 'utf8');
 const multiAiJs = await readFile(new URL('../public/v2/modules-v17.js', import.meta.url), 'utf8');
+const onboardingJs = await readFile(new URL('../public/v2/modules-v18.js', import.meta.url), 'utf8');
 
 const must = (ok, message) => { if (!ok) throw new Error(message); };
-for (const asset of ['/v2/kun-v7.css','/v2/kun-v8.css','/v2/modules-v7.js','/v2/modules-v8.js','/v2/modules-v10.js','/v2/modules-v11.js','/v2/modules-v12.js','/v2/modules-v13.js','/v2/modules-v14.js','/v2/modules-v15.js','/v2/modules-v16.js','/v2/modules-v17.js']) must(index.includes(asset), `Missing ${asset} from v2 index`);
+for (const asset of ['/v2/kun-v7.css','/v2/kun-v8.css','/v2/modules-v7.js','/v2/modules-v8.js','/v2/modules-v10.js','/v2/modules-v11.js','/v2/modules-v12.js','/v2/modules-v13.js','/v2/modules-v14.js','/v2/modules-v15.js','/v2/modules-v16.js','/v2/modules-v17.js','/v2/modules-v18.js']) must(index.includes(asset), `Missing ${asset} from v2 index`);
 for (const theme of ['light','gray','dark']) must(themeJs.includes(`'${theme}'`) || themeJs.includes(`\"${theme}\"`), `Theme ${theme} is missing from switcher`);
 must(css.includes('body[data-theme="gray"]'), 'Gray theme CSS missing');
 must(css.includes('body[data-theme="dark"]'), 'Dark theme CSS missing');
@@ -27,7 +28,7 @@ must(css.includes(':focus-visible'), 'Keyboard focus styles missing');
 must(themeJs.includes('mobileMenuBtn'), 'Mobile navigation control missing');
 must(themeJs.includes("localStorage.setItem(storageKey,theme)"), 'Theme persistence missing');
 must(index.includes('viewport-fit=cover'), 'Safe-area capable viewport missing');
-for (const view of ['audit','ops','control','inbox','campaigns','pos','stores','supplier-finance','integrations']) must(index.includes(`data-view="${view}"`), `Navigation entry missing: ${view}`);
+for (const view of ['audit','ops','control','inbox','campaigns','pos','stores','supplier-finance','integrations','onboarding','store-access']) must(index.includes(`data-view="${view}"`), `Navigation entry missing: ${view}`);
 must(auditJs.includes('/api/audit-log'), 'Audit UI must use audit API');
 must(auditJs.includes('/api/access/snapshot'), 'Audit UI must show effective access snapshot');
 must(opsJs.includes('/api/system-status'), 'Operations UI must use system status API');
@@ -45,7 +46,9 @@ must(integrationsJs.includes('/api/integrations/readiness'), 'Integrations cente
 must(multiAiJs.includes('/api/stores'), 'Multi-store UI must use stores API');
 must(multiAiJs.includes('/api/ai/insights/generate'), 'AI UI must generate governed insight snapshots');
 must(multiAiJs.includes('/api/ai-actions'), 'AI UI must retain action governance history');
+must(onboardingJs.includes('/api/onboarding/status'), 'Onboarding UI must use onboarding status API');
+must(onboardingJs.includes('/api/store-access'), 'Store access UI must use store access API');
 must(helpCss.includes('.help-popover'), 'Contextual help popover styles missing');
 must(helpJs.includes('MutationObserver'), 'Contextual help must decorate dynamically rendered views');
 must(helpJs.includes('مركز المساعدة'), 'Help center integration missing');
-console.log('UI contract checks passed: responsive themes, accessibility, operations, SaaS, inbox, campaigns, POS, multi-store, AI insights, supplier finance, integrations and contextual help.');
+console.log('UI contract checks passed: responsive themes, accessibility, operations, SaaS, inbox, campaigns, POS, multi-store, AI insights, supplier finance, integrations, onboarding, store access and contextual help.');
