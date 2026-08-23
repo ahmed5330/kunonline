@@ -1,0 +1,18 @@
+import {readFile} from 'node:fs/promises';
+const migration=await readFile(new URL('../migrations/0008_integration_secrets.sql',import.meta.url),'utf8');
+const helper=await readFile(new URL('../src/integration-secrets.js',import.meta.url),'utf8');
+const api=await readFile(new URL('../src/index-commerce-v11.js',import.meta.url),'utf8');
+const saas=await readFile(new URL('../src/index-commerce-v7.js',import.meta.url),'utf8');
+const must=(ok,msg)=>{if(!ok)throw new Error(msg)};
+must(migration.includes('CREATE TABLE IF NOT EXISTS integration_secrets'),'Encrypted secret table missing');
+must(migration.includes('ciphertext_b64')&&migration.includes('iv_b64'),'Ciphertext/IV columns missing');
+must(helper.includes("name:'AES-GCM'")||helper.includes("name: 'AES-GCM'"),'AES-GCM encryption missing');
+must(helper.includes('bytes.length!==32'),'Encryption key length validation missing');
+must(helper.includes('INTEGRATION_ENCRYPTION_KEY'),'Encryption key must come from environment secret');
+must(api.includes('/api/integration-secrets/'),'Integration secret API missing');
+must(api.includes('SELECT secret_name,created_at,updated_at'),'Secret list must return metadata only');
+must(!api.includes('decryptSecret('),'Secret API must not expose plaintext decryption endpoint');
+must(!api.includes('ciphertext_b64,iv_b64 FROM integration_secrets'),'Secret API must not return ciphertext payloads to browser');
+must(saas.includes('sanitizeConfig'),'Store connection config must sanitize secret-like fields');
+must(saas.includes('SECRET_KEY'),'Secret-key pattern stripping missing');
+console.log('Integration secret checks passed: AES-GCM, env master key, metadata-only reads, sanitized connection config.');
