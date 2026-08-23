@@ -3,7 +3,7 @@
 #   npx wrangler d1 create konline
 
 name = "konline-system"
-main = "src/index.js"
+main = "src/index-commerce.js"
 compatibility_date = "2026-05-01"
 
 # الداشبورد نفسه — أي مسار مش /api أو /webhooks بيتقدّم من هنا
