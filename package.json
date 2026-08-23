@@ -7,7 +7,9 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "db:init": "wrangler d1 execute konline --remote --file=./schema.sql",
-    "db:init-local": "wrangler d1 execute konline --local --file=./schema.sql"
+    "db:init-local": "wrangler d1 execute konline --local --file=./schema.sql",
+    "db:commerce": "wrangler d1 execute kunonline --remote --file=./migration_2026-08-23_commerce_os.sql",
+    "db:commerce-local": "wrangler d1 execute kunonline --local --file=./migration_2026-08-23_commerce_os.sql"
   },
   "devDependencies": {
     "wrangler": "^4.0.0"
