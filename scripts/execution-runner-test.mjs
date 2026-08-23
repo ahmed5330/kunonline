@@ -7,7 +7,8 @@ must(runner.includes('adapter_not_configured'),'Unknown actions must fail closed
 must(runner.includes("status='running'"),'Jobs must claim running state');
 must(runner.includes("status='completed'"),'Completed state missing');
 must(runner.includes("'dead_letter'"),'Dead-letter handling missing');
+must(runner.includes("status IN ('queued','failed')"),'Failed jobs must become eligible for scheduled retries');
 must(runner.includes('Math.pow(2'),'Exponential retry backoff missing');
 must(entry.includes('/api/execution-jobs/run'),'Manual queue runner endpoint missing');
 must(entry.includes('scheduled(controller,env,ctx)'),'Scheduled queue processing missing');
-console.log('Execution runner checks passed: whitelisted adapters, retries, dead-letter and scheduled processing.');
+console.log('Execution runner checks passed: whitelisted adapters, automatic retries, dead-letter and scheduled processing.');
