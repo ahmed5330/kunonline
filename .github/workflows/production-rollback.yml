@@ -34,4 +34,5 @@ jobs:
       - name: Verify production isolation
         run: npm run check:production-config
       - name: Roll back Worker code only
-        run: npx wrangler rollback "${{ inputs.version_id }}" --config wrangler.production.toml --message "GitHub approved rollback: ${{ inputs.reason }}"
+        run: |
+          npx wrangler rollback "${{ inputs.version_id }}" --config wrangler.production.toml --message "GitHub approved rollback: ${{ inputs.reason }}"
