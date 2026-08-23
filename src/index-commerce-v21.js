@@ -10,6 +10,14 @@ const SECURITY_HEADERS={
   'Cross-Origin-Resource-Policy':'same-origin'
 };
 
+function hardenedEnv(env){
+  if(env.TOKEN_ENC_KEY)return env;
+  const inherited=Object.create(env);
+  if(env.INTEGRATION_ENCRYPTION_KEY)inherited.TOKEN_ENC_KEY=`legacy-state:${env.INTEGRATION_ENCRYPTION_KEY}`;
+  else if(env.SESSION_SECRET)inherited.TOKEN_ENC_KEY=`legacy-state:${env.SESSION_SECRET}`;
+  return inherited;
+}
+
 function harden(response,path){
   const headers=new Headers(response.headers);
   for(const [k,v] of Object.entries(SECURITY_HEADERS))headers.set(k,v);
@@ -20,11 +28,11 @@ function harden(response,path){
 
 async function fetchV21(request,env,ctx){
   const url=new URL(request.url);
-  const response=await commerceV20.fetch(request,env,ctx);
+  const response=await commerceV20.fetch(request,hardenedEnv(env),ctx);
   return harden(response,url.pathname);
 }
 
 export default {
   fetch:fetchV21,
-  scheduled(controller,env,ctx){return commerceV20.scheduled?.(controller,env,ctx);}
+  scheduled(controller,env,ctx){return commerceV20.scheduled?.(controller,hardenedEnv(env),ctx);}
 };
