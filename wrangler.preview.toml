@@ -14,7 +14,7 @@ database_id = "31cd5cdf-fc01-42d7-ba1e-571f3dd58495"
 migrations_dir = "migrations"
 
 [triggers]
-crons = ["0 */2 * * *"]
+crons = ["*/5 * * * *", "0 */2 * * *"]
 
 [vars]
 APP_ENV = "preview"
