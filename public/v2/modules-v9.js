@@ -1,0 +1,21 @@
+/* kun online v9 — Approval Center + AI action governance */
+(function(){
+  const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  async function api(path,options={}){const r=await fetch(path,{credentials:'include',headers:{'Content-Type':'application/json',...(options.headers||{})},...options});const data=await r.json().catch(()=>({}));if(!r.ok)throw new Error(data.error||`HTTP ${r.status}`);return data;}
+  const fmt=d=>d?new Date(d).toLocaleString('ar-EG'):'—';
+  function statusBadge(s){const cls=s==='approved'?'b-delivered':s==='rejected'?'b-cancelled':'b-pending';return `<span class="badge ${cls}">${esc(s||'pending')}</span>`;}
+  async function renderApprovals(root){
+    root.innerHTML=`<div class="page-head"><div><div class="title">مركز الموافقات</div><div class="sub">أي إجراء حساس من الأتمتة أو kun AI يمر من هنا قبل التنفيذ.</div></div></div><div class="card"><div class="toolbar"><select class="select" id="apStatus"><option value="pending">قيد الانتظار</option><option value="">الكل</option><option value="approved">مقبول</option><option value="rejected">مرفوض</option></select><button class="btn soft" id="apReload">تحديث</button></div><div id="apBody" class="empty">جارٍ التحميل...</div></div>`;
+    const load=async()=>{const box=root.querySelector('#apBody');try{const st=root.querySelector('#apStatus').value;const rows=await api(`/api/approvals${st?`?status=${encodeURIComponent(st)}`:''}`);if(!rows.length){box.innerHTML='لا توجد طلبات موافقة.';return;}box.className='table-wrap';box.innerHTML=`<table class="table compact"><thead><tr><th>الإجراء</th><th>المصدر</th><th>المخاطرة</th><th>الحالة</th><th>الطالب</th><th>الوقت</th><th>قرار</th></tr></thead><tbody>${rows.map(x=>`<tr><td>${esc(x.action_type)}</td><td>${esc(x.source)}</td><td>${esc(x.risk)}</td><td>${statusBadge(x.status)}</td><td>${esc(x.requested_by||'—')}</td><td>${fmt(x.requested_at)}</td><td>${x.status==='pending'?`<button class="btn primary apDecision" data-id="${esc(x.id)}" data-d="approve">موافقة</button> <button class="btn soft apDecision" data-id="${esc(x.id)}" data-d="reject">رفض</button>`:'—'}</td></tr>`).join('')}</tbody></table>`;box.querySelectorAll('.apDecision').forEach(b=>b.onclick=async()=>{try{await api(`/api/approvals/${encodeURIComponent(b.dataset.id)}/${b.dataset.d}`,{method:'POST',body:'{}'});load();}catch(e){window.showToast?showToast(e.message):alert(e.message)}});}catch(e){box.className='empty';box.textContent=e.message;}};
+    root.querySelector('#apReload').onclick=load;root.querySelector('#apStatus').onchange=load;load();
+  }
+  async function renderAiGovernance(root){
+    root.innerHTML=`<div class="page-head"><div><div class="title">kun AI — سجل الإجراءات</div><div class="sub">اقتراحات الذكاء الاصطناعي منفصلة عن التنفيذ، والإجراءات الحساسة تتحول تلقائيًا لموافقة بشرية.</div></div></div><div class="card"><div id="aiGovBody" class="empty">جارٍ التحميل...</div></div>`;
+    const box=root.querySelector('#aiGovBody');try{const rows=await api('/api/ai-actions');if(!rows.length){box.textContent='لا توجد إجراءات AI مقترحة حتى الآن.';return;}box.className='table-wrap';box.innerHTML=`<table class="table compact"><thead><tr><th>الاقتراح</th><th>الإجراء</th><th>المخاطرة</th><th>الحالة</th><th>السبب</th><th>الوقت</th></tr></thead><tbody>${rows.map(x=>`<tr><td>${esc(x.title)}</td><td>${esc(x.action_type)}</td><td>${esc(x.risk)}</td><td>${statusBadge(x.status)}</td><td>${esc(x.rationale||'—')}</td><td>${fmt(x.created_at)}</td></tr>`).join('')}</tbody></table>`;}catch(e){box.textContent=e.message;}
+  }
+  function hook(){
+    const nav=document.querySelector('.nav');if(nav&&!nav.querySelector('[data-view="approvals"]')){const audit=nav.querySelector('[data-view="audit"]');const b=document.createElement('button');b.dataset.view='approvals';b.textContent='مركز الموافقات';nav.insertBefore(b,audit||null);}
+    document.addEventListener('click',e=>{const b=e.target.closest('.nav button');if(!b)return;const root=document.getElementById('root');if(b.dataset.view==='approvals'){setTimeout(()=>renderApprovals(root),0);}if(b.dataset.view==='ai'){setTimeout(()=>renderAiGovernance(root),0);}});
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',hook);else hook();
+})();
