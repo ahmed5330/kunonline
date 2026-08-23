@@ -28,7 +28,8 @@ jobs:
       - run: npm test
       - run: npm run check:deploy
       - name: Set isolated Preview session secret
-        run: node -e 'console.log(JSON.stringify({SESSION_SECRET: require("node:crypto").randomBytes(32).toString("hex")}))' | npx wrangler secret bulk --config wrangler.preview.toml
+        run: |
+          node -e 'console.log(JSON.stringify({SESSION_SECRET: require("node:crypto").randomBytes(32).toString("hex")}))' | npx wrangler secret bulk --config wrangler.preview.toml
       - name: Apply preview migrations only
         run: npm run db:migrate:preview
       - name: Deploy preview Worker
