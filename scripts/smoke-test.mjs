@@ -4,9 +4,8 @@ if (!base) throw new Error('Usage: node scripts/smoke-test.mjs <base-url>');
 async function fetchWithRetry(path) {
   let lastError;
   for (let attempt = 1; attempt <= 6; attempt += 1) {
-    try {
-      return await fetch(`${base}${path}`, { redirect: 'follow' });
-    } catch (error) {
+    try { return await fetch(`${base}${path}`, { redirect: 'follow' }); }
+    catch (error) {
       lastError = error;
       if (attempt < 6) await new Promise((resolve) => setTimeout(resolve, attempt * 2000));
     }
@@ -18,7 +17,7 @@ async function check(path, validate) {
   const response = await fetchWithRetry(path);
   const body = await response.text();
   if (!response.ok) throw new Error(`${path} returned ${response.status}: ${body}`);
-  validate(body);
+  validate(body, response);
   console.log(`Smoke check passed: ${path}`);
 }
 
@@ -31,6 +30,21 @@ await check('/healthz', (body) => {
 
 await check('/v2/', (body) => {
   if (!body.trim()) throw new Error('/v2/ returned an empty response');
+  for (const marker of ['viewport-fit=cover','kun-v7.css','modules-v7.js','data-theme="light"']) {
+    if (!body.includes(marker)) throw new Error(`/v2/ missing responsive/theme marker: ${marker}`);
+  }
+});
+
+await check('/v2/kun-v7.css', (body) => {
+  for (const marker of ['body[data-theme="gray"]','body[data-theme="dark"]','@media(max-width:820px)','@media(max-width:560px)','prefers-reduced-motion']) {
+    if (!body.includes(marker)) throw new Error(`kun-v7.css missing: ${marker}`);
+  }
+});
+
+await check('/v2/modules-v7.js', (body) => {
+  for (const marker of ["['light','gray','dark']",'mobileMenuBtn','kun-theme']) {
+    if (!body.includes(marker)) throw new Error(`modules-v7.js missing: ${marker}`);
+  }
 });
 
 const sessionResponse = await fetchWithRetry('/api/me');
