@@ -1,16 +1,15 @@
 // kun online — granular access control foundation
 const ROLE_RULES={
   admin:['*'],
-  ops:['orders.*','customers.*','products.*','inventory.*','procurement.*','shipping.*','automation.*','audit.read','finance.read','support.*','integrations.*'],
-  accountant:['finance.*','profit.read','cod.*','audit.read','billing.read','usage.read'],
-  support:['orders.read','orders.update','customers.read','customers.update','shipping.read','support.*','integrations.read'],
-  viewer:['orders.read','customers.read','products.read','inventory.read','analytics.read','usage.read']
+  ops:['orders.*','customers.*','products.*','inventory.*','procurement.*','shipping.*','automation.*','audit.read','finance.read','support.*','integrations.*','inbox.*','campaigns.*'],
+  accountant:['finance.*','profit.read','cod.*','audit.read','billing.read','usage.read','campaigns.read'],
+  support:['orders.read','orders.update','customers.read','customers.update','shipping.read','support.*','integrations.read','inbox.*'],
+  viewer:['orders.read','customers.read','products.read','inventory.read','analytics.read','usage.read','campaigns.read','inbox.read']
 };
-
 const LEGACY={
   settings:['*'],
-  entries:['orders.*','customers.*','products.*','inventory.*','procurement.*','shipping.*','automation.*'],
-  finance:['finance.*','profit.read','cod.*','audit.read','billing.read','usage.read']
+  entries:['orders.*','customers.*','products.*','inventory.*','procurement.*','shipping.*','automation.*','inbox.*','campaigns.*'],
+  finance:['finance.*','profit.read','cod.*','audit.read','billing.read','usage.read','campaigns.read']
 };
 function match(rule,resource,action){if(rule==='*')return true;const target=`${resource}.${action}`;return rule===target||rule===`${resource}.*`;}
 export function effectivePermissions(me={}){if(me.role==='client')return ['tenant:*'];const result=new Set(ROLE_RULES[me.role]||[]);for(const p of me.perms||[]){result.add(p);for(const mapped of LEGACY[p]||[])result.add(mapped);}return [...result];}
