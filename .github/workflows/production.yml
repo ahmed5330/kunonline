@@ -19,6 +19,8 @@ jobs:
           node-version: 22
       - run: npm install --ignore-scripts
       - run: npm test
+      - name: Verify production resource isolation
+        run: npm run check:production-config
   deploy:
     needs: test
     runs-on: ubuntu-latest
@@ -35,5 +37,7 @@ jobs:
         with:
           node-version: 22
       - run: npm install --ignore-scripts
+      - name: Recheck production isolation before approval-gated deploy
+        run: npm run check:production-config
       - name: Deploy production Worker only
         run: npx wrangler deploy --config wrangler.production.toml
