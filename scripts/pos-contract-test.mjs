@@ -1,0 +1,13 @@
+import {readFile} from 'node:fs/promises';
+const migration=await readFile(new URL('../migrations/0007_pos.sql',import.meta.url),'utf8');
+const worker=await readFile(new URL('../src/index-commerce-v9.js',import.meta.url),'utf8');
+const access=await readFile(new URL('../src/access-control.js',import.meta.url),'utf8');
+const must=(ok,msg)=>{if(!ok)throw new Error(msg)};
+for(const t of ['pos_sessions','pos_sales','pos_sale_items'])must(migration.includes(`CREATE TABLE IF NOT EXISTS ${t}`),`Missing ${t}`);
+for(const e of ['/api/pos/sessions','/api/pos/sales'])must(worker.includes(e),`Missing ${e}`);
+must(worker.includes('المخزون غير كافٍ'),'POS must reject insufficient stock');
+must(worker.includes("status='open'"),'POS sale must validate open session');
+must(worker.includes('stock=stock-?'),'POS sale must decrement stock');
+must(worker.includes("'pos.sale.create'"),'POS writes must be audited');
+must(access.includes("'pos.*'"),'POS permissions missing');
+console.log('POS contract checks passed: sessions, stock validation, sale and audit.');
