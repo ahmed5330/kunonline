@@ -6,7 +6,7 @@ const must=(ok,msg)=>{if(!ok)throw new Error(msg)};
 must(/main\s*=\s*"src\/index-commerce-v11\.js"/.test(wrangler),'Preview must point at current commerce entry v11');
 must(/name\s*=\s*"kunonline-preview"/.test(wrangler),'Preview Worker name mismatch');
 must(/database_name\s*=\s*"kunonline-preview"/.test(wrangler),'Preview D1 mismatch');
-for(const expected of ['0000_preview_baseline.sql','0001_preview_schema.sql','0002_profit_cod.sql','0003_approvals_ai_gateway.sql','0004_execution_ops.sql','0005_saas_control_plane.sql','0006_channels_campaigns.sql','0007_pos.sql','0008_integration_secrets.sql'])must(migrations.includes(expected),`Missing migration ${expected}`);
+for(const expected of ['0000_preview_baseline.sql','0001_preview_schema.sql','0002_profit_cod.sql','0003_approvals_ai_gateway.sql','0004_execution_ops.sql','0005_saas_control_plane.sql','0006_channels_campaigns.sql','0007_pos.sql','0008_integration_secrets.sql','0009_pos_stock_guards.sql'])must(migrations.includes(expected),`Missing migration ${expected}`);
 for(const asset of ['modules-v10.js','modules-v11.js','modules-v12.js','modules-v13.js','modules-v14.js','kun-v8.css'])must(index.includes(asset),`Release UI asset missing: ${asset}`);
 for(const view of ['dashboard','pos','orders','customers','inbox','inventory','procurement','shipping','cod','campaigns','finance','profit','analytics','automation','ai','access','approvals','ops','audit','control'])must(index.includes(`data-view="${view}"`),`Release navigation view missing: ${view}`);
 console.log(`Release readiness checks passed with ${migrations.length} migrations, v11 API entry and current v2 assets.`);
