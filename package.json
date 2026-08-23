@@ -7,9 +7,9 @@
     "dev": "wrangler dev",
     "test": "node tests.mjs",
     "check:preview-config": "node scripts/verify-preview-config.mjs",
-    "check:deploy": "npm run check:preview-config && wrangler deploy --dry-run",
-    "deploy:preview": "npm run check:preview-config && wrangler deploy",
-    "db:migrate:preview": "npm run check:preview-config && wrangler d1 migrations apply DB --remote",
+    "check:deploy": "npm run check:preview-config && wrangler deploy --dry-run --config wrangler.preview.toml",
+    "deploy:preview": "npm run check:preview-config && wrangler deploy --config wrangler.preview.toml",
+    "db:migrate:preview": "npm run check:preview-config && wrangler d1 migrations apply kunonline-preview --remote --config wrangler.preview.toml",
     "smoke:preview": "node scripts/smoke-test.mjs https://kunonline-preview.mr-a-mnaa.workers.dev",
     "db:init": "wrangler d1 execute kunonline-preview --remote --file=./schema.sql",
     "db:init-local": "wrangler d1 execute kunonline-preview --local --file=./schema.sql",
@@ -19,4 +19,3 @@
   },
   "devDependencies": { "wrangler": "^4.0.0" }
 }
-
