@@ -6,13 +6,14 @@
     '/api/pos/sessions','/api/pos/sales','/api/procurement/invoices','/api/procurement/payments',
     '/api/procurement/returns','/api/procurement/supplier-balances','/api/inbox/conversations',
     '/api/campaigns','/api/ai/insights','/api/ai-actions','/api/approvals','/api/execution-jobs',
-    '/api/notifications','/api/store-connections','/api/support-tickets','/api/integrations/readiness'
+    '/api/notifications','/api/store-connections','/api/support-tickets','/api/integrations/readiness',
+    '/api/products/stock-log'
   ];
   const CLIENT_SCOPED_WRITES=[
     '/api/orders','/api/customers','/api/products','/api/suppliers','/api/purchase-orders',
     '/api/pos/sessions','/api/integrations/connections'
   ];
-  let cached='';
+  let cached='',resolving=null;
   const fromState=()=>{
     try{
       return String(
@@ -23,17 +24,25 @@
       );
     }catch{return '';}
   };
-  async function resolve(){
-    const local=fromState();if(local){cached=local;return local;}if(cached)return cached;
-    try{
-      const me=await nativeFetch('/api/me',{credentials:'include'}).then(r=>r.ok?r.json():null);
-      if(me?.clientId){cached=String(me.clientId);return cached;}
-      const s=await nativeFetch('/api/state',{credentials:'include'}).then(r=>r.ok?r.json():null);
-      const id=s?.clients?.[0]?.id||s?.state?.clients?.[0]?.id||s?.orders?.find?.(x=>x?.clientId||x?.client_id)?.clientId||s?.orders?.find?.(x=>x?.client_id)?.client_id||'';
-      if(id){cached=String(id);try{if(typeof activeClientId!=='undefined')activeClientId=cached;}catch{} }
-      return cached;
-    }catch{return '';}
+  const apply=id=>{if(!id)return '';cached=String(id);try{if(typeof activeClientId!=='undefined')activeClientId=cached;}catch{};document.documentElement.dataset.clientContext='ready';return cached;};
+  async function resolveFresh(){
+    const local=fromState();if(local)return apply(local);if(cached)return cached;
+    const me=await nativeFetch('/api/me',{credentials:'include'}).then(r=>r.ok?r.json():null).catch(()=>null);
+    if(me?.clientId)return apply(me.clientId);
+    let s=await nativeFetch('/api/state',{credentials:'include'}).then(r=>r.ok?r.json():null).catch(()=>null);
+    let id=s?.clients?.[0]?.id||s?.state?.clients?.[0]?.id||s?.orders?.find?.(x=>x?.clientId||x?.client_id)?.clientId||s?.orders?.find?.(x=>x?.client_id)?.client_id||'';
+    if(id)return apply(id);
+    if(me?.role==='admin'){
+      const boot=await nativeFetch('/api/preview/ensure-client',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:'{}'}).then(r=>r.ok?r.json():null).catch(()=>null);
+      if(boot?.clientId){
+        id=apply(boot.clientId);
+        try{if(typeof load==='function')await load();}catch{}
+        return id;
+      }
+    }
+    return '';
   }
+  async function resolve(){if(resolving)return resolving;resolving=resolveFresh().finally(()=>{resolving=null});return resolving;}
   const scopedGet=path=>CLIENT_SCOPED_GET.some(p=>path===p||path.startsWith(p+'/'));
   const scopedWrite=path=>CLIENT_SCOPED_WRITES.some(p=>path===p||path.startsWith(p+'/'));
   window.kunClientId=resolve;
@@ -51,5 +60,5 @@
     }
     return nativeFetch(typeof input==='string'?url:new Request(url,input),init);
   };
-  document.addEventListener('DOMContentLoaded',()=>{resolve().then(id=>{if(id)document.documentElement.dataset.clientContext='ready';});});
+  document.addEventListener('DOMContentLoaded',()=>{resolve();});
 })();
