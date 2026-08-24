@@ -1,4 +1,4 @@
-import {readFile,readdir} from 'node:fs/promises';
+import {readFile,readdir,access} from 'node:fs/promises';
 const wrangler=await readFile(new URL('../wrangler.preview.toml',import.meta.url),'utf8');
 const index=await readFile(new URL('../public/v2/index.html',import.meta.url),'utf8');
 const security=await readFile(new URL('../src/index-commerce-v21.js',import.meta.url),'utf8');
@@ -8,7 +8,12 @@ const recoveryPage=await readFile(new URL('../public/preview-admin-recovery.html
 const actions=await readFile(new URL('../public/v2/modules-v20.js',import.meta.url),'utf8');
 const migrations=(await readdir(new URL('../migrations/',import.meta.url))).filter(x=>x.endsWith('.sql')).sort();
 const must=(ok,msg)=>{if(!ok)throw new Error(msg)};
-must(/main\s*=\s*"src\/index-commerce-v23\.js"/.test(wrangler),'Preview must point at current commerce entry v23');
+const entry=wrangler.match(/^\s*main\s*=\s*"([^"]+)"/m)?.[1];
+must(Boolean(entry),'Preview entrypoint is missing from wrangler.preview.toml');
+must(/^src\/index-commerce-v\d+\.js$/.test(entry),`Unexpected Preview entrypoint: ${entry}`);
+await access(new URL(`../${entry}`,import.meta.url));
+const current=await readFile(new URL(`../${entry}`,import.meta.url),'utf8');
+must(/\/api\/preview\/version/.test(current),'Current Preview entry must expose /api/preview/version for deployed-build verification');
 must(/name\s*=\s*"kunonline-preview"/.test(wrangler),'Preview Worker name mismatch');
 must(/database_name\s*=\s*"kunonline-preview"/.test(wrangler),'Preview D1 mismatch');
 for(const expected of ['0000_preview_baseline.sql','0001_preview_schema.sql','0002_profit_cod.sql','0003_approvals_ai_gateway.sql','0004_execution_ops.sql','0005_saas_control_plane.sql','0006_channels_campaigns.sql','0007_pos.sql','0008_integration_secrets.sql','0009_pos_stock_guards.sql','0010_procurement_finance.sql','0011_multistore_ai.sql'])must(migrations.includes(expected),`Missing migration ${expected}`);
@@ -23,4 +28,4 @@ must(recovery.includes("env.APP_ENV!=='preview'"),'Admin recovery must be Previe
 must(recovery.includes("__preview_admin_recovery_used__"),'Admin recovery must be one-time');
 must(recovery.includes("UPDATE users SET status='disabled' WHERE role='admin'"),'Admin recovery must disable stale Preview admins');
 must(recoveryPage.includes('/api/preview-admin-recovery'),'Preview recovery page is not wired');
-console.log(`Release readiness checks passed with ${migrations.length} migrations, v23 Preview recovery, real core actions and current v2 assets.`);
+console.log(`Release readiness checks passed with ${migrations.length} migrations, current entry ${entry}, Preview recovery, real core actions and current v2 assets.`);
