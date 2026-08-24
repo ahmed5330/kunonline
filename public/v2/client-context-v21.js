@@ -18,9 +18,7 @@
     '/api/execution-jobs','/api/cod-reconciliation','/api/integrations/health','/api/integration-secrets'
   ];
   let cached='',resolving=null;
-  const fromState=()=>{
-    try{return String((typeof activeClientId!=='undefined'&&activeClientId)||(typeof state!=='undefined'&&state?.businessClients?.[0]?.id)||(typeof state!=='undefined'&&state?.orders?.find?.(x=>x?.clientId||x?.client_id)?.clientId)||(typeof state!=='undefined'&&state?.orders?.find?.(x=>x?.client_id)?.client_id)||'');}catch{return '';}
-  };
+  const fromState=()=>{try{return String((typeof activeClientId!=='undefined'&&activeClientId)||(typeof state!=='undefined'&&state?.businessClients?.[0]?.id)||(typeof state!=='undefined'&&state?.orders?.find?.(x=>x?.clientId||x?.client_id)?.clientId)||(typeof state!=='undefined'&&state?.orders?.find?.(x=>x?.client_id)?.client_id)||'');}catch{return '';}};
   const apply=id=>{if(!id)return '';cached=String(id);try{if(typeof activeClientId!=='undefined')activeClientId=cached;}catch{};document.documentElement.dataset.clientContext='ready';return cached;};
   async function resolveFresh(){
     const local=fromState();if(local)return apply(local);if(cached)return cached;
@@ -49,7 +47,15 @@
         try{const body=JSON.parse(init.body);if(body&&typeof body==='object'&&!Array.isArray(body)&&!body.clientId){body.clientId=id;init={...init,body:JSON.stringify(body)};}}catch{}
       }else if(!init.body){init={...init,headers:{'Content-Type':'application/json',...(init.headers||{})},body:JSON.stringify({clientId:id})};}
     }
-    return nativeFetch(typeof input==='string'?url:new Request(url,input),init);
+    const response=await nativeFetch(typeof input==='string'?url:new Request(url,input),init);
+    if(response.status===404){
+      const data=await response.clone().json().catch(()=>null);
+      if(data?.error==='مسار غير معروف'){
+        const headers=new Headers(response.headers);headers.set('Content-Type','application/json; charset=utf-8');
+        return new Response(JSON.stringify({...data,error:`مسار غير معروف: ${u.pathname}`,path:u.pathname,method}),{status:404,statusText:response.statusText,headers});
+      }
+    }
+    return response;
   };
   document.addEventListener('DOMContentLoaded',()=>{resolve();});
 })();
