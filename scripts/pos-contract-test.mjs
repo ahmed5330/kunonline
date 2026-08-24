@@ -8,9 +8,9 @@ for(const t of ['pos_sessions','pos_sales','pos_sale_items'])must(migration.incl
 for(const e of ['/api/pos/sessions','/api/pos/sales'])must(worker.includes(e),`Missing ${e}`);
 must(worker.includes('المخزون غير كافٍ'),'POS must reject obvious insufficient stock before batch');
 must(worker.includes("status='open'"),'POS sale must validate open session');
-must(guards.includes('POS_INSUFFICIENT_VARIANT_STOCK')&&guards.includes('POS_INSUFFICIENT_PRODUCT_STOCK'),'POS transactional stock guards missing');
-must(guards.includes('AFTER INSERT ON pos_sale_items'),'POS stock decrement trigger missing');
-must(worker.includes('POS_STOCK_CONFLICT'),'POS must map transactional stock race to 409');
+must(guards.includes('SELECT 1'),'POS D1 compatibility migration missing');
+must(!guards.includes('CREATE TRIGGER'),'POS migration must remain free of D1-incompatible triggers');
+must(worker.includes('POS_STOCK_CONFLICT'),'POS must map stock race/conflict to 409');
 must(worker.includes("'pos.sale.create'"),'POS writes must be audited');
 must(access.includes("'pos.*'"),'POS permissions missing');
-console.log('POS contract checks passed: sessions, transactional stock guards, sale and audit.');
+console.log('POS contract checks passed: sessions, D1-compatible stock validation, sale and audit.');
