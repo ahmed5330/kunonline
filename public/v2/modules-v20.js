@@ -1,8 +1,8 @@
 /* kun online v20 — complete core UI actions */
 (function(){
-  const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[c]));
   async function api(path,options={}){const r=await fetch(path,{credentials:'include',headers:{'Content-Type':'application/json',...(options.headers||{})},...options});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||`HTTP ${r.status}`);return d;}
-  const currentClient=()=>window.activeClientId||globalThis.activeClientId||'';
+  const currentClient=()=>{try{return typeof activeClientId!=='undefined'?activeClientId:''}catch{return ''}};
   function open(title,body,save){drawer.innerHTML=`<div class="page-head"><div><div class="title">${esc(title)}</div></div><div class="spacer"></div><button class="btn soft" id="v20Close">إغلاق</button></div>${body}<div class="v5-actions"><button class="btn primary" id="v20Save">حفظ</button></div>`;drawer.classList.add('open');drawerBack.classList.add('show');document.getElementById('v20Close').onclick=closeDrawer;document.getElementById('v20Save').onclick=save;}
   const field=(label,id,type='text',extra='')=>`<label>${label}<input class="input" id="${id}" type="${type}" ${extra}></label>`;
   async function refresh(){try{await load();}catch{} }
