@@ -7,22 +7,19 @@
     '/api/procurement/returns','/api/procurement/supplier-balances','/api/inbox/conversations',
     '/api/campaigns','/api/ai/insights','/api/ai-actions','/api/approvals','/api/execution-jobs',
     '/api/notifications','/api/store-connections','/api/support-tickets','/api/integrations/readiness',
-    '/api/products/stock-log'
+    '/api/products/stock-log','/api/onboarding/status','/api/team-members','/api/stores','/api/store-access',
+    '/api/tenant/overview','/api/system-status','/api/usage','/api/billing','/api/integrations/health',
+    '/api/profit-intelligence','/api/cod-reconciliation','/api/transactions'
   ];
   const CLIENT_SCOPED_WRITES=[
     '/api/orders','/api/customers','/api/products','/api/suppliers','/api/purchase-orders',
-    '/api/pos/sessions','/api/integrations/connections'
+    '/api/pos/sessions','/api/pos/sales','/api/integrations/connections','/api/store-connections',
+    '/api/support-tickets','/api/store-access','/api/stores','/api/ai/insights','/api/approvals',
+    '/api/execution-jobs','/api/cod-reconciliation','/api/integrations/health','/api/integration-secrets'
   ];
   let cached='',resolving=null;
   const fromState=()=>{
-    try{
-      return String(
-        (typeof activeClientId!=='undefined'&&activeClientId)||
-        (typeof state!=='undefined'&&state?.businessClients?.[0]?.id)||
-        (typeof state!=='undefined'&&state?.orders?.find?.(x=>x?.clientId||x?.client_id)?.clientId)||
-        (typeof state!=='undefined'&&state?.orders?.find?.(x=>x?.client_id)?.client_id)||''
-      );
-    }catch{return '';}
+    try{return String((typeof activeClientId!=='undefined'&&activeClientId)||(typeof state!=='undefined'&&state?.businessClients?.[0]?.id)||(typeof state!=='undefined'&&state?.orders?.find?.(x=>x?.clientId||x?.client_id)?.clientId)||(typeof state!=='undefined'&&state?.orders?.find?.(x=>x?.client_id)?.client_id)||'');}catch{return '';}
   };
   const apply=id=>{if(!id)return '';cached=String(id);try{if(typeof activeClientId!=='undefined')activeClientId=cached;}catch{};document.documentElement.dataset.clientContext='ready';return cached;};
   async function resolveFresh(){
@@ -34,11 +31,7 @@
     if(id)return apply(id);
     if(me?.role==='admin'){
       const boot=await nativeFetch('/api/preview/ensure-client',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:'{}'}).then(r=>r.ok?r.json():null).catch(()=>null);
-      if(boot?.clientId){
-        id=apply(boot.clientId);
-        try{if(typeof load==='function')await load();}catch{}
-        return id;
-      }
+      if(boot?.clientId){id=apply(boot.clientId);try{if(typeof load==='function')await load();}catch{};return id;}
     }
     return '';
   }
@@ -49,14 +42,12 @@
   window.fetch=async function(input,init={}){
     let url=typeof input==='string'?input:input?.url||'';
     if(!url||!url.startsWith('/api/'))return nativeFetch(input,init);
-    const method=String(init.method||'GET').toUpperCase();
-    const u=new URL(url,location.origin);
-    const id=await resolve();
-    if(id&&method==='GET'&&scopedGet(u.pathname)&&!u.searchParams.has('clientId')){
-      u.searchParams.set('clientId',id);url=u.pathname+u.search+u.hash;
-    }
-    if(id&&method!=='GET'&&scopedWrite(u.pathname)&&init.body&&typeof init.body==='string'){
-      try{const body=JSON.parse(init.body);if(body&&typeof body==='object'&&!Array.isArray(body)&&!body.clientId){body.clientId=id;init={...init,body:JSON.stringify(body)};}}catch{}
+    const method=String(init.method||'GET').toUpperCase(),u=new URL(url,location.origin),id=await resolve();
+    if(id&&method==='GET'&&scopedGet(u.pathname)&&!u.searchParams.has('clientId')){u.searchParams.set('clientId',id);url=u.pathname+u.search+u.hash;}
+    if(id&&method!=='GET'&&scopedWrite(u.pathname)){
+      if(init.body&&typeof init.body==='string'){
+        try{const body=JSON.parse(init.body);if(body&&typeof body==='object'&&!Array.isArray(body)&&!body.clientId){body.clientId=id;init={...init,body:JSON.stringify(body)};}}catch{}
+      }else if(!init.body){init={...init,headers:{'Content-Type':'application/json',...(init.headers||{})},body:JSON.stringify({clientId:id})};}
     }
     return nativeFetch(typeof input==='string'?url:new Request(url,input),init);
   };
