@@ -7,7 +7,7 @@ async function currentUser(request,env,ctx){
   const u=new URL(request.url);u.pathname='/api/me';u.search='';
   const r=await commerceV3.fetch(new Request(u,{method:'GET',headers:request.headers}),env,ctx);
   const data=await r.json().catch(()=>({}));
-  if(!r.ok||!data?.role)throw Object.assign(new Error(data?.error||'محتاج تسجّل دخول'),{status:r.status||401});
+  if(!r.ok||!data?.role)throw Object.assign(new Error(data?.error||'محتاج تسجّل دخول'),{status:!r.ok?r.status:401});
   return data;
 }
 
