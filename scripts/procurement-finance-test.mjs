@@ -7,9 +7,9 @@ for(const e of ['/api/procurement/invoices','/api/procurement/payments','/api/pr
 must(worker.includes("draft:['approved','cancelled']"),'PO approval transition missing');
 must(worker.includes("approved:['sent','cancelled']"),'PO sent transition missing');
 must(worker.includes("status=totalPaid+0.0001>=num(inv.total)?'paid'"),'Invoice payment status reconciliation missing');
-must(migration.includes('PURCHASE_RETURN_INSUFFICIENT_VARIANT_STOCK'),'Purchase return transactional variant stock guard missing');
-must(migration.includes('PURCHASE_RETURN_INSUFFICIENT_PRODUCT_STOCK'),'Purchase return transactional product stock guard missing');
+must(worker.includes('المخزون غير كافٍ لإرجاع'),'Purchase return must reject obvious insufficient stock before batch');
+must(!/\bCREATE\s+TRIGGER\b/i.test(migration.split('\n').filter(line=>!line.trimStart().startsWith('--')).join('\n')),'Procurement migration must remain free of D1-incompatible triggers');
 must(worker.includes('PURCHASE_RETURN_STOCK_CONFLICT'),'Purchase return stock race must map to 409');
 must(worker.includes("'supplier_payment.create'"),'Supplier payments must be audited');
 must(worker.includes("'purchase_return.create'"),'Purchase returns must be audited');
-console.log('Procurement finance checks passed: PO transitions, invoices, payments, supplier balance and transactional returns.');
+console.log('Procurement finance checks passed: PO transitions, invoices, payments, supplier balance and D1-compatible purchase returns.');
