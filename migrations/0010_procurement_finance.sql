@@ -1,4 +1,8 @@
--- Preview-only procurement finance and returns foundation
+-- Preview-only procurement finance and returns foundation.
+-- D1-compatible: schema only. Runtime stock validation/decrement belongs in
+-- the Worker layer; multi-statement CREATE TRIGGER bodies are intentionally
+-- avoided because Wrangler remote migrations can reject them as incomplete SQL.
+
 CREATE TABLE IF NOT EXISTS supplier_invoices (
   id TEXT PRIMARY KEY,
   client_id TEXT NOT NULL,
@@ -60,33 +64,3 @@ CREATE TABLE IF NOT EXISTS purchase_return_items (
   line_total REAL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_purchase_return_items ON purchase_return_items(return_id);
-
-CREATE TRIGGER IF NOT EXISTS trg_purchase_return_variant_guard
-BEFORE INSERT ON purchase_return_items
-WHEN NEW.variant_id IS NOT NULL
-BEGIN
-  SELECT CASE WHEN COALESCE((SELECT stock FROM product_variants WHERE id=NEW.variant_id),-1) < NEW.qty
-    THEN RAISE(ABORT,'PURCHASE_RETURN_INSUFFICIENT_VARIANT_STOCK') END;
-END;
-
-CREATE TRIGGER IF NOT EXISTS trg_purchase_return_product_guard
-BEFORE INSERT ON purchase_return_items
-WHEN NEW.variant_id IS NULL
-BEGIN
-  SELECT CASE WHEN COALESCE((SELECT stock FROM products WHERE id=NEW.product_id),-1) < NEW.qty
-    THEN RAISE(ABORT,'PURCHASE_RETURN_INSUFFICIENT_PRODUCT_STOCK') END;
-END;
-
-CREATE TRIGGER IF NOT EXISTS trg_purchase_return_variant_decrement
-AFTER INSERT ON purchase_return_items
-WHEN NEW.variant_id IS NOT NULL
-BEGIN
-  UPDATE product_variants SET stock=stock-NEW.qty WHERE id=NEW.variant_id;
-END;
-
-CREATE TRIGGER IF NOT EXISTS trg_purchase_return_product_decrement
-AFTER INSERT ON purchase_return_items
-WHEN NEW.variant_id IS NULL
-BEGIN
-  UPDATE products SET stock=stock-NEW.qty WHERE id=NEW.product_id;
-END;
