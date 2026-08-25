@@ -32,7 +32,7 @@ must(qaOpsJs.includes("['signed','Delivered']"), 'Order UI must submit the canon
 must(!qaOpsJs.includes("['delivered','Delivered']"), 'Order UI must not submit the unsupported delivered state');
 must(commerceV3Js.includes("o.state='signed'"), 'COD reconciliation must select signed orders awaiting collection');
 must(!commerceV3Js.includes("o.state='delivered'"), 'COD reconciliation must not query the unsupported delivered state');
-must(/async function eventually[\s\S]{0,220}attempt<=6/.test(smokeJs), 'Preview smoke checks must tolerate short deployment propagation windows');
+must(/PROPAGATION_ATTEMPTS=12/.test(smokeJs)&&/PROPAGATION_DELAY_MS=5000/.test(smokeJs)&&/async function eventually[\s\S]{0,260}attempt<=PROPAGATION_ATTEMPTS/.test(smokeJs), 'Preview smoke checks must tolerate deployment propagation windows beyond 30 seconds');
 must(/async function check\(path, validate\)[\s\S]{0,260}eventually/.test(smokeJs), 'Preview public-route validation must retry transient HTTP and contract failures');
 for (const theme of ['light','gray','dark']) must(themeJs.includes(`'${theme}'`) || themeJs.includes(`\"${theme}\"`), `Theme ${theme} is missing from switcher`);
 must(css.includes('body[data-theme="gray"]'), 'Gray theme CSS missing');

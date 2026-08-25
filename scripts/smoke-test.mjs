@@ -1,7 +1,9 @@
 const base = (process.argv[2] || '').replace(/\/$/, '');
 if (!base) throw new Error('Usage: node scripts/smoke-test.mjs <base-url>');
+const PROPAGATION_ATTEMPTS=12;
+const PROPAGATION_DELAY_MS=5000;
 async function fetchWithRetry(path,options={}) {let lastError;for (let attempt=1;attempt<=6;attempt+=1){try{return await fetch(`${base}${path}`,{redirect:'follow',...options});}catch(error){lastError=error;if(attempt<6)await new Promise(r=>setTimeout(r,attempt*2000));}}throw lastError;}
-async function eventually(path,validate){let lastError;for(let attempt=1;attempt<=6;attempt+=1){try{const response=await fetchWithRetry(path);const body=await response.text();validate(body,response);return response;}catch(error){lastError=error;if(attempt<6)await new Promise(r=>setTimeout(r,attempt*2000));}}throw lastError;}
+async function eventually(path,validate){let lastError;for(let attempt=1;attempt<=PROPAGATION_ATTEMPTS;attempt+=1){try{const response=await fetchWithRetry(path);const body=await response.text();validate(body,response);return response;}catch(error){lastError=error;if(attempt<PROPAGATION_ATTEMPTS)await new Promise(r=>setTimeout(r,PROPAGATION_DELAY_MS));}}throw lastError;}
 async function check(path, validate) {await eventually(path,(body,response)=>{if(!response.ok)throw new Error(`${path} returned ${response.status}: ${body}`);validate(body,response);});console.log(`Smoke check passed: ${path}`);}
 async function checkProtected(path){const response=await eventually(path,(body,current)=>{if(![401,403].includes(current.status))throw new Error(`${path} must reject unauthenticated access; got ${current.status}: ${body}`);if(/SESSION_SECRET/i.test(body))throw new Error(`${path} leaked session configuration details`);});console.log(`Protected-route check passed: ${path} -> ${response.status}`);}
 await check('/healthz',(body)=>{const data=JSON.parse(body);if(data.ok!==true||data.environment!=='preview'||data.database!=='reachable')throw new Error(`Unexpected health response: ${body}`);});
