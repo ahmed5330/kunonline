@@ -5,6 +5,7 @@ const esc=(v='')=>String(v).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'
 const money=v=>new Intl.NumberFormat('ar-EG',{maximumFractionDigits:0}).format(Number(v)||0);
 const help=t=>`<span class="help" title="${esc(t)}">i</span>`;
 const toast=t=>{const e=document.getElementById('toast');e.textContent=t;e.style.display='block';setTimeout(()=>e.style.display='none',2200)};
+window.showToast=toast;
 const clientOf=x=>x?.clientId||x?.client_id||'';
 const customerOrders=c=>state.orders.filter(o=>String(o.customerId||o.customer_id||'')===String(c.id)||(!o.customerId&&!o.customer_id&&o.phone===c.phone));
 function badge(st){return `<span class="badge b-${st}">${S[st]||esc(st||'—')}</span>`}

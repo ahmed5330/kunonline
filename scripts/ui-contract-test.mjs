@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 
 const index = await readFile(new URL('../public/v2/index.html', import.meta.url), 'utf8');
+const appJs = await readFile(new URL('../public/v2/app-v3.js', import.meta.url), 'utf8');
 const css = await readFile(new URL('../public/v2/kun-v7.css', import.meta.url), 'utf8');
 const helpCss = await readFile(new URL('../public/v2/kun-v8.css', import.meta.url), 'utf8');
 const themeJs = await readFile(new URL('../public/v2/modules-v7.js', import.meta.url), 'utf8');
@@ -24,6 +25,7 @@ const smokeJs = await readFile(new URL('./smoke-test.mjs', import.meta.url), 'ut
 const must = (ok, message) => { if (!ok) throw new Error(message); };
 for (const asset of ['/v2/kun-v7.css','/v2/kun-v8.css','/v2/modules-v7.js','/v2/modules-v8.js','/v2/modules-v10.js','/v2/modules-v11.js','/v2/modules-v12.js','/v2/modules-v13.js','/v2/modules-v14.js','/v2/modules-v15.js','/v2/modules-v16.js','/v2/modules-v17.js','/v2/modules-v18.js','/v2/modules-v21.js']) must(index.includes(asset), `Missing ${asset} from v2 index`);
 must(index.includes('/v2/client-context-v23.js'), 'Current client context asset is missing from v2 index');
+must(appJs.includes('window.showToast=toast'), 'Shared modules must use the non-blocking application toast instead of native error dialogs');
 must(!/boot\?\.clientId[\s\S]{0,220}await load\(\)/.test(clientContextJs), 'Client context must not await load() while its resolver is still pending');
 must(clientContextJs.includes("setTimeout(()=>{try{if(typeof load==='function')Promise.resolve(load()).catch(()=>{});}catch{}},0)"), 'Client context must refresh state after its resolver completes');
 for (const endpoint of ['/api/workflows','/api/campaigns','/api/ai-actions','/api/procurement/invoices','/api/procurement/payments','/api/procurement/returns']) must(clientContextJs.includes(`'${endpoint}'`), `Client context is missing scoped write: ${endpoint}`);
