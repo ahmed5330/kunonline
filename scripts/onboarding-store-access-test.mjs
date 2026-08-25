@@ -13,6 +13,7 @@ must(accessWorker.includes('AND client_id=?'),'Store access writes must be tenan
 must(worker.includes("requirePermission(m,'settings','read')"),'Onboarding/team APIs require settings.read');
 must(teamUi.includes('/api/users')&&teamUi.includes('v5CreateUser')&&teamUi.includes("viewer:'مشاهدة فقط'"),'Team UI must create members and expose the viewer role');
 must(legacyWorker.includes("viewer:     { label:'مشاهدة فقط'")&&legacyWorker.includes('const assignedClientId = b.clientId || me.clientId || null'),'Legacy authentication must preserve tenant-bound viewer accounts');
+must(legacyWorker.includes("support:    { label:'خدمة عملاء',    perms:['orders','customers'] }")&&legacyWorker.includes("!can(user, 'products')")&&legacyWorker.includes("!can(user, 'inventory')"),'Customer service must not inherit catalog or inventory writes from orders access');
 must(legacyWorker.includes('FROM users WHERE client_id = ? ORDER BY role, email')&&legacyWorker.includes('مش مسموح الوصول لبيانات متجر آخر'),'Team reads and explicit client context must be tenant isolated');
 must(clientContext.includes("'/api/users'")&&clientContext.includes("'/api/store-access'"),'V2 must scope team and store-access calls to the active tenant');
 for(const endpoint of ['/api/onboarding/status','/api/team-members','/api/stores','/api/store-access'])must(ui.includes(endpoint),`UI missing ${endpoint}`);

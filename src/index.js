@@ -128,9 +128,9 @@ function normalizePhone(raw) {
 /* ---------- الأدوار والصلاحيات ---------- */
 /* كل دور بياخد أقل صلاحيات تكفّي شغله — مش أكتر */
 const ROLES = {
-  admin:      { label:'مدير',          perms:['orders','orders_delete','entries','finance','clients','users','settings'] },
-  ops:        { label:'تشغيل وشحن',    perms:['orders','entries'] },
-  support:    { label:'خدمة عملاء',    perms:['orders'] },
+  admin:      { label:'مدير',          perms:['orders','orders_delete','entries','finance','clients','users','settings','products','inventory','customers','procurement','marketing'] },
+  ops:        { label:'تشغيل وشحن',    perms:['orders','entries','products','inventory','customers','procurement','marketing'] },
+  support:    { label:'خدمة عملاء',    perms:['orders','customers'] },
   accountant: { label:'محاسب',         perms:['finance','orders_view'] },
   viewer:     { label:'مشاهدة فقط',    perms:['orders_view'] },
   client:     { label:'عميل',          perms:[] }
@@ -1557,7 +1557,7 @@ async function handleApi(request, env, url, path) {
       const b = await request.json().catch(() => ({}));
       const clientId = user.role === 'client' ? me.clientId : b.clientId;
       if (!clientId) return json({ error: 'اختار المتجر' }, 400);
-      if (user.role !== 'client' && !can(user, 'clients') && !can(user, 'orders')) {
+      if (user.role !== 'client' && !can(user, 'products')) {
         return json({ error: 'مش مسموح' }, 403);
       }
       /* صاحب المتجر بيدير منتجاته هو بس — الـ clientId اتفرض فوق */
@@ -1583,7 +1583,7 @@ async function handleApi(request, env, url, path) {
     const row = await env.DB.prepare('SELECT client_id FROM products WHERE id = ?').bind(pid).first();
     if (!row) return json({ error: 'المنتج مش موجود' }, 404);
     if (me.clientId && row.client_id !== me.clientId) return json({ error: 'مش مسموح' }, 403);
-    if (user.role !== 'client' && !can(user, 'clients') && !can(user, 'orders')) {
+    if (user.role !== 'client' && !can(user, 'inventory')) {
       return json({ error: 'مش مسموح' }, 403);
     }
     const b = await request.json().catch(() => ({}));
@@ -1606,7 +1606,7 @@ async function handleApi(request, env, url, path) {
     const row = await env.DB.prepare('SELECT client_id, name, stock FROM products WHERE id = ?').bind(pid).first();
     if (!row) return json({ error: 'المنتج مش موجود' }, 404);
     if (me.clientId && row.client_id !== me.clientId) return json({ error: 'مش مسموح' }, 403);
-    if (user.role !== 'client' && !can(user, 'clients') && !can(user, 'orders')) {
+    if (user.role !== 'client' && !can(user, 'inventory')) {
       return json({ error: 'مش مسموح' }, 403);
     }
     const b = await request.json().catch(() => ({}));
@@ -1636,7 +1636,7 @@ async function handleApi(request, env, url, path) {
     ).bind(vid).first();
     if (!row) return json({ error: 'المتغير مش موجود' }, 404);
     if (me.clientId && row.client_id !== me.clientId) return json({ error: 'مش مسموح' }, 403);
-    if (user.role !== 'client' && !can(user, 'clients') && !can(user, 'orders')) {
+    if (user.role !== 'client' && !can(user, 'inventory')) {
       return json({ error: 'مش مسموح' }, 403);
     }
     const b = await request.json().catch(() => ({}));
@@ -1661,7 +1661,7 @@ async function handleApi(request, env, url, path) {
 
   /* سجل كل إضافات المخزون */
   if (path === '/api/products/stock-log' && request.method === 'GET') {
-    const staffAccess = isStaff(user) && (can(user, 'clients') || can(user, 'orders'));
+    const staffAccess = isStaff(user) && can(user, 'inventory');
     const qcid = url.searchParams.get('clientId');
     if (user.role === 'client' && qcid && qcid !== me.clientId) return json({ error: 'مش مسموح' }, 403);
     const targetId = user.role === 'client' ? me.clientId : qcid;
@@ -1675,9 +1675,9 @@ async function handleApi(request, env, url, path) {
   }
 
   /* ---------- الموردين ---------- */
-  /* كل عميل (متجر) بيدير موردينه هو بس. الإدارة بتقدر تديرهم بصلاحية clients أو orders، زي المخزون بالظبط */
+  /* كل عميل (متجر) بيدير موردينه هو بس. الفريق يحتاج صلاحية procurement مستقلة. */
   if (path === '/api/suppliers') {
-    const staffAccess = isStaff(user) && (can(user, 'clients') || can(user, 'orders'));
+    const staffAccess = isStaff(user) && can(user, 'procurement');
     if (request.method === 'GET') {
       const qcid = url.searchParams.get('clientId');
       if (user.role === 'client' && qcid && qcid !== me.clientId) return json({ error: 'مش مسموح' }, 403);
@@ -1711,7 +1711,7 @@ async function handleApi(request, env, url, path) {
     const row = await env.DB.prepare('SELECT client_id FROM suppliers WHERE id = ?').bind(sid).first();
     if (!row) return json({ error: 'المورد مش موجود' }, 404);
     if (me.clientId && row.client_id !== me.clientId) return json({ error: 'مش مسموح' }, 403);
-    if (user.role !== 'client' && !can(user, 'clients') && !can(user, 'orders')) {
+    if (user.role !== 'client' && !can(user, 'procurement')) {
       return json({ error: 'مش مسموح' }, 403);
     }
     await env.DB.prepare('DELETE FROM suppliers WHERE id = ?').bind(sid).run();
@@ -1742,7 +1742,7 @@ async function handleApi(request, env, url, path) {
   }
 
   if (path === '/api/customers') {
-    const staffAccess = isStaff(user) && (can(user, 'clients') || can(user, 'orders'));
+    const staffAccess = isStaff(user) && can(user, 'customers');
     if (request.method === 'GET') {
       const qcid = url.searchParams.get('clientId');
       if (user.role === 'client' && qcid && qcid !== me.clientId) return json({ error: 'مش مسموح' }, 403);
@@ -1762,7 +1762,7 @@ async function handleApi(request, env, url, path) {
     if (!row) return json({ error: 'العميل مش موجود' }, 404);
     if (me.clientId && row.client_id !== me.clientId) return json({ error: 'مش مسموح' }, 403);
     if (user.role !== 'client' && !isStaff(user)) return json({ error: 'مش مسموح' }, 403);
-    if (user.role !== 'client' && !(can(user, 'clients') || can(user, 'orders'))) {
+    if (user.role !== 'client' && !can(user, 'customers')) {
       return json({ error: 'مش مسموح' }, 403);
     }
     const { results } = await env.DB.prepare(
@@ -1780,7 +1780,7 @@ async function handleApi(request, env, url, path) {
     const row = await env.DB.prepare('SELECT client_id FROM customers WHERE id = ?').bind(cid).first();
     if (!row) return json({ error: 'العميل مش موجود' }, 404);
     if (me.clientId && row.client_id !== me.clientId) return json({ error: 'مش مسموح' }, 403);
-    if (user.role !== 'client' && !can(user, 'clients') && !can(user, 'orders')) {
+    if (user.role !== 'client' && !can(user, 'customers')) {
       return json({ error: 'مش مسموح' }, 403);
     }
     const b = await request.json().catch(() => ({}));
@@ -1795,7 +1795,7 @@ async function handleApi(request, env, url, path) {
 
   /* ---------- كوبونات الخصم ---------- */
   if (path === '/api/coupons') {
-    const staffAccess = isStaff(user) && (can(user, 'clients') || can(user, 'orders'));
+    const staffAccess = isStaff(user) && can(user, 'marketing');
     if (request.method === 'GET') {
       const qcid = url.searchParams.get('clientId');
       if (user.role === 'client' && qcid && qcid !== me.clientId) return json({ error: 'مش مسموح' }, 403);
@@ -1839,7 +1839,7 @@ async function handleApi(request, env, url, path) {
     const row = await env.DB.prepare('SELECT client_id FROM coupons WHERE id = ?').bind(cid2).first();
     if (!row) return json({ error: 'الكوبون مش موجود' }, 404);
     if (me.clientId && row.client_id !== me.clientId) return json({ error: 'مش مسموح' }, 403);
-    if (user.role !== 'client' && !can(user, 'clients') && !can(user, 'orders')) {
+    if (user.role !== 'client' && !can(user, 'marketing')) {
       return json({ error: 'مش مسموح' }, 403);
     }
     await env.DB.prepare('DELETE FROM coupons WHERE id = ?').bind(cid2).run();
@@ -1852,6 +1852,7 @@ async function handleApi(request, env, url, path) {
     const row = await env.DB.prepare('SELECT client_id FROM products WHERE id = ?').bind(pid).first();
     if (!row) return json({ error: 'المنتج مش موجود' }, 404);
     if (me.clientId && row.client_id !== me.clientId) return json({ error: 'مش مسموح' }, 403);
+    if (user.role !== 'client' && !can(user, 'products')) return json({ error: 'مش مسموح' }, 403);
     await env.DB.prepare('DELETE FROM product_variants WHERE product_id = ?').bind(pid).run();
     await env.DB.prepare('DELETE FROM products WHERE id = ?').bind(pid).run();
     return json({ ok: true });
@@ -1864,7 +1865,7 @@ async function handleApi(request, env, url, path) {
     const prod = await env.DB.prepare('SELECT client_id FROM products WHERE id = ?').bind(pid).first();
     if (!prod) return json({ error: 'المنتج مش موجود' }, 404);
     if (me.clientId && prod.client_id !== me.clientId) return json({ error: 'مش مسموح' }, 403);
-    if (user.role !== 'client' && !can(user, 'clients') && !can(user, 'orders')) {
+    if (user.role !== 'client' && !can(user, 'products')) {
       return json({ error: 'مش مسموح' }, 403);
     }
     if (request.method === 'GET') {
@@ -1894,7 +1895,7 @@ async function handleApi(request, env, url, path) {
     const row = await env.DB.prepare('SELECT client_id FROM product_variants WHERE id = ?').bind(vid).first();
     if (!row) return json({ error: 'المتغير مش موجود' }, 404);
     if (me.clientId && row.client_id !== me.clientId) return json({ error: 'مش مسموح' }, 403);
-    if (user.role !== 'client' && !can(user, 'clients') && !can(user, 'orders')) {
+    if (user.role !== 'client' && !can(user, 'products')) {
       return json({ error: 'مش مسموح' }, 403);
     }
     await env.DB.prepare('DELETE FROM product_variants WHERE id = ?').bind(vid).run();

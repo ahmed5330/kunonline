@@ -303,6 +303,19 @@ r=await call('/api/users',{method:'POST',body:JSON.stringify({
 })},adminCookie);
 check('إنشاء خدمة عملاء مرتبطة بالحساب',r.status===200);
 const supportC1Cookie=ck(await call('/api/login',{method:'POST',body:JSON.stringify({email:'support.c1@x.com',password:'SupportC1Pass99'})}));
+r=await call('/api/users',{method:'POST',body:JSON.stringify({
+  email:'ops.c1@x.com',name:'تشغيل متجر أ',role:'ops',clientId:'c1',password:'OpsC1Pass99'
+})},adminCookie);
+check('إنشاء تشغيل مرتبط بالحساب',r.status===200);
+const opsC1Cookie=ck(await call('/api/login',{method:'POST',body:JSON.stringify({email:'ops.c1@x.com',password:'OpsC1Pass99'})}));
+let [,rbacProduct]=await j(await call('/api/products',{method:'POST',body:JSON.stringify({clientId:'c1',name:'QA RBAC Product',sku:'QA-RBAC'})},adminCookie));
+check('خدمة العملاء ممنوعة من إنشاء منتج',(await call('/api/products',{method:'POST',body:JSON.stringify({clientId:'c1',name:'ممنوع'})},supportC1Cookie)).status===403);
+check('خدمة العملاء ممنوعة من حذف منتج بالـID',(await call('/api/products/'+rbacProduct.id,{method:'DELETE'},supportC1Cookie)).status===403);
+check('المشاهد ممنوع من حذف منتج بالـID',(await call('/api/products/'+rbacProduct.id,{method:'DELETE'},viewerCookie)).status===403);
+check('التشغيل يستطيع إدارة الكتالوج داخل حسابه',(await call('/api/products/'+rbacProduct.id,{method:'DELETE'},opsC1Cookie)).status===200);
+check('خدمة العملاء تستطيع قراءة CRM لحسابها',(await call('/api/customers?clientId=c1',{},supportC1Cookie)).status===200);
+check('خدمة العملاء ممنوعة من الموردين',(await call('/api/suppliers?clientId=c1',{},supportC1Cookie)).status===403);
+check('خدمة العملاء ممنوعة من إنشاء كوبون',(await call('/api/coupons',{method:'POST',body:JSON.stringify({clientId:'c1',code:'NOPE',value:10})},supportC1Cookie)).status===403);
 const [,teamOrderA]=await j(await call('/api/orders',{method:'POST',body:JSON.stringify({clientId:'c1',name:'متجر أ',phone:'0100',total:100,date:TODAY})},adminCookie));
 const [,teamOrderB]=await j(await call('/api/orders',{method:'POST',body:JSON.stringify({clientId:'c2',name:'متجر ب',phone:'0100',total:100,date:TODAY})},adminCookie));
 check('خدمة العملاء تعدّل طلب حسابها',(await call('/api/orders/'+teamOrderA.order.id,{method:'PATCH',body:JSON.stringify({state:'confirmed'})},supportC1Cookie)).status===200);
