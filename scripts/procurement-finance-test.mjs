@@ -1,6 +1,7 @@
 import {readFile} from 'node:fs/promises';
 const migration=await readFile(new URL('../migrations/0010_procurement_finance.sql',import.meta.url),'utf8');
 const worker=await readFile(new URL('../src/index-commerce-v12.js',import.meta.url),'utf8');
+const ui=await readFile(new URL('../public/v2/modules-v5.js',import.meta.url),'utf8');
 const must=(ok,msg)=>{if(!ok)throw new Error(msg)};
 for(const t of ['supplier_invoices','supplier_payments','purchase_returns','purchase_return_items'])must(migration.includes(`CREATE TABLE IF NOT EXISTS ${t}`),`Missing ${t}`);
 for(const e of ['/api/procurement/invoices','/api/procurement/payments','/api/procurement/returns','/api/procurement/supplier-balance'])must(worker.includes(e),`Missing ${e}`);
@@ -12,4 +13,5 @@ must(!/\bCREATE\s+TRIGGER\b/i.test(migration.split('\n').filter(line=>!line.trim
 must(worker.includes('PURCHASE_RETURN_STOCK_CONFLICT'),'Purchase return stock race must map to 409');
 must(worker.includes("'supplier_payment.create'"),'Supplier payments must be audited');
 must(worker.includes("'purchase_return.create'"),'Purchase returns must be audited');
+must(/async function v5Receive[\s\S]{0,500}toast\('تم الاستلام وتحديث المخزون'\);await load\(\)/.test(ui),'Receiving UI must refresh product state after stock changes');
 console.log('Procurement finance checks passed: PO transitions, invoices, payments, supplier balance and D1-compatible purchase returns.');
