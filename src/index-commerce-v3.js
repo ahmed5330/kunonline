@@ -71,7 +71,7 @@ async function profitIntelligence(env,clientId,url){
 }
 
 async function codCandidates(env,clientId){
-  const {results}=await env.DB.prepare(`SELECT o.id,o.date,o.name,o.awb,o.total,o.discount_amount,o.refund_amount,o.state,o.checkpoint FROM orders o LEFT JOIN cod_reconciliation_items i ON i.client_id=o.client_id AND i.order_id=o.id WHERE o.client_id=? AND o.state='delivered' AND i.id IS NULL ORDER BY o.date DESC LIMIT 500`).bind(clientId).all();
+  const {results}=await env.DB.prepare(`SELECT o.id,o.date,o.name,o.awb,o.total,o.discount_amount,o.refund_amount,o.state,o.checkpoint FROM orders o LEFT JOIN cod_reconciliation_items i ON i.client_id=o.client_id AND i.order_id=o.id WHERE o.client_id=? AND o.state='signed' AND i.id IS NULL ORDER BY o.date DESC LIMIT 500`).bind(clientId).all();
   return (results||[]).map(o=>({...o,expectedAmount:round2(Math.max(0,num(o.total)-num(o.discount_amount)-num(o.refund_amount)))}));
 }
 async function listReconciliations(env,clientId){
@@ -84,7 +84,7 @@ async function createReconciliation(request,env,me,clientId){
   const orderIds=[...new Set((Array.isArray(b.orderIds)?b.orderIds:[]).map(String).filter(Boolean))];
   if(!orderIds.length) return json({error:'اختر طلبًا واحدًا على الأقل'},400);
   const placeholders=orderIds.map(()=>'?').join(',');
-  const {results}=await env.DB.prepare(`SELECT o.id,o.awb,o.total,o.discount_amount,o.refund_amount FROM orders o LEFT JOIN cod_reconciliation_items i ON i.client_id=o.client_id AND i.order_id=o.id WHERE o.client_id=? AND o.state='delivered' AND i.id IS NULL AND o.id IN (${placeholders})`).bind(clientId,...orderIds).all();
+  const {results}=await env.DB.prepare(`SELECT o.id,o.awb,o.total,o.discount_amount,o.refund_amount FROM orders o LEFT JOIN cod_reconciliation_items i ON i.client_id=o.client_id AND i.order_id=o.id WHERE o.client_id=? AND o.state='signed' AND i.id IS NULL AND o.id IN (${placeholders})`).bind(clientId,...orderIds).all();
   if((results||[]).length!==orderIds.length) return json({error:'بعض الطلبات غير متاحة للتسوية أو تمت تسويتها سابقًا'},400);
   const expected=round2((results||[]).reduce((s,o)=>s+Math.max(0,num(o.total)-num(o.discount_amount)-num(o.refund_amount)),0));
   const actual=b.actualAmount===undefined||b.actualAmount===null||b.actualAmount===''?null:round2(Math.max(0,num(b.actualAmount)));
