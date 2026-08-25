@@ -4,7 +4,7 @@ const ui=await readFile(new URL('../public/v2/modules-v15.js',import.meta.url),'
 const integrations=await readFile(new URL('../public/v2/modules-v16.js',import.meta.url),'utf8');
 const must=(ok,msg)=>{if(!ok)throw new Error(msg)};
 must(api.includes('/api/procurement/supplier-balances'),'Supplier balances API missing');
-must(api.includes('WHERE s.client_id=? AND s.active=1'),'Supplier balance query must be tenant scoped');
+must(api.includes("WHERE s.client_id=? AND (? IS NULL OR s.store_id=?) AND s.active=1"),'Supplier balance query must be tenant and store scoped');
 must(api.includes("requirePermission(me,'finance','read')"),'Supplier balance permission gate missing');
 must(ui.includes('/api/procurement/supplier-balances'),'Supplier finance UI must use aggregate balances API');
 for(const id of ['sfKpis','sfBalances','sfInv','sfPay','sfRet'])must(ui.includes(id),`Supplier finance UI state missing: ${id}`);

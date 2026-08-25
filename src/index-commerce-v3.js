@@ -23,10 +23,10 @@ function targetClient(me,requested){
   return requested;
 }
 function canFinanceWrite(me){return me.role==='admin'||me.role==='accountant'||(me.perms||[]).includes('finance')||(me.perms||[]).includes('settings');}
-async function audit(env,me,clientId,action,entityType,entityId,metadata={}){
+async function audit(env,me,clientId,storeId,action,entityType,entityId,metadata={}){
   try{
-    await env.DB.prepare(`INSERT INTO audit_log (id,client_id,actor_user_id,actor_email,action,entity_type,entity_id,metadata_json,created_at) VALUES (?,?,?,?,?,?,?,?,?)`)
-      .bind(id('AUD'),clientId,me.uid||null,me.email||null,action,entityType,entityId,JSON.stringify(metadata),now()).run();
+    await env.DB.prepare(`INSERT INTO audit_log (id,client_id,store_id,actor_user_id,actor_email,action,entity_type,entity_id,metadata_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`)
+      .bind(id('AUD'),clientId,storeId||null,me.uid||null,me.email||null,action,entityType,entityId,JSON.stringify(metadata),now()).run();
   }catch(_){/* audit must not hide the primary response on preview */}
 }
 
@@ -46,16 +46,19 @@ async function profitIntelligence(env,clientId,url){
   const from=url.searchParams.get('from');
   const to=url.searchParams.get('to');
   const groupBy=url.searchParams.get('groupBy')||'summary';
+  const storeId=url.searchParams.get('storeId')||null;
   let sql='SELECT id,date,name,product,product_id,qty,total,discount_amount,refund_amount,product_cost,shipping_cost,other_cost,source,state FROM orders WHERE client_id=?';
   const binds=[clientId];
+  if(storeId){sql+=' AND store_id=?';binds.push(storeId)}
   if(from){sql+=' AND date>=?';binds.push(from)}
   if(to){sql+=' AND date<=?';binds.push(to)}
   sql+=' ORDER BY date DESC LIMIT 5000';
   const {results}=await env.DB.prepare(sql).bind(...binds).all();
   const rows=(results||[]).map(o=>({...o,economics:orderEconomics(o)}));
   const sum=rows.reduce((a,o)=>{const e=o.economics;a.orders++;a.gross+=e.gross;a.discount+=e.discount;a.refunds+=e.refunds;a.netRevenue+=e.netRevenue;a.cogs+=e.cogs;a.shipping+=e.shipping;a.other+=e.other;a.contribution+=e.contribution;return a},{orders:0,gross:0,discount:0,refunds:0,netRevenue:0,cogs:0,shipping:0,other:0,contribution:0});
-  let txSql=`SELECT COALESCE(SUM(CASE WHEN type='expense' THEN amount ELSE 0 END),0) expenses, COALESCE(SUM(CASE WHEN type='income' THEN amount ELSE 0 END),0) income FROM transactions WHERE (client_id=? OR client_id IS NULL)`;
+  let txSql=`SELECT COALESCE(SUM(CASE WHEN type='expense' THEN amount ELSE 0 END),0) expenses, COALESCE(SUM(CASE WHEN type='income' THEN amount ELSE 0 END),0) income FROM transactions WHERE ${storeId?'client_id=? AND store_id=?':'(client_id=? OR client_id IS NULL)'}`;
   const txBinds=[clientId];
+  if(storeId)txBinds.push(storeId);
   if(from){txSql+=' AND date>=?';txBinds.push(from)}
   if(to){txSql+=' AND date<=?';txBinds.push(to)}
   const tx=await env.DB.prepare(txSql).bind(...txBinds).first();
@@ -71,32 +74,32 @@ async function profitIntelligence(env,clientId,url){
   return {summary,groupBy,breakdown};
 }
 
-async function codCandidates(env,clientId){
-  const {results}=await env.DB.prepare(`SELECT o.id,o.date,o.name,o.awb,o.total,o.discount_amount,o.refund_amount,o.state,o.checkpoint FROM orders o LEFT JOIN cod_reconciliation_items i ON i.client_id=o.client_id AND i.order_id=o.id WHERE o.client_id=? AND o.state='signed' AND i.id IS NULL ORDER BY o.date DESC LIMIT 500`).bind(clientId).all();
+async function codCandidates(env,clientId,storeId){
+  const {results}=await env.DB.prepare(`SELECT o.id,o.store_id,o.date,o.name,o.awb,o.total,o.discount_amount,o.refund_amount,o.state,o.checkpoint FROM orders o LEFT JOIN cod_reconciliation_items i ON i.client_id=o.client_id AND i.store_id IS o.store_id AND i.order_id=o.id WHERE o.client_id=? ${storeId?'AND o.store_id=?':''} AND o.state='signed' AND i.id IS NULL ORDER BY o.date DESC LIMIT 500`).bind(...(storeId?[clientId,storeId]:[clientId])).all();
   return (results||[]).map(o=>({...o,expectedAmount:round2(Math.max(0,num(o.total)-num(o.discount_amount)-num(o.refund_amount)))}));
 }
-async function listReconciliations(env,clientId){
-  const {results}=await env.DB.prepare(`SELECT id,provider,reference,status,expected_amount,actual_amount,difference,currency,reconciled_at,note,created_by,created_at,updated_at FROM cod_reconciliations WHERE client_id=? ORDER BY created_at DESC LIMIT 200`).bind(clientId).all();
+async function listReconciliations(env,clientId,storeId){
+  const {results}=await env.DB.prepare(`SELECT id,store_id,provider,reference,status,expected_amount,actual_amount,difference,currency,reconciled_at,note,created_by,created_at,updated_at FROM cod_reconciliations WHERE client_id=? ${storeId?'AND store_id=?':''} ORDER BY created_at DESC LIMIT 200`).bind(...(storeId?[clientId,storeId]:[clientId])).all();
   return results||[];
 }
-async function createReconciliation(request,env,me,clientId){
+async function createReconciliation(request,env,me,clientId,storeId){
   if(!canFinanceWrite(me)) return json({error:'مش مسموح بتسوية التحصيلات'},403);
   const b=await request.json().catch(()=>({}));
   const orderIds=[...new Set((Array.isArray(b.orderIds)?b.orderIds:[]).map(String).filter(Boolean))];
   if(!orderIds.length) return json({error:'اختر طلبًا واحدًا على الأقل'},400);
   const placeholders=orderIds.map(()=>'?').join(',');
-  const {results}=await env.DB.prepare(`SELECT o.id,o.awb,o.total,o.discount_amount,o.refund_amount,o.history FROM orders o LEFT JOIN cod_reconciliation_items i ON i.client_id=o.client_id AND i.order_id=o.id WHERE o.client_id=? AND o.state='signed' AND i.id IS NULL AND o.id IN (${placeholders})`).bind(clientId,...orderIds).all();
+  const {results}=await env.DB.prepare(`SELECT o.id,o.store_id,o.awb,o.total,o.discount_amount,o.refund_amount,o.history FROM orders o LEFT JOIN cod_reconciliation_items i ON i.client_id=o.client_id AND i.store_id IS o.store_id AND i.order_id=o.id WHERE o.client_id=? ${storeId?'AND o.store_id=?':''} AND o.state='signed' AND i.id IS NULL AND o.id IN (${placeholders})`).bind(...(storeId?[clientId,storeId,...orderIds]:[clientId,...orderIds])).all();
   if((results||[]).length!==orderIds.length) return json({error:'بعض الطلبات غير متاحة للتسوية أو تمت تسويتها سابقًا'},400);
   const expected=round2((results||[]).reduce((s,o)=>s+Math.max(0,num(o.total)-num(o.discount_amount)-num(o.refund_amount)),0));
   const actual=b.actualAmount===undefined||b.actualAmount===null||b.actualAmount===''?null:round2(Math.max(0,num(b.actualAmount)));
   const difference=actual===null?null:round2(actual-expected);
   const status=actual===null?'open':Math.abs(difference)<0.01?'reconciled':'disputed';
   const rid=id('COD'),ts=now();
-  const stmts=[env.DB.prepare(`INSERT INTO cod_reconciliations (id,client_id,provider,reference,status,expected_amount,actual_amount,difference,currency,reconciled_at,note,created_by,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(rid,clientId,b.provider||null,b.reference||null,status,expected,actual,difference,b.currency||'EGP',status==='reconciled'?ts:null,b.note||'',me.email||me.uid||'',ts,ts)];
-  for(const o of results||[]){const itemExpected=round2(Math.max(0,num(o.total)-num(o.discount_amount)-num(o.refund_amount))),itemStatus=status==='reconciled'?'reconciled':status==='disputed'?'disputed':'pending',itemActual=status==='reconciled'?itemExpected:null;stmts.push(env.DB.prepare(`INSERT INTO cod_reconciliation_items (id,reconciliation_id,client_id,order_id,awb,expected_amount,actual_amount,difference,status,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`).bind(id('CODI'),rid,clientId,o.id,o.awb||null,itemExpected,itemActual,status==='reconciled'?0:null,itemStatus,ts));if(status==='reconciled'){let history=[];try{history=JSON.parse(o.history||'[]')}catch{}history.push({state:'collected',at:ts,note:`COD reconciliation ${rid}`});stmts.push(env.DB.prepare("UPDATE orders SET state='collected',collected_at=?,checkpoint='تم التحصيل عبر تسوية COD',history=? WHERE id=? AND client_id=? AND state='signed'").bind(ts,JSON.stringify(history),o.id,clientId));}}
+  const stmts=[env.DB.prepare(`INSERT INTO cod_reconciliations (id,client_id,store_id,provider,reference,status,expected_amount,actual_amount,difference,currency,reconciled_at,note,created_by,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(rid,clientId,storeId||null,b.provider||null,b.reference||null,status,expected,actual,difference,b.currency||'EGP',status==='reconciled'?ts:null,b.note||'',me.email||me.uid||'',ts,ts)];
+  for(const o of results||[]){const itemExpected=round2(Math.max(0,num(o.total)-num(o.discount_amount)-num(o.refund_amount))),itemStatus=status==='reconciled'?'reconciled':status==='disputed'?'disputed':'pending',itemActual=status==='reconciled'?itemExpected:null;stmts.push(env.DB.prepare(`INSERT INTO cod_reconciliation_items (id,reconciliation_id,client_id,store_id,order_id,awb,expected_amount,actual_amount,difference,status,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`).bind(id('CODI'),rid,clientId,o.store_id||storeId||null,o.id,o.awb||null,itemExpected,itemActual,status==='reconciled'?0:null,itemStatus,ts));if(status==='reconciled'){let history=[];try{history=JSON.parse(o.history||'[]')}catch{}history.push({state:'collected',at:ts,note:`COD reconciliation ${rid}`});stmts.push(env.DB.prepare("UPDATE orders SET state='collected',collected_at=?,checkpoint='تم التحصيل عبر تسوية COD',history=? WHERE id=? AND client_id=? AND store_id IS ? AND state='signed'").bind(ts,JSON.stringify(history),o.id,clientId,o.store_id||storeId||null));}}
   await env.DB.batch(stmts);
-  await audit(env,me,clientId,'cod_reconciliation.create','cod_reconciliation',rid,{orderCount:orderIds.length,expected,actual,difference,status});
-  return json({ok:true,id:rid,status,expectedAmount:expected,actualAmount:actual,difference},201);
+  await audit(env,me,clientId,storeId,'cod_reconciliation.create','cod_reconciliation',rid,{orderCount:orderIds.length,expected,actual,difference,status});
+  return json({ok:true,id:rid,status,storeId:storeId||null,expectedAmount:expected,actualAmount:actual,difference},201);
 }
 
 async function fetchV3(request,env,ctx){
@@ -106,13 +109,13 @@ async function fetchV3(request,env,ctx){
       const me=await meFromBase(request,env,ctx);const clientId=targetClient(me,url.searchParams.get('clientId')||(me.role==='client'?me.clientId:null));return json(await profitIntelligence(env,clientId,url));
     }
     if(path==='/api/cod-reconciliation/candidates'&&request.method==='GET'){
-      const me=await meFromBase(request,env,ctx);requirePermission(me,'cod','read');const clientId=targetClient(me,url.searchParams.get('clientId')||(me.role==='client'?me.clientId:null));return json(await codCandidates(env,clientId));
+      const me=await meFromBase(request,env,ctx);requirePermission(me,'cod','read');const clientId=targetClient(me,url.searchParams.get('clientId')||(me.role==='client'?me.clientId:null)),storeId=url.searchParams.get('storeId')||request.headers.get('X-Kun-Store-Id')||null;return json(await codCandidates(env,clientId,storeId));
     }
     if(path==='/api/cod-reconciliation'&&request.method==='GET'){
-      const me=await meFromBase(request,env,ctx);requirePermission(me,'cod','read');const clientId=targetClient(me,url.searchParams.get('clientId')||(me.role==='client'?me.clientId:null));return json(await listReconciliations(env,clientId));
+      const me=await meFromBase(request,env,ctx);requirePermission(me,'cod','read');const clientId=targetClient(me,url.searchParams.get('clientId')||(me.role==='client'?me.clientId:null)),storeId=url.searchParams.get('storeId')||request.headers.get('X-Kun-Store-Id')||null;return json(await listReconciliations(env,clientId,storeId));
     }
     if(path==='/api/cod-reconciliation'&&request.method==='POST'){
-      const me=await meFromBase(request,env,ctx);const b=await request.clone().json().catch(()=>({}));const clientId=targetClient(me,b.clientId||b.client_id||(me.role==='client'?me.clientId:null));return createReconciliation(new Request(request.url,{method:'POST',headers:request.headers,body:JSON.stringify(b)}),env,me,clientId);
+      const me=await meFromBase(request,env,ctx);const b=await request.clone().json().catch(()=>({}));const clientId=targetClient(me,b.clientId||b.client_id||(me.role==='client'?me.clientId:null)),storeId=b.storeId||b.store_id||request.headers.get('X-Kun-Store-Id')||null;return createReconciliation(new Request(request.url,{method:'POST',headers:request.headers,body:JSON.stringify(b)}),env,me,clientId,storeId);
     }
     return workerV2.fetch(request,env,ctx);
   }catch(e){return json({error:e.message||'حدث خطأ'},e.status||500);}

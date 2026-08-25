@@ -16,6 +16,8 @@ const stmt=(sql)=>({
     if(sql.includes('FROM login_attempts')) return attempts.get(this.args[0])||null;
     if(sql.includes('FROM orders WHERE id = ?')){ const o=orders.get(this.args[0]); return o?{...o}:null; }
     if(sql.includes('FROM orders WHERE awb = ?')) return [...orders.values()].find(o=>o.awb===this.args[0])||null;
+    if(sql.includes('FROM customers WHERE client_id = ? AND store_id IS ? AND phone = ?'))
+      return [...customers.values()].find(c=>c.client_id===this.args[0]&&(c.store_id||null)===(this.args[1]||null)&&c.phone===this.args[2])||null;
     if(sql.includes('FROM customers WHERE client_id = ? AND phone = ?'))
       return [...customers.values()].find(c=>c.client_id===this.args[0]&&c.phone===this.args[1])||null;
     if(sql.includes('SELECT name, note, tags FROM customers WHERE id = ?')){
@@ -23,6 +25,8 @@ const stmt=(sql)=>({
     }
     if(sql.includes('FROM product_variants WHERE id = ?')){ const v=variants.get(this.args[0]); return v?{...v}:null; }
     if(sql.includes('FROM customers WHERE id = ?')){ const c=customers.get(this.args[0]); return c?{...c}:null; }
+    if(sql.includes('FROM coupons WHERE client_id = ? AND store_id IS ? AND code = ?'))
+      return [...coupons.values()].find(c=>c.client_id===this.args[0]&&(c.store_id||null)===(this.args[1]||null)&&c.code===this.args[2])||null;
     if(sql.includes('FROM coupons WHERE client_id = ? AND code = ?'))
       return [...coupons.values()].find(c=>c.client_id===this.args[0]&&c.code===this.args[1])||null;
     if(sql.includes('FROM coupons WHERE id = ?')){ const c=coupons.get(this.args[0]); return c?{...c}:null; }
@@ -55,10 +59,10 @@ const stmt=(sql)=>({
     else if(sql.includes('INSERT INTO login_attempts')) attempts.set(this.args[0],{email:this.args[0],fails:this.args[1],locked_until:this.args[2]});
     else if(sql.includes('DELETE FROM login_attempts')) attempts.delete(this.args[0]);
     else if(sql.includes('INSERT INTO orders')){
-      const [id,client_id,ref,customer_id,date,name,phone,gov,address,product,product_id,variant_id,product_note,unit_price,qty,total,
+      const [id,client_id,store_id,ref,customer_id,date,name,phone,gov,address,product,product_id,variant_id,product_note,unit_price,qty,total,
         discount_amount,coupon_code,product_cost,shipping_cost,other_cost,source,note,awb,state,checkpoint,signed_at,collected_at,defer_until,
         refund_amount,return_type,restocked,contact_log,history,created_at]=this.args;
-      orders.set(id,{id,client_id,ref,customer_id,date,name,phone,gov,address,product,product_id,variant_id,product_note,unit_price,qty,total,
+      orders.set(id,{id,client_id,store_id,ref,customer_id,date,name,phone,gov,address,product,product_id,variant_id,product_note,unit_price,qty,total,
         discount_amount,coupon_code,product_cost,shipping_cost,other_cost,source,note,awb,state,checkpoint,signed_at,collected_at,defer_until,
         refund_amount,return_type,restocked,contact_log,history,created_at});}
     else if(sql.includes('UPDATE orders SET state = ?, awb = ?')){
@@ -81,16 +85,16 @@ const stmt=(sql)=>({
     else if(sql.includes('DELETE FROM orders')) orders.delete(this.args[0]);
     else if(sql.includes('DELETE FROM transactions')) transactions.delete(this.args[0]);
     else if(sql.includes('INSERT INTO products')){
-      const [id,client_id,name,sku,category,price,cost,active,stock,low_stock_threshold,created_at]=this.args;
-      products.set(id,{id,client_id,name,sku,category,price,cost,active,stock,low_stock_threshold,created_at});}
+      const [id,client_id,store_id,name,sku,category,price,cost,active,stock,low_stock_threshold,created_at]=this.args;
+      products.set(id,{id,client_id,store_id,name,sku,category,price,cost,active,stock,low_stock_threshold,created_at});}
     else if(sql.startsWith('UPDATE products SET stock = ?, low_stock_threshold = ?')){
       const [stock,low_stock_threshold,id]=this.args; const p=products.get(id);
       if(p){p.stock=stock;p.low_stock_threshold=low_stock_threshold;}}
     else if(sql.startsWith('UPDATE products SET stock')){const p=products.get(this.args[1]);if(p)p.stock=this.args[0];}
     else if(sql.startsWith('UPDATE products SET price')){const [price,id]=this.args; const p=products.get(id); if(p)p.price=price;}
     else if(sql.includes('INSERT INTO transactions')){
-      const [id,type,date,category,amount,currency,method,client_id,note,created_by,created_at]=this.args;
-      transactions.set(id,{id,type,date,category,amount,currency,method,client_id,note,created_by,created_at});}
+      const [id,type,date,category,amount,currency,method,client_id,store_id,note,created_by,created_at]=this.args;
+      transactions.set(id,{id,type,date,category,amount,currency,method,client_id,store_id,note,created_by,created_at});}
     else if(sql.includes('INSERT INTO chat_messages')){
       const [id,client_id,author_id,author_name,body,created_at]=this.args;
       chatMessages.set(id,{id,client_id,author_id,author_name,body,created_at});}
@@ -98,14 +102,15 @@ const stmt=(sql)=>({
       const [id,title,description,assigned_to,assigned_by,status,created_at,updated_at]=this.args;
       tasks.set(id,{id,title,description,assigned_to,assigned_by,status,created_at,updated_at});}
     else if(sql.includes('INSERT INTO wallet_log')){
-      const [id,client_id,type,amount,balance_after,note,created_at,created_by]=this.args;
-      walletLog.set(id,{id,client_id,type,amount,balance_after,note,created_at,created_by});}
+      const [id,client_id,store_id,type,amount,balance_after,note,created_at,created_by]=this.args.length===9
+        ? this.args : [this.args[0],this.args[1],null,...this.args.slice(2)];
+      walletLog.set(id,{id,client_id,store_id,type,amount,balance_after,note,created_at,created_by});}
     else if(sql.includes('INSERT INTO stock_log')){
-      const [id,client_id,product_id,variant_id,product_name,delta,new_stock,note,supplier_id,supplier_name,created_at,created_by]=this.args;
-      stockLog.set(id,{id,client_id,product_id,variant_id,product_name,delta,new_stock,note,supplier_id,supplier_name,created_at,created_by});}
+      const [id,client_id,store_id,product_id,variant_id,product_name,delta,new_stock,note,supplier_id,supplier_name,created_at,created_by]=this.args;
+      stockLog.set(id,{id,client_id,store_id,product_id,variant_id,product_name,delta,new_stock,note,supplier_id,supplier_name,created_at,created_by});}
     else if(sql.includes('INSERT INTO product_variants')){
-      const [id,product_id,client_id,name,sku,stock,price,active,created_at]=this.args;
-      variants.set(id,{id,product_id,client_id,name,sku,stock,price,active,created_at});}
+      const [id,product_id,client_id,store_id,name,sku,stock,price,active,created_at]=this.args;
+      variants.set(id,{id,product_id,client_id,store_id,name,sku,stock,price,active,created_at});}
     else if(sql.startsWith('UPDATE product_variants SET stock')){
       const p=variants.get(this.args[1]); if(p) p.stock=this.args[0];}
     else if(sql.startsWith('DELETE FROM product_variants WHERE product_id')){
@@ -113,12 +118,12 @@ const stmt=(sql)=>({
     else if(sql.startsWith('DELETE FROM product_variants WHERE id')) variants.delete(this.args[0]);
     else if(sql.includes('DELETE FROM product_variants')) variants.clear();
     else if(sql.includes('INSERT INTO suppliers')){
-      const [id,client_id,name,phone,note,active,created_at]=this.args;
-      suppliers.set(id,{id,client_id,name,phone,note,active,created_at});}
+      const [id,client_id,store_id,name,phone,note,active,created_at]=this.args;
+      suppliers.set(id,{id,client_id,store_id,name,phone,note,active,created_at});}
     else if(sql.includes('DELETE FROM suppliers')) suppliers.delete(this.args[0]);
     else if(sql.includes('INSERT INTO customers')){
-      const [id,client_id,name,phone,gov,address,tags,note,created_at]=this.args;
-      customers.set(id,{id,client_id,name,phone,gov,address,tags,note,created_at});}
+      const [id,client_id,store_id,name,phone,gov,address,tags,note,created_at]=this.args;
+      customers.set(id,{id,client_id,store_id,name,phone,gov,address,tags,note,created_at});}
     else if(sql.startsWith('UPDATE customers SET name = ?, gov = ?, address = ?')){
       const [name,gov,address,id]=this.args; const c=customers.get(id);
       if(c){c.name=name;c.gov=gov;c.address=address;}}
@@ -127,14 +132,14 @@ const stmt=(sql)=>({
       if(c){c.name=name;c.note=note;c.tags=tags;}}
     else if(sql.includes('DELETE FROM customers')) customers.clear();
     else if(sql.includes('INSERT INTO coupons')){
-      const [id,client_id,code,type,value,active,expires_at,note,created_at]=this.args;
-      const dup=[...coupons.values()].find(c=>c.client_id===client_id && c.code===code && c.id!==id);
+      const [id,client_id,store_id,code,type,value,active,expires_at,note,created_at]=this.args;
+      const dup=[...coupons.values()].find(c=>c.client_id===client_id && (c.store_id||null)===(store_id||null) && c.code===code && c.id!==id);
       if(dup) throw new Error('UNIQUE constraint failed: coupons.client_id, coupons.code');
-      coupons.set(id,{id,client_id,code,type,value,active,expires_at,note,created_at});}
+      coupons.set(id,{id,client_id,store_id,code,type,value,active,expires_at,note,created_at});}
     else if(sql.includes('DELETE FROM coupons')) sql.includes('WHERE id') ? coupons.delete(this.args[0]) : coupons.clear();
     else if(sql.includes('INSERT INTO whatsapp_outbox')){
-      const [id,client_id,order_id,phone,message,kind,status,created_at]=this.args;
-      waOutbox.set(id,{id,client_id,order_id,phone,message,kind,status,created_at});}
+      const [id,client_id,store_id,order_id,phone,message,kind,status,created_at]=this.args;
+      waOutbox.set(id,{id,client_id,store_id,order_id,phone,message,kind,status,created_at});}
     else if(sql.startsWith('UPDATE whatsapp_outbox SET status')){
       const [status,sent_at,id]=this.args; const w=waOutbox.get(id); if(w){w.status=status;w.sent_at=sent_at;}}
     else if(sql.startsWith('UPDATE tasks SET')){
