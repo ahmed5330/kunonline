@@ -5,6 +5,7 @@ const css = await readFile(new URL('../public/v2/kun-v7.css', import.meta.url), 
 const helpCss = await readFile(new URL('../public/v2/kun-v8.css', import.meta.url), 'utf8');
 const themeJs = await readFile(new URL('../public/v2/modules-v7.js', import.meta.url), 'utf8');
 const auditJs = await readFile(new URL('../public/v2/modules-v8.js', import.meta.url), 'utf8');
+const approvalJs = await readFile(new URL('../public/v2/modules-v9.js', import.meta.url), 'utf8');
 const opsJs = await readFile(new URL('../public/v2/modules-v10.js', import.meta.url), 'utf8');
 const controlJs = await readFile(new URL('../public/v2/modules-v11.js', import.meta.url), 'utf8');
 const channelsJs = await readFile(new URL('../public/v2/modules-v12.js', import.meta.url), 'utf8');
@@ -51,6 +52,8 @@ must(index.includes('viewport-fit=cover'), 'Safe-area capable viewport missing')
 for (const view of ['audit','ops','control','inbox','campaigns','pos','stores','supplier-finance','integrations','onboarding','store-access']) must(index.includes(`data-view="${view}"`), `Navigation entry missing: ${view}`);
 must(auditJs.includes('/api/audit-log'), 'Audit UI must use audit API');
 must(auditJs.includes('/api/access/snapshot'), 'Audit UI must show effective access snapshot');
+must(approvalJs.includes("b.dataset.d==='approve'")&&approvalJs.includes('/queue'), 'Approved sensitive actions must enter the idempotent execution queue');
+must(approvalJs.includes('apQueue'), 'Approved actions must expose a recovery path when the initial queue request fails');
 must(opsJs.includes('/api/system-status'), 'Operations UI must use system status API');
 must(opsJs.includes('/api/execution-jobs'), 'Operations UI must show execution queue');
 must(opsJs.includes('/api/notifications'), 'Operations UI must show notifications');
