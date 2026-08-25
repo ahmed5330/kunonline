@@ -7,5 +7,6 @@ must(index.includes('data-view="readiness"'),'Readiness navigation missing');
 must(index.includes('/v2/modules-v19.js'),'Readiness UI asset missing');
 must(ui.includes('/api/release/readiness'),'Readiness UI must call release readiness API');
 for(const marker of ['Code Ready','Integrations Ready','SESSION_SECRET','INTEGRATION_ENCRYPTION_KEY','Preview Environment'])must(ui.includes(marker),`Readiness UI missing ${marker}`);
-for(const marker of ["'/api/release/readiness'",'codeReady','integrationsReady','previewEnvironment'])must(worker.includes(marker),`Readiness backend missing ${marker}`);
+for(const marker of ["'/api/release/readiness'",'codeReady','integrationsReady','previewEnvironment','integrationEncryptionKeySource','preview_derived'])must(worker.includes(marker),`Readiness backend missing ${marker}`);
+must(ui.includes('مفتاح Preview معزول مشتق من SESSION_SECRET'),'Readiness UI must disclose the Preview-derived encryption key source');
 console.log('Release readiness UI/backend contract passed.');

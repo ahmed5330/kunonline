@@ -1,4 +1,6 @@
 import {readFile} from 'node:fs/promises';
+import assert from 'node:assert/strict';
+import {encryptSecret,decryptSecret} from '../src/integration-secrets.js';
 const migration=await readFile(new URL('../migrations/0008_integration_secrets.sql',import.meta.url),'utf8');
 const helper=await readFile(new URL('../src/integration-secrets.js',import.meta.url),'utf8');
 const api=await readFile(new URL('../src/index-commerce-v11.js',import.meta.url),'utf8');
@@ -9,6 +11,7 @@ must(migration.includes('ciphertext_b64')&&migration.includes('iv_b64'),'Ciphert
 must(helper.includes("name:'AES-GCM'")||helper.includes("name: 'AES-GCM'"),'AES-GCM encryption missing');
 must(helper.includes('bytes.length!==32'),'Encryption key length validation missing');
 must(helper.includes('INTEGRATION_ENCRYPTION_KEY'),'Encryption key must come from environment secret');
+must(helper.includes("env.APP_ENV==='preview'")&&helper.includes('kunonline-preview-integration-v1:'),'Preview-only derived-key fallback missing');
 must(api.includes('integration-secrets')&&api.includes('secretName'),'Integration secret API route missing');
 must(api.includes("method==='PUT'")&&api.includes("method==='DELETE'")&&api.includes("method==='GET'"),'Integration secret API must support metadata read, secure write and delete');
 must(api.includes('SELECT secret_name,created_at,updated_at'),'Secret list must return metadata only');
@@ -16,4 +19,9 @@ must(!api.includes('decryptSecret('),'Secret API must not expose plaintext decry
 must(!api.includes('ciphertext_b64,iv_b64 FROM integration_secrets'),'Secret API must not return ciphertext payloads to browser');
 must(saas.includes('sanitizeConfig'),'Store connection config must sanitize secret-like fields');
 must(saas.includes('SECRET_KEY'),'Secret-key pattern stripping missing');
+const previewEnv={APP_ENV:'preview',SESSION_SECRET:'qa-preview-session-secret'};
+const encrypted=await encryptSecret(previewEnv,'qa-fake-token');
+assert.notEqual(encrypted.ciphertextB64,'qa-fake-token');
+assert.equal(await decryptSecret(previewEnv,encrypted.ciphertextB64,encrypted.ivB64),'qa-fake-token');
+await assert.rejects(()=>encryptSecret({APP_ENV:'production',SESSION_SECRET:'qa-production-session-secret'},'blocked'),e=>e?.code==='INTEGRATION_KEY_MISSING');
 console.log('Integration secret checks passed: AES-GCM, env master key, metadata-only reads, sanitized connection config.');
