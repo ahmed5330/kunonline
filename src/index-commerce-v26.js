@@ -1,5 +1,6 @@
 import commerceV25 from './index-commerce-v25.js';
 import commerceV3 from './index-commerce-v3.js';
+import commerceV10 from './index-commerce-v10.js';
 
 const BUILD='preview-v26-2026-08-24';
 const json=(d,s=200)=>new Response(JSON.stringify(d),{status:s,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Kun-Build':BUILD}});
@@ -16,6 +17,10 @@ async function fetchV26(request,env,ctx){
     // Keep the operational COD routes at the active entrypoint. This avoids a
     // legacy fallback swallowing them before the v3 commerce router sees them.
     if(u.pathname.startsWith('/api/cod-reconciliation'))return hardenApi(await commerceV3.fetch(request,env,ctx));
+    // Governance and execution routes must not be swallowed by the legacy
+    // fallback chain. V10 owns the runner and delegates the remaining routes
+    // to the approval/operations layers below it.
+    if(['/api/approvals','/api/execution-jobs','/api/notifications','/api/system-status'].some(path=>u.pathname===path||u.pathname.startsWith(path+'/')))return hardenApi(await commerceV10.fetch(request,env,ctx));
     const response=await commerceV25.fetch(request,env,ctx);
     if(env.APP_ENV!=='preview'||response.status!==404)return response;
     const body=await response.clone().json().catch(()=>null);

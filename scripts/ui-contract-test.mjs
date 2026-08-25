@@ -37,6 +37,7 @@ must(!qaOpsJs.includes("['delivered','Delivered']"), 'Order UI must not submit t
 must(commerceV3Js.includes("o.state='signed'"), 'COD reconciliation must select signed orders awaiting collection');
 must(!commerceV3Js.includes("o.state='delivered'"), 'COD reconciliation must not query the unsupported delivered state');
 must(commerceV26Js.includes("u.pathname.startsWith('/api/cod-reconciliation')")&&commerceV26Js.includes('commerceV3.fetch(request,env,ctx)'), 'Active Preview entrypoint must route COD APIs before legacy fallback handling');
+must(commerceV26Js.includes("'/api/approvals'")&&commerceV26Js.includes("'/api/execution-jobs'")&&commerceV26Js.includes('commerceV10.fetch(request,env,ctx)'), 'Active Preview entrypoint must route governance APIs before legacy fallback handling');
 must(commerceV26Js.includes("code:'UNHANDLED_PREVIEW_ERROR'")&&commerceV26Js.includes("if(env.APP_ENV!=='preview')throw error"), 'Only Preview may surface otherwise-unhandled runtime errors as structured JSON');
 must(/PROPAGATION_ATTEMPTS=12/.test(smokeJs)&&/PROPAGATION_DELAY_MS=5000/.test(smokeJs)&&/async function eventually[\s\S]{0,260}attempt<=PROPAGATION_ATTEMPTS/.test(smokeJs), 'Preview smoke checks must tolerate deployment propagation windows beyond 30 seconds');
 must(/async function check\(path, validate\)[\s\S]{0,260}eventually/.test(smokeJs), 'Preview public-route validation must retry transient HTTP and contract failures');
