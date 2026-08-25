@@ -15,12 +15,15 @@ const integrationsJs = await readFile(new URL('../public/v2/modules-v16.js', imp
 const multiAiJs = await readFile(new URL('../public/v2/modules-v17.js', import.meta.url), 'utf8');
 const onboardingJs = await readFile(new URL('../public/v2/modules-v18.js', import.meta.url), 'utf8');
 const clientContextJs = await readFile(new URL('../public/v2/client-context-v22.js', import.meta.url), 'utf8');
+const smokeJs = await readFile(new URL('./smoke-test.mjs', import.meta.url), 'utf8');
 
 const must = (ok, message) => { if (!ok) throw new Error(message); };
 for (const asset of ['/v2/kun-v7.css','/v2/kun-v8.css','/v2/modules-v7.js','/v2/modules-v8.js','/v2/modules-v10.js','/v2/modules-v11.js','/v2/modules-v12.js','/v2/modules-v13.js','/v2/modules-v14.js','/v2/modules-v15.js','/v2/modules-v16.js','/v2/modules-v17.js','/v2/modules-v18.js']) must(index.includes(asset), `Missing ${asset} from v2 index`);
 must(index.includes('/v2/client-context-v22.js'), 'Current client context asset is missing from v2 index');
 must(!/boot\?\.clientId[\s\S]{0,220}await load\(\)/.test(clientContextJs), 'Client context must not await load() while its resolver is still pending');
 must(clientContextJs.includes("setTimeout(()=>{try{if(typeof load==='function')Promise.resolve(load()).catch(()=>{});}catch{}},0)"), 'Client context must refresh state after its resolver completes');
+must(/async function eventually[\s\S]{0,220}attempt<=6/.test(smokeJs), 'Preview smoke checks must tolerate short deployment propagation windows');
+must(/async function check\(path, validate\)[\s\S]{0,260}eventually/.test(smokeJs), 'Preview public-route validation must retry transient HTTP and contract failures');
 for (const theme of ['light','gray','dark']) must(themeJs.includes(`'${theme}'`) || themeJs.includes(`\"${theme}\"`), `Theme ${theme} is missing from switcher`);
 must(css.includes('body[data-theme="gray"]'), 'Gray theme CSS missing');
 must(css.includes('body[data-theme="dark"]'), 'Dark theme CSS missing');
