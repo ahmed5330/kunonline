@@ -26,6 +26,8 @@ body{background:var(--bg);color:var(--ink)}
 .table th{background:var(--surface-2);color:var(--muted)}
 .table td,.table th{border-color:var(--line)}
 .btn.soft{background:var(--surface-3);color:var(--blue)}
+body[data-theme="dark"] .btn.soft,body[data-theme="dark"] .theme-switcher button.active{color:#82b7ed}
+body[data-theme="dark"] .btn.primary{background:#2f6fae;color:#fff}
 .chip{background:var(--surface-3);color:var(--ink)}
 .customer-hero{background:var(--surface-2);border-color:var(--line)}
 .drawer{box-shadow:var(--shadow)}

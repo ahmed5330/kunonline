@@ -26,6 +26,9 @@ const commerceV26Js = await readFile(new URL('../src/index-commerce-v26.js', imp
 const smokeJs = await readFile(new URL('./smoke-test.mjs', import.meta.url), 'utf8');
 
 const must = (ok, message) => { if (!ok) throw new Error(message); };
+const rgb=hex=>hex.slice(1).match(/.{2}/g).map(x=>parseInt(x,16));
+const luminance=hex=>{const c=rgb(hex).map(v=>v/255).map(v=>v<=.03928?v/12.92:((v+.055)/1.055)**2.4);return .2126*c[0]+.7152*c[1]+.0722*c[2];};
+const contrast=(a,b)=>{const x=luminance(a),y=luminance(b);return (Math.max(x,y)+.05)/(Math.min(x,y)+.05);};
 for (const asset of ['/v2/kun-v7.css','/v2/kun-v8.css','/v2/modules-v7.js','/v2/modules-v8.js','/v2/modules-v10.js','/v2/modules-v11.js','/v2/modules-v12.js','/v2/modules-v13.js','/v2/modules-v14.js','/v2/modules-v15.js','/v2/modules-v16.js','/v2/modules-v17.js','/v2/modules-v18.js','/v2/modules-v21.js']) must(index.includes(asset), `Missing ${asset} from v2 index`);
 must(index.includes('/v2/client-context-v23.js'), 'Current client context asset is missing from v2 index');
 must(appJs.includes('window.showToast=toast'), 'Shared modules must use the non-blocking application toast instead of native error dialogs');
@@ -50,6 +53,9 @@ must(/async function check\(path, validate\)[\s\S]{0,260}eventually/.test(smokeJ
 for (const theme of ['light','gray','dark']) must(themeJs.includes(`'${theme}'`) || themeJs.includes(`\"${theme}\"`), `Theme ${theme} is missing from switcher`);
 must(css.includes('body[data-theme="gray"]'), 'Gray theme CSS missing');
 must(css.includes('body[data-theme="dark"]'), 'Dark theme CSS missing');
+const darkSoft=css.match(/body\[data-theme="dark"\] \.btn\.soft[^\{]*\{[^}]*color:(#[0-9a-f]{6})/i),darkPrimary=css.match(/body\[data-theme="dark"\] \.btn\.primary\{[^}]*background:(#[0-9a-f]{6})/i);
+must(darkSoft&&contrast(darkSoft[1],'#1d2d45')>=4.5, 'Dark soft button text contrast must meet WCAG AA');
+must(darkPrimary&&contrast('#ffffff',darkPrimary[1])>=4.5, 'Dark primary button contrast must meet WCAG AA');
 must(css.includes('@media(max-width:820px)'), 'Tablet/mobile breakpoint missing');
 must(css.includes('@media(max-width:560px)'), 'Phone breakpoint missing');
 must(css.includes('@media(max-width:360px)'), 'Very small screen breakpoint missing');
