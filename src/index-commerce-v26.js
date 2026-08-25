@@ -11,17 +11,22 @@ function hardenApi(response){
 
 async function fetchV26(request,env,ctx){
   const u=new URL(request.url);
-  if(u.pathname==='/api/preview/version')return json({ok:true,build:BUILD,environment:env.APP_ENV||'unknown',entrypoint:'index-commerce-v26.js'});
-  // Keep the operational COD routes at the active entrypoint. This avoids a
-  // legacy fallback swallowing them before the v3 commerce router sees them.
-  if(u.pathname.startsWith('/api/cod-reconciliation'))return hardenApi(await commerceV3.fetch(request,env,ctx));
-  const response=await commerceV25.fetch(request,env,ctx);
-  if(env.APP_ENV!=='preview'||response.status!==404)return response;
-  const body=await response.clone().json().catch(()=>null);
-  if(body?.error&&String(body.error).includes('مسار غير معروف')){
-    return json({error:`مسار غير معروف: ${u.pathname}`,code:'UNKNOWN_ROUTE',path:u.pathname,method:request.method,build:BUILD},404);
+  try{
+    if(u.pathname==='/api/preview/version')return json({ok:true,build:BUILD,environment:env.APP_ENV||'unknown',entrypoint:'index-commerce-v26.js'});
+    // Keep the operational COD routes at the active entrypoint. This avoids a
+    // legacy fallback swallowing them before the v3 commerce router sees them.
+    if(u.pathname.startsWith('/api/cod-reconciliation'))return hardenApi(await commerceV3.fetch(request,env,ctx));
+    const response=await commerceV25.fetch(request,env,ctx);
+    if(env.APP_ENV!=='preview'||response.status!==404)return response;
+    const body=await response.clone().json().catch(()=>null);
+    if(body?.error&&String(body.error).includes('مسار غير معروف')){
+      return json({error:`مسار غير معروف: ${u.pathname}`,code:'UNKNOWN_ROUTE',path:u.pathname,method:request.method,build:BUILD},404);
+    }
+    return response;
+  }catch(error){
+    if(env.APP_ENV!=='preview')throw error;
+    return json({error:error?.message||'Unhandled Preview error',code:'UNHANDLED_PREVIEW_ERROR',path:u.pathname,method:request.method,build:BUILD},500);
   }
-  return response;
 }
 
 export default {fetch:fetchV26,scheduled(controller,env,ctx){return commerceV25.scheduled?.(controller,env,ctx);}};
