@@ -4,6 +4,7 @@ const ui=await readFile(new URL('../public/v2/modules-v16.js',import.meta.url),'
 const must=(ok,msg)=>{if(!ok)throw new Error(msg)};
 for(const marker of ['/api/integrations/connections','providerById','integration.connection.create','integration.connection.delete'])must(worker.includes(marker),`Integration setup missing ${marker}`);
 must(worker.includes("requirePermission(m,'integrations'"),'Integration setup must require permissions');
+must(worker.includes('deduplicated:true')&&worker.includes('lower(store_name)=lower(?)'),'Repeated setup must reuse an existing provider/store connection');
 must(worker.includes('DELETE FROM integration_secrets'),'Connection delete must remove encrypted secrets');
 must(ui.includes('/api/integration-secrets/'),'UI must send credentials directly to encrypted secret API');
 must(ui.includes('/api/integrations/connections'),'UI must create governed connections');
