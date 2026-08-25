@@ -17,6 +17,7 @@ const onboardingJs = await readFile(new URL('../public/v2/modules-v18.js', impor
 const clientContextJs = await readFile(new URL('../public/v2/client-context-v23.js', import.meta.url), 'utf8');
 const qaOpsJs = await readFile(new URL('../public/v2/modules-v21.js', import.meta.url), 'utf8');
 const commerceV3Js = await readFile(new URL('../src/index-commerce-v3.js', import.meta.url), 'utf8');
+const commerceV26Js = await readFile(new URL('../src/index-commerce-v26.js', import.meta.url), 'utf8');
 const smokeJs = await readFile(new URL('./smoke-test.mjs', import.meta.url), 'utf8');
 
 const must = (ok, message) => { if (!ok) throw new Error(message); };
@@ -32,6 +33,7 @@ must(qaOpsJs.includes("['signed','Delivered']"), 'Order UI must submit the canon
 must(!qaOpsJs.includes("['delivered','Delivered']"), 'Order UI must not submit the unsupported delivered state');
 must(commerceV3Js.includes("o.state='signed'"), 'COD reconciliation must select signed orders awaiting collection');
 must(!commerceV3Js.includes("o.state='delivered'"), 'COD reconciliation must not query the unsupported delivered state');
+must(commerceV26Js.includes("u.pathname.startsWith('/api/cod-reconciliation')")&&commerceV26Js.includes('commerceV3.fetch(request,env,ctx)'), 'Active Preview entrypoint must route COD APIs before legacy fallback handling');
 must(/PROPAGATION_ATTEMPTS=12/.test(smokeJs)&&/PROPAGATION_DELAY_MS=5000/.test(smokeJs)&&/async function eventually[\s\S]{0,260}attempt<=PROPAGATION_ATTEMPTS/.test(smokeJs), 'Preview smoke checks must tolerate deployment propagation windows beyond 30 seconds');
 must(/async function check\(path, validate\)[\s\S]{0,260}eventually/.test(smokeJs), 'Preview public-route validation must retry transient HTTP and contract failures');
 for (const theme of ['light','gray','dark']) must(themeJs.includes(`'${theme}'`) || themeJs.includes(`\"${theme}\"`), `Theme ${theme} is missing from switcher`);

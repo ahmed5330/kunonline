@@ -1,4 +1,5 @@
 import workerV2 from './index-commerce-v2.js';
+import {requirePermission} from './access-control.js';
 
 const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8'}});
 const now=()=>new Date().toISOString();
@@ -105,10 +106,10 @@ async function fetchV3(request,env,ctx){
       const me=await meFromBase(request,env,ctx);const clientId=targetClient(me,url.searchParams.get('clientId')||(me.role==='client'?me.clientId:null));return json(await profitIntelligence(env,clientId,url));
     }
     if(path==='/api/cod-reconciliation/candidates'&&request.method==='GET'){
-      const me=await meFromBase(request,env,ctx);const clientId=targetClient(me,url.searchParams.get('clientId')||(me.role==='client'?me.clientId:null));return json(await codCandidates(env,clientId));
+      const me=await meFromBase(request,env,ctx);requirePermission(me,'cod','read');const clientId=targetClient(me,url.searchParams.get('clientId')||(me.role==='client'?me.clientId:null));return json(await codCandidates(env,clientId));
     }
     if(path==='/api/cod-reconciliation'&&request.method==='GET'){
-      const me=await meFromBase(request,env,ctx);const clientId=targetClient(me,url.searchParams.get('clientId')||(me.role==='client'?me.clientId:null));return json(await listReconciliations(env,clientId));
+      const me=await meFromBase(request,env,ctx);requirePermission(me,'cod','read');const clientId=targetClient(me,url.searchParams.get('clientId')||(me.role==='client'?me.clientId:null));return json(await listReconciliations(env,clientId));
     }
     if(path==='/api/cod-reconciliation'&&request.method==='POST'){
       const me=await meFromBase(request,env,ctx);const b=await request.clone().json().catch(()=>({}));const clientId=targetClient(me,b.clientId||b.client_id||(me.role==='client'?me.clientId:null));return createReconciliation(new Request(request.url,{method:'POST',headers:request.headers,body:JSON.stringify(b)}),env,me,clientId);
