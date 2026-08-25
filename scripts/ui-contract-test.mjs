@@ -14,16 +14,19 @@ const supplierJs = await readFile(new URL('../public/v2/modules-v15.js', import.
 const integrationsJs = await readFile(new URL('../public/v2/modules-v16.js', import.meta.url), 'utf8');
 const multiAiJs = await readFile(new URL('../public/v2/modules-v17.js', import.meta.url), 'utf8');
 const onboardingJs = await readFile(new URL('../public/v2/modules-v18.js', import.meta.url), 'utf8');
-const clientContextJs = await readFile(new URL('../public/v2/client-context-v22.js', import.meta.url), 'utf8');
+const clientContextJs = await readFile(new URL('../public/v2/client-context-v23.js', import.meta.url), 'utf8');
+const qaOpsJs = await readFile(new URL('../public/v2/modules-v21.js', import.meta.url), 'utf8');
 const smokeJs = await readFile(new URL('./smoke-test.mjs', import.meta.url), 'utf8');
 
 const must = (ok, message) => { if (!ok) throw new Error(message); };
-for (const asset of ['/v2/kun-v7.css','/v2/kun-v8.css','/v2/modules-v7.js','/v2/modules-v8.js','/v2/modules-v10.js','/v2/modules-v11.js','/v2/modules-v12.js','/v2/modules-v13.js','/v2/modules-v14.js','/v2/modules-v15.js','/v2/modules-v16.js','/v2/modules-v17.js','/v2/modules-v18.js']) must(index.includes(asset), `Missing ${asset} from v2 index`);
-must(index.includes('/v2/client-context-v22.js'), 'Current client context asset is missing from v2 index');
+for (const asset of ['/v2/kun-v7.css','/v2/kun-v8.css','/v2/modules-v7.js','/v2/modules-v8.js','/v2/modules-v10.js','/v2/modules-v11.js','/v2/modules-v12.js','/v2/modules-v13.js','/v2/modules-v14.js','/v2/modules-v15.js','/v2/modules-v16.js','/v2/modules-v17.js','/v2/modules-v18.js','/v2/modules-v21.js']) must(index.includes(asset), `Missing ${asset} from v2 index`);
+must(index.includes('/v2/client-context-v23.js'), 'Current client context asset is missing from v2 index');
 must(!/boot\?\.clientId[\s\S]{0,220}await load\(\)/.test(clientContextJs), 'Client context must not await load() while its resolver is still pending');
 must(clientContextJs.includes("setTimeout(()=>{try{if(typeof load==='function')Promise.resolve(load()).catch(()=>{});}catch{}},0)"), 'Client context must refresh state after its resolver completes');
+for (const endpoint of ['/api/workflows','/api/campaigns','/api/ai-actions','/api/procurement/invoices','/api/procurement/payments','/api/procurement/returns']) must(clientContextJs.includes(`'${endpoint}'`), `Client context is missing scoped write: ${endpoint}`);
 must(multiAiJs.includes('id="storeName"') && multiAiJs.includes('aria-label="اسم المتجر أو الفرع"'), 'Store creation must expose an accessible inline name field');
 must(!multiAiJs.includes("prompt('اسم المتجر أو الفرع')"), 'Store creation must not block the app with a native prompt');
+for (const marker of ['qaCreateSale','qaCloseSession','qaFlowCreate','qaRequestApproval','qaCampaignCreate','qaInvoiceCreate','qaPaymentCreate','qaVariantCreate','qaOrderSave']) must(qaOpsJs.includes(marker), `Operational QA surface is missing: ${marker}`);
 must(/async function eventually[\s\S]{0,220}attempt<=6/.test(smokeJs), 'Preview smoke checks must tolerate short deployment propagation windows');
 must(/async function check\(path, validate\)[\s\S]{0,260}eventually/.test(smokeJs), 'Preview public-route validation must retry transient HTTP and contract failures');
 for (const theme of ['light','gray','dark']) must(themeJs.includes(`'${theme}'`) || themeJs.includes(`\"${theme}\"`), `Theme ${theme} is missing from switcher`);
