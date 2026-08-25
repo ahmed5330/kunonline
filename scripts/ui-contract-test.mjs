@@ -74,6 +74,8 @@ must(channelsJs.includes('/api/inbox/conversations'), 'Unified inbox must use co
 must(channelsJs.includes('/api/campaigns/summary'), 'Campaign view must use campaign summary API');
 must(posJs.includes('/api/pos/sessions'), 'POS UI must use sessions API');
 must(posJs.includes('/api/pos/sales'), 'POS UI must use sales API');
+must(posJs.includes('if(!sb||!sl)return')&&posJs.includes('if(box)box.textContent=e.message'),'POS async rendering must ignore stale views after rapid navigation');
+must(channelsJs.includes('if(!kpis||!box)return')&&channelsJs.includes("const box=root.querySelector('#campBody');if(box)"),'Campaign async rendering must ignore stale views after rapid navigation');
 must(supplierJs.includes('/api/procurement/supplier-balances'), 'Supplier finance must expose aggregate supplier balances');
 must(integrationsJs.includes('/api/integrations/readiness'), 'Integrations center must use readiness API');
 must(integrationsJs.includes('type="password"')&&integrationsJs.includes('autocomplete="new-password"'), 'Integration secrets must use non-prefilled password fields');
