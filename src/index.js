@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 37605)
-Total output lines: 2747
-
 /**
  * كن أونلاين — Cloudflare Worker
  * ---------------------------------------------------------------------------
@@ -797,7 +794,1241 @@ async function handleApi(request, env, url, path) {
     return json((state.clients || [])
       .filter(c => c.status === 'active' && c.adAccount)
       .map(c => ({
-        clientId: c.id, name: c.name, adAc…17605 tokens truncated…   const gid = decodeURIComponent(wgm[1]);
+        clientId: c.id, name: c.name, adAccount: c.adAccount, currency: c.currency,
+        /* لو العميل مسطّب توكن Meta خاص بيه، الأجنت يستخدمه بدل التوكن المركزي */
+        metaToken: c.metaToken || null
+      })));
+  }
+
+  /* قايمة خفيفة بكل المتاجر النشطة — للإيجنتات الخارجية.
+     senderName بتفيد مطابقة كشوف J&T، adAccount بتفيد مصروف الإعلانات */
+  if (path === '/api/clients' && request.method === 'GET' && isIngest) {
+    const state = await loadState(env);
+    return json((state.clients || [])
+      .filter(c => c.status === 'active')
+      .map(c => ({
+        id: c.id, name: c.name, senderName: c.senderName || '',
+        adAccount: c.adAccount || '', currency: c.currency, market: c.market
+      })));
+  }
+
+  /* كتالوج منتجات متجر معيّن — للإيجنت يطابق بيه اسم المنتج في رسالة العميل */
+  if (path === '/api/products' && request.method === 'GET' && isIngest) {
+    const cid = url.searchParams.get('clientId');
+    if (!cid) return json({ error: 'clientId مطلوب' }, 400);
+    return json(await listProducts(env, cid));
+  }
+
+  /* استيراد شحنات J&T بالتوكن — للإيجنتات الخارجية. tracking بس، مش orders —
+     إنشاء الأوردرات ليها مسار مخصص (wa-order) بتحقق أدق */
+  if (path === '/api/orders/bulk' && request.method === 'POST' && isIngest) {
+    const b = await request.json().catch(() => ({}));
+    if (b.mode !== 'tracking') return json({ error: 'التوكن ده مسموح له بشحنات J&T بس' }, 403);
+    const rows = Array.isArray(b.rows) ? b.rows.slice(0, 3000) : [];
+    if (!rows.length) return json({ error: 'مفيش صفوف' }, 400);
+    const result = await runTrackingImport(env, rows);
+    return json({ ok: true, ...result });
+  }
+
+  /* تسجيل أوردر جاي من جروب واتساب. بيتحقق من التليفون والمبلغ بصرامة —
+     الرسائل الحرة عرضة للأخطاء أكتر من شيت منظم */
+  if (path === '/api/wa-order' && request.method === 'POST' && isIngest) {
+    const b = await request.json().catch(() => ({}));
+    if (!b.clientId) return json({ error: 'محتاجين نعرف المتجر', field: 'clientId' }, 400);
+
+    const state = await loadState(env);
+    const client = (state.clients || []).find(c => c.id === b.clientId);
+    if (!client || client.status !== 'active') return json({ error: 'المتجر مش موجود أو موقوف' }, 400);
+
+    const name = String(b.name || '').trim();
+    if (!name) return json({ error: 'اسم المشتري مطلوب', field: 'name' }, 400);
+
+    const phone = normalizePhone(b.phone);
+    if (!phone) {
+      return json({
+        error: 'رقم التليفون مش صحيح — لازم يبدأ بـ 01 (مصر، 11 رقم) أو 05 (السعودية، 10 أرقام)',
+        field: 'phone'
+      }, 400);
+    }
+
+    const qty = Math.max(1, Number(b.qty) || 1);
+    let productRow = null;
+    if (b.productId) {
+      productRow = await env.DB.prepare('SELECT * FROM products WHERE id = ? AND client_id = ?')
+        .bind(b.productId, b.clientId).first();
+    }
+
+    let unitPrice = productRow ? Number(productRow.price) || 0 : (Number(b.unitPrice) || 0);
+    let total = Number(b.total) || (unitPrice ? unitPrice * qty : 0);
+    if (!total || total <= 0) {
+      return json({ error: 'محتاجين سعر الأوردر — اختار منتج من الكتالوج أو ابعت المبلغ', field: 'total' }, 400);
+    }
+
+    const id = 'WA-' + crypto.randomUUID().slice(0, 8).toUpperCase();
+    const order = {
+      id, clientId: b.clientId, ref: b.ref || null,
+      date: new Date().toISOString().slice(0, 10),
+      name, phone, gov: String(b.gov || '').trim(), address: String(b.address || '').trim(),
+      product: productRow ? productRow.name : String(b.product || '').trim(),
+      productId: productRow ? productRow.id : null,
+      unitPrice, qty, total,
+      productCost: productRow ? (Number(productRow.cost) || 0) * qty : 0,
+      source: 'واتساب', note: String(b.note || '').trim(),
+      state: 'pending', checkpoint: STATE_TEXT.pending
+    };
+    const waOrderState = await loadState(env);
+    const waOrderClient = waOrderState.clients.find(c => c.id === b.clientId);
+    await insertOrderAndCharge(env, order, waOrderClient && waOrderClient.name);
+    return json({ ok: true, id, order });
+  }
+
+  /* تعديل أوردر واتساب — بمعرّفه أو بمرجعه (ref) جوه نفس المتجر.
+     مسموح بس للأوردرات اللي مصدرها واتساب ولسه في مراحلها الأولى */
+  if (path === '/api/wa-order' && request.method === 'PATCH' && isIngest) {
+    const b = await request.json().catch(() => ({}));
+    let order = null;
+    if (b.id) order = await env.DB.prepare('SELECT * FROM orders WHERE id = ?').bind(b.id).first();
+    if (!order && b.ref && b.clientId) {
+      order = await env.DB.prepare('SELECT * FROM orders WHERE ref = ? AND client_id = ?')
+        .bind(b.ref, b.clientId).first();
+    }
+    if (!order) return json({ error: 'الأوردر مش موجود — محتاجين id أو ref+clientId' }, 404);
+    if (order.source !== 'واتساب') return json({ error: 'الأوردر ده مصدره مش واتساب — عدّله من لوحة الإدارة' }, 403);
+    if (['collected', 'returned', 'cancelled'].includes(order.state)) {
+      return json({ error: `الأوردر خلاص اتقفل (${STATE_TEXT[order.state]}) — كلّم الإدارة لو محتاج تعديل` }, 409);
+    }
+
+    const fields = {};
+    if (b.name !== undefined) fields.name = String(b.name).trim();
+    if (b.phone !== undefined) {
+      const p = normalizePhone(b.phone);
+      if (!p) return json({ error: 'رقم التليفون مش صحيح', field: 'phone' }, 400);
+      fields.phone = p;
+    }
+    if (b.gov !== undefined) fields.gov = String(b.gov).trim();
+    if (b.address !== undefined) fields.address = String(b.address).trim();
+    if (b.note !== undefined) fields.note = String(b.note).trim();
+    if (b.qty !== undefined) fields.qty = Math.max(1, Number(b.qty) || 1);
+
+    if (b.productId !== undefined) {
+      const pr = await env.DB.prepare('SELECT * FROM products WHERE id = ? AND client_id = ?')
+        .bind(b.productId, order.client_id).first();
+      if (pr) {
+        fields.product_id = pr.id; fields.product = pr.name; fields.unit_price = pr.price;
+        fields.product_cost = (Number(pr.cost) || 0) * (fields.qty || order.qty);
+        if (b.total === undefined) fields.total = Number(pr.price) * (fields.qty || order.qty);
+      }
+    }
+    if (b.total !== undefined) {
+      const t = Number(b.total);
+      if (!t || t <= 0) return json({ error: 'السعر لازم يكون أكبر من صفر', field: 'total' }, 400);
+      fields.total = t;
+    }
+    if (!Object.keys(fields).length) return json({ error: 'مفيش حاجة اتبعتت للتعديل' }, 400);
+
+    const sets = Object.keys(fields).map(k => `${k} = ?`).join(', ');
+    await env.DB.prepare(`UPDATE orders SET ${sets} WHERE id = ?`)
+      .bind(...Object.values(fields), order.id).run();
+    return json({ ok: true, id: order.id });
+  }
+
+  if (path === '/api/wa-groups' && request.method === 'GET' && isIngest) {
+    /* للأجنت (OpenClaw) — خريطة Group ID → clientId لكل الجروبات المربوطة والمفعّلة.
+       ده البديل الحي لملف wa-groups.json الثابت */
+    const state = await loadState(env);
+    const groups = {};
+    (state.clients || []).forEach(c => {
+      if (c.status !== 'active') return;
+      (c.whatsappGroups || []).forEach(g => { if (g.groupId) groups[g.groupId] = c.id; });
+    });
+    return json({ groups });
+  }
+
+  /* طابور رسائل الواتساب التلقائية — أجنت OpenClaw بيسحب الرسايل المعلّقة ويبعتها بنفس رقمه المتصل */
+  if (path === '/api/whatsapp/outbox' && request.method === 'GET' && isIngest) {
+    const { results } = await env.DB.prepare(
+      "SELECT id, client_id, order_id, phone, message, kind, created_at FROM whatsapp_outbox WHERE status = 'pending' ORDER BY created_at ASC LIMIT 50"
+    ).all();
+    return json(results || []);
+  }
+
+  const waoSent = path.match(/^\/api\/whatsapp\/outbox\/([^/]+)\/(sent|failed)$/);
+  if (waoSent && request.method === 'POST' && isIngest) {
+    const [, oid, outcome] = waoSent;
+    await env.DB.prepare('UPDATE whatsapp_outbox SET status = ?, sent_at = ? WHERE id = ?')
+      .bind(outcome, new Date().toISOString(), decodeURIComponent(oid)).run();
+    return json({ ok: true });
+  }
+
+  if (path === '/api/ad-spend' && request.method === 'POST') {
+    /* بيقبل التوكن أو جلسة عندها صلاحية الإدخال اليومي */
+    let allowed = isIngest;
+    if (!allowed) {
+      const sess = await readSession(request, secret);
+      if (sess && sess.uid) {
+        const u = await env.DB.prepare('SELECT role, status FROM users WHERE id = ?').bind(sess.uid).first();
+        allowed = u && u.status === 'active' && permsOf(u.role).includes('entries');
+      }
+    }
+    if (!allowed) return json({ error: 'مش مسموح' }, 403);
+
+    const b = await request.json().catch(() => ({}));
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(String(b.date || ''))
+      ? b.date : new Date().toISOString().slice(0, 10);
+    const rows = Array.isArray(b.entries) ? b.entries
+      : (b.clientId || b.adAccount) ? [{ clientId: b.clientId, adAccount: b.adAccount, spend: b.spend }]
+      : [];
+    if (!rows.length) return json({ error: 'مفيش بيانات' }, 400);
+
+    const state = await loadState(env);
+    state.entries = state.entries || [];
+    const applied = [], skipped = [];
+
+    for (const r of rows) {
+      const spend = Number(r.spend);
+      if (!Number.isFinite(spend) || spend < 0) { skipped.push({ ...r, why: 'مبلغ غير صالح' }); continue; }
+
+      /* بندوّر بالعميل أو بحساب الإعلانات — OpenClaw بيعرف حساب الإعلانات بس */
+      const client = r.clientId
+        ? (state.clients || []).find(c => c.id === r.clientId)
+        : (state.clients || []).find(c => String(c.adAccount || '').replace(/^act_/, '')
+            === String(r.adAccount || '').replace(/^act_/, ''));
+      if (!client) { skipped.push({ ...r, why: 'مالقيناش المتجر' }); continue; }
+
+      if (r.balance !== undefined && Number.isFinite(Number(r.balance))) {
+        client.metaBalance = round2(Number(r.balance));
+        client.metaBalanceCurrency = r.balanceCurrency || client.currency || '';
+        client.metaBalanceAt = new Date().toISOString();
+      }
+
+      const existing = state.entries.find(e => e.clientId === client.id && e.date === date);
+      if (existing) {
+        /* الإدخال اليدوي أولى — ما بنكتبش فوقه إلا لو الطلب صريح */
+        if (existing.source === 'manual' && !b.overwrite) {
+          skipped.push({ client: client.name, why: 'فيه إدخال يدوي لنفس اليوم' });
+          continue;
+        }
+        existing.adSpend = spend;
+        existing.source = 'auto';
+        existing.syncedAt = new Date().toISOString();
+      } else {
+        state.entries.push({
+          id: crypto.randomUUID().slice(0, 8), clientId: client.id, date,
+          adSpend: spend, orders: 0, source: 'auto', syncedAt: new Date().toISOString()
+        });
+      }
+      applied.push({ client: client.name, spend });
+    }
+
+    if (applied.length) await saveState(env, state);
+    return json({ ok: true, date, applied, skipped });
+  }
+
+  /* أول تشغيل: إنشاء حساب الإدارة — متاح بس لما الجدول يكون فاضي */
+  if (path === '/api/setup' && request.method === 'POST') {
+    if (await countUsers(env) > 0) return json({ error: 'النظام متظبط بالفعل' }, 403);
+    const { email = '', password = '' } = await request.json().catch(() => ({}));
+    const mail = String(email).trim().toLowerCase();
+    if (!mail.includes('@')) return json({ error: 'اكتب إيميل صحيح' }, 400);
+    if (String(password).length < MIN_PASSWORD) {
+      return json({ error: `كلمة المرور لازم تكون ${MIN_PASSWORD} حروف على الأقل` }, 400);
+    }
+    const uid = crypto.randomUUID();
+    await env.DB.prepare(
+      'INSERT INTO users (id, email, name, password, role, client_id, status, created_at) VALUES (?,?,?,?,?,?,?,?)'
+    ).bind(uid, mail, 'الإدارة', await hashPassword(password), 'admin', null, 'active',
+      new Date().toISOString()).run();
+
+    const state = await loadState(env);
+    state.agency.adminEmail = mail;
+    await saveState(env, state);
+
+    const token = await makeSession({ role: 'admin', email: mail, uid }, secret);
+    return json({ role: 'admin', email: mail }, 200, {
+      'Set-Cookie': `${COOKIE}=${token}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${WEEK}`
+    });
+  }
+
+  /* تسجيل الدخول — الإيميل وكلمة المرور بيتطابقوا مع جدول users */
+  if (path === '/api/login' && request.method === 'POST') {
+    const { email = '', password = '' } = await request.json().catch(() => ({}));
+    const mail = String(email).trim().toLowerCase();
+    if (!mail || !password) return json({ error: 'اكتب الإيميل وكلمة المرور' }, 400);
+
+    const lockedFor = await checkLock(env, mail);
+    if (lockedFor) {
+      return json({ error: `الحساب متقفل مؤقتاً. جرّب تاني بعد ${lockedFor} دقيقة.` }, 429);
+    }
+
+    const user = await findUserByEmail(env, mail);
+    /* بنتحقق من كلمة المرور حتى لو الحساب مش موجود — عشان الرد ياخد نفس الوقت
+       وما يبانش من السرعة إن الإيميل ده مسجّل عندنا ولا لأ */
+    const ok = user
+      ? await verifyPassword(password, user.password)
+      : await verifyPassword(password, await hashPassword('__dummy__'));
+
+    if (!user || !ok) {
+      const left = await recordFail(env, mail);
+      const hint = left > 0 && left <= 2 ? ` فاضل ${left} محاولات قبل القفل.` : '';
+      return json({ error: 'الإيميل أو كلمة المرور غير صحيحة.' + hint }, 401);
+    }
+    if (user.status !== 'active') return json({ error: 'الحساب موقوف. كلّم فريق كن أونلاين.' }, 403);
+
+    await clearFails(env, mail);
+    await env.DB.prepare('UPDATE users SET last_login = ? WHERE id = ?')
+      .bind(new Date().toISOString(), user.id).run();
+
+    const payload = user.role === 'client'
+      ? { role: 'client', clientId: user.client_id, email: user.email, uid: user.id }
+      : { role: 'admin', email: user.email, uid: user.id };
+    const token = await makeSession(payload, secret);
+    return json(payload, 200, {
+      'Set-Cookie': `${COOKIE}=${token}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${WEEK}`
+    });
+  }
+
+  if (path === '/api/logout') {
+    return json({ ok: true }, 200, { 'Set-Cookie': `${COOKIE}=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0` });
+  }
+
+  const session = await readSession(request, secret);
+  if (!session) {
+    if (path === '/api/me') return json({ role: null, needsSetup: (await countUsers(env)) === 0 });
+    return json({ error: 'محتاج تسجّل دخول' }, 401);
+  }
+
+  /* بنقرأ الحساب من قاعدة البيانات مع كل طلب — عشان لو غيّرت صلاحياته
+     أو أوقفته، يتنفّذ فوراً من غير ما يستنى جلسته تنتهي */
+  const user = session.uid
+    ? await env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(session.uid).first()
+    : await findUserByEmail(env, session.email || '');
+  if (!user || user.status !== 'active') {
+    return json({ error: 'الحساب مش نشط. سجّل دخول تاني.' }, 401, {
+      'Set-Cookie': `${COOKIE}=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0`
+    });
+  }
+  const me = {
+    role: user.role, clientId: user.client_id, email: user.email,
+    name: user.name || '', uid: user.id, perms: permsOf(user.role)
+  };
+  if (path === '/api/me') return json(me);
+
+  /* قراءة البيانات */
+  if (path === '/api/state' && request.method === 'GET') {
+    const state = await loadState(env);
+    if (isStaff(user)) {
+      const masked = maskClientSecrets(state);
+      return json({ ...masked, orders: await listOrders(env), products: await listProducts(env), roles: ROLES });
+    }
+    const scoped = scopeForClient(state, await listOrders(env, me.clientId), me.clientId);
+    if (scoped) scoped.products = await listProducts(env, me.clientId);
+    return scoped ? json(scoped) : json({ error: 'الحساب مش موجود' }, 404);
+  }
+
+  /* حفظ البيانات — الإدارة بس */
+  if (path === '/api/state' && request.method === 'PUT') {
+    const body = await request.json();
+    delete body.orders; delete body.roles; delete body.products;
+    (body.clients || []).forEach(c => { delete c.password; delete c.code; });
+
+    if (can(user, 'settings')) {           /* المدير بيحفظ كل حاجة */
+      const current = await loadState(env);
+      preserveUntouchedSecrets(body, current);
+      await saveState(env, body);
+      return json({ ok: true });
+    }
+    /* غير المدير بيعدّل الأجزاء المسموح له بيها بس — والباقي بيفضل زي ما هو */
+    const current = await loadState(env);
+    if (can(user, 'entries')) current.entries = body.entries || current.entries;
+    if (can(user, 'finance')) current.funding = body.funding || current.funding;
+    if (!can(user, 'entries') && !can(user, 'finance')) {
+      return json({ error: 'مش مسموح' }, 403);
+    }
+    await saveState(env, current);
+    return json({ ok: true });
+  }
+
+  /* تسجيل أوردر — العميل لحسابه هو، والإدارة لأي حساب */
+  if (path === '/api/orders' && request.method === 'POST') {
+    const o = await request.json();
+    if (user.role === 'client') o.clientId = me.clientId;
+    else if (!can(user, 'orders')) return json({ error: 'مش مسموح' }, 403);
+    if (!o.clientId || !o.name || !o.phone) return json({ error: 'بيانات ناقصة' }, 400);
+    o.id = await nextOrderCode(env, o.name);
+    o.state = ORDER_STATES.includes(o.state) ? o.state : 'pending';
+    o.checkpoint = o.checkpoint || STATE_TEXT.pending;
+
+    /* لو جالنا كود كوبون، نتحقق منه ونحسب قيمة الخصم تلقائي (مفيش حاجة تتحسب لو الكود مش موجود/منتهي) */
+    if (o.couponCode) {
+      const code = String(o.couponCode).trim().toUpperCase();
+      const coupon = await env.DB.prepare(
+        'SELECT type, value, active, expires_at FROM coupons WHERE client_id = ? AND code = ?'
+      ).bind(o.clientId, code).first();
+      const today = new Date().toISOString().slice(0, 10);
+      if (coupon && coupon.active && (!coupon.expires_at || coupon.expires_at >= today)) {
+        o.couponCode = code;
+        if (o.discountAmount === undefined || o.discountAmount === null) {
+          o.discountAmount = coupon.type === 'percent'
+            ? round2((Number(o.total) || 0) * (Number(coupon.value) || 0) / 100)
+            : Number(coupon.value) || 0;
+        }
+      } else {
+        return json({ error: 'كود الكوبون مش صالح أو منتهي' }, 400);
+      }
+    }
+
+    const manualOrderState = await loadState(env);
+    const manualOrderClient = manualOrderState.clients.find(c => c.id === o.clientId);
+    await insertOrderAndCharge(env, o, manualOrderClient && manualOrderClient.name);
+    return json({ ok: true, order: o });
+  }
+
+  /* تعديل حالة أو بوليصة — الإدارة بس */
+  const m = path !== '/api/orders/bulk' ? path.match(/^\/api\/orders\/([^/]+)$/) : null;
+  if (m) {
+    const id = decodeURIComponent(m[1]);
+    const isOrderStaff = isStaff(user) && can(user, 'orders');
+
+    if (request.method === 'DELETE') {
+      if (!isStaff(user) || !can(user, 'orders_delete')) return json({ error: 'مش مسموح — محتاج صلاحية حذف الأوردرات' }, 403);
+      await env.DB.prepare('DELETE FROM orders WHERE id = ?').bind(id).run();
+      return json({ ok: true });
+    }
+
+    if (request.method === 'PATCH') {
+      const p = await request.json();
+      const cur = await env.DB.prepare(
+        `SELECT client_id, state, awb, shipping_cost, other_cost, signed_at, history, name, phone, defer_until,
+                product_id, variant_id, qty, total, restocked, refund_amount, return_type
+         FROM orders WHERE id = ?`
+      ).bind(id).first();
+      if (!cur) return json({ error: 'أوردر غير موجود' }, 404);
+
+      /* فريق التخزين/الشحن (confirmed→preparing/shipped) وفريق خدمة العملاء
+         (pending↔confirmed↔preparing) — كل واحد مفعّل ليه نطاق مختلف من الإدارة */
+      let isInventoryClient = false, isServiceClient = false;
+      if (!isOrderStaff) {
+        if (user.role !== 'client' || cur.client_id !== me.clientId) return json({ error: 'مش مسموح' }, 403);
+        const state = await loadState(env);
+        const client = state.clients.find(c => c.id === me.clientId);
+        isInventoryClient = !!(client && client.inventoryEnabled);
+        isServiceClient = !!(client && client.customerServiceEnabled);
+        if (!isInventoryClient && !isServiceClient) return json({ error: 'مش مسموح' }, 403);
+      }
+
+      let st = p.state || cur.state;
+      const awb = p.awb !== undefined ? (p.awb || null) : cur.awb;
+      if (p.awb && ['pending','confirmed','preparing'].includes(cur.state) && !p.state) st = 'shipped';
+
+      if (isInventoryClient || isServiceClient) {
+        const inventoryOk = isInventoryClient
+          && ['confirmed', 'preparing'].includes(cur.state) && ['preparing', 'shipped'].includes(st);
+        const serviceOk = isServiceClient
+          && ['pending', 'confirmed', 'preparing', 'deferred'].includes(cur.state)
+          && ['pending', 'confirmed', 'preparing', 'deferred'].includes(st);
+        if (!inventoryOk && !serviceOk) {
+          return json({ error: 'الحالة دي برّه الصلاحية المتاحة ليك' }, 403);
+        }
+      }
+      if (!ORDER_STATES.includes(st)) return json({ error: 'حالة غير معروفة' }, 400);
+
+      /* التأجيل لازم يجيله تاريخ رجوع صحيح */
+      let deferUntil = cur.defer_until || null;
+      if (st === 'deferred') {
+        if (!p.deferUntil || !/^\d{4}-\d{2}-\d{2}$/.test(p.deferUntil)) {
+          return json({ error: 'حدد تاريخ التأجيل الأول' }, 400);
+        }
+        deferUntil = p.deferUntil;
+      }
+
+      const num = v => (v === undefined || v === null || v === '') ? null : Number(v);
+      let ship  = p.shippingCost !== undefined ? num(p.shippingCost) : cur.shipping_cost;
+      let other = p.otherCost    !== undefined ? num(p.otherCost)    : cur.other_cost;
+
+      /* التحصيل ما يتسجّلش من غير تكاليفه — وإلا الربح هيطلع أعلى من الحقيقة */
+      if (st === 'collected' && (ship === null || other === null || isNaN(ship) || isNaN(other))) {
+        return json({ error: 'قبل ما تسجّل التحصيل لازم تحدد سعر الشحن والمصاريف الأخرى', needCosts: true }, 400);
+      }
+
+      /* ---------- المرتجعات: نوع المرتجع + قيمة الاسترداد + رجوع المنتج للمخزون تلقائي ---------- */
+      let refundAmount = p.refundAmount !== undefined ? num(p.refundAmount) : cur.refund_amount;
+      let returnType = p.returnType !== undefined ? (p.returnType || null) : cur.return_type;
+      let restocked = !!cur.restocked;
+      const enteringReturn = st === 'returned' && cur.state !== 'returned';
+      const leavingReturn  = st !== 'returned' && cur.state === 'returned';
+
+      if (enteringReturn) {
+        if (!returnType) returnType = 'full';
+        if (!['full', 'partial', 'exchange'].includes(returnType)) {
+          return json({ error: 'نوع المرتجع لازم يكون: مرتجع كامل، مرتجع جزئي، أو استبدال' }, 400);
+        }
+        if (returnType === 'partial' && (p.refundAmount === undefined || p.refundAmount === null || p.refundAmount === '')) {
+          return json({ error: 'حدد قيمة الاسترداد الجزئي الأول', needRefundAmount: true }, 400);
+        }
+        if (refundAmount === null || refundAmount === undefined) refundAmount = Number(cur.total) || 0;
+
+        if (cur.product_id && !restocked) {
+          if (cur.variant_id) {
+            const variant = await env.DB.prepare('SELECT name, stock, product_id FROM product_variants WHERE id = ?').bind(cur.variant_id).first();
+            if (variant) {
+              const qty = Number(cur.qty) || 1;
+              const newStock = Math.max(0, (Number(variant.stock) || 0) + qty);
+              await env.DB.prepare('UPDATE product_variants SET stock = ? WHERE id = ?').bind(newStock, cur.variant_id).run();
+              const prodRow = await env.DB.prepare('SELECT name FROM products WHERE id = ?').bind(cur.product_id).first();
+              await env.DB.prepare(
+                `INSERT INTO stock_log (id, client_id, product_id, variant_id, product_name, delta, new_stock, note, supplier_id, supplier_name, created_at, created_by)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`
+              ).bind('STK-' + crypto.randomUUID().slice(0, 8).toUpperCase(), cur.client_id, cur.product_id, cur.variant_id,
+                `${(prodRow && prodRow.name) || ''} — ${variant.name}`, qty, newStock, `مرتجع من أوردر ${id}`,
+                null, null, new Date().toISOString(), user.email || user.role).run();
+              restocked = true;
+            }
+          } else {
+            const prod = await env.DB.prepare('SELECT name, stock FROM products WHERE id = ?').bind(cur.product_id).first();
+            if (prod) {
+              const qty = Number(cur.qty) || 1;
+              const newStock = Math.max(0, (Number(prod.stock) || 0) + qty);
+              await env.DB.prepare('UPDATE products SET stock = ? WHERE id = ?').bind(newStock, cur.product_id).run();
+              await env.DB.prepare(
+                `INSERT INTO stock_log (id, client_id, product_id, variant_id, product_name, delta, new_stock, note, supplier_id, supplier_name, created_at, created_by)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`
+              ).bind('STK-' + crypto.randomUUID().slice(0, 8).toUpperCase(), cur.client_id, cur.product_id, null, prod.name, qty,
+                newStock, `مرتجع من أوردر ${id}`, null, null, new Date().toISOString(), user.email || user.role).run();
+              restocked = true;
+            }
+          }
+        }
+      } else if (leavingReturn) {
+        /* تصحيح غلطة: الأوردر كان متسجل مرتجع وبيرجع لحالة تانية — نلغي إضافة المخزون اللي كانت حصلت */
+        if (cur.product_id && restocked) {
+          if (cur.variant_id) {
+            const variant = await env.DB.prepare('SELECT name, stock FROM product_variants WHERE id = ?').bind(cur.variant_id).first();
+            if (variant) {
+              const qty = Number(cur.qty) || 1;
+              const newStock = Math.max(0, (Number(variant.stock) || 0) - qty);
+              await env.DB.prepare('UPDATE product_variants SET stock = ? WHERE id = ?').bind(newStock, cur.variant_id).run();
+              const prodRow = await env.DB.prepare('SELECT name FROM products WHERE id = ?').bind(cur.product_id).first();
+              await env.DB.prepare(
+                `INSERT INTO stock_log (id, client_id, product_id, variant_id, product_name, delta, new_stock, note, supplier_id, supplier_name, created_at, created_by)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`
+              ).bind('STK-' + crypto.randomUUID().slice(0, 8).toUpperCase(), cur.client_id, cur.product_id, cur.variant_id,
+                `${(prodRow && prodRow.name) || ''} — ${variant.name}`, -qty, newStock,
+                `إلغاء مرتجع — أوردر ${id} رجع لحالة تانية`, null, null, new Date().toISOString(), user.email || user.role).run();
+            }
+          } else {
+            const prod = await env.DB.prepare('SELECT name, stock FROM products WHERE id = ?').bind(cur.product_id).first();
+            if (prod) {
+              const qty = Number(cur.qty) || 1;
+              const newStock = Math.max(0, (Number(prod.stock) || 0) - qty);
+              await env.DB.prepare('UPDATE products SET stock = ? WHERE id = ?').bind(newStock, cur.product_id).run();
+              await env.DB.prepare(
+                `INSERT INTO stock_log (id, client_id, product_id, variant_id, product_name, delta, new_stock, note, supplier_id, supplier_name, created_at, created_by)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`
+              ).bind('STK-' + crypto.randomUUID().slice(0, 8).toUpperCase(), cur.client_id, cur.product_id, null, prod.name, -qty,
+                newStock, `إلغاء مرتجع — أوردر ${id} رجع لحالة تانية`, null, null, new Date().toISOString(), user.email || user.role).run();
+            }
+          }
+        }
+        restocked = false;
+        refundAmount = null;
+        returnType = null;
+      }
+
+      const stamp = new Date().toISOString().slice(0, 10);
+      const collectedAt = st === 'collected' ? (p.collectedAt || stamp) : null;
+      const signedAt = (st === 'signed' || st === 'collected')
+        ? (p.signedAt || cur.signed_at || stamp) : null;
+
+      const history = parseJsonArr(cur.history);
+      if (st !== cur.state) history.push({
+        state: st, at: new Date().toISOString(),
+        note: st === 'deferred' ? `مؤجل لحد ${deferUntil}`
+          : enteringReturn ? `${returnType === 'exchange' ? 'استبدال' : returnType === 'partial' ? 'مرتجع جزئي' : 'مرتجع كامل'} — استرداد ${refundAmount || 0}`
+          : undefined
+      });
+
+      await env.DB.prepare(
+        `UPDATE orders SET state = ?, awb = ?, checkpoint = ?, shipping_cost = ?, other_cost = ?, signed_at = ?, collected_at = ?,
+           defer_until = ?, refund_amount = ?, return_type = ?, restocked = ?, history = ? WHERE id = ?`
+      ).bind(st, awb, STATE_TEXT[st] || '', ship, other, signedAt, collectedAt, deferUntil,
+        refundAmount, returnType, restocked ? 1 : 0, JSON.stringify(history), id).run();
+
+      /* رسالة "جاري شحن طلبك" لما الأوردر يتحول لـ"جاري الشحن" */
+      if (st === 'preparing' && cur.state !== 'preparing') {
+        await queueWhatsAppMessage(env, {
+          clientId: cur.client_id, orderId: id, phone: cur.phone,
+          message: shippingMessageFor({ id, name: cur.name, awb }), kind: 'shipping'
+        });
+      }
+      return json({ ok: true, state: st, history, deferUntil, refundAmount, returnType, restocked });
+    }
+  }
+
+  /* موظف أوردرات، أو عميل مفعّل ليه "خدمة العملاء" وبيتصرف في أوردر بتاعه هو بس.
+     لو العميل مشترك في نظام المحفظة وخلص رصيده، بتتقفل أزرار التواصل/واتساب لحد ما يشحن —
+     الأوردرات نفسها بتفضل توصل وتتسجّل عادي، القفل ده على "التعامل" بس */
+  async function canActOnOrder(env, user, me, clientIdOfOrder) {
+    const state = await loadState(env);
+    const client = state.clients.find(c => c.id === clientIdOfOrder);
+    if (client && Number(client.walletFeePerOrder) > 0 && Number(client.walletBalance || 0) <= 0) {
+      return { ok: false, code: 402, reason: 'رصيد محفظة الاشتراك خلص — لازم تشحن رصيد عشان تقدر تتواصل مع العملاء' };
+    }
+    if (isStaff(user) && can(user, 'orders')) return { ok: true };
+    if (user.role !== 'client' || clientIdOfOrder !== me.clientId) return { ok: false, code: 403, reason: 'مش مسموح' };
+    return client && client.customerServiceEnabled
+      ? { ok: true } : { ok: false, code: 403, reason: 'مش مسموح' };
+  }
+
+  /* محاولات التواصل مع العميل — أقصى ٣ في اليوم و١٠ خلال ٣ أيام */
+  const cm = path.match(/^\/api\/orders\/([^/]+)\/contact$/);
+  if (cm && request.method === 'POST') {
+    const id = decodeURIComponent(cm[1]);
+    const cur = await env.DB.prepare('SELECT client_id, contact_log, history FROM orders WHERE id = ?').bind(id).first();
+    if (!cur) return json({ error: 'أوردر غير موجود' }, 404);
+    const access = await canActOnOrder(env, user, me, cur.client_id);
+    if (!access.ok) return json({ error: access.reason }, access.code);
+
+    const log = parseJsonArr(cur.contact_log);
+    const now = new Date();
+    const today = now.toISOString().slice(0, 10);
+    const threeDaysAgo = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000);
+    const todayCount = log.filter(t => String(t).slice(0, 10) === today).length;
+    const last3DaysCount = log.filter(t => new Date(t) >= threeDaysAgo).length;
+
+    if (todayCount >= 3) {
+      return json({ error: 'تجاوزت عدد مرات التواصل المسموح بها لهذا اليوم (٣ محاولات)', log }, 429);
+    }
+    if (last3DaysCount >= 10) {
+      return json({ error: 'تجاوزت الحد الأقصى لمحاولات التواصل خلال ٣ أيام (١٠ محاولات)', log }, 429);
+    }
+    log.push(now.toISOString());
+    const history = parseJsonArr(cur.history);
+    history.push({ type: 'contact', at: now.toISOString(), by: user.email || user.role });
+    await env.DB.prepare('UPDATE orders SET contact_log = ?, history = ? WHERE id = ?')
+      .bind(JSON.stringify(log), JSON.stringify(history), id).run();
+    return json({ ok: true, log, history, todayCount: todayCount + 1 });
+  }
+
+  /* تسجيل إرسال رسالة واتساب في تاريخ الأوردر */
+  const wm = path.match(/^\/api\/orders\/([^/]+)\/whatsapp-log$/);
+  if (wm && request.method === 'POST') {
+    const id = decodeURIComponent(wm[1]);
+    const cur = await env.DB.prepare('SELECT client_id, history FROM orders WHERE id = ?').bind(id).first();
+    if (!cur) return json({ error: 'أوردر غير موجود' }, 404);
+    const access = await canActOnOrder(env, user, me, cur.client_id);
+    if (!access.ok) return json({ error: access.reason }, access.code);
+    const b = await request.json().catch(() => ({}));
+    const history = parseJsonArr(cur.history);
+    const template = ['confirm', 'shipped', 'review'].includes(b.template) ? b.template : 'other';
+    history.push({ type: 'whatsapp', template, at: new Date().toISOString(), by: user.email || user.role });
+    await env.DB.prepare('UPDATE orders SET history = ? WHERE id = ?').bind(JSON.stringify(history), id).run();
+    return json({ ok: true, history });
+  }
+
+  /* أي حد داخل يقدر يغيّر كلمة مروره هو */
+  if (path === '/api/change-password' && request.method === 'POST') {
+    const { current = '', next = '' } = await request.json().catch(() => ({}));
+    if (String(next).length < MIN_PASSWORD) {
+      return json({ error: `كلمة المرور الجديدة لازم تكون ${MIN_PASSWORD} حروف على الأقل` }, 400);
+    }
+    if (!await verifyPassword(current, user.password)) {
+      return json({ error: 'كلمة المرور الحالية غير صحيحة' }, 401);
+    }
+    await env.DB.prepare('UPDATE users SET password = ? WHERE id = ?')
+      .bind(await hashPassword(next), user.id).run();
+    return json({ ok: true });
+  }
+
+  /* إدارة الحسابات — الإدارة بس */
+  if (path === '/api/users') {
+    if (!can(user, 'users')) return json({ error: 'مش مسموح' }, 403);
+
+    if (request.method === 'GET') {
+      const { results } = await env.DB.prepare(
+        'SELECT id, email, name, role, client_id, status, last_login FROM users ORDER BY role, email'
+      ).all();
+      return json((results || []).map(publicUser));
+    }
+
+    if (request.method === 'POST') {
+      const b = await request.json().catch(() => ({}));
+      const mail = String(b.email || '').trim().toLowerCase();
+      const role = ROLES[b.role] ? b.role : 'client';
+      if (!mail.includes('@')) return json({ error: 'اكتب إيميل صحيح' }, 400);
+      if (b.password && String(b.password).length < MIN_PASSWORD) {
+        return json({ error: `كلمة المرور لازم تكون ${MIN_PASSWORD} حروف على الأقل` }, 400);
+      }
+
+      /* بندوّر بالعميل الأول عشان لو الإيميل اتغيّر نعدّل نفس الحساب مش نعمل جديد */
+      let target = (role === 'client' && b.clientId)
+        ? await env.DB.prepare('SELECT * FROM users WHERE client_id = ?').bind(b.clientId).first()
+        : (b.id ? await env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(b.id).first() : null);
+
+      const byEmail = await findUserByEmail(env, mail);
+
+      /* الإيميل لو موجود، لازم يكون بتاع نفس صاحب الحساب ونفس الدور —
+         من غير الشرط ده كنت تقدر تحوّل حساب إدارة لحساب عميل بالغلط */
+      if (!target && byEmail) {
+        const sameOwner = (byEmail.client_id || null) === (role === 'client' ? (b.clientId || null) : null)
+          && byEmail.role === role;
+        if (!sameOwner) return json({ error: 'الإيميل ده مستخدم في حساب تاني' }, 409);
+        target = byEmail;
+      }
+      if (target && byEmail && byEmail.id !== target.id) {
+        return json({ error: 'الإيميل ده مستخدم في حساب تاني' }, 409);
+      }
+
+      if (target) {
+        const pass = b.password ? await hashPassword(b.password) : target.password;
+        /* آخر مدير ما ينفعش ينزل من الإدارة — وإلا يتقفل النظام على الكل */
+        if (target.role === 'admin' && role !== 'admin') {
+          const r = await env.DB.prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'admin'").first();
+          if (((r && r.n) || 0) <= 1) return json({ error: 'ما ينفعش تشيل صلاحية آخر مدير' }, 400);
+        }
+        await env.DB.prepare(
+          'UPDATE users SET email = ?, name = ?, password = ?, role = ?, client_id = ?, status = ? WHERE id = ?'
+        ).bind(mail, b.name || target.name || '', pass, role,
+          role === 'client' ? (b.clientId || null) : null,
+          b.status || target.status, target.id).run();
+        if (b.password) await clearFails(env, mail);
+        return json({ ok: true, created: false });
+      }
+
+      if (!b.password) return json({ error: 'الحساب جديد — لازم تحدد كلمة مرور' }, 400);
+      await env.DB.prepare(
+        'INSERT INTO users (id, email, name, password, role, client_id, status, created_at) VALUES (?,?,?,?,?,?,?,?)'
+      ).bind(crypto.randomUUID(), mail, b.name || '', await hashPassword(b.password), role,
+        role === 'client' ? (b.clientId || null) : null, b.status || 'active',
+        new Date().toISOString()).run();
+      return json({ ok: true, created: true });
+    }
+  }
+
+  const um = path.match(/^\/api\/users\/([^/]+)$/);
+  if (um && can(user, 'users') && request.method === 'DELETE') {
+    const id = decodeURIComponent(um[1]);
+    const target = await env.DB.prepare('SELECT email, role FROM users WHERE id = ?').bind(id).first();
+    if (!target) return json({ error: 'الحساب مش موجود' }, 404);
+    if (target.role === 'admin') {
+      const r = await env.DB.prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'admin'").first();
+      if (((r && r.n) || 0) <= 1) return json({ error: 'ما ينفعش تمسح آخر حساب إدارة' }, 400);
+    }
+    await env.DB.prepare('DELETE FROM users WHERE id = ?').bind(id).run();
+    return json({ ok: true });
+  }
+
+  /* ---------- منتجات المتجر ---------- */
+  if (path === '/api/products') {
+    if (request.method === 'GET') {
+      return json(await listProducts(env, user.role === 'client' ? me.clientId : url.searchParams.get('clientId')));
+    }
+    if (request.method === 'POST') {
+      const b = await request.json().catch(() => ({}));
+      const clientId = user.role === 'client' ? me.clientId : b.clientId;
+      if (!clientId) return json({ error: 'اختار المتجر' }, 400);
+      if (user.role !== 'client' && !can(user, 'clients') && !can(user, 'orders')) {
+        return json({ error: 'مش مسموح' }, 403);
+      }
+      /* صاحب المتجر بيدير منتجاته هو بس — الـ clientId اتفرض فوق */
+      if (!b.name) return json({ error: 'اسم المنتج مطلوب' }, 400);
+      const id = b.id || 'P-' + crypto.randomUUID().slice(0, 8).toUpperCase();
+      await env.DB.prepare(
+        `INSERT INTO products (${PRODUCT_COLS}) VALUES (?,?,?,?,?,?,?,?,?,?,?)
+         ON CONFLICT(id) DO UPDATE SET
+           name=excluded.name, sku=excluded.sku, category=excluded.category, price=excluded.price,
+           cost=excluded.cost, active=excluded.active,
+           stock=excluded.stock, low_stock_threshold=excluded.low_stock_threshold`
+      ).bind(id, clientId, b.name, b.sku || '', b.category || '', Number(b.price) || 0, Number(b.cost) || 0,
+        b.active === false ? 0 : 1, Math.max(0, Number(b.stock) || 0),
+        Math.max(0, Number(b.lowStockThreshold) || 5), new Date().toISOString()).run();
+      return json({ ok: true, id });
+    }
+  }
+
+  /* تحديث سريع لكمية المخزون بس — مش محتاج تبعت باقي بيانات المنتج */
+  const pstock = path.match(/^\/api\/products\/([^/]+)\/stock$/);
+  if (pstock && request.method === 'PATCH') {
+    const pid = decodeURIComponent(pstock[1]);
+    const row = await env.DB.prepare('SELECT client_id FROM products WHERE id = ?').bind(pid).first();
+    if (!row) return json({ error: 'المنتج مش موجود' }, 404);
+    if (user.role === 'client' && row.client_id !== me.clientId) return json({ error: 'مش مسموح' }, 403);
+    if (user.role !== 'client' && !can(user, 'clients') && !can(user, 'orders')) {
+      return json({ error: 'مش مسموح' }, 403);
+    }
+    const b = await request.json().catch(() => ({}));
+    const stock = Math.max(0, Number(b.stock) || 0);
+    if (b.lowStockThreshold !== undefined) {
+      const threshold = Math.max(0, Number(b.lowStockThreshold) || 0);
+      await env.DB.prepare('UPDATE products SET stock = ?, low_stock_threshold = ? WHERE id = ?')
+        .bind(stock, threshold, pid).run();
+      return json({ ok: true, stock, lowStockThreshold: threshold });
+    }
+    await env.DB.prepare('UPDATE products SET stock = ? WHERE id = ?').bind(stock, pid).run();
+    return json({ ok: true, stock });
+  }
+
+  /* إضافة كمية جديدة (توريد/تجديد مخزون) — دلتا بتتضاف فوق الرصيد الحالي، ومسجّلة في سجل منفصل
+     supplierId اختياري: لو اتبعت بنتحقق إنه لنفس العميل ونسجّل اسمه مع الحركة */
+  const pstockAdd = path.match(/^\/api\/products\/([^/]+)\/stock\/add$/);
+  if (pstockAdd && request.method === 'POST') {
+    const pid = decodeURIComponent(pstockAdd[1]);
+    const row = await env.DB.prepare('SELECT client_id, name, stock FROM products WHERE id = ?').bind(pid).first();
+    if (!row) return json({ error: 'المنتج مش موجود' }, 404);
+    if (user.role === 'client' && row.client_id !== me.clientId) return json({ error: 'مش مسموح' }, 403);
+    if (user.role !== 'client' && !can(user, 'clients') && !can(user, 'orders')) {
+      return json({ error: 'مش مسموح' }, 403);
+    }
+    const b = await request.json().catch(() => ({}));
+    const delta = Number(b.delta);
+    if (!delta || delta === 0) return json({ error: 'اكتب كمية أكبر من صفر' }, 400);
+    let supplierId = null, supplierName = null;
+    if (b.supplierId) {
+      const sup = await env.DB.prepare('SELECT client_id, name FROM suppliers WHERE id = ?').bind(b.supplierId).first();
+      if (sup && sup.client_id === row.client_id) { supplierId = b.supplierId; supplierName = sup.name; }
+    }
+    const newStock = Math.max(0, (Number(row.stock) || 0) + delta);
+    await env.DB.prepare('UPDATE products SET stock = ? WHERE id = ?').bind(newStock, pid).run();
+    await env.DB.prepare(
+      `INSERT INTO stock_log (id, client_id, product_id, variant_id, product_name, delta, new_stock, note, supplier_id, supplier_name, created_at, created_by)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`
+    ).bind('STK-' + crypto.randomUUID().slice(0, 8).toUpperCase(), row.client_id, pid, null, row.name, delta,
+      newStock, String(b.note || '').trim(), supplierId, supplierName, new Date().toISOString(), me.email || me.role).run();
+    return json({ ok: true, stock: newStock });
+  }
+
+  /* إضافة كمية لمتغير محدد (لون/مقاس) بدل المنتج العام */
+  const varStockAdd = path.match(/^\/api\/variants\/([^/]+)\/stock\/add$/);
+  if (varStockAdd && request.method === 'POST') {
+    const vid = decodeURIComponent(varStockAdd[1]);
+    const row = await env.DB.prepare(
+      'SELECT client_id, product_id, name, stock FROM product_variants WHERE id = ?'
+    ).bind(vid).first();
+    if (!row) return json({ error: 'المتغير مش موجود' }, 404);
+    if (user.role === 'client' && row.client_id !== me.clientId) return json({ error: 'مش مسموح' }, 403);
+    if (user.role !== 'client' && !can(user, 'clients') && !can(user, 'orders')) {
+      return json({ error: 'مش مسموح' }, 403);
+    }
+    const b = await request.json().catch(() => ({}));
+    const delta = Number(b.delta);
+    if (!delta || delta === 0) return json({ error: 'اكتب كمية أكبر من صفر' }, 400);
+    let supplierId = null, supplierName = null;
+    if (b.supplierId) {
+      const sup = await env.DB.prepare('SELECT client_id, name FROM suppliers WHERE id = ?').bind(b.supplierId).first();
+      if (sup && sup.client_id === row.client_id) { supplierId = b.supplierId; supplierName = sup.name; }
+    }
+    const newStock = Math.max(0, (Number(row.stock) || 0) + delta);
+    await env.DB.prepare('UPDATE product_variants SET stock = ? WHERE id = ?').bind(newStock, vid).run();
+    const prodRow = await env.DB.prepare('SELECT name FROM products WHERE id = ?').bind(row.product_id).first();
+    await env.DB.prepare(
+      `INSERT INTO stock_log (id, client_id, product_id, variant_id, product_name, delta, new_stock, note, supplier_id, supplier_name, created_at, created_by)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`
+    ).bind('STK-' + crypto.randomUUID().slice(0, 8).toUpperCase(), row.client_id, row.product_id, vid,
+      `${(prodRow && prodRow.name) || ''} — ${row.name}`, delta, newStock, String(b.note || '').trim(),
+      supplierId, supplierName, new Date().toISOString(), me.email || me.role).run();
+    return json({ ok: true, stock: newStock });
+  }
+
+  /* سجل كل إضافات المخزون */
+  if (path === '/api/products/stock-log' && request.method === 'GET') {
+    const staffAccess = isStaff(user) && (can(user, 'clients') || can(user, 'orders'));
+    const qcid = url.searchParams.get('clientId');
+    if (user.role === 'client' && qcid && qcid !== me.clientId) return json({ error: 'مش مسموح' }, 403);
+    const targetId = user.role === 'client' ? me.clientId : qcid;
+    if (user.role !== 'client' && !staffAccess) return json({ error: 'مش مسموح' }, 403);
+    if (!targetId) return json({ error: 'محتاجين clientId' }, 400);
+    const { results } = await env.DB.prepare(
+      `SELECT id, product_id, variant_id, product_name, delta, new_stock, note, supplier_id, supplier_name, created_at, created_by
+       FROM stock_log WHERE client_id = ? ORDER BY created_at DESC LIMIT 200`
+    ).bind(targetId).all();
+    return json(results || []);
+  }
+
+  /* ---------- الموردين ---------- */
+  /* كل عميل (متجر) بيدير موردينه هو بس. الإدارة بتقدر تديرهم بصلاحية clients أو orders، زي المخزون بالظبط */
+  if (path === '/api/suppliers') {
+    const staffAccess = isStaff(user) && (can(user, 'clients') || can(user, 'orders'));
+    if (request.method === 'GET') {
+      const qcid = url.searchParams.get('clientId');
+      if (user.role === 'client' && qcid && qcid !== me.clientId) return json({ error: 'مش مسموح' }, 403);
+      const targetId = user.role === 'client' ? me.clientId : qcid;
+      if (user.role !== 'client' && !staffAccess) return json({ error: 'مش مسموح' }, 403);
+      if (!targetId) return json({ error: 'محتاجين clientId' }, 400);
+      const { results } = await env.DB.prepare(
+        'SELECT id, name, phone, note, active, created_at FROM suppliers WHERE client_id = ? ORDER BY name'
+      ).bind(targetId).all();
+      return json(results || []);
+    }
+    if (request.method === 'POST') {
+      const b = await request.json().catch(() => ({}));
+      const clientId = user.role === 'client' ? me.clientId : b.clientId;
+      if (!clientId) return json({ error: 'اختار المتجر' }, 400);
+      if (user.role !== 'client' && !staffAccess) return json({ error: 'مش مسموح' }, 403);
+      if (!b.name || !String(b.name).trim()) return json({ error: 'اسم المورد مطلوب' }, 400);
+      const id = b.id || 'SUP-' + crypto.randomUUID().slice(0, 8).toUpperCase();
+      await env.DB.prepare(
+        `INSERT INTO suppliers (id, client_id, name, phone, note, active, created_at) VALUES (?,?,?,?,?,?,?)
+         ON CONFLICT(id) DO UPDATE SET name=excluded.name, phone=excluded.phone, note=excluded.note, active=excluded.active`
+      ).bind(id, clientId, String(b.name).trim(), String(b.phone || '').trim(), String(b.note || '').trim(),
+        b.active === false ? 0 : 1, new Date().toISOString()).run();
+      return json({ ok: true, id });
+    }
+  }
+
+  const sm = path.match(/^\/api\/suppliers\/([^/]+)$/);
+  if (sm && request.method === 'DELETE') {
+    const sid = decodeURIComponent(sm[1]);
+    const row = await env.DB.prepare('SELECT client_id FROM suppliers WHERE id = ?').bind(sid).first();
+    if (!row) return json({ error: 'المورد مش موجود' }, 404);
+    if (user.role === 'client' && row.client_id !== me.clientId) return json({ error: 'مش مسموح' }, 403);
+    if (user.role !== 'client' && !can(user, 'clients') && !can(user, 'orders')) {
+      return json({ error: 'مش مسموح' }, 403);
+    }
+    await env.DB.prepare('DELETE FROM suppliers WHERE id = ?').bind(sid).run();
+    return json({ ok: true });
+  }
+
+  /* ---------- العملاء (Customer 360) ----------
+     كل عميل (متجر) بيشوف عملاؤه هو بس. الإدارة بتقدر تشوف عملاء أي متجر بصلاحية clients/orders.
+     إجمالي المصروف وعدد الأوردرات وتاريخ آخر أوردر بيتحسبوا لايف من جدول orders — مفيش تخزين مكرر ممكن يفرق. */
+  async function listCustomersWithStats(env, clientId) {
+    const { results } = await env.DB.prepare(
+      `SELECT c.id, c.name, c.phone, c.gov, c.address, c.tags, c.note, c.created_at,
+              COUNT(o.id) AS total_orders,
+              COALESCE(SUM(CASE WHEN o.state NOT IN ('cancelled','returned') THEN o.total ELSE 0 END), 0) AS total_spent,
+              MAX(o.date) AS last_order_date
+       FROM customers c
+       LEFT JOIN orders o ON o.customer_id = c.id
+       WHERE c.client_id = ?
+       GROUP BY c.id
+       ORDER BY total_spent DESC`
+    ).bind(clientId).all();
+    return (results || []).map(r => ({
+      id: r.id, name: r.name, phone: r.phone, gov: r.gov, address: r.address,
+      tags: parseJsonArr(r.tags), note: r.note, createdAt: r.created_at,
+      totalOrders: r.total_orders || 0, totalSpent: round2(r.total_spent || 0),
+      lastOrderDate: r.last_order_date || null
+    }));
+  }
+
+  if (path === '/api/customers') {
+    const staffAccess = isStaff(user) && (can(user, 'clients') || can(user, 'orders'));
+    if (request.method === 'GET') {
+      const qcid = url.searchParams.get('clientId');
+      if (user.role === 'client' && qcid && qcid !== me.clientId) return json({ error: 'مش مسموح' }, 403);
+      const targetId = user.role === 'client' ? me.clientId : qcid;
+      if (user.role !== 'client' && !staffAccess) return json({ error: 'مش مسموح' }, 403);
+      if (!targetId) return json({ error: 'محتاجين clientId' }, 400);
+      return json(await listCustomersWithStats(env, targetId));
+    }
+  }
+
+  const cmDetail = path.match(/^\/api\/customers\/([^/]+)$/);
+  if (cmDetail && request.method === 'GET') {
+    const cid = decodeURIComponent(cmDetail[1]);
+    const row = await env.DB.prepare(
+      'SELECT id, client_id, name, phone, gov, address, tags, note, created_at FROM customers WHERE id = ?'
+    ).bind(cid).first();
+    if (!row) return json({ error: 'العميل مش موجود' }, 404);
+    if (user.role === 'client' && row.client_id !== me.clientId) return json({ error: 'مش مسموح' }, 403);
+    if (user.role !== 'client' && !isStaff(user)) return json({ error: 'مش مسموح' }, 403);
+    if (user.role !== 'client' && !(can(user, 'clients') || can(user, 'orders'))) {
+      return json({ error: 'مش مسموح' }, 403);
+    }
+    const { results } = await env.DB.prepare(
+      `SELECT ${ORDER_COLS} FROM orders WHERE customer_id = ? ORDER BY date DESC LIMIT 500`
+    ).bind(cid).all();
+    return json({
+      id: row.id, name: row.name, phone: row.phone, gov: row.gov, address: row.address,
+      tags: parseJsonArr(row.tags), note: row.note, createdAt: row.created_at,
+      orders: (results || []).map(rowToOrder)
+    });
+  }
+
+  if (cmDetail && request.method === 'PATCH') {
+    const cid = decodeURIComponent(cmDetail[1]);
+    const row = await env.DB.prepare('SELECT client_id FROM customers WHERE id = ?').bind(cid).first();
+    if (!row) return json({ error: 'العميل مش موجود' }, 404);
+    if (user.role === 'client' && row.client_id !== me.clientId) return json({ error: 'مش مسموح' }, 403);
+    if (user.role !== 'client' && !can(user, 'clients') && !can(user, 'orders')) {
+      return json({ error: 'مش مسموح' }, 403);
+    }
+    const b = await request.json().catch(() => ({}));
+    const current = await env.DB.prepare('SELECT name, note, tags FROM customers WHERE id = ?').bind(cid).first();
+    const name = b.name !== undefined ? String(b.name).trim() : current.name;
+    const note = b.note !== undefined ? String(b.note).trim() : current.note;
+    const tags = Array.isArray(b.tags) ? JSON.stringify(b.tags.map(String)) : current.tags;
+    await env.DB.prepare('UPDATE customers SET name = ?, note = ?, tags = ? WHERE id = ?')
+      .bind(name, note, tags, cid).run();
+    return json({ ok: true });
+  }
+
+  /* ---------- كوبونات الخصم ---------- */
+  if (path === '/api/coupons') {
+    const staffAccess = isStaff(user) && (can(user, 'clients') || can(user, 'orders'));
+    if (request.method === 'GET') {
+      const qcid = url.searchParams.get('clientId');
+      if (user.role === 'client' && qcid && qcid !== me.clientId) return json({ error: 'مش مسموح' }, 403);
+      const targetId = user.role === 'client' ? me.clientId : qcid;
+      if (user.role !== 'client' && !staffAccess) return json({ error: 'مش مسموح' }, 403);
+      if (!targetId) return json({ error: 'محتاجين clientId' }, 400);
+      const { results } = await env.DB.prepare(
+        'SELECT id, code, type, value, active, expires_at, note, created_at FROM coupons WHERE client_id = ? ORDER BY created_at DESC'
+      ).bind(targetId).all();
+      return json(results || []);
+    }
+    if (request.method === 'POST') {
+      const b = await request.json().catch(() => ({}));
+      const clientId = user.role === 'client' ? me.clientId : b.clientId;
+      if (!clientId) return json({ error: 'اختار المتجر' }, 400);
+      if (user.role !== 'client' && !staffAccess) return json({ error: 'مش مسموح' }, 403);
+      const code = String(b.code || '').trim().toUpperCase();
+      if (!code) return json({ error: 'كود الكوبون مطلوب' }, 400);
+      const type = b.type === 'percent' ? 'percent' : 'fixed';
+      const value = Number(b.value) || 0;
+      if (value <= 0) return json({ error: 'قيمة الكوبون لازم تكون أكبر من صفر' }, 400);
+      if (type === 'percent' && value > 100) return json({ error: 'نسبة الخصم ما تزيدش عن ١٠٠٪' }, 400);
+      const id = b.id || 'CPN-' + crypto.randomUUID().slice(0, 8).toUpperCase();
+      try {
+        await env.DB.prepare(
+          `INSERT INTO coupons (id, client_id, code, type, value, active, expires_at, note, created_at) VALUES (?,?,?,?,?,?,?,?,?)
+           ON CONFLICT(id) DO UPDATE SET code=excluded.code, type=excluded.type, value=excluded.value,
+             active=excluded.active, expires_at=excluded.expires_at, note=excluded.note`
+        ).bind(id, clientId, code, type, value, b.active === false ? 0 : 1,
+          b.expiresAt || null, String(b.note || '').trim(), new Date().toISOString()).run();
+      } catch (e) {
+        return json({ error: 'في كوبون بنفس الكود ده موجود بالفعل لنفس المتجر' }, 409);
+      }
+      return json({ ok: true, id });
+    }
+  }
+
+  const cpm = path.match(/^\/api\/coupons\/([^/]+)$/);
+  if (cpm && request.method === 'DELETE') {
+    const cid2 = decodeURIComponent(cpm[1]);
+    const row = await env.DB.prepare('SELECT client_id FROM coupons WHERE id = ?').bind(cid2).first();
+    if (!row) return json({ error: 'الكوبون مش موجود' }, 404);
+    if (user.role === 'client' && row.client_id !== me.clientId) return json({ error: 'مش مسموح' }, 403);
+    if (user.role !== 'client' && !can(user, 'clients') && !can(user, 'orders')) {
+      return json({ error: 'مش مسموح' }, 403);
+    }
+    await env.DB.prepare('DELETE FROM coupons WHERE id = ?').bind(cid2).run();
+    return json({ ok: true });
+  }
+
+  const pm = path.match(/^\/api\/products\/([^/]+)$/);
+  if (pm && request.method === 'DELETE') {
+    const pid = decodeURIComponent(pm[1]);
+    const row = await env.DB.prepare('SELECT client_id FROM products WHERE id = ?').bind(pid).first();
+    if (!row) return json({ error: 'المنتج مش موجود' }, 404);
+    if (user.role === 'client' && row.client_id !== me.clientId) return json({ error: 'مش مسموح' }, 403);
+    await env.DB.prepare('DELETE FROM product_variants WHERE product_id = ?').bind(pid).run();
+    await env.DB.prepare('DELETE FROM products WHERE id = ?').bind(pid).run();
+    return json({ ok: true });
+  }
+
+  /* ---------- متغيرات المنتج (لون/مقاس) ---------- */
+  const pv = path.match(/^\/api\/products\/([^/]+)\/variants$/);
+  if (pv) {
+    const pid = decodeURIComponent(pv[1]);
+    const prod = await env.DB.prepare('SELECT client_id FROM products WHERE id = ?').bind(pid).first();
+    if (!prod) return json({ error: 'المنتج مش موجود' }, 404);
+    if (user.role === 'client' && prod.client_id !== me.clientId) return json({ error: 'مش مسموح' }, 403);
+    if (user.role !== 'client' && !can(user, 'clients') && !can(user, 'orders')) {
+      return json({ error: 'مش مسموح' }, 403);
+    }
+    if (request.method === 'GET') {
+      const { results } = await env.DB.prepare(
+        'SELECT id, product_id, name, sku, stock, price, active FROM product_variants WHERE product_id = ? ORDER BY name'
+      ).bind(pid).all();
+      return json((results || []).map(rowToVariant));
+    }
+    if (request.method === 'POST') {
+      const b = await request.json().catch(() => ({}));
+      if (!b.name || !String(b.name).trim()) return json({ error: 'اسم المتغير مطلوب (مثلاً: أحمر — مقاس L)' }, 400);
+      const id = b.id || 'VAR-' + crypto.randomUUID().slice(0, 8).toUpperCase();
+      await env.DB.prepare(
+        `INSERT INTO product_variants (id, product_id, client_id, name, sku, stock, price, active, created_at) VALUES (?,?,?,?,?,?,?,?,?)
+         ON CONFLICT(id) DO UPDATE SET name=excluded.name, sku=excluded.sku, stock=excluded.stock,
+           price=excluded.price, active=excluded.active`
+      ).bind(id, pid, prod.client_id, String(b.name).trim(), b.sku || '',
+        Math.max(0, Number(b.stock) || 0), b.price !== undefined && b.price !== null && b.price !== '' ? Number(b.price) : null,
+        b.active === false ? 0 : 1, new Date().toISOString()).run();
+      return json({ ok: true, id });
+    }
+  }
+
+  const vm = path.match(/^\/api\/variants\/([^/]+)$/);
+  if (vm && request.method === 'DELETE') {
+    const vid = decodeURIComponent(vm[1]);
+    const row = await env.DB.prepare('SELECT client_id FROM product_variants WHERE id = ?').bind(vid).first();
+    if (!row) return json({ error: 'المتغير مش موجود' }, 404);
+    if (user.role === 'client' && row.client_id !== me.clientId) return json({ error: 'مش مسموح' }, 403);
+    if (user.role !== 'client' && !can(user, 'clients') && !can(user, 'orders')) {
+      return json({ error: 'مش مسموح' }, 403);
+    }
+    await env.DB.prepare('DELETE FROM product_variants WHERE id = ?').bind(vid).run();
+    return json({ ok: true });
+  }
+
+  /* ---------- التوكن والـ API (Meta + إيزي أوردرز) + ضريبة الـ 14% + ربط الإيميل ----------
+     العميل بيدير بياناته هو بس. الإدارة بتدير أي عميل بصلاحية 'clients' أو 'settings'.
+     التوكنز بترجع Set:true/false + آخر ٤ حروف بس — أبداً القيمة الكاملة */
+  function integrationsView(c) {
+    const masked = maskClientSecrets({ clients: [c] }).clients[0];
+    return {
+      clientId: c.id,
+      metaAdAccountId: c.adAccount || '',
+      metaTokenSet: masked.metaTokenSet, metaTokenTail: masked.metaTokenTail || '',
+      metaBalance: c.metaBalance != null ? c.metaBalance : null,
+      metaBalanceCurrency: c.metaBalanceCurrency || '',
+      metaBalanceAt: c.metaBalanceAt || null,
+      taxEnabled: !!c.taxEnabled, taxRate: Number(c.taxRate) || 14,
+      easyOrdersStoreId: c.storeId || '',
+      easyOrdersTokenSet: masked.easyOrdersTokenSet, easyOrdersTokenTail: masked.easyOrdersTokenTail || '',
+      deliveryRateMode: c.deliveryRateMode || 'auto',
+      deliveryRateManual: c.deliveryRateManual != null ? c.deliveryRateManual : null,
+      adminFee: Number(c.adminFee) || 0,
+      shippingMode: c.shippingMode === 'byGov' ? 'byGov' : 'fixed',
+      inventoryEnabled: !!c.inventoryEnabled,
+      walletBalance: round2(Number(c.walletBalance) || 0),
+      walletFeePerOrder: Number(c.walletFeePerOrder) || 0,
+      customerServiceEnabled: !!c.customerServiceEnabled,
+      shippingFixed: Number(c.shippingFixed) || 0,
+      shippingByGov: c.shippingByGov && typeof c.shippingByGov === 'object' ? c.shippingByGov : {},
+      email: {
+        enabled: !!c.emailEnabled, host: c.emailHost || '', port: c.emailPort || '',
+        secure: c.emailSecure !== false, user: c.emailUser || '',
+        passwordSet: masked.emailPasswordSet, passwordTail: masked.emailPasswordTail || ''
+      }
+    };
+  }
+
+  if (path === '/api/integrations') {
+    const staffAccess = isStaff(user) && (can(user, 'clients') || can(user, 'settings'));
+    let bodyForPut = null;
+    if (request.method === 'PUT') bodyForPut = await request.json().catch(() => ({}));
+    const qcid = url.searchParams.get('clientId') || (bodyForPut && bodyForPut.clientId) || null;
+    if (user.role === 'client' && qcid && qcid !== me.clientId) return json({ error: 'مش مسموح' }, 403);
+    const targetId = user.role === 'client' ? me.clientId : qcid;
+    if (user.role !== 'client' && !staffAccess) return json({ error: 'مش مسموح' }, 403);
+    if (!targetId) return json({ error: 'محتاجين clientId' }, 400);
+
+    const state = await loadState(env);
+    const client = state.clients.find(c => c.id === targetId);
+    if (!client) return json({ error: 'العميل مش موجود' }, 404);
+
+    if (request.method === 'GET') return json(integrationsView(client));
+
+    if (request.method === 'PUT') {
+      const b = bodyForPut || {};
+      if (b.metaAdAccountId !== undefined) client.adAccount = String(b.metaAdAccountId).trim();
+      if (b.metaToken !== undefined) {
+        if (String(b.metaToken).trim() === '') delete client.metaToken;
+        else client.metaToken = String(b.metaToken).trim();
+      }
+      if (b.easyOrdersStoreId !== undefined) client.storeId = String(b.easyOrdersStoreId).trim();
+      if (b.easyOrdersToken !== undefined) {
+        if (String(b.easyOrdersToken).trim() === '') delete client.easyOrdersToken;
+        else client.easyOrdersToken = String(b.easyOrdersToken).trim();
+      }
+      if (b.taxEnabled !== undefined) client.taxEnabled = !!b.taxEnabled;
+      if (b.taxRate !== undefined) {
+        const r = Number(b.taxRate);
+        client.taxRate = Number.isFinite(r) ? Math.max(0, Math.min(100, r)) : 14;
+      }
+      if (b.deliveryRateMode !== undefined) client.deliveryRateMode = b.deliveryRateMode === 'manual' ? 'manual' : 'auto';
+      if (b.deliveryRateManual !== undefined) {
+        const r = Number(b.deliveryRateManual);
+        client.deliveryRateManual = Number.isFinite(r) ? Math.max(0, Math.min(100, r)) : null;
+      }
+      if (b.adminFee !== undefined && isStaff(user)) {
+        const f = Number(b.adminFee);
+        client.adminFee = Number.isFinite(f) ? Math.max(0, f) : 0;
+      }
+      if (b.inventoryEnabled !== undefined && isStaff(user)) {
+        client.inventoryEnabled = !!b.inventoryEnabled;
+      }
+      if (b.customerServiceEnabled !== undefined && isStaff(user)) {
+        client.customerServiceEnabled = !!b.customerServiceEnabled;
+      }
+      if (b.walletFeePerOrder !== undefined && isStaff(user)) {
+        const f = Number(b.walletFeePerOrder);
+        client.walletFeePerOrder = Number.isFinite(f) ? Math.max(0, f) : 0;
+      }
+      if (b.shippingMode !== undefined) client.shippingMode = b.shippingMode === 'byGov' ? 'byGov' : 'fixed';
+      if (b.shippingFixed !== undefined) {
+        const f = Number(b.shippingFixed);
+        client.shippingFixed = Number.isFinite(f) ? Math.max(0, f) : 0;
+      }
+      if (b.shippingByGov !== undefined && b.shippingByGov && typeof b.shippingByGov === 'object') {
+        const clean = {};
+        for (const [gov, rate] of Object.entries(b.shippingByGov)) {
+          const r = Number(rate);
+          if (String(gov).trim() && Number.isFinite(r)) clean[String(gov).trim()] = Math.max(0, r);
+        }
+        client.shippingByGov = clean;
+      }
+      if (b.emailEnabled !== undefined) client.emailEnabled = !!b.emailEnabled;
+      if (b.emailHost !== undefined) client.emailHost = String(b.emailHost).trim();
+      if (b.emailPort !== undefined) client.emailPort = String(b.emailPort).trim();
+      if (b.emailSecure !== undefined) client.emailSecure = !!b.emailSecure;
+      if (b.emailUser !== undefined) client.emailUser = String(b.emailUser).trim();
+      if (b.emailPassword !== undefined) {
+        if (String(b.emailPassword).trim() === '') delete client.emailPassword;
+        else client.emailPassword = String(b.emailPassword).trim();
+      }
+      await saveState(env, state);
+      return json({ ok: true, ...integrationsView(client) });
+    }
+  }
+
+  /* ---------- ربط الواتساب — جروبات إضافية تحت رقم الإيجنسي، بدون حد أقصى ----------
+     كل جروب بيتحط له label من العميل (أو الإدارة)، والإدارة/الأجنت هو اللي بيحط
+     الـ Group ID الحقيقي (لازم وصول لواتساب المتصل عشان يجيبه) */
+  const waGroupsOf = c => c.whatsappGroups || [];
+
+  if (path === '/api/wa-groups') {
+    const staffAccess = isStaff(user) && can(user, 'clients');
+    const state = await loadState(env);
+
+    if (request.method === 'GET') {
+      if (user.role === 'client') {
+        const client = state.clients.find(c => c.id === me.clientId);
+        return json(client ? waGroupsOf(client) : []);
+      }
+      if (!staffAccess) return json({ error: 'مش مسموح' }, 403);
+      const cid = url.searchParams.get('clientId');
+      if (cid) {
+        const client = state.clients.find(c => c.id === cid);
+        return json(client ? waGroupsOf(client) : []);
+      }
+      /* بدون clientId: كل الجروبات لكل العملاء — لشاشة الإدارة العامة */
+      return json(state.clients.map(c => ({ clientId: c.id, name: c.name, groups: waGroupsOf(c) })));
+    }
+
+    if (request.method === 'POST') {
+      const b = await request.json().catch(() => ({}));
+      const targetId = user.role === 'client' ? me.clientId : b.clientId;
+      if (user.role !== 'client' && !staffAccess) return json({ error: 'مش مسموح' }, 403);
+      if (!targetId) return json({ error: 'محتاجين clientId' }, 400);
+      const client = state.clients.find(c => c.id === targetId);
+      if (!client) return json({ error: 'العميل مش موجود' }, 404);
+      const label = String(b.label || '').trim();
+      if (!label) return json({ error: 'اكتب اسم/وصف الجروب' }, 400);
+      const groupId = (isStaff(user) && b.groupId) ? String(b.groupId).trim() : null;
+      const entry = {
+        id: crypto.randomUUID().slice(0, 8), label, groupId,
+        status: groupId ? 'linked' : 'pending', requestedAt: new Date().toISOString()
+      };
+      client.whatsappGroups = [...waGroupsOf(client), entry];
+      await saveState(env, state);
+      return json({ ok: true, entry });
+    }
+  }
+
+  const wgm = path.match(/^\/api\/wa-groups\/([^/]+)$/);
+  if (wgm) {
+    const gid = decodeURIComponent(wgm[1]);
     const state = await loadState(env);
     const client = user.role === 'client'
       ? state.clients.find(c => c.id === me.clientId)
