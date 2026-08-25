@@ -22,6 +22,8 @@ for (const asset of ['/v2/kun-v7.css','/v2/kun-v8.css','/v2/modules-v7.js','/v2/
 must(index.includes('/v2/client-context-v22.js'), 'Current client context asset is missing from v2 index');
 must(!/boot\?\.clientId[\s\S]{0,220}await load\(\)/.test(clientContextJs), 'Client context must not await load() while its resolver is still pending');
 must(clientContextJs.includes("setTimeout(()=>{try{if(typeof load==='function')Promise.resolve(load()).catch(()=>{});}catch{}},0)"), 'Client context must refresh state after its resolver completes');
+must(multiAiJs.includes('id="storeName"') && multiAiJs.includes('aria-label="اسم المتجر أو الفرع"'), 'Store creation must expose an accessible inline name field');
+must(!multiAiJs.includes("prompt('اسم المتجر أو الفرع')"), 'Store creation must not block the app with a native prompt');
 must(/async function eventually[\s\S]{0,220}attempt<=6/.test(smokeJs), 'Preview smoke checks must tolerate short deployment propagation windows');
 must(/async function check\(path, validate\)[\s\S]{0,260}eventually/.test(smokeJs), 'Preview public-route validation must retry transient HTTP and contract failures');
 for (const theme of ['light','gray','dark']) must(themeJs.includes(`'${theme}'`) || themeJs.includes(`\"${theme}\"`), `Theme ${theme} is missing from switcher`);
