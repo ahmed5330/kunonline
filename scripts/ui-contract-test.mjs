@@ -18,6 +18,8 @@ const multiAiJs = await readFile(new URL('../public/v2/modules-v17.js', import.m
 const onboardingJs = await readFile(new URL('../public/v2/modules-v18.js', import.meta.url), 'utf8');
 const clientContextJs = await readFile(new URL('../public/v2/client-context-v23.js', import.meta.url), 'utf8');
 const qaOpsJs = await readFile(new URL('../public/v2/modules-v21.js', import.meta.url), 'utf8');
+const financeJs = await readFile(new URL('../public/v2/modules-v4.js', import.meta.url), 'utf8');
+const legacyJs = await readFile(new URL('../src/index.js', import.meta.url), 'utf8');
 const commerceV3Js = await readFile(new URL('../src/index-commerce-v3.js', import.meta.url), 'utf8');
 const commerceV26Js = await readFile(new URL('../src/index-commerce-v26.js', import.meta.url), 'utf8');
 const smokeJs = await readFile(new URL('./smoke-test.mjs', import.meta.url), 'utf8');
@@ -36,6 +38,8 @@ must(qaOpsJs.includes("['signed','Delivered']"), 'Order UI must submit the canon
 must(!qaOpsJs.includes("['delivered','Delivered']"), 'Order UI must not submit the unsupported delivered state');
 must(commerceV3Js.includes("o.state='signed'"), 'COD reconciliation must select signed orders awaiting collection');
 must(!commerceV3Js.includes("o.state='delivered'"), 'COD reconciliation must not query the unsupported delivered state');
+must(commerceV3Js.includes("status==='reconciled'?")&&commerceV3Js.includes("state='collected'")&&commerceV3Js.includes('COD reconciliation ${rid}'),'Exact COD reconciliation must atomically collect its orders and preserve history');
+must(legacyJs.includes('revenueCollected:')&&financeJs.includes('m.revenueCollected'),'Finance UI must display revenue collected through COD reconciliation');
 must(commerceV26Js.includes("u.pathname.startsWith('/api/cod-reconciliation')")&&commerceV26Js.includes('commerceV3.fetch(request,env,ctx)'), 'Active Preview entrypoint must route COD APIs before legacy fallback handling');
 must(commerceV26Js.includes("'/api/approvals'")&&commerceV26Js.includes("'/api/execution-jobs'")&&commerceV26Js.includes('commerceV10.fetch(request,env,ctx)'), 'Active Preview entrypoint must route governance APIs before legacy fallback handling');
 must(commerceV26Js.includes("code:'UNHANDLED_PREVIEW_ERROR'")&&commerceV26Js.includes("if(env.APP_ENV!=='preview')throw error"), 'Only Preview may surface otherwise-unhandled runtime errors as structured JSON');
@@ -53,6 +57,7 @@ must(themeJs.includes('mobileMenuBtn'), 'Mobile navigation control missing');
 must(themeJs.includes("localStorage.setItem(storageKey,theme)"), 'Theme persistence missing');
 must(index.includes('viewport-fit=cover'), 'Safe-area capable viewport missing');
 for (const view of ['audit','ops','control','inbox','campaigns','pos','stores','supplier-finance','integrations','onboarding','store-access']) must(index.includes(`data-view="${view}"`), `Navigation entry missing: ${view}`);
+must(qaOpsJs.includes('qa-supplier-forms')&&helpCss.includes('.qa-supplier-forms>.card{min-width:0}')&&helpCss.includes('repeat(2,minmax(0,1fr))'),'Supplier finance forms must not force horizontal page overflow');
 must(auditJs.includes('/api/audit-log'), 'Audit UI must use audit API');
 must(auditJs.includes('/api/access/snapshot'), 'Audit UI must show effective access snapshot');
 must(approvalJs.includes("b.dataset.d==='approve'")&&approvalJs.includes('/queue'), 'Approved sensitive actions must enter the idempotent execution queue');
