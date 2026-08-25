@@ -132,6 +132,7 @@ const ROLES = {
   ops:        { label:'تشغيل وشحن',    perms:['orders','entries'] },
   support:    { label:'خدمة عملاء',    perms:['orders'] },
   accountant: { label:'محاسب',         perms:['finance','orders_view'] },
+  viewer:     { label:'مشاهدة فقط',    perms:['orders_view'] },
   client:     { label:'عميل',          perms:[] }
 };
 const permsOf = role => (ROLES[role] || ROLES.client).perms;
@@ -140,7 +141,7 @@ const isStaff = user => user.role !== 'client';
 
 /* ---------- جدول الحسابات ---------- */
 const publicUser = u => ({
-  id: u.id, email: u.email, role: u.role, clientId: u.client_id,
+  id: u.id, email: u.email, name: u.name || '', role: u.role, clientId: u.client_id,
   status: u.status, lastLogin: u.last_login
 });
 
@@ -1113,10 +1114,31 @@ async function handleApi(request, env, url, path) {
   };
   if (path === '/api/me') return json(me);
 
+  /* عضو الفريق المرتبط بمتجر لا يستطيع تبديل clientId يدويًا في query/body. */
+  if (me.clientId) {
+    const requestedClientId = url.searchParams.get('clientId');
+    if (requestedClientId && requestedClientId !== me.clientId) {
+      return json({ error: 'مش مسموح الوصول لبيانات متجر آخر' }, 403);
+    }
+    if (['POST','PUT','PATCH','DELETE'].includes(request.method)) {
+      const scopedBody = await request.clone().json().catch(() => null);
+      if (scopedBody?.clientId && scopedBody.clientId !== me.clientId) {
+        return json({ error: 'مش مسموح الوصول لبيانات متجر آخر' }, 403);
+      }
+    }
+  }
+
   /* قراءة البيانات */
   if (path === '/api/state' && request.method === 'GET') {
     const state = await loadState(env);
     if (isStaff(user)) {
+      if (me.clientId) {
+        const scoped = scopeForClient(state, await listOrders(env, me.clientId), me.clientId);
+        if (!scoped) return json({ error: 'الحساب مش موجود' }, 404);
+        scoped.products = await listProducts(env, me.clientId);
+        scoped.roles = ROLES;
+        return json(scoped);
+      }
       const masked = maskClientSecrets(state);
       return json({ ...masked, orders: await listOrders(env), products: await listProducts(env), roles: ROLES });
     }
@@ -1191,6 +1213,9 @@ async function handleApi(request, env, url, path) {
 
     if (request.method === 'DELETE') {
       if (!isStaff(user) || !can(user, 'orders_delete')) return json({ error: 'مش مسموح — محتاج صلاحية حذف الأوردرات' }, 403);
+      const target = await env.DB.prepare('SELECT client_id FROM orders WHERE id = ?').bind(id).first();
+      if (!target) return json({ error: 'أوردر غير موجود' }, 404);
+      if (me.clientId && target.client_id !== me.clientId) return json({ error: 'مش مسموح' }, 403);
       await env.DB.prepare('DELETE FROM orders WHERE id = ?').bind(id).run();
       return json({ ok: true });
     }
@@ -1203,6 +1228,7 @@ async function handleApi(request, env, url, path) {
          FROM orders WHERE id = ?`
       ).bind(id).first();
       if (!cur) return json({ error: 'أوردر غير موجود' }, 404);
+      if (me.clientId && cur.client_id !== me.clientId) return json({ error: 'مش مسموح' }, 403);
 
       /* فريق التخزين/الشحن (confirmed→preparing/shipped) وفريق خدمة العملاء
          (pending↔confirmed↔preparing) — كل واحد مفعّل ليه نطاق مختلف من الإدارة */
@@ -1373,6 +1399,7 @@ async function handleApi(request, env, url, path) {
     if (client && Number(client.walletFeePerOrder) > 0 && Number(client.walletBalance || 0) <= 0) {
       return { ok: false, code: 402, reason: 'رصيد محفظة الاشتراك خلص — لازم تشحن رصيد عشان تقدر تتواصل مع العملاء' };
     }
+    if (me.clientId && clientIdOfOrder !== me.clientId) return { ok: false, code: 403, reason: 'مش مسموح' };
     if (isStaff(user) && can(user, 'orders')) return { ok: true };
     if (user.role !== 'client' || clientIdOfOrder !== me.clientId) return { ok: false, code: 403, reason: 'مش مسموح' };
     return client && client.customerServiceEnabled
@@ -1444,9 +1471,10 @@ async function handleApi(request, env, url, path) {
     if (!can(user, 'users')) return json({ error: 'مش مسموح' }, 403);
 
     if (request.method === 'GET') {
-      const { results } = await env.DB.prepare(
-        'SELECT id, email, name, role, client_id, status, last_login FROM users ORDER BY role, email'
-      ).all();
+      const clientId = url.searchParams.get('clientId') || me.clientId || null;
+      const { results } = clientId
+        ? await env.DB.prepare('SELECT id, email, name, role, client_id, status, last_login FROM users WHERE client_id = ? ORDER BY role, email').bind(clientId).all()
+        : await env.DB.prepare('SELECT id, email, name, role, client_id, status, last_login FROM users ORDER BY role, email').all();
       return json((results || []).map(publicUser));
     }
 
@@ -1454,14 +1482,16 @@ async function handleApi(request, env, url, path) {
       const b = await request.json().catch(() => ({}));
       const mail = String(b.email || '').trim().toLowerCase();
       const role = ROLES[b.role] ? b.role : 'client';
+      const assignedClientId = b.clientId || me.clientId || null;
       if (!mail.includes('@')) return json({ error: 'اكتب إيميل صحيح' }, 400);
+      if (role === 'client' && !assignedClientId) return json({ error: 'اختار المتجر أو الحساب أولًا' }, 400);
       if (b.password && String(b.password).length < MIN_PASSWORD) {
         return json({ error: `كلمة المرور لازم تكون ${MIN_PASSWORD} حروف على الأقل` }, 400);
       }
 
       /* بندوّر بالعميل الأول عشان لو الإيميل اتغيّر نعدّل نفس الحساب مش نعمل جديد */
-      let target = (role === 'client' && b.clientId)
-        ? await env.DB.prepare('SELECT * FROM users WHERE client_id = ?').bind(b.clientId).first()
+      let target = (role === 'client' && assignedClientId)
+        ? await env.DB.prepare("SELECT * FROM users WHERE client_id = ? AND role = 'client'").bind(assignedClientId).first()
         : (b.id ? await env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(b.id).first() : null);
 
       const byEmail = await findUserByEmail(env, mail);
@@ -1469,7 +1499,7 @@ async function handleApi(request, env, url, path) {
       /* الإيميل لو موجود، لازم يكون بتاع نفس صاحب الحساب ونفس الدور —
          من غير الشرط ده كنت تقدر تحوّل حساب إدارة لحساب عميل بالغلط */
       if (!target && byEmail) {
-        const sameOwner = (byEmail.client_id || null) === (role === 'client' ? (b.clientId || null) : null)
+        const sameOwner = (byEmail.client_id || null) === assignedClientId
           && byEmail.role === role;
         if (!sameOwner) return json({ error: 'الإيميل ده مستخدم في حساب تاني' }, 409);
         target = byEmail;
@@ -1488,7 +1518,7 @@ async function handleApi(request, env, url, path) {
         await env.DB.prepare(
           'UPDATE users SET email = ?, name = ?, password = ?, role = ?, client_id = ?, status = ? WHERE id = ?'
         ).bind(mail, b.name || target.name || '', pass, role,
-          role === 'client' ? (b.clientId || null) : null,
+          assignedClientId,
           b.status || target.status, target.id).run();
         if (b.password) await clearFails(env, mail);
         return json({ ok: true, created: false });
@@ -1498,7 +1528,7 @@ async function handleApi(request, env, url, path) {
       await env.DB.prepare(
         'INSERT INTO users (id, email, name, password, role, client_id, status, created_at) VALUES (?,?,?,?,?,?,?,?)'
       ).bind(crypto.randomUUID(), mail, b.name || '', await hashPassword(b.password), role,
-        role === 'client' ? (b.clientId || null) : null, b.status || 'active',
+        assignedClientId, b.status || 'active',
         new Date().toISOString()).run();
       return json({ ok: true, created: true });
     }
@@ -1507,8 +1537,9 @@ async function handleApi(request, env, url, path) {
   const um = path.match(/^\/api\/users\/([^/]+)$/);
   if (um && can(user, 'users') && request.method === 'DELETE') {
     const id = decodeURIComponent(um[1]);
-    const target = await env.DB.prepare('SELECT email, role FROM users WHERE id = ?').bind(id).first();
+    const target = await env.DB.prepare('SELECT email, role, client_id FROM users WHERE id = ?').bind(id).first();
     if (!target) return json({ error: 'الحساب مش موجود' }, 404);
+    if (me.clientId && target.client_id !== me.clientId) return json({ error: 'الحساب مش موجود' }, 404);
     if (target.role === 'admin') {
       const r = await env.DB.prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'admin'").first();
       if (((r && r.n) || 0) <= 1) return json({ error: 'ما ينفعش تمسح آخر حساب إدارة' }, 400);
@@ -1551,7 +1582,7 @@ async function handleApi(request, env, url, path) {
     const pid = decodeURIComponent(pstock[1]);
     const row = await env.DB.prepare('SELECT client_id FROM products WHERE id = ?').bind(pid).first();
     if (!row) return json({ error: 'المنتج مش موجود' }, 404);
-    if (user.role === 'client' && row.client_id !== me.clientId) return json({ error: 'مش مسموح' }, 403);
+    if (me.clientId && row.client_id !== me.clientId) return json({ error: 'مش مسموح' }, 403);
     if (user.role !== 'client' && !can(user, 'clients') && !can(user, 'orders')) {
       return json({ error: 'مش مسموح' }, 403);
     }
@@ -1574,7 +1605,7 @@ async function handleApi(request, env, url, path) {
     const pid = decodeURIComponent(pstockAdd[1]);
     const row = await env.DB.prepare('SELECT client_id, name, stock FROM products WHERE id = ?').bind(pid).first();
     if (!row) return json({ error: 'المنتج مش موجود' }, 404);
-    if (user.role === 'client' && row.client_id !== me.clientId) return json({ error: 'مش مسموح' }, 403);
+    if (me.clientId && row.client_id !== me.clientId) return json({ error: 'مش مسموح' }, 403);
     if (user.role !== 'client' && !can(user, 'clients') && !can(user, 'orders')) {
       return json({ error: 'مش مسموح' }, 403);
     }
@@ -1604,7 +1635,7 @@ async function handleApi(request, env, url, path) {
       'SELECT client_id, product_id, name, stock FROM product_variants WHERE id = ?'
     ).bind(vid).first();
     if (!row) return json({ error: 'المتغير مش موجود' }, 404);
-    if (user.role === 'client' && row.client_id !== me.clientId) return json({ error: 'مش مسموح' }, 403);
+    if (me.clientId && row.client_id !== me.clientId) return json({ error: 'مش مسموح' }, 403);
     if (user.role !== 'client' && !can(user, 'clients') && !can(user, 'orders')) {
       return json({ error: 'مش مسموح' }, 403);
     }
@@ -1679,7 +1710,7 @@ async function handleApi(request, env, url, path) {
     const sid = decodeURIComponent(sm[1]);
     const row = await env.DB.prepare('SELECT client_id FROM suppliers WHERE id = ?').bind(sid).first();
     if (!row) return json({ error: 'المورد مش موجود' }, 404);
-    if (user.role === 'client' && row.client_id !== me.clientId) return json({ error: 'مش مسموح' }, 403);
+    if (me.clientId && row.client_id !== me.clientId) return json({ error: 'مش مسموح' }, 403);
     if (user.role !== 'client' && !can(user, 'clients') && !can(user, 'orders')) {
       return json({ error: 'مش مسموح' }, 403);
     }
@@ -1729,7 +1760,7 @@ async function handleApi(request, env, url, path) {
       'SELECT id, client_id, name, phone, gov, address, tags, note, created_at FROM customers WHERE id = ?'
     ).bind(cid).first();
     if (!row) return json({ error: 'العميل مش موجود' }, 404);
-    if (user.role === 'client' && row.client_id !== me.clientId) return json({ error: 'مش مسموح' }, 403);
+    if (me.clientId && row.client_id !== me.clientId) return json({ error: 'مش مسموح' }, 403);
     if (user.role !== 'client' && !isStaff(user)) return json({ error: 'مش مسموح' }, 403);
     if (user.role !== 'client' && !(can(user, 'clients') || can(user, 'orders'))) {
       return json({ error: 'مش مسموح' }, 403);
@@ -1748,7 +1779,7 @@ async function handleApi(request, env, url, path) {
     const cid = decodeURIComponent(cmDetail[1]);
     const row = await env.DB.prepare('SELECT client_id FROM customers WHERE id = ?').bind(cid).first();
     if (!row) return json({ error: 'العميل مش موجود' }, 404);
-    if (user.role === 'client' && row.client_id !== me.clientId) return json({ error: 'مش مسموح' }, 403);
+    if (me.clientId && row.client_id !== me.clientId) return json({ error: 'مش مسموح' }, 403);
     if (user.role !== 'client' && !can(user, 'clients') && !can(user, 'orders')) {
       return json({ error: 'مش مسموح' }, 403);
     }
@@ -1807,7 +1838,7 @@ async function handleApi(request, env, url, path) {
     const cid2 = decodeURIComponent(cpm[1]);
     const row = await env.DB.prepare('SELECT client_id FROM coupons WHERE id = ?').bind(cid2).first();
     if (!row) return json({ error: 'الكوبون مش موجود' }, 404);
-    if (user.role === 'client' && row.client_id !== me.clientId) return json({ error: 'مش مسموح' }, 403);
+    if (me.clientId && row.client_id !== me.clientId) return json({ error: 'مش مسموح' }, 403);
     if (user.role !== 'client' && !can(user, 'clients') && !can(user, 'orders')) {
       return json({ error: 'مش مسموح' }, 403);
     }
@@ -1820,7 +1851,7 @@ async function handleApi(request, env, url, path) {
     const pid = decodeURIComponent(pm[1]);
     const row = await env.DB.prepare('SELECT client_id FROM products WHERE id = ?').bind(pid).first();
     if (!row) return json({ error: 'المنتج مش موجود' }, 404);
-    if (user.role === 'client' && row.client_id !== me.clientId) return json({ error: 'مش مسموح' }, 403);
+    if (me.clientId && row.client_id !== me.clientId) return json({ error: 'مش مسموح' }, 403);
     await env.DB.prepare('DELETE FROM product_variants WHERE product_id = ?').bind(pid).run();
     await env.DB.prepare('DELETE FROM products WHERE id = ?').bind(pid).run();
     return json({ ok: true });
@@ -1832,7 +1863,7 @@ async function handleApi(request, env, url, path) {
     const pid = decodeURIComponent(pv[1]);
     const prod = await env.DB.prepare('SELECT client_id FROM products WHERE id = ?').bind(pid).first();
     if (!prod) return json({ error: 'المنتج مش موجود' }, 404);
-    if (user.role === 'client' && prod.client_id !== me.clientId) return json({ error: 'مش مسموح' }, 403);
+    if (me.clientId && prod.client_id !== me.clientId) return json({ error: 'مش مسموح' }, 403);
     if (user.role !== 'client' && !can(user, 'clients') && !can(user, 'orders')) {
       return json({ error: 'مش مسموح' }, 403);
     }
@@ -1862,7 +1893,7 @@ async function handleApi(request, env, url, path) {
     const vid = decodeURIComponent(vm[1]);
     const row = await env.DB.prepare('SELECT client_id FROM product_variants WHERE id = ?').bind(vid).first();
     if (!row) return json({ error: 'المتغير مش موجود' }, 404);
-    if (user.role === 'client' && row.client_id !== me.clientId) return json({ error: 'مش مسموح' }, 403);
+    if (me.clientId && row.client_id !== me.clientId) return json({ error: 'مش مسموح' }, 403);
     if (user.role !== 'client' && !can(user, 'clients') && !can(user, 'orders')) {
       return json({ error: 'مش مسموح' }, 403);
     }

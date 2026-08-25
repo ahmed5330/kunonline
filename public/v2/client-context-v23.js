@@ -7,7 +7,7 @@
     '/api/procurement/returns','/api/procurement/supplier-balances','/api/inbox/conversations',
     '/api/campaigns','/api/ai/insights','/api/ai-actions','/api/approvals','/api/execution-jobs',
     '/api/notifications','/api/workflows','/api/store-connections','/api/support-tickets','/api/integrations/readiness',
-    '/api/products/stock-log','/api/onboarding/status','/api/team-members','/api/stores','/api/store-access',
+    '/api/products/stock-log','/api/onboarding/status','/api/team-members','/api/users','/api/stores','/api/store-access',
     '/api/tenant/overview','/api/system-status','/api/usage','/api/billing','/api/integrations/health',
     '/api/profit-intelligence','/api/cod-reconciliation','/api/transactions'
   ];
@@ -15,7 +15,7 @@
     '/api/orders','/api/customers','/api/products','/api/suppliers','/api/purchase-orders',
     '/api/workflows','/api/campaigns','/api/ai-actions','/api/procurement/invoices',
     '/api/procurement/payments','/api/procurement/returns','/api/pos/sessions','/api/pos/sales','/api/integrations/connections','/api/store-connections',
-    '/api/support-tickets','/api/store-access','/api/stores','/api/ai/insights','/api/approvals',
+    '/api/support-tickets','/api/users','/api/store-access','/api/stores','/api/ai/insights','/api/approvals',
     '/api/execution-jobs','/api/cod-reconciliation','/api/integrations/health','/api/integration-secrets'
   ];
   let cached='',resolving=null;

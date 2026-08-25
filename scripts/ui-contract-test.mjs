@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 
 const index = await readFile(new URL('../public/v2/index.html', import.meta.url), 'utf8');
+const legacyIndex = await readFile(new URL('../public/index.html', import.meta.url), 'utf8');
 const appJs = await readFile(new URL('../public/v2/app-v3.js', import.meta.url), 'utf8');
 const css = await readFile(new URL('../public/v2/kun-v7.css', import.meta.url), 'utf8');
 const helpCss = await readFile(new URL('../public/v2/kun-v8.css', import.meta.url), 'utf8');
@@ -19,6 +20,7 @@ const onboardingJs = await readFile(new URL('../public/v2/modules-v18.js', impor
 const clientContextJs = await readFile(new URL('../public/v2/client-context-v23.js', import.meta.url), 'utf8');
 const qaOpsJs = await readFile(new URL('../public/v2/modules-v21.js', import.meta.url), 'utf8');
 const financeJs = await readFile(new URL('../public/v2/modules-v4.js', import.meta.url), 'utf8');
+const accessJs = await readFile(new URL('../public/v2/modules-v5.js', import.meta.url), 'utf8');
 const codUiJs = await readFile(new URL('../public/v2/modules-v6.js', import.meta.url), 'utf8');
 const legacyJs = await readFile(new URL('../src/index.js', import.meta.url), 'utf8');
 const commerceV3Js = await readFile(new URL('../src/index-commerce-v3.js', import.meta.url), 'utf8');
@@ -63,6 +65,9 @@ must(css.includes('prefers-reduced-motion'), 'Reduced motion accessibility suppo
 must(css.includes(':focus-visible'), 'Keyboard focus styles missing');
 must(themeJs.includes('mobileMenuBtn'), 'Mobile navigation control missing');
 must(themeJs.includes("localStorage.setItem(storageKey,theme)"), 'Theme persistence missing');
+must(accessJs.includes('/api/users')&&accessJs.includes('id="v5CreateUser"')&&accessJs.includes('type="password"')&&accessJs.includes("viewer:'مشاهدة فقط'"),'Team UI must create tenant-bound members with an explicit viewer role');
+must(clientContextJs.includes("'/api/users'")&&clientContextJs.includes("'/api/store-access'"),'Team and store access requests must inherit the active tenant context');
+must(legacyIndex.includes("viewer:'مشاهدة فقط'")&&legacyJs.includes("viewer:     { label:'مشاهدة فقط'"),'Legacy account UI and API must agree on the viewer role');
 must(index.includes('viewport-fit=cover'), 'Safe-area capable viewport missing');
 for (const view of ['audit','ops','control','inbox','campaigns','pos','stores','supplier-finance','integrations','onboarding','store-access']) must(index.includes(`data-view="${view}"`), `Navigation entry missing: ${view}`);
 must(qaOpsJs.includes('qa-supplier-forms')&&helpCss.includes('.qa-supplier-forms>.card{min-width:0}')&&helpCss.includes('repeat(2,minmax(0,1fr))'),'Supplier finance forms must not force horizontal page overflow');

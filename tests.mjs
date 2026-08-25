@@ -10,6 +10,7 @@ const stmt=(sql)=>({
     if(sql.includes("COUNT(*) AS n FROM users WHERE role")) return {n:[...users.values()].filter(u=>u.role==='admin').length};
     if(sql.includes('COUNT(*) AS n FROM users')) return {n:users.size};
     if(sql.includes('FROM users WHERE email = ?')) return [...users.values()].find(u=>u.email===this.args[0])||null;
+    if(sql.includes("FROM users WHERE client_id = ? AND role = 'client'")) return [...users.values()].find(u=>u.client_id===this.args[0]&&u.role==='client')||null;
     if(sql.includes('FROM users WHERE client_id = ?')) return [...users.values()].find(u=>u.client_id===this.args[0])||null;
     if(sql.includes('FROM users WHERE id = ?')) return users.get(this.args[0])||null;
     if(sql.includes('FROM login_attempts')) return attempts.get(this.args[0])||null;
@@ -146,7 +147,11 @@ const stmt=(sql)=>({
     return {};
   },
   async all(){
-    if(sql.includes('FROM users')) return {results:[...users.values()]};
+    if(sql.includes('FROM users')){
+      let ulist=[...users.values()];
+      if(sql.includes('WHERE client_id = ?')) ulist=ulist.filter(u=>u.client_id===this.args[0]);
+      return {results:ulist};
+    }
     if(sql.includes('FROM products')){
       let plist=[...products.values()];
       if(sql.includes('WHERE client_id = ?')) plist=plist.filter(p=>p.client_id===this.args[0]);
@@ -277,6 +282,34 @@ check('إيميل الإدارة ما ينفعش يتحوّل لحساب عمي�
 r=await call('/api/login',{method:'POST',body:JSON.stringify({email:'b@x.com',password:'ClientPass99'})});
 const clientCookie=ck(r);
 check('دخول العميل', r.status===200);
+
+head('أعضاء الفريق المرتبطون بمتجر');
+r=await call('/api/users',{method:'POST',body:JSON.stringify({
+  email:'viewer.c1@x.com',name:'مشاهد متجر أ',role:'viewer',clientId:'c1',password:'ViewerPass99'
+})},adminCookie);
+check('إنشاء عضو مشاهدة مرتبط بالحساب',r.status===200);
+const viewerLogin=await call('/api/login',{method:'POST',body:JSON.stringify({email:'viewer.c1@x.com',password:'ViewerPass99'})});
+const viewerCookie=ck(viewerLogin);
+const [,viewerMe]=await j(await call('/api/me',{},viewerCookie));
+check('جلسة عضو الفريق تحتفظ بالدور والحساب',viewerMe.role==='viewer'&&viewerMe.clientId==='c1');
+const [,scopedTeam]=await j(await call('/api/users?clientId=c1',{},adminCookie));
+check('قائمة الفريق مفلترة بالحساب',scopedTeam.length===1&&scopedTeam[0].email==='viewer.c1@x.com'&&scopedTeam[0].name==='مشاهد متجر أ');
+const [,viewerState]=await j(await call('/api/state',{},viewerCookie));
+check('عضو الفريق يرى حسابه فقط',viewerState.clients.length===1&&viewerState.clients[0].id==='c1');
+check('عضو الفريق لا يستطيع تبديل clientId يدويًا',(await call('/api/products?clientId=c2',{},viewerCookie)).status===403);
+check('دور المشاهدة ممنوع من كتابة المنتجات',(await call('/api/products',{method:'POST',body:JSON.stringify({clientId:'c1',name:'ممنوع'})},viewerCookie)).status===403);
+r=await call('/api/users',{method:'POST',body:JSON.stringify({
+  email:'support.c1@x.com',name:'دعم متجر أ',role:'support',clientId:'c1',password:'SupportC1Pass99'
+})},adminCookie);
+check('إنشاء خدمة عملاء مرتبطة بالحساب',r.status===200);
+const supportC1Cookie=ck(await call('/api/login',{method:'POST',body:JSON.stringify({email:'support.c1@x.com',password:'SupportC1Pass99'})}));
+const [,teamOrderA]=await j(await call('/api/orders',{method:'POST',body:JSON.stringify({clientId:'c1',name:'متجر أ',phone:'0100',total:100,date:TODAY})},adminCookie));
+const [,teamOrderB]=await j(await call('/api/orders',{method:'POST',body:JSON.stringify({clientId:'c2',name:'متجر ب',phone:'0100',total:100,date:TODAY})},adminCookie));
+check('خدمة العملاء تعدّل طلب حسابها',(await call('/api/orders/'+teamOrderA.order.id,{method:'PATCH',body:JSON.stringify({state:'confirmed'})},supportC1Cookie)).status===200);
+check('خدمة العملاء ممنوعة من تعديل طلب حساب آخر بالـID',(await call('/api/orders/'+teamOrderB.order.id,{method:'PATCH',body:JSON.stringify({state:'confirmed'})},supportC1Cookie)).status===403);
+check('خدمة العملاء ممنوعة من التواصل على طلب حساب آخر بالـID',(await call('/api/orders/'+teamOrderB.order.id+'/contact',{method:'POST'},supportC1Cookie)).status===403);
+await call('/api/orders/'+teamOrderA.order.id,{method:'DELETE'},adminCookie);
+await call('/api/orders/'+teamOrderB.order.id,{method:'DELETE'},adminCookie);
 
 head('عزل بيانات العملاء');
 check('من غير جلسة ممنوع', (await call('/api/state')).status===401);
@@ -504,9 +537,11 @@ check('دخول عميل c1', r.status===200);
 check('عميل c1 ممنوع يفتح ملف عميل تابع لـ c2', (await call('/api/customers/'+custId,{},clientACookie)).status===403);
 check('عميل c1 ممنوع يعدّل ملف عميل تابع لـ c2',
   (await call('/api/customers/'+custId,{method:'PATCH',body:JSON.stringify({name:'اختراق'})},clientACookie)).status===403);
+check('clientId مختلف في جسم الطلب مرفوض بدل تجاهله بصمت',(await call('/api/orders',{method:'POST',
+  body:JSON.stringify({clientId:'c1',name:'سارة',phone:'0111',total:300,date:'2026-08-09'})},clientCookie)).status===403);
 const [,ord]=await j(await call('/api/orders',{method:'POST',
-  body:JSON.stringify({clientId:'c1',name:'سارة',phone:'0111',total:300,date:'2026-08-09'})},clientCookie));
-check('أوردر العميل بيتحوّل لحسابه هو', ord.order.clientId==='c2','→ '+ord.order.clientId);
+  body:JSON.stringify({name:'سارة',phone:'0111',total:300,date:'2026-08-09'})},clientCookie));
+check('أوردر العميل بدون clientId بيتحوّل لحسابه هو', ord.order.clientId==='c2','→ '+ord.order.clientId);
 await call('/api/orders/EO-1',{method:'PATCH',body:JSON.stringify({awb:'JT123EG'})},adminCookie);
 check('البوليصة بتنقل الحالة تلقائياً', orders.get('EO-1').awb==='JT123EG'&&orders.get('EO-1').state==='shipped');
 check('العميل ممنوع يعدّل الأوردر',
@@ -655,10 +690,11 @@ check('الإدارة تقدر تسجّل حركة مالية لعميل', r.sta
 r=await call('/api/transactions',{},clientCookie);
 let [,clientTx]=await j(r);
 check('العميل شايف حركاته المالية هو بس', r.status===200 && clientTx.some(t=>t.category==='عمولة لكل أوردر') && clientTx.every(t=>t.clientId==='c2'));
-r=await call('/api/transactions',{method:'POST',body:JSON.stringify({type:'expense',category:'أخرى',amount:50,clientId:'c1'})},clientCookie);
+check('الحركة المالية بـ clientId مختلف مرفوضة',(await call('/api/transactions',{method:'POST',body:JSON.stringify({type:'expense',category:'أخرى',amount:50,clientId:'c1'})},clientCookie)).status===403);
+r=await call('/api/transactions',{method:'POST',body:JSON.stringify({type:'expense',category:'أخرى',amount:50})},clientCookie);
 let [,clientTxNew]=await j(r);
 check('العميل يقدر يسجّل حركة مالية بنفسه', r.status===200);
-check('حركة العميل بتتسجّل على حسابه هو دايماً — حتى لو حاول يبعت clientId مختلف', transactions.get(clientTxNew.id).client_id==='c2');
+check('حركة العميل بتتسجّل على حسابه هو دايماً', transactions.get(clientTxNew.id).client_id==='c2');
 r=await call('/api/transactions/'+clientTxNew.id,{method:'DELETE'},clientCookie);
 check('العميل يقدر يمسح حركته هو', r.status===200);
 let [,otherTx]=await j(await call('/api/transactions',{method:'POST',body:JSON.stringify({type:'expense',category:'أخرى',amount:20,clientId:'c1'})},adminCookie));
