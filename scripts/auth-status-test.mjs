@@ -62,5 +62,7 @@ for (const path of protectedRoutes) {
 const codResponse = await commerceV26.fetch(new Request(`${base}/api/cod-reconciliation/candidates?clientId=QA-CLIENT`, { headers: { Cookie: await adminCookie() } }), env, context);
 assert.equal(codResponse.status, 200, `COD candidates must be reachable from the active entrypoint; got ${codResponse.status}: ${await codResponse.clone().text()}`);
 assert.deepEqual(await codResponse.json(), [{ id: 'QA-DELIVERED-1', total: 650, discount_amount: 0, refund_amount: 0, state: 'signed', expectedAmount: 650 }]);
+const workflowResponse = await commerceV26.fetch(new Request(`${base}/api/workflows`, { method: 'POST', headers: { Cookie: await adminCookie(), 'Content-Type': 'application/json' }, body: JSON.stringify({ clientId: 'QA-CLIENT', name: 'QA Safe Workflow', triggerType: 'order.created', active: true, actions: [{ type: 'notify_team' }] }) }), env, context);
+assert.equal(workflowResponse.status, 201, `Admin workflow creation must resolve clientId from the request body; got ${workflowResponse.status}: ${await workflowResponse.clone().text()}`);
 
-console.log('Authentication status contract passed: protected APIs reject anonymous requests and COD routes remain reachable.');
+console.log('Authentication status contract passed: protected APIs reject anonymous requests, COD routes remain reachable, and Admin workflow creation is body-scoped.');

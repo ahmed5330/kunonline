@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { classifyAction, validateWorkflowDefinition, evaluateConditions, planWorkflowRun } from './src/workflow-engine.js';
+
+const workflowApiSource = readFileSync(new URL('./src/index-commerce.js', import.meta.url), 'utf8');
 
 let passed = 0;
 function test(name, fn) {
@@ -81,6 +84,11 @@ test('settings permission is an admin override for sensitive planning', () => {
   } }, {}, { perms: ['settings'] });
   assert.equal(result.status, 'awaiting_confirmation');
   assert.equal(result.steps[0].allowed, true);
+});
+
+test('workflow API resolves Admin tenant from body and prevents duplicate names', () => {
+  assert.match(workflowApiSource, /b\.clientId\|\|b\.client_id\|\|url\.searchParams\.get\('clientId'\)/);
+  assert.match(workflowApiSource, /DUPLICATE_WORKFLOW/);
 });
 
 console.log(`Workflow engine tests passed: ${passed}`);
