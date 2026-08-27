@@ -1,3 +1,19 @@
 /* Kun Online v27 additions */
 .v27-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:12px 0}.v27-form label{display:grid;gap:6px;font-weight:700}.v27-form .wide{grid-column:1/-1}.v27-order-actions{display:grid;grid-template-columns:minmax(160px,1fr) repeat(3,auto);gap:8px;margin-top:14px;align-items:center}.v27-modules{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:12px 0}.v27-modules label{display:grid;grid-template-columns:auto 1fr 90px;gap:8px;align-items:center;border:1px solid var(--line,#e5e7eb);padding:8px;border-radius:10px}.v27Fee{min-width:70px}.v27-topup{display:grid;grid-template-columns:1fr 90px auto;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line,#e5e7eb)}.v27-topup img{width:80px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--line,#e5e7eb)}.v27-ad-variant{padding:14px 0;border-bottom:1px solid var(--line,#e5e7eb)}.v27-ad-variant:last-child{border-bottom:0}.v27-admin-only{display:none}html[data-role="admin"] .v27-admin-only{display:block}.mt{margin-top:14px}@media(max-width:820px){.v27-form,.v27-modules{grid-template-columns:1fr}.v27-form .wide{grid-column:auto}.v27-order-actions{grid-template-columns:1fr 1fr}.v27-topup{grid-template-columns:1fr}.v27-topup img{width:100%;height:140px}.v27-modules label{grid-template-columns:auto 1fr 80px}}@media(max-width:560px){.v27-order-actions{grid-template-columns:1fr}.v27-order-actions .btn{width:100%;text-align:center}}
 .v27-wa-box{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:end}.v27-wa-box textarea{min-height:64px;resize:vertical}@media(max-width:560px){.v27-wa-box{grid-template-columns:1fr}.v27-wa-box .btn{width:100%}}
+
+/* v28 responsive containment: wide operational tables scroll inside their card instead of widening the viewport. */
+.content,.card,.grid,.table-wrap{min-width:0}
+.table-wrap{max-width:100%;overflow-x:auto;overflow-y:hidden;overscroll-behavior-inline:contain;-webkit-overflow-scrolling:touch}
+.table-wrap>.table{max-width:none}
+.rowline>*{min-width:0}
+@media(max-width:820px){
+  .content{max-width:100%;overflow-x:hidden}
+  .table-wrap{width:100%}
+  .v28-store-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(120px,180px);gap:8px;align-items:center}
+  .v28-store-row label{min-width:0;overflow-wrap:anywhere}
+}
+@media(max-width:560px){
+  .v28-store-row{grid-template-columns:1fr}
+  .v28-store-row .select{width:100%}
+}
