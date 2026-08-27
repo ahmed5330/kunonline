@@ -116,7 +116,7 @@ try{
 
   const exceptions=[],consoleErrors=[],logErrors=[],networkFailures=[],serverErrors=[],criticalResponses=[];
   const requests=new Map();
-  cdp.on('Runtime.exceptionThrown',p=>exceptions.push(p.exceptionDetails?.text||p.exceptionDetails?.exception?.description||'uncaught exception'));
+  cdp.on('Runtime.exceptionThrown',p=>{const d=p.exceptionDetails||{},desc=d.exception?.description||String(d.exception?.value||''),frames=(d.stackTrace?.callFrames||[]).slice(0,5).map(f=>`${f.functionName||'<anon>'}@${f.url||'inline'}:${Number(f.lineNumber)+1}:${Number(f.columnNumber)+1}`).join(' <- ');exceptions.push([desc,d.text,frames].filter(Boolean).join(' :: ')||'uncaught exception');});
   cdp.on('Runtime.consoleAPICalled',p=>{if(p.type==='error')consoleErrors.push((p.args||[]).map(x=>x.value??x.description??'').join(' '));});
   cdp.on('Log.entryAdded',p=>{const e=p.entry||{};if(e.level==='error'&&(!e.url||isSameOrigin(e.url)))logErrors.push(`${e.source||'log'}: ${e.text||''}`);});
   cdp.on('Network.requestWillBeSent',p=>requests.set(p.requestId,{url:p.request?.url||'',type:p.type||''}));
