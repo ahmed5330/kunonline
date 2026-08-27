@@ -4,7 +4,10 @@ const must=(ok,msg)=>{if(!ok)throw new Error(msg)};
 const [migration,worker,wallet,features,events,marketing,admin,ad,html,css,scope,access,provider,wrangler]=await Promise.all([
   read('migrations/0014_platform_control_wallet_marketing.sql'),read('src/index-commerce-v27.js'),read('src/wallet-billing.js'),read('src/feature-entitlements.js'),read('src/order-events.js'),read('src/marketing-intelligence.js'),read('src/admin-control.js'),read('src/ad-studio.js'),read('public/v2/index.html'),read('public/v2/kun-v9.css'),read('src/store-scope.js'),read('src/access-control.js'),read('src/provider-registry.js'),read('wrangler.preview.toml')
 ]);
-for(const table of ['tenant_modules','wallet_accounts','wallet_topup_requests','order_billing','order_events','order_notes','customer_channel_identities','order_attribution','ad_studio_drafts','ad_creative_assets','ad_draft_variants','ai_insight_snapshots','platform_client_notes'])must(migration.includes(`CREATE TABLE IF NOT EXISTS ${table}`),`Missing ${table}`);
+for(const table of ['tenant_modules','wallet_accounts','wallet_topup_requests','order_billing','order_events','order_notes','customer_channel_identities','order_attribution','ad_studio_drafts','ad_creative_assets','ad_draft_variants','platform_client_notes'])must(migration.includes(`CREATE TABLE IF NOT EXISTS ${table}`),`Missing ${table}`);
+must(migration.includes('ai_insight_snapshots already exists since migration 0011'),'v27 migration must reuse the existing AI snapshot table');
+const business=await read('src/business-intelligence.js');
+for(const marker of ['insight_type','metric_json','suggested_payload_json','generated_at'])must(business.includes(marker),`Business brief persistence must use existing AI snapshot column: ${marker}`);
 for(const endpoint of ['/api/tenant/features','/api/admin/clients','/api/admin/wallet/topups','/api/wallet/topups','/api/marketing/performance','/api/ai/business-brief','/api/ad-studio/drafts'])must(worker.includes(endpoint),`Missing ${endpoint}`);
 must(worker.includes("filterLegacyStateByFeatures"),'State payload must be filtered by entitlements');
 must(worker.includes("/^Bearer\\s+/i"),'Bearer ingest compatibility guard missing');
