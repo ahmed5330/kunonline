@@ -199,18 +199,8 @@ CREATE TABLE IF NOT EXISTS ad_draft_variants (
 );
 CREATE INDEX IF NOT EXISTS idx_ad_variants_draft ON ad_draft_variants(client_id,draft_id,created_at);
 
-CREATE TABLE IF NOT EXISTS ai_insight_snapshots (
-  id TEXT PRIMARY KEY,
-  client_id TEXT NOT NULL,
-  store_id TEXT,
-  scope TEXT NOT NULL,
-  engine TEXT NOT NULL,
-  summary TEXT,
-  metrics_json TEXT NOT NULL DEFAULT '{}',
-  recommendations_json TEXT NOT NULL DEFAULT '[]',
-  created_at TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_ai_insight_client ON ai_insight_snapshots(client_id,store_id,created_at);
+-- ai_insight_snapshots already exists since migration 0011. v27 intentionally reuses
+-- its generated_at/metric_json/suggested_payload_json schema to preserve Preview data.
 
 CREATE TABLE IF NOT EXISTS platform_client_notes (
   id TEXT PRIMARY KEY,
