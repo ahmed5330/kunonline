@@ -76,9 +76,15 @@ jobs:
         continue-on-error: true
         run: node scripts/live-preview-functional-test.mjs https://kunonline-preview.mr-a-mnaa.workers.dev
 
+      - name: Browser runtime and responsive QA
+        id: browser
+        if: steps.deploy_ownership.outputs.is_latest == 'true' && steps.smoke.outcome == 'success' && steps.live.outcome == 'success'
+        continue-on-error: true
+        run: node scripts/browser-preview-qa.mjs https://kunonline-preview.mr-a-mnaa.workers.dev
+
       - name: Confirm ownership before rollback
         id: rollback_ownership
-        if: always() && (steps.smoke.outcome == 'failure' || steps.live.outcome == 'failure')
+        if: always() && (steps.smoke.outcome == 'failure' || steps.live.outcome == 'failure' || steps.browser.outcome == 'failure')
         run: |
           latest="$(git ls-remote origin refs/heads/develop/ux-system-upgrade | awk '{print $1}')"
           if [ "$latest" = "$GITHUB_SHA" ]; then
@@ -89,15 +95,15 @@ jobs:
           fi
 
       - name: Roll back Preview code after failed validation
-        if: always() && (steps.smoke.outcome == 'failure' || steps.live.outcome == 'failure') && steps.rollback_ownership.outputs.is_latest == 'true'
+        if: always() && (steps.smoke.outcome == 'failure' || steps.live.outcome == 'failure' || steps.browser.outcome == 'failure') && steps.rollback_ownership.outputs.is_latest == 'true'
         run: npm run rollback:preview
 
       - name: Verify restored Preview health
-        if: always() && (steps.smoke.outcome == 'failure' || steps.live.outcome == 'failure') && steps.rollback_ownership.outputs.is_latest == 'true'
+        if: always() && (steps.smoke.outcome == 'failure' || steps.live.outcome == 'failure' || steps.browser.outcome == 'failure') && steps.rollback_ownership.outputs.is_latest == 'true'
         run: node scripts/preview-health-check.mjs https://kunonline-preview.mr-a-mnaa.workers.dev
 
       - name: Mark failed deployment
-        if: always() && (steps.smoke.outcome == 'failure' || steps.live.outcome == 'failure') && steps.rollback_ownership.outputs.is_latest == 'true'
+        if: always() && (steps.smoke.outcome == 'failure' || steps.live.outcome == 'failure' || steps.browser.outcome == 'failure') && steps.rollback_ownership.outputs.is_latest == 'true'
         run: |
           echo "The latest Preview deployment failed validation and was rolled back."
           exit 1
