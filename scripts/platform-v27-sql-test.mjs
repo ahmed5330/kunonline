@@ -22,6 +22,9 @@ CREATE TABLE campaign_daily_metrics(client_id TEXT NOT NULL,store_id TEXT,campai
 CREATE TABLE audit_log(id TEXT PRIMARY KEY,client_id TEXT,store_id TEXT,actor_user_id TEXT,actor_email TEXT,action TEXT NOT NULL,entity_type TEXT,entity_id TEXT,before_json TEXT,after_json TEXT,metadata_json TEXT,created_at TEXT NOT NULL);
 CREATE TABLE whatsapp_outbox(id TEXT PRIMARY KEY,client_id TEXT NOT NULL,store_id TEXT,order_id TEXT,phone TEXT,message TEXT,kind TEXT,status TEXT,created_at TEXT,sent_at TEXT);
 CREATE TABLE approval_requests(id TEXT PRIMARY KEY,client_id TEXT NOT NULL,store_id TEXT,source TEXT,source_id TEXT,action_type TEXT,risk TEXT,payload_json TEXT,status TEXT,requested_by TEXT,requested_at TEXT,reviewed_by TEXT,reviewed_at TEXT,review_note TEXT,idempotency_key TEXT);
+CREATE TABLE ai_insight_snapshots(id TEXT PRIMARY KEY,client_id TEXT NOT NULL,store_id TEXT,insight_type TEXT NOT NULL,severity TEXT DEFAULT 'info',title TEXT NOT NULL,rationale TEXT,metric_json TEXT DEFAULT '{}',suggested_action_type TEXT,suggested_payload_json TEXT DEFAULT '{}',status TEXT DEFAULT 'active',generated_at TEXT NOT NULL,dismissed_at TEXT,dismissed_by TEXT);
+CREATE INDEX idx_ai_insights_client ON ai_insight_snapshots(client_id,status,generated_at);
+CREATE INDEX idx_ai_insights_store ON ai_insight_snapshots(client_id,store_id,status);
 `);
 db.exec(await readFile(new URL('../migrations/0014_platform_control_wallet_marketing.sql',import.meta.url),'utf8'));
 const env={DB:new D1(db)},client='C1',store='S1',ts=new Date().toISOString(),day=ts.slice(0,10);
