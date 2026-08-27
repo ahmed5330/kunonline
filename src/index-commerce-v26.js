@@ -29,6 +29,16 @@ async function tenantFromRequest(request,me){
   return u.searchParams.get('clientId');
 }
 
+async function normalizeOrderCreate(request){
+  const u=new URL(request.url);
+  if(u.pathname!=='/api/orders'||request.method.toUpperCase()!=='POST')return request;
+  const body=await request.clone().json().catch(()=>null);
+  if(!body||typeof body!=='object'||Array.isArray(body))return request;
+  if(body.date!==undefined&&body.date!==null&&String(body.date).trim())return request;
+  body.date=new Date().toISOString().slice(0,10);
+  return new Request(request,{body:JSON.stringify(body)});
+}
+
 async function fetchV26(request,env,ctx){
   const u=new URL(request.url);
   try{
@@ -44,6 +54,7 @@ async function fetchV26(request,env,ctx){
       if(clientId)scopedRequest=(await enforceStoreScope(request,env,me,clientId)).request;
       else if(me.role!=='admin')return json({error:'محتاج clientId',code:'CLIENT_ID_REQUIRED'},400);
     }
+    scopedRequest=await normalizeOrderCreate(scopedRequest);
     // Keep the operational COD routes at the active entrypoint. This avoids a
     // legacy fallback swallowing them before the v3 commerce router sees them.
     if(u.pathname.startsWith('/api/cod-reconciliation'))return hardenApi(await commerceV3.fetch(scopedRequest,env,ctx));

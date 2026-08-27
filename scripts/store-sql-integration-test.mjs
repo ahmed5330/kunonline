@@ -3,7 +3,7 @@ import {readFile,readdir} from 'node:fs/promises';
 import worker from '../src/index-commerce-v26.js';
 
 const must=(value,message)=>{if(!value)throw new Error(message);};
-const normalize=value=>value===undefined?null:value;
+const normalize=value=>{if(value===undefined)throw new TypeError('D1_TYPE_ERROR: Type undefined not supported; use null instead');return value;};
 
 class D1Statement{
   constructor(database,sql){this.database=database;this.sql=sql;this.args=[];}
@@ -50,7 +50,10 @@ async function createStoreFixtures(storeId,suffix,phone){
   const product=await call('/api/products',{method:'POST',body:{clientId,storeId,id:`SQL-P-${suffix}`,name:`SQL Product ${suffix}`,sku:`SQL-${suffix}`,price:250,cost:100,stock:20,lowStockThreshold:2}});
   const customer=await call('/api/customers',{method:'POST',expected:201,body:{clientId,storeId,name:`SQL Customer ${suffix}`,phone,address:'QA address'}});
   const supplier=await call('/api/suppliers',{method:'POST',body:{clientId,storeId,name:`SQL Supplier ${suffix}`,phone}});
-  const orderResponse=await call('/api/orders',{method:'POST',body:{clientId,storeId,id:`SQL-O-${suffix}`,date:new Date().toISOString().slice(0,10),name:`SQL Customer ${suffix}`,phone,product:`SQL Product ${suffix}`,productId:product.id,total:250,qty:1,state:'pending'}}),order=orderResponse.order;
+  const orderBody={clientId,storeId,id:`SQL-O-${suffix}`,name:`SQL Customer ${suffix}`,phone,product:`SQL Product ${suffix}`,productId:product.id,total:250,qty:1,state:'pending'};
+  if(suffix!=='B')orderBody.date=new Date().toISOString().slice(0,10);
+  const orderResponse=await call('/api/orders',{method:'POST',body:orderBody}),order=orderResponse.order;
+  must(/^\d{4}-\d{2}-\d{2}$/.test(String(order?.date||'')),`Order ${suffix} must have a normalized date`);
   const campaign=await call('/api/campaigns',{method:'POST',expected:201,body:{clientId,storeId,name:`SQL Campaign ${suffix}`,platform:'meta',spend:100,revenue:350}});
   const session=await call('/api/pos/sessions',{method:'POST',expected:201,body:{clientId,storeId,registerName:`Register ${suffix}`,openingCash:100}});
   const sale=await call('/api/pos/sales',{method:'POST',expected:201,body:{clientId,storeId,sessionId:session.id,items:[{productId:product.id,qty:1}],paymentMethod:'cash'}});
