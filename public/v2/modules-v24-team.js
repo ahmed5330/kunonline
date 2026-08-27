@@ -1,0 +1,51 @@
+/* Kun Online v24 team lifecycle + branch permission management */
+(function(){
+  const K=window.KunActionsV23;if(!K)throw new Error('KunActionsV23 core missing');
+  const q=(cid,s='')=>`clientId=${encodeURIComponent(cid)}${s}`;
+  let cache={roles:null,stores:[],members:[],cid:''};
+  const roleLabel=id=>cache.roles?.businessRoles?.find(x=>x.id===id)?.label||id;
+  const storeRoleLabel=id=>cache.roles?.storeRoles?.find(x=>x.id===id)?.label||id;
+  async function context(){const cid=await K.clientId();if(!cid)throw new Error('حدد العميل أولًا');return cid;}
+  async function loadData(){
+    const cid=await context();
+    const [roles,stores,members]=await Promise.all([
+      K.api('/api/team-role-catalog'),K.api(`/api/stores?${q(cid)}`),K.api(`/api/team-members?${q(cid)}`)
+    ]);
+    cache={roles,stores:Array.isArray(stores)?stores:(stores.stores||[]),members:Array.isArray(members)?members:[],cid};return cache;
+  }
+  function statusBadge(s){const active=s==='active';return `<span class="badge ${active?'b-delivered':'b-pending'}">${active?'نشط':s==='tenant_suspended'?'موقوف مع الحساب':'معطل'}</span>`;}
+  function accessBadges(m){return m.isOwner?'<span class="chip">كل الفروع — مالك</span>':(m.storeAccess||[]).map(a=>`<span class="chip">${K.esc(a.storeName||a.storeId)} · ${K.esc(storeRoleLabel(a.role))}</span>`).join(' ')||'<span class="meta">بدون فرع</span>';}
+  async function renderTeam(mode='team'){
+    const root=K.root();if(!root)return;root.innerHTML='<div class="card empty">جارٍ تحميل الفريق والصلاحيات...</div>';
+    try{
+      const d=await loadData(),staff=d.members.filter(x=>!x.isOwner),active=staff.filter(x=>x.status==='active').length,disabled=staff.length-active;
+      root.innerHTML=`<div class="page-head"><div><div class="title">${mode==='stores'?'صلاحيات الفروع':'الفريق والصلاحيات'}</div><div class="sub">إدارة أعضاء الفريق وأدوارهم والفروع المسموح لهم بالوصول إليها — الصلاحيات تُطبّق على الـAPI وليست إخفاء واجهة فقط.</div></div><div class="spacer"></div><button class="btn primary" id="v28AddMember">+ إضافة عضو فريق</button></div>
+      <div class="grid kpis four"><div class="card"><div class="k-label">أعضاء الفريق</div><div class="k-val small">${staff.length}</div></div><div class="card"><div class="k-label">نشطون</div><div class="k-val small">${active}</div></div><div class="card"><div class="k-label">معطلون</div><div class="k-val small">${disabled}</div></div><div class="card"><div class="k-label">الفروع</div><div class="k-val small">${d.stores.length}</div></div></div>
+      <div class="card mt table-wrap"><table class="table compact"><thead><tr><th>العضو</th><th>الدور الوظيفي</th><th>الحالة</th><th>صلاحيات الفروع</th><th></th></tr></thead><tbody>${d.members.length?d.members.map(m=>`<tr><td><b>${K.esc(m.name||m.email)}</b><div class="meta">${K.esc(m.email)}</div></td><td>${m.isOwner?'مالك الحساب':K.esc(roleLabel(m.role))}</td><td>${statusBadge(m.status)}</td><td>${accessBadges(m)}</td><td>${m.isOwner?'<span class="meta">محمي</span>':`<button class="btn soft v28MemberEdit" data-id="${K.esc(m.id)}">إدارة</button>`}</td></tr>`).join(''):'<tr><td colspan="5" class="empty">لا يوجد أعضاء فريق بعد.</td></tr>'}</tbody></table></div>
+      <div class="card mt"><h3>نموذج الصلاحيات</h3><div class="grid mini-kpis"><div><b>مدير / تشغيل</b><div class="meta">طلبات + منتجات + مخزون + تشغيل، داخل الفروع المسموحة فقط.</div></div><div><b>خدمة العملاء</b><div class="meta">طلبات + CRM + رسائل، بدون مالية وإدارة.</div></div><div><b>تسويق</b><div class="meta">حملات + تحليلات + Ad Studio.</div></div><div><b>محاسب</b><div class="meta">مالية + COD + ربحية وتقارير.</div></div><div><b>مشاهدة فقط</b><div class="meta">قراءة بدون كتابة، حتى لو تم استدعاء الـAPI مباشرة.</div></div></div></div>`;
+      document.getElementById('v28AddMember').onclick=openCreate;
+      root.querySelectorAll('.v28MemberEdit').forEach(b=>b.onclick=()=>openEdit(b.dataset.id));
+    }catch(e){root.innerHTML=`<div class="card empty"><h3>تعذر تحميل الفريق</h3><p>${K.esc(e.message)}</p></div>`;}
+  }
+  function roleOptions(selected='support'){return (cache.roles?.businessRoles||[]).map(r=>`<option value="${K.esc(r.id)}" ${r.id===selected?'selected':''}>${K.esc(r.label)}</option>`).join('');}
+  function storesForm(assignments=[]){const map=new Map((assignments||[]).map(x=>[String(x.storeId),x.role||'member']));return cache.stores.map(s=>{const role=map.get(String(s.id))||'member',checked=map.has(String(s.id));return `<div class="rowline v28-store-row"><label><input type="checkbox" data-v28-store="${K.esc(s.id)}" ${checked?'checked':''}> <b>${K.esc(s.name)}</b></label><select class="select" data-v28-store-role="${K.esc(s.id)}"><option value="manager" ${role==='manager'?'selected':''}>مدير فرع</option><option value="member" ${role==='member'?'selected':''}>عضو</option><option value="viewer" ${role==='viewer'?'selected':''}>مشاهدة فقط</option></select></div>`;}).join('')||'<div class="empty">أنشئ متجرًا أو فرعًا أولًا.</div>';}
+  function readAssignments(){return [...document.querySelectorAll('[data-v28-store]:checked')].map(x=>{const id=x.dataset.v28Store,role=document.querySelector(`[data-v28-store-role="${CSS.escape(id)}"]`)?.value||'member';return {storeId:id,role};});}
+  async function openCreate(){
+    if(!cache.roles)await loadData();
+    K.drawer('إضافة عضو فريق',`<div class="card"><h3>بيانات العضو</h3><div class="v27-form">${K.field('الاسم','v28MemberName')}${K.field('البريد الإلكتروني','v28MemberEmail','email','autocomplete="email"')}<label>الدور الوظيفي<select class="select" id="v28MemberRole">${roleOptions('support')}</select></label><label>كلمة مرور مؤقتة<div class="toolbar"><input class="input" id="v28MemberPassword" type="text" minlength="8"><button class="btn soft" type="button" id="v28GenMemberPassword">توليد</button></div></label></div></div><div class="card mt"><h3>الفروع المسموحة</h3>${storesForm()}</div><div class="card mt"><button class="btn primary" id="v28CreateMember">إنشاء العضو</button><div class="meta mt">عضو الفريق لا يستطيع رؤية أو تعديل فرع غير مربوط به حتى عبر API مباشر.</div></div>`);
+    const pass=document.getElementById('v28MemberPassword');pass.value=K.randomPassword();document.getElementById('v28GenMemberPassword').onclick=()=>pass.value=K.randomPassword();
+    document.getElementById('v28MemberRole').onchange=e=>{if(e.target.value==='viewer')document.querySelectorAll('[data-v28-store-role]').forEach(x=>x.value='viewer');};
+    document.getElementById('v28CreateMember').onclick=async()=>{const b=document.getElementById('v28CreateMember');try{b.disabled=true;b.textContent='جاري الإنشاء...';const r=await K.api(`/api/team-members?${q(cache.cid)}`,{method:'POST',body:JSON.stringify({clientId:cache.cid,name:K.val('v28MemberName'),email:K.val('v28MemberEmail'),role:K.val('v28MemberRole'),password:K.val('v28MemberPassword'),storeAccess:readAssignments()})});K.notify(`تم إنشاء عضو الفريق ${r.name}`);K.close();renderTeam()}catch(e){K.notify(e.message);b.disabled=false;b.textContent='إنشاء العضو';}};
+  }
+  async function openEdit(id){
+    const m=cache.members.find(x=>String(x.id)===String(id));if(!m)return;K.drawer(`إدارة — ${m.name}`,`<div class="card"><div class="v27-form">${K.field('الاسم','v28EditName','text',`value="${K.esc(m.name)}"`)}${K.field('البريد الإلكتروني','v28EditEmail','email',`value="${K.esc(m.email)}"`)}<label>الدور الوظيفي<select class="select" id="v28EditRole">${roleOptions(m.role)}</select></label><label>الحالة<select class="select" id="v28EditStatus"><option value="active" ${m.status==='active'?'selected':''}>نشط</option><option value="disabled" ${m.status!=='active'?'selected':''}>معطل</option></select></label></div><button class="btn primary" id="v28SaveMember">حفظ بيانات العضو</button></div><div class="card mt"><h3>صلاحيات الفروع</h3>${storesForm(m.storeAccess)}<button class="btn primary mt" id="v28SaveStores">حفظ صلاحيات الفروع</button></div><div class="card mt"><h3>الأمان</h3><div class="toolbar"><input class="input" id="v28ResetMemberPassword" type="text" placeholder="كلمة مرور جديدة"><button class="btn soft" id="v28GenReset">توليد</button><button class="btn soft" id="v28ResetPassword">تغيير كلمة المرور</button><button class="btn danger" id="v28DeleteMember">حذف العضو</button></div></div>`);
+    document.getElementById('v28EditRole').onchange=e=>{if(e.target.value==='viewer')document.querySelectorAll('[data-v28-store-role]').forEach(x=>x.value='viewer');};
+    document.getElementById('v28SaveMember').onclick=async()=>{try{await K.api(`/api/team-members/${encodeURIComponent(id)}?${q(cache.cid)}`,{method:'PATCH',body:JSON.stringify({clientId:cache.cid,name:K.val('v28EditName'),email:K.val('v28EditEmail'),role:K.val('v28EditRole'),status:K.val('v28EditStatus')})});K.notify('تم حفظ بيانات العضو');K.close();renderTeam()}catch(e){K.notify(e.message)}};
+    document.getElementById('v28SaveStores').onclick=async()=>{try{await K.api(`/api/team-members/${encodeURIComponent(id)}/store-access?${q(cache.cid)}`,{method:'PUT',body:JSON.stringify({clientId:cache.cid,storeAccess:readAssignments()})});K.notify('تم حفظ صلاحيات الفروع');K.close();renderTeam()}catch(e){K.notify(e.message)}};
+    document.getElementById('v28GenReset').onclick=()=>document.getElementById('v28ResetMemberPassword').value=K.randomPassword();
+    document.getElementById('v28ResetPassword').onclick=async()=>{try{await K.api(`/api/team-members/${encodeURIComponent(id)}/reset-password?${q(cache.cid)}`,{method:'POST',body:JSON.stringify({clientId:cache.cid,password:K.val('v28ResetMemberPassword')})});K.notify('تم تغيير كلمة مرور العضو')}catch(e){K.notify(e.message)}};
+    document.getElementById('v28DeleteMember').onclick=async()=>{if(!confirm('حذف عضو الفريق وصلاحيات فروعه؟'))return;try{await K.api(`/api/team-members/${encodeURIComponent(id)}?${q(cache.cid)}`,{method:'DELETE',body:JSON.stringify({clientId:cache.cid})});K.notify('تم حذف عضو الفريق');K.close();renderTeam()}catch(e){K.notify(e.message)}};
+  }
+  document.addEventListener('click',e=>{const nav=e.target.closest?.('.nav button[data-view]');if(!nav)return;if(nav.dataset.view==='access')setTimeout(()=>renderTeam('team'),80);if(nav.dataset.view==='store-access')setTimeout(()=>renderTeam('stores'),120);},true);
+  window.KunTeamV28={renderTeam,openCreate};document.documentElement.dataset.v28Team='ready';
+})();
