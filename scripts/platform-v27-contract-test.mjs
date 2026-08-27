@@ -1,8 +1,8 @@
 import {readFile} from 'node:fs/promises';
 const read=p=>readFile(new URL(`../${p}`,import.meta.url),'utf8');
 const must=(ok,msg)=>{if(!ok)throw new Error(msg)};
-const [migration,worker,wallet,features,events,marketing,admin,ad,html,css,scope,access,provider,wrangler]=await Promise.all([
-  read('migrations/0014_platform_control_wallet_marketing.sql'),read('src/index-commerce-v27.js'),read('src/wallet-billing.js'),read('src/feature-entitlements.js'),read('src/order-events.js'),read('src/marketing-intelligence.js'),read('src/admin-control.js'),read('src/ad-studio.js'),read('public/v2/index.html'),read('public/v2/kun-v9.css'),read('src/store-scope.js'),read('src/access-control.js'),read('src/provider-registry.js'),read('wrangler.preview.toml')
+const [migration,worker,v28,wallet,features,events,marketing,admin,ad,html,css,scope,access,provider,wrangler]=await Promise.all([
+  read('migrations/0014_platform_control_wallet_marketing.sql'),read('src/index-commerce-v27.js'),read('src/index-commerce-v28.js'),read('src/wallet-billing.js'),read('src/feature-entitlements.js'),read('src/order-events.js'),read('src/marketing-intelligence.js'),read('src/admin-control.js'),read('src/ad-studio.js'),read('public/v2/index.html'),read('public/v2/kun-v9.css'),read('src/store-scope.js'),read('src/access-control.js'),read('src/provider-registry.js'),read('wrangler.preview.toml')
 ]);
 for(const table of ['tenant_modules','wallet_accounts','wallet_topup_requests','order_billing','order_events','order_notes','customer_channel_identities','order_attribution','ad_studio_drafts','ad_creative_assets','ad_draft_variants','platform_client_notes'])must(migration.includes(`CREATE TABLE IF NOT EXISTS ${table}`),`Missing ${table}`);
 must(migration.includes('ai_insight_snapshots already exists since migration 0011'),'v27 migration must reuse the existing AI snapshot table');
@@ -23,6 +23,7 @@ must(css.includes('.v27-order-actions'),'v27 responsive UI styles missing');
 must(scope.includes('/api/ad-studio')&&scope.includes('/api/ai/business-brief'),'New store-scoped endpoints missing');
 must(access.includes("marketing:")&&access.includes("'ads.*'")&&access.includes("'wallet.read'"),'v27 permissions missing');
 for(const p of ['tiktok_messaging','bosta','mylerz','aramex','custom_shipping'])must(provider.includes(`id:'${p}'`),`Provider ${p} missing`);
-must(wrangler.includes('main = "src/index-commerce-v27.js"'),'Preview entrypoint not v27');
+must(v28.includes("import commerceV27 from './index-commerce-v27.js'")&&v28.includes('commerceV27.fetch'),'v28 must preserve the v27 foundation by delegation');
+must(wrangler.includes('main = "src/index-commerce-v28.js"'),'Preview entrypoint must be v28 wrapper');
 must(!wrangler.includes('kunonline"\n')||wrangler.includes('name = "kunonline-preview"'),'Preview config safety failed');
-console.log('v27 contract checks passed: control plane, entitlements, wallet, order timeline, marketing, AI/ads, integrations and Preview entrypoint.');
+console.log('v27 foundation checks passed under v28: control plane, entitlements, wallet, order timeline, marketing, AI/ads, integrations and delegated Preview entrypoint.');
