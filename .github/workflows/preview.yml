@@ -30,27 +30,74 @@ jobs:
       - run: npm run check:deploy
       - name: Verify Production remains migration-free
         run: npm run check:production-config
+
+      - name: Confirm latest branch HEAD before Preview mutation
+        id: ownership
+        run: |
+          latest="$(git ls-remote origin refs/heads/develop/ux-system-upgrade | awk '{print $1}')"
+          echo "latest_sha=$latest" >> "$GITHUB_OUTPUT"
+          if [ "$latest" = "$GITHUB_SHA" ]; then
+            echo "is_latest=true" >> "$GITHUB_OUTPUT"
+            echo "This run owns the latest Preview branch HEAD: $GITHUB_SHA"
+          else
+            echo "is_latest=false" >> "$GITHUB_OUTPUT"
+            echo "Stale Preview run detected. Run=$GITHUB_SHA Latest=$latest. Preview mutation will be skipped."
+          fi
+
       - name: Apply preview migrations only
+        if: steps.ownership.outputs.is_latest == 'true'
         run: npm run db:migrate:preview
+
+      - name: Reconfirm latest branch HEAD before deploy
+        id: deploy_ownership
+        if: steps.ownership.outputs.is_latest == 'true'
+        run: |
+          latest="$(git ls-remote origin refs/heads/develop/ux-system-upgrade | awk '{print $1}')"
+          if [ "$latest" = "$GITHUB_SHA" ]; then
+            echo "is_latest=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_latest=false" >> "$GITHUB_OUTPUT"
+            echo "Run became stale before deploy. Run=$GITHUB_SHA Latest=$latest. Deploy skipped."
+          fi
+
       - name: Deploy preview Worker
+        if: steps.deploy_ownership.outputs.is_latest == 'true'
         run: npm run deploy:preview
+
       - name: Smoke test deployed preview
         id: smoke
+        if: steps.deploy_ownership.outputs.is_latest == 'true'
         continue-on-error: true
         run: npm run smoke:preview
+
       - name: Live authenticated Store B regression
         id: live
-        if: steps.smoke.outcome == 'success'
+        if: steps.deploy_ownership.outputs.is_latest == 'true' && steps.smoke.outcome == 'success'
         continue-on-error: true
         run: node scripts/live-preview-functional-test.mjs https://kunonline-preview.mr-a-mnaa.workers.dev
-      - name: Roll back Preview code after failed validation
-        if: steps.smoke.outcome == 'failure' || steps.live.outcome == 'failure'
-        run: npm run rollback:preview
-      - name: Verify restored Preview health
-        if: steps.smoke.outcome == 'failure' || steps.live.outcome == 'failure'
-        run: node scripts/preview-health-check.mjs https://kunonline-preview.mr-a-mnaa.workers.dev
-      - name: Mark failed deployment
-        if: steps.smoke.outcome == 'failure' || steps.live.outcome == 'failure'
+
+      - name: Confirm ownership before rollback
+        id: rollback_ownership
+        if: always() && (steps.smoke.outcome == 'failure' || steps.live.outcome == 'failure')
         run: |
-          echo "The new Preview failed validation and was rolled back."
+          latest="$(git ls-remote origin refs/heads/develop/ux-system-upgrade | awk '{print $1}')"
+          if [ "$latest" = "$GITHUB_SHA" ]; then
+            echo "is_latest=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_latest=false" >> "$GITHUB_OUTPUT"
+            echo "Validation failed in a stale run. Rollback suppressed so it cannot overwrite a newer deployment."
+          fi
+
+      - name: Roll back Preview code after failed validation
+        if: always() && (steps.smoke.outcome == 'failure' || steps.live.outcome == 'failure') && steps.rollback_ownership.outputs.is_latest == 'true'
+        run: npm run rollback:preview
+
+      - name: Verify restored Preview health
+        if: always() && (steps.smoke.outcome == 'failure' || steps.live.outcome == 'failure') && steps.rollback_ownership.outputs.is_latest == 'true'
+        run: node scripts/preview-health-check.mjs https://kunonline-preview.mr-a-mnaa.workers.dev
+
+      - name: Mark failed deployment
+        if: always() && (steps.smoke.outcome == 'failure' || steps.live.outcome == 'failure') && steps.rollback_ownership.outputs.is_latest == 'true'
+        run: |
+          echo "The latest Preview deployment failed validation and was rolled back."
           exit 1
