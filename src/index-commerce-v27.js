@@ -10,7 +10,7 @@ import {enrichBusinessBriefWithAI} from './ai-provider.js';
 import {listAdDrafts,createAdDraft,getAdDraft,generateAdDraft,requestAdAction} from './ad-studio.js';
 import {
   requireAdmin,listAdminClients,clientOverview,updateClientModules,updateClientBilling,
-  migrateClientBilling,addClientNote
+  migrateClientBilling,addClientNote,createAdminClient,updateClientStatus,resetClientOwnerPassword
 } from './admin-control.js';
 import {resolveStoreScope,requestedStoreId} from './store-scope.js';
 import {requirePermission} from './access-control.js';
@@ -27,6 +27,27 @@ const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:
 const isWrite=m=>['POST','PUT','PATCH','DELETE'].includes(String(m||'').toUpperCase());
 const safeEqual=(a,b)=>{a=String(a||'');b=String(b||'');if(a.length!==b.length)return false;let d=0;for(let i=0;i<a.length;i++)d|=a.charCodeAt(i)^b.charCodeAt(i);return d===0};
 const rid=p=>`${p}-${crypto.randomUUID().slice(0,10).toUpperCase()}`;
+
+function normalizeCustomerPhone(raw){
+  let d=String(raw||'').replace(/[^\d]/g,'');
+  if(d.startsWith('0020'))d='0'+d.slice(4);else if(d.startsWith('20')&&d.length===12)d='0'+d.slice(2);
+  else if(d.startsWith('00966'))d='0'+d.slice(5);else if(d.startsWith('966')&&d.length===12)d='0'+d.slice(3);
+  if(/^01\d{9}$/.test(d)||/^05\d{8}$/.test(d))return d;
+  return null;
+}
+async function createStandaloneCustomer(env,{clientId,storeId,body,actor}){
+  const phone=normalizeCustomerPhone(body.phone);if(!phone)throw Object.assign(new Error('رقم الهاتف غير صحيح'),{status:400,code:'PHONE_INVALID'});
+  const name=String(body.name||'').trim();if(!name)throw Object.assign(new Error('اسم العميل مطلوب'),{status:400,code:'CUSTOMER_NAME_REQUIRED'});
+  const existing=await env.DB.prepare('SELECT id,name,phone FROM customers WHERE client_id=? AND store_id IS ? AND phone=?').bind(clientId,storeId||null,phone).first();
+  if(existing)return {ok:true,existing:true,id:existing.id,customer:existing};
+  const id=rid('CUS'),ts=new Date().toISOString(),tags=Array.isArray(body.tags)?JSON.stringify(body.tags.map(String)):'[]';
+  await env.DB.batch([
+    env.DB.prepare('INSERT INTO customers (id,client_id,store_id,name,phone,gov,address,tags,note,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)').bind(id,clientId,storeId||null,name,phone,String(body.gov||''),String(body.address||''),tags,String(body.note||''),ts),
+    env.DB.prepare('INSERT INTO audit_log (id,client_id,store_id,actor_user_id,actor_email,action,entity_type,entity_id,metadata_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)').bind(rid('AUD'),clientId,storeId||null,actor?.uid||null,actor?.email||actor?.role||'user','customer.create','customer',id,JSON.stringify({source:'v27-ui'}),ts)
+  ]);
+  return {ok:true,id,customer:{id,clientId,storeId:storeId||null,name,phone,gov:String(body.gov||''),address:String(body.address||''),tags:JSON.parse(tags),note:String(body.note||'')}};
+}
+
 
 async function currentUser(request,env,ctx){
   const u=new URL(request.url);u.pathname='/api/me';u.search='';
@@ -71,6 +92,7 @@ async function routeV27(request,env,ctx,me,url,body){
   }
 
   if(path==='/api/admin/clients'&&method==='GET'){requireAdmin(me);return json(await listAdminClients(env));}
+  if(path==='/api/admin/clients'&&method==='POST'){requireAdmin(me);return json(await createAdminClient(env,body,me),201);}
   let m=path.match(/^\/api\/admin\/clients\/([^/]+)\/overview$/);
   if(m&&method==='GET'){requireAdmin(me);return json(await clientOverview(env,decodeURIComponent(m[1])));}
   m=path.match(/^\/api\/admin\/clients\/([^/]+)\/modules$/);
@@ -81,6 +103,10 @@ async function routeV27(request,env,ctx,me,url,body){
   if(m&&method==='POST'){requireAdmin(me);const clientId=decodeURIComponent(m[1]);return json(await migrateClientBilling(env,clientId,me));}
   m=path.match(/^\/api\/admin\/clients\/([^/]+)\/notes$/);
   if(m&&method==='POST'){requireAdmin(me);const clientId=decodeURIComponent(m[1]);return json(await addClientNote(env,clientId,body,me),201);}
+  m=path.match(/^\/api\/admin\/clients\/([^/]+)\/status$/);
+  if(m&&method==='PATCH'){requireAdmin(me);const clientId=decodeURIComponent(m[1]);return json(await updateClientStatus(env,clientId,body,me));}
+  m=path.match(/^\/api\/admin\/clients\/([^/]+)\/reset-owner-password$/);
+  if(m&&method==='POST'){requireAdmin(me);const clientId=decodeURIComponent(m[1]);return json(await resetClientOwnerPassword(env,clientId,body,me));}
   if(path==='/api/admin/wallet/topups'&&method==='GET'){requireAdmin(me);return json(await listPendingTopupsAdmin(env,url.searchParams.get('limit')||200));}
   m=path.match(/^\/api\/admin\/wallet\/topups\/([^/]+)\/(approve|reject)$/);
   if(m&&method==='POST'){
@@ -91,9 +117,12 @@ async function routeV27(request,env,ctx,me,url,body){
 
   const clientId=requestedClient(me,url,body);
   if(!clientId)return null;
-  const needsStoreScope=path.startsWith('/api/orders/')||path==='/api/order-attribution'||path==='/api/marketing/performance'||path==='/api/ai/business-brief'||path.startsWith('/api/ad-studio');
+  if(!featureSkip(path))await assertFeatureEnabled(env,me,clientId,path);
+  const needsStoreScope=(path==='/api/customers'&&method==='POST')||path.startsWith('/api/orders/')||path==='/api/order-attribution'||path==='/api/marketing/performance'||path==='/api/ai/business-brief'||path.startsWith('/api/ad-studio');
   const scope=needsStoreScope?await scopeFor(env,me,clientId,request,body):{storeId:null};
   const storeId=scope.storeId||null;
+
+  if(path==='/api/customers'&&method==='POST'){requirePermission(me,'customers','write');return json(await createStandaloneCustomer(env,{clientId,storeId,body,actor:me}),201);}
 
   if(path==='/api/wallet'&&method==='GET'){
     if(me.role!=='client')requirePermission(me,'wallet','read');
