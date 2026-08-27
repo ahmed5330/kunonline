@@ -3,7 +3,7 @@ const config=readFileSync(new URL('../wrangler.preview.toml',import.meta.url),'u
 const workflow=readFileSync(new URL('../.github/workflows/preview.yml',import.meta.url),'utf8');
 const packageJson=readFileSync(new URL('../package.json',import.meta.url),'utf8');
 const d1Block=config.match(/\[\[d1_databases\]\]([\s\S]*?)(?=\n\[|$)/)?.[1]||'';
-const expected={worker:'kunonline-preview',entrypoint:'src/index-commerce-v27.js',database:'kunonline-preview',databaseId:'31cd5cdf-fc01-42d7-ba1e-571f3dd58495',binding:'DB'};
+const expected={worker:'kunonline-preview',entrypoint:'src/index-commerce-v28.js',database:'kunonline-preview',databaseId:'31cd5cdf-fc01-42d7-ba1e-571f3dd58495',binding:'DB'};
 const value=(source,key)=>source.match(new RegExp(`^\\s*${key}\\s*=\\s*"([^"]+)"`,'m'))?.[1];
 const actual={worker:value(config,'name'),entrypoint:value(config,'main'),database:value(d1Block,'database_name'),databaseId:value(d1Block,'database_id'),binding:value(d1Block,'binding')};
 for(const [key,expectedValue] of Object.entries(expected))if(actual[key]!==expectedValue)throw new Error(`Preview safety check failed: ${key} must be ${expectedValue}; got ${actual[key]??'missing'}`);
@@ -20,8 +20,9 @@ if(!/wrangler rollback --config wrangler\.preview\.toml --message/.test(packageJ
 if(!/git ls-remote origin refs\/heads\/develop\/ux-system-upgrade/.test(workflow))throw new Error('Preview safety check failed: stale-run branch ownership guard is missing.');
 if(!/id:\s*ownership[\s\S]*if:\s*steps\.ownership\.outputs\.is_latest == 'true'[\s\S]*npm run db:migrate:preview/.test(workflow))throw new Error('Preview safety check failed: Preview migrations are not guarded by latest-HEAD ownership.');
 if(!/id:\s*deploy_ownership[\s\S]*if:\s*steps\.deploy_ownership\.outputs\.is_latest == 'true'[\s\S]*npm run deploy:preview/.test(workflow))throw new Error('Preview safety check failed: Preview deploy is not guarded by latest-HEAD ownership.');
-if(!/name:\s*Browser runtime and responsive QA[\s\S]*id:\s*browser[\s\S]*scripts\/browser-preview-qa\.mjs/.test(workflow))throw new Error('Preview safety check failed: browser runtime/responsive QA gate is missing.');
-if(!/steps\.smoke\.outcome == 'failure' \|\| steps\.live\.outcome == 'failure' \|\| steps\.browser\.outcome == 'failure'/.test(workflow))throw new Error('Preview safety check failed: smoke/live/browser validation failure condition is missing.');
+if(!/name:\s*Live team and branch permission regression[\s\S]*id:\s*team_live[\s\S]*scripts\/live-preview-team-test\.mjs/.test(workflow))throw new Error('Preview safety check failed: live team/store permission gate is missing.');
+if(!/name:\s*Browser runtime and responsive QA[\s\S]*id:\s*browser[\s\S]*steps\.team_live\.outcome == 'success'[\s\S]*scripts\/browser-preview-qa\.mjs/.test(workflow))throw new Error('Preview safety check failed: browser gate must depend on team live QA.');
+if(!/steps\.smoke\.outcome == 'failure' \|\| steps\.live\.outcome == 'failure' \|\| steps\.team_live\.outcome == 'failure' \|\| steps\.browser\.outcome == 'failure'/.test(workflow))throw new Error('Preview safety check failed: smoke/live/team/browser validation failure condition is missing.');
 if(!/id:\s*rollback_ownership[\s\S]*steps\.rollback_ownership\.outputs\.is_latest == 'true'[\s\S]*npm run rollback:preview/.test(workflow))throw new Error('Preview safety check failed: rollback is not protected against stale runs.');
 if(!/"wrangler"\s*:\s*"4\.125\.0"/.test(packageJson))throw new Error('Preview safety check failed: Wrangler must be pinned to 4.125.0.');
 console.log('Preview config and workflow safety checks passed.');
