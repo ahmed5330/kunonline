@@ -8,8 +8,10 @@ export function dateRange(url){
   return {from,to};
 }
 
-export async function campaignPerformance(env,{clientId,storeId=null,from,to}){
-  const binds=[clientId];let storeWhere='';if(storeId){storeWhere=' AND c.store_id=?';binds.push(storeId)}binds.push(from,to);
+export async function campaignPerformance(env,{clientId,storeId=null,from,to,platform=null}){
+  let campaignWhere='c.client_id=?',campaignBinds=[from,to,clientId];
+  if(storeId){campaignWhere+=' AND c.store_id=?';campaignBinds.push(storeId)}
+  if(platform){campaignWhere+=' AND c.platform=?';campaignBinds.push(platform)}
   const {results:campaigns=[]}=await env.DB.prepare(`
     SELECT c.id,c.store_id,c.platform,c.external_campaign_id,c.name,c.objective,c.status,c.currency,c.budget,
       COALESCE(SUM(m.spend),0) spend,COALESCE(SUM(m.impressions),0) impressions,
@@ -19,8 +21,8 @@ export async function campaignPerformance(env,{clientId,storeId=null,from,to}){
     FROM marketing_campaigns c
     LEFT JOIN campaign_daily_metrics m ON m.client_id=c.client_id AND m.campaign_id=c.id
       AND m.store_id IS c.store_id AND m.metric_date BETWEEN ? AND ?
-    WHERE c.client_id=? ${storeWhere}
-    GROUP BY c.id ORDER BY c.updated_at DESC`).bind(...(storeId?[from,to,clientId,storeId]:[from,to,clientId])).all();
+    WHERE ${campaignWhere}
+    GROUP BY c.id ORDER BY c.updated_at DESC`).bind(...campaignBinds).all();
 
   const out=[];
   for(const c of campaigns){
@@ -36,18 +38,18 @@ export async function campaignPerformance(env,{clientId,storeId=null,from,to}){
       FROM order_attribution x JOIN orders o ON o.id=x.order_id AND o.client_id=x.client_id
       WHERE x.client_id=? AND x.campaign_id=? AND date(o.date) BETWEEN date(?) AND date(?) ${storeClause}`)
       .bind(...orderBinds).first();
-    const spend=n(c.spend),impressions=n(c.impressions),clicks=n(c.clicks),real=n(a?.real_orders),confirmed=n(a?.confirmed_orders),delivered=n(a?.delivered_orders),revenue=n(a?.delivered_revenue),platformPurchases=n(c.platform_purchases),newCustomers=n(a?.new_customers);
+    const spend=n(c.spend),impressions=n(c.impressions),reach=n(c.reach),clicks=n(c.clicks),real=n(a?.real_orders),confirmed=n(a?.confirmed_orders),delivered=n(a?.delivered_orders),deliveredRevenue=n(a?.delivered_revenue),platformPurchases=n(c.platform_purchases),platformPurchaseValue=n(c.platform_purchase_value),newCustomers=n(a?.new_customers);
     out.push({...c,
-      spend:r2(spend),impressions,clicks,reach:n(c.reach),leads:n(c.leads),platformPurchases,
-      ctr:pct(clicks,impressions),cpc:clicks?r2(spend/clicks):0,cpm:impressions?r2(spend/impressions*1000):0,
+      spend:r2(spend),impressions,clicks,reach,frequency:reach?r2(impressions/reach):0,leads:n(c.leads),platformPurchases,platformPurchaseValue:r2(platformPurchaseValue),
+      ctr:pct(clicks,impressions),cpc:clicks?r2(spend/clicks):0,cpm:impressions?r2(spend/impressions*1000):0,platformRoas:spend?r2(platformPurchaseValue/spend):0,
       realOrders:real,confirmedOrders:confirmed,deliveredOrders:delivered,cancelledOrders:n(a?.cancelled_orders),returnedOrders:n(a?.returned_orders),
       platformCpp:platformPurchases?r2(spend/platformPurchases):0,realOrderCost:real?r2(spend/real):0,
       confirmedOrderCost:confirmed?r2(spend/confirmed):0,deliveredOrderCost:delivered?r2(spend/delivered):0,
-      newCustomers,cac:newCustomers?r2(spend/newCustomers):0,deliveredRevenue:r2(revenue),realRoas:spend?r2(revenue/spend):0,
+      newCustomers,cac:newCustomers?r2(spend/newCustomers):0,deliveredRevenue:r2(deliveredRevenue),realRoas:spend?r2(deliveredRevenue/spend):0,
       cancellationRate:pct(n(a?.cancelled_orders),real),returnRate:pct(n(a?.returned_orders),Math.max(1,delivered+n(a?.returned_orders)))
     });
   }
-  const total=out.reduce((a,c)=>{for(const k of ['spend','impressions','clicks','reach','leads','platformPurchases','realOrders','confirmedOrders','deliveredOrders','cancelledOrders','returnedOrders','newCustomers','deliveredRevenue'])a[k]=(a[k]||0)+n(c[k]);return a;},{});
+  const total=out.reduce((a,c)=>{for(const k of ['spend','impressions','clicks','reach','leads','platformPurchases','platformPurchaseValue','realOrders','confirmedOrders','deliveredOrders','cancelledOrders','returnedOrders','newCustomers','deliveredRevenue'])a[k]=(a[k]||0)+n(c[k]);return a;},{});
   const attributedOrders=total.realOrders||0;
   const overall=await env.DB.prepare(`SELECT COUNT(*) real_orders,
     SUM(CASE WHEN state IN ('confirmed','preparing','shipped','signed','collected') THEN 1 ELSE 0 END) confirmed_orders,
@@ -59,7 +61,6 @@ export async function campaignPerformance(env,{clientId,storeId=null,from,to}){
     FROM orders WHERE client_id=? ${storeId?'AND store_id=?':''} AND date(date) BETWEEN date(?) AND date(?)`)
     .bind(...(storeId?[clientId,storeId,from,to]:[clientId,from,to])).first();
   total.attributedOrders=attributedOrders;total.realOrders=n(overall?.real_orders);total.unattributedOrders=Math.max(0,total.realOrders-attributedOrders);total.confirmedOrders=n(overall?.confirmed_orders);total.deliveredOrders=n(overall?.delivered_orders);total.cancelledOrders=n(overall?.cancelled_orders);total.returnedOrders=n(overall?.returned_orders);total.deliveredRevenue=r2(overall?.delivered_revenue);total.customers=n(overall?.customers);
-  total.ctr=pct(total.clicks,total.impressions);total.cpc=total.clicks?r2(total.spend/total.clicks):0;total.cpm=total.impressions?r2(total.spend/total.impressions*1000):0;total.platformCpp=total.platformPurchases?r2(total.spend/total.platformPurchases):0;total.realOrderCost=total.realOrders?r2(total.spend/total.realOrders):0;total.confirmedOrderCost=total.confirmedOrders?r2(total.spend/total.confirmedOrders):0;total.deliveredOrderCost=total.deliveredOrders?r2(total.spend/total.deliveredOrders):0;total.cac=total.customers?r2(total.spend/total.customers):0;total.realRoas=total.spend?r2(total.deliveredRevenue/total.spend):0;
-  return {from,to,total,campaigns:out};
+  total.ctr=pct(total.clicks,total.impressions);total.cpc=total.clicks?r2(total.spend/total.clicks):0;total.cpm=total.impressions?r2(total.spend/total.impressions*1000):0;total.frequency=total.reach?r2(total.impressions/total.reach):0;total.platformCpp=total.platformPurchases?r2(total.spend/total.platformPurchases):0;total.platformRoas=total.spend?r2(total.platformPurchaseValue/total.spend):0;total.realOrderCost=total.realOrders?r2(total.spend/total.realOrders):0;total.confirmedOrderCost=total.confirmedOrders?r2(total.spend/total.confirmedOrders):0;total.deliveredOrderCost=total.deliveredOrders?r2(total.spend/total.deliveredOrders):0;total.cac=total.customers?r2(total.spend/total.customers):0;total.realRoas=total.spend?r2(total.deliveredRevenue/total.spend):0;
+  return {from,to,platform:platform||null,total,campaigns:out};
 }
-
