@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
-import {validateMetaAdsConnection,validateProviderConnection} from '../src/integration-provider-validation.js';
+import {validateEasyOrdersConnection,validateMetaAdsConnection,validateProviderConnection} from '../src/integration-provider-validation.js';
 
 const env={META_GRAPH_API_VERSION:'v25.0'};
 function response(body,status=200){return new Response(JSON.stringify(body),{status,headers:{'Content-Type':'application/json'}});}
@@ -29,6 +29,18 @@ const invalidFetch=()=>response({error:{message:'Invalid OAuth access token.',ty
 result=await validateMetaAdsConnection({env,secrets:{access_token:'bad'},selectedAdAccountId:'123',fetcher:invalidFetch});assert.equal(result.ok,false);assert.equal(result.status,'disconnected');assert.equal(result.code,'META_TOKEN_INVALID');assert.match(result.message,/غير صالح|منتهي/);
 result=await validateProviderConnection({env,provider:{id:'shopify',name:'Shopify'},secrets:{access_token:'x'},fetcher:oneAccountFetch});assert.equal(result.externalConnectivityChecked,false);assert.equal(result.status,'configured');
 
+const easyOrdersCalls=[];
+const easyOrdersFetch=(url,options={})=>{easyOrdersCalls.push({url,options});return response({data:[]});};
+result=await validateProviderConnection({env,provider:{id:'easyorders',name:'Easy Orders'},secrets:{api_key:'tenant-a-easyorders-key'},fetcher:easyOrdersFetch});
+assert.equal(result.ok,true);assert.equal(result.status,'connected');assert.equal(result.externalConnectivityChecked,true);assert.equal(result.code,undefined);
+assert.equal(easyOrdersCalls.length,1);assert.equal(easyOrdersCalls[0].url,'https://api.easy-orders.net/api/v1/external-apps/products');assert.equal(easyOrdersCalls[0].options.method,'GET');assert.equal(easyOrdersCalls[0].options.headers['Api-Key'],'tenant-a-easyorders-key');assert.equal(easyOrdersCalls[0].options.headers.Authorization,undefined,'Easy Orders uses Api-Key, not Bearer authentication');
+result=await validateEasyOrdersConnection({secrets:{api_key:'bad'},fetcher:()=>response({message:'Unauthorized'},401)});assert.equal(result.ok,false);assert.equal(result.code,'EASYORDERS_API_KEY_INVALID');assert.equal(result.externalConnectivityChecked,true);
+result=await validateEasyOrdersConnection({secrets:{api_key:'no-products'},fetcher:()=>response({message:'Forbidden'},403)});assert.equal(result.code,'EASYORDERS_PRODUCTS_READ_FORBIDDEN');assert.match(result.message,/products:read/);
+result=await validateEasyOrdersConnection({secrets:{},fetcher:()=>{throw new Error('must not fetch')}});assert.equal(result.code,'EASYORDERS_API_KEY_MISSING');assert.equal(result.externalConnectivityChecked,false);
+const easyTenantKeys=[];
+for(const api_key of ['tenant-a-key','tenant-b-key']){const tenantResult=await validateEasyOrdersConnection({secrets:{api_key},fetcher:(_url,options)=>{easyTenantKeys.push(options.headers['Api-Key']);return response({data:[]});}});assert.equal(tenantResult.status,'connected');}
+assert.deepEqual(easyTenantKeys,['tenant-a-key','tenant-b-key'],'Each validation must use only the decrypted key for the current tenant connection');
+
 const worker=await readFile(new URL('../src/index-commerce-v19.js',import.meta.url),'utf8');
 const readiness=await readFile(new URL('../src/index-commerce-v13.js',import.meta.url),'utf8');
 const validator=await readFile(new URL('../src/integration-provider-validation.js',import.meta.url),'utf8');
@@ -43,9 +55,11 @@ for(const marker of [
 ])assert.ok(worker.includes(marker),`Tenant-scoped integration persistence missing ${marker}`);
 assert.ok(validator.includes('WHERE client_id=? AND connection_id=?'),'Secret reads must be tenant + connection scoped');
 for(const marker of ['adAccountConfirmed:true','requiresAccountIdInput:true','لن يختار Kun Online أي حساب تلقائيًا'])assert.ok(validator.includes(marker),`Explicit Meta account binding missing ${marker}`);
+for(const marker of ["EASYORDERS_PROVIDER='easyorders'","'Api-Key':apiKey",'api.easy-orders.net/api/v1/external-apps/products','EASYORDERS_API_KEY_INVALID'])assert.ok(validator.includes(marker),`Easy Orders external validation missing ${marker}`);
 for(const marker of ['config.adAccountConfirmed===true','requiresAdAccountId','requires_ad_account_id'])assert.ok(readiness.includes(marker),`Readiness must downgrade legacy Meta bindings: ${marker}`);
 for(const marker of ['حفظ واختبار','رقم الحساب الإعلاني Meta Ad Account ID','intMetaAdAccountId','Ad Account ID مطلوب','لن يختار Kun Online أي حساب تلقائيًا'])assert.ok(ui.includes(marker),`Integration UI missing ${marker}`);
 const runtimeSources=`${worker}\n${validator}\n${ui}`;
 assert.equal(runtimeSources.includes('Wefaq Ads'),false,'Production runtime must never hard-code the QA customer/account name');
 assert.equal(runtimeSources.includes('وفاق'),false,'Production runtime must never hard-code a customer name');
 console.log('Integration validation checks passed: explicit Meta Ad Account ID, tenant isolation, legacy-binding downgrade, cache reset and no customer-specific hard-coding.');
+
