@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
-import {validateEasyOrdersConnection,validateMetaAdsConnection,validateProviderConnection} from '../src/integration-provider-validation.js';
+import {readConnectionSecrets,validateEasyOrdersConnection,validateMetaAdsConnection,validateProviderConnection} from '../src/integration-provider-validation.js';
+import {encryptSecret} from '../src/integration-secrets.js';
 
 const env={META_GRAPH_API_VERSION:'v25.0'};
 function response(body,status=200){return new Response(JSON.stringify(body),{status,headers:{'Content-Type':'application/json'}});}
@@ -41,6 +42,27 @@ const easyTenantKeys=[];
 for(const api_key of ['tenant-a-key','tenant-b-key']){const tenantResult=await validateEasyOrdersConnection({secrets:{api_key},fetcher:(_url,options)=>{easyTenantKeys.push(options.headers['Api-Key']);return response({data:[]});}});assert.equal(tenantResult.status,'connected');}
 assert.deepEqual(easyTenantKeys,['tenant-a-key','tenant-b-key'],'Each validation must use only the decrypted key for the current tenant connection');
 
+// Full secret-read regression: even if two tenants reuse the same connection ID, both SQL keys must scope the decrypted credential.
+const scopedSecretEnv={APP_ENV:'preview',SESSION_SECRET:'easyorders-tenant-regression'};
+const encryptedA=await encryptSecret(scopedSecretEnv,'tenant-a-saved-key'),encryptedB=await encryptSecret(scopedSecretEnv,'tenant-b-saved-key');
+const scopedRows=[
+  {client_id:'tenant-a',connection_id:'shared-connection',secret_name:'api_key',ciphertext_b64:encryptedA.ciphertextB64,iv_b64:encryptedA.ivB64},
+  {client_id:'tenant-b',connection_id:'shared-connection',secret_name:'api_key',ciphertext_b64:encryptedB.ciphertextB64,iv_b64:encryptedB.ivB64}
+];
+scopedSecretEnv.DB={prepare(sql){assert.match(sql,/WHERE client_id=\? AND connection_id=\?/);return {bind(clientId,connectionId){return {async all(){return {results:scopedRows.filter(row=>row.client_id===clientId&&row.connection_id===connectionId)}}};}};}};
+const scopedRequests=[];
+for(const clientId of ['tenant-a','tenant-b']){
+  const savedSecrets=await readConnectionSecrets(scopedSecretEnv,clientId,'shared-connection');
+  const tenantResult=await validateProviderConnection({env:scopedSecretEnv,provider:{id:'easyorders',name:'Easy Orders'},secrets:savedSecrets,fetcher:(_url,options)=>{scopedRequests.push({clientId,key:options.headers['Api-Key']});return response({data:[]});}});
+  assert.equal(tenantResult.status,'connected');assert.notEqual(tenantResult.code,'PROVIDER_EXTERNAL_VALIDATION_PENDING');
+}
+assert.deepEqual(scopedRequests,[{clientId:'tenant-a',key:'tenant-a-saved-key'},{clientId:'tenant-b',key:'tenant-b-saved-key'}]);
+for(const fetcher of [()=>response({},401),()=>response({},403),()=>response({},429),()=>response({},503),()=>{throw new Error('offline')}]){
+  const outcome=await validateProviderConnection({env,provider:{id:'easyorders',name:'Easy Orders'},secrets:{api_key:'saved-key'},fetcher});
+  assert.notEqual(outcome.code,'PROVIDER_EXTERNAL_VALIDATION_PENDING','Easy Orders must always use its external validator for every tenant and outcome');
+  assert.equal(outcome.externalConnectivityChecked,true);
+}
+
 const worker=await readFile(new URL('../src/index-commerce-v19.js',import.meta.url),'utf8');
 const readiness=await readFile(new URL('../src/index-commerce-v13.js',import.meta.url),'utf8');
 const validator=await readFile(new URL('../src/integration-provider-validation.js',import.meta.url),'utf8');
@@ -61,5 +83,5 @@ for(const marker of ['حفظ واختبار','رقم الحساب الإعلان
 const runtimeSources=`${worker}\n${validator}\n${ui}`;
 assert.equal(runtimeSources.includes('Wefaq Ads'),false,'Production runtime must never hard-code the QA customer/account name');
 assert.equal(runtimeSources.includes('وفاق'),false,'Production runtime must never hard-code a customer name');
-console.log('Integration validation checks passed: explicit Meta Ad Account ID, tenant isolation, legacy-binding downgrade, cache reset and no customer-specific hard-coding.');
+console.log('Integration validation checks passed: tenant-scoped Easy Orders credentials, external validation routing, explicit Meta Ad Account ID, legacy-binding downgrade, cache reset and no customer-specific hard-coding.');
 
