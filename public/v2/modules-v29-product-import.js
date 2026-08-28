@@ -11,5 +11,5 @@
   document.documentElement.dataset.productImport='ready';
 })();
 {
-  const module=document.createElement('script');module.src='/v2/modules-v30-order-sync.js?v=30.1';document.head.appendChild(module);
+  const module=document.createElement('script');module.src='/v2/modules-v30-order-sync.js?v=30.2';document.head.appendChild(module);
 }
