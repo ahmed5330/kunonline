@@ -35,7 +35,7 @@ const index=await readFile(new URL('../public/v2/index.html',import.meta.url),'u
 for(const marker of ["provider=? AND status='connected'","WHERE client_id=? AND connection_id=?","platform='meta_ads'",'campaign_daily_metrics','last_sync_at','syncStoreId'])assert.ok(syncSource.includes(marker),`Meta sync missing tenant/persistence marker: ${marker}`);
 for(const marker of ['/api/integrations/meta-ads/sync','/api/integrations/meta-ads/performance','campaignPerformance','syncMetaAdsForClient','syncAllConnectedMetaAds',"controller?.cron==='0 */2 * * *'"])assert.ok(worker.includes(marker),`v28 Meta route missing ${marker}`);
 for(const marker of ['platformPurchaseValue','platformRoas','frequency','platform=null'])assert.ok(performance.includes(marker),`Marketing performance missing ${marker}`);
-for(const marker of ['إدارة الحملات — Meta Ads','Marketing Intelligence','مزامنة Meta الآن','الشغالة فقط','Platform ROAS','Real ROAS','KunMetaAdsLive'])assert.ok(ui.includes(marker),`Live Meta UI missing ${marker}`);
+for(const marker of ['إدارة الحملات — Meta Ads','Marketing Intelligence','مزامنة Meta الآن','الشغالة فقط','Platform ROAS','Real ROAS','KunMetaAdsLive','async function liveData','empty:${c.clientId}'])assert.ok(ui.includes(marker),`Live Meta UI missing ${marker}`);
 assert.equal(ui.includes('access_token'),false,'The browser UI must never contain or expose the Meta access token');
 assert.ok(index.includes('/v2/modules-v27-meta-ads.js?v=27.0'),'Preview entrypoint must load the live Meta Ads overlay');
-console.log('Meta Ads sync checks passed: Graph pagination/insights parsing, tenant-scoped persistence, live campaign UI, real performance and scheduled refresh are wired.');
+console.log('Meta Ads sync checks passed: Graph pagination/insights parsing, tenant-scoped persistence, empty-state auto-sync, live campaign UI, real performance and scheduled refresh are wired.');
