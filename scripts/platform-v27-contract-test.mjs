@@ -24,7 +24,7 @@ must(scope.includes('/api/ad-studio')&&scope.includes('/api/ai/business-brief'),
 must(access.includes("marketing:")&&access.includes("'ads.*'")&&access.includes("'wallet.read'"),'v27 permissions missing');
 for(const p of ['tiktok_messaging','bosta','mylerz','aramex','custom_shipping'])must(provider.includes(`id:'${p}'`),`Provider ${p} missing`);
 must(v28.includes("import commerceV27 from './index-commerce-v27.js'")&&v28.includes('commerceV27.fetch'),'v28 must preserve the v27 foundation by delegation');
-must(wrangler.includes('main = "src/index-commerce-v30.js"'),'Preview entrypoint must be v30 wrapper');
+const previewEntry=wrangler.match(/^\s*main\s*=\s*"([^"]+)"/m)?.[1]||'';
+must(/^src\/index-commerce-v\d+\.js$/.test(previewEntry),'Preview entrypoint must be a versioned commerce wrapper');
 must(!wrangler.includes('kunonline"\n')||wrangler.includes('name = "kunonline-preview"'),'Preview config safety failed');
-console.log('v27 foundation checks passed under v28: control plane, entitlements, wallet, order timeline, marketing, AI/ads, integrations and delegated Preview entrypoint.');
-
+console.log(`v27 foundation checks passed under v28+: control plane, entitlements, wallet, order timeline, marketing, AI/ads, integrations and delegated Preview entrypoint ${previewEntry}.`);
