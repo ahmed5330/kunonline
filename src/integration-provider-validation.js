@@ -1,6 +1,8 @@
 import {decryptSecret} from './integration-secrets.js';
 
 const META_PROVIDER='meta_ads';
+const EASYORDERS_PROVIDER='easyorders';
+const EASYORDERS_PRODUCTS_URL='https://api.easy-orders.net/api/v1/external-apps/products';
 const cleanAccountId=value=>String(value||'').trim().replace(/^act_/i,'');
 const graphVersion=env=>{const raw=String(env?.META_GRAPH_API_VERSION||'v25.0').trim();return raw.startsWith('v')?raw:`v${raw}`;};
 const safeAccount=row=>({id:String(row?.id||''),accountId:cleanAccountId(row?.account_id||row?.id),name:String(row?.name||'حساب إعلاني بدون اسم'),accountStatus:Number(row?.account_status||0),currency:String(row?.currency||''),timezone:String(row?.timezone_name||'')});
@@ -45,7 +47,25 @@ export async function validateMetaAdsConnection({env,secrets,selectedAdAccountId
   return {ok:true,status:'connected',externalConnectivityChecked:true,requiresAccountSelection:false,requiresAccountIdInput:false,apiVersion:version,identity:{id:String(identity?.id||''),name:String(identity?.name||'')},account:verified,externalStoreId:`act_${verified.accountId}`,storeName:verified.name,config:{apiVersion:version,adAccountId:verified.accountId,adAccountConfirmed:true},message:`تم الاتصال بـ Meta Ads بنجاح — ${verified.name} (act_${verified.accountId}).`};
 }
 
+export async function validateEasyOrdersConnection({secrets,fetcher=fetch}){
+  const apiKey=String(secrets?.api_key||'').trim();
+  if(!apiKey)return {ok:false,status:'disconnected',externalConnectivityChecked:false,code:'EASYORDERS_API_KEY_MISSING',message:'مفتاح Easy Orders API غير موجود.'};
+  let response;
+  try{
+    response=await fetcher(EASYORDERS_PRODUCTS_URL,{method:'GET',headers:{'Api-Key':apiKey,Accept:'application/json'}});
+  }catch(error){
+    return {ok:false,status:'disconnected',externalConnectivityChecked:true,code:'EASYORDERS_CONNECTIVITY_FAILED',message:`تعذر الاتصال بـ Easy Orders: ${String(error?.message||'خطأ في الشبكة')}`};
+  }
+  if(response.ok)return {ok:true,status:'connected',externalConnectivityChecked:true,config:{authentication:'api-key',validatedResource:'products'},message:'تم الاتصال بـ Easy Orders والتحقق من مفتاح API بنجاح.'};
+  if(response.status===401)return {ok:false,status:'disconnected',externalConnectivityChecked:true,code:'EASYORDERS_API_KEY_INVALID',message:'Easy Orders رفضت مفتاح API. انسخ المفتاح الظاهر مرة واحدة عند إنشائه من Public API، وليس رقم سجل المفتاح.'};
+  if(response.status===403)return {ok:false,status:'disconnected',externalConnectivityChecked:true,code:'EASYORDERS_PRODUCTS_READ_FORBIDDEN',message:'مفتاح Easy Orders صالح لكنه لا يملك صلاحية products:read المطلوبة للتحقق.'};
+  if(response.status===429)return {ok:false,status:'configured',externalConnectivityChecked:true,code:'EASYORDERS_RATE_LIMITED',message:'Easy Orders أوقفت التحقق مؤقتًا بسبب حد الطلبات. حاول مرة أخرى بعد قليل.'};
+  return {ok:false,status:'disconnected',externalConnectivityChecked:true,code:'EASYORDERS_VALIDATION_FAILED',message:`فشل التحقق من Easy Orders (HTTP ${response.status}).`};
+}
+
 export async function validateProviderConnection({env,provider,secrets,selectedAdAccountId,fetcher=fetch}){
   if(provider?.id===META_PROVIDER)return validateMetaAdsConnection({env,secrets,selectedAdAccountId,fetcher});
+  if(provider?.id===EASYORDERS_PROVIDER)return validateEasyOrdersConnection({secrets,fetcher});
   return {ok:true,status:'configured',externalConnectivityChecked:false,code:'PROVIDER_EXTERNAL_VALIDATION_PENDING',message:`بيانات ${provider?.name||provider?.id||'التكامل'} محفوظة، لكن التحقق الخارجي لهذا المزود لم يتم تفعيله بعد.`};
 }
+
