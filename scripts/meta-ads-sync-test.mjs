@@ -31,13 +31,15 @@ const validator=await readFile(new URL('../src/integration-provider-validation.j
 const worker=await readFile(new URL('../src/index-commerce-v28.js',import.meta.url),'utf8');
 const performance=await readFile(new URL('../src/marketing-performance.js',import.meta.url),'utf8');
 const ui=await readFile(new URL('../public/v2/modules-v27-meta-ads.js',import.meta.url),'utf8');
+const integrationUi=await readFile(new URL('../public/v2/modules-v16.js',import.meta.url),'utf8');
 const index=await readFile(new URL('../public/v2/index.html',import.meta.url),'utf8');
 
 for(const marker of ["provider=? AND status='connected'","platform='meta_ads'",'campaign_daily_metrics','last_sync_at','syncStoreId'])assert.ok(syncSource.includes(marker),`Meta sync missing tenant/persistence marker: ${marker}`);
 assert.ok(validator.includes('WHERE client_id=? AND connection_id=?'),'Decrypted Meta secrets must remain tenant + connection scoped');
-for(const marker of ['/api/integrations/meta-ads/sync','/api/integrations/meta-ads/performance','campaignPerformance','syncMetaAdsForClient','syncAllConnectedMetaAds',"controller?.cron==='0 */2 * * *'"])assert.ok(worker.includes(marker),`v28 Meta route missing ${marker}`);
+for(const marker of ['/api/integrations/meta-ads/sync','/api/integrations/meta-ads/performance','campaignPerformance','syncMetaAdsForClient','explicitMetaBinding','syncAllExplicitMeta','adAccountConfirmed!==true',"controller?.cron==='0 */2 * * *'"])assert.ok(worker.includes(marker),`v28 Meta route missing ${marker}`);
 for(const marker of ['platformPurchaseValue','platformRoas','frequency','platform=null'])assert.ok(performance.includes(marker),`Marketing performance missing ${marker}`);
 for(const marker of ['إدارة الحملات — Meta Ads','Marketing Intelligence','مزامنة Meta الآن','الشغالة فقط','Platform ROAS','Real ROAS','KunMetaAdsLive','async function liveData','empty:${c.clientId}'])assert.ok(ui.includes(marker),`Live Meta UI missing ${marker}`);
+for(const marker of ['intMetaAdAccountId','رقم الحساب الإعلاني Meta Ad Account ID','لن يختار Kun Online أي حساب تلقائيًا'])assert.ok(integrationUi.includes(marker),`Integration UI missing explicit Meta account input: ${marker}`);
 assert.equal(ui.includes('access_token'),false,'The browser UI must never contain or expose the Meta access token');
 assert.ok(index.includes('/v2/modules-v27-meta-ads.js?v=27.0'),'Preview entrypoint must load the live Meta Ads overlay');
-console.log('Meta Ads sync checks passed: Graph pagination/insights parsing, tenant-scoped secrets/persistence, empty-state auto-sync, live campaign UI, real performance and scheduled refresh are wired.');
+console.log('Meta Ads sync checks passed: Graph pagination/insights parsing, explicit account binding gate, tenant-scoped secrets/persistence, live campaign UI, real performance and safe scheduled refresh are wired.');
