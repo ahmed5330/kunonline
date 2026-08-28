@@ -69,7 +69,7 @@ async function diagnostics(request,env,ctx){
   let row=results[0]||null;if(requestedStore)row=results.find(x=>text(parseConfig(x).kunStoreId)===requestedStore)||row;
   if(!row)return json({connected:false,code:'EASYORDERS_CONNECTION_NOT_FOUND',message:'لا يوجد ربط Easy Orders لهذا الحساب.'},404);
   const config=parseConfig(row),secrets=await readConnectionSecrets(env,clientId,row.id).catch(()=>({})),path=await easyOrdersWebhookPath(env,row);
-  return json({connected:row.status==='connected',connectionId:row.id,status:row.status,kunStoreId:config.kunStoreId||null,externalStoreId:row.external_store_id||null,webhookUrl:`${url.origin}${path}`,secretConfigured:Boolean(text(secrets.webhook_secret)),lastSyncAt:row.last_sync_at||null,lastError:row.last_error||null,webhook:{lastReceivedAt:config.webhookLastReceivedAt||null,lastProbeAt:config.webhookLastProbeAt||null,lastStatus:config.webhookLastStatus||null,lastCode:config.webhookLastCode||null,lastHttpStatus:config.webhookLastHttpStatus||null,lastOrderId:config.webhookLastOrderId||null,lastExternalStoreId:config.webhookLastExternalStoreId||null}});
+  return json({connected:row.status==='connected',connectionId:row.id,status:row.status,kunStoreId:config.kunStoreId||null,externalStoreId:row.external_store_id||null,webhookUrl:`${url.origin}${path}`,routeMode:'connection-scoped',legacyRouteDisabled:true,legacyWebhookUrl:`${url.origin}/webhooks/easyorders`,secretConfigured:Boolean(text(secrets.webhook_secret)),lastSyncAt:row.last_sync_at||null,lastError:row.last_error||null,webhook:{lastReceivedAt:config.webhookLastReceivedAt||null,lastProbeAt:config.webhookLastProbeAt||null,lastStatus:config.webhookLastStatus||null,lastCode:config.webhookLastCode||null,lastHttpStatus:config.webhookLastHttpStatus||null,lastOrderId:config.webhookLastOrderId||null,lastExternalStoreId:config.webhookLastExternalStoreId||null}});
 }
 
 async function fetchV31(request,env,ctx){
@@ -77,6 +77,11 @@ async function fetchV31(request,env,ctx){
   try{
     if(path==='/api/preview/version')return json({ok:true,build:BUILD,environment:env.APP_ENV||'unknown',entrypoint:'index-commerce-v31.js'});
     if(path==='/api/commerce/order-sync/diagnostics'&&method==='GET')return diagnostics(request,env,ctx);
+    if(/^\/webhooks\/easyorders\/?$/.test(path)){
+      const headers={'X-Kun-Webhook':'easyorders','X-Kun-Webhook-Deprecated':'1'};
+      if(method==='HEAD')return new Response(null,{status:410,headers});
+      return json({error:'رابط Webhook العام قديم وغير مدعوم على Preview. استخدم الرابط الفريد الظاهر داخل Kun Online لهذا الربط.',code:'EASYORDERS_WEBHOOK_LEGACY_ROUTE_DISABLED'},410,headers);
+    }
     const match=path.match(/^\/webhooks\/easyorders\/([^/]+)\/([^/]+)\/?$/);
     if(match){
       const connectionId=decodeURIComponent(match[1]),sentToken=decodeURIComponent(match[2]),connection=await connectionById(env,connectionId);
