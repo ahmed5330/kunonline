@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {easyOrdersWebhookPath} from '../src/commerce-order-sync.js';
+// Contract rerun marker: keep Preview validation deterministic after transient live-store failures.
 const root=new URL('../',import.meta.url),read=p=>readFile(new URL(p,root),'utf8');
 const [sync,worker,ui,loader,validator,preview]=await Promise.all([read('src/commerce-order-sync.js'),read('src/index-commerce-v30.js'),read('public/v2/modules-v30-order-sync.js'),read('public/v2/modules-v29-product-import.js'),read('src/integration-provider-validation.js'),read('wrangler.preview.toml')]);
 const env={SESSION_SECRET:'qa-session-secret'};
