@@ -6,7 +6,7 @@ import {
 import {requirePermission,resolveTenant} from './access-control.js';
 import {resolveStoreScope,requestedStoreId} from './store-scope.js';
 import {campaignPerformance,dateRange} from './marketing-performance.js';
-import {syncMetaAdsForClient,syncAllConnectedMetaAds} from './meta-ads-sync.js';
+import {syncMetaAdsForClient} from './meta-ads-sync.js';
 
 const BUILD='preview-v28-2026-08-28';
 const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{
@@ -27,6 +27,20 @@ async function currentUser(request,env,ctx){
 async function bodyOf(request){return ['POST','PUT','PATCH','DELETE'].includes(request.method.toUpperCase())?await request.clone().json().catch(()=>({})):{};}
 function requestedClient(url,body={}){return body.clientId||body.client_id||url.searchParams.get('clientId')||null;}
 async function audit(env,me,clientId,storeId,action,entityId,metadata={}){try{await env.DB.prepare('INSERT INTO audit_log (id,client_id,store_id,actor_user_id,actor_email,action,entity_type,entity_id,metadata_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)').bind(`AUD-${crypto.randomUUID().slice(0,10).toUpperCase()}`,clientId,storeId||null,me?.uid||null,me?.email||me?.role||'user',action,'store_connection',entityId||null,JSON.stringify(metadata),new Date().toISOString()).run();}catch{}}
+function parseConfig(row){try{return JSON.parse(row?.config_json||'{}')}catch{return {}};}
+async function explicitMetaBinding(env,clientId){
+  const row=await env.DB.prepare("SELECT id,status,config_json FROM store_connections WHERE client_id=? AND provider='meta_ads' ORDER BY updated_at DESC LIMIT 1").bind(clientId).first();
+  if(!row)throw Object.assign(new Error('اربط Meta Ads من مركز التكاملات أولًا'),{status:409,code:'META_ADS_NOT_CONNECTED'});
+  const config=parseConfig(row),accountId=String(config.adAccountId||'').trim().replace(/^act_/i,'');
+  if(row.status!=='connected'||config.adAccountConfirmed!==true||!accountId)throw Object.assign(new Error('لازم تدخل رقم الحساب الإعلاني Ad Account ID وتؤكده من مركز التكاملات قبل عرض أو مزامنة بيانات Meta.'),{status:409,code:'META_AD_ACCOUNT_CONFIRMATION_REQUIRED'});
+  return {connectionId:row.id,accountId,config};
+}
+async function syncAllExplicitMeta(env,{days=30,limit=50}={}){
+  const {results=[]}=await env.DB.prepare("SELECT DISTINCT client_id FROM store_connections WHERE provider='meta_ads' ORDER BY updated_at DESC LIMIT ?").bind(Math.max(1,Math.min(200,Number(limit)||50))).all();
+  const outcomes=[];
+  for(const row of results){try{await explicitMetaBinding(env,row.client_id);outcomes.push({clientId:row.client_id,...await syncMetaAdsForClient(env,{clientId:row.client_id,days})});}catch(error){outcomes.push({clientId:row.client_id,ok:false,code:error?.code||'META_SYNC_SKIPPED',error:error?.message||String(error)});}}
+  return outcomes;
+}
 
 async function onboardingV28(request,env,ctx,me,clientId){
   const response=await commerceV27.fetch(request,env,ctx);if(!response.ok)return response;
@@ -49,9 +63,10 @@ async function fetchV28(request,env,ctx){
       const clientId=resolveTenant(me,requestedClient(url,body));
       const write=path.endsWith('/sync');
       requirePermission(me,'campaigns',write?'write':'read');
+      const binding=await explicitMetaBinding(env,clientId);
       const scope=await resolveStoreScope(env,me,clientId,requestedStoreId(request,body),{write});
       if(path==='/api/integrations/meta-ads/performance'&&method==='GET'){
-        const range=dateRange(url);return json(await campaignPerformance(env,{clientId,storeId:scope.storeId||null,...range,platform:'meta_ads'}));
+        const range=dateRange(url);return json({...await campaignPerformance(env,{clientId,storeId:scope.storeId||null,...range,platform:'meta_ads'}),metaAccountId:binding.accountId});
       }
       if(path==='/api/integrations/meta-ads/sync'&&method==='POST'){
         const result=await syncMetaAdsForClient(env,{clientId,storeId:scope.storeId||null,from:body.from,to:body.to,days:body.days});
@@ -82,7 +97,7 @@ async function fetchV28(request,env,ctx){
 export default {
   fetch:fetchV28,
   scheduled(controller,env,ctx){
-    if(controller?.cron==='0 */2 * * *')ctx.waitUntil(syncAllConnectedMetaAds(env,{days:30}).catch(()=>[]));
+    if(controller?.cron==='0 */2 * * *')ctx.waitUntil(syncAllExplicitMeta(env,{days:30}).catch(()=>[]));
     return commerceV27.scheduled?.(controller,env,ctx);
   }
 };
