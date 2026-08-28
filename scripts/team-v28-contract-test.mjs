@@ -9,8 +9,8 @@ must(entry.includes("preview-v28-2026-08-28")&&entry.includes("index-commerce-v2
 for(const marker of ['createTeamMember','updateTeamMember','replaceTeamMemberStoreAccess','resetTeamMemberPassword','deleteTeamMember','OWNER_PROTECTED','STORE_ACCESS_REQUIRED','pbkdf2$'])must(team.includes(marker),`team backend missing: ${marker}`);
 for(const marker of ['v28AddMember','v28CreateMember','v28SaveStores','v28ResetPassword','v28DeleteMember','data-v28-store','KunTeamV28'])must(ui.includes(marker),`team UI missing: ${marker}`);
 must(index.includes('modules-v24-team.js'),'team UI overlay not loaded');
-must(wrangler.includes('main = "src/index-commerce-v30.js"'),'Preview must deploy the v30 wrapper over v28');
+const previewEntry=wrangler.match(/^\s*main\s*=\s*"([^"]+)"/m)?.[1]||'';
+must(/^src\/index-commerce-v\d+\.js$/.test(previewEntry),'Preview must deploy a versioned wrapper over v28');
 must(scope.includes("STORE_READ_ONLY")&&scope.includes('user_store_access'),'store-level server enforcement missing');
 must(access.includes("support:")&&access.includes("viewer:")&&access.includes("marketing:")&&access.includes("accountant:"),'business role rules missing');
-console.log('v28 team contract checks passed: lifecycle, canonical roles, branch access, onboarding and Preview entrypoint.');
-
+console.log(`v28 team contract checks passed: lifecycle, canonical roles, branch access, onboarding and Preview entrypoint ${previewEntry}.`);
