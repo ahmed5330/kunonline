@@ -9,7 +9,8 @@ assert.equal(hookA,hookA2,'Webhook URL must remain stable for the same connectio
 assert.notEqual(hookA,hookB,'Each Easy Orders connection must receive a unique webhook URL');
 assert.match(hookA,/^\/webhooks\/easyorders\/CON-A\/[a-f0-9]{64}$/,'Webhook URL must carry an unguessable HMAC route token');
 for(const marker of ['all','month','seven_days','day','since_connection','orders.read','EASYORDERS_HISTORICAL_ORDERS_UNAVAILABLE','easyOrdersWebhookPath','verifyRoute','bindExternalStore','EASYORDERS_STORE_MISMATCH','client_id=? AND store_id IS ? AND phone=?','kunStoreId','webhook_secret','ON CONFLICT(id)','last_sync_at'])assert.ok(sync.includes(marker),`sync missing ${marker}`);
-for(const marker of ['/api/commerce/order-sync/providers','/api/commerce/order-sync','/webhooks/easyorders','easyRoute','connectionId','routeToken','resolveTenant','resolveStoreScope','requirePermission'])assert.ok(worker.includes(marker),`worker missing ${marker}`);
+for(const marker of ['/api/commerce/order-sync/providers','/api/commerce/order-sync','easyRoute','connectionId','routeToken','resolveTenant','resolveStoreScope','requirePermission'])assert.ok(worker.includes(marker),`worker missing ${marker}`);
+assert.ok(worker.includes('webhooks\\/easyorders'),'worker must route scoped Easy Orders webhooks');
 for(const marker of ['provider.modes','orderSyncMode','supported','commerceOrderSync','رابط Webhook','Webhook Secret','saveEasyOrdersWebhookSecret','Public API','Create Webhook'])assert.ok(ui.includes(marker),`UI missing ${marker}`);
 assert.ok(loader.includes('/v2/modules-v30-order-sync.js?v=30.1'),'order sync UI cache bust not loaded');
 assert.ok(validator.includes('easyOrdersStoreId')&&validator.includes('externalStoreId'),'Easy Orders validation must bind the external store id when discoverable');
