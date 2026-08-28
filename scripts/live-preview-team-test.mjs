@@ -13,7 +13,6 @@ const adminEmail=`qa-v28-team-admin-${nonce}@example.test`,adminId=`QA-V28-ADMIN
 const ownerEmail=`qa-v28-owner-${nonce}@example.test`,memberEmail=`qa-v28-member-${nonce}@example.test`;
 const adminPassword=`Admin!${randomBytes(10).toString('hex')}Aa1`,ownerPassword=`Owner!${randomBytes(10).toString('hex')}Bb2`,memberPassword=`Member!${randomBytes(10).toString('hex')}Cc3`,memberPassword2=`Reset!${randomBytes(10).toString('hex')}Dd4`;
 let adminCookie='',ownerCookie='',memberCookie='',clientId=null,storeA=null,storeB=null,memberId=null,productId=null,stateSnapshot=null;
-const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 
 async function d1(sql,params=[]){const r=await fetch(d1Url,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({sql,params})});const p=await r.json().catch(()=>({})),x=p?.result?.[0];if(!r.ok||p.success===false||x?.success===false)throw new Error(`Preview D1 query failed (${r.status}): ${JSON.stringify(p?.errors||x?.error||p).slice(0,800)}`);return x?.results||[];}
 async function hashPassword(value){const salt=randomBytes(16),key=await webcrypto.subtle.importKey('raw',new TextEncoder().encode(value),'PBKDF2',false,['deriveBits']);const bits=await webcrypto.subtle.deriveBits({name:'PBKDF2',salt,iterations:100000,hash:'SHA-256'},key,256);return `pbkdf2$100000$${salt.toString('base64')}$${Buffer.from(bits).toString('base64')}`;}
@@ -33,7 +32,7 @@ try{
   const hash=await hashPassword(adminPassword),ts=new Date().toISOString();
   await d1('INSERT INTO users (id,email,name,password,role,client_id,status,created_at,last_login) VALUES (?,?,?,?,?,NULL,?,?,NULL)',[adminId,adminEmail,'CI v28 Team Admin',hash,'admin','active',ts]);
   adminCookie=(await login(adminEmail,adminPassword)).cookie;if(!adminCookie)throw new Error('Temporary admin cookie missing');
-  const version=(await api(adminCookie,'/api/preview/version')).data;if(version.build!=='preview-v30-2026-08-28')throw new Error(`Expected v30, got ${JSON.stringify(version)}`);
+  const version=(await api(adminCookie,'/api/preview/version')).data;if(version.build!=='preview-v31-2026-08-28'||version.entrypoint!=='index-commerce-v31.js')throw new Error(`Expected current v31 Preview, got ${JSON.stringify(version)}`);
   const onboard=(await api(adminCookie,'/api/admin/clients',{method:'POST',ok:[201],body:{businessName:'CI v28 Team Tenant',ownerName:'CI v28 Owner',email:ownerEmail,phone:'01012345678',password:ownerPassword,storeName:'CI Store A',plan:'trial',baseOrderFee:2,modules:{dashboard:{enabled:true},stores:{enabled:true},'store-access':{enabled:true},orders:{enabled:true},catalog:{enabled:true},inventory:{enabled:true},team:{enabled:true},settings:{enabled:true}}}})).data;
   clientId=onboard.clientId;storeA=onboard.storeId;if(!clientId||!storeA)throw new Error('Temporary tenant onboarding failed');
   ownerCookie=(await login(ownerEmail,ownerPassword)).cookie;if(!ownerCookie)throw new Error('Owner cookie missing');
@@ -65,8 +64,7 @@ try{
   await api(ownerCookie,`/api/team-members/${encodeURIComponent(memberId)}`,{method:'DELETE',body:{clientId}});memberId=null;
   await login(memberEmail,memberPassword2,[401,403]);
   const count=(await d1('SELECT COUNT(*) n FROM user_store_access WHERE client_id=? AND user_id IN (SELECT id FROM users WHERE email=?)',[clientId,memberEmail]))[0]?.n||0;if(Number(count)!==0)throw new Error('Deleted member store access was not cleaned');
-  console.log(`Live v28 team QA passed: create/login/role change/store A-B isolation/viewer read-only/password reset/disable-enable/delete (${clientId}).`);
+  console.log(`Live v28 team QA passed on v31 Preview: create/login/role change/store A-B isolation/viewer read-only/password reset/disable-enable/delete (${clientId}).`);
 }catch(error){primaryError=error;
 }finally{try{await restore()}catch(cleanupError){primaryError=primaryError?new Error(`${primaryError.message}; ${cleanupError.message}`):cleanupError;}}
 if(primaryError)throw primaryError;
-
