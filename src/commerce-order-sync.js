@@ -10,7 +10,7 @@ const MODES=[
   {id:'since_connection',label:'بدءًا من الربط'}
 ];
 const mapStatus=value=>({pending:'pending',confirmed:'confirmed',processing:'preparing',preparing:'preparing',shipped:'shipped',delivered:'delivered',paid:'collected',collected:'collected',cancelled:'cancelled',canceled:'cancelled',returned:'returned',refunded:'returned'})[text(value).toLowerCase()]||'pending';
-const checkpoint=state=>({pending:'جاري التأكيد',confirmed:'تم التأكيد',preparing:'جاري التجهيز',shipped:'تم الشحن',delivered:'تم التسليم',collected:'تم التحصيل',cancelled:'ملغي',returned:'مرتجع'}[state]||state;
+const checkpoint=state=>({pending:'جاري التأكيد',confirmed:'تم التأكيد',preparing:'جاري التجهيز',shipped:'تم الشحن',delivered:'تم التسليم',collected:'تم التحصيل',cancelled:'ملغي',returned:'مرتجع'}[state]||state);
 const safeEqual=(a,b)=>{a=text(a);b=text(b);if(a.length!==b.length)return false;let diff=0;for(let i=0;i<a.length;i++)diff|=a.charCodeAt(i)^b.charCodeAt(i);return diff===0;};
 function parseConfig(row){try{return JSON.parse(row?.config_json||'{}')}catch{return {};}}
 function scopes(row,provider){try{const saved=JSON.parse(row?.scopes_json||'[]');return Array.isArray(saved)&&saved.length?saved:provider.capabilities;}catch{return provider.capabilities;}}
