@@ -1,6 +1,6 @@
 # Preview resources only.
 name = "kunonline-preview"
-main = "src/index-commerce-v28.js"
+main = "src/index-commerce-v29.js"
 compatibility_date = "2026-08-23"
 
 [assets]
@@ -23,3 +23,4 @@ META_GRAPH_API_VERSION = "v25.0"
 
 [observability]
 enabled = true
+

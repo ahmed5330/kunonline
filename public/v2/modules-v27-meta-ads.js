@@ -60,3 +60,7 @@
   document.addEventListener('click',event=>{const button=event.target.closest('.nav button[data-view]');if(!button||!['campaigns','marketing'].includes(button.dataset.view))return;event.preventDefault();event.stopPropagation();event.stopImmediatePropagation();const target=button.dataset.view;setTimeout(()=>target==='campaigns'?renderCampaigns(30):renderMarketing(30),0);},true);
   window.KunMetaAdsLive={renderCampaigns,renderMarketing,sync};
 })();
+{
+  const module=document.createElement('script');module.src='/v2/modules-v29-product-import.js?v=29.0';document.head.appendChild(module);
+}
+
