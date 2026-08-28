@@ -56,7 +56,11 @@ export async function validateEasyOrdersConnection({secrets,fetcher=fetch}){
   }catch(error){
     return {ok:false,status:'disconnected',externalConnectivityChecked:true,code:'EASYORDERS_CONNECTIVITY_FAILED',message:`تعذر الاتصال بـ Easy Orders: ${String(error?.message||'خطأ في الشبكة')}`};
   }
-  if(response.ok)return {ok:true,status:'connected',externalConnectivityChecked:true,config:{authentication:'api-key',validatedResource:'products'},message:'تم الاتصال بـ Easy Orders والتحقق من مفتاح API بنجاح.'};
+  if(response.ok){
+    const payload=await response.clone().json().catch(()=>null),items=Array.isArray(payload)?payload:Array.isArray(payload?.data)?payload.data:Array.isArray(payload?.products)?payload.products:Array.isArray(payload?.data?.products)?payload.data.products:[];
+    const externalStoreId=String(payload?.store_id||payload?.storeId||items[0]?.store_id||items[0]?.storeId||'').trim()||null;
+    return {ok:true,status:'connected',externalConnectivityChecked:true,externalStoreId,config:{authentication:'api-key',validatedResource:'products',easyOrdersStoreId:externalStoreId},message:externalStoreId?'تم الاتصال بـ Easy Orders وربط Store ID لاستقبال الطلبات الجديدة.':'تم الاتصال بـ Easy Orders. فعّل Webhook الطلبات؛ تعذر اكتشاف Store ID تلقائيًا لأن قائمة المنتجات لا تحتويه.'};
+  }
   if(response.status===401)return {ok:false,status:'disconnected',externalConnectivityChecked:true,code:'EASYORDERS_API_KEY_INVALID',message:'Easy Orders رفضت مفتاح API. انسخ المفتاح الظاهر مرة واحدة عند إنشائه من Public API، وليس رقم سجل المفتاح.'};
   if(response.status===403)return {ok:false,status:'disconnected',externalConnectivityChecked:true,code:'EASYORDERS_PRODUCTS_READ_FORBIDDEN',message:'مفتاح Easy Orders صالح لكنه لا يملك صلاحية products:read المطلوبة للتحقق.'};
   if(response.status===429)return {ok:false,status:'configured',externalConnectivityChecked:true,code:'EASYORDERS_RATE_LIMITED',message:'Easy Orders أوقفت التحقق مؤقتًا بسبب حد الطلبات. حاول مرة أخرى بعد قليل.'};
@@ -68,4 +72,5 @@ export async function validateProviderConnection({env,provider,secrets,selectedA
   if(provider?.id===EASYORDERS_PROVIDER)return validateEasyOrdersConnection({secrets,fetcher});
   return {ok:true,status:'configured',externalConnectivityChecked:false,code:'PROVIDER_EXTERNAL_VALIDATION_PENDING',message:`بيانات ${provider?.name||provider?.id||'التكامل'} محفوظة، لكن التحقق الخارجي لهذا المزود لم يتم تفعيله بعد.`};
 }
+
 

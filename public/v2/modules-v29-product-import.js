@@ -10,4 +10,7 @@
   document.addEventListener('click',e=>{const b=e.target.closest?.('#commerceProductImport');if(!b)return;e.preventDefault();e.stopImmediatePropagation();chooseProvider();},true);
   document.documentElement.dataset.productImport='ready';
 })();
+{
+  const module=document.createElement('script');module.src='/v2/modules-v30-order-sync.js?v=30.0';document.head.appendChild(module);
+}
 
