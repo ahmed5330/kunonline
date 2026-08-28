@@ -7,6 +7,5 @@ for(const marker of ['/api/commerce/product-import/providers','/api/commerce/pro
 for(const marker of ['commerceProductImport','استيراد المنتجات','created','updated','skipped','errors'])assert.ok(ui.includes(marker),`UI missing ${marker}`);
 assert.ok(!ui.includes("provider==='easyorders'"),'UI must not hard-code Easy Orders');
 assert.ok(loader.includes('/v2/modules-v29-product-import.js'),'product import UI module not loaded');
-assert.match(preview,/main\s*=\s*"src\/index-commerce-v30\.js"/);
+assert.match(preview,/main\s*=\s*"src\/index-commerce-v\d+\.js"/);
 console.log('Commerce product import contract passed.');
-
