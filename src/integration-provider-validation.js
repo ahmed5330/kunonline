@@ -28,21 +28,21 @@ export async function readConnectionSecrets(env,clientId,connectionId){
 
 export async function validateMetaAdsConnection({env,secrets,selectedAdAccountId,fetcher=fetch}){
   const token=String(secrets?.access_token||'').trim();
-  if(!token)return {ok:false,status:'disconnected',externalConnectivityChecked:false,code:'META_TOKEN_MISSING',message:'Access Token غير موجود.'};
+  if(!token)return {ok:false,status:'disconnected',externalConnectivityChecked:false,code:'META_TOKEN_MISSING',config:{adAccountConfirmed:false},message:'Access Token غير موجود.'};
   const version=graphVersion(env);let identity,accountList;
   try{
     identity=await metaGet(fetcher,version,'me',token,{fields:'id,name'});
     const response=await metaGet(fetcher,version,'me/adaccounts',token,{fields:'id,account_id,name,account_status,currency,timezone_name',limit:'100'});
     accountList=Array.isArray(response?.data)?response.data.map(safeAccount).filter(x=>x.accountId):[];
-  }catch(error){const failure=metaFailure(error);return {ok:false,status:'disconnected',externalConnectivityChecked:true,...failure,metaCode:error?.metaCode||null,apiVersion:version};}
-  if(!accountList.length)return {ok:false,status:'disconnected',externalConnectivityChecked:true,code:'META_NO_AD_ACCOUNTS',apiVersion:version,identity:{id:String(identity?.id||''),name:String(identity?.name||'')},message:'التوكن صالح عند Meta، لكن لا توجد حسابات إعلانية متاحة له. تأكد أن المستخدم أو System User مضاف للحساب الإعلاني وأن التوكن لديه ads_read.'};
+  }catch(error){const failure=metaFailure(error);return {ok:false,status:'disconnected',externalConnectivityChecked:true,...failure,config:{adAccountConfirmed:false},metaCode:error?.metaCode||null,apiVersion:version};}
+  if(!accountList.length)return {ok:false,status:'disconnected',externalConnectivityChecked:true,code:'META_NO_AD_ACCOUNTS',apiVersion:version,config:{adAccountConfirmed:false},identity:{id:String(identity?.id||''),name:String(identity?.name||'')},message:'التوكن صالح عند Meta، لكن لا توجد حسابات إعلانية متاحة له. تأكد أن المستخدم أو System User مضاف للحساب الإعلاني وأن التوكن لديه ads_read.'};
   const requested=cleanAccountId(selectedAdAccountId);
-  if(!requested&&accountList.length>1)return {ok:true,status:'configured',externalConnectivityChecked:true,requiresAccountSelection:true,accounts:accountList,apiVersion:version,identity:{id:String(identity?.id||''),name:String(identity?.name||'')},message:`تم التحقق من التوكن ووجدنا ${accountList.length} حسابات إعلانية. اختر الحساب الذي تريد ربطه بمتجر Kun Online.`};
-  const selected=requested?accountList.find(x=>x.accountId===requested||x.id===`act_${requested}`):accountList[0];
-  if(!selected)return {ok:false,status:'configured',externalConnectivityChecked:true,code:'META_AD_ACCOUNT_NOT_ACCESSIBLE',accounts:accountList,apiVersion:version,message:'الحساب الإعلاني المختار غير متاح لهذا التوكن. اختر حسابًا من القائمة التي أعادتها Meta.'};
+  if(!requested)return {ok:true,status:'configured',externalConnectivityChecked:true,requiresAccountSelection:true,requiresAccountIdInput:true,accounts:accountList,apiVersion:version,config:{adAccountConfirmed:false},identity:{id:String(identity?.id||''),name:String(identity?.name||'')},message:'اكتب رقم الحساب الإعلاني Ad Account ID الذي تريد ربطه بهذا العميل. لن يختار Kun Online أي حساب تلقائيًا حتى لو كان التوكن يرى حسابًا واحدًا فقط.'};
+  const selected=accountList.find(x=>x.accountId===requested||x.id===`act_${requested}`);
+  if(!selected)return {ok:false,status:'configured',externalConnectivityChecked:true,requiresAccountSelection:true,requiresAccountIdInput:true,code:'META_AD_ACCOUNT_NOT_ACCESSIBLE',accounts:accountList,apiVersion:version,config:{adAccountConfirmed:false},message:`الحساب الإعلاني act_${requested} غير متاح لهذا التوكن. تأكد من رقم الحساب وأن المستخدم أو System User لديه صلاحية عليه.`};
   let verified=selected;
-  try{const direct=await metaGet(fetcher,version,`act_${selected.accountId}`,token,{fields:'id,account_id,name,account_status,currency,timezone_name'});verified=safeAccount(direct);}catch(error){const failure=metaFailure(error);return {ok:false,status:'disconnected',externalConnectivityChecked:true,...failure,metaCode:error?.metaCode||null,apiVersion:version};}
-  return {ok:true,status:'connected',externalConnectivityChecked:true,requiresAccountSelection:false,apiVersion:version,identity:{id:String(identity?.id||''),name:String(identity?.name||'')},account:verified,externalStoreId:`act_${verified.accountId}`,storeName:verified.name,config:{apiVersion:version,adAccountId:verified.accountId},message:`تم الاتصال بـ Meta Ads بنجاح — ${verified.name} (act_${verified.accountId}).`};
+  try{const direct=await metaGet(fetcher,version,`act_${selected.accountId}`,token,{fields:'id,account_id,name,account_status,currency,timezone_name'});verified=safeAccount(direct);}catch(error){const failure=metaFailure(error);return {ok:false,status:'disconnected',externalConnectivityChecked:true,...failure,config:{adAccountConfirmed:false},metaCode:error?.metaCode||null,apiVersion:version};}
+  return {ok:true,status:'connected',externalConnectivityChecked:true,requiresAccountSelection:false,requiresAccountIdInput:false,apiVersion:version,identity:{id:String(identity?.id||''),name:String(identity?.name||'')},account:verified,externalStoreId:`act_${verified.accountId}`,storeName:verified.name,config:{apiVersion:version,adAccountId:verified.accountId,adAccountConfirmed:true},message:`تم الاتصال بـ Meta Ads بنجاح — ${verified.name} (act_${verified.accountId}).`};
 }
 
 export async function validateProviderConnection({env,provider,secrets,selectedAdAccountId,fetcher=fetch}){
