@@ -143,21 +143,27 @@ jobs:
         continue-on-error: true
         run: node scripts/live-preview-team-test.mjs https://kunonline-preview.mr-a-mnaa.workers.dev
 
+      - name: Live Customer Service regression
+        id: customer_service_live
+        if: steps.worker_ownership.outputs.is_current == 'true' && steps.smoke.outcome == 'success' && steps.live.outcome == 'success' && steps.team_live.outcome == 'success'
+        continue-on-error: true
+        run: node scripts/live-preview-customer-service-test.mjs https://kunonline-preview.mr-a-mnaa.workers.dev
+
       - name: Live Easy Orders webhook regression
         id: easyorders_live
-        if: steps.worker_ownership.outputs.is_current == 'true' && steps.smoke.outcome == 'success' && steps.live.outcome == 'success' && steps.team_live.outcome == 'success'
+        if: steps.worker_ownership.outputs.is_current == 'true' && steps.smoke.outcome == 'success' && steps.live.outcome == 'success' && steps.team_live.outcome == 'success' && steps.customer_service_live.outcome == 'success'
         continue-on-error: true
         run: node scripts/live-preview-easyorders-test.mjs https://kunonline-preview.mr-a-mnaa.workers.dev
 
       - name: Browser runtime and responsive QA
         id: browser
-        if: steps.worker_ownership.outputs.is_current == 'true' && steps.smoke.outcome == 'success' && steps.live.outcome == 'success' && steps.team_live.outcome == 'success' && steps.easyorders_live.outcome == 'success'
+        if: steps.worker_ownership.outputs.is_current == 'true' && steps.smoke.outcome == 'success' && steps.live.outcome == 'success' && steps.team_live.outcome == 'success' && steps.customer_service_live.outcome == 'success' && steps.easyorders_live.outcome == 'success'
         continue-on-error: true
         run: node scripts/browser-preview-qa.mjs https://kunonline-preview.mr-a-mnaa.workers.dev
 
       - name: Confirm branch ownership before rollback
         id: rollback_ownership
-        if: always() && (steps.smoke.outcome == 'failure' || steps.live.outcome == 'failure' || steps.team_live.outcome == 'failure' || steps.easyorders_live.outcome == 'failure' || steps.browser.outcome == 'failure')
+        if: always() && (steps.smoke.outcome == 'failure' || steps.live.outcome == 'failure' || steps.team_live.outcome == 'failure' || steps.customer_service_live.outcome == 'failure' || steps.easyorders_live.outcome == 'failure' || steps.browser.outcome == 'failure')
         run: |
           latest="$(git ls-remote origin refs/heads/develop/ux-system-upgrade | awk '{print $1}')"
           if [ "$latest" = "$GITHUB_SHA" ]; then
@@ -169,7 +175,7 @@ jobs:
 
       - name: Confirm Worker ownership before rollback
         id: rollback_worker_ownership
-        if: always() && steps.rollback_ownership.outputs.is_latest == 'true' && (steps.smoke.outcome == 'failure' || steps.live.outcome == 'failure' || steps.team_live.outcome == 'failure' || steps.easyorders_live.outcome == 'failure' || steps.browser.outcome == 'failure')
+        if: always() && steps.rollback_ownership.outputs.is_latest == 'true' && (steps.smoke.outcome == 'failure' || steps.live.outcome == 'failure' || steps.team_live.outcome == 'failure' || steps.customer_service_live.outcome == 'failure' || steps.easyorders_live.outcome == 'failure' || steps.browser.outcome == 'failure')
         run: |
           status="$(npx wrangler deployments status --config wrangler.preview.toml --json)"
           current="$(printf '%s' "$status" | node -e '
@@ -195,24 +201,24 @@ jobs:
           fi
 
       - name: Restore exact Preview version after failed validation
-        if: always() && steps.rollback_ownership.outputs.is_latest == 'true' && steps.rollback_worker_ownership.outputs.is_current == 'true' && (steps.smoke.outcome == 'failure' || steps.live.outcome == 'failure' || steps.team_live.outcome == 'failure' || steps.easyorders_live.outcome == 'failure' || steps.browser.outcome == 'failure')
+        if: always() && steps.rollback_ownership.outputs.is_latest == 'true' && steps.rollback_worker_ownership.outputs.is_current == 'true' && (steps.smoke.outcome == 'failure' || steps.live.outcome == 'failure' || steps.team_live.outcome == 'failure' || steps.customer_service_live.outcome == 'failure' || steps.easyorders_live.outcome == 'failure' || steps.browser.outcome == 'failure')
         run: |
           previous="${{ steps.rollback_base.outputs.version_id }}"
           test -n "$previous"
           npx wrangler versions deploy "$previous@100%" --yes --config wrangler.preview.toml --message "Automatic exact Preview restore after failed validation"
 
       - name: Verify restored Preview health
-        if: always() && steps.rollback_ownership.outputs.is_latest == 'true' && steps.rollback_worker_ownership.outputs.is_current == 'true' && (steps.smoke.outcome == 'failure' || steps.live.outcome == 'failure' || steps.team_live.outcome == 'failure' || steps.easyorders_live.outcome == 'failure' || steps.browser.outcome == 'failure')
+        if: always() && steps.rollback_ownership.outputs.is_latest == 'true' && steps.rollback_worker_ownership.outputs.is_current == 'true' && (steps.smoke.outcome == 'failure' || steps.live.outcome == 'failure' || steps.team_live.outcome == 'failure' || steps.customer_service_live.outcome == 'failure' || steps.easyorders_live.outcome == 'failure' || steps.browser.outcome == 'failure')
         run: node scripts/preview-health-check.mjs https://kunonline-preview.mr-a-mnaa.workers.dev
 
       - name: Mark failed owned deployment
-        if: always() && steps.rollback_ownership.outputs.is_latest == 'true' && steps.rollback_worker_ownership.outputs.is_current == 'true' && (steps.smoke.outcome == 'failure' || steps.live.outcome == 'failure' || steps.team_live.outcome == 'failure' || steps.easyorders_live.outcome == 'failure' || steps.browser.outcome == 'failure')
+        if: always() && steps.rollback_ownership.outputs.is_latest == 'true' && steps.rollback_worker_ownership.outputs.is_current == 'true' && (steps.smoke.outcome == 'failure' || steps.live.outcome == 'failure' || steps.team_live.outcome == 'failure' || steps.customer_service_live.outcome == 'failure' || steps.easyorders_live.outcome == 'failure' || steps.browser.outcome == 'failure')
         run: |
           echo "The latest owned Preview deployment failed validation and the exact previous version was restored."
           exit 1
 
       - name: Mark Preview ownership loss
-        if: always() && steps.rollback_ownership.outputs.is_latest == 'true' && steps.rollback_worker_ownership.outputs.is_current == 'false' && (steps.smoke.outcome == 'failure' || steps.live.outcome == 'failure' || steps.team_live.outcome == 'failure' || steps.easyorders_live.outcome == 'failure' || steps.browser.outcome == 'failure')
+        if: always() && steps.rollback_ownership.outputs.is_latest == 'true' && steps.rollback_worker_ownership.outputs.is_current == 'false' && (steps.smoke.outcome == 'failure' || steps.live.outcome == 'failure' || steps.team_live.outcome == 'failure' || steps.customer_service_live.outcome == 'failure' || steps.easyorders_live.outcome == 'failure' || steps.browser.outcome == 'failure')
         run: |
           echo "Preview Worker changed during QA; validation result is not attributable to this run and rollback was intentionally suppressed."
           exit 1
