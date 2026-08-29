@@ -3,6 +3,7 @@ import {readFile} from 'node:fs/promises';
 const backend=await readFile(new URL('../src/customer-service.js',import.meta.url),'utf8');
 const entry=await readFile(new URL('../src/index-commerce-v31.js',import.meta.url),'utf8');
 const ui=await readFile(new URL('../public/v2/modules-v31-customer-service.js',import.meta.url),'utf8');
+const dataUi=await readFile(new URL('../public/v2/modules-v23-data.js',import.meta.url),'utf8');
 const css=await readFile(new URL('../public/v2/kun-v10.css',import.meta.url),'utf8');
 const index=await readFile(new URL('../public/v2/index.html',import.meta.url),'utf8');
 const team=await readFile(new URL('../public/v2/modules-v24-team.js',import.meta.url),'utf8');
@@ -15,6 +16,11 @@ must(backend.includes("import {listMyStores} from './store-scope.js'")&&backend.
 must(backend.includes('STORE_ISOLATION')&&backend.includes('STORE_READ_ONLY'),'Customer Service backend must enforce assigned-store isolation and read-only access');
 must(team.includes('data-v28-store')&&team.includes('storeAccess:readAssignments()'),'Administration must keep multi-store assignment controls for team members');
 must(ui.includes('كل المتاجر')&&ui.includes('data-cs-store'),'Customer Service must allow an authorized user to combine assigned stores in one board');
+
+must(backend.includes('ensureLegacyCustomerServiceEnabled')&&backend.includes("module_key='orders'")&&backend.includes('customerServiceEnabled=true'),'Tenant owners on the modern Customer Service board must bridge the legacy state permission before delegated order actions');
+must(backend.includes("const DELETE_ROLES=new Set(['admin','client','ops'])")&&backend.includes("action==='delete'")&&backend.includes('ORDER_DELETE_DENIED'),'Order deletion must be explicitly limited to platform admin, tenant owner and operations manager roles');
+must(dataUi.includes('v23DeleteOrder')&&dataUi.includes('حذف الطلب')&&dataUi.includes('/api/customer-service/orders/${encodeURIComponent(orderId)}/delete'),'General Orders drawer must expose the governed delete action');
+must(dataUi.includes("['admin','client','ops'].includes"),'General Orders delete button must stay hidden from Customer Service/support users');
 
 must(backend.includes("state='deferred'")&&backend.includes("type:'defer_return'")&&backend.includes('Africa/Cairo'),'Deferred orders must automatically return using the Cairo business date');
 must(ui.includes("next==='deferred'")&&ui.includes('csDeferDate')&&ui.includes('الطلبات المؤجلة'),'Deferred orders must have a date picker and a separate deferred section');
@@ -32,9 +38,9 @@ must(backend.includes('byName')&&backend.includes('byUserId')&&ui.includes('بو
 must(ui.includes('سجل الأوردر')&&ui.includes('/history'),'Every card must expose the auditable order timeline');
 must(ui.includes('رقم البوليصة')&&backend.includes("type:'awb'"),'Customer Service must allow AWB recording with audit history');
 
-must(!ui.includes('حذف')&&!ui.includes('data-cs-action="delete"'),'Customer Service must not expose order deletion');
+must(!ui.includes('حذف')&&!ui.includes('data-cs-action="delete"'),'Customer Service board must not expose order deletion');
 must(index.includes('data-view="customer-service"')&&index.includes('/v2/modules-v31-customer-service.js')&&index.includes('/v2/kun-v10.css'),'Customer Service navigation, JS and CSS assets must be loaded by v2');
 must(css.includes('grid-template-columns:repeat(4')&&css.includes('@media(max-width:700px)')&&css.includes('.cs-returned-today'),'Customer Service board must be four-stage, responsive and visually flag returned deferred orders');
 must(entry.includes("path==='/api/customer-service'")&&entry.includes("path.startsWith('/api/customer-service/orders/')"),'Active Preview entrypoint must route Customer Service APIs');
 
-console.log('Customer Service contract passed: role visibility, multi-store access, four-stage board, deferral return, audited actions, contact/call/WhatsApp, internal notes and no delete action.');
+console.log('Customer Service contract passed: role visibility, owner legacy bridge, governed Orders delete, multi-store access, four-stage board, deferral return, audited actions, contact/call/WhatsApp, internal notes and no delete action inside the Customer Service board.');
