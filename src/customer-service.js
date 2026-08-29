@@ -96,10 +96,18 @@ async function decorateLatestState(env,clientId,orderId,state,me){
   if(!found)history.push({type:'state',state,at:now(),...a});
   await env.DB.prepare('UPDATE orders SET history=? WHERE id=? AND client_id=?').bind(JSON.stringify(history),orderId,clientId).run();
 }
-async function decorateLatestType(env,clientId,orderId,type,me){
+async function appendContactMirror(env,clientId,orderId,me,channel='phone'){
+  const row=await env.DB.prepare('SELECT history,contact_log FROM orders WHERE id=? AND client_id=?').bind(orderId,clientId).first();if(!row)return {contactCount:0};
+  const stamp=now(),a=actor(me),history=parseArr(row.history),contactLog=parseArr(row.contact_log),entry={type:'contact',channel,at:stamp,...a};
+  history.push(entry);contactLog.push({channel,at:stamp,by:a.by,byName:a.byName,byUserId:a.byUserId});
+  await env.DB.prepare('UPDATE orders SET history=?,contact_log=? WHERE id=? AND client_id=?').bind(JSON.stringify(history),JSON.stringify(contactLog),orderId,clientId).run();
+  return {contactCount:contactLog.length,entry};
+}
+async function decorateLatestType(env,clientId,orderId,type,me,metadata={}){
   const row=await env.DB.prepare('SELECT history FROM orders WHERE id=? AND client_id=?').bind(orderId,clientId).first();if(!row)return;
-  const history=parseArr(row.history),a=actor(me);
-  for(let i=history.length-1;i>=0;i--){if(history[i]?.type===type){history[i]={...history[i],...a};break;}}
+  const history=parseArr(row.history),a=actor(me);let found=false;
+  for(let i=history.length-1;i>=0;i--){if(history[i]?.type===type){history[i]={...history[i],...a,...metadata};found=true;break;}}
+  if(!found)history.push({type,at:now(),...a,...metadata});
   await env.DB.prepare('UPDATE orders SET history=? WHERE id=? AND client_id=?').bind(JSON.stringify(history),orderId,clientId).run();
 }
 function canonicalRequest(request,path,body,clientId,storeId){
@@ -117,16 +125,19 @@ export async function handleAction(request,env,me,delegate){
     const state=clean(body.state);if(!ALL_STATES.includes(state))fail('حالة الأوردر غير معروفة',400,'ORDER_STATE_INVALID');
     if(state==='deferred'&&!/^\d{4}-\d{2}-\d{2}$/.test(clean(body.deferUntil)))fail('حدد تاريخ التأجيل',400,'DEFER_DATE_REQUIRED');
     const req=canonicalRequest(request,`/api/orders/${encodeURIComponent(orderId)}`,{state,deferUntil:body.deferUntil||undefined,awb:body.awb||undefined},clientId,storeId);
-    // Legacy order update endpoint expects PATCH.
     const legacy=new Request(req.url,{method:'PATCH',headers:req.headers,body:await req.text()});
     const response=await delegate(legacy);if(response.ok)await decorateLatestState(env,clientId,orderId,state,me);return proxyJson(response);
   }
   if(action==='contact'&&method==='POST'){
-    const response=await delegate(canonicalRequest(request,`/api/orders/${encodeURIComponent(orderId)}/contact`,{},clientId,storeId));if(response.ok)await decorateLatestType(env,clientId,orderId,'contact',me);return proxyJson(response);
+    const channel=['phone','whatsapp','messenger','instagram','tiktok'].includes(clean(body.channel).toLowerCase())?clean(body.channel).toLowerCase():'phone';
+    const response=await delegate(canonicalRequest(request,`/api/orders/${encodeURIComponent(orderId)}/contact`,{channel},clientId,storeId));
+    if(!response.ok)return proxyJson(response);
+    const mirrored=await appendContactMirror(env,clientId,orderId,me,channel),proxied=await proxyJson(response);
+    return {data:{...proxied.data,contactCount:mirrored.contactCount},status:proxied.status};
   }
   if(action==='whatsapp-log'&&method==='POST'){
     const template=['confirm','shipped','review'].includes(body.template)?body.template:'other';
-    const response=await delegate(canonicalRequest(request,`/api/orders/${encodeURIComponent(orderId)}/whatsapp-log`,{template},clientId,storeId));if(response.ok)await decorateLatestType(env,clientId,orderId,'whatsapp',me);return proxyJson(response);
+    const response=await delegate(canonicalRequest(request,`/api/orders/${encodeURIComponent(orderId)}/whatsapp-log`,{template},clientId,storeId));if(response.ok)await decorateLatestType(env,clientId,orderId,'whatsapp',me,{template});return proxyJson(response);
   }
   if(action==='notes'&&method==='POST'){
     const note=clean(body.note);if(!note)fail('اكتب الملاحظة أولًا',400,'NOTE_REQUIRED');if(note.length>2000)fail('الملاحظة طويلة جدًا',400,'NOTE_TOO_LONG');
