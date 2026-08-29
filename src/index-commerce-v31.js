@@ -43,7 +43,7 @@ export function normalizeEasyOrdersWebhookPayload(input){
 async function currentUser(request,env,ctx){
   const u=new URL(request.url);u.pathname='/api/me';u.search='';
   const r=await commerceV30.fetch(new Request(u,{method:'GET',headers:request.headers}),env,ctx),d=await r.json().catch(()=>({}));
-  if(!r.ok||!d?.role)throw Object.assign(new Error(d?.error||'محتاج تسجّل دخول'),{status:r.status||401,code:'AUTH_REQUIRED'});
+  if(!r.ok||!d?.role)throw Object.assign(new Error(d?.error||'محتاج تسجّل دخول'),{status:r.ok?401:(r.status||401),code:'AUTH_REQUIRED'});
   return d;
 }
 async function patchHealth(env,connection,{status,code,httpStatus,orderId,externalStoreId,error,probe=false}){
