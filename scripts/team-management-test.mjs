@@ -1,5 +1,5 @@
 import {DatabaseSync} from 'node:sqlite';
-import {createTeamMember,listTeamMembers,updateTeamMember,replaceTeamMemberStoreAccess,resetTeamMemberPassword,deleteTeamMember,teamStaffCount,teamRoleCatalog} from '../src/team-management.js';
+import {createTeamMember,listTeamMembers,updateTeamMember,replaceTeamMemberStoreAccess,resetTeamMemberPassword,deleteTeamMember,teamStaffCount,teamRoleCatalog,listAccessibleClients,listTeamAccessCatalog} from '../src/team-management.js';
 import {resolveStoreScope} from '../src/store-scope.js';
 const must=(ok,msg)=>{if(!ok)throw new Error(msg)};
 const normalize=v=>{if(v===undefined)throw new TypeError('undefined bind');return v};
@@ -37,5 +37,19 @@ await updateTeamMember(env,client,created.id,{status:'disabled'},actor);must((aw
 await updateTeamMember(env,client,created.id,{status:'active'},actor);
 let ownerDelete=false;try{await deleteTeamMember(env,client,'OWNER',actor)}catch(e){ownerDelete=e.code==='OWNER_PROTECTED'}must(ownerDelete,'owner must be protected');
 await deleteTeamMember(env,client,created.id,actor);must(!(await env.DB.prepare('SELECT id FROM users WHERE id=?').bind(created.id).first()),'member delete failed');must((await env.DB.prepare('SELECT COUNT(*) n FROM user_store_access WHERE user_id=?').bind(created.id).first()).n===0,'store access cleanup failed');
+
+const admin={uid:'ADMIN',email:'admin@test',role:'admin',clientId:null},platformPassword='PlatformPass11!';
+const accessCatalog=await listTeamAccessCatalog(env,admin,null,{platformScope:true});
+must(accessCatalog.clients.length===2&&accessCatalog.clients.flatMap(x=>x.stores).length===3,'platform access catalog must include all clients/stores');
+const platform=await createTeamMember(env,null,{platformScope:true,name:'Platform Support',email:'platform@test.com',password:platformPassword,role:'support',storeAccess:[{clientId:client,storeId:A,role:'member'},{clientId:other,storeId:X,role:'member'}]},admin);
+must(platform.platformMember===true&&platform.storeAccess.length===2,'platform member must support cross-client assignments');
+const platformRow=await env.DB.prepare('SELECT client_id,password FROM users WHERE id=?').bind(platform.id).first();must(platformRow.client_id===null&&platformRow.password.startsWith('pbkdf2$100000$'),'platform member must be global and password hashed');
+const platformList=await listTeamMembers(env,null,{platformScope:true});must(platformList.some(x=>x.id===platform.id&&x.storeAccess.length===2),'platform team list must expose all assigned stores');
+const clientContext=await listAccessibleClients(env,{uid:platform.id,role:'support',clientId:null});must(clientContext.clients.length===2,'global staff must receive both assigned client contexts');
+const platformMe={uid:platform.id,role:'support',clientId:null,perms:[]};must((await resolveStoreScope(env,platformMe,client,A,{write:true})).storeId===A,'platform member must access assigned store in first client');must((await resolveStoreScope(env,platformMe,other,X,{write:true})).storeId===X,'platform member must access assigned store in second client');
+let hidden=false;try{await resolveStoreScope(env,platformMe,client,B,{write:false})}catch(e){hidden=e.code==='STORE_ISOLATION'}must(hidden,'platform member must not access unassigned branch');
+await resetTeamMemberPassword(env,null,platform.id,{platformScope:true,password:'PlatformReset12!'},admin);const platformReset=await env.DB.prepare('SELECT password FROM users WHERE id=?').bind(platform.id).first();must(platformReset.password.startsWith('pbkdf2$100000$')&&!platformReset.password.includes('PlatformReset12!'),'platform password reset must persist securely');
+await deleteTeamMember(env,null,platform.id,admin,{platformScope:true});must(!(await env.DB.prepare('SELECT id FROM users WHERE id=?').bind(platform.id).first()),'platform member deletion failed');must(Number((await env.DB.prepare('SELECT COUNT(*) n FROM user_store_access WHERE user_id=?').bind(platform.id).first()).n)===0,'platform access rows must be deleted');
+
 const catalog=teamRoleCatalog();must(catalog.businessRoles.some(x=>x.id==='support')&&catalog.storeRoles.some(x=>x.id==='manager'),'role catalog missing canonical roles');
-console.log('Team management checks passed: lifecycle, password safety, owner protection, canonical roles and store isolation.');
+console.log('Team management checks passed: tenant lifecycle, password safety, owner protection, platform multi-client/store assignments, client switch context and store isolation.');
