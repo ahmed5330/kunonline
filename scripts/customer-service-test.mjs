@@ -11,7 +11,7 @@ const must=(ok,message)=>{if(!ok)throw new Error(message);};
 for(const role of ['admin','client','ops','support'])must(backend.includes(`'${role}'`)&&ui.includes(`'${role}'`),`Customer Service role missing: ${role}`);
 for(const stage of ['pending','confirmed','preparing','shipped'])must(backend.includes(`'${stage}'`)&&ui.includes(`'${stage}'`),`Customer Service stage missing: ${stage}`);
 for(const label of ['في انتظار التأكيد','تم التأكيد','التجهيز والتغليف','جاري الشحن'])must(backend.includes(label)&&ui.includes(label),`Customer Service label missing: ${label}`);
-must(backend.includes('listMyStores')&&backend.includes('user')===false,'Customer Service must resolve store access through the central multi-store scope');
+must(backend.includes("import {listMyStores} from './store-scope.js'")&&backend.includes('accessContext'),'Customer Service must resolve access through the central multi-store scope');
 must(backend.includes('STORE_ISOLATION')&&backend.includes('STORE_READ_ONLY'),'Customer Service backend must enforce assigned-store isolation and read-only access');
 must(team.includes('data-v28-store')&&team.includes('storeAccess:readAssignments()'),'Administration must keep multi-store assignment controls for team members');
 must(ui.includes('كل المتاجر')&&ui.includes('data-cs-store'),'Customer Service must allow an authorized user to combine assigned stores in one board');
@@ -20,7 +20,7 @@ must(backend.includes("state='deferred'")&&backend.includes("type:'defer_return'
 must(ui.includes("next==='deferred'")&&ui.includes('csDeferDate')&&ui.includes('الطلبات المؤجلة'),'Deferred orders must have a date picker and a separate deferred section');
 must(ui.includes('returnedFromDeferredToday')&&ui.includes('رجع من التأجيل اليوم'),'Orders returning from deferral today must be visually called out');
 
-must(backend.includes("type:'contact'")||backend.includes("'contact'"),'Contact attempts must route through the recorded order contact action');
+must(backend.includes("action==='contact'")&&backend.includes('/contact'),'Contact attempts must route through the recorded order contact action');
 must(ui.includes('/contact')&&ui.includes('تواصل ('),'Customer Service cards must record and expose contact-attempt counts');
 must(ui.includes('href="tel:')&&ui.includes('مكالمة'),'Customer Service cards must provide native phone calling');
 must(ui.includes('https://wa.me/')&&ui.includes('/whatsapp-log')&&ui.includes('templatesFor'),'WhatsApp templates must open WhatsApp and record the event');
