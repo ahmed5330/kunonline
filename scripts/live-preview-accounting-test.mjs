@@ -10,7 +10,20 @@ const d1Url=`https://api.cloudflare.com/client/v4/accounts/${accountId}/d1/datab
 let adminCookie='',accountantCookie='',entryId='';
 async function d1Raw(sql,params=[]){const r=await fetch(d1Url,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({sql,params})}),p=await r.json().catch(()=>({})),x=p?.result?.[0];if(!r.ok||p.success===false||x?.success===false)throw new Error(`Preview D1 query failed (${r.status}): ${JSON.stringify(p?.errors||x?.error||p).slice(0,1000)}`);return x||{results:[],meta:{}};}
 async function d1(sql,params=[]){return (await d1Raw(sql,params)).results||[];}
-const remoteEnv={DB:{prepare(sql){return {bind(...params){return {all:async()=>({results:(await d1Raw(sql,params)).results||[]}),first:async()=>((await d1Raw(sql,params)).results||[])[0]||null,run:async()=>{const x=await d1Raw(sql,params);return {meta:x.meta||{}};}};}};}};
+const remoteDb={
+  prepare(sql){
+    return {
+      bind(...params){
+        return {
+          async all(){return {results:(await d1Raw(sql,params)).results||[]};},
+          async first(){return ((await d1Raw(sql,params)).results||[])[0]||null;},
+          async run(){const x=await d1Raw(sql,params);return {meta:x.meta||{}};}
+        };
+      }
+    };
+  }
+};
+const remoteEnv={DB:remoteDb};
 async function hashPassword(value){const salt=randomBytes(16),key=await webcrypto.subtle.importKey('raw',new TextEncoder().encode(value),'PBKDF2',false,['deriveBits']),bits=await webcrypto.subtle.deriveBits({name:'PBKDF2',salt,iterations:100000,hash:'SHA-256'},key,256);return `pbkdf2$100000$${salt.toString('base64')}$${Buffer.from(bits).toString('base64')}`;}
 async function login(email,password){const r=await fetch(`${base}/api/login`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password})}),t=await r.text();if(!r.ok)throw new Error(`Accounting login failed ${r.status}: ${t.slice(0,500)}`);const c=(r.headers.get('set-cookie')||'').split(';')[0];if(!c)throw new Error('Accounting login cookie missing');return c;}
 async function api(path,{method='GET',body,cookie=adminCookie,ok=[200]}={}){const r=await fetch(`${base}${path}`,{method,headers:{'Content-Type':'application/json',...(cookie?{Cookie:cookie}:{})},...(body!==undefined?{body:JSON.stringify(body)}:{})}),t=await r.text();let data={};try{data=JSON.parse(t)}catch{data={raw:t}}if(!ok.includes(r.status))throw new Error(`${method} ${path} expected ${ok.join('/')}, got ${r.status}: ${t.slice(0,1200)}`);return {status:r.status,data};}
