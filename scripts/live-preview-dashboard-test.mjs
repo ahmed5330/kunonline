@@ -53,3 +53,4 @@ try{
   console.log(`Live Dashboard QA passed across ${candidates.length} active Preview store(s): today + 7d + 30d + all-time/custom-range guard, tenant/store scope, KPI drill-down, finance, ads, return-aware rates, governorates, period-scoped AI snapshots and trend.`);
 }catch(e){error=e;}finally{await cleanup();}
 if(error)throw error;
+await import('./live-preview-order-sheet-import-test.mjs');

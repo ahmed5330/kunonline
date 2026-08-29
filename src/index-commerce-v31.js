@@ -5,6 +5,7 @@ import {easyOrdersWebhookPath} from './commerce-order-sync.js';
 import {readConnectionSecrets} from './integration-provider-validation.js';
 import {board as customerServiceBoard,handleAction as handleCustomerServiceAction} from './customer-service.js';
 import {dashboardData} from './dashboard-intelligence.js';
+import {orderSheetSources,importOrderSheet} from './order-sheet-import.js';
 
 const BUILD='preview-v31-2026-08-28';
 const text=v=>String(v??'').trim(),now=()=>new Date().toISOString();
@@ -88,6 +89,15 @@ async function fetchV31(request,env,ctx){
   const url=new URL(request.url),path=url.pathname,method=request.method.toUpperCase();
   try{
     if(path==='/api/preview/version')return json({ok:true,build:BUILD,environment:env.APP_ENV||'unknown',entrypoint:'index-commerce-v31.js'});
+    if(path==='/api/orders/sheet-import/sources'&&method==='GET'){
+      const me=await currentUser(request,env,ctx),clientId=resolveTenant(me,url.searchParams.get('clientId'));requirePermission(me,'orders','read');
+      return json({ok:true,clientId,sources:orderSheetSources()});
+    }
+    if(path==='/api/orders/sheet-import'&&method==='POST'){
+      const me=await currentUser(request,env,ctx),body=await request.clone().json().catch(()=>({})),clientId=resolveTenant(me,body.clientId||url.searchParams.get('clientId'));requirePermission(me,'orders','write');
+      const scope=await resolveStoreScope(env,me,clientId,text(body.storeId)||null,{write:true});
+      return json(await importOrderSheet(env,{clientId,storeId:scope.storeId||null,source:body.source,rows:body.rows,actor:me}));
+    }
     if(path==='/api/dashboard'&&method==='GET'){
       const me=await currentUser(request,env,ctx),clientId=resolveTenant(me,url.searchParams.get('clientId'));requirePermission(me,'analytics','read');
       const scope=await resolveStoreScope(env,me,clientId,text(url.searchParams.get('storeId'))||null,{write:false});
