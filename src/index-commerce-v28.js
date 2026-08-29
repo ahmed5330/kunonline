@@ -1,7 +1,7 @@
 import commerceV27 from './index-commerce-v27.js';
 import {
   requireTeamManager,resolveTeamClient,teamRoleCatalog,listTeamMembers,createTeamMember,updateTeamMember,
-  resetTeamMemberPassword,replaceTeamMemberStoreAccess,deleteTeamMember,teamStaffCount
+  resetTeamMemberPassword,replaceTeamMemberStoreAccess,deleteTeamMember,teamStaffCount,listTeamAccessCatalog,listAccessibleClients
 } from './team-management.js';
 import {requirePermission,resolveTenant} from './access-control.js';
 import {resolveStoreScope,requestedStoreId} from './store-scope.js';
@@ -54,7 +54,7 @@ async function fetchV28(request,env,ctx){
   const url=new URL(request.url),path=url.pathname,method=request.method.toUpperCase();
   try{
     if(path==='/api/preview/version')return json({ok:true,build:BUILD,environment:env.APP_ENV||'unknown',entrypoint:'index-commerce-v28.js'});
-    const isTeam=path==='/api/team-role-catalog'||path==='/api/team-members'||path.startsWith('/api/team-members/')||path==='/api/onboarding/status';
+    const isTeam=path==='/api/team-role-catalog'||path==='/api/team-access-catalog'||path==='/api/my-client-context'||path==='/api/team-members'||path.startsWith('/api/team-members/')||path==='/api/onboarding/status';
     const isMetaAds=path==='/api/integrations/meta-ads/sync'||path==='/api/integrations/meta-ads/performance';
     if(!isTeam&&!isMetaAds)return commerceV27.fetch(request,env,ctx);
     const me=await currentUser(request,env,ctx),body=await bodyOf(request);
@@ -76,18 +76,31 @@ async function fetchV28(request,env,ctx){
       return json({error:'المسار غير مدعوم',code:'METHOD_NOT_ALLOWED'},405);
     }
 
+    if(path==='/api/my-client-context'&&method==='GET')return json(await listAccessibleClients(env,me));
     if(path==='/api/team-role-catalog'&&method==='GET'){requireTeamManager(me);return json(teamRoleCatalog());}
-    const clientId=resolveTeamClient(me,requestedClient(url,body));requireTeamManager(me);
+
+    const requestedPlatform=url.searchParams.get('scope')==='platform'||body?.platformScope===true;
+    if(requestedPlatform&&me.role!=='admin')return json({error:'صلاحيات فريق الإدارة غير متاحة',code:'PLATFORM_TEAM_DENIED'},403);
+    const platformScope=me.role==='admin'&&requestedPlatform;
+    const requestedId=requestedClient(url,body);
+
+    if(path==='/api/team-access-catalog'&&method==='GET'){
+      requireTeamManager(me);
+      const clientId=platformScope?null:resolveTeamClient(me,requestedId);
+      return json(await listTeamAccessCatalog(env,me,clientId,{platformScope}));
+    }
+
+    const clientId=platformScope?null:resolveTeamClient(me,requestedId);requireTeamManager(me);
     if(path==='/api/onboarding/status'&&method==='GET')return onboardingV28(request,env,ctx,me,clientId);
-    if(path==='/api/team-members'&&method==='GET')return json(await listTeamMembers(env,clientId));
-    if(path==='/api/team-members'&&method==='POST')return json(await createTeamMember(env,clientId,body,me),201);
+    if(path==='/api/team-members'&&method==='GET')return json(await listTeamMembers(env,clientId,{platformScope}));
+    if(path==='/api/team-members'&&method==='POST')return json(await createTeamMember(env,clientId,{...body,platformScope},me),201);
     let m=path.match(/^\/api\/team-members\/([^/]+)$/);
-    if(m&&method==='PATCH')return json(await updateTeamMember(env,clientId,decodeURIComponent(m[1]),body,me));
-    if(m&&method==='DELETE')return json(await deleteTeamMember(env,clientId,decodeURIComponent(m[1]),me));
+    if(m&&method==='PATCH')return json(await updateTeamMember(env,clientId,decodeURIComponent(m[1]),{...body,platformScope},me));
+    if(m&&method==='DELETE')return json(await deleteTeamMember(env,clientId,decodeURIComponent(m[1]),me,{...body,platformScope}));
     m=path.match(/^\/api\/team-members\/([^/]+)\/reset-password$/);
-    if(m&&method==='POST')return json(await resetTeamMemberPassword(env,clientId,decodeURIComponent(m[1]),body,me));
+    if(m&&method==='POST')return json(await resetTeamMemberPassword(env,clientId,decodeURIComponent(m[1]),{...body,platformScope},me));
     m=path.match(/^\/api\/team-members\/([^/]+)\/store-access$/);
-    if(m&&method==='PUT')return json(await replaceTeamMemberStoreAccess(env,clientId,decodeURIComponent(m[1]),body,me));
+    if(m&&method==='PUT')return json(await replaceTeamMemberStoreAccess(env,clientId,decodeURIComponent(m[1]),{...body,platformScope},me));
     return json({error:'المسار غير مدعوم',code:'METHOD_NOT_ALLOWED'},405);
   }catch(error){
     return json({error:error?.message||'حدث خطأ',code:error?.code||'V28_ERROR',path,method},error?.status||500);
