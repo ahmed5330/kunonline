@@ -14,6 +14,11 @@ async function d1(sql,params=[]){const r=await fetch(d1Url,{method:'POST',header
 async function hashPassword(value){const salt=randomBytes(16),key=await webcrypto.subtle.importKey('raw',new TextEncoder().encode(value),'PBKDF2',false,['deriveBits']),bits=await webcrypto.subtle.deriveBits({name:'PBKDF2',salt,iterations:100000,hash:'SHA-256'},key,256);return `pbkdf2$100000$${salt.toString('base64')}$${Buffer.from(bits).toString('base64')}`;}
 async function api(path,{method='GET',body,ok=[200]}={}){const r=await fetch(`${base}${path}`,{method,headers:{'Content-Type':'application/json',...(cookie?{Cookie:cookie}:{})},body:body===undefined?undefined:JSON.stringify(body)}),txt=await r.text();let data={};try{data=JSON.parse(txt)}catch{data={raw:txt}}if(!ok.includes(r.status))throw new Error(`${method} ${path} expected ${ok.join('/')}, got ${r.status}: ${txt.slice(0,900)}`);return {status:r.status,data};}
 async function cleanup(){for(const [sql,params] of [
+  ['DELETE FROM order_stock_allocations WHERE client_id=?',[clientId]],
+  ['DELETE FROM orders WHERE client_id=?',[clientId]],
+  ['DELETE FROM customers WHERE client_id=?',[clientId]],
+  ['DELETE FROM inventory_batch_items WHERE client_id=?',[clientId]],
+  ['DELETE FROM inventory_batches WHERE client_id=?',[clientId]],
   ['DELETE FROM stock_log WHERE client_id=?',[clientId]],
   ['DELETE FROM products WHERE client_id=?',[clientId]],
   ['DELETE FROM stores WHERE client_id=?',[clientId]],
@@ -45,6 +50,34 @@ try{
   await api('/api/inventory/stock-adjust',{method:'POST',ok:[400],body:{clientId,storeId,productId,delta:5,stockDate:'2026-99-99',note:'must fail'}});
   const after=(await d1('SELECT stock FROM products WHERE id=?',[productId]))[0]?.stock;if(Number(before)!==Number(after))throw new Error('Invalid stock date mutated inventory');
 
-  console.log('Live Inventory QA passed: user-selected stock date, Cairo-today default, visible history, actual entry timestamp separation, store scope and invalid-date no-mutation guard.');
+  const batch=(await api('/api/inventory/batches',{method:'POST',ok:[201],body:{clientId,storeId,name:'أول استوك QA',stockDate:historicDate,note:'QA named batch',items:[{productId,qty:5}]}})).data;
+  if(!batch.id||batch.name!=='أول استوك QA'||batch.stockDate!==historicDate||Number(batch.totalQty)!==5)throw new Error(`Named stock batch create invalid: ${JSON.stringify(batch)}`);
+  product=(await d1('SELECT stock FROM products WHERE id=?',[productId]))[0];if(Number(product?.stock)!==25)throw new Error(`Named batch must add to general stock: expected 25, got ${product?.stock}`);
+  let batches=(await api(`/api/inventory/batches?clientId=${encodeURIComponent(clientId)}&storeId=${encodeURIComponent(storeId)}`)).data.batches||[],listed=batches.find(x=>x.id===batch.id);
+  if(!listed||listed.stockDate!==historicDate||Number(listed.totalInitial)!==5||Number(listed.totalRemaining)!==5||Number(listed.items?.[0]?.remainingQty)!==5)throw new Error(`Named batch listing invalid: ${JSON.stringify(listed)}`);
+  await api(`/api/products/${encodeURIComponent(productId)}?clientId=${encodeURIComponent(clientId)}&storeId=${encodeURIComponent(storeId)}`,{method:'DELETE',ok:[409]});
+
+  const order1=(await api('/api/orders',{method:'POST',body:{clientId,storeId,name:'QA Batch Customer 1',phone:'01000000001',gov:'القاهرة',address:'QA',product:'QA Dated Stock Product',productId,qty:2,total:200,state:'confirmed'}})).data.order;
+  if(!order1?.id)throw new Error('Failed to create first batch allocation order');
+  await api(`/api/customer-service/orders/${encodeURIComponent(order1.id)}/state?clientId=${encodeURIComponent(clientId)}&storeId=${encodeURIComponent(storeId)}`,{method:'PATCH',body:{clientId,storeId,state:'shipped',stockBatchId:batch.id}});
+  let allocation=(await d1('SELECT batch_id,qty,status FROM order_stock_allocations WHERE order_id=?',[order1.id]))[0];if(allocation?.batch_id!==batch.id||Number(allocation?.qty)!==2||allocation?.status!=='allocated')throw new Error(`Order allocation missing: ${JSON.stringify(allocation)}`);
+  listed=(await api(`/api/inventory/batches?clientId=${encodeURIComponent(clientId)}&storeId=${encodeURIComponent(storeId)}`)).data.batches.find(x=>x.id===batch.id);if(Number(listed?.totalRemaining)!==3)throw new Error(`Batch remaining after ship must be 3: ${JSON.stringify(listed)}`);
+  product=(await d1('SELECT stock FROM products WHERE id=?',[productId]))[0];if(Number(product?.stock)!==23)throw new Error(`General stock after batch shipment must be 23, got ${product?.stock}`);
+
+  await api(`/api/customer-service/orders/${encodeURIComponent(order1.id)}/state?clientId=${encodeURIComponent(clientId)}&storeId=${encodeURIComponent(storeId)}`,{method:'PATCH',body:{clientId,storeId,state:'returned'}});
+  allocation=(await d1('SELECT status FROM order_stock_allocations WHERE order_id=?',[order1.id]))[0];if(allocation?.status!=='returned')throw new Error('Returned order must restore named batch allocation');
+  listed=(await api(`/api/inventory/batches?clientId=${encodeURIComponent(clientId)}&storeId=${encodeURIComponent(storeId)}`)).data.batches.find(x=>x.id===batch.id);if(Number(listed?.totalRemaining)!==5)throw new Error('Returned order must restore named batch quantity to 5');
+  product=(await d1('SELECT stock FROM products WHERE id=?',[productId]))[0];if(Number(product?.stock)!==25)throw new Error(`Legacy return + batch restore must leave general stock at 25, got ${product?.stock}`);
+
+  await api(`/api/customer-service/orders/${encodeURIComponent(order1.id)}/state?clientId=${encodeURIComponent(clientId)}&storeId=${encodeURIComponent(storeId)}`,{method:'PATCH',body:{clientId,storeId,state:'shipped',stockBatchId:batch.id}});
+  listed=(await api(`/api/inventory/batches?clientId=${encodeURIComponent(clientId)}&storeId=${encodeURIComponent(storeId)}`)).data.batches.find(x=>x.id===batch.id);if(Number(listed?.totalRemaining)!==3)throw new Error('Re-shipping returned order must consume 2 again from the selected batch');
+  product=(await d1('SELECT stock FROM products WHERE id=?',[productId]))[0];if(Number(product?.stock)!==23)throw new Error(`Re-shipping returned order must not double-deduct general stock; got ${product?.stock}`);
+
+  const order2=(await api('/api/orders',{method:'POST',body:{clientId,storeId,name:'QA Batch Customer 2',phone:'01000000002',gov:'القاهرة',address:'QA',product:'QA Dated Stock Product',productId,qty:3,total:300,state:'confirmed'}})).data.order;
+  await api(`/api/customer-service/orders/${encodeURIComponent(order2.id)}/state?clientId=${encodeURIComponent(clientId)}&storeId=${encodeURIComponent(storeId)}`,{method:'PATCH',body:{clientId,storeId,state:'shipped',stockBatchId:batch.id}});
+  listed=(await api(`/api/inventory/batches?clientId=${encodeURIComponent(clientId)}&storeId=${encodeURIComponent(storeId)}`)).data.batches.find(x=>x.id===batch.id);if(Number(listed?.totalRemaining)!==0||listed?.status!=='depleted')throw new Error(`Batch must become depleted at zero: ${JSON.stringify(listed)}`);
+  const active=(await api(`/api/inventory/batches?clientId=${encodeURIComponent(clientId)}&storeId=${encodeURIComponent(storeId)}&activeOnly=1`)).data.batches||[];if(active.some(x=>x.id===batch.id))throw new Error('Depleted named batch must disappear from Customer Service active batch choices');
+
+  console.log('Live Inventory QA passed: historic dates, named multi-product batch model, product-delete stock guard, shipping allocation, return restore, re-shipment and depleted-batch hiding.');
 }catch(e){error=e;}finally{await cleanup();}
 if(error)throw error;

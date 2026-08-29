@@ -1,5 +1,6 @@
 import {requirePermission,resolveTenant} from './access-control.js';
 import {listMyStores} from './store-scope.js';
+import {prepareOrderStockTransition,rollbackOrderStockTransition,finalizeOrderStockTransition} from './inventory-batches.js';
 
 const ALLOWED_ROLES=new Set(['admin','client','ops','support']);
 const DELETE_ROLES=new Set(['admin','client','ops']);
@@ -47,7 +48,12 @@ function storeCanWrite(access,storeId){
 }
 async function orderForAccess(env,me,clientId,orderId,{write=false}={}){
   const access=await accessContext(env,me,clientId);
-  const row=await env.DB.prepare(`SELECT o.*,s.name store_name,s.code store_code FROM orders o LEFT JOIN stores s ON s.id=o.store_id AND s.client_id=o.client_id WHERE o.id=? AND o.client_id=?`).bind(orderId,clientId).first();
+  const row=await env.DB.prepare(`SELECT o.*,s.name store_name,s.code store_code,osa.batch_id stock_batch_id,osa.status stock_allocation_status,ib.name stock_batch_name
+    FROM orders o
+    LEFT JOIN stores s ON s.id=o.store_id AND s.client_id=o.client_id
+    LEFT JOIN order_stock_allocations osa ON osa.order_id=o.id AND osa.client_id=o.client_id
+    LEFT JOIN inventory_batches ib ON ib.id=osa.batch_id AND ib.client_id=o.client_id
+    WHERE o.id=? AND o.client_id=?`).bind(orderId,clientId).first();
   if(!row)fail('الأوردر غير موجود',404,'ORDER_NOT_FOUND');
   if(!access.allStores&&!access.ids.includes(String(row.store_id||'')))fail('الأوردر خارج المتاجر المسموح بها',403,'STORE_ISOLATION');
   if(write&&!storeCanWrite(access,row.store_id))fail('صلاحية هذا المتجر للعرض فقط',403,'STORE_READ_ONLY');
@@ -59,7 +65,7 @@ async function ensureLegacyCustomerServiceEnabled(env,me,clientId){
   if(!moduleRow||Number(moduleRow.enabled)===0)return false;
   for(let attempt=0;attempt<4;attempt++){
     const row=await env.DB.prepare('SELECT json,updated_at FROM state WHERE id=1').first().catch(()=>null);if(!row?.json)return false;
-    let state;try{state=JSON.parse(row.json)}catch{return false}
+    let state;try{state=JSON.parse(row.json)}catch{return false;}
     const clients=Array.isArray(state?.clients)?state.clients:[],client=clients.find(x=>String(x?.id)===String(clientId));if(!client)return false;
     if(client.customerServiceEnabled===true)return true;
     client.customerServiceEnabled=true;const ts=now();
@@ -89,8 +95,9 @@ function mapOrder(row,today){
   return {
     id:row.id,clientId:row.client_id,storeId:row.store_id||null,storeName:row.store_name||'بدون متجر محدد',storeCode:row.store_code||null,
     ref:row.ref||null,date:row.date||row.created_at||null,createdAt:row.created_at||null,name:row.name||'',phone:row.phone||'',gov:row.gov||'',address:row.address||'',
-    product:row.product||'',productId:row.product_id||null,productNote:row.product_note||'',qty:Number(row.qty||1),unitPrice:Number(row.unit_price||0),total:Number(row.total||0),
+    product:row.product||'',productId:row.product_id||null,variantId:row.variant_id||null,productNote:row.product_note||'',qty:Number(row.qty||1),unitPrice:Number(row.unit_price||0),total:Number(row.total||0),
     source:row.source||'',customerNote:row.note||'',awb:row.awb||'',state:row.state||'pending',checkpoint:row.checkpoint||'',deferUntil:row.defer_until||null,
+    stockBatchId:row.stock_batch_id||null,stockBatchName:row.stock_batch_name||null,stockAllocationStatus:row.stock_allocation_status||null,
     contactLog,contactCount:contactLog.length,history,internalNotes:meta.internalNotes,latestInternalNote:meta.latestInternalNote,returnedFromDeferredToday:returnedToday
   };
 }
@@ -101,15 +108,20 @@ export async function board(request,env,me){
   const dueReturned=await processDueDeferred(env,clientId,access),states=BOARD_AND_DEFERRED,binds=[clientId,...states];
   let where=`o.client_id=? AND o.state IN (${states.map(()=>'?').join(',')})`;
   if(selected){where+=' AND o.store_id=?';binds.push(selected);}else if(!access.allStores){where+=` AND o.store_id IN (${access.ids.map(()=>'?').join(',')})`;binds.push(...access.ids);}
-  const {results=[]}=await env.DB.prepare(`SELECT o.*,s.name store_name,s.code store_code FROM orders o LEFT JOIN stores s ON s.id=o.store_id AND s.client_id=o.client_id WHERE ${where} ORDER BY COALESCE(o.date,o.created_at) DESC,o.created_at DESC`).bind(...binds).all();
+  const {results=[]}=await env.DB.prepare(`SELECT o.*,s.name store_name,s.code store_code,osa.batch_id stock_batch_id,osa.status stock_allocation_status,ib.name stock_batch_name
+    FROM orders o
+    LEFT JOIN stores s ON s.id=o.store_id AND s.client_id=o.client_id
+    LEFT JOIN order_stock_allocations osa ON osa.order_id=o.id AND osa.client_id=o.client_id
+    LEFT JOIN inventory_batches ib ON ib.id=osa.batch_id AND ib.client_id=o.client_id
+    WHERE ${where} ORDER BY COALESCE(o.date,o.created_at) DESC,o.created_at DESC`).bind(...binds).all();
   const today=cairoDate(),orders=results.map(r=>mapOrder(r,today));
   return {ok:true,clientId,role:me.role,allStores:access.allStores,stores:access.stores.map(s=>({id:s.id,name:s.name,code:s.code||'',role:s.role||'owner'})),selectedStoreId:selected||null,dueReturned,today,stages:BOARD_STATES.map(id=>({id,label:STATE_LABELS[id]})),stateLabels:STATE_LABELS,orders};
 }
-async function decorateLatestState(env,clientId,orderId,state,me){
+async function decorateLatestState(env,clientId,orderId,state,me,metadata={}){
   const row=await env.DB.prepare('SELECT history FROM orders WHERE id=? AND client_id=?').bind(orderId,clientId).first();if(!row)return;
   const history=parseArr(row.history),a=actor(me);let found=false;
-  for(let i=history.length-1;i>=0;i--){const h=history[i];if(h?.state===state&&!h.by){history[i]={...h,...a,type:h.type||'state'};found=true;break;}if(h?.state&&h.state!==state)break;}
-  if(!found)history.push({type:'state',state,at:now(),...a});
+  for(let i=history.length-1;i>=0;i--){const h=history[i];if(h?.state===state&&!h.by){history[i]={...h,...a,...metadata,type:h.type||'state'};found=true;break;}if(h?.state&&h.state!==state)break;}
+  if(!found)history.push({type:'state',state,at:now(),...a,...metadata});
   await env.DB.prepare('UPDATE orders SET history=? WHERE id=? AND client_id=?').bind(JSON.stringify(history),orderId,clientId).run();
 }
 async function appendContactMirror(env,clientId,orderId,me,channel='phone'){
@@ -145,6 +157,7 @@ export async function handleAction(request,env,me,delegate){
       env.DB.prepare('DELETE FROM order_events WHERE order_id=? AND client_id=?').bind(orderId,clientId),
       env.DB.prepare('DELETE FROM order_attribution WHERE order_id=? AND client_id=?').bind(orderId,clientId),
       env.DB.prepare('DELETE FROM whatsapp_outbox WHERE order_id=? AND client_id=?').bind(orderId,clientId),
+      env.DB.prepare('DELETE FROM order_stock_allocations WHERE order_id=? AND client_id=?').bind(orderId,clientId),
       env.DB.prepare('DELETE FROM orders WHERE id=? AND client_id=?').bind(orderId,clientId)
     ]);
     try{await env.DB.prepare('INSERT INTO audit_log (id,client_id,store_id,actor_user_id,actor_email,action,entity_type,entity_id,before_json,metadata_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)').bind(`AUD-${crypto.randomUUID().slice(0,10).toUpperCase()}`,clientId,storeId,a.byUserId,a.by,'order.delete','order',orderId,JSON.stringify(snapshot),JSON.stringify({source:'orders_ui'}),stamp).run();}catch{}
@@ -154,9 +167,15 @@ export async function handleAction(request,env,me,delegate){
   if(action==='state'&&method==='PATCH'){
     const state=clean(body.state);if(!ALL_STATES.includes(state))fail('حالة الأوردر غير معروفة',400,'ORDER_STATE_INVALID');
     if(state==='deferred'&&!/^\d{4}-\d{2}-\d{2}$/.test(clean(body.deferUntil)))fail('حدد تاريخ التأجيل',400,'DEFER_DATE_REQUIRED');
-    const req=canonicalRequest(request,`/api/orders/${encodeURIComponent(orderId)}`,{state,deferUntil:body.deferUntil||undefined,awb:body.awb||undefined},clientId,storeId);
-    const legacy=new Request(req.url,{method:'PATCH',headers:req.headers,body:await req.text()});
-    const response=await delegate(legacy);if(response.ok)await decorateLatestState(env,clientId,orderId,state,me);return proxyJson(response);
+    let stockTransition={kind:'none'};
+    try{
+      stockTransition=await prepareOrderStockTransition(env,{clientId,storeId,orderId,fromState:row.state,toState:state,stockBatchId:body.stockBatchId||body.stock_batch_id,actor:me});
+      const req=canonicalRequest(request,`/api/orders/${encodeURIComponent(orderId)}`,{state,deferUntil:body.deferUntil||undefined,awb:body.awb||undefined},clientId,storeId),legacy=new Request(req.url,{method:'PATCH',headers:req.headers,body:await req.text()}),response=await delegate(legacy);
+      if(!response.ok){await rollbackOrderStockTransition(env,stockTransition);return proxyJson(response);}
+      const finalized=await finalizeOrderStockTransition(env,{clientId,orderId,fromState:row.state,toState:state});
+      const metadata=stockTransition.kind==='allocated'?{stockBatchId:stockTransition.batchId,stockBatchName:stockTransition.batchName,stockQty:stockTransition.qty}:finalized.kind==='returned'?{stockBatchId:finalized.batchId,stockRestoredQty:finalized.qty}:{};
+      await decorateLatestState(env,clientId,orderId,state,me,metadata);return proxyJson(response);
+    }catch(error){await rollbackOrderStockTransition(env,stockTransition).catch(()=>{});throw error;}
   }
   if(action==='contact'&&method==='POST'){
     const channel=['phone','whatsapp','messenger','instagram','tiktok'].includes(clean(body.channel).toLowerCase())?clean(body.channel).toLowerCase():'phone';
