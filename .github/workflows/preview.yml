@@ -60,41 +60,102 @@ jobs:
             echo "Run became stale before deploy. Run=$GITHUB_SHA Latest=$latest. Deploy skipped."
           fi
 
-      - name: Deploy preview Worker
+      - name: Capture exact Preview rollback version
+        id: rollback_base
         if: steps.deploy_ownership.outputs.is_latest == 'true'
-        run: npm run deploy:preview
+        run: |
+          status="$(npx wrangler deployments status --config wrangler.preview.toml --json)"
+          version="$(printf '%s' "$status" | node -e '
+            let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{
+              const root=JSON.parse(raw),hits=[];
+              const walk=x=>{if(Array.isArray(x)){for(const v of x)walk(v);return;}if(!x||typeof x!=="object")return;
+                const id=x.version_id||x.versionId;
+                const pct=x.percentage??x.traffic_percentage??x.trafficPercentage;
+                if(id)hits.push({id:String(id),pct:pct==null?null:Number(pct)});
+                for(const v of Object.values(x))walk(v);
+              };walk(root);
+              const unique=[...new Map(hits.map(x=>[x.id,x])).values()];
+              const full=unique.find(x=>x.pct===100||x.pct===1)||(unique.length===1?unique[0]:null);
+              if(!full)process.exit(2);process.stdout.write(full.id);
+            });')"
+          test -n "$version"
+          echo "version_id=$version" >> "$GITHUB_OUTPUT"
+          echo "Captured current Preview version for exact rollback: $version"
+
+      - name: Deploy preview Worker
+        id: deploy
+        if: steps.deploy_ownership.outputs.is_latest == 'true'
+        run: |
+          set -o pipefail
+          output="$(npm run deploy:preview 2>&1)"
+          printf '%s\n' "$output"
+          version="$(printf '%s\n' "$output" | sed -nE 's/.*Current Version ID: ([0-9a-f-]{36}).*/\1/p' | tail -1)"
+          if [ -z "$version" ]; then
+            echo "Could not capture deployed Preview Worker version ID."
+            exit 1
+          fi
+          echo "version_id=$version" >> "$GITHUB_OUTPUT"
+          echo "Captured deployed Preview Worker version: $version"
+
+      - name: Confirm deployed Worker owns Preview traffic
+        id: worker_ownership
+        if: steps.deploy.outcome == 'success'
+        run: |
+          status="$(npx wrangler deployments status --config wrangler.preview.toml --json)"
+          current="$(printf '%s' "$status" | node -e '
+            let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{
+              const root=JSON.parse(raw),hits=[];
+              const walk=x=>{if(Array.isArray(x)){for(const v of x)walk(v);return;}if(!x||typeof x!=="object")return;
+                const id=x.version_id||x.versionId;
+                const pct=x.percentage??x.traffic_percentage??x.trafficPercentage;
+                if(id)hits.push({id:String(id),pct:pct==null?null:Number(pct)});
+                for(const v of Object.values(x))walk(v);
+              };walk(root);
+              const unique=[...new Map(hits.map(x=>[x.id,x])).values()];
+              const full=unique.find(x=>x.pct===100||x.pct===1)||(unique.length===1?unique[0]:null);
+              if(!full)process.exit(2);process.stdout.write(full.id);
+            });')"
+          expected="${{ steps.deploy.outputs.version_id }}"
+          if [ "$current" = "$expected" ]; then
+            echo "is_current=true" >> "$GITHUB_OUTPUT"
+            echo "Preview Worker ownership confirmed: $current"
+          else
+            echo "is_current=false" >> "$GITHUB_OUTPUT"
+            echo "Preview Worker ownership lost immediately after deploy. Expected=$expected Current=$current"
+            exit 1
+          fi
 
       - name: Smoke test deployed preview
         id: smoke
-        if: steps.deploy_ownership.outputs.is_latest == 'true'
+        if: steps.worker_ownership.outputs.is_current == 'true'
         continue-on-error: true
         run: npm run smoke:preview
 
       - name: Live authenticated Store B regression
         id: live
-        if: steps.deploy_ownership.outputs.is_latest == 'true' && steps.smoke.outcome == 'success'
+        if: steps.worker_ownership.outputs.is_current == 'true' && steps.smoke.outcome == 'success'
         continue-on-error: true
         run: node scripts/live-preview-functional-test.mjs https://kunonline-preview.mr-a-mnaa.workers.dev
 
       - name: Live team and branch permission regression
         id: team_live
-        if: steps.deploy_ownership.outputs.is_latest == 'true' && steps.smoke.outcome == 'success' && steps.live.outcome == 'success'
+        if: steps.worker_ownership.outputs.is_current == 'true' && steps.smoke.outcome == 'success' && steps.live.outcome == 'success'
         continue-on-error: true
         run: node scripts/live-preview-team-test.mjs https://kunonline-preview.mr-a-mnaa.workers.dev
 
       - name: Live Easy Orders webhook regression
         id: easyorders_live
-        if: steps.deploy_ownership.outputs.is_latest == 'true' && steps.smoke.outcome == 'success' && steps.live.outcome == 'success' && steps.team_live.outcome == 'success'
+        if: steps.worker_ownership.outputs.is_current == 'true' && steps.smoke.outcome == 'success' && steps.live.outcome == 'success' && steps.team_live.outcome == 'success'
         continue-on-error: true
         run: node scripts/live-preview-easyorders-test.mjs https://kunonline-preview.mr-a-mnaa.workers.dev
 
       - name: Browser runtime and responsive QA
         id: browser
-        if: steps.deploy_ownership.outputs.is_latest == 'true' && steps.smoke.outcome == 'success' && steps.live.outcome == 'success' && steps.team_live.outcome == 'success' && steps.easyorders_live.outcome == 'success'
+        if: steps.worker_ownership.outputs.is_current == 'true' && steps.smoke.outcome == 'success' && steps.live.outcome == 'success' && steps.team_live.outcome == 'success' && steps.easyorders_live.outcome == 'success'
         continue-on-error: true
         run: node scripts/browser-preview-qa.mjs https://kunonline-preview.mr-a-mnaa.workers.dev
 
-      - name: Confirm ownership before rollback
+      - name: Confirm branch ownership before rollback
         id: rollback_ownership
         if: always() && (steps.smoke.outcome == 'failure' || steps.live.outcome == 'failure' || steps.team_live.outcome == 'failure' || steps.easyorders_live.outcome == 'failure' || steps.browser.outcome == 'failure')
         run: |
@@ -106,16 +167,52 @@ jobs:
             echo "Validation failed in a stale run. Rollback suppressed so it cannot overwrite a newer deployment."
           fi
 
-      - name: Roll back Preview code after failed validation
-        if: always() && (steps.smoke.outcome == 'failure' || steps.live.outcome == 'failure' || steps.team_live.outcome == 'failure' || steps.easyorders_live.outcome == 'failure' || steps.browser.outcome == 'failure') && steps.rollback_ownership.outputs.is_latest == 'true'
-        run: npm run rollback:preview
+      - name: Confirm Worker ownership before rollback
+        id: rollback_worker_ownership
+        if: always() && steps.rollback_ownership.outputs.is_latest == 'true' && (steps.smoke.outcome == 'failure' || steps.live.outcome == 'failure' || steps.team_live.outcome == 'failure' || steps.easyorders_live.outcome == 'failure' || steps.browser.outcome == 'failure')
+        run: |
+          status="$(npx wrangler deployments status --config wrangler.preview.toml --json)"
+          current="$(printf '%s' "$status" | node -e '
+            let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{
+              const root=JSON.parse(raw),hits=[];
+              const walk=x=>{if(Array.isArray(x)){for(const v of x)walk(v);return;}if(!x||typeof x!=="object")return;
+                const id=x.version_id||x.versionId;
+                const pct=x.percentage??x.traffic_percentage??x.trafficPercentage;
+                if(id)hits.push({id:String(id),pct:pct==null?null:Number(pct)});
+                for(const v of Object.values(x))walk(v);
+              };walk(root);
+              const unique=[...new Map(hits.map(x=>[x.id,x])).values()];
+              const full=unique.find(x=>x.pct===100||x.pct===1)||(unique.length===1?unique[0]:null);
+              if(!full)process.exit(2);process.stdout.write(full.id);
+            });')"
+          expected="${{ steps.deploy.outputs.version_id }}"
+          if [ "$current" = "$expected" ]; then
+            echo "is_current=true" >> "$GITHUB_OUTPUT"
+            echo "Failed validation still belongs to this run's Worker: $current"
+          else
+            echo "is_current=false" >> "$GITHUB_OUTPUT"
+            echo "Preview changed during QA. Expected=$expected Current=$current. Automatic rollback suppressed."
+          fi
+
+      - name: Restore exact Preview version after failed validation
+        if: always() && steps.rollback_ownership.outputs.is_latest == 'true' && steps.rollback_worker_ownership.outputs.is_current == 'true' && (steps.smoke.outcome == 'failure' || steps.live.outcome == 'failure' || steps.team_live.outcome == 'failure' || steps.easyorders_live.outcome == 'failure' || steps.browser.outcome == 'failure')
+        run: |
+          previous="${{ steps.rollback_base.outputs.version_id }}"
+          test -n "$previous"
+          npx wrangler versions deploy "$previous@100%" --yes --config wrangler.preview.toml --message "Automatic exact Preview restore after failed validation"
 
       - name: Verify restored Preview health
-        if: always() && (steps.smoke.outcome == 'failure' || steps.live.outcome == 'failure' || steps.team_live.outcome == 'failure' || steps.easyorders_live.outcome == 'failure' || steps.browser.outcome == 'failure') && steps.rollback_ownership.outputs.is_latest == 'true'
+        if: always() && steps.rollback_ownership.outputs.is_latest == 'true' && steps.rollback_worker_ownership.outputs.is_current == 'true' && (steps.smoke.outcome == 'failure' || steps.live.outcome == 'failure' || steps.team_live.outcome == 'failure' || steps.easyorders_live.outcome == 'failure' || steps.browser.outcome == 'failure')
         run: node scripts/preview-health-check.mjs https://kunonline-preview.mr-a-mnaa.workers.dev
 
-      - name: Mark failed deployment
-        if: always() && (steps.smoke.outcome == 'failure' || steps.live.outcome == 'failure' || steps.team_live.outcome == 'failure' || steps.easyorders_live.outcome == 'failure' || steps.browser.outcome == 'failure') && steps.rollback_ownership.outputs.is_latest == 'true'
+      - name: Mark failed owned deployment
+        if: always() && steps.rollback_ownership.outputs.is_latest == 'true' && steps.rollback_worker_ownership.outputs.is_current == 'true' && (steps.smoke.outcome == 'failure' || steps.live.outcome == 'failure' || steps.team_live.outcome == 'failure' || steps.easyorders_live.outcome == 'failure' || steps.browser.outcome == 'failure')
         run: |
-          echo "The latest Preview deployment failed validation and was rolled back."
+          echo "The latest owned Preview deployment failed validation and the exact previous version was restored."
+          exit 1
+
+      - name: Mark Preview ownership loss
+        if: always() && steps.rollback_ownership.outputs.is_latest == 'true' && steps.rollback_worker_ownership.outputs.is_current == 'false' && (steps.smoke.outcome == 'failure' || steps.live.outcome == 'failure' || steps.team_live.outcome == 'failure' || steps.easyorders_live.outcome == 'failure' || steps.browser.outcome == 'failure')
+        run: |
+          echo "Preview Worker changed during QA; validation result is not attributable to this run and rollback was intentionally suppressed."
           exit 1
