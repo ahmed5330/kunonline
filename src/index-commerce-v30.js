@@ -30,9 +30,13 @@ export async function reconcileAutomaticManagementFees(env,{limit=1000}={}){
   const cap=Math.min(5000,Math.max(1,Number(limit)||1000));
   const {results=[]}=await env.DB.prepare(`SELECT o.id
     FROM orders o
+    JOIN stores s ON s.id=o.store_id AND s.client_id=o.client_id
     LEFT JOIN order_management_fees f ON f.order_id=o.id AND f.client_id=o.client_id
     WHERE o.store_id IS NOT NULL AND (
-      (o.state IN ('shipped','signed','collected') AND (f.order_id IS NULL OR f.status<>'active'))
+      (o.state IN ('shipped','signed','collected') AND (
+        (f.order_id IS NULL AND COALESCE(s.management_fee_pct,0)>0)
+        OR (f.order_id IS NOT NULL AND f.status<>'active')
+      ))
       OR (o.state IN ('returned','cancelled') AND f.status='active')
     )
     ORDER BY COALESCE(o.date,o.created_at) DESC
