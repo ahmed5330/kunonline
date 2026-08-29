@@ -1,6 +1,6 @@
 /* kun online v16 — Integration readiness + secure setup */
 (function(){
-  const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[c]));
+  const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   async function api(path,options={}){const r=await fetch(path,{credentials:'include',headers:{'Content-Type':'application/json',...(options.headers||{})},...options});const d=await r.json().catch(()=>({}));if(!r.ok){const e=new Error(d.error||`HTTP ${r.status}`);e.code=d.code;throw e}return d;}
   const label={commerce:'منصات التجارة',social:'التواصل والعملاء',marketing:'الإعلانات والتسويق',shipping:'الشحن والتتبع'};
   const state=s=>s==='connected'?'متصل':s==='needs_secrets'?'ينقصه بيانات ربط':s==='configured'?'مُعدّ — يحتاج تأكيد':s==='disconnected'?'غير متصل':s;
