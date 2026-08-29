@@ -26,13 +26,46 @@
     '/api/workflows','/api/approvals','/api/execution-jobs','/api/notifications','/api/audit-log',
     '/api/ai/insights','/api/ai-actions','/api/dashboard','/api/ai/business-brief'
   ];
-  let cached='',resolving=null,storeCached='',storeResolving=null,storeLoadedFor='';
+  let cached='',resolving=null,storeCached='',storeResolving=null,storeLoadedFor='',meCached=null,meResolving=null,clientContext=null;
   const fromState=()=>{try{return String((typeof activeClientId!=='undefined'&&activeClientId)||(typeof state!=='undefined'&&state?.businessClients?.[0]?.id)||(typeof state!=='undefined'&&state?.orders?.find?.(x=>x?.clientId||x?.client_id)?.clientId)||(typeof state!=='undefined'&&state?.orders?.find?.(x=>x?.client_id)?.client_id)||'');}catch{return '';}};
   const apply=id=>{if(!id)return '';cached=String(id);try{if(typeof activeClientId!=='undefined')activeClientId=cached;}catch{};document.documentElement.dataset.clientContext='ready';return cached;};
+  const html=v=>String(v||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const clientKey='kunActiveClient';
+  const storeKey=id=>`kunActiveStore:${id}`;
+
+  async function getMe(){
+    if(meCached)return meCached;
+    if(meResolving)return meResolving;
+    meResolving=nativeFetch('/api/me',{credentials:'include'}).then(async r=>r.ok?await r.json():null).catch(()=>null).then(x=>(meCached=x,x)).finally(()=>{meResolving=null;});
+    return meResolving;
+  }
+
+  function ensureClientPicker(){
+    let select=document.getElementById('clientBtn');if(select)return select;
+    const store=document.getElementById('storeBtn');if(!store)return null;
+    select=document.createElement('select');select.id='clientBtn';select.className='btn soft';select.setAttribute('aria-label','اختيار المتجر / الحساب');store.before(select);return select;
+  }
+  function renderClientPicker(context){
+    clientContext=context;const select=ensureClientPicker();if(!select)return;
+    const clients=context?.clients||[];
+    if(clients.length<=1){select.style.display='none';return;}
+    select.style.display='';select.innerHTML=clients.map(c=>`<option value="${html(c.id)}">${html(c.name||c.id)}</option>`).join('');select.value=cached&&clients.some(c=>String(c.id)===String(cached))?cached:String(clients[0]?.id||'');
+    select.onchange=()=>{const next=select.value;if(!next)return;localStorage.setItem(clientKey,next);localStorage.removeItem(storeKey(cached));cached=next;storeCached='';storeLoadedFor='';location.reload();};
+  }
+
+  async function accessibleClientContext(me){
+    const r=await nativeFetch('/api/my-client-context',{credentials:'include'}),d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||'تعذر تحميل المتاجر المسموحة');return d;
+  }
   async function resolveFresh(){
-    const local=fromState();if(local)return apply(local);if(cached)return cached;
-    const me=await nativeFetch('/api/me',{credentials:'include'}).then(r=>r.ok?r.json():null).catch(()=>null);
+    const me=await getMe();
     if(me?.clientId)return apply(me.clientId);
+    if(me?.role&&me.role!=='admin'){
+      const context=await accessibleClientContext(me).catch(()=>({clients:[]})),clients=context?.clients||[];
+      if(!clients.length)return '';
+      const saved=localStorage.getItem(clientKey)||'',chosen=clients.some(c=>String(c.id)===saved)?saved:String(clients[0].id);
+      apply(chosen);renderClientPicker(context);return chosen;
+    }
+    const local=fromState();if(local)return apply(local);if(cached)return cached;
     let s=await nativeFetch('/api/state',{credentials:'include'}).then(r=>r.ok?r.json():null).catch(()=>null);
     let id=s?.clients?.[0]?.id||s?.state?.clients?.[0]?.id||s?.orders?.find?.(x=>x?.clientId||x?.client_id)?.clientId||s?.orders?.find?.(x=>x?.client_id)?.client_id||'';
     if(id)return apply(id);
@@ -50,15 +83,13 @@
   const scopedGet=path=>CLIENT_SCOPED_GET.some(p=>path===p||path.startsWith(p+'/'));
   const scopedWrite=path=>CLIENT_SCOPED_WRITES.some(p=>path===p||path.startsWith(p+'/'));
   const storeScoped=path=>STORE_SCOPED.some(p=>path===p||path.startsWith(p+'/'));
-  const storeKey=id=>`kunActiveStore:${id}`;
-  const html=v=>String(v||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   function renderStorePicker(context,id){
     const select=document.getElementById('storeBtn');if(!select)return;
     const stores=context?.stores||[],saved=localStorage.getItem(storeKey(id))||'';
     let selected=stores.some(s=>String(s.id)===saved)?saved:'';
     if(!context?.allStores&&!selected&&stores.length)selected=String(stores[0].id);
     storeCached=selected;
-    select.innerHTML=(context?.allStores?'<option value="">كل المتاجر</option>':'')+stores.map(s=>`<option value="${html(s.id)}">${html(s.name||s.code||s.id)}</option>`).join('');
+    select.innerHTML=(context?.allStores?'<option value="">كل الفروع</option>':'')+stores.map(s=>`<option value="${html(s.id)}">${html(s.name||s.code||s.id)}</option>`).join('');
     select.value=selected;
     select.disabled=!context?.allStores&&stores.length<=1;
     select.onchange=()=>{storeCached=select.value;if(storeCached)localStorage.setItem(storeKey(id),storeCached);else localStorage.removeItem(storeKey(id));location.reload();};
@@ -96,5 +127,5 @@
     }
     return response;
   };
-  document.addEventListener('DOMContentLoaded',async()=>{const id=await resolve();await resolveStore(id);});
+  document.addEventListener('DOMContentLoaded',async()=>{const id=await resolve();if(clientContext)renderClientPicker(clientContext);await resolveStore(id);});
 })();
