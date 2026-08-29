@@ -10,7 +10,7 @@
     '/api/products/stock-log','/api/onboarding/status','/api/team-members','/api/users','/api/stores','/api/store-access',
     '/api/tenant/overview','/api/system-status','/api/usage','/api/billing','/api/integrations/health',
     '/api/profit-intelligence','/api/cod-reconciliation','/api/transactions','/api/orders','/api/products',
-    '/api/variants','/api/coupons','/api/performance'
+    '/api/variants','/api/coupons','/api/performance','/api/dashboard','/api/ai/business-brief'
   ];
   const CLIENT_SCOPED_WRITES=[
     '/api/orders','/api/customers','/api/products','/api/suppliers','/api/purchase-orders',
@@ -24,7 +24,7 @@
     '/api/transactions','/api/purchase-orders','/api/procurement','/api/pos','/api/campaigns',
     '/api/inbox','/api/cod-reconciliation','/api/finance','/api/profit-intelligence','/api/analytics',
     '/api/workflows','/api/approvals','/api/execution-jobs','/api/notifications','/api/audit-log',
-    '/api/ai/insights','/api/ai-actions'
+    '/api/ai/insights','/api/ai-actions','/api/dashboard','/api/ai/business-brief'
   ];
   let cached='',resolving=null,storeCached='',storeResolving=null,storeLoadedFor='';
   const fromState=()=>{try{return String((typeof activeClientId!=='undefined'&&activeClientId)||(typeof state!=='undefined'&&state?.businessClients?.[0]?.id)||(typeof state!=='undefined'&&state?.orders?.find?.(x=>x?.clientId||x?.client_id)?.clientId)||(typeof state!=='undefined'&&state?.orders?.find?.(x=>x?.client_id)?.client_id)||'');}catch{return '';}};
