@@ -24,29 +24,40 @@ export async function campaignPerformance(env,{clientId,storeId=null,from,to,pla
     WHERE ${campaignWhere}
     GROUP BY c.id ORDER BY c.updated_at DESC`).bind(...campaignBinds).all();
 
-  const out=[];
-  for(const c of campaigns){
-    const orderBinds=[clientId,c.id,from,to];let storeClause='';if(storeId){storeClause=' AND o.store_id=?';orderBinds.push(storeId)}
-    const a=await env.DB.prepare(`SELECT
+  // One aggregate attribution query for the entire selected period. The previous
+  // implementation executed one D1 query per campaign, which could become slow
+  // enough to surface as a 500 on 7/30-day dashboard ranges for stores with many campaigns.
+  const attributionBinds=storeId?[clientId,from,to,storeId]:[clientId,from,to];
+  const {results:attributionRows=[]}=await env.DB.prepare(`
+    SELECT x.campaign_id,
       COUNT(*) real_orders,
       SUM(CASE WHEN o.state IN ('confirmed','preparing','shipped','signed','collected') THEN 1 ELSE 0 END) confirmed_orders,
       SUM(CASE WHEN o.state IN ('signed','collected') THEN 1 ELSE 0 END) delivered_orders,
       SUM(CASE WHEN o.state='cancelled' THEN 1 ELSE 0 END) cancelled_orders,
       SUM(CASE WHEN o.state='returned' THEN 1 ELSE 0 END) returned_orders,
       COALESCE(SUM(CASE WHEN o.state IN ('signed','collected') THEN o.total ELSE 0 END),0) delivered_revenue,
-      COUNT(DISTINCT CASE WHEN o.customer_id IS NOT NULL AND date(o.date)=(SELECT MIN(date(o2.date)) FROM orders o2 WHERE o2.client_id=o.client_id AND o2.customer_id=o.customer_id) THEN o.customer_id END) new_customers
-      FROM order_attribution x JOIN orders o ON o.id=x.order_id AND o.client_id=x.client_id
-      WHERE x.client_id=? AND x.campaign_id=? AND date(o.date) BETWEEN date(?) AND date(?) ${storeClause}`)
-      .bind(...orderBinds).first();
-    const spend=n(c.spend),impressions=n(c.impressions),reach=n(c.reach),clicks=n(c.clicks),real=n(a?.real_orders),confirmed=n(a?.confirmed_orders),delivered=n(a?.delivered_orders),deliveredRevenue=n(a?.delivered_revenue),platformPurchases=n(c.platform_purchases),platformPurchaseValue=n(c.platform_purchase_value),newCustomers=n(a?.new_customers);
+      COUNT(DISTINCT CASE WHEN o.customer_id IS NOT NULL AND date(o.date)=(
+        SELECT MIN(date(o2.date)) FROM orders o2
+        WHERE o2.client_id=o.client_id AND o2.customer_id=o.customer_id
+      ) THEN o.customer_id END) new_customers
+    FROM order_attribution x
+    JOIN orders o ON o.id=x.order_id AND o.client_id=x.client_id
+    WHERE x.client_id=? AND date(o.date) BETWEEN date(?) AND date(?) ${storeId?'AND o.store_id=?':''}
+    GROUP BY x.campaign_id`).bind(...attributionBinds).all();
+  const attribution=new Map(attributionRows.map(row=>[String(row.campaign_id),row]));
+
+  const out=[];
+  for(const c of campaigns){
+    const a=attribution.get(String(c.id))||{};
+    const spend=n(c.spend),impressions=n(c.impressions),reach=n(c.reach),clicks=n(c.clicks),real=n(a.real_orders),confirmed=n(a.confirmed_orders),delivered=n(a.delivered_orders),deliveredRevenue=n(a.delivered_revenue),platformPurchases=n(c.platform_purchases),platformPurchaseValue=n(c.platform_purchase_value),newCustomers=n(a.new_customers);
     out.push({...c,
       spend:r2(spend),impressions,clicks,reach,frequency:reach?r2(impressions/reach):0,leads:n(c.leads),platformPurchases,platformPurchaseValue:r2(platformPurchaseValue),
       ctr:pct(clicks,impressions),cpc:clicks?r2(spend/clicks):0,cpm:impressions?r2(spend/impressions*1000):0,platformRoas:spend?r2(platformPurchaseValue/spend):0,
-      realOrders:real,confirmedOrders:confirmed,deliveredOrders:delivered,cancelledOrders:n(a?.cancelled_orders),returnedOrders:n(a?.returned_orders),
+      realOrders:real,confirmedOrders:confirmed,deliveredOrders:delivered,cancelledOrders:n(a.cancelled_orders),returnedOrders:n(a.returned_orders),
       platformCpp:platformPurchases?r2(spend/platformPurchases):0,realOrderCost:real?r2(spend/real):0,
       confirmedOrderCost:confirmed?r2(spend/confirmed):0,deliveredOrderCost:delivered?r2(spend/delivered):0,
       newCustomers,cac:newCustomers?r2(spend/newCustomers):0,deliveredRevenue:r2(deliveredRevenue),realRoas:spend?r2(deliveredRevenue/spend):0,
-      cancellationRate:pct(n(a?.cancelled_orders),real),returnRate:pct(n(a?.returned_orders),Math.max(1,delivered+n(a?.returned_orders)))
+      cancellationRate:pct(n(a.cancelled_orders),real),returnRate:pct(n(a.returned_orders),Math.max(1,delivered+n(a.returned_orders)))
     });
   }
   const total=out.reduce((a,c)=>{for(const k of ['spend','impressions','clicks','reach','leads','platformPurchases','platformPurchaseValue','realOrders','confirmedOrders','deliveredOrders','cancelledOrders','returnedOrders','newCustomers','deliveredRevenue'])a[k]=(a[k]||0)+n(c[k]);return a;},{});
