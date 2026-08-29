@@ -5,7 +5,7 @@ const STORE_SCOPED_PREFIXES = [
   '/api/finance', '/api/profit-intelligence', '/api/analytics', '/api/workflows',
   '/api/approvals', '/api/execution-jobs', '/api/notifications', '/api/audit-log',
   '/api/ai/insights', '/api/ai-actions', '/api/ai/business-brief',
-  '/api/ad-studio', '/api/order-attribution', '/api/marketing/performance'
+  '/api/ad-studio', '/api/order-attribution', '/api/marketing/performance', '/api/dashboard'
 ];
 const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 export function isStoreScopedPath(pathname = '') {return STORE_SCOPED_PREFIXES.some(prefix => pathname === prefix || pathname.startsWith(prefix + '/'));}
