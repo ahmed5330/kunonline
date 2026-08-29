@@ -41,17 +41,20 @@ assert.equal(result.trend.granularity,'day','one-day range must use daily trend'
 assert.ok(Object.hasOwn(result.trend.points[0],'netProfit'),'trend points must expose net profit');
 assert.ok(result.recommendations.length>0,'dashboard must always provide recommendations');
 
-const [html,js,css,context,worker]=await Promise.all([
+const [html,js,baseCss,polishCss,context,worker]=await Promise.all([
   readFile(new URL('../public/v2/index.html',import.meta.url),'utf8'),
-  readFile(new URL('../public/v2/modules-v32-dashboard.js',import.meta.url),'utf8'),
+  readFile(new URL('../public/v2/modules-v33-dashboard.js',import.meta.url),'utf8'),
   readFile(new URL('../public/v2/kun-v11.css',import.meta.url),'utf8'),
+  readFile(new URL('../public/v2/kun-v12.css',import.meta.url),'utf8'),
   readFile(new URL('../public/v2/client-context-v23.js',import.meta.url),'utf8'),
   readFile(new URL('../src/index-commerce-v31.js',import.meta.url),'utf8')
 ]);
-for(const marker of ['data-view="dashboard">الداشبورد','kun-v11.css','modules-v32-dashboard.js'])assert.ok(html.includes(marker),`index missing ${marker}`);
-for(const marker of ['/api/dashboard','آخر 7 أيام','آخر 30 يوم','مدة معينة','data-dash-kpi','data-dash-reload','تكلفة الطلب الفعلية','نتائج الإعلانات','أفضل المحافظات للشحن','أهم توصيات kun AI','أهم مؤشرات البيزنس عبر الزمن','تحليل جديد بالـAI'])assert.ok(js.includes(marker),`dashboard UI missing ${marker}`);
-for(const marker of ['.dash-kpis','.dash-drilldown','.dash-ad-grid','.dash-ai-grid','.dash-bars','@media(max-width:820px)','@media(max-width:390px)','body[data-theme="dark"]'])assert.ok(css.includes(marker),`dashboard CSS missing ${marker}`);
+for(const marker of ['data-view="dashboard">الداشبورد','kun-v11.css','kun-v12.css','modules-v33-dashboard.js'])assert.ok(html.includes(marker),`index missing ${marker}`);
+for(const marker of ['/api/dashboard','آخر 7 أيام','آخر 30 يوم','خلال مدة معينة','data-dash-kpi','data-dash-reload','reloadSection','dash-updated','data-dash-trend','تكلفة الطلب الفعلية','نتائج الإعلانات بالتفصيل','أفضل المحافظات للشحن','أهم توصيات kun AI','أهم مؤشرات البيزنس وطريقة سريانه','تحليل جديد بالـAI','المرتجعات ÷ كل ما دخل مرحلة الشحن × 100'])assert.ok(js.includes(marker),`dashboard UI missing ${marker}`);
+assert.doesNotThrow(()=>new Function(js),'dashboard v33 browser module must parse');
+for(const marker of ['.dash-kpis','.dash-drilldown','.dash-ad-grid','.dash-ai-grid','.dash-bars','@media(max-width:820px)','@media(max-width:390px)','body[data-theme="dark"]'])assert.ok(baseCss.includes(marker),`dashboard base CSS missing ${marker}`);
+for(const marker of ['.dash-updated','.dash-trend-tabs','.dash-province-list','.dash-refreshing','prefers-reduced-motion'])assert.ok(polishCss.includes(marker),`dashboard polish CSS missing ${marker}`);
 assert.ok(context.includes("'/api/dashboard'"),'client context must scope dashboard');
 for(const marker of ["path==='/api/dashboard'","dashboardData","requirePermission(me,'analytics','read')"])assert.ok(worker.includes(marker),`worker dashboard route missing ${marker}`);
 
-console.log('Dashboard v32 checks passed: real all-order CPP, expected revenue/profit, full-margin P&L, returns-aware rates, governorates, AI/trends, scoped API and responsive drill-down UI.');
+console.log('Dashboard v33 checks passed: formulas + independent section reload + Arabic ad KPIs + return-aware rates + province ranking + selectable business trends + responsive polish.');
