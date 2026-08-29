@@ -72,7 +72,7 @@ export async function validateEasyOrdersConnection({secrets,fetcher=fetch}){
     attempts.push({profile:profile.id,status:response.status});
   }
   const statuses=attempts.map(x=>x.status).filter(Boolean);
-  if(statuses.includes(403))return {ok:false,status:'disconnected',externalConnectivityChecked:true,code:'EASYORDERS_PRODUCTS_READ_FORBIDDEN',message:'مفتاح Easy Orders صالح لكنه لا يملك صلاحية قراءة المنتجات المطلوبة للتحقق.'};
+  if(statuses.includes(403))return {ok:false,status:'disconnected',externalConnectivityChecked:true,code:'EASYORDERS_PRODUCTS_READ_FORBIDDEN',message:'مفتاح Easy Orders صالح لكنه لا يملك صلاحية products:read المطلوبة للتحقق.'};
   if(statuses.includes(429))return {ok:false,status:'configured',externalConnectivityChecked:true,code:'EASYORDERS_RATE_LIMITED',message:'Easy Orders أوقفت التحقق مؤقتًا بسبب حد الطلبات. حاول مرة أخرى بعد قليل.'};
   if(statuses.length&&statuses.every(status=>status===401||status===404))return {ok:false,status:'disconnected',externalConnectivityChecked:true,code:'EASYORDERS_API_KEY_INVALID',message:'Easy Orders رفضت مفتاح API بكلتا طريقتي المصادقة الموثقتين. انسخ المفتاح من Public API وتأكد أنه مفعّل.'};
   if(!statuses.length)return {ok:false,status:'disconnected',externalConnectivityChecked:true,code:'EASYORDERS_CONNECTIVITY_FAILED',message:'تعذر الاتصال بـ Easy Orders بكلتا طريقتي الاتصال الموثقتين.'};
