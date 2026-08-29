@@ -8,5 +8,7 @@ must(worker.includes('deduplicated:true')&&worker.includes('lower(store_name)=lo
 must(worker.includes('DELETE FROM integration_secrets'),'Connection delete must remove encrypted secrets');
 must(ui.includes('/api/integration-secrets/'),'UI must send credentials directly to encrypted secret API');
 must(ui.includes('/api/integrations/connections'),'UI must create governed connections');
+must(/function remove\(row,load,root\)\{[\s\S]*?panel\.scrollIntoView\(\{behavior:'smooth',block:'start'\}\)/.test(ui),'Removal confirmation must be brought into view');
+must(ui.includes("btn.textContent='جاري الإزالة...'")&&ui.includes("method:'DELETE'"),'Removal action must expose progress and call the delete route');
 must(!ui.includes('localStorage.setItem')&&!ui.includes('sessionStorage.setItem'),'Integration UI must not persist credentials in browser storage');
-console.log('Integration setup checks passed: governed connections, encrypted credential handoff and safe deletion.');
+console.log('Integration setup checks passed: governed connections, encrypted credential handoff, visible confirmation and safe deletion.');
