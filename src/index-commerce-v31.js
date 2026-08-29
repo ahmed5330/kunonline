@@ -2,6 +2,7 @@ import commerceV30 from './index-commerce-v30.js';
 import {requirePermission,resolveTenant} from './access-control.js';
 import {easyOrdersWebhookPath} from './commerce-order-sync.js';
 import {readConnectionSecrets} from './integration-provider-validation.js';
+import {board as customerServiceBoard,handleAction as handleCustomerServiceAction} from './customer-service.js';
 
 const BUILD='preview-v31-2026-08-28';
 const text=v=>String(v??'').trim(),now=()=>new Date().toISOString();
@@ -76,6 +77,13 @@ async function fetchV31(request,env,ctx){
   const url=new URL(request.url),path=url.pathname,method=request.method.toUpperCase();
   try{
     if(path==='/api/preview/version')return json({ok:true,build:BUILD,environment:env.APP_ENV||'unknown',entrypoint:'index-commerce-v31.js'});
+    if(path==='/api/customer-service'&&method==='GET'){
+      const me=await currentUser(request,env,ctx);return json(await customerServiceBoard(request,env,me));
+    }
+    if(path.startsWith('/api/customer-service/orders/')){
+      const me=await currentUser(request,env,ctx),result=await handleCustomerServiceAction(request,env,me,req=>commerceV30.fetch(req,env,ctx));
+      return json(result.data,result.status||200);
+    }
     if(path==='/api/commerce/order-sync/diagnostics'&&method==='GET')return diagnostics(request,env,ctx);
     if(/^\/webhooks\/easyorders\/?$/.test(path)){
       const headers={'X-Kun-Webhook':'easyorders','X-Kun-Webhook-Deprecated':'1'};
