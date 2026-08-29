@@ -31,7 +31,7 @@ function productCostFor(order,productCosts){
   if(saved>0)return saved;
   return r2(n(productCosts.get(String(order.product_id||'')))*Math.max(1,n(order.qty)||1));
 }
-function billingFeeFor(order,billing){const row=billing.get(String(order.id));return row&& !['waived','failed'].includes(row.status)?n(row.fee):0;}
+function billingFeeFor(order,billing){const row=billing.get(String(order.id));return row&&!['waived','failed'].includes(row.status)?n(row.fee):0;}
 function sum(rows,fn){return r2((rows||[]).reduce((a,x)=>a+n(fn(x)),0));}
 function groupBreakdown(rows,keyFn,valueFn=()=>1){
   const m=new Map();for(const row of rows||[]){const key=text(keyFn(row))||'غير محدد';m.set(key,r2(n(m.get(key))+n(valueFn(row))));}
@@ -52,10 +52,10 @@ function governorates(rows){
 }
 
 function buildTrend({orders,transactions,dailyAds,billing,productCosts,from,to}){
-  const span=daysBetween(from,to),granularity=span<=31?'day':span<=180?'week':'month',map=new Map();
+  const span=daysBetween(from,to),granularity=span<=31?'day':span<=180?'week':'month',map=new Map(),hasIntegratedDailyAds=sum(dailyAds,a=>a.spend)>0;
   const get=(date)=>{const key=bucketFor(date,granularity);if(!map.has(key))map.set(key,{key,orders:0,revenue:0,productCost:0,adSpend:0,otherExpenses:0,shipping:0,orderOther:0,adminFees:0,confirmed:0,delivered:0,returned:0});return map.get(key)};
   for(const o of orders||[]){const date=String(o.date||o.created_at||from).slice(0,10),x=get(date);x.orders++;if(!excludedRevenueStates.has(o.state)){x.revenue+=n(o.total);x.productCost+=productCostFor(o,productCosts);}x.shipping+=n(o.shipping_cost);x.orderOther+=n(o.other_cost);x.adminFees+=billingFeeFor(o,billing);if(confirmedStates.has(o.state))x.confirmed++;if(deliveredStates.has(o.state))x.delivered++;if(o.state==='returned')x.returned++;}
-  for(const t of transactions||[]){if(isAdCategory(t.category))continue;const x=get(String(t.date||t.created_at||from).slice(0,10));x.otherExpenses+=n(t.amount);}
+  for(const t of transactions||[]){const x=get(String(t.date||t.created_at||from).slice(0,10));if(isAdCategory(t.category)){if(!hasIntegratedDailyAds)x.adSpend+=n(t.amount);continue;}x.otherExpenses+=n(t.amount);}
   for(const a of dailyAds||[]){const x=get(String(a.metric_date||from).slice(0,10));x.adSpend+=n(a.spend);}
   return {granularity,points:[...map.values()].sort((a,b)=>a.key.localeCompare(b.key)).map(x=>{const operating=n(x.adSpend)+n(x.otherExpenses)+n(x.shipping)+n(x.orderOther)+n(x.adminFees),gross=n(x.revenue)-n(x.productCost),net=gross-operating;return {...x,revenue:r2(x.revenue),productCost:r2(x.productCost),adSpend:r2(x.adSpend),otherExpenses:r2(x.otherExpenses),shipping:r2(x.shipping),orderOther:r2(x.orderOther),adminFees:r2(x.adminFees),grossProfit:r2(gross),netProfit:r2(net),confirmationRate:pct(x.confirmed,x.orders),deliveryRate:pct(x.delivered,x.delivered+x.returned)};})};
 }
@@ -109,13 +109,12 @@ export function computeDashboardSnapshot({orders=[],historyOrders=[],transaction
 
 export async function dashboardData(env,{clientId,storeId=null,from=null,to=null}){
   const today=cairoToday(),resolvedTo=parseDate(to,today),resolvedFrom=parseDate(from,resolvedTo);if(resolvedFrom>resolvedTo)throw Object.assign(new Error('بداية الفترة يجب أن تكون قبل نهايتها'),{status:400,code:'DATE_RANGE_INVALID'});
-  if(daysBetween(resolvedFrom,resolvedTo)>1461)throw Object.assign(new Error('أقصى فترة للداشبورد 4 سنوات في العرض الواحد'),{status:400,code:'DATE_RANGE_TOO_LARGE'});
   const storeClause=storeId?' AND store_id=?':'',rangeBinds=storeId?[clientId,storeId,resolvedFrom,resolvedTo]:[clientId,resolvedFrom,resolvedTo],scopeBinds=storeId?[clientId,storeId]:[clientId];
   const [orderResult,historyResult,transactionResult,billingResult,productResult,adsResult,aiResult,storeRow]=await Promise.all([
-    env.DB.prepare(`SELECT id,client_id,store_id,date,created_at,state,total,product_cost,shipping_cost,other_cost,gov,source,customer_id,product_id,qty FROM orders WHERE client_id=? ${storeClause} AND date(date) BETWEEN date(?) AND date(?) ORDER BY date,created_at`).bind(...rangeBinds).all(),
-    env.DB.prepare(`SELECT id,date,created_at,state,total FROM orders WHERE client_id=? ${storeClause} AND date(date)>=date(?,'-29 day') AND date(date)<=date(?)`).bind(...(storeId?[clientId,storeId,today,today]:[clientId,today,today])).all(),
-    env.DB.prepare(`SELECT id,date,created_at,category,amount,note FROM transactions WHERE client_id=? ${storeClause} AND type='expense' AND date(date) BETWEEN date(?) AND date(?) ORDER BY date`).bind(...rangeBinds).all(),
-    env.DB.prepare(`SELECT b.order_id,b.fee,b.status FROM order_billing b JOIN orders o ON o.id=b.order_id AND o.client_id=b.client_id WHERE b.client_id=? ${storeId?'AND o.store_id=?':''} AND date(o.date) BETWEEN date(?) AND date(?)`).bind(...rangeBinds).all(),
+    env.DB.prepare(`SELECT id,client_id,store_id,date,created_at,state,total,product_cost,shipping_cost,other_cost,gov,source,customer_id,product_id,qty FROM orders WHERE client_id=? ${storeClause} AND date(COALESCE(date,created_at)) BETWEEN date(?) AND date(?) ORDER BY COALESCE(date,created_at),created_at`).bind(...rangeBinds).all(),
+    env.DB.prepare(`SELECT id,date,created_at,state,total FROM orders WHERE client_id=? ${storeClause} AND date(COALESCE(date,created_at))>=date(?,'-29 day') AND date(COALESCE(date,created_at))<=date(?)`).bind(...(storeId?[clientId,storeId,today,today]:[clientId,today,today])).all(),
+    env.DB.prepare(`SELECT id,date,created_at,category,amount,note FROM transactions WHERE client_id=? ${storeClause} AND type='expense' AND date(COALESCE(date,created_at)) BETWEEN date(?) AND date(?) ORDER BY COALESCE(date,created_at)`).bind(...rangeBinds).all(),
+    env.DB.prepare(`SELECT b.order_id,b.fee,b.status FROM order_billing b JOIN orders o ON o.id=b.order_id AND o.client_id=b.client_id WHERE b.client_id=? ${storeId?'AND o.store_id=?':''} AND date(COALESCE(o.date,o.created_at)) BETWEEN date(?) AND date(?)`).bind(...rangeBinds).all(),
     env.DB.prepare(`SELECT id,cost FROM products WHERE client_id=? ${storeClause}`).bind(...scopeBinds).all(),
     env.DB.prepare(`SELECT metric_date,COALESCE(SUM(spend),0) spend FROM campaign_daily_metrics WHERE client_id=? ${storeClause} AND date(metric_date) BETWEEN date(?) AND date(?) GROUP BY metric_date ORDER BY metric_date`).bind(...rangeBinds).all(),
     env.DB.prepare(`SELECT id,insight_type,severity,title,rationale,suggested_payload_json,generated_at FROM ai_insight_snapshots WHERE client_id=? ${storeId?'AND (store_id=? OR store_id IS NULL)':''} AND status='active' ORDER BY generated_at DESC LIMIT 8`).bind(...scopeBinds).all(),
