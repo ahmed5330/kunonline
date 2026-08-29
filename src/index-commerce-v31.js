@@ -90,12 +90,38 @@ async function accountingScope(request,env,me,{write=false,body={}}={}){
   const storeId=text(body.storeId||body.store_id||url.searchParams.get('storeId'))||null;
   return {clientId,...await resolveStoreScope(env,me,clientId,storeId,{write})};
 }
+function cairoToday(){const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Cairo',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date()),g=t=>parts.find(x=>x.type===t)?.value||'';return `${g('year')}-${g('month')}-${g('day')}`;}
+function validStockDate(value){const v=text(value);if(!v)return cairoToday();if(!/^\d{4}-\d{2}-\d{2}$/.test(v)||Number.isNaN(Date.parse(`${v}T00:00:00Z`)))throw Object.assign(new Error('تاريخ المخزون غير صحيح'),{status:400,code:'STOCK_DATE_INVALID'});return v;}
+async function inventoryScope(request,env,me,{write=false,body={}}={}){const url=new URL(request.url),clientId=resolveTenant(me,body.clientId||body.client_id||url.searchParams.get('clientId')),storeId=text(body.storeId||body.store_id||url.searchParams.get('storeId'))||null;return {clientId,...await resolveStoreScope(env,me,clientId,storeId,{write})};}
+async function adjustInventory(request,env,ctx){
+  const me=await currentUser(request,env,ctx);requirePermission(me,'inventory','write');const body=await request.clone().json().catch(()=>({})),scope=await inventoryScope(request,env,me,{write:true,body});
+  const productId=text(body.productId||body.product_id),variantId=text(body.variantId||body.variant_id),delta=Number(body.delta),stockDate=validStockDate(body.stockDate||body.stock_date);
+  if(!productId&&!variantId)throw Object.assign(new Error('اختر المنتج'),{status:400,code:'STOCK_PRODUCT_REQUIRED'});if(!Number.isFinite(delta)||delta===0)throw Object.assign(new Error('اكتب كمية غير صفرية'),{status:400,code:'STOCK_DELTA_INVALID'});
+  let row,productName,updateSql,updateId,rootProductId;
+  if(variantId){
+    row=await env.DB.prepare(`SELECT v.id,v.product_id,v.name,v.stock,p.name product_name FROM product_variants v JOIN products p ON p.id=v.product_id AND p.client_id=v.client_id WHERE v.id=? AND v.client_id=? AND v.store_id IS ?`).bind(variantId,scope.clientId,scope.storeId||null).first();
+    if(!row)throw Object.assign(new Error('متغير المنتج غير موجود في المتجر الحالي'),{status:404,code:'STOCK_VARIANT_NOT_FOUND'});rootProductId=row.product_id;productName=`${row.product_name||''} — ${row.name||''}`;updateSql='UPDATE product_variants SET stock=? WHERE id=? AND client_id=?';updateId=variantId;
+  }else{
+    row=await env.DB.prepare('SELECT id,name,stock FROM products WHERE id=? AND client_id=? AND store_id IS ?').bind(productId,scope.clientId,scope.storeId||null).first();
+    if(!row)throw Object.assign(new Error('المنتج غير موجود في المتجر الحالي'),{status:404,code:'STOCK_PRODUCT_NOT_FOUND'});rootProductId=row.id;productName=row.name;updateSql='UPDATE products SET stock=? WHERE id=? AND client_id=?';updateId=productId;
+  }
+  let supplierId=null,supplierName=null;if(body.supplierId||body.supplier_id){supplierId=text(body.supplierId||body.supplier_id);const supplier=await env.DB.prepare('SELECT id,name FROM suppliers WHERE id=? AND client_id=? AND store_id IS ?').bind(supplierId,scope.clientId,scope.storeId||null).first();if(!supplier)throw Object.assign(new Error('المورد غير موجود في المتجر الحالي'),{status:400,code:'STOCK_SUPPLIER_INVALID'});supplierName=supplier.name;}
+  const newStock=Math.max(0,(Number(row.stock)||0)+delta),ts=now(),id=`STK-${crypto.randomUUID().slice(0,8).toUpperCase()}`;
+  await env.DB.prepare(updateSql).bind(newStock,updateId,scope.clientId).run();
+  await env.DB.prepare('INSERT INTO stock_log (id,client_id,store_id,product_id,variant_id,product_name,delta,new_stock,note,supplier_id,supplier_name,stock_date,created_at,created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(id,scope.clientId,scope.storeId||null,rootProductId,variantId||null,productName,delta,newStock,text(body.note),supplierId,supplierName,stockDate,ts,me.email||me.name||me.role||me.id||'system').run();
+  return {ok:true,id,productId:rootProductId,variantId:variantId||null,delta,newStock,stock:newStock,stockDate};
+}
+async function inventoryLog(request,env,ctx){
+  const me=await currentUser(request,env,ctx);requirePermission(me,'inventory','read');const scope=await inventoryScope(request,env,me,{write:false}),url=new URL(request.url),limit=Math.min(500,Math.max(1,Number(url.searchParams.get('limit'))||200)),where=['client_id=?'],binds=[scope.clientId];if(scope.storeId){where.push('store_id=?');binds.push(scope.storeId);}const {results=[]}=await env.DB.prepare(`SELECT id,store_id,product_id,variant_id,product_name,delta,new_stock,note,supplier_id,supplier_name,stock_date,created_at,created_by FROM stock_log WHERE ${where.join(' AND ')} ORDER BY COALESCE(stock_date,substr(created_at,1,10)) DESC,created_at DESC LIMIT ${limit}`).bind(...binds).all();return {ok:true,entries:results.map(x=>({...x,stock_date:x.stock_date||text(x.created_at).slice(0,10)}))};
+}
 
 async function fetchV31(request,env,ctx){
   const url=new URL(request.url),path=url.pathname,method=request.method.toUpperCase();
   try{
     if(path==='/api/preview/version')return json({ok:true,build:BUILD,environment:env.APP_ENV||'unknown',entrypoint:'index-commerce-v31.js'});
 
+    if(path==='/api/inventory/stock-adjust'&&method==='POST')return json(await adjustInventory(request,env,ctx));
+    if(path==='/api/inventory/stock-log'&&method==='GET')return json(await inventoryLog(request,env,ctx));
     if(path==='/api/accounting/catalog'&&method==='GET'){
       const me=await currentUser(request,env,ctx);requirePermission(me,'finance','read');return json({ok:true,...accountingCatalog()});
     }
