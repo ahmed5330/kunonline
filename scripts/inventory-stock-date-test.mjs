@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+const root=new URL('../',import.meta.url),read=p=>readFile(new URL(p,root),'utf8');
+const [worker,ui,index,migration,legacy]=await Promise.all([read('src/index-commerce-v31.js'),read('public/v2/modules-v37-inventory.js'),read('public/v2/index.html'),read('migrations/0016_inventory_stock_date.sql'),read('src/index.js')]);
+new Function(ui);
+for(const marker of ['/api/inventory/stock-adjust','/api/inventory/stock-log','validStockDate','stockDate','stock_date','STOCK_DATE_INVALID','inventoryScope','requirePermission(me,\'inventory\',\'write\')','requirePermission(me,\'inventory\',\'read\')','supplier_name','created_by'])assert.ok(worker.includes(marker),`Inventory worker missing ${marker}`);
+for(const marker of ['تاريخ المخزون','v37StockDate','/api/inventory/stock-adjust','سجل إضافات المخزون','/api/inventory/stock-log','وقت التسجيل','v37AddStockFromHistory'])assert.ok(ui.includes(marker),`Inventory UI missing ${marker}`);
+for(const marker of ['ALTER TABLE stock_log ADD COLUMN stock_date TEXT','UPDATE stock_log','idx_stocklog_stock_date','trg_stock_log_default_stock_date'])assert.ok(migration.includes(marker),`Inventory migration missing ${marker}`);
+assert.ok(index.includes('modules-v37-inventory.js?v=37.0'),'Inventory v37 module is not loaded');
+assert.ok(legacy.includes('INSERT INTO stock_log'),'Legacy stock writes must remain supported by the migration trigger');
+console.log('Inventory stock-date contract passed: explicit business date, backward-compatible default, visible history and dated stock-adjust API are wired.');
