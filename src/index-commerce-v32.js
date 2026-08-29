@@ -14,6 +14,10 @@ async function currentUser(request,env,ctx){
 async function fetchV32(request,env,ctx){
   const url=new URL(request.url),path=url.pathname,method=request.method.toUpperCase();
   try{
+    /* Keep the deployed-build verification contract authoritative in v31 while
+       routing Preview through this additive order-details wrapper. */
+    if(path==='/api/preview/version'&&method==='GET')return commerceV31.fetch(request,env,ctx);
+
     const match=path.match(/^\/api\/orders\/([^/]+)\/details$/);
     if(match&&method==='GET'){
       const me=await currentUser(request,env,ctx);requirePermission(me,'orders','read');
