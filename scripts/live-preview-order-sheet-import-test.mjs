@@ -10,7 +10,7 @@ async function d1(sql,params=[]){const r=await fetch(d1Url,{method:'POST',header
 async function hashPassword(value){const salt=randomBytes(16),key=await webcrypto.subtle.importKey('raw',new TextEncoder().encode(value),'PBKDF2',false,['deriveBits']),bits=await webcrypto.subtle.deriveBits({name:'PBKDF2',salt,iterations:100000,hash:'SHA-256'},key,256);return `pbkdf2$100000$${salt.toString('base64')}$${Buffer.from(bits).toString('base64')}`;}
 async function api(path,{method='GET',body=null,ok=[200]}={}){const r=await fetch(`${base}${path}`,{method,headers:{...(cookie?{Cookie:cookie}:{}),...(body?{'Content-Type':'application/json'}:{})},body:body?JSON.stringify(body):undefined}),txt=await r.text();let data={};try{data=JSON.parse(txt)}catch{data={raw:txt}}if(!ok.includes(r.status))throw new Error(`${method} ${path} expected ${ok.join('/')}, got ${r.status}: ${txt.slice(0,1000)}`);return {status:r.status,data};}
 async function cleanup(){for(const sql of [
-  ['DELETE FROM order_billing WHERE client_id=?',[clientId]],['DELETE FROM wallet_log WHERE client_id=?',[clientId]],['DELETE FROM wallet_accounts WHERE client_id=?',[clientId]],['DELETE FROM audit_log WHERE client_id=?',[clientId]],['DELETE FROM orders WHERE client_id=?',[clientId]],['DELETE FROM customers WHERE client_id=?',[clientId]],['DELETE FROM stores WHERE client_id=?',[clientId]],['DELETE FROM login_attempts WHERE email=?',[email]],['DELETE FROM users WHERE id=?',[userId]]
+  ['DELETE FROM order_management_fees WHERE client_id=?',[clientId]],['DELETE FROM order_billing WHERE client_id=?',[clientId]],['DELETE FROM wallet_log WHERE client_id=?',[clientId]],['DELETE FROM wallet_accounts WHERE client_id=?',[clientId]],['DELETE FROM audit_log WHERE client_id=?',[clientId]],['DELETE FROM orders WHERE client_id=?',[clientId]],['DELETE FROM customers WHERE client_id=?',[clientId]],['DELETE FROM stores WHERE client_id=?',[clientId]],['DELETE FROM login_attempts WHERE email=?',[email]],['DELETE FROM users WHERE id=?',[userId]]
 ]){try{await d1(sql[0],sql[1])}catch{}}}
 let failure=null;
 try{
@@ -31,3 +31,4 @@ try{
   console.log('Live order sheet import QA passed: source catalog, Easy Orders create/update idempotency, store isolation, Product Cost≠COGS, shipping/UTM mapping and tenant guard.');
 }catch(e){failure=e;}finally{await cleanup();}
 if(failure)throw failure;
+await import('./live-preview-accounting-test.mjs');

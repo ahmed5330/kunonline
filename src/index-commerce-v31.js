@@ -6,8 +6,9 @@ import {readConnectionSecrets} from './integration-provider-validation.js';
 import {board as customerServiceBoard,handleAction as handleCustomerServiceAction} from './customer-service.js';
 import {dashboardData} from './dashboard-intelligence.js';
 import {orderSheetSources,importOrderSheet} from './order-sheet-import.js';
+import {accountingCatalog,accountingOverview,listAccountingEntries,listManagementFeeEntries,createAccountingEntry,deleteAccountingEntry,getStoreManagementFeeSettings,updateStoreManagementFeeSettings,reconcileManagementFeeForOrder,reconcileStoreManagementFees,decorateDashboardWithManagementFees,decorateProfitIntelligence} from './accounting.js';
 
-const BUILD='preview-v31-2026-08-28';
+const BUILD='preview-v31-2026-08-29-accounting';
 const text=v=>String(v??'').trim(),now=()=>new Date().toISOString();
 const json=(data,status=200,extra={})=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Kun-Build':BUILD,'X-Content-Type-Options':'nosniff','X-Frame-Options':'DENY',...extra}});
 const safeEqual=(a,b)=>{a=text(a);b=text(b);if(a.length!==b.length)return false;let diff=0;for(let i=0;i<a.length;i++)diff|=a.charCodeAt(i)^b.charCodeAt(i);return diff===0;};
@@ -84,31 +85,79 @@ async function diagnostics(request,env,ctx){
   const config=parseConfig(row),secrets=await readConnectionSecrets(env,clientId,row.id).catch(()=>({})),path=await easyOrdersWebhookPath(env,row);
   return json({connected:row.status==='connected',connectionId:row.id,status:row.status,kunStoreId:config.kunStoreId||null,externalStoreId:row.external_store_id||null,webhookUrl:`${url.origin}${path}`,routeMode:'connection-scoped',legacyRouteDisabled:true,legacyWebhookUrl:`${url.origin}/webhooks/easyorders`,secretConfigured:Boolean(text(secrets.webhook_secret)),lastSyncAt:row.last_sync_at||null,lastError:row.last_error||null,webhook:{lastReceivedAt:config.webhookLastReceivedAt||null,lastProbeAt:config.webhookLastProbeAt||null,lastStatus:config.webhookLastStatus||null,lastCode:config.webhookLastCode||null,lastHttpStatus:config.webhookLastHttpStatus||null,lastOrderId:config.webhookLastOrderId||null,lastExternalStoreId:config.webhookLastExternalStoreId||null}});
 }
+async function accountingScope(request,env,me,{write=false,body={}}={}){
+  const url=new URL(request.url),clientId=resolveTenant(me,body.clientId||body.client_id||url.searchParams.get('clientId'));
+  const storeId=text(body.storeId||body.store_id||url.searchParams.get('storeId'))||null;
+  return {clientId,...await resolveStoreScope(env,me,clientId,storeId,{write})};
+}
 
 async function fetchV31(request,env,ctx){
   const url=new URL(request.url),path=url.pathname,method=request.method.toUpperCase();
   try{
     if(path==='/api/preview/version')return json({ok:true,build:BUILD,environment:env.APP_ENV||'unknown',entrypoint:'index-commerce-v31.js'});
+
+    if(path==='/api/accounting/catalog'&&method==='GET'){
+      const me=await currentUser(request,env,ctx);requirePermission(me,'finance','read');return json({ok:true,...accountingCatalog()});
+    }
+    if(path==='/api/accounting/overview'&&method==='GET'){
+      const me=await currentUser(request,env,ctx);requirePermission(me,'finance','read');const scope=await accountingScope(request,env,me);
+      return json(await accountingOverview(env,{clientId:scope.clientId,storeId:scope.storeId||null,from:url.searchParams.get('from'),to:url.searchParams.get('to')}));
+    }
+    if(path==='/api/accounting/entries'&&method==='GET'){
+      const me=await currentUser(request,env,ctx);requirePermission(me,'finance','read');const scope=await accountingScope(request,env,me);
+      return json({ok:true,entries:await listAccountingEntries(env,{clientId:scope.clientId,storeId:scope.storeId||null,from:url.searchParams.get('from'),to:url.searchParams.get('to')})});
+    }
+    if(path==='/api/accounting/entries'&&method==='POST'){
+      const me=await currentUser(request,env,ctx);requirePermission(me,'finance','write');const body=await request.clone().json().catch(()=>({})),scope=await accountingScope(request,env,me,{write:true,body});
+      return json(await createAccountingEntry(env,{clientId:scope.clientId,storeId:scope.storeId||null,body,actor:me}),201);
+    }
+    const accountingDelete=path.match(/^\/api\/accounting\/entries\/([^/]+)$/);
+    if(accountingDelete&&method==='DELETE'){
+      const me=await currentUser(request,env,ctx);requirePermission(me,'finance','write');const body=await request.clone().json().catch(()=>({})),scope=await accountingScope(request,env,me,{write:true,body});
+      return json(await deleteAccountingEntry(env,{clientId:scope.clientId,storeId:scope.storeId||null,id:decodeURIComponent(accountingDelete[1]),actor:me}));
+    }
+    if(path==='/api/accounting/management-fees'&&method==='GET'){
+      const me=await currentUser(request,env,ctx);requirePermission(me,'finance','read');const scope=await accountingScope(request,env,me);
+      return json({ok:true,entries:await listManagementFeeEntries(env,{clientId:scope.clientId,storeId:scope.storeId||null,from:url.searchParams.get('from'),to:url.searchParams.get('to')})});
+    }
+    const managementSettings=path.match(/^\/api\/admin\/stores\/([^/]+)\/management-fee$/);
+    if(managementSettings&&['GET','PATCH'].includes(method)){
+      const me=await currentUser(request,env,ctx);if(me.role!=='admin')return json({error:'إعداد نسبة الإدارة متاح لإدارة Kun Online فقط',code:'ADMIN_ONLY'},403);
+      const body=method==='PATCH'?await request.clone().json().catch(()=>({})):{};
+      const clientId=text(body.clientId||body.client_id||url.searchParams.get('clientId'));if(!clientId)return json({error:'محتاج clientId',code:'CLIENT_ID_REQUIRED'},400);
+      const storeId=decodeURIComponent(managementSettings[1]);
+      if(method==='GET')return json({ok:true,...await getStoreManagementFeeSettings(env,{clientId,storeId})});
+      return json(await updateStoreManagementFeeSettings(env,{clientId,storeId,managementFeePct:body.managementFeePct,actor:me}));
+    }
+
     if(path==='/api/orders/sheet-import/sources'&&method==='GET'){
       const me=await currentUser(request,env,ctx),clientId=resolveTenant(me,url.searchParams.get('clientId'));requirePermission(me,'orders','read');
       return json({ok:true,clientId,sources:orderSheetSources()});
     }
     if(path==='/api/orders/sheet-import'&&method==='POST'){
       const me=await currentUser(request,env,ctx),body=await request.clone().json().catch(()=>({})),clientId=resolveTenant(me,body.clientId||url.searchParams.get('clientId'));requirePermission(me,'orders','write');
-      const scope=await resolveStoreScope(env,me,clientId,text(body.storeId)||null,{write:true});
-      return json(await importOrderSheet(env,{clientId,storeId:scope.storeId||null,source:body.source,rows:body.rows,actor:me}));
+      const scope=await resolveStoreScope(env,me,clientId,text(body.storeId)||null,{write:true}),result=await importOrderSheet(env,{clientId,storeId:scope.storeId||null,source:body.source,rows:body.rows,actor:me});
+      await reconcileStoreManagementFees(env,{clientId,storeId:scope.storeId||null}).catch(()=>{});
+      return json(result);
     }
     if(path==='/api/dashboard'&&method==='GET'){
       const me=await currentUser(request,env,ctx),clientId=resolveTenant(me,url.searchParams.get('clientId'));requirePermission(me,'analytics','read');
       const scope=await resolveStoreScope(env,me,clientId,text(url.searchParams.get('storeId'))||null,{write:false});
       let from=url.searchParams.get('from');if(from==='beginning')from=await dashboardBeginning(env,clientId,scope.storeId||null);
-      return json(await dashboardData(env,{clientId,storeId:scope.storeId||null,from,to:url.searchParams.get('to')}));
+      const data=await dashboardData(env,{clientId,storeId:scope.storeId||null,from,to:url.searchParams.get('to')});
+      return json(await decorateDashboardWithManagementFees(env,data,{clientId,storeId:scope.storeId||null}));
+    }
+    if(path==='/api/profit-intelligence'&&method==='GET'){
+      const me=await currentUser(request,env,ctx),clientId=resolveTenant(me,url.searchParams.get('clientId'));requirePermission(me,'profit','read');
+      const scope=await resolveStoreScope(env,me,clientId,text(url.searchParams.get('storeId'))||null,{write:false}),response=await commerceV30.fetch(request,env,ctx),data=await response.clone().json().catch(()=>({}));
+      if(!response.ok)return response;return json(await decorateProfitIntelligence(env,data,{clientId,storeId:scope.storeId||null,from:url.searchParams.get('from'),to:url.searchParams.get('to')}));
     }
     if(path==='/api/customer-service'&&method==='GET'){
       const me=await currentUser(request,env,ctx);return json(await customerServiceBoard(request,env,me));
     }
     if(path.startsWith('/api/customer-service/orders/')){
       const me=await currentUser(request,env,ctx),result=await handleCustomerServiceAction(request,env,me,req=>commerceV30.fetch(req,env,ctx));
+      const stateMatch=path.match(/^\/api\/customer-service\/orders\/([^/]+)\/state$/);if(result.status>=200&&result.status<300&&stateMatch)await reconcileManagementFeeForOrder(env,decodeURIComponent(stateMatch[1])).catch(()=>{});
       return json(result.data,result.status||200);
     }
     if(path==='/api/commerce/order-sync/diagnostics'&&method==='GET')return diagnostics(request,env,ctx);
@@ -141,10 +190,13 @@ async function fetchV31(request,env,ctx){
         throw error;
       }
       const ok=response.ok&&data?.ok!==false;
+      if(ok&&data?.id)await reconcileManagementFeeForOrder(env,data.id).catch(()=>{});
       await patchHealth(env,connection,{status:ok?'accepted':'rejected',code:data?.code||(ok?'EASYORDERS_WEBHOOK_ACCEPTED':'EASYORDERS_WEBHOOK_REJECTED'),httpStatus:response.status,orderId:data?.id||payload.id||payload.order_id,externalStoreId:payload.store_id,error:ok?null:(data?.error||`HTTP ${response.status}`)}).catch(()=>{});
       return response;
     }
-    return commerceV30.fetch(request,env,ctx);
+    const delegated=await commerceV30.fetch(request,env,ctx);
+    const orderMutation=path.match(/^\/api\/orders\/([^/]+)$/);if(delegated.ok&&orderMutation&&['PATCH','PUT'].includes(method))await reconcileManagementFeeForOrder(env,decodeURIComponent(orderMutation[1])).catch(()=>{});
+    return delegated;
   }catch(error){return json({error:error?.message||'حدث خطأ',code:error?.code||'V31_ERROR',path,method},error?.status||500);}
 }
 
