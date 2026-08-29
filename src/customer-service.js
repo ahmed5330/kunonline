@@ -2,6 +2,7 @@ import {requirePermission,resolveTenant} from './access-control.js';
 import {listMyStores} from './store-scope.js';
 
 const ALLOWED_ROLES=new Set(['admin','client','ops','support']);
+const DELETE_ROLES=new Set(['admin','client','ops']);
 const BOARD_STATES=['pending','confirmed','preparing','shipped'];
 const BOARD_AND_DEFERRED=[...BOARD_STATES,'deferred'];
 const STATE_LABELS={
@@ -51,6 +52,21 @@ async function orderForAccess(env,me,clientId,orderId,{write=false}={}){
   if(!access.allStores&&!access.ids.includes(String(row.store_id||'')))fail('الأوردر خارج المتاجر المسموح بها',403,'STORE_ISOLATION');
   if(write&&!storeCanWrite(access,row.store_id))fail('صلاحية هذا المتجر للعرض فقط',403,'STORE_READ_ONLY');
   return {row,access};
+}
+async function ensureLegacyCustomerServiceEnabled(env,me,clientId){
+  if(me?.role!=='client')return false;
+  const moduleRow=await env.DB.prepare("SELECT enabled FROM tenant_modules WHERE client_id=? AND module_key='orders'").bind(clientId).first().catch(()=>null);
+  if(!moduleRow||Number(moduleRow.enabled)===0)return false;
+  for(let attempt=0;attempt<4;attempt++){
+    const row=await env.DB.prepare('SELECT json,updated_at FROM state WHERE id=1').first().catch(()=>null);if(!row?.json)return false;
+    let state;try{state=JSON.parse(row.json)}catch{return false}
+    const clients=Array.isArray(state?.clients)?state.clients:[],client=clients.find(x=>String(x?.id)===String(clientId));if(!client)return false;
+    if(client.customerServiceEnabled===true)return true;
+    client.customerServiceEnabled=true;const ts=now();
+    const result=await env.DB.prepare("UPDATE state SET json=?,updated_at=? WHERE id=1 AND COALESCE(updated_at,'')=?").bind(JSON.stringify(state),ts,row.updated_at||'').run();
+    if(Number(result?.meta?.changes||0)>0)return true;
+  }
+  fail('تعذر مزامنة صلاحية خدمة العملاء، حاول مرة أخرى',409,'CUSTOMER_SERVICE_LEGACY_SYNC_CONFLICT');
 }
 async function processDueDeferred(env,clientId,access){
   const today=cairoDate(),binds=[clientId,today];let where=`client_id=? AND state='deferred' AND defer_until IS NOT NULL AND defer_until<=?`;
@@ -118,9 +134,23 @@ function canonicalRequest(request,path,body,clientId,storeId){
 async function proxyJson(response){const data=await response.clone().json().catch(()=>({error:`HTTP ${response.status}`}));return {data,status:response.status};}
 export async function handleAction(request,env,me,delegate){
   assertRole(me,true);const path=new URL(request.url).pathname,method=request.method.toUpperCase(),body=await request.clone().json().catch(()=>({})),clientId=scopedClient(me,request,body);
-  let m=path.match(/^\/api\/customer-service\/orders\/([^/]+)\/(state|contact|whatsapp-log|notes|awb|history)$/);if(!m)fail('مسار خدمة العملاء غير مدعوم',404,'CUSTOMER_SERVICE_ROUTE_NOT_FOUND');
+  let m=path.match(/^\/api\/customer-service\/orders\/([^/]+)\/(state|contact|whatsapp-log|notes|awb|history|delete)$/);if(!m)fail('مسار خدمة العملاء غير مدعوم',404,'CUSTOMER_SERVICE_ROUTE_NOT_FOUND');
   const orderId=decodeURIComponent(m[1]),action=m[2],{row}=await orderForAccess(env,me,clientId,orderId,{write:action!=='history'}),storeId=row.store_id||null;
   if(action==='history'&&method==='GET')return {data:{ok:true,order:mapOrder(row,cairoDate())},status:200};
+  if(action==='delete'&&method==='DELETE'){
+    if(!DELETE_ROLES.has(me?.role))fail('مش مسموح — حذف الأوردر متاح للإدارة أو مالك الحساب أو مدير التشغيل فقط',403,'ORDER_DELETE_DENIED');
+    const a=actor(me),stamp=now(),snapshot={id:row.id,state:row.state,name:row.name,phone:row.phone,total:Number(row.total||0),source:row.source||'',storeId};
+    await env.DB.batch([
+      env.DB.prepare('DELETE FROM order_notes WHERE order_id=? AND client_id=?').bind(orderId,clientId),
+      env.DB.prepare('DELETE FROM order_events WHERE order_id=? AND client_id=?').bind(orderId,clientId),
+      env.DB.prepare('DELETE FROM order_attribution WHERE order_id=? AND client_id=?').bind(orderId,clientId),
+      env.DB.prepare('DELETE FROM whatsapp_outbox WHERE order_id=? AND client_id=?').bind(orderId,clientId),
+      env.DB.prepare('DELETE FROM orders WHERE id=? AND client_id=?').bind(orderId,clientId)
+    ]);
+    try{await env.DB.prepare('INSERT INTO audit_log (id,client_id,store_id,actor_user_id,actor_email,action,entity_type,entity_id,before_json,metadata_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)').bind(`AUD-${crypto.randomUUID().slice(0,10).toUpperCase()}`,clientId,storeId,a.byUserId,a.by,'order.delete','order',orderId,JSON.stringify(snapshot),JSON.stringify({source:'orders_ui'}),stamp).run();}catch{}
+    return {data:{ok:true,id:orderId,deleted:true},status:200};
+  }
+  if(['state','contact','whatsapp-log'].includes(action))await ensureLegacyCustomerServiceEnabled(env,me,clientId);
   if(action==='state'&&method==='PATCH'){
     const state=clean(body.state);if(!ALL_STATES.includes(state))fail('حالة الأوردر غير معروفة',400,'ORDER_STATE_INVALID');
     if(state==='deferred'&&!/^\d{4}-\d{2}-\d{2}$/.test(clean(body.deferUntil)))fail('حدد تاريخ التأجيل',400,'DEFER_DATE_REQUIRED');
