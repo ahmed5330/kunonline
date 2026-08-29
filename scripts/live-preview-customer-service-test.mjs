@@ -10,7 +10,7 @@ const databaseId=config.match(/database_id\s*=\s*"([^"]+)"/)?.[1];if(!databaseId
 const d1Url=`https://api.cloudflare.com/client/v4/accounts/${accountId}/d1/database/${databaseId}/query`;
 const nonce=randomBytes(5).toString('hex'),adminEmail=`qa-cs-admin-${nonce}@example.test`,ownerEmail=`qa-cs-owner-${nonce}@example.test`,supportEmail=`qa-cs-support-${nonce}@example.test`;
 const adminId=`QA-CS-ADMIN-${nonce}`,adminPassword=`Admin!${randomBytes(9).toString('hex')}Aa1`,ownerPassword=`Owner!${randomBytes(9).toString('hex')}Bb2`,supportPassword=`Support!${randomBytes(9).toString('hex')}Cc3`;
-let clientId=null,storeA=null,storeB=null,storeC=null,supportId=null,orderA=null,orderB=null,orderC=null,stateSnapshot=null;
+let clientId=null,storeA=null,storeB=null,storeC=null,supportId=null,orderA=null,orderB=null,orderC=null,orderDelete=null,stateSnapshot=null;
 
 async function d1(sql,params=[]){const r=await fetch(d1Url,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({sql,params})});const p=await r.json().catch(()=>({})),x=p?.result?.[0];if(!r.ok||p.success===false||x?.success===false)throw new Error(`Preview D1 query failed (${r.status}): ${JSON.stringify(p?.errors||x?.error||p).slice(0,800)}`);return x?.results||[];}
 async function hashPassword(value){const salt=randomBytes(16),key=await webcrypto.subtle.importKey('raw',new TextEncoder().encode(value),'PBKDF2',false,['deriveBits']);const bits=await webcrypto.subtle.deriveBits({name:'PBKDF2',salt,iterations:100000,hash:'SHA-256'},key,256);return `pbkdf2$100000$${salt.toString('base64')}$${Buffer.from(bits).toString('base64')}`;}
@@ -40,12 +40,25 @@ try{
   const member=(await api(ownerCookie,'/api/team-members',{method:'POST',ok:[201],body:{clientId,name:'CI Customer Service Agent',email:supportEmail,password:supportPassword,role:'support',storeAccess:[{storeId:storeA,role:'member'},{storeId:storeB,role:'member'}]}})).data;supportId=member.id;if(!supportId)throw new Error('Customer Service support member creation failed');
   const makeOrder=async(storeId,name,product)=>orderIdOf((await api(ownerCookie,'/api/orders',{method:'POST',ok:[200,201],body:{clientId,storeId,name,phone:'01000000001',gov:'القاهرة',address:'عنوان QA',product,qty:1,total:650,source:'manual',date:today,state:'pending',note:'ملاحظة العميل الأصلية'}})).data);
   orderA=await makeOrder(storeA,'عميل خدمة A','QA Product A');orderB=await makeOrder(storeB,'عميل خدمة B','QA Product B');orderC=await makeOrder(storeC,'عميل مخفي C','QA Product C');if(!orderA||!orderB||!orderC)throw new Error('Customer Service QA orders were not created');
+
+  // Regression: modern tenant owner must be able to move pending -> confirmed even when the legacy flag was absent at onboarding.
+  await api(ownerCookie,`/api/customer-service/orders/${encodeURIComponent(orderC)}/state?clientId=${encodeURIComponent(clientId)}`,{method:'PATCH',body:{clientId,storeId:storeC,state:'confirmed'}});
+  const ownerMoved=(await d1('SELECT state FROM orders WHERE id=? AND client_id=?',[orderC,clientId]))[0];if(ownerMoved?.state!=='confirmed')throw new Error(`Tenant owner pending->confirmed bridge failed: ${JSON.stringify(ownerMoved)}`);
+  const legacyAfterBridge=(await d1('SELECT json FROM state WHERE id=1'))[0];let legacyClient=null;try{legacyClient=JSON.parse(legacyAfterBridge?.json||'{}')?.clients?.find(x=>String(x.id)===String(clientId))}catch{}if(legacyClient?.customerServiceEnabled!==true)throw new Error('Modern tenant owner did not repair the legacy customerServiceEnabled bridge');
+
+  // Regression: deletion is available to the tenant owner from Orders but not to Customer Service agents.
+  orderDelete=await makeOrder(storeA,'عميل حذف QA','QA Delete Product');if(!orderDelete)throw new Error('Order delete QA order was not created');
+  await api(ownerCookie,`/api/customer-service/orders/${encodeURIComponent(orderDelete)}/delete?clientId=${encodeURIComponent(clientId)}`,{method:'DELETE',body:{clientId,storeId:storeA}});
+  if((await d1('SELECT id FROM orders WHERE id=? AND client_id=?',[orderDelete,clientId])).length)throw new Error('Tenant owner order delete did not remove the order');
+
   const supportCookie=(await login(supportEmail,supportPassword)).cookie;if(!supportCookie)throw new Error('Customer Service agent login failed');
   const me=(await api(supportCookie,'/api/me')).data;if(me.role!=='support'||String(me.clientId)!==String(clientId))throw new Error(`Support session incorrect: ${JSON.stringify(me)}`);
   let board=(await api(supportCookie,`/api/customer-service?clientId=${encodeURIComponent(clientId)}`)).data;
   if(board.stores?.length!==2||!board.stores.some(x=>String(x.id)===String(storeA))||!board.stores.some(x=>String(x.id)===String(storeB)))throw new Error(`Support multi-store assignments missing: ${JSON.stringify(board.stores)}`);
   const ids=new Set((board.orders||[]).map(x=>String(x.id)));if(!ids.has(String(orderA))||!ids.has(String(orderB))||ids.has(String(orderC)))throw new Error(`Customer Service board store isolation failed: ${JSON.stringify([...ids])}`);
   if(!board.stages?.map(x=>x.id).join(',').includes('pending,confirmed,preparing,shipped'))throw new Error('Customer Service four-stage board missing');
+  await api(supportCookie,`/api/customer-service/orders/${encodeURIComponent(orderA)}/delete?clientId=${encodeURIComponent(clientId)}`,{method:'DELETE',body:{clientId,storeId:storeA},ok:[403]});
+  if(!(await d1('SELECT id FROM orders WHERE id=? AND client_id=?',[orderA,clientId])).length)throw new Error('Customer Service agent unexpectedly deleted an order');
   await api(supportCookie,`/api/customer-service/orders/${encodeURIComponent(orderA)}/contact?clientId=${encodeURIComponent(clientId)}`,{method:'POST',body:{clientId,storeId:storeA}});
   await api(supportCookie,`/api/customer-service/orders/${encodeURIComponent(orderA)}/notes?clientId=${encodeURIComponent(clientId)}`,{method:'POST',ok:[201],body:{clientId,storeId:storeA,note:'ملاحظة داخلية QA'}});
   await api(supportCookie,`/api/customer-service/orders/${encodeURIComponent(orderA)}/awb?clientId=${encodeURIComponent(clientId)}`,{method:'PATCH',body:{clientId,storeId:storeA,awb:'QA-AWB-123'}});
@@ -61,7 +74,7 @@ try{
   await d1("UPDATE orders SET state='deferred',checkpoint='مؤجل',defer_until=? WHERE id=? AND client_id=?",[today,orderB,clientId]);
   board=(await api(supportCookie,`/api/customer-service?clientId=${encodeURIComponent(clientId)}`)).data;const returned=board.orders.find(x=>String(x.id)===String(orderB));if(returned?.state!=='pending'||returned.returnedFromDeferredToday!==true)throw new Error(`Due deferred order did not return highlighted: ${JSON.stringify(returned)}`);
   await api(supportCookie,`/api/customer-service?clientId=${encodeURIComponent(clientId)}&storeId=${encodeURIComponent(storeC)}`,{ok:[403]});
-  console.log(`Live Customer Service QA passed: support multi-store A+B, hidden C, four stages, actor history, contact, AWB, WhatsApp log, separate internal notes and deferred return (${clientId}).`);
+  console.log(`Live Customer Service QA passed: owner pending->confirmed legacy bridge, owner-only governed deletion vs support denial, support multi-store A+B, hidden C, four stages, actor history, contact, AWB, WhatsApp log, separate internal notes and deferred return (${clientId}).`);
 }catch(error){primaryError=error;
 }finally{try{await restore()}catch(cleanupError){primaryError=primaryError?new Error(`${primaryError.message}; ${cleanupError.message}`):cleanupError;}}
 if(primaryError)throw primaryError;
