@@ -35,7 +35,7 @@ export async function reconcileAutomaticManagementFees(env,{limit=1000}={}){
       (o.state IN ('shipped','signed','collected') AND (f.order_id IS NULL OR f.status<>'active'))
       OR (o.state IN ('returned','cancelled') AND f.status='active')
     )
-    ORDER BY COALESCE(o.updated_at,o.date,o.created_at) DESC
+    ORDER BY COALESCE(o.date,o.created_at) DESC
     LIMIT ?`).bind(cap).all();
   const out={ok:true,processed:0,active:0,reversed:0,failed:0};
   for(const row of results){
