@@ -133,7 +133,7 @@ export async function handleAction(request,env,me,delegate){
     const response=await delegate(canonicalRequest(request,`/api/orders/${encodeURIComponent(orderId)}/contact`,{channel},clientId,storeId));
     if(!response.ok)return proxyJson(response);
     const mirrored=await appendContactMirror(env,clientId,orderId,me,channel),proxied=await proxyJson(response);
-    return {data:{...proxied.data,contactCount:mirrored.contactCount},status:proxied.status};
+    return {data:{...proxied.data,contactCount:mirrored.contactCount},status:200};
   }
   if(action==='whatsapp-log'&&method==='POST'){
     const template=['confirm','shipped','review'].includes(body.template)?body.template:'other';
