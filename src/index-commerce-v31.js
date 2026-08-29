@@ -48,6 +48,15 @@ async function currentUser(request,env,ctx){
   if(!r.ok||!d?.role)throw Object.assign(new Error(d?.error||'محتاج تسجّل دخول'),{status:r.ok?401:(r.status||401),code:'AUTH_REQUIRED'});
   return d;
 }
+async function dashboardBeginning(env,clientId,storeId=null){
+  const storeClause=storeId?' AND store_id=?':'',binds=storeId?[clientId,storeId]:[clientId];
+  const [orders,transactions,ads]=await Promise.all([
+    env.DB.prepare(`SELECT MIN(date(date)) d FROM orders WHERE client_id=?${storeClause}`).bind(...binds).first(),
+    env.DB.prepare(`SELECT MIN(date(date)) d FROM transactions WHERE client_id=?${storeClause}`).bind(...binds).first(),
+    env.DB.prepare(`SELECT MIN(date(metric_date)) d FROM campaign_daily_metrics WHERE client_id=?${storeClause}`).bind(...binds).first()
+  ]);
+  return [orders?.d,transactions?.d,ads?.d].filter(Boolean).sort()[0]||now().slice(0,10);
+}
 async function patchHealth(env,connection,{status,code,httpStatus,orderId,externalStoreId,error,probe=false}){
   const fresh=await env.DB.prepare('SELECT config_json FROM store_connections WHERE id=? AND client_id=?').bind(connection.id,connection.client_id).first();
   const config=parseConfig(fresh||connection),ts=now();
@@ -82,7 +91,8 @@ async function fetchV31(request,env,ctx){
     if(path==='/api/dashboard'&&method==='GET'){
       const me=await currentUser(request,env,ctx),clientId=resolveTenant(me,url.searchParams.get('clientId'));requirePermission(me,'analytics','read');
       const scope=await resolveStoreScope(env,me,clientId,text(url.searchParams.get('storeId'))||null,{write:false});
-      return json(await dashboardData(env,{clientId,storeId:scope.storeId||null,from:url.searchParams.get('from'),to:url.searchParams.get('to')}));
+      let from=url.searchParams.get('from');if(from==='beginning')from=await dashboardBeginning(env,clientId,scope.storeId||null);
+      return json(await dashboardData(env,{clientId,storeId:scope.storeId||null,from,to:url.searchParams.get('to')}));
     }
     if(path==='/api/customer-service'&&method==='GET'){
       const me=await currentUser(request,env,ctx);return json(await customerServiceBoard(request,env,me));
