@@ -1,4 +1,4 @@
-/* Kun Online v31 — multi-store Customer Service workspace */
+/* Kun Online v31.1 — multi-store Customer Service workspace */
 (function(){
   const ALLOWED=new Set(['admin','client','ops','support']);
   const STAGES=['pending','confirmed','preparing','shipped'];
@@ -41,7 +41,7 @@
       ${o.customerNote?`<div class="cs-customer-note"><strong>ملاحظة العميل عند الطلب:</strong> ${esc(o.customerNote)}</div>`:''}
       ${o.latestInternalNote?`<div class="cs-internal-latest"><b>آخر ملاحظة داخلية:</b> ${esc(o.latestInternalNote)}</div>`:''}
       ${deferred&&o.deferUntil?`<div class="cs-defer-chip">⏰ مؤجل حتى ${esc(o.deferUntil)}</div>`:''}
-      <div class="cs-field"><input class="input" data-cs-note placeholder="ملاحظة داخلية لخدمة العملاء"></div>
+      <div class="cs-field cs-note-field"><input class="input" data-cs-note placeholder="ملاحظة داخلية لخدمة العملاء"><button type="button" class="btn primary cs-note-add" data-cs-action="note">إضافة</button></div>
       <div class="cs-field"><select class="select" data-cs-state data-current="${esc(o.state)}">${statusOptions(o.state)}</select></div>
       <div class="cs-field"><div style="display:grid;grid-template-columns:1fr auto;gap:6px"><input class="input" data-cs-awb value="${esc(o.awb||'')}" placeholder="رقم البوليصة"><button class="btn soft" data-cs-action="awb">حفظ</button></div></div>
       <div class="cs-actions">
@@ -49,7 +49,6 @@
         <button class="btn soft" data-cs-action="contact">تواصل (${Number(o.contactCount)||0})</button>
         <a class="btn soft" href="tel:${esc(o.phone||'')}" data-cs-action="call">مكالمة</a>
         <button class="btn soft" data-cs-action="whatsapp">واتساب</button>
-        <button class="btn soft" data-cs-action="note">حفظ الملاحظة</button>
       </div>
     </article>`;
   }
