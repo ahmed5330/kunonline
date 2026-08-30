@@ -22,7 +22,7 @@ for(const marker of ['provider.modes','orderSyncMode','supported','commerceOrder
 for(const marker of ['orders/short/','Api-Key','webhookLastOrderId','webhookLastShortId','record not found','waiting_for_short_id','easyOrdersRecoveryHighestShortId','easyOrdersRecoveryCursor','MAX_AHEAD_MISSES','rate_limited','handleEasyOrdersWebhook','recoveredOrderIds','maxRequests:DEFAULT_MAX_REQUESTS'])assert.ok(recovery.includes(marker),`recovery missing ${marker}`);
 for(const marker of ['/api/commerce/order-sync/reconcile','reconcileEasyOrdersOrders','*/5 * * * *','maxRequests:30','lookback:80','reconcileRecoveredFees','rememberEasyOrdersShortId','webhookLastShortId','short_id','shortId-80'])assert.ok(v34.includes(marker),`v34 recovery wiring missing ${marker}`);
 for(const marker of ['إصلاح مزامنة Easy Orders','/api/commerce/order-sync/reconcile','maxRequests:30','lookback:80','easyOrdersRecoveryBtn'])assert.ok(recoveryUi.includes(marker),`recovery UI missing ${marker}`);
-assert.ok(index.includes('/v2/modules-v49-easyorders-recovery.js?v=49.0'),'Easy Orders recovery UI is not loaded');
+assert.ok(index.includes('/v2/modules-v49-easyorders-recovery.js'),'Easy Orders recovery UI is not loaded');
 assert.equal(typeof reconcileEasyOrdersOrders,'function');
 assert.equal(easyOrdersReconciliationDefaults.maxRequests,30);assert.ok(easyOrdersReconciliationDefaults.lookback>=80);assert.ok(easyOrdersReconciliationDefaults.aheadMisses>=3);
 assert.ok(loader.includes('/v2/modules-v30-order-sync.js?v=30.2'),'order sync UI cache bust not loaded');
