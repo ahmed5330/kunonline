@@ -32,7 +32,7 @@ try{
   const hash=await hashPassword(adminPassword),ts=new Date().toISOString();
   await d1('INSERT INTO users (id,email,name,password,role,client_id,status,created_at,last_login) VALUES (?,?,?,?,?,NULL,?,?,NULL)',[adminId,adminEmail,'CI v28 Team Admin',hash,'admin','active',ts]);
   adminCookie=(await login(adminEmail,adminPassword)).cookie;if(!adminCookie)throw new Error('Temporary admin cookie missing');
-  const version=(await api(adminCookie,'/api/preview/version')).data;if(version.build!=='preview-v31-2026-08-29-accounting'||version.entrypoint!=='index-commerce-v31.js')throw new Error(`Expected current accounting v31 Preview, got ${JSON.stringify(version)}`);
+  const version=(await api(adminCookie,'/api/preview/version')).data;if(version.build!=='preview-v33-2026-08-30-order-edit-detailed-products'||version.entrypoint!=='index-commerce-v33.js')throw new Error(`Expected current v33 Preview, got ${JSON.stringify(version)}`);
   const onboard=(await api(adminCookie,'/api/admin/clients',{method:'POST',ok:[201],body:{businessName:'CI v28 Team Tenant',ownerName:'CI v28 Owner',email:ownerEmail,phone:'01012345678',password:ownerPassword,storeName:'CI Store A',plan:'trial',baseOrderFee:2,modules:{dashboard:{enabled:true},stores:{enabled:true},'store-access':{enabled:true},orders:{enabled:true},catalog:{enabled:true},inventory:{enabled:true},team:{enabled:true},settings:{enabled:true}}}})).data;
   clientId=onboard.clientId;storeA=onboard.storeId;if(!clientId||!storeA)throw new Error('Temporary tenant onboarding failed');
   ownerCookie=(await login(ownerEmail,ownerPassword)).cookie;if(!ownerCookie)throw new Error('Owner cookie missing');
