@@ -3,7 +3,7 @@ const num=value=>Number(value)||0;
 const r2=value=>Math.round(num(value)*100)/100;
 const iso=/^\d{4}-\d{2}-\d{2}$/;
 const isAdCategory=value=>/(ads?|advert|facebook|meta|google|tiktok|اعلان|إعلان|اعلانات|إعلانات)/i.test(text(value));
-function cairoToday(){const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Cairo',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date()),get=type=>parts.find(x=>x.type===t)?.value||'';return `${get('year')}-${get('month')}-${get('day')}`;}
+function cairoToday(){const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Cairo',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date()),get=type=>parts.find(x=>x.type===type)?.value||'';return `${get('year')}-${get('month')}-${get('day')}`;}
 function dateOr(value,fallback){const v=text(value);if(v==='beginning')return '2000-01-01';return iso.test(v)?v:fallback;}
 function orderBusinessDate(row){return String(row?.date||row?.created_at||'').slice(0,10);}
 
