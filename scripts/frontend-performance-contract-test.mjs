@@ -1,0 +1,29 @@
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+
+const read=path=>readFile(new URL(`../${path}`,import.meta.url),'utf8');
+const [index,perf,post,ai,rich,ads,recovery,permissions]=await Promise.all([
+  read('public/v2/index.html'),
+  read('public/v2/performance-core-v52.js'),
+  read('public/v2/modules-v47-post-shipping.js'),
+  read('public/v2/modules-v34-dashboard-ai.js'),
+  read('public/v2/modules-v42-customer-service-rich-cards.js'),
+  read('public/v2/modules-v48-ad-expert.js'),
+  read('public/v2/modules-v49-easyorders-recovery.js'),
+  read('public/v2/modules-v51-permission-navigation.js')
+]);
+
+assert.ok(index.includes('/v2/performance-core-v52.js'), 'shared performance core must be loaded');
+assert.ok(index.indexOf('/v2/performance-core-v52.js')<index.indexOf('/v2/modules-v4.js'), 'performance core must load before feature modules');
+assert.equal(index.includes('/v2/modules-v45-post-shipping.js'),false,'superseded v45 post-shipping bundle must not load');
+assert.ok(post.includes('.ps-page{display:grid'), 'v47 must own its base post-shipping styles after v45 removal');
+assert.ok(perf.includes("if(path==='/api/me')return 15000"), 'repeated /api/me calls must be cached');
+assert.equal(permissions.includes('new MutationObserver'),false,'permission navigation must not observe every nav class change');
+assert.equal(recovery.includes('new MutationObserver'),false,'Easy Orders recovery button must not observe the whole root');
+assert.ok(ai.includes("observe(root,{childList:true,subtree:false})"),'dashboard AI observer must stay root-only');
+assert.ok(rich.includes("rootMargin:'80px 0px'"),'customer-service enrichment must stay close to viewport');
+assert.ok(rich.includes('if(!active()||scanQueued)return'),'customer-service scans must be view-gated and coalesced');
+assert.equal(ads.includes('if(data.connected&&noGranular'),false,'Meta granular sync must never start automatically from a dashboard read');
+assert.ok(ads.includes('KunPerformanceCore?.idle'),'advanced ads analysis should be deferred until the page is idle');
+
+console.log('Frontend performance contract passed');
