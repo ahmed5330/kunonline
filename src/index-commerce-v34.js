@@ -4,6 +4,8 @@ import {resolveStoreScope} from './store-scope.js';
 import {syncMetaAdsForClient} from './meta-ads-sync.js';
 import {syncMetaAdsGranular} from './meta-ads-granular.js';
 import {metaAdsExpertAnalysisV2} from './meta-ads-expert.js';
+import {reconcileEasyOrdersOrders} from './easyorders-order-reconciliation.js';
+import {reconcileManagementFeeForOrder} from './accounting.js';
 
 const BUILD='preview-v34-2026-08-30-meta-ads-expert';
 const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Kun-Build':BUILD,'X-Content-Type-Options':'nosniff','X-Frame-Options':'DENY'}});
@@ -15,11 +17,17 @@ async function currentUser(request,env,ctx){
 }
 function cleanDate(value){return /^\d{4}-\d{2}-\d{2}$/.test(String(value||''))?String(value):null;}
 function requestedRange(input={}){const to=cleanDate(input.to)||new Date().toISOString().slice(0,10),rawFrom=String(input.from||''),from=rawFrom==='beginning'?null:cleanDate(rawFrom);let days=30;if(from){days=Math.max(1,Math.min(90,Math.floor((new Date(`${to}T00:00:00Z`)-new Date(`${from}T00:00:00Z`))/86400000)+1));}else if(rawFrom==='beginning')days=90;return {from:from||undefined,to,days};}
+async function reconcileRecoveredFees(env,result){for(const id of result?.recoveredOrderIds||[])await reconcileManagementFeeForOrder(env,id).catch(()=>{});return result;}
 
 async function fetchV34(request,env,ctx){
   const url=new URL(request.url),path=url.pathname,method=request.method.toUpperCase();
   try{
     if(path==='/api/preview/version'&&method==='GET')return json({ok:true,build:BUILD,environment:env.APP_ENV||'unknown',entrypoint:'index-commerce-v34.js'});
+    if(path==='/api/commerce/order-sync/reconcile'&&method==='POST'){
+      const me=await currentUser(request,env,ctx);requirePermission(me,'orders','write');const body=await request.clone().json().catch(()=>({})),clientId=resolveTenant(me,body.clientId||body.client_id||url.searchParams.get('clientId')),scope=await resolveStoreScope(env,me,clientId,body.storeId||body.store_id||url.searchParams.get('storeId')||null,{write:true});
+      const result=await reconcileEasyOrdersOrders(env,{clientId,storeId:scope.storeId||null,connectionId:body.connectionId||body.connection_id||null,maxRequests:body.maxRequests||30,lookback:body.lookback||80});
+      return json(await reconcileRecoveredFees(env,result));
+    }
     if(path==='/api/integrations/meta-ads/expert-analysis'&&method==='GET'){
       const me=await currentUser(request,env,ctx);requirePermission(me,'analytics','read');const clientId=resolveTenant(me,url.searchParams.get('clientId')),scope=await resolveStoreScope(env,me,clientId,url.searchParams.get('storeId')||null,{write:false});
       return json(await metaAdsExpertAnalysisV2(env,{clientId,storeId:scope.storeId||null,from:url.searchParams.get('from'),to:url.searchParams.get('to')}));
@@ -35,4 +43,18 @@ async function fetchV34(request,env,ctx){
   }catch(error){return json({error:error?.message||'حدث خطأ',code:error?.code||'COMMERCE_V34_ERROR',path,method},error?.status||500);}
 }
 
-export default {fetch:fetchV34,scheduled(controller,env,ctx){return commerceV33.scheduled?.(controller,env,ctx);}};
+async function runScheduledWithEasyOrdersRecovery(controller,env,ctx){
+  const pending=[],nestedCtx=Object.create(ctx||null);nestedCtx.waitUntil=promise=>{if(promise)pending.push(Promise.resolve(promise));};
+  let delegated;try{delegated=commerceV33.scheduled?.(controller,env,nestedCtx);}catch(error){pending.push(Promise.reject(error));}
+  if(delegated&&typeof delegated.then==='function')pending.push(Promise.resolve(delegated));
+  await Promise.allSettled(pending);
+  if(String(controller?.cron||'')!=='*/5 * * * *')return {ok:true,easyOrdersRecovery:'skipped'};
+  const result=await reconcileEasyOrdersOrders(env,{maxRequests:30,lookback:80});
+  await reconcileRecoveredFees(env,result);
+  return result;
+}
+
+export default {
+  fetch:fetchV34,
+  scheduled(controller,env,ctx){const task=runScheduledWithEasyOrdersRecovery(controller,env,ctx);ctx?.waitUntil?.(task);return task;}
+};
