@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import vm from 'node:vm';
 import {readFile} from 'node:fs/promises';
 import {can,effectivePermissions,resolveTenant,requirePermission} from '../src/access-control.js';
 
@@ -40,4 +41,36 @@ for(const marker of ["dashboard:['analytics.read']","'customer-service':['suppor
 }
 assert.ok(index.includes('/v2/modules-v51-permission-navigation.js?v=51.1'),'permission navigation module not loaded');
 assert.ok(index.indexOf('modules-v51-permission-navigation.js')>index.indexOf('modules-v50-stock-batch-variants.js'),'permission navigation must load after feature modules');
+
+const fakeDocument={
+  readyState:'loading',
+  documentElement:{dataset:{}},
+  querySelector:()=>null,
+  querySelectorAll:()=>[],
+  getElementById:()=>null,
+  addEventListener:()=>{}
+};
+const fakeWindow={};
+vm.runInNewContext(nav,{window:fakeWindow,document:fakeDocument,console,fetch:async()=>({ok:false,json:async()=>({})}),MutationObserver:class{observe(){}}});
+const policy=fakeWindow.KunPermissionNavigationV51;
+assert.ok(policy?.allowedView,'permission navigation policy was not exposed for QA');
+const snap=role=>({role,permissions:effectivePermissions({role})});
+assert.equal(policy.allowedView('orders',snap('support')),true);
+assert.equal(policy.allowedView('customer-service',snap('support')),true);
+assert.equal(policy.allowedView('finance',snap('support')),false);
+assert.equal(policy.allowedView('dashboard',snap('support')),false);
+assert.equal(policy.allowedView('settings',snap('support')),false);
+assert.equal(policy.allowedView('dashboard',snap('marketing')),true);
+assert.equal(policy.allowedView('ad-studio',snap('marketing')),true);
+assert.equal(policy.allowedView('customer-service',snap('marketing')),false);
+assert.equal(policy.allowedView('finance',snap('accountant')),true);
+assert.equal(policy.allowedView('cod',snap('accountant')),true);
+assert.equal(policy.allowedView('inventory',snap('accountant')),false);
+assert.equal(policy.allowedView('dashboard',snap('viewer')),true);
+assert.equal(policy.allowedView('marketing',snap('viewer')),true);
+assert.equal(policy.allowedView('ad-studio',snap('viewer')),false);
+assert.equal(policy.allowedView('settings',snap('viewer')),false);
+assert.equal(policy.allowedView('settings',{role:'client',permissions:['tenant:*']}),true);
+assert.equal(policy.allowedView('admin-clients',{role:'client',permissions:['tenant:*']}),false);
+assert.equal(policy.allowedView('admin-clients',{role:'admin',permissions:['*']}),true);
 console.log('Access-control tests passed');
