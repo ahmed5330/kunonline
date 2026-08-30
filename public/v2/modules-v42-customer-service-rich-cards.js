@@ -1,8 +1,8 @@
-/* Kun Online v42.1 — rich Customer Service cards matching order details */
+/* Kun Online v42.2 — rich Customer Service cards matching order details */
 (function(){
   const cache=new Map();
   const pending=new Map();
-  let observer=null;
+  let observer=null,scanQueued=false;
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const val=v=>String(v??'').trim();
   const money=v=>new Intl.NumberFormat('ar-EG',{maximumFractionDigits:2}).format(Number(v)||0);
@@ -78,11 +78,13 @@
     catch{box.remove();basicFallback(card);}
   }
   function watchCard(card){
-    if(!observer){observer=new IntersectionObserver(entries=>{for(const entry of entries)if(entry.isIntersecting){observer.unobserve(entry.target);enrich(entry.target);}}, {rootMargin:'280px 0px'});}
+    if(!observer){observer=new IntersectionObserver(entries=>{for(const entry of entries)if(entry.isIntersecting){observer.unobserve(entry.target);enrich(entry.target);}}, {rootMargin:'80px 0px'});}
     observer.observe(card);
   }
-  function scan(){document.querySelectorAll('#root .cs-order[data-cs-order]').forEach(card=>{if(card.dataset.csRichWatched==='1')return;card.dataset.csRichWatched='1';watchCard(card);});}
-  function boot(){ensureStyle();document.addEventListener('click',e=>{const b=e.target.closest?.('[data-cs-copy-value]');if(!b)return;e.preventDefault();e.stopImmediatePropagation();copyValue(b.dataset.csCopyValue||'');},true);const root=document.getElementById('root')||document.body;new MutationObserver(scan).observe(root,{childList:true,subtree:true});scan();}
+  function active(){return document.querySelector('.nav button.active[data-view]')?.dataset.view==='customer-service';}
+  function scan(){if(!active())return;document.querySelectorAll('#root .cs-order[data-cs-order]').forEach(card=>{if(card.dataset.csRichWatched==='1')return;card.dataset.csRichWatched='1';watchCard(card);});}
+  function scheduleScan(){if(!active()||scanQueued)return;scanQueued=true;queueMicrotask(()=>{scanQueued=false;scan();});}
+  function boot(){ensureStyle();document.addEventListener('click',e=>{const b=e.target.closest?.('[data-cs-copy-value]');if(b){e.preventDefault();e.stopImmediatePropagation();copyValue(b.dataset.csCopyValue||'');return;}if(e.target.closest?.('.nav button[data-view="customer-service"]'))setTimeout(scheduleScan,0);},true);const root=document.getElementById('root')||document.body;new MutationObserver(scheduleScan).observe(root,{childList:true,subtree:true});scheduleScan();}
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
-  window.KunCustomerServiceRichCards={scan,cache,version:'42.1'};
+  window.KunCustomerServiceRichCards={scan:scheduleScan,cache,version:'42.2'};
 })();
