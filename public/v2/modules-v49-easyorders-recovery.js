@@ -22,6 +22,6 @@
   }
   const baseOrders=typeof orders==='function'?orders:null;if(baseOrders)orders=function(){const html=baseOrders();queueMicrotask(inject);return html;};
   document.addEventListener('click',e=>{const b=e.target.closest?.('#easyOrdersRecoveryBtn');if(!b)return;e.preventDefault();e.stopImmediatePropagation();runRecovery(b);},true);
-  const root=document.getElementById('root')||document.body;if(root)new MutationObserver(inject).observe(root,{childList:true,subtree:true});queueMicrotask(inject);
+  queueMicrotask(inject);
   document.documentElement.dataset.easyOrdersRecovery='ready';
 })();
