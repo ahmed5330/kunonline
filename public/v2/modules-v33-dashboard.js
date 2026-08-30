@@ -1,6 +1,6 @@
 /* Kun Online v33 — Commerce Intelligence Dashboard polish */
 (function(){
-  const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[c]));
+  const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const num=v=>new Intl.NumberFormat('ar-EG',{maximumFractionDigits:2}).format(Number(v)||0);
   const money=(v,c='EGP')=>`${num(v)} ${c==='EGP'?'ج.م':esc(c)}`;
   const pct=v=>`${num(v)}%`;
