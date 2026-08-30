@@ -12,6 +12,7 @@ const MAX_AHEAD_MISSES=3;
 function parseConfig(row){try{return JSON.parse(row?.config_json||'{}')}catch{return {};}}
 function positiveInt(value){const n=Math.floor(Number(value));return Number.isFinite(n)&&n>0?n:0;}
 function bounded(value,fallback,min,max){const n=Math.floor(Number(value));return Number.isFinite(n)?Math.max(min,Math.min(max,n)):fallback;}
+function providerSaysMissing(data){const message=text(data?.message||data?.error||data?.detail).toLowerCase();return message.includes('record not found')||message==='not found'||message.includes('order not found');}
 
 async function patchConfig(env,connection,patch){
   const fresh=await env.DB.prepare('SELECT config_json FROM store_connections WHERE id=? AND client_id=?').bind(connection.id,connection.client_id).first();
@@ -24,9 +25,9 @@ async function patchConfig(env,connection,patch){
 
 async function easyOrdersGet(fetcher,url,apiKey){
   const response=await fetcher(url,{method:'GET',headers:{Accept:'application/json','Api-Key':apiKey}});
-  if(response.status===404)return {kind:'missing',data:null,status:404};
   if(response.status===429)return {kind:'rate_limited',data:null,status:429};
   const data=await response.json().catch(()=>null);
+  if(response.status===404||([400,422].includes(response.status)&&providerSaysMissing(data)))return {kind:'missing',data:null,status:response.status};
   if(!response.ok){
     const error=new Error(data?.message||data?.error||`Easy Orders HTTP ${response.status}`);
     error.status=response.status;
@@ -60,6 +61,12 @@ async function ingestThroughCanonicalWebhook(env,connection,secrets,order){
 async function bootstrapFromLastWebhook(env,connection,{apiKey,fetcher,lookback}){
   let config=parseConfig(connection),highest=positiveInt(config.easyOrdersRecoveryHighestShortId),requests=0;
   if(highest)return {config,highest,cursor:positiveInt(config.easyOrdersRecoveryCursor)||Math.max(1,highest-lookback),requests,seeded:true,rateLimited:false};
+  const webhookShortId=positiveInt(config.webhookLastShortId||config.webhookLastShortID||config.webhook_last_short_id);
+  if(webhookShortId){
+    const cursor=Math.max(1,webhookShortId-lookback);
+    config=await patchConfig(env,connection,{easyOrdersRecoveryHighestShortId:webhookShortId,easyOrdersRecoveryCursor:cursor,easyOrdersRecoverySeedOrderId:text(config.webhookLastOrderId)||null,easyOrdersRecoverySeededAt:now(),easyOrdersRecoveryLastError:null});
+    return {config,highest:webhookShortId,cursor,requests,seeded:true,rateLimited:false};
+  }
   const lastOrderId=text(config.webhookLastOrderId);
   if(!lastOrderId)return {config,highest:0,cursor:0,requests,seeded:false,rateLimited:false};
   let fetched;
@@ -67,10 +74,11 @@ async function bootstrapFromLastWebhook(env,connection,{apiKey,fetcher,lookback}
   else fetched=await fetchOrderById(fetcher,apiKey,lastOrderId);
   requests++;
   if(fetched.kind==='rate_limited')return {config,highest:0,cursor:0,requests,seeded:false,rateLimited:true};
+  if(fetched.kind==='missing')return {config,highest:0,cursor:0,requests,seeded:false,rateLimited:false};
   const shortId=positiveInt(fetched.data?.short_id||fetched.data?.shortId);
   if(!shortId)return {config,highest:0,cursor:0,requests,seeded:false,rateLimited:false};
   const cursor=Math.max(1,shortId-lookback);
-  config=await patchConfig(env,connection,{easyOrdersRecoveryHighestShortId:shortId,easyOrdersRecoveryCursor:cursor,easyOrdersRecoverySeedOrderId:text(fetched.data?.id)||lastOrderId,easyOrdersRecoverySeededAt:now(),easyOrdersRecoveryLastError:null});
+  config=await patchConfig(env,connection,{webhookLastShortId:shortId,easyOrdersRecoveryHighestShortId:shortId,easyOrdersRecoveryCursor:cursor,easyOrdersRecoverySeedOrderId:text(fetched.data?.id)||lastOrderId,easyOrdersRecoverySeededAt:now(),easyOrdersRecoveryLastError:null});
   return {config,highest:shortId,cursor,requests,seeded:true,rateLimited:false};
 }
 
@@ -85,7 +93,7 @@ async function reconcileConnection(env,connection,{maxRequests,lookback,fetcher}
     let highest=seed.highest,cursor=seed.cursor;
     if(out.rateLimited)return out;
     if(!highest){
-      await patchConfig(env,connection,{easyOrdersRecoveryLastRunAt:now(),easyOrdersRecoveryLastStatus:'waiting_for_seed',easyOrdersRecoveryLastError:'لا يوجد Order ID سابق يمكن استخدامه كبداية لإصلاح الفجوات'});
+      await patchConfig(env,connection,{easyOrdersRecoveryLastRunAt:now(),easyOrdersRecoveryLastStatus:'waiting_for_short_id',easyOrdersRecoveryLastError:null});
       return out;
     }
     const inspect=async shortId=>{
