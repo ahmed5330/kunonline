@@ -45,7 +45,7 @@
     "test:dashboard-v32": "node scripts/dashboard-v32-test.mjs",
     "test:order-details": "node --check src/order-details.js && node --check src/index-commerce-v32.js && node --check public/v2/modules-v40-order-details.js && node scripts/order-details-contract-test.mjs",
     "test:order-bulk-delete": "node --check public/v2/modules-v41-order-bulk-delete.js && node scripts/order-bulk-delete-test.mjs",
-    "test": "npm run test:core && npm run test:ui && npm run test:workflow && npm run test:access && npm run test:auth-status && npm run test:approvals && npm run test:ops && npm run test:saas && npm run test:channels && npm run test:pos && npm run test:runner && npm run test:secrets && npm run test:procurement && npm run test:providers && npm run test:supplier-ui && npm run test:multistore-ai && npm run test:onboarding-store-access && npm run test:integration-setup && npm run test:integration-validation && npm run test:meta-sync && npm run test:release-ui && npm run test:store-isolation && npm run test:store-sql && npm run test:v27-contract && npm run test:v27-sql && npm run test:onboarding-buttons && npm run test:team && npm run test:v28-contract && npm run test:release && npm run test:product-import && npm run test:inventory-stock-date && npm run test:order-sync && npm run test:manual-order-form && npm run test:order-sheet-import && npm run test:accounting && npm run test:customer-service && npm run test:customer-service-rich-card && npm run test:dashboard-v32 && npm run test:order-details && npm run test:order-bulk-delete",
+    "test": "npm run test:core && npm run test:ui && npm run test:workflow && npm run test:access && npm run test:auth-status && npm run test:approvals && npm run test:ops && npm run test:saas && npm run test:channels && npm run test:pos && npm run test:runner && npm run test:secrets && npm run test:procurement && npm run test:providers && npm run test:supplier-ui && npm run test:multistore-ai && npm run test:onboarding-store-access && npm run test:integration-setup && npm run test:integration-validation && npm run test:meta-sync && npm run test:release-ui && npm run test:store-isolation && npm run test:store-sql && npm run test:v27-contract && npm run test:v27-sql && npm run test:onboarding-buttons && npm run test:team && npm run test:v28-contract && npm run test:release && npm run test:product-import && npm run test:inventory-stock-date && npm run test:order-sync && npm run test:manual-order-form && npm run test:order-sheet-import && npm run test:accounting && npm run test:customer-service && npm run test:customer-service-rich-card && npm run test:dashboard-v32 && npm run test:order-details && npm run test:order-bulk-delete && npm run test:commerce-edit-products",
     "check:preview-config": "node scripts/verify-preview-config.mjs",
     "check:production-config": "node scripts/verify-production-config.mjs",
     "check:deploy": "npm run check:preview-config && wrangler deploy --dry-run --config wrangler.preview.toml",
@@ -57,7 +57,10 @@
     "db:init-local": "wrangler d1 execute kunonline-preview --local --file=./schema.sql",
     "db:commerce": "wrangler d1 execute kunonline-preview --remote --file=./migration_2026-08-23_commerce_os.sql",
     "db:commerce-local": "wrangler d1 execute kunonline-preview --local --file=./migration_2026-08-23_commerce_os.sql",
-    "db:preview:setup": "npm run db:init && npm run db:commerce"
+    "db:preview:setup": "npm run db:init && npm run db:commerce",
+    "test:commerce-edit-products": "node --check src/order-edit.js && node --check src/order-edit-details.js && node --check src/product-management.js && node --check src/post-shipping.js && node --check src/index-commerce-v33.js && node --check public/v2/modules-v43-product-catalog.js && node --check public/v2/modules-v44-customer-service-order-edit.js && node --check public/v2/modules-v45-post-shipping.js && node scripts/commerce-edit-products-test.mjs"
   },
-  "devDependencies": { "wrangler": "4.125.0" }
+  "devDependencies": {
+    "wrangler": "4.125.0"
+  }
 }

@@ -5,7 +5,7 @@ const ROLE_RULES={
   ops:['orders.*','customers.*','products.*','inventory.*','procurement.*','shipping.*','automation.*','audit.read','finance.read','support.*','integrations.*','inbox.*','campaigns.*','pos.*','ai.read','ads.read'],
   marketing:['orders.read','customers.read','products.read','inventory.read','campaigns.*','analytics.read','profit.read','ai.read','ads.*','integrations.read','inbox.read'],
   accountant:['finance.*','profit.read','cod.*','audit.read','billing.read','usage.read','wallet.read','campaigns.read','analytics.read','pos.read','ai.read'],
-  support:['orders.read','orders.update','customers.read','customers.update','shipping.read','support.*','integrations.read','inbox.*','pos.read'],
+  support:['orders.read','orders.update','customers.read','products.read','customers.update','shipping.read','support.*','integrations.read','inbox.*','pos.read'],
   viewer:['orders.read','customers.read','products.read','inventory.read','analytics.read','usage.read','campaigns.read','inbox.read','pos.read','ads.read']
 };
 const LEGACY={
