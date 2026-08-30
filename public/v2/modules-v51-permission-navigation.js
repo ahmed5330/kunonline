@@ -62,9 +62,12 @@
   function firstAllowedButton(){return visibleButtons()[0]||null;}
   function currentView(){return document.querySelector('.nav button.active[data-view]')?.dataset.view||'';}
   function notify(){window.showToast?.('القسم غير متاح ضمن صلاحيات حسابك');}
+  function showNoAccess(){
+    const root=document.getElementById('root');if(root)root.innerHTML='<div class="card empty"><h2>لا توجد أقسام متاحة لهذا الحساب</h2><p>راجع صلاحيات عضو الفريق من حساب المالك.</p></div>';
+  }
   function goFirstAllowed(){
     if(redirecting)return;const current=currentView();if(current&&allowed.has(current))return;
-    const first=firstAllowedButton();if(!first)return;
+    const first=firstAllowedButton();if(!first){showNoAccess();return;}
     redirecting=true;setTimeout(()=>{try{first.click();}finally{redirecting=false;}},0);
   }
   function apply(){
@@ -104,5 +107,5 @@
   const originalSetView=typeof window.setView==='function'?window.setView:null;
   if(originalSetView)window.setView=function(view){if(!ready||allowed.has(String(view)))return originalSetView(view);notify();goFirstAllowed();};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',loadAccess,{once:true});else loadAccess();
-  window.KunPermissionNavigationV51={load:loadAccess,apply,allowedView,match,get snapshot(){return snapshot;},get allowed(){return [...allowed];},rules:VIEW_RULES,version:'51.0'};
+  window.KunPermissionNavigationV51={load:loadAccess,apply,allowedView,match,get snapshot(){return snapshot;},get allowed(){return [...allowed];},rules:VIEW_RULES,version:'51.1'};
 })();
