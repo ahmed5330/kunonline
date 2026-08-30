@@ -1,5 +1,5 @@
 import commerceV33 from './index-commerce-v33.js';
-import {requirePermission,resolveTenant} from './access-control.js';
+import {permissionSnapshot,requirePermission,resolveTenant} from './access-control.js';
 import {resolveStoreScope} from './store-scope.js';
 import {syncMetaAdsForClient} from './meta-ads-sync.js';
 import {syncMetaAdsGranular} from './meta-ads-granular.js';
@@ -38,6 +38,10 @@ async function fetchV34(request,env,ctx){
   const url=new URL(request.url),path=url.pathname,method=request.method.toUpperCase();
   try{
     if(path==='/api/preview/version'&&method==='GET')return json({ok:true,build:BUILD,environment:env.APP_ENV||'unknown',entrypoint:'index-commerce-v34.js'});
+    if(path==='/api/navigation-access'&&method==='GET'){
+      const me=await currentUser(request,env,ctx);
+      return json({ok:true,...permissionSnapshot(me)});
+    }
     const easyWebhook=path.match(/^\/webhooks\/easyorders\/([^/]+)\/[^/]+\/?$/);
     if(easyWebhook&&method==='POST'){
       const payload=await request.clone().json().catch(()=>({})),response=await commerceV33.fetch(request,env,ctx);
