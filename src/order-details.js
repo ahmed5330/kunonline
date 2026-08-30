@@ -104,8 +104,8 @@ function normalizeProviderOrder(payload){
   return {rawId:text(first(p.id,p.order_id,p.orderId)),items,address:providerAddress(p),customer:providerCustomer(p),summary:providerSummary(p,items)};
 }
 function parseConfig(row){try{return JSON.parse(row?.config_json||'{}')}catch{return {};}}
-function easyOrderId(order){const ref=text(order?.ref);if(/^easyorders:/i.test(ref))return ref.split(':').slice(1).join(':')||text(order?.id);return text(order?.id);}
-function isEasyOrder(order){return /^easyorders:/i.test(text(order?.ref))||/easy\s*orders|easyorders|إيزي\s*أوردرز/i.test(text(order?.source));}
+function easyOrderId(order){const ref=text(order?.ref);if(/^sheet:easyorders:/i.test(ref))return ref.split(':').slice(2).join(':')||text(order?.id);if(/^easyorders:/i.test(ref))return ref.split(':').slice(1).join(':')||text(order?.id);return text(order?.id);}
+function isEasyOrder(order){return /^sheet:easyorders:/i.test(text(order?.ref))||/^easyorders:/i.test(text(order?.ref))||/easy\s*orders|easyorders|إيزي\s*أوردرز/i.test(text(order?.source));}
 
 async function easyConnectionForOrder(env,order){
   const {results=[]}=await env.DB.prepare("SELECT * FROM store_connections WHERE client_id=? AND provider='easyorders' AND status='connected' ORDER BY updated_at DESC").bind(order.client_id).all();
@@ -158,6 +158,10 @@ async function customerStats(env,order,customer){
     totalOrders:Number(row?.total_orders||0),deliveredOrders:Number(row?.delivered_orders||0),returnedOrders:Number(row?.returned_orders||0),cancelledOrders:Number(row?.cancelled_orders||0),totalSpent:Number(row?.total_spent||0),firstOrder:row?.first_order||null,lastOrder:row?.last_order||null
   };
 }
+async function importedOrderItems(env,order){
+  const {results=[]}=await env.DB.prepare('SELECT id,product_id,variant_id,sku,product_name,variant_label,qty,unit_price,line_total FROM order_items WHERE order_id=? AND client_id=? AND qty>0 ORDER BY created_at,id').bind(order.id,order.client_id).all().catch(()=>({results:[]}));
+  return results.map((row,index)=>{const options=optionsFromNote(row.variant_label),quantity=Math.max(1,num(row.qty)),price=num(row.unit_price);return {id:row.id||String(index+1),productId:row.product_id||null,variantId:row.variant_id||null,name:text(row.product_name)||'منتج',sku:text(row.sku)||null,variantSku:null,quantity,price,lineTotal:num(row.line_total)||price*quantity,image:null,options,note:text(row.variant_label)||null,variantName:text(row.variant_label)||null};});
+}
 async function fallbackCatalogItem(env,order){
   let product=null,variant=null;
   if(order.product_id)product=await env.DB.prepare('SELECT id,name,sku,price FROM products WHERE id=? AND client_id=?').bind(order.product_id,order.client_id).first().catch(()=>null);
@@ -183,8 +187,8 @@ function cleanTags(value){try{const parsed=JSON.parse(value||'[]');return Array.
 export async function loadOrderDetails(env,{clientId,orderId,fetcher=fetch}){
   const order=await env.DB.prepare(`SELECT o.*,s.name store_name,s.code store_code FROM orders o LEFT JOIN stores s ON s.id=o.store_id AND s.client_id=o.client_id WHERE o.id=? AND o.client_id=?`).bind(orderId,clientId).first();
   if(!order)throw Object.assign(new Error('الأوردر غير موجود'),{status:404,code:'ORDER_NOT_FOUND'});
-  const customer=await customerRecord(env,order),stats=await customerStats(env,order,customer),providerResult=isEasyOrder(order)?await fetchEasyOrder(env,order,fetcher):{data:null,warning:null},provider=providerResult.data;
-  const items=provider?.items?.length?provider.items:[await fallbackCatalogItem(env,order)],customerBase=provider?.customer||{},summaryProvider=provider?.summary||{};
+  const customer=await customerRecord(env,order),stats=await customerStats(env,order,customer),providerResult=isEasyOrder(order)?await fetchEasyOrder(env,order,fetcher):{data:null,warning:null},provider=providerResult.data,importedItems=await importedOrderItems(env,order);
+  const items=provider?.items?.length?provider.items:importedItems.length?importedItems:[await fallbackCatalogItem(env,order)],customerBase=provider?.customer||{},summaryProvider=provider?.summary||{};
   const subtotal=items.reduce((sum,item)=>sum+num(item.lineTotal),0),shippingCost=num(first(summaryProvider.shippingCost,order.shipping_cost)),discountAmount=num(first(summaryProvider.discountAmount,order.discount_amount)),total=num(first(summaryProvider.total,order.total));
   return {
     ok:true,
@@ -198,6 +202,6 @@ export async function loadOrderDetails(env,{clientId,orderId,fetcher=fetch}){
     address:mergeAddress(provider?.address,order,customer),
     summary:{paymentMethod:text(summaryProvider.paymentMethod),subtotal:subtotal||Math.max(0,total-shippingCost+discountAmount),shippingCost,discountAmount,total,quantity:items.reduce((sum,item)=>sum+Math.max(1,num(item.quantity)),0)},
     history:parseArr(order.history),contactLog:parseArr(order.contact_log),
-    provider:{id:isEasyOrder(order)?'easyorders':null,enriched:Boolean(provider),warning:providerResult.warning||null}
+    provider:{id:isEasyOrder(order)?'easyorders':null,enriched:Boolean(provider),importedLineItems:!provider&&importedItems.length>0,warning:providerResult.warning||null}
   };
 }
