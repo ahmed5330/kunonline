@@ -86,9 +86,10 @@
     document.documentElement.dataset.permissionNavigation='ready';
     goFirstAllowed();
   }
-  async function loadAccess(){
+  async function loadAccess(force=false){
     try{
-      const response=await fetch('/api/navigation-access',{credentials:'include',cache:'no-store'}),data=await response.json().catch(()=>({}));
+      if(force)window.KunPerformanceCore?.invalidate?.('/api/navigation-access');
+      const response=await fetch('/api/navigation-access',{credentials:'include'}),data=await response.json().catch(()=>({}));
       if(!response.ok||!data?.role)throw new Error(data?.error||`HTTP ${response.status}`);
       snapshot=data;ready=true;apply();return data;
     }catch(error){
@@ -102,10 +103,8 @@
     const view=targetView(target);if(!view||allowed.has(view))return;
     event.preventDefault();event.stopImmediatePropagation();notify();goFirstAllowed();
   },true);
-  const nav=document.querySelector('.nav');
-  if(nav)new MutationObserver(()=>{if(ready){apply();const active=currentView();if(active&&!allowed.has(active))goFirstAllowed();}}).observe(nav,{childList:true,subtree:true,attributes:true,attributeFilter:['class']});
   const originalSetView=typeof window.setView==='function'?window.setView:null;
   if(originalSetView)window.setView=function(view){if(!ready||allowed.has(String(view)))return originalSetView(view);notify();goFirstAllowed();};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',loadAccess,{once:true});else loadAccess();
-  window.KunPermissionNavigationV51={load:loadAccess,apply,allowedView,match,get snapshot(){return snapshot;},get allowed(){return [...allowed];},rules:VIEW_RULES,version:'51.1'};
+  window.KunPermissionNavigationV51={load:()=>loadAccess(true),apply,allowedView,match,get snapshot(){return snapshot;},get allowed(){return [...allowed];},rules:VIEW_RULES,version:'51.2'};
 })();
