@@ -20,5 +20,5 @@ for(const marker of ['/api/commerce/order-sync/diagnostics','normalizeEasyOrders
 for(const marker of ['provider.modes','orderSyncMode','supported','commerceOrderSync','رابط Webhook','Webhook Secret','saveEasyOrdersWebhookSecret','Public API','Create Webhook','checkEasyOrdersWebhook','probeWebhook','probeEasyOrdersWebhook','probeDiagWebhook','lastProbeAt','الرابط العام القديم'])assert.ok(ui.includes(marker),`UI missing ${marker}`);
 assert.ok(loader.includes('/v2/modules-v30-order-sync.js?v=30.2'),'order sync UI cache bust not loaded');
 assert.ok(validator.includes('easyOrdersStoreId')&&validator.includes('externalStoreId'),'Easy Orders validation must bind the external store id when discoverable');
-assert.match(preview,/main\s*=\s*"src\/index-commerce-v33\.js"/,'Preview must use the current additive wrapper over v32/v31 Easy Orders routes');
+assert.match(preview,/main\s*=\s*"src\/index-commerce-v3[34]\.js"/,'Preview must use the current additive wrapper over v32/v31 Easy Orders routes');
 console.log('Commerce order sync contract passed: scoped Easy Orders webhook, legacy-route shutdown, wrapper normalization, GET/HEAD readiness, probe-aware diagnostics, tenant/store scoping and secret setup are wired.');
