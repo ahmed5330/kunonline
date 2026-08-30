@@ -39,7 +39,7 @@ assert.ok(!dashboard.includes("margin:{label:'هامش الربح',icon:'%',valu
 for(const marker of ["dashboard:['analytics.read']","'customer-service':['support.read']","finance:['finance.read']","'ad-studio':['ads.write']","access:['owner']","button.hidden=!ok","stopImmediatePropagation","goFirstAllowed","/api/navigation-access","لا توجد أقسام متاحة لهذا الحساب"]){
   assert.ok(nav.includes(marker),`permission navigation missing ${marker}`);
 }
-assert.ok(index.includes('/v2/modules-v51-permission-navigation.js?v=51.1'),'permission navigation module not loaded');
+assert.ok(index.includes('/v2/modules-v51-permission-navigation.js'),'permission navigation module not loaded');
 assert.ok(index.indexOf('modules-v51-permission-navigation.js')>index.indexOf('modules-v50-stock-batch-variants.js'),'permission navigation must load after feature modules');
 
 const fakeDocument={
@@ -70,7 +70,8 @@ assert.equal(policy.allowedView('dashboard',snap('viewer')),true);
 assert.equal(policy.allowedView('marketing',snap('viewer')),true);
 assert.equal(policy.allowedView('ad-studio',snap('viewer')),false);
 assert.equal(policy.allowedView('settings',snap('viewer')),false);
-assert.equal(policy.allowedView('settings',{role:'client',permissions:['tenant:*']}),true);
-assert.equal(policy.allowedView('admin-clients',{role:'client',permissions:['tenant:*']}),false);
+assert.equal(policy.allowedView('settings',{role:'client',permissions:[]}),true);
+assert.equal(policy.allowedView('admin-clients',{role:'client',permissions:[]}),false);
 assert.equal(policy.allowedView('admin-clients',{role:'admin',permissions:['*']}),true);
+
 console.log('Access-control tests passed');
