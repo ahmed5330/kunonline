@@ -12,7 +12,7 @@ const MAX_AHEAD_MISSES=3;
 function parseConfig(row){try{return JSON.parse(row?.config_json||'{}')}catch{return {};}}
 function positiveInt(value){const n=Math.floor(Number(value));return Number.isFinite(n)&&n>0?n:0;}
 function bounded(value,fallback,min,max){const n=Math.floor(Number(value));return Number.isFinite(n)?Math.max(min,Math.min(max,n)):fallback;}
-function providerSaysMissing(data){const message=text(data?.message||data?.error||data?.detail).toLowerCase();return message.includes('record not found')||message==='not found'||message.includes('order not found');}
+function providerSaysMissing(data){const message=text(typeof data==='string'?data:(data?.message||data?.error||data?.detail)).toLowerCase();return message.includes('record not found')||message==='not found'||message.includes('order not found');}
 
 async function patchConfig(env,connection,patch){
   const fresh=await env.DB.prepare('SELECT config_json FROM store_connections WHERE id=? AND client_id=?').bind(connection.id,connection.client_id).first();
@@ -26,10 +26,10 @@ async function patchConfig(env,connection,patch){
 async function easyOrdersGet(fetcher,url,apiKey){
   const response=await fetcher(url,{method:'GET',headers:{Accept:'application/json','Api-Key':apiKey}});
   if(response.status===429)return {kind:'rate_limited',data:null,status:429};
-  const data=await response.json().catch(()=>null);
-  if(response.status===404||([400,422].includes(response.status)&&providerSaysMissing(data)))return {kind:'missing',data:null,status:response.status};
+  const data=await response.json().catch(async()=>text(await response.clone().text().catch(()=>''))||null);
+  if(response.status===404||providerSaysMissing(data))return {kind:'missing',data:null,status:response.status};
   if(!response.ok){
-    const error=new Error(data?.message||data?.error||`Easy Orders HTTP ${response.status}`);
+    const error=new Error((typeof data==='string'?data:null)||data?.message||data?.error||`Easy Orders HTTP ${response.status}`);
     error.status=response.status;
     error.code=response.status===401||response.status===403?'EASYORDERS_ORDERS_READ_FORBIDDEN':'EASYORDERS_RECONCILIATION_PROVIDER_ERROR';
     throw error;
