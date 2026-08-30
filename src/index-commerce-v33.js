@@ -4,7 +4,8 @@ import {resolveStoreScope,requestedStoreId} from './store-scope.js';
 import {editCustomerServiceOrder} from './order-edit.js';
 import {loadEditableOrderDetails} from './order-edit-details.js';
 import {listDetailedProducts,loadDetailedProduct,saveDetailedProduct} from './product-management.js';
-import {postShippingBoard,markPostShippingDelivered,collectPostShippingOrder} from './post-shipping.js';
+import {postShippingBoardV47,markPostShippingDeliveredV47,startPostShippingCollectionV47,collectPostShippingOrderV47} from './post-shipping-v47.js';
+import {collectedProfitOverview} from './collected-profit.js';
 import {reconcileManagementFeeForOrder} from './accounting.js';
 
 const BUILD='preview-v33-2026-08-30-order-edit-detailed-products';
@@ -28,12 +29,18 @@ async function fetchV33(request,env,ctx){
   try{
     if(path==='/api/preview/version'&&method==='GET')return json({ok:true,build:BUILD,environment:env.APP_ENV||'unknown',entrypoint:'index-commerce-v33.js'});
     if(path==='/api/post-shipping'&&method==='GET'){
-      const me=await currentUser(request,env,ctx);requirePermission(me,'orders','read');const clientId=resolveTenant(me,url.searchParams.get('clientId'));return json(await postShippingBoard(env,{clientId,me,selectedStoreId:url.searchParams.get('storeId')||''}));
+      const me=await currentUser(request,env,ctx);requirePermission(me,'orders','read');const clientId=resolveTenant(me,url.searchParams.get('clientId'));return json(await postShippingBoardV47(env,{clientId,me,selectedStoreId:url.searchParams.get('storeId')||''}));
     }
-    const postShippingAction=path.match(/^\/api\/post-shipping\/orders\/([^/]+)\/(delivered|collect)$/);
+    const postShippingAction=path.match(/^\/api\/post-shipping\/orders\/([^/]+)\/(delivered|collecting|collect)$/);
     if(postShippingAction&&method==='PATCH'){
       const me=await currentUser(request,env,ctx);requirePermission(me,'orders','update');const body=await request.clone().json().catch(()=>({})),clientId=resolveTenant(me,body.clientId||body.client_id||url.searchParams.get('clientId')),orderId=decodeURIComponent(postShippingAction[1]);let result;
-      if(postShippingAction[2]==='delivered')result=await markPostShippingDelivered(env,{clientId,orderId,me});else {result=await collectPostShippingOrder(env,{clientId,orderId,amount:body.amount,me});await reconcileManagementFeeForOrder(env,orderId).catch(()=>{});}return json(result);
+      if(postShippingAction[2]==='delivered')result=await markPostShippingDeliveredV47(env,{clientId,orderId,me});
+      else if(postShippingAction[2]==='collecting')result=await startPostShippingCollectionV47(env,{clientId,orderId,me});
+      else {result=await collectPostShippingOrderV47(env,{clientId,orderId,amount:body.amount,me});await reconcileManagementFeeForOrder(env,orderId).catch(()=>{});}return json(result);
+    }
+    if(path==='/api/accounting/collected-profit'&&method==='GET'){
+      const me=await currentUser(request,env,ctx);requirePermission(me,'analytics','read');const clientId=resolveTenant(me,url.searchParams.get('clientId')),scope=await resolveStoreScope(env,me,clientId,url.searchParams.get('storeId')||null,{write:false});
+      return json(await collectedProfitOverview(env,{clientId,storeId:scope.storeId||null,from:url.searchParams.get('from'),to:url.searchParams.get('to'),includeDetails:url.searchParams.get('details')==='1'}));
     }
     const detailsMatch=path.match(/^\/api\/orders\/([^/]+)\/details$/);
     if(detailsMatch&&method==='GET'){
