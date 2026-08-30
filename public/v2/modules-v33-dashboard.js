@@ -1,6 +1,6 @@
 /* Kun Online v33 — Commerce Intelligence Dashboard polish */
 (function(){
-  const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[c]));
   const num=v=>new Intl.NumberFormat('ar-EG',{maximumFractionDigits:2}).format(Number(v)||0);
   const money=(v,c='EGP')=>`${num(v)} ${c==='EGP'?'ج.م':esc(c)}`;
   const pct=v=>`${num(v)}%`;
@@ -11,7 +11,7 @@
     actualOrderCost:{label:'تكلفة الطلب الفعلية',icon:'◎',value:d=>money(d.overview.actualOrderCost,d.currency),hint:'صرف الإعلانات ÷ كل الطلبات الداخلة للنظام'},
     expectedRevenue:{label:'الإيرادات المتوقعة',icon:'↗',value:d=>money(d.overview.expectedRevenue,d.currency),hint:'الطلبات الداخلة بعد استبعاد الملغي والمرتجع'},
     expectedProfit:{label:'الأرباح المتوقعة',icon:'◈',value:d=>money(d.overview.expectedProfit,d.currency),hint:'المؤكد + التجهيز + الجاري شحنه بعد مصاريف الطلب التشغيلية'},
-    margin:{label:'هامش الربح',icon:'%',value:d=>pct(d.overview.profitMargin),hint:'بعد تكلفة المنتج وكل المصاريف التشغيلية'},
+    margin:{label:'هامش الربح',icon:'◈',value:d=>money(d.finance.netProfit,d.currency),hint:'قيمة صافي الربح بعد تكلفة المنتج وكل المصاريف التشغيلية'},
     adSpend:{label:'صرف الإعلانات',icon:'◉',value:d=>money(d.overview.adSpend,d.currency),hint:'الإنفاق الإعلاني في الفترة المحددة'},
     otherExpenses:{label:'مصاريف اليوم الأخرى',icon:'≋',value:d=>money(d.overview.otherExpenses,d.currency),hint:'المصاريف العامة غير الإعلانية المسجلة على المتجر'}
   };
