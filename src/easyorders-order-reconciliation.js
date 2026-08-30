@@ -26,7 +26,7 @@ async function patchConfig(env,connection,patch){
 async function easyOrdersGet(fetcher,url,apiKey){
   const response=await fetcher(url,{method:'GET',headers:{Accept:'application/json','Api-Key':apiKey}});
   if(response.status===429)return {kind:'rate_limited',data:null,status:429};
-  const data=await response.json().catch(async()=>text(await response.clone().text().catch(()=>''))||null);
+  const raw=await response.text().catch(()=>''),data=(()=>{if(!raw)return null;try{return JSON.parse(raw)}catch{return raw}})();
   if(response.status===404||providerSaysMissing(data))return {kind:'missing',data:null,status:response.status};
   if(!response.ok){
     const error=new Error((typeof data==='string'?data:null)||data?.message||data?.error||`Easy Orders HTTP ${response.status}`);
