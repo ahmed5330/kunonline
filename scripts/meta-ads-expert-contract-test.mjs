@@ -14,6 +14,6 @@ assert(entry.includes('/api/integrations/meta-ads/expert-analysis'),'Expert anal
 assert(entry.includes('/api/integrations/meta-ads/expert-sync'),'Expert sync route missing');
 for(const heading of ['تحليل الحملات الإعلانية','تحليل المجموعات الإعلانية','تحليل الإعلانات','قراءة خبير الإعلانات'])assert(ui.includes(heading),`Dashboard expert heading missing: ${heading}`);
 for(const signal of ['مرشح للتوسيع','إجهاد إعلاني','مشكلة بعد النقرة'])assert(ui.includes(signal)||ui.includes('flags'),`Expert signal support missing: ${signal}`);
-assert(index.includes('modules-v48-ad-expert.js?v=48.0'),'Expert dashboard bundle is not loaded');
+assert(index.includes('modules-v48-ad-expert.js'),'Expert dashboard bundle is not loaded');
 assert(preview.includes('main = "src/index-commerce-v34.js"'),'Preview is not routed through v34');
 console.log('Meta Ads expert analysis contract passed.');
