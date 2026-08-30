@@ -6,6 +6,7 @@ const text=v=>String(v??'').trim();
 const num=v=>Number.isFinite(Number(v))?Number(v):0;
 const list=v=>Array.isArray(v)?v:[];
 const first=(...xs)=>xs.find(x=>x!==undefined&&x!==null&&x!=='');
+const firstList=(...xs)=>xs.find(x=>Array.isArray(x)&&x.length)||xs.find(Array.isArray)||[];
 const EASYORDERS_PAGE_SIZE=100;
 const EASYORDERS_MAX_PAGES=100;
 const EASYORDERS_AUTH_PROFILES=[
@@ -29,42 +30,58 @@ async function stableId(prefix,...parts){
   return `${prefix}-${[...new Uint8Array(hash)].slice(0,12).map(x=>x.toString(16).padStart(2,'0')).join('').toUpperCase()}`;
 }
 
+function propText(x){
+  const nested=first(x?.variation_prop,x?.variationProp,x?.VariationProp,x?.prop,x?.Prop);
+  if(nested&&typeof nested==='object')return text(first(nested?.value,nested?.Value,nested?.name,nested?.Name,nested?.title,nested?.Title,nested?.label,nested?.Label));
+  return text(first(nested,x?.value,x?.Value,x?.name,x?.Name,x?.title,x?.Title,x?.label,x?.Label));
+}
 function variantName(v){
-  const props=list(v?.variation_props||v?.variationProps).map(x=>text(x?.variation_prop||x?.value||x?.name)).filter(Boolean);
-  return text(first(v?.name,v?.title,[v?.color,v?.size].filter(Boolean).join(' — '),props.join(' — '),'متغير'));
+  const props=firstList(v?.variation_props,v?.variationProps,v?.VariationProps,v?.props,v?.Props).map(propText).filter(Boolean);
+  const direct=[first(v?.color,v?.Color),first(v?.size,v?.Size)].map(text).filter(Boolean).join(' — ');
+  return text(first(props.join(' — '),direct,v?.name,v?.Name,v?.title,v?.Title,'متغير'));
+}
+function activeFlag(v,{product=false}={}){
+  const explicit=first(v?.active,v?.Active,product?first(v?.published,v?.Published):undefined);
+  if(explicit===false||explicit===0||text(explicit).toLowerCase()==='false')return false;
+  const status=text(first(v?.status,v?.Status)).toLowerCase();
+  return !(product?['draft','archived','inactive','disabled']:['draft','archived','inactive','disabled']).includes(status);
 }
 function normalizeVariant(v,i){
   return {
-    externalId:text(first(v?.id,v?.variant_id,v?.external_id,i)),
+    externalId:text(first(v?.id,v?.Id,v?.ID,v?.variant_id,v?.variantId,v?.VariantId,v?.external_id,v?.externalId,v?.ExternalId,i)),
     name:variantName(v),
-    sku:text(first(v?.sku,v?.code,v?.taager_code)),
-    price:num(first(v?.sale_price||undefined,v?.price)),
-    stock:Math.max(0,num(first(v?.stock,v?.quantity,v?.inventory_quantity))),
-    active:first(v?.active,v?.status)!==false&&text(v?.status).toLowerCase()!=='draft'
+    sku:text(first(v?.sku,v?.SKU,v?.code,v?.Code,v?.taager_code,v?.taagerCode,v?.TaagerCode)),
+    price:num(first(v?.sale_price,v?.salePrice,v?.SalePrice,v?.price,v?.Price)),
+    stock:Math.max(0,num(first(v?.stock,v?.Stock,v?.quantity,v?.Quantity,v?.inventory_quantity,v?.inventoryQuantity,v?.InventoryQuantity))),
+    active:activeFlag(v)
   };
 }
 function normalizeProduct(p,i){
-  const variants=list(first(p?.variants,p?.options)).map(normalizeVariant);
+  const variants=firstList(p?.variants,p?.Variants,p?.options,p?.Options).map(normalizeVariant);
+  const variantStock=variants.reduce((sum,v)=>sum+v.stock,0);
+  const parentStock=Math.max(0,num(first(p?.stock,p?.Stock,p?.quantity,p?.Quantity,p?.inventory_quantity,p?.inventoryQuantity,p?.InventoryQuantity)));
+  const categories=firstList(p?.categories,p?.Categories).map(x=>text(first(x?.name,x?.Name,x))).filter(Boolean).join('، ');
+  const images=firstList(p?.images,p?.Images,p?.image?[p.image]:[],p?.Image?[p.Image]:[]).map(x=>text(first(x?.src,x?.Src,x?.url,x?.Url,x))).filter(Boolean);
   return {
-    externalId:text(first(p?.id,p?.product_id,p?.external_id,i)),
-    name:text(first(p?.name,p?.title)),
-    sku:text(first(p?.sku,p?.code,p?.taager_code)),
-    price:num(first(p?.sale_price||undefined,p?.price,p?.regular_price)),
-    stock:Math.max(0,num(first(p?.stock,p?.quantity,p?.inventory_quantity,variants.reduce((s,v)=>s+v.stock,0)))),
-    category:text(first(p?.category?.name,p?.category,list(p?.categories).map(x=>text(x?.name||x)).filter(Boolean).join('، '))),
-    active:first(p?.active,p?.published,p?.status)!==false&&!['draft','archived'].includes(text(p?.status).toLowerCase()),
-    images:list(first(p?.images,p?.image?[p.image]:[])).map(x=>text(x?.src||x?.url||x)).filter(Boolean),
+    externalId:text(first(p?.id,p?.Id,p?.ID,p?.product_id,p?.productId,p?.ProductId,p?.external_id,p?.externalId,p?.ExternalId,i)),
+    name:text(first(p?.name,p?.Name,p?.title,p?.Title)),
+    sku:text(first(p?.sku,p?.SKU,p?.code,p?.Code,p?.taager_code,p?.taagerCode,p?.TaagerCode)),
+    price:num(first(p?.sale_price,p?.salePrice,p?.SalePrice,p?.price,p?.Price,p?.regular_price,p?.regularPrice,p?.RegularPrice)),
+    stock:variants.length?variantStock:parentStock,
+    category:text(first(p?.category?.name,p?.Category?.Name,p?.category_name,p?.categoryName,p?.CategoryName,categories)),
+    active:activeFlag(p,{product:true}),
+    images,
     variants
   };
 }
-function rows(data){return list(first(data?.data?.products,data?.data?.items,data?.products,data?.items,data?.data,data));}
+function rows(data){return firstList(data?.data?.products,data?.data?.Products,data?.Data?.Products,data?.data?.items,data?.data?.Items,data?.Data?.Items,data?.products,data?.Products,data?.items,data?.Items,data?.data,data?.Data,data);}
 async function get(fetcher,url,headers){return json(await fetcher(url,{method:'GET',headers:{Accept:'application/json',...headers}}));}
 
 function easyOrdersProfiles(config){
   const preferred=text(config?.authentication);
   return [...EASYORDERS_AUTH_PROFILES].sort((a,b)=>Number(b.id===preferred)-Number(a.id===preferred));
 }
-function productKey(p,i){return text(first(p?.id,p?.product_id,p?.external_id,p?.sku,p?.taager_code,`row-${i}`));}
+function productKey(p,i){return text(first(p?.id,p?.Id,p?.ID,p?.product_id,p?.productId,p?.ProductId,p?.external_id,p?.externalId,p?.ExternalId,p?.sku,p?.SKU,p?.taager_code,p?.taagerCode,p?.TaagerCode,`row-${i}`));}
 async function fetchAllEasyOrdersProducts({secrets,config,fetcher}){
   const key=text(secrets?.api_key);
   if(!key)throw Object.assign(new Error('مفتاح Easy Orders API غير موجود'),{status:409,code:'EASYORDERS_API_KEY_MISSING'});
@@ -175,4 +192,5 @@ export async function importCommerceProducts(env,args){
   await env.DB.prepare('UPDATE store_connections SET last_sync_at=?,last_error=?,updated_at=? WHERE id=? AND client_id=?').bind(ts,summary.errors.length?`${summary.errors.length} product import errors`:null,ts,pulled.row.id,args.clientId).run();
   return summary;
 }
+export const normalizeCommerceProduct=normalizeProduct;
 export const commerceProductImportAdapters=Object.freeze(Object.keys(ADAPTERS));
