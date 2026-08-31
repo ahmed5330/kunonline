@@ -9,6 +9,16 @@ const fail=(message,status=400,code='ORDER_FIFO_STOCK_ERROR')=>{throw Object.ass
 async function refreshBatchStatus(env,batchId){const row=await env.DB.prepare('SELECT COALESCE(SUM(remaining_qty),0) remaining FROM inventory_batch_items WHERE batch_id=?').bind(batchId).first();await env.DB.prepare('UPDATE inventory_batches SET status=? WHERE id=?').bind(num(row?.remaining)>0?'active':'depleted',batchId).run();}
 async function legacyAllocation(env,orderId,clientId){return env.DB.prepare('SELECT * FROM order_stock_allocations WHERE order_id=? AND client_id=?').bind(orderId,clientId).first().catch(()=>null);}
 async function activeAllocations(env,orderId,clientId){const {results=[]}=await env.DB.prepare("SELECT a.*,i.product_name,b.name batch_name FROM order_item_stock_allocations a LEFT JOIN inventory_batch_items i ON i.id=a.batch_item_id LEFT JOIN inventory_batches b ON b.id=a.batch_id WHERE a.order_id=? AND a.client_id=? AND a.status='allocated' ORDER BY a.created_at,a.id").bind(orderId,clientId).all().catch(()=>({results:[]}));return results;}
+async function writeLegacySummary(env,token,actor){
+  const first=token?.slices?.[0];if(!first)return;const at=stamp(),createdAt=token.previousLegacy?.created_at||at;
+  await env.DB.prepare(`INSERT INTO order_stock_allocations (order_id,client_id,store_id,batch_id,batch_item_id,product_id,variant_id,qty,status,created_at,updated_at,created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(order_id) DO UPDATE SET client_id=excluded.client_id,store_id=excluded.store_id,batch_id=excluded.batch_id,batch_item_id=excluded.batch_item_id,product_id=excluded.product_id,variant_id=excluded.variant_id,qty=excluded.qty,status='allocated',updated_at=excluded.updated_at,created_by=excluded.created_by`).bind(token.orderId,token.clientId,token.storeId,first.batchId,first.batchItemId,first.productId,first.variantId||null,token.qty,'allocated',createdAt,at,actorName(actor)).run();token.legacySummaryWritten=true;
+}
+async function restoreLegacySummary(env,token){
+  if(!token?.legacySummaryWritten)return;
+  const previous=token.previousLegacy;
+  if(previous){await env.DB.prepare('UPDATE order_stock_allocations SET client_id=?,store_id=?,batch_id=?,batch_item_id=?,product_id=?,variant_id=?,qty=?,status=?,created_at=?,updated_at=?,created_by=? WHERE order_id=?').bind(previous.client_id,previous.store_id,previous.batch_id,previous.batch_item_id,previous.product_id,previous.variant_id,previous.qty,previous.status,previous.created_at,previous.updated_at,previous.created_by,previous.order_id).run().catch(()=>{});}
+  else await env.DB.prepare('DELETE FROM order_stock_allocations WHERE order_id=? AND client_id=?').bind(token.orderId,token.clientId).run().catch(()=>{});
+}
 
 async function resolveLegacyOrderProduct(env,order){
   if(order.product_id)return {productId:order.product_id,variantId:order.variant_id||null};
@@ -49,6 +59,7 @@ async function rollbackSlices(env,token){
     if(slice.generalAdjusted){if(slice.variantId)await env.DB.prepare('UPDATE product_variants SET stock=COALESCE(stock,0)+? WHERE id=? AND client_id=?').bind(slice.qty,slice.variantId,token.clientId).run().catch(()=>{});else await env.DB.prepare('UPDATE products SET stock=COALESCE(stock,0)+? WHERE id=? AND client_id=?').bind(slice.qty,slice.productId,token.clientId).run().catch(()=>{});if(slice.logId)await env.DB.prepare('DELETE FROM stock_log WHERE id=?').bind(slice.logId).run().catch(()=>{});}
     await env.DB.prepare('DELETE FROM order_item_stock_allocations WHERE id=?').bind(slice.allocationId).run().catch(()=>{});await refreshBatchStatus(env,slice.batchId).catch(()=>{});
   }
+  await restoreLegacySummary(env,token);
 }
 
 export async function prepareOrderStockTransition(env,{clientId,storeId,orderId,fromState,toState,actor}={}){
@@ -58,7 +69,7 @@ export async function prepareOrderStockTransition(env,{clientId,storeId,orderId,
   const lines=await orderLines(env,order),groups=new Map();
   for(const line of lines){const productId=clean(line.product_id),variantId=clean(line.variant_id)||null,qty=Math.max(1,num(line.qty)||1),key=`${productId}::${variantId||''}`;if(!groups.has(key))groups.set(key,{productId,variantId,needed:0,lines:[]});const group=groups.get(key);group.needed+=qty;group.lines.push({...line,qty});}
   for(const group of groups.values()){group.lots=await fifoLots(env,{clientId,storeId,productId:group.productId,variantId:group.variantId});const available=group.lots.reduce((sum,lot)=>sum+num(lot.remaining_qty),0);if(available<group.needed)fail(`المخزون غير كافٍ للمنتج «${clean(group.lines[0]?.product_name)||group.productId}». المطلوب ${group.needed} والمتاح ${available}.`,409,'STOCK_FIFO_INSUFFICIENT');}
-  const generalAdjusted=fromState!=='returned',token={kind:'allocated',fifo:true,orderId,clientId,storeId,qty:0,slices:[],batchIds:[],batchNames:[]};
+  const generalAdjusted=fromState!=='returned',token={kind:'allocated',fifo:true,orderId,clientId,storeId,qty:0,slices:[],batchIds:[],batchNames:[],previousLegacy:legacy||null,legacySummaryWritten:false};
   try{
     for(const group of groups.values()){
       const lots=group.lots.map(lot=>({...lot,virtualRemaining:num(lot.remaining_qty)}));
@@ -69,7 +80,7 @@ export async function prepareOrderStockTransition(env,{clientId,storeId,orderId,
         if(left>0)fail('تعذر إكمال الخصم التلقائي من دفعات المخزون',409,'STOCK_FIFO_ALLOCATION_INCOMPLETE');
       }
     }
-    token.batchId=token.batchIds[0]||null;token.batchName=token.batchNames[0]||'FIFO';return token;
+    token.batchId=token.batchIds[0]||null;token.batchName=token.batchNames[0]||'FIFO';await writeLegacySummary(env,token,actor);return token;
   }catch(error){await rollbackSlices(env,token);throw error;}
 }
 
@@ -77,6 +88,6 @@ export async function rollbackOrderStockTransition(env,token){if(!token||token.k
 
 export async function finalizeOrderStockTransition(env,{clientId,orderId,fromState,toState}={}){
   if(toState!=='returned'||!OUTBOUND_STATES.has(fromState))return {kind:'none'};
-  const active=await activeAllocations(env,orderId,clientId);if(active.length){let qty=0;const batchIds=[];for(const allocation of active){const amount=num(allocation.qty);if(amount<=0)continue;await env.DB.prepare('UPDATE inventory_batch_items SET remaining_qty=remaining_qty+? WHERE id=?').bind(amount,allocation.batch_item_id).run();await env.DB.prepare("UPDATE order_item_stock_allocations SET status='returned',updated_at=? WHERE id=?").bind(stamp(),allocation.id).run();await env.DB.prepare("UPDATE inventory_batches SET status='active' WHERE id=?").bind(allocation.batch_id).run();qty+=amount;if(!batchIds.includes(allocation.batch_id))batchIds.push(allocation.batch_id);}return {kind:'returned',fifo:true,batchId:batchIds[0]||null,batchIds,qty};}
+  const active=await activeAllocations(env,orderId,clientId);if(active.length){let qty=0;const batchIds=[];for(const allocation of active){const amount=num(allocation.qty);if(amount<=0)continue;await env.DB.prepare('UPDATE inventory_batch_items SET remaining_qty=remaining_qty+? WHERE id=?').bind(amount,allocation.batch_item_id).run();await env.DB.prepare("UPDATE order_item_stock_allocations SET status='returned',updated_at=? WHERE id=?").bind(stamp(),allocation.id).run();await env.DB.prepare("UPDATE inventory_batches SET status='active' WHERE id=?").bind(allocation.batch_id).run();qty+=amount;if(!batchIds.includes(allocation.batch_id))batchIds.push(allocation.batch_id);}await env.DB.prepare("UPDATE order_stock_allocations SET status='returned',updated_at=? WHERE order_id=? AND client_id=?").bind(stamp(),orderId,clientId).run().catch(()=>{});return {kind:'returned',fifo:true,batchId:batchIds[0]||null,batchIds,qty};}
   const legacy=await legacyAllocation(env,orderId,clientId);if(!legacy||legacy.status!=='allocated')return {kind:'none'};await env.DB.prepare('UPDATE inventory_batch_items SET remaining_qty=remaining_qty+? WHERE id=?').bind(num(legacy.qty),legacy.batch_item_id).run();await env.DB.prepare("UPDATE order_stock_allocations SET status='returned',updated_at=? WHERE order_id=? AND client_id=?").bind(stamp(),orderId,clientId).run();await env.DB.prepare("UPDATE inventory_batches SET status='active' WHERE id=?").bind(legacy.batch_id).run();return {kind:'returned',batchId:legacy.batch_id,qty:num(legacy.qty)};
 }
