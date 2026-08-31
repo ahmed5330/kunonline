@@ -1,6 +1,6 @@
 import {requirePermission,resolveTenant} from './access-control.js';
 import {listMyStores} from './store-scope.js';
-import {prepareOrderStockTransition,rollbackOrderStockTransition,finalizeOrderStockTransition} from './inventory-batches.js';
+import {prepareOrderStockTransition,rollbackOrderStockTransition,finalizeOrderStockTransition} from './inventory-fifo.js';
 
 const ALLOWED_ROLES=new Set(['admin','client','ops','support']);
 const DELETE_ROLES=new Set(['admin','client','ops']);
