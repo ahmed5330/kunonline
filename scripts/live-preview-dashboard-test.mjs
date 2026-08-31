@@ -20,16 +20,20 @@ function assertShape(data,label){
   if(data?.ok!==true)throw new Error(`${label}: dashboard ok flag missing`);
   for(const key of ['overview','finance','ads','rates','provinces','recommendations','trend'])if(data[key]===undefined)throw new Error(`${label}: missing ${key}`);
   for(const key of ['totalOrders','actualOrderCost','expectedRevenue','expectedProfit','profitMargin','adSpend','otherExpenses'])finite(data.overview?.[key],`${label}.overview.${key}`);
+  for(const key of ['periodOrders','allOrders','customerServiceActive'])finite(data.overview?.[key],`${label}.overview.${key}`);
   for(const key of ['expenses','grossProfit','productCost','revenue','netProfit'])finite(data.finance?.[key],`${label}.finance.${key}`);
   for(const key of ['systemCpp','cpc','cpm','cac','ctr','platformRoas','realRoas','cpa'])finite(data.ads?.[key],`${label}.ads.${key}`);
   for(const w of ['d7','d30'])for(const key of ['confirmationRate','deliveryRate','returnRate','returnOfShippedRate'])finite(data.rates?.[w]?.[key],`${label}.rates.${w}.${key}`);
   if(!Array.isArray(data.provinces)||!Array.isArray(data.recommendations)||!Array.isArray(data.trend?.points))throw new Error(`${label}: dashboard list shape invalid`);
   if(!['day','week','month'].includes(data.trend?.granularity))throw new Error(`${label}: invalid trend granularity ${data.trend?.granularity}`);
-  if(!data.overview?.details?.actualOrderCost||!data.overview?.details?.expectedRevenue||!data.overview?.details?.margin)throw new Error(`${label}: KPI drill-down details missing`);
+  if(!data.overview?.details?.actualOrderCost||!data.overview?.details?.expectedRevenue||!data.overview?.details?.margin||!data.overview?.details?.orders)throw new Error(`${label}: KPI drill-down details missing`);
+  if(data.orderCountSemantics?.canonical!==true)throw new Error(`${label}: canonical order-count semantics missing`);
 }
 function cairoToday(){const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Cairo',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date()),g=t=>parts.find(x=>x.type===t)?.value||'';return `${g('year')}-${g('month')}-${g('day')}`;}
 function addDays(date,delta){const d=new Date(`${date}T00:00:00Z`);d.setUTCDate(d.getUTCDate()+delta);return d.toISOString().slice(0,10);}
 async function checkRange(candidate,from,to,label){const q=`clientId=${encodeURIComponent(candidate.client_id)}&storeId=${encodeURIComponent(candidate.store_id)}`,data=(await api(`/api/dashboard?${q}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`)).data;assertShape(data,label);if(data.from!==from||data.to!==to)throw new Error(`${label}: range mismatch ${data.from}..${data.to}, expected ${from}..${to}`);return data;}
+async function canonicalCounts(candidate){const rows=await d1(`SELECT COUNT(*) total,SUM(CASE WHEN state IN ('pending','confirmed','preparing','shipped','deferred') THEN 1 ELSE 0 END) customer_service_active FROM orders WHERE client_id=? AND store_id=?`,[candidate.client_id,candidate.store_id]);return {total:Number(rows[0]?.total)||0,customerServiceActive:Number(rows[0]?.customer_service_active)||0};}
+function assertCanonical(data,counts,label){if(Number(data.overview.totalOrders)!==counts.total||Number(data.overview.allOrders)!==counts.total)throw new Error(`${label}: dashboard total ${data.overview.totalOrders}/${data.overview.allOrders} does not match Orders D1 count ${counts.total}`);if(Number(data.overview.customerServiceActive)!==counts.customerServiceActive)throw new Error(`${label}: dashboard Customer Service active count ${data.overview.customerServiceActive} does not match D1 ${counts.customerServiceActive}`);}
 
 let error=null;
 try{
@@ -41,16 +45,18 @@ try{
   const login=await fetch(`${base}/api/login`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password})});const loginText=await login.text();if(!login.ok)throw new Error(`Dashboard admin login failed ${login.status}: ${loginText.slice(0,500)}`);cookie=(login.headers.get('set-cookie')||'').split(';')[0];if(!cookie)throw new Error('Dashboard admin cookie missing');
   const today=cairoToday(),weekFrom=addDays(today,-6),monthFrom=addDays(today,-29);
   for(const [i,candidate] of candidates.entries()){
+    const counts=await canonicalCounts(candidate);
     const daily=await checkRange(candidate,today,today,`store-${i+1}-daily`);
     const weekly=await checkRange(candidate,weekFrom,today,`store-${i+1}-7d`);
     const monthly=await checkRange(candidate,monthFrom,today,`store-${i+1}-30d`);
-    if(Number(weekly.overview.totalOrders)>Number(monthly.overview.totalOrders))throw new Error(`store-${i+1}: 7-day order count cannot exceed 30-day count`);
-    if(Number(daily.overview.totalOrders)>Number(weekly.overview.totalOrders))throw new Error(`store-${i+1}: daily order count cannot exceed 7-day count`);
+    assertCanonical(daily,counts,`store-${i+1}-daily`);assertCanonical(weekly,counts,`store-${i+1}-7d`);assertCanonical(monthly,counts,`store-${i+1}-30d`);
+    if(Number(weekly.overview.periodOrders)>Number(monthly.overview.periodOrders))throw new Error(`store-${i+1}: 7-day period order count cannot exceed 30-day count`);
+    if(Number(daily.overview.periodOrders)>Number(weekly.overview.periodOrders))throw new Error(`store-${i+1}: daily period order count cannot exceed 7-day count`);
   }
   const candidate=candidates[0],q=`clientId=${encodeURIComponent(candidate.client_id)}&storeId=${encodeURIComponent(candidate.store_id)}`;
-  const all=(await api(`/api/dashboard?${q}&from=beginning&to=${today}`)).data;assertShape(all,'all-time');if(!/^\d{4}-\d{2}-\d{2}$/.test(String(all.from||''))||all.from>today)throw new Error(`All-time dashboard did not resolve a real first date: ${all.from}`);
+  const all=(await api(`/api/dashboard?${q}&from=beginning&to=${today}`)).data;assertShape(all,'all-time');assertCanonical(all,await canonicalCounts(candidate),'all-time');if(!/^\d{4}-\d{2}-\d{2}$/.test(String(all.from||''))||all.from>today)throw new Error(`All-time dashboard did not resolve a real first date: ${all.from}`);
   await api(`/api/dashboard?${q}&from=${today}&to=2026-01-01`,[400]);
-  console.log(`Live Dashboard QA passed across ${candidates.length} active Preview store(s): today + 7d + 30d + all-time/custom-range guard, tenant/store scope, KPI drill-down, finance, ads, return-aware rates, governorates, period-scoped AI snapshots and trend.`);
+  console.log(`Live Dashboard QA passed across ${candidates.length} active Preview store(s): dashboard total equals canonical Orders D1 count, Customer Service active count matches operational states, period counts remain date-scoped, plus KPI/finance/ads/rates/provinces/AI/trend checks.`);
 }catch(e){error=e;}finally{await cleanup();}
 if(error)throw error;
 await import('./live-preview-inventory-test.mjs');
