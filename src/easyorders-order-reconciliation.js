@@ -7,7 +7,7 @@ const SHORT_ORDER_BASE='https://api.easy-orders.net/api/v1/external-apps/orders/
 const ORDER_BY_ID_BASE='https://api.easy-orders.net/api/v1/external-apps/orders/';
 const DEFAULT_LOOKBACK=80;
 const DEFAULT_MAX_REQUESTS=30;
-const MAX_AHEAD_MISSES=3;
+const MAX_AHEAD_MISSES=30;
 
 function parseConfig(row){try{return JSON.parse(row?.config_json||'{}')}catch{return {};}}
 function positiveInt(value){const n=Math.floor(Number(value));return Number.isFinite(n)&&n>0?n:0;}
