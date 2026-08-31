@@ -43,11 +43,12 @@ must(ui.includes('رقم البوليصة')&&backend.includes("type:'awb'"),'Cus
 must(backend.includes("from './inventory-fifo.js'"),'Customer Service shipping must use the dedicated FIFO inventory allocator');
 for(const marker of ['order_item_stock_allocations','ORDER BY b.stock_date ASC,b.created_at ASC','STOCK_FIFO_INSUFFICIENT','virtualRemaining','خصم أوردر ${orderId} تلقائيًا بنظام FIFO'])must(fifo.includes(marker),`FIFO inventory allocator missing ${marker}`);
 must(!fifo.includes('STOCK_BATCH_REQUIRED'),'FIFO shipping must not require a manually selected stock batch');
-must(searchUi.includes("customers.filter(customer=>norm(customer?.name).includes(q))"),'Global customer search must return every matching customer, not use find()');
+must(searchUi.includes('operationalCustomerMatches')&&searchUi.includes('كل العملاء المطابقين للاسم'),'Global operational search must return every matching customer under one list');
+must(!searchUi.includes('/api/state?clientId='),'Operational customer search must not load the full state payload');
 must(searchUi.includes('filterOperationalCards')&&searchUi.includes('v55-filter-hidden'),'Customer Service search must filter operational columns to matching customer names');
 must(searchUi.includes('v55-order-date')&&searchUi.includes('تاريخ الطلب'),'Every operational order card must receive an explicit order-date row');
 must(searchUi.includes("select.value!=='shipped'")&&searchUi.includes("state:'shipped'"),'Shipping transition must bypass the old manual stock chooser and call automatic FIFO allocation');
-must(index.includes('/v2/modules-v55-customer-search-fifo.js?v=55.0'),'v55 FIFO/search/date module must be loaded by v2');
+must(index.includes('/v2/modules-v55-customer-search-fifo.js?v=55.1'),'v55.1 fast FIFO/search/date module must be loaded by v2');
 must(index.indexOf('modules-v55-customer-search-fifo.js')<index.indexOf('modules-v39-stock-batches.js'),'FIFO shipping capture must load before the legacy stock chooser interceptor');
 
 must(!ui.includes('حذف')&&!ui.includes('data-cs-action="delete"'),'Customer Service board must not expose order deletion');
