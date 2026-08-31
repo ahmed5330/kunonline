@@ -40,11 +40,16 @@ try{
     if(repair.ok!==true||Number(repair.connections||0)<1)throw new Error(`Easy Orders gap recovery endpoint did not run: ${JSON.stringify(repair).slice(0,1000)}`);
     const failed=(repair.results||[]).find(x=>x.error),providerUnavailable=failed&&providerAccountUnavailable(failed.error);
     if(failed&&!providerUnavailable)throw new Error(`Easy Orders gap recovery failed: ${failed.error}`);
+    const health=(await api(`/api/commerce/order-sync/recovery-status?${q}&connectionId=${encodeURIComponent(row.id)}`)).data;
+    if(health.ok!==true||Number(health.connections||0)!==1)throw new Error(`Easy Orders recovery status endpoint returned an invalid scope: ${JSON.stringify(health).slice(0,1000)}`);
+    const state=health.results?.[0];if(!state||state.connectionId!==row.id)throw new Error(`Easy Orders recovery status did not return the selected connection: ${JSON.stringify(health).slice(0,1000)}`);
+    if(!['healthy','catching_up','rate_limited','waiting_for_short_id','error'].includes(state.status))throw new Error(`Unexpected Easy Orders recovery status: ${state.status}`);
+    if(Number(state.estimatedRemaining||0)<0||Number(state.recoveredTotal||0)<0)throw new Error(`Invalid Easy Orders recovery counters: ${JSON.stringify(state)}`);
     const tokenPart=target.pathname.split('/').filter(Boolean).at(-1)||'',maskedToken=tokenPart.length>12?`${tokenPart.slice(0,6)}…${tokenPart.slice(-4)}`:'masked';
     if(providerUnavailable){
-      console.warn(`Live Easy Orders QA passed with provider account unavailable: connection=${row.id}; scopedProbe=200; routeToken=${maskedToken}; providerMessage=${String(failed.error).slice(0,200)}. Webhook routing and diagnostics are healthy; historical recovery could not be exercised because Easy Orders blocked this inactive/overdue store.`);
+      console.warn(`Live Easy Orders QA passed with provider account unavailable: connection=${row.id}; scopedProbe=200; routeToken=${maskedToken}; providerMessage=${String(failed.error).slice(0,200)}; recoveryStatus=${state.status}. Webhook routing, diagnostics and recovery health API are healthy; historical recovery could not be exercised because Easy Orders blocked this inactive/overdue store.`);
     }else{
-      console.log(`Live Easy Orders QA passed: connection=${row.id}; externalStoreId=${row.external_store_id||'none'}; secret=${after.secretConfigured?'configured':'missing'}; scopedProbe=200; routeToken=${maskedToken}; lastPOST=${after.webhook?.lastReceivedAt||'none'}; recoveryRequests=${repair.requests||0}; recovered=${repair.recovered||0}; updated=${repair.updated||0}; seeded=${repair.seeded||0}; rateLimited=${repair.rateLimited?'yes':'no'}.`);
+      console.log(`Live Easy Orders QA passed: connection=${row.id}; externalStoreId=${row.external_store_id||'none'}; secret=${after.secretConfigured?'configured':'missing'}; scopedProbe=200; routeToken=${maskedToken}; lastPOST=${after.webhook?.lastReceivedAt||'none'}; recoveryRequests=${repair.requests||0}; recovered=${repair.recovered||0}; updated=${repair.updated||0}; seeded=${repair.seeded||0}; rateLimited=${repair.rateLimited?'yes':'no'}; recoveryStatus=${state.status}; estimatedRemaining=${state.estimatedRemaining||0}; recoveredTotal=${state.recoveredTotal||0}.`);
     }
   }
 }catch(error){primaryError=error;
