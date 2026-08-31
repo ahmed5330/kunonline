@@ -13,6 +13,8 @@ const num=v=>Number(v)||0;
 const isoDate=/^\d{4}-\d{2}-\d{2}$/;
 function cairoToday(){const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Cairo',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date()),g=t=>parts.find(x=>x.type===t)?.value||'';return `${g('year')}-${g('month')}-${g('day')}`;}
 function parseDate(value,fallback){const v=text(value);return isoDate.test(v)?v:fallback;}
+function hasAuth(request){return Boolean(text(request.headers.get('cookie'))||text(request.headers.get('authorization')));}
+function authRequired(){return json({error:'محتاج تسجّل دخول',code:'AUTH_REQUIRED'},401);}
 
 async function currentUser(request,env,ctx){
   const url=new URL(request.url);url.pathname='/api/me';url.search='';
@@ -69,12 +71,12 @@ async function fetchV35(request,env,ctx){
   const url=new URL(request.url),path=url.pathname,method=request.method.toUpperCase();
   try{
     if(path==='/api/preview/version'&&method==='GET')return json({ok:true,build:BUILD,environment:env.APP_ENV||'unknown',entrypoint:'index-commerce-v35.js'});
-    if(path==='/api/dashboard'&&method==='GET')return dashboard(request,env,ctx);
-    if(path==='/api/orders/dedupe/reconcile'&&method==='POST')return reconcileRoute(request,env,ctx);
-    if(path==='/api/orders/sheet-import'&&method==='POST')return sheetImport(request,env,ctx);
+    if(path==='/api/dashboard'&&method==='GET'){if(!hasAuth(request))return authRequired();return dashboard(request,env,ctx);}
+    if(path==='/api/orders/dedupe/reconcile'&&method==='POST'){if(!hasAuth(request))return authRequired();return reconcileRoute(request,env,ctx);}
+    if(path==='/api/orders/sheet-import'&&method==='POST'){if(!hasAuth(request))return authRequired();return sheetImport(request,env,ctx);}
     const webhook=path.match(/^\/webhooks\/easyorders\/([^/]+)\/[^/]+\/?$/);if(webhook&&method==='POST')return easyOrdersWebhook(request,env,ctx,decodeURIComponent(webhook[1]));
     if(path==='/api/state'&&method==='GET'){const response=await commerceV34.fetch(request,env,ctx),data=await response.clone().json().catch(()=>null);if(response.ok&&Array.isArray(data?.orders)&&data.orders[0]?.clientId){const clientId=text(data.orders[0].clientId),storeId=text(data.orders[0].storeId)||null;await reconcileEasyOrdersDuplicates(env,{clientId,storeId,limit:6000}).catch(()=>{});return duplicateFilteredResponse(response,env);}return duplicateFilteredResponse(response,env);}
-    if(path==='/api/customer-service'&&method==='GET'){const me=await currentUser(request,env,ctx),clientId=resolveTenant(me,url.searchParams.get('clientId')),scope=await resolveStoreScope(env,me,clientId,text(url.searchParams.get('storeId'))||null,{write:false});await reconcileEasyOrdersDuplicates(env,{clientId,storeId:scope.storeId||null,limit:6000});return duplicateFilteredResponse(await commerceV34.fetch(request,env,ctx),env);}
+    if(path==='/api/customer-service'&&method==='GET'){if(!hasAuth(request))return authRequired();const me=await currentUser(request,env,ctx),clientId=resolveTenant(me,url.searchParams.get('clientId')),scope=await resolveStoreScope(env,me,clientId,text(url.searchParams.get('storeId'))||null,{write:false});await reconcileEasyOrdersDuplicates(env,{clientId,storeId:scope.storeId||null,limit:6000});return duplicateFilteredResponse(await commerceV34.fetch(request,env,ctx),env);}
     return commerceV34.fetch(request,env,ctx);
   }catch(error){return json({error:error?.message||'حدث خطأ',code:error?.code||'COMMERCE_V35_ERROR',path,method},error?.status||500);}
 }
