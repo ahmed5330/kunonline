@@ -6,7 +6,7 @@ import {campaignPerformance} from './marketing-performance.js';
 import {decorateDashboardWithManagementFees} from './accounting.js';
 import {prepareIncomingEasyOrdersDedupeV2,prepareEasyOrdersSheetRowsV2,reconcileEasyOrdersDuplicates,reconcileAllEasyOrdersDuplicates,duplicateIdsForOrders} from './order-deduplication-v2.js';
 
-const BUILD='preview-v35-2026-08-31-daily-orders-dedupe-v2';
+const BUILD='preview-v35-2026-08-31-fast-reads-dedupe-v2';
 const json=(data,status=200,extra={})=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Kun-Build':BUILD,'X-Content-Type-Options':'nosniff','X-Frame-Options':'DENY',...extra}});
 const text=v=>String(v??'').trim();
 const num=v=>Number(v)||0;
@@ -55,7 +55,7 @@ async function dashboard(request,env,ctx){
   const url=new URL(request.url),me=await currentUser(request,env,ctx);requirePermission(me,'analytics','read');const clientId=resolveTenant(me,url.searchParams.get('clientId')),scope=await resolveStoreScope(env,me,clientId,text(url.searchParams.get('storeId'))||null,{write:false}),storeId=scope.storeId||null;
   const rawFrom=text(url.searchParams.get('from')),rawTo=text(url.searchParams.get('to'));
   if(rawFrom!=='beginning'&&isoDate.test(rawFrom)&&isoDate.test(rawTo)&&rawFrom>rawTo)throw Object.assign(new Error('بداية الفترة يجب أن تكون قبل نهايتها'),{status:400,code:'DATE_RANGE_INVALID'});
-  await reconcileEasyOrdersDuplicates(env,{clientId,storeId,limit:6000});
+  // Fast read path: dedupe links are maintained on Easy Orders writes/imports and by the sync worker, not rebuilt on every dashboard GET.
   let from=url.searchParams.get('from');if(from==='beginning')from=await canonicalBeginning(env,clientId,storeId);
   let data=await canonicalDashboardData(env,{clientId,storeId,from,to:url.searchParams.get('to')}),counts=await canonicalOrderCounts(env,{clientId,storeId});
   data=await decorateDashboardWithManagementFees(env,data,{clientId,storeId});
@@ -82,8 +82,9 @@ async function fetchV35(request,env,ctx){
     if(path==='/api/orders/dedupe/reconcile'&&method==='POST'){if(!hasAuth(request))return authRequired();return await reconcileRoute(request,env,ctx);}
     if(path==='/api/orders/sheet-import'&&method==='POST'){if(!hasAuth(request))return authRequired();return await sheetImport(request,env,ctx);}
     const webhook=path.match(/^\/webhooks\/easyorders\/([^/]+)\/[^/]+\/?$/);if(webhook&&method==='POST')return await easyOrdersWebhook(request,env,ctx,decodeURIComponent(webhook[1]));
-    if(path==='/api/state'&&method==='GET'){const response=await commerceV34.fetch(request,env,ctx),data=await response.clone().json().catch(()=>null);if(response.ok&&Array.isArray(data?.orders)&&data.orders[0]?.clientId){const clientId=text(data.orders[0].clientId),storeId=text(data.orders[0].storeId)||null;await reconcileEasyOrdersDuplicates(env,{clientId,storeId,limit:6000}).catch(()=>{});return await duplicateFilteredResponse(response,env);}return await duplicateFilteredResponse(response,env);}
-    if(path==='/api/customer-service'&&method==='GET'){if(!hasAuth(request))return authRequired();const me=await currentUser(request,env,ctx),clientId=resolveTenant(me,url.searchParams.get('clientId')),scope=await resolveStoreScope(env,me,clientId,text(url.searchParams.get('storeId'))||null,{write:false});await reconcileEasyOrdersDuplicates(env,{clientId,storeId:scope.storeId||null,limit:6000});return await duplicateFilteredResponse(await commerceV34.fetch(request,env,ctx),env);}
+    // Fast read paths: filter from the existing duplicate registry only; never rescan thousands of orders while opening a screen.
+    if(path==='/api/state'&&method==='GET')return await duplicateFilteredResponse(await commerceV34.fetch(request,env,ctx),env);
+    if(path==='/api/customer-service'&&method==='GET'){if(!hasAuth(request))return authRequired();return await duplicateFilteredResponse(await commerceV34.fetch(request,env,ctx),env);}
     return await commerceV34.fetch(request,env,ctx);
   }catch(error){return json({error:error?.message||'حدث خطأ',code:error?.code||'COMMERCE_V35_ERROR',path,method},error?.status||500);}
 }
