@@ -32,7 +32,7 @@ try{
   const hash=await hashPassword(adminPassword),ts=new Date().toISOString();
   await d1('INSERT INTO users (id,email,name,password,role,client_id,status,created_at,last_login) VALUES (?,?,?,?,?,NULL,?,?,NULL)',[adminId,adminEmail,'CI v28 Team Admin',hash,'admin','active',ts]);
   adminCookie=(await login(adminEmail,adminPassword)).cookie;if(!adminCookie)throw new Error('Temporary admin cookie missing');
-  const version=(await api(adminCookie,'/api/preview/version')).data;if(!String(version.build||'').startsWith('preview-v34-')||version.entrypoint!=='index-commerce-v34.js'||version.environment!=='preview')throw new Error(`Expected current v34 Preview, got ${JSON.stringify(version)}`);
+  const version=(await api(adminCookie,'/api/preview/version')).data;if(!/^preview-v3[45]-/.test(String(version.build||''))||!/^index-commerce-v3[45]\.js$/.test(String(version.entrypoint||''))||version.environment!=='preview')throw new Error(`Expected current additive Preview v34+, got ${JSON.stringify(version)}`);
   const onboard=(await api(adminCookie,'/api/admin/clients',{method:'POST',ok:[201],body:{businessName:'CI v28 Team Tenant',ownerName:'CI v28 Owner',email:ownerEmail,phone:'01012345678',password:ownerPassword,storeName:'CI Store A',plan:'trial',baseOrderFee:2,modules:{dashboard:{enabled:true},stores:{enabled:true},'store-access':{enabled:true},orders:{enabled:true},catalog:{enabled:true},inventory:{enabled:true},team:{enabled:true},settings:{enabled:true}}}})).data;
   clientId=onboard.clientId;storeA=onboard.storeId;if(!clientId||!storeA)throw new Error('Temporary tenant onboarding failed');
   ownerCookie=(await login(ownerEmail,ownerPassword)).cookie;if(!ownerCookie)throw new Error('Owner cookie missing');
@@ -64,7 +64,7 @@ try{
   await api(ownerCookie,`/api/team-members/${encodeURIComponent(memberId)}`,{method:'DELETE',body:{clientId}});memberId=null;
   await login(memberEmail,memberPassword2,[401,403]);
   const count=(await d1('SELECT COUNT(*) n FROM user_store_access WHERE client_id=? AND user_id IN (SELECT id FROM users WHERE email=?)',[clientId,memberEmail]))[0]?.n||0;if(Number(count)!==0)throw new Error('Deleted member store access was not cleaned');
-  console.log(`Live v28 team QA passed on Preview v34: create/login/role change/store A-B isolation/viewer read-only/password reset/disable-enable/delete (${clientId}).`);
+  console.log(`Live v28 team QA passed on current Preview: create/login/role change/store A-B isolation/viewer read-only/password reset/disable-enable/delete (${clientId}).`);
 }catch(error){primaryError=error;
 }finally{try{await restore()}catch(cleanupError){primaryError=primaryError?new Error(`${primaryError.message}; ${cleanupError.message}`):cleanupError;}}
 if(primaryError)throw primaryError;
