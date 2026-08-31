@@ -7,6 +7,7 @@ import {syncMetaAdsGranular} from './meta-ads-granular.js';
 import {metaAdsExpertAnalysisV2} from './meta-ads-expert.js';
 import {easyOrdersRecoveryStatus,reconcileEasyOrdersOrders} from './easyorders-order-reconciliation.js';
 import {reconcileManagementFeeForOrder} from './accounting.js';
+import {clearProductInventory,clearStaleBatchStockIfProductZero} from './inventory-clear.js';
 
 const BUILD='preview-v34-2026-08-30-meta-ads-expert';
 const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Kun-Build':BUILD,'X-Content-Type-Options':'nosniff','X-Frame-Options':'DENY'}});
@@ -55,6 +56,21 @@ async function fetchV34(request,env,ctx){
     if(path==='/api/navigation-access'&&method==='GET'){
       const me=await currentUser(request,env,ctx);
       return json({ok:true,...permissionSnapshot(me)});
+    }
+    const stockClear=path.match(/^\/api\/inventory\/products\/([^/]+)\/clear$/);
+    if(stockClear&&method==='POST'){
+      const me=await currentUser(request,env,ctx),body=await request.clone().json().catch(()=>({})),productId=decodeURIComponent(stockClear[1]),clientId=resolveTenant(me,body.clientId||body.client_id||url.searchParams.get('clientId'));requirePermission(me,'inventory','write');
+      const product=await env.DB.prepare('SELECT id,client_id,store_id FROM products WHERE id=? AND client_id=?').bind(productId,clientId).first();if(!product)return json({error:'المنتج غير موجود في المتجر الحالي',code:'PRODUCT_NOT_FOUND'},404);
+      const requested=text(body.storeId||body.store_id||url.searchParams.get('storeId')||product.store_id)||null,scope=await resolveStoreScope(env,me,clientId,requested,{write:true});if(scope.storeId&&String(product.store_id||'')!==String(scope.storeId))return json({error:'المنتج غير موجود في هذا الفرع',code:'PRODUCT_NOT_FOUND'},404);
+      return json(await clearProductInventory(env,{clientId,storeId:product.store_id||scope.storeId||null,productId,actor:me,reason:'تصفير كامل للمخزون من شاشة المخزون'}));
+    }
+    const productDelete=path.match(/^\/api\/products\/([^/]+)$/);
+    if(productDelete&&method==='DELETE'){
+      const me=await currentUser(request,env,ctx),productId=decodeURIComponent(productDelete[1]),clientId=resolveTenant(me,url.searchParams.get('clientId')||me.clientId);requirePermission(me,'products','write');
+      const product=await env.DB.prepare('SELECT id,client_id,store_id FROM products WHERE id=? AND client_id=?').bind(productId,clientId).first();if(!product)return json({error:'المنتج مش موجود'},404);
+      const requested=text(url.searchParams.get('storeId')||product.store_id)||null,scope=await resolveStoreScope(env,me,clientId,requested,{write:true});if(scope.storeId&&String(product.store_id||'')!==String(scope.storeId))return json({error:'المنتج غير موجود في هذا الفرع'},404);
+      await clearStaleBatchStockIfProductZero(env,{clientId,storeId:product.store_id||scope.storeId||null,productId,actor:me});
+      return commerceV33.fetch(request,env,ctx);
     }
     const easyWebhook=path.match(/^\/webhooks\/easyorders\/([^/]+)\/[^/]+\/?$/);
     if(easyWebhook&&method==='POST'){
