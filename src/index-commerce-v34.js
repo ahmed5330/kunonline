@@ -4,7 +4,7 @@ import {resolveStoreScope} from './store-scope.js';
 import {syncMetaAdsForClient} from './meta-ads-sync.js';
 import {syncMetaAdsGranular} from './meta-ads-granular.js';
 import {metaAdsExpertAnalysisV2} from './meta-ads-expert.js';
-import {reconcileEasyOrdersOrders} from './easyorders-order-reconciliation.js';
+import {easyOrdersRecoveryStatus,reconcileEasyOrdersOrders} from './easyorders-order-reconciliation.js';
 import {reconcileManagementFeeForOrder} from './accounting.js';
 
 const BUILD='preview-v34-2026-08-30-meta-ads-expert';
@@ -47,6 +47,10 @@ async function fetchV34(request,env,ctx){
       const payload=await request.clone().json().catch(()=>({})),response=await commerceV33.fetch(request,env,ctx);
       if(response.ok)await rememberEasyOrdersShortId(env,decodeURIComponent(easyWebhook[1]),payload).catch(()=>{});
       return response;
+    }
+    if(path==='/api/commerce/order-sync/recovery-status'&&method==='GET'){
+      const me=await currentUser(request,env,ctx);requirePermission(me,'orders','read');const clientId=resolveTenant(me,url.searchParams.get('clientId')),scope=await resolveStoreScope(env,me,clientId,url.searchParams.get('storeId')||null,{write:false});
+      return json(await easyOrdersRecoveryStatus(env,{clientId,storeId:scope.storeId||null,connectionId:url.searchParams.get('connectionId')||null}));
     }
     if(path==='/api/commerce/order-sync/reconcile'&&method==='POST'){
       const me=await currentUser(request,env,ctx);requirePermission(me,'orders','write');const body=await request.clone().json().catch(()=>({})),clientId=resolveTenant(me,body.clientId||body.client_id||url.searchParams.get('clientId')),scope=await resolveStoreScope(env,me,clientId,body.storeId||body.store_id||url.searchParams.get('storeId')||null,{write:true});
