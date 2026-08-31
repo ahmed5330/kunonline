@@ -8,8 +8,9 @@ import {metaAdsExpertAnalysisV2} from './meta-ads-expert.js';
 import {easyOrdersRecoveryStatus,reconcileEasyOrdersOrders} from './easyorders-order-reconciliation.js';
 import {reconcileManagementFeeForOrder} from './accounting.js';
 import {clearProductInventory,clearStaleBatchStockIfProductZero} from './inventory-clear.js';
+import {prepareIncomingEasyOrdersDedupe,prepareEasyOrdersSheetRows,persistEasyOrdersLineItems,restoreNativeSourceForMatchedSheetOrders} from './order-deduplication.js';
 
-const BUILD='preview-v34-2026-08-30-meta-ads-expert';
+const BUILD='preview-v34-2026-08-31-minute-meta-exact-dedupe';
 const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Kun-Build':BUILD,'X-Content-Type-Options':'nosniff','X-Frame-Options':'DENY'}});
 const text=v=>String(v??'').trim();
 const positiveInt=value=>{const n=Math.floor(Number(value));return Number.isFinite(n)&&n>0?n:0;};
@@ -36,18 +37,22 @@ async function rememberEasyOrdersShortId(env,connectionId,rawPayload){
   await env.DB.prepare('UPDATE store_connections SET config_json=?,updated_at=? WHERE id=? AND client_id=?').bind(JSON.stringify(config),new Date().toISOString(),row.id,row.client_id).run();
 }
 
+async function connectedMetaClients(env,{limit=50}={}){
+  const {results=[]}=await env.DB.prepare("SELECT client_id,config_json FROM store_connections WHERE provider='meta_ads' AND status='connected' ORDER BY updated_at DESC LIMIT ?").bind(Math.max(1,Math.min(200,Number(limit)||50))).all(),seen=new Set(),out=[];
+  for(const row of results){const clientId=text(row.client_id);if(!clientId||seen.has(clientId))continue;seen.add(clientId);const config=parseConfig(row),accountId=text(config.adAccountId||config.ad_account_id).replace(/^act_/i,'');out.push({clientId,ready:config.adAccountConfirmed===true&&Boolean(accountId)});}return out;
+}
 async function syncAllMetaAdsGranularScheduled(env,{days=30,limit=50}={}){
-  const {results=[]}=await env.DB.prepare("SELECT client_id,config_json FROM store_connections WHERE provider='meta_ads' AND status='connected' ORDER BY updated_at DESC LIMIT ?").bind(Math.max(1,Math.min(200,Number(limit)||50))).all();
-  const seen=new Set(),outcomes=[];
-  for(const row of results){
-    const clientId=text(row.client_id);if(!clientId||seen.has(clientId))continue;seen.add(clientId);
-    const config=parseConfig(row),accountId=text(config.adAccountId||config.ad_account_id).replace(/^act_/i,'');
-    if(config.adAccountConfirmed!==true||!accountId){outcomes.push({clientId,ok:false,code:'META_AD_ACCOUNT_CONFIRMATION_REQUIRED',skipped:true});continue;}
-    try{outcomes.push({clientId,...await syncMetaAdsGranular(env,{clientId,days})});}
-    catch(error){outcomes.push({clientId,ok:false,code:error?.code||'META_GRANULAR_SYNC_FAILED',error:error?.message||String(error)});}
-  }
+  const clients=await connectedMetaClients(env,{limit}),outcomes=[];
+  for(const row of clients){if(!row.ready){outcomes.push({clientId:row.clientId,ok:false,code:'META_AD_ACCOUNT_CONFIRMATION_REQUIRED',skipped:true});continue;}try{outcomes.push({clientId:row.clientId,...await syncMetaAdsGranular(env,{clientId:row.clientId,days})});}catch(error){outcomes.push({clientId:row.clientId,ok:false,code:error?.code||'META_GRANULAR_SYNC_FAILED',error:error?.message||String(error)});}}
   return outcomes;
 }
+async function syncAllMetaAdsNearLiveScheduled(env,{days=2,limit=50}={}){
+  const clients=await connectedMetaClients(env,{limit}),outcomes=[];
+  for(const row of clients){if(!row.ready){outcomes.push({clientId:row.clientId,ok:false,code:'META_AD_ACCOUNT_CONFIRMATION_REQUIRED',skipped:true});continue;}try{const campaign=await syncMetaAdsForClient(env,{clientId:row.clientId,days}),granular=await syncMetaAdsGranular(env,{clientId:row.clientId,days});outcomes.push({clientId:row.clientId,ok:true,campaign,granular});}catch(error){outcomes.push({clientId:row.clientId,ok:false,code:error?.code||'META_NEAR_LIVE_SYNC_FAILED',error:error?.message||String(error)});}}
+  return outcomes;
+}
+
+function requestWithJsonBody(request,body){const headers=new Headers(request.headers);headers.set('Content-Type','application/json');headers.delete('content-length');return new Request(request.url,{method:request.method,headers,body:JSON.stringify(body)});}
 
 async function fetchV34(request,env,ctx){
   const url=new URL(request.url),path=url.pathname,method=request.method.toUpperCase();
@@ -56,6 +61,17 @@ async function fetchV34(request,env,ctx){
     if(path==='/api/navigation-access'&&method==='GET'){
       const me=await currentUser(request,env,ctx);
       return json({ok:true,...permissionSnapshot(me)});
+    }
+    if(path==='/api/admin/clients'&&method==='POST'){
+      const body=await request.clone().json().catch(()=>({})),response=await commerceV33.fetch(request,env,ctx);if(!response.ok)return response;const data=await response.clone().json().catch(()=>({})),fee=Number(body.baseOrderFee);
+      if(data.clientId&&Number.isFinite(fee)&&fee>=0){await env.DB.prepare('UPDATE wallet_accounts SET base_order_fee=?,min_order_fee=0,max_order_fee=0,updated_at=? WHERE client_id=?').bind(fee,new Date().toISOString(),data.clientId).run();data.baseOrderFee=fee;data.feeCap=null;}
+      return json(data,response.status);
+    }
+    if(path==='/api/orders/sheet-import'&&method==='POST'){
+      const body=await request.clone().json().catch(()=>({}));if(String(body.source||'').toLowerCase()!=='easyorders')return commerceV33.fetch(request,env,ctx);
+      const me=await currentUser(request,env,ctx);requirePermission(me,'orders','write');const clientId=resolveTenant(me,body.clientId||body.client_id||url.searchParams.get('clientId')),scope=await resolveStoreScope(env,me,clientId,body.storeId||body.store_id||url.searchParams.get('storeId')||null,{write:true});if(!scope.storeId)return json({error:'حدد المتجر قبل استيراد الشيت',code:'ORDER_IMPORT_STORE_REQUIRED'},400);
+      const prepared=await prepareEasyOrdersSheetRows(env,{clientId,storeId:scope.storeId,rows:body.rows||[]}),delegated=await commerceV33.fetch(requestWithJsonBody(request,{...body,clientId,storeId:scope.storeId,rows:prepared.rows}),env,ctx);if(!delegated.ok)return delegated;
+      await restoreNativeSourceForMatchedSheetOrders(env,{clientId,storeId:scope.storeId,orderIds:prepared.matchedOrderIds});const data=await delegated.clone().json().catch(()=>({}));return json({...data,deduplicatedExact:Number(data.deduplicatedExact||0)+prepared.deduplicated,dedupeMode:'strict-full-order'},delegated.status);
     }
     const stockClear=path.match(/^\/api\/inventory\/products\/([^/]+)\/clear$/);
     if(stockClear&&method==='POST'){
@@ -74,8 +90,8 @@ async function fetchV34(request,env,ctx){
     }
     const easyWebhook=path.match(/^\/webhooks\/easyorders\/([^/]+)\/[^/]+\/?$/);
     if(easyWebhook&&method==='POST'){
-      const payload=await request.clone().json().catch(()=>({})),response=await commerceV33.fetch(request,env,ctx);
-      if(response.ok)await rememberEasyOrdersShortId(env,decodeURIComponent(easyWebhook[1]),payload).catch(()=>{});
+      const connectionId=decodeURIComponent(easyWebhook[1]),payload=await request.clone().json().catch(()=>({})),prepared=await prepareIncomingEasyOrdersDedupe(env,{connectionId,payload}).catch(()=>({matched:false,payload})),response=await commerceV33.fetch(request,env,ctx);
+      if(response.ok){await rememberEasyOrdersShortId(env,connectionId,payload).catch(()=>{});const data=await response.clone().json().catch(()=>({})),orderId=data.id||prepared.orderId||null,clientId=prepared.clientId||null,storeId=prepared.storeId||null;if(orderId&&clientId)await persistEasyOrdersLineItems(env,{clientId,storeId,orderId,payload,skip:prepared.matched}).catch(()=>{});if(prepared.matched)return json({...data,id:orderId,deduplicatedExact:true,dedupeMode:'strict-full-order'},response.status);}
       return response;
     }
     if(path==='/api/commerce/order-sync/recovery-status'&&method==='GET'){
@@ -108,6 +124,7 @@ async function runScheduledWithEasyOrdersRecovery(controller,env,ctx){
   if(delegated&&typeof delegated.then==='function')pending.push(Promise.resolve(delegated));
   await Promise.allSettled(pending);
   const cron=String(controller?.cron||'');
+  if(cron==='* * * * *')return {ok:true,easyOrdersRecovery:'skipped',metaNearLive:await syncAllMetaAdsNearLiveScheduled(env,{days:2})};
   if(cron==='0 */2 * * *')return {ok:true,easyOrdersRecovery:'skipped',metaGranular:await syncAllMetaAdsGranularScheduled(env,{days:30})};
   if(cron!=='*/5 * * * *')return {ok:true,easyOrdersRecovery:'skipped'};
   const result=await reconcileEasyOrdersOrders(env,{maxRequests:30,lookback:80});
