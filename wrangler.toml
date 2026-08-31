@@ -1,25 +1,13 @@
-# Cloudflare Preview only. Production is intentionally configured separately.
-name = "kunonline-preview"
-main = "src/index-commerce-v2.js"
+# SAFETY GUARD: default Wrangler config is intentionally NOT Preview or Production.
+# Local development must use `npm run dev` (pinned to wrangler.preview.toml in local mode).
+# Shared Preview deployment must use `npm run deploy:preview`.
+# This prevents a bare `wrangler deploy` from replacing kunonline-preview code or Cron Triggers.
+name = "kunonline-local-dev-guard"
+main = "src/dev-config-guard.js"
 compatibility_date = "2026-08-23"
 
-[assets]
-directory = "./public"
-binding = "ASSETS"
-
-[[d1_databases]]
-binding = "DB"
-database_name = "kunonline-preview"
-database_id = "31cd5cdf-fc01-42d7-ba1e-571f3dd58495"
-migrations_dir = "migrations"
-
-[triggers]
-crons = ["0 */2 * * *"]
-
 [vars]
-APP_ENV = "preview"
-TRACKING_PROVIDER = "track123"
+APP_ENV = "local-guard"
 
 [observability]
-enabled = true
-
+enabled = false
