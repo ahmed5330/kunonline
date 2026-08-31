@@ -9,7 +9,6 @@ on:
       - 'scripts/verify-cloudflare-crons.mjs'
       - 'scripts/smoke-sync-preview.mjs'
       - '.github/workflows/sync-preview.yml'
-      - 'package.json'
   workflow_dispatch:
 concurrency:
   group: kunonline-sync-preview
@@ -63,14 +62,16 @@ jobs:
       - name: Verify sync Worker Cron + RPC health
         id: smoke
         continue-on-error: true
+        env:
+          SYNC_SMOKE_ATTEMPTS: '36'
+          SYNC_SMOKE_INTERVAL_MS: '5000'
         run: npm run smoke:sync-preview
       - name: Restore previous sync Worker after failed smoke
         if: always() && steps.smoke.outcome == 'failure' && steps.rollback_base.outputs.version_id != ''
         run: |
           npx wrangler versions deploy "${{ steps.rollback_base.outputs.version_id }}@100%" --yes --config wrangler.sync.preview.toml --message "Automatic sync Preview restore after failed validation"
-          npm run smoke:sync-preview
       - name: Mark failed sync deployment
         if: always() && steps.smoke.outcome == 'failure'
         run: |
-          echo "Dedicated sync Worker failed validation. Existing app Cron remains the safety fallback until scheduler handoff is completed."
+          echo "Dedicated sync Worker failed validation after the RPC stabilization window. The previous scheduler version was restored when available; the app Worker intentionally owns zero Cron Triggers."
           exit 1
