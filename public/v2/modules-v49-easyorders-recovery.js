@@ -1,4 +1,4 @@
-/* Easy Orders resilient gap recovery UI */
+/* Easy Orders resilient gap recovery UI — health/progress v49.2 */
 (function(){
   const K=window.KunActionsV23;if(!K)return;
   const labels={healthy:'مكتمل وسليم',catching_up:'جاري الاستكمال',rate_limited:'حد Easy Orders مؤقتًا',waiting_for_short_id:'بانتظار نقطة بداية',error:'خطأ في المزامنة'};
