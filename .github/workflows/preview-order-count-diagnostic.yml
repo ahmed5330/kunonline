@@ -1,4 +1,4 @@
-name: Preview order count diagnostic
+name: Preview Easy Orders business-date repair
 
 on:
   push:
@@ -11,12 +11,12 @@ permissions:
   contents: read
 
 jobs:
-  diagnose:
+  repair:
     runs-on: ubuntu-latest
     environment:
       name: preview
     steps:
-      - name: Read-only Preview D1 order counts
+      - name: Repair Easy Orders business dates in Preview D1 only
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -26,40 +26,41 @@ jobs:
           const accountId=process.env.CLOUDFLARE_ACCOUNT_ID;
           const token=process.env.CLOUDFLARE_API_TOKEN;
           const databaseId=process.env.PREVIEW_D1_ID;
-          if(!accountId||!token||!databaseId) throw new Error('Missing Preview diagnostic credentials');
+          if(!accountId||!token||!databaseId) throw new Error('Missing Preview repair credentials');
+          if(databaseId!=='31cd5cdf-fc01-42d7-ba1e-571f3dd58495') throw new Error('Refusing to run outside the pinned Preview D1 database');
           const url=`https://api.cloudflare.com/client/v4/accounts/${accountId}/d1/database/${databaseId}/query`;
           async function d1(sql,params=[]){
-            if(!/^\s*SELECT\b/i.test(sql)) throw new Error('Diagnostic is read-only: SELECT statements only');
             const r=await fetch(url,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({sql,params})});
             const p=await r.json();
             const x=p?.result?.[0];
             if(!r.ok||p.success===false||x?.success===false) throw new Error(`D1 query failed: ${JSON.stringify(p?.errors||x?.error||p).slice(0,1000)}`);
-            return x?.results||[];
+            return {rows:x?.results||[],changes:Number(x?.meta?.changes||0)};
           }
-          const operational="'pending','confirmed','preparing','shipped','deferred'";
-          const summary=await d1(`SELECT s.client_id,s.id AS store_id,s.name AS store_name,
-            COUNT(o.id) AS raw_total,
-            SUM(CASE WHEN o.id IS NOT NULL AND d.duplicate_order_id IS NULL THEN 1 ELSE 0 END) AS canonical_total,
-            SUM(CASE WHEN o.id IS NOT NULL AND o.state IN (${operational}) THEN 1 ELSE 0 END) AS raw_customer_service,
-            SUM(CASE WHEN o.id IS NOT NULL AND d.duplicate_order_id IS NULL AND o.state IN (${operational}) THEN 1 ELSE 0 END) AS canonical_customer_service,
-            SUM(CASE WHEN o.id IS NOT NULL AND date(COALESCE(o.date,o.created_at))=date('now','+3 hours') THEN 1 ELSE 0 END) AS raw_today,
-            SUM(CASE WHEN o.id IS NOT NULL AND d.duplicate_order_id IS NULL AND date(COALESCE(o.date,o.created_at))=date('now','+3 hours') THEN 1 ELSE 0 END) AS canonical_today
-            FROM stores s
-            LEFT JOIN orders o ON o.client_id=s.client_id AND o.store_id=s.id
-            LEFT JOIN order_duplicate_links d ON d.duplicate_order_id=o.id
-            WHERE s.status='active'
-            GROUP BY s.client_id,s.id,s.name
-            ORDER BY raw_total DESC,s.created_at`);
-          console.log('PREVIEW_ORDER_COUNT_SUMMARY='+JSON.stringify(summary));
-          const mismatched=summary.filter(x=>Number(x.raw_total)!==Number(x.canonical_total)||Number(x.raw_customer_service)!==Number(x.raw_total)||Number(x.raw_today)!==Number(x.canonical_today));
-          for(const s of mismatched){
-            const rows=await d1(`SELECT o.id,o.store_id,o.date,o.created_at,o.state,o.source,
-              CASE WHEN d.duplicate_order_id IS NULL THEN 0 ELSE 1 END AS is_duplicate,
-              d.canonical_order_id,d.match_mode,d.confidence,d.metadata_json
-              FROM orders o
-              LEFT JOIN order_duplicate_links d ON d.duplicate_order_id=o.id
-              WHERE o.client_id=? AND o.store_id=?
-              ORDER BY COALESCE(o.date,o.created_at),o.created_at,o.id`,[s.client_id,s.store_id]);
-            console.log('PREVIEW_ORDER_COUNT_DETAIL='+JSON.stringify({client_id:s.client_id,store_id:s.store_id,store_name:s.store_name,rows}));
+          function cairoDate(value){
+            const d=new Date(value);if(Number.isNaN(d.getTime()))return null;
+            const parts=new Intl.DateTimeFormat('en-US',{timeZone:'Africa/Cairo',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(d),g=t=>parts.find(x=>x.type===t)?.value||'';
+            return `${g('year')}-${g('month')}-${g('day')}`;
           }
+          const today=cairoDate(new Date());
+          const before=(await d1(`SELECT s.client_id,s.id store_id,s.name store_name,COUNT(o.id) canonical_today
+            FROM stores s LEFT JOIN orders o ON o.client_id=s.client_id AND o.store_id=s.id
+              AND date(COALESCE(o.date,o.created_at))=date(?)
+              AND NOT EXISTS (SELECT 1 FROM order_duplicate_links d WHERE d.duplicate_order_id=o.id)
+            WHERE s.status='active' GROUP BY s.client_id,s.id,s.name ORDER BY canonical_today DESC`,[today])).rows;
+          const source='المتجر (Easy Orders)';
+          const orders=(await d1(`SELECT id,client_id,store_id,date,created_at FROM orders WHERE source=? AND created_at LIKE '____-__-__T%' ORDER BY created_at`,[source])).rows;
+          const corrected=[];
+          for(const order of orders){
+            const expected=cairoDate(order.created_at);if(!expected||expected===order.date)continue;
+            const result=await d1('UPDATE orders SET date=? WHERE id=? AND client_id=? AND source=?',[expected,order.id,order.client_id,source]);
+            if(result.changes===1)corrected.push({id:order.id,store_id:order.store_id,from:order.date,to:expected});
+          }
+          const after=(await d1(`SELECT s.client_id,s.id store_id,s.name store_name,COUNT(o.id) canonical_today
+            FROM stores s LEFT JOIN orders o ON o.client_id=s.client_id AND o.store_id=s.id
+              AND date(COALESCE(o.date,o.created_at))=date(?)
+              AND NOT EXISTS (SELECT 1 FROM order_duplicate_links d WHERE d.duplicate_order_id=o.id)
+            WHERE s.status='active' GROUP BY s.client_id,s.id,s.name ORDER BY canonical_today DESC`,[today])).rows;
+          const previous=new Map(before.map(x=>[`${x.client_id}:${x.store_id}`,Number(x.canonical_today)||0]));
+          const changedStores=after.map(x=>({...x,before:previous.get(`${x.client_id}:${x.store_id}`)||0,after:Number(x.canonical_today)||0})).filter(x=>x.before!==x.after);
+          console.log('PREVIEW_BUSINESS_DATE_REPAIR='+JSON.stringify({today,scanned:orders.length,corrected:corrected.length,changedStores,correctedOrders:corrected}));
           NODE
