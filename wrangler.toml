@@ -1,7 +1,7 @@
 # SAFETY GUARD: default Wrangler config is intentionally NOT Preview or Production.
-# Local development must use `npm run dev` (pinned to wrangler.preview.toml in local mode).
+# Local development must use `npm run dev` with the explicit Preview config in local mode.
 # Shared Preview deployment must use `npm run deploy:preview`.
-# This prevents a bare `wrangler deploy` from replacing kunonline-preview code or Cron Triggers.
+# A bare `wrangler deploy` therefore targets only this isolated guard Worker and cannot replace shared sync code or Cron Triggers.
 name = "kunonline-local-dev-guard"
 main = "src/dev-config-guard.js"
 compatibility_date = "2026-08-23"
