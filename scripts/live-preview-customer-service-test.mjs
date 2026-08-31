@@ -131,9 +131,12 @@ try{
   const me=(await api(supportCookie,'/api/me')).data;
   if(me.role!=='support'||String(me.clientId)!==String(clientId))throw new Error(`Support session incorrect: ${JSON.stringify(me)}`);
 
-  // New store-scoped contract: operational boards require an explicit store selection.
-  const missingStore=await api(supportCookie,`/api/customer-service?${qs(clientId,null)}`,{ok:[400]});
-  if(missingStore.data?.code!=='STORE_SELECTION_REQUIRED')throw new Error(`Missing store selection was not rejected explicitly: ${JSON.stringify(missingStore.data)}`);
+  // Multi-store agents may work from one combined board, but only for stores explicitly assigned to them.
+  const combined=(await api(supportCookie,`/api/customer-service?${qs(clientId,null)}`)).data;
+  if(combined.selectedStoreId!==null)throw new Error(`Combined board unexpectedly selected one store: ${JSON.stringify(combined.selectedStoreId)}`);
+  if(combined.stores?.length!==2||!combined.stores.some(x=>String(x.id)===String(storeA))||!combined.stores.some(x=>String(x.id)===String(storeB)))throw new Error(`Combined board assignments missing: ${JSON.stringify(combined.stores)}`);
+  const combinedIds=new Set((combined.orders||[]).map(x=>String(x.id)));
+  if(!combinedIds.has(String(orderA))||!combinedIds.has(String(orderB))||combinedIds.has(String(orderC)))throw new Error(`Combined assigned-store isolation failed: ${JSON.stringify([...combinedIds])}`);
 
   let boardA=(await api(supportCookie,`/api/customer-service?${qs(clientId,storeA)}`)).data;
   if(boardA.selectedStoreId!==storeA)throw new Error(`Store A was not selected: ${JSON.stringify(boardA.selectedStoreId)}`);
@@ -177,7 +180,7 @@ try{
   const returned=boardB.orders.find(x=>String(x.id)===String(orderB));
   if(returned?.state!=='pending'||returned.returnedFromDeferredToday!==true)throw new Error(`Due deferred order did not return highlighted: ${JSON.stringify(returned)}`);
 
-  console.log(`Live Customer Service QA passed: explicit store selection, support A+B assignment with per-store isolation, hidden C, owner legacy bridge/delete governance, four stages, actor history, contact, AWB, WhatsApp, internal notes and deferred return (${clientId}).`);
+  console.log(`Live Customer Service QA passed: combined assigned-store board + per-store isolation, hidden C, owner legacy bridge/delete governance, four stages, actor history, contact, AWB, WhatsApp, internal notes and deferred return (${clientId}).`);
 }catch(error){
   primaryError=error;
 }finally{
