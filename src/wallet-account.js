@@ -28,7 +28,7 @@ export async function ensureWalletAccount(env,clientId){
   const preservedLegacyDebt=Math.max(0,round2(0-balance));
   await env.DB.prepare(`INSERT OR IGNORE INTO wallet_accounts
     (client_id,balance,currency,base_order_fee,min_order_fee,max_order_fee,credit_limit,billing_version,billing_start_rowid,status,updated_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?)`).bind(clientId,balance,'EGP',fee||2,2,5,preservedLegacyDebt,'legacy',null,'active',ts).run();
+    VALUES (?,?,?,?,?,?,?,?,?,?,?)`).bind(clientId,balance,'EGP',fee||2,0,0,preservedLegacyDebt,'legacy',null,'active',ts).run();
   row=await env.DB.prepare('SELECT * FROM wallet_accounts WHERE client_id=?').bind(clientId).first();
   return row;
 }
@@ -36,27 +36,25 @@ export async function ensureWalletAccount(env,clientId){
 export async function migrateLegacyBilling(env,clientId,actor='admin'){
   const account=await ensureWalletAccount(env,clientId);const legacy=await legacyClient(env,clientId);
   const legacyFee=Math.max(0,Number(legacy.client?.walletFeePerOrder)||0);
-  const base=legacyFee>0?Math.min(5,Math.max(2,legacyFee)):Math.min(5,Math.max(2,Number(account.base_order_fee)||2));
+  const base=legacyFee>0?legacyFee:Math.max(0,Number(account.base_order_fee)||2);
   const ts=now();
   const cutoff=await env.DB.prepare('SELECT COALESCE(MAX(rowid),0) n FROM orders WHERE client_id=?').bind(clientId).first();
   const requiredCredit=Math.max(Number(account.credit_limit)||0,Math.max(0,0-Number(account.balance||0)));
-  await env.DB.prepare(`UPDATE wallet_accounts SET base_order_fee=?,min_order_fee=2,max_order_fee=5,credit_limit=?,billing_version='v27',billing_start_rowid=?,status='active',updated_at=? WHERE client_id=?`)
+  await env.DB.prepare(`UPDATE wallet_accounts SET base_order_fee=?,min_order_fee=0,max_order_fee=0,credit_limit=?,billing_version='v27',billing_start_rowid=?,status='active',updated_at=? WHERE client_id=?`)
     .bind(base,requiredCredit,Number(cutoff?.n)||0,ts,clientId).run();
   await mirrorLegacyBalance(env,clientId,Number(account.balance)||0,{disableLegacyFee:true});
   await env.DB.prepare(`INSERT INTO audit_log (id,client_id,actor_email,action,entity_type,entity_id,metadata_json,created_at)
-    VALUES (?,?,?,?,?,?,?,?)`).bind(rid('AUD'),clientId,actor,'wallet.billing.migrate','wallet_account',clientId,JSON.stringify({from:'legacy',to:'v27',legacyFee,baseOrderFee:base}),ts).run();
+    VALUES (?,?,?,?,?,?,?,?)`).bind(rid('AUD'),clientId,actor,'wallet.billing.migrate','wallet_account',clientId,JSON.stringify({from:'legacy',to:'v27',legacyFee,baseOrderFee:base,feeCap:'none'}),ts).run();
   return (await import('./wallet-read.js')).walletSnapshot(env,clientId);
 }
 
 export async function configureWallet(env,clientId,patch={},actor='admin'){
   await ensureWalletAccount(env,clientId);
   const current=await env.DB.prepare('SELECT * FROM wallet_accounts WHERE client_id=?').bind(clientId).first();
-  const min=Math.max(0,Number(patch.minOrderFee??current.min_order_fee)||0);
-  const max=Math.max(min,Number(patch.maxOrderFee??current.max_order_fee)||min);
-  const base=Math.min(max,Math.max(min,Number(patch.baseOrderFee??current.base_order_fee)||min));
+  const base=Math.max(0,Number(patch.baseOrderFee??current.base_order_fee)||0);
   const credit=Math.max(0,Number(patch.creditLimit??current.credit_limit)||0);
   const status=['active','paused'].includes(patch.status)?patch.status:current.status;
-  await env.DB.prepare('UPDATE wallet_accounts SET base_order_fee=?,min_order_fee=?,max_order_fee=?,credit_limit=?,status=?,updated_at=? WHERE client_id=?')
-    .bind(base,min,max,credit,status,now(),clientId).run();
+  await env.DB.prepare('UPDATE wallet_accounts SET base_order_fee=?,min_order_fee=0,max_order_fee=0,credit_limit=?,status=?,updated_at=? WHERE client_id=?')
+    .bind(base,credit,status,now(),clientId).run();
   return (await import('./wallet-read.js')).walletSnapshot(env,clientId);
 }
