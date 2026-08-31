@@ -21,12 +21,13 @@
   function cardName(card){return card.querySelector('.cs-rich-name,.cs-customer')?.textContent?.trim()||'';}
   function cardPhone(card){return card.querySelector('.cs-phone')?.textContent?.trim()||'';}
   function cardStore(card){return card.querySelector('.cs-rich-store,.cs-store')?.textContent?.trim()||'';}
+  function cardOrderId(card){return card.dataset.csOrder||card.dataset.v47Order||'';}
   function operationalCards(){return [...document.querySelectorAll('#root .cs-order[data-cs-order],#root .ps-order[data-v47-order]')];}
   function operationalCustomerMatches(query){
     const q=norm(query);if(q.length<2)return[];const seen=new Set(),out=[];
     for(const card of operationalCards()){
       const name=cardName(card);if(!name||!norm(name).includes(q))continue;
-      const phone=cardPhone(card),store=cardStore(card),key=`${norm(name)}|${digits(phone)}|${norm(store)}`;
+      const phone=cardPhone(card),store=cardStore(card),phoneKey=digits(phone),identity=phoneKey||cardOrderId(card),key=`${norm(name)}|${identity}|${norm(store)}`;
       if(seen.has(key))continue;seen.add(key);out.push({name,phone,store,key});
     }
     return out.sort((a,b)=>norm(a.name).localeCompare(norm(b.name),'ar')||digits(a.phone).localeCompare(digits(b.phone)));
