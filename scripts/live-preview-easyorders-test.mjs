@@ -24,7 +24,7 @@ try{
   await cleanup();const hash=await hashPassword(adminPassword),ts=new Date().toISOString();
   await d1('INSERT INTO users (id,email,name,password,role,client_id,status,created_at,last_login) VALUES (?,?,?,?,?,NULL,?,?,NULL)',[adminId,adminEmail,'CI Easy Orders Admin',hash,'admin','active',ts]);
   const login=await api('/api/login',{method:'POST',cookie:'',body:{email:adminEmail,password:adminPassword}});adminCookie=(login.headers.get('set-cookie')||'').split(';')[0];if(!adminCookie)throw new Error('Temporary admin cookie missing');
-  const version=(await api('/api/preview/version')).data;if(version.build!=='preview-v34-2026-08-30-meta-ads-expert'||version.entrypoint!=='index-commerce-v34.js')throw new Error(`Expected current v34 Preview, got ${JSON.stringify(version)}`);
+  const version=(await api('/api/preview/version')).data;if(!String(version.build||'').startsWith('preview-v34-')||version.entrypoint!=='index-commerce-v34.js'||version.environment!=='preview')throw new Error(`Expected current v34 Preview, got ${JSON.stringify(version)}`);
   const rows=await d1("SELECT id,client_id,external_store_id,config_json,updated_at FROM store_connections WHERE provider='easyorders' AND status='connected' ORDER BY updated_at DESC LIMIT 1");
   if(!rows.length){console.log('Live Easy Orders webhook QA: legacy route disabled; no connected Easy Orders Preview row exists, so scoped live probe and gap recovery were skipped.');}
   else{
