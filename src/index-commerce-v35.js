@@ -73,7 +73,12 @@ async function fetchV35(request,env,ctx){
   const url=new URL(request.url),path=url.pathname,method=request.method.toUpperCase();
   try{
     if(path==='/api/preview/version'&&method==='GET')return json({ok:true,build:BUILD,environment:env.APP_ENV||'unknown',entrypoint:'index-commerce-v35.js'});
-    if(path==='/api/dashboard'&&method==='GET'){if(!hasAuth(request))return authRequired();return dashboard(request,env,ctx);}
+    if(path==='/api/dashboard'&&method==='GET'){
+      if(!hasAuth(request))return authRequired();
+      const rawFrom=text(url.searchParams.get('from')),rawTo=text(url.searchParams.get('to'));
+      if(rawFrom!=='beginning'&&isoDate.test(rawFrom)&&isoDate.test(rawTo)&&rawFrom>rawTo)return json({error:'بداية الفترة يجب أن تكون قبل نهايتها',code:'DATE_RANGE_INVALID',path,method},400);
+      return dashboard(request,env,ctx);
+    }
     if(path==='/api/orders/dedupe/reconcile'&&method==='POST'){if(!hasAuth(request))return authRequired();return reconcileRoute(request,env,ctx);}
     if(path==='/api/orders/sheet-import'&&method==='POST'){if(!hasAuth(request))return authRequired();return sheetImport(request,env,ctx);}
     const webhook=path.match(/^\/webhooks\/easyorders\/([^/]+)\/[^/]+\/?$/);if(webhook&&method==='POST')return easyOrdersWebhook(request,env,ctx,decodeURIComponent(webhook[1]));
