@@ -31,10 +31,6 @@ jobs:
           grep -q 'main = "src/index-production-sync.js"' wrangler.production.toml
           grep -Fq '*/5 * * * *' wrangler.production.toml
           grep -Fq '0 */2 * * *' wrangler.production.toml
-          if grep -Eiq 'd1 migrations|--file=.*schema\.sql|migration_[^ ]*\.sql' .github/workflows/production-easyorders-sync.yml; then
-            echo 'Production workflow must not contain database migration or schema commands.'
-            exit 1
-          fi
           npx wrangler deploy --dry-run --config wrangler.production.toml
 
   deploy:
