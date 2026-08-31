@@ -27,5 +27,5 @@ assert.equal(typeof reconcileEasyOrdersOrders,'function');assert.equal(typeof ea
 assert.equal(easyOrdersReconciliationDefaults.maxRequests,30);assert.ok(easyOrdersReconciliationDefaults.lookback>=80);assert.ok(easyOrdersReconciliationDefaults.aheadMisses>=3);
 assert.ok(loader.includes('/v2/modules-v30-order-sync.js?v=30.2'),'order sync UI cache bust not loaded');
 assert.ok(validator.includes('easyOrdersStoreId')&&validator.includes('externalStoreId'),'Easy Orders validation must bind the external store id when discoverable');
-assert.match(preview,/main\s*=\s*"src\/index-commerce-v3[34]\.js"/,'Preview must use the current additive wrapper over v32/v31 Easy Orders routes');
+assert.match(preview,/main\s*=\s*"src\/index-commerce-v3[345]\.js"/,'Preview must use the current additive wrapper over v32/v31 Easy Orders routes');
 console.log('Commerce order sync contract passed: scoped webhook + persisted Short ID + resilient gap recovery + health/progress status + five-minute reconciliation + manual repair are wired.');
