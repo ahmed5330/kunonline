@@ -53,6 +53,8 @@ async function canonicalDashboardData(env,{clientId,storeId=null,from=null,to=nu
 }
 async function dashboard(request,env,ctx){
   const url=new URL(request.url),me=await currentUser(request,env,ctx);requirePermission(me,'analytics','read');const clientId=resolveTenant(me,url.searchParams.get('clientId')),scope=await resolveStoreScope(env,me,clientId,text(url.searchParams.get('storeId'))||null,{write:false}),storeId=scope.storeId||null;
+  const rawFrom=text(url.searchParams.get('from')),rawTo=text(url.searchParams.get('to'));
+  if(rawFrom!=='beginning'&&isoDate.test(rawFrom)&&isoDate.test(rawTo)&&rawFrom>rawTo)throw Object.assign(new Error('بداية الفترة يجب أن تكون قبل نهايتها'),{status:400,code:'DATE_RANGE_INVALID'});
   await reconcileEasyOrdersDuplicates(env,{clientId,storeId,limit:6000});
   let from=url.searchParams.get('from');if(from==='beginning')from=await canonicalBeginning(env,clientId,storeId);
   let data=await canonicalDashboardData(env,{clientId,storeId,from,to:url.searchParams.get('to')}),counts=await canonicalOrderCounts(env,{clientId,storeId});
