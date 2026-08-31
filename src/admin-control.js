@@ -16,8 +16,8 @@ async function hashPassword(password){
 }
 const clean=v=>String(v??'').trim();
 const normalizeEmail=v=>clean(v).toLowerCase();
-const clamp=(v,min,max)=>Math.min(max,Math.max(min,Number(v)||min));
 const allowedPlans=new Set(['trial','starter','growth','pro','enterprise']);
+const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 
 async function legacyStateRow(env){
   const row=await env.DB.prepare('SELECT json,updated_at FROM state WHERE id=1').first();
@@ -25,21 +25,28 @@ async function legacyStateRow(env){
   try{return {row,state:JSON.parse(row.json)}}catch{return {row,state:{agency:{name:'كن أونلاين',adminEmail:''},clients:[],entries:[],funding:[]}}}
 }
 async function updateLegacyClient(env,clientId,mutator){
-  for(let attempt=0;attempt<4;attempt++){
+  let lastSeen=null;
+  for(let attempt=0;attempt<12;attempt++){
     const {row,state}=await legacyStateRow(env);state.clients=Array.isArray(state.clients)?state.clients:[];
     let client=state.clients.find(x=>String(x.id)===String(clientId));
     if(!client){client={id:clientId};state.clients.push(client)}
-    mutator(client,state);const ts=now();
+    mutator(client,state);const ts=now();lastSeen=row?.updated_at||null;
     if(row){
       const result=await env.DB.prepare('UPDATE state SET json=?,updated_at=? WHERE id=1 AND updated_at=?').bind(JSON.stringify(state),ts,row.updated_at||'').run();
-      if(Number(result?.meta?.changes||0)>0)return true;
+      if(Number(result?.meta?.changes||0)>0){
+        const verified=await env.DB.prepare('SELECT json FROM state WHERE id=1').first();
+        try{if((JSON.parse(verified?.json||'{}').clients||[]).some(x=>String(x.id)===String(clientId)))return true;}catch{}
+      }
     }else{
-      try{await env.DB.prepare('INSERT INTO state (id,json,updated_at) VALUES (1,?,?)').bind(JSON.stringify(state),ts).run();return true}catch{}
+      try{
+        await env.DB.prepare('INSERT INTO state (id,json,updated_at) VALUES (1,?,?)').bind(JSON.stringify(state),ts).run();
+        return true;
+      }catch{}
     }
+    await sleep(Math.min(120,8*(attempt+1)));
   }
-  throw Object.assign(new Error('تعذر مزامنة ملف العميل، حاول مرة أخرى'),{status:409,code:'CLIENT_STATE_CONFLICT'});
+  throw Object.assign(new Error('تعذر مزامنة ملف العميل بعد عدة محاولات بسبب تحديث متزامن'),{status:409,code:'CLIENT_STATE_CONFLICT',lastSeen});
 }
-
 
 export function requireAdmin(me){if(me?.role!=='admin')throw Object.assign(new Error('المسار متاح لإدارة Kun Online فقط'),{status:403,code:'ADMIN_ONLY'});}
 
@@ -92,7 +99,6 @@ export async function updateClientModules(env,clientId,body,actor){return setTen
 export async function updateClientBilling(env,clientId,body,actor){return configureWallet(env,clientId,body,actor?.email||actor?.uid||'admin');}
 export async function migrateClientBilling(env,clientId,actor){return migrateLegacyBilling(env,clientId,actor?.email||actor?.uid||'admin');}
 
-
 export async function createAdminClient(env,body={},actor={}){
   const businessName=clean(body.businessName||body.name),ownerName=clean(body.ownerName),email=normalizeEmail(body.email||body.ownerEmail),phone=clean(body.phone);
   const password=String(body.password||''),storeName=clean(body.storeName)||businessName;
@@ -104,7 +110,7 @@ export async function createAdminClient(env,body={},actor={}){
   if(existing)throw Object.assign(new Error('البريد الإلكتروني مستخدم بالفعل'),{status:409,code:'EMAIL_EXISTS'});
   const clientId=rid('CLI'),storeId=rid('STR'),ownerId=crypto.randomUUID(),subscriptionId=rid('SUB'),ts=now();
   const plan=allowedPlans.has(String(body.plan||''))?String(body.plan):'trial',currency=clean(body.currency)||'EGP',timezone=clean(body.timezone)||'Africa/Cairo';
-  const baseOrderFee=clamp(body.baseOrderFee??2,2,5),moduleInput=body.modules&&typeof body.modules==='object'?body.modules:{};
+  const baseOrderFee=Math.max(0,Number(body.baseOrderFee??2)||0),moduleInput=body.modules&&typeof body.modules==='object'?body.modules:{};
   const passwordHash=await hashPassword(password),actorName=actor?.email||actor?.uid||'admin';
   const statements=[
     env.DB.prepare('INSERT INTO tenant_settings (client_id,display_name,timezone,currency,locale,plan,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)').bind(clientId,businessName,timezone,currency,'ar-EG',plan,'active',ts,ts),
@@ -112,7 +118,7 @@ export async function createAdminClient(env,body={},actor={}){
     env.DB.prepare('INSERT INTO stores (id,client_id,name,code,currency,timezone,status,is_default,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)').bind(storeId,clientId,storeName,'MAIN',currency,timezone,'active',1,ts,ts),
     env.DB.prepare('INSERT INTO users (id,email,name,password,role,client_id,status,created_at,last_login) VALUES (?,?,?,?,?,?,?,?,NULL)').bind(ownerId,email,ownerName,passwordHash,'client',clientId,'active',ts),
     env.DB.prepare('INSERT INTO user_store_access (id,client_id,user_id,store_id,role,created_at) VALUES (?,?,?,?,?,?)').bind(rid('USA'),clientId,ownerId,storeId,'owner',ts),
-    env.DB.prepare(`INSERT INTO wallet_accounts (client_id,balance,currency,base_order_fee,min_order_fee,max_order_fee,credit_limit,billing_version,billing_start_rowid,status,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`).bind(clientId,0,currency,baseOrderFee,2,5,0,'v27',0,'active',ts)
+    env.DB.prepare(`INSERT INTO wallet_accounts (client_id,balance,currency,base_order_fee,min_order_fee,max_order_fee,credit_limit,billing_version,billing_start_rowid,status,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`).bind(clientId,0,currency,baseOrderFee,0,0,0,'v27',0,'active',ts)
   ];
   for(const moduleKey of MODULES){
     const input=moduleInput[moduleKey],enabled=input===undefined?1:(typeof input==='object'?(input.enabled===false?0:1):(input?1:0));
@@ -121,13 +127,8 @@ export async function createAdminClient(env,body={},actor={}){
   }
   statements.push(env.DB.prepare('INSERT INTO audit_log (id,client_id,store_id,actor_user_id,actor_email,action,entity_type,entity_id,metadata_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)').bind(rid('AUD'),clientId,storeId,actor?.uid||null,actorName,'platform.client.create','tenant',clientId,JSON.stringify({businessName,ownerEmail:email,plan,storeId}),ts));
   await env.DB.batch(statements);
-  try{
-    await updateLegacyClient(env,clientId,c=>Object.assign(c,{id:clientId,name:businessName,status:'active',plan,phone,ownerName,ownerEmail:email,walletBalance:0,walletFeePerOrder:0,createdAt:ts}));
-  }catch(error){
-    // Relational tables remain source of truth. Surface a warning without exposing credentials.
-    return {ok:true,clientId,storeId,ownerId,ownerEmail:email,warning:error.code||'LEGACY_STATE_SYNC_PENDING'};
-  }
-  return {ok:true,clientId,storeId,ownerId,ownerEmail:email,plan,status:'active'};
+  await updateLegacyClient(env,clientId,c=>Object.assign(c,{id:clientId,name:businessName,status:'active',plan,phone,ownerName,ownerEmail:email,walletBalance:0,walletFeePerOrder:0,createdAt:ts}));
+  return {ok:true,clientId,storeId,ownerId,ownerEmail:email,plan,status:'active',baseOrderFee,feeCap:null};
 }
 
 export async function updateClientStatus(env,clientId,body={},actor={}){
