@@ -1,4 +1,4 @@
-# Preview resources only.
+# Preview application resources only. Scheduled sync ownership lives in wrangler.sync.preview.toml.
 name = "kunonline-preview"
 main = "src/index-commerce-v34.js"
 compatibility_date = "2026-08-23"
@@ -14,7 +14,7 @@ database_id = "31cd5cdf-fc01-42d7-ba1e-571f3dd58495"
 migrations_dir = "migrations"
 
 [triggers]
-crons = ["*/5 * * * *", "0 */2 * * *"]
+crons = []
 
 [vars]
 APP_ENV = "preview"
