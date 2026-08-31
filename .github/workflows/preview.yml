@@ -60,10 +60,22 @@ jobs:
             echo "Run became stale before deploy. Run=$GITHUB_SHA Latest=$latest. Deploy skipped."
           fi
 
-      - name: Capture exact Preview rollback version
+      - name: Capture verified healthy Preview rollback version
         id: rollback_base
         if: steps.deploy_ownership.outputs.is_latest == 'true'
         run: |
+          base_url="https://kunonline-preview.mr-a-mnaa.workers.dev"
+          known_healthy="30d9fbdb-cea7-4a88-9ba9-db2fcd92ae41"
+          health="$(curl -sS --max-time 10 "$base_url/healthz" || true)"
+          healthy="$(printf '%s' "$health" | node -e '
+            let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{
+              try{const p=JSON.parse(raw);if(p?.ok===true&&p?.environment==="preview"&&p?.database==="reachable")process.stdout.write("yes");}catch{}
+            });')"
+          if [ "$healthy" != "yes" ]; then
+            echo "Current Preview is unhealthy; restoring last known healthy Preview version before the new deployment."
+            npx wrangler versions deploy "$known_healthy@100%" --yes --config wrangler.preview.toml --message "Recover known healthy Preview baseline before CI deployment"
+            node scripts/preview-health-check.mjs "$base_url"
+          fi
           status="$(npx wrangler deployments status --config wrangler.preview.toml --json)"
           version="$(printf '%s' "$status" | node -e '
             let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{
@@ -80,7 +92,7 @@ jobs:
             });')"
           test -n "$version"
           echo "version_id=$version" >> "$GITHUB_OUTPUT"
-          echo "Captured current Preview version for exact rollback: $version"
+          echo "Captured verified healthy Preview version for exact rollback: $version"
 
       - name: Deploy preview Worker
         id: deploy
@@ -206,12 +218,12 @@ jobs:
             echo "Preview changed during QA. Expected=$expected Current=$current. Automatic rollback suppressed."
           fi
 
-      - name: Restore exact Preview version after failed validation
+      - name: Restore exact verified Preview version after failed validation
         if: always() && steps.rollback_ownership.outputs.is_latest == 'true' && steps.rollback_worker_ownership.outputs.is_current == 'true' && (steps.smoke.outcome == 'failure' || steps.live.outcome == 'failure' || steps.team_live.outcome == 'failure' || steps.customer_service_live.outcome == 'failure' || steps.easyorders_live.outcome == 'failure' || steps.dashboard_live.outcome == 'failure' || steps.browser.outcome == 'failure')
         run: |
           previous="${{ steps.rollback_base.outputs.version_id }}"
           test -n "$previous"
-          npx wrangler versions deploy "$previous@100%" --yes --config wrangler.preview.toml --message "Automatic exact Preview restore after failed validation"
+          npx wrangler versions deploy "$previous@100%" --yes --config wrangler.preview.toml --message "Automatic exact verified Preview restore after failed validation"
 
       - name: Verify restored Preview health
         if: always() && steps.rollback_ownership.outputs.is_latest == 'true' && steps.rollback_worker_ownership.outputs.is_current == 'true' && (steps.smoke.outcome == 'failure' || steps.live.outcome == 'failure' || steps.team_live.outcome == 'failure' || steps.customer_service_live.outcome == 'failure' || steps.easyorders_live.outcome == 'failure' || steps.dashboard_live.outcome == 'failure' || steps.browser.outcome == 'failure')
@@ -220,7 +232,7 @@ jobs:
       - name: Mark failed owned deployment
         if: always() && steps.rollback_ownership.outputs.is_latest == 'true' && steps.rollback_worker_ownership.outputs.is_current == 'true' && (steps.smoke.outcome == 'failure' || steps.live.outcome == 'failure' || steps.team_live.outcome == 'failure' || steps.customer_service_live.outcome == 'failure' || steps.easyorders_live.outcome == 'failure' || steps.dashboard_live.outcome == 'failure' || steps.browser.outcome == 'failure')
         run: |
-          echo "The latest owned Preview deployment failed validation and the exact previous version was restored."
+          echo "The latest owned Preview deployment failed validation and the exact verified previous version was restored."
           exit 1
 
       - name: Mark Preview ownership loss
