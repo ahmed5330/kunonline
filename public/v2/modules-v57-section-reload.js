@@ -1,4 +1,4 @@
-/* Kun Online v57 — one reload control per main workspace section, without browser-page reload. */
+/* Kun Online v57.1 — one reload control per main workspace section, without browser-page reload. */
 (function(){
   const K=window.KunActionsV23||{};
   const root=document.getElementById('root');
@@ -6,7 +6,6 @@
   const registry=new Map();
   let injecting=false;
 
-  const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
   const notify=message=>K.notify?K.notify(message):(window.showToast?.(message)||console.log(message));
   const activeNav=()=>document.querySelector('.nav button.active[data-view]');
   const activeView=()=>activeNav()?.dataset.view||'';
@@ -19,6 +18,7 @@
       .kun-section-reload .kun-reload-icon{display:inline-block;font-size:15px;line-height:1}
       .kun-section-reload.is-loading{opacity:.72;cursor:wait}
       .kun-section-reload.is-loading .kun-reload-icon{animation:kunReloadSpin .8s linear infinite}
+      .kun-section-reload-head{margin-bottom:12px;min-height:40px}
       @keyframes kunReloadSpin{to{transform:rotate(-360deg)}}
       @media(max-width:640px){.kun-section-reload .kun-reload-text{display:none}.kun-section-reload{min-width:38px;padding-inline:10px}}
     `;document.head.appendChild(style);
@@ -28,7 +28,8 @@
     const direct=[...root.children];
     for(const child of direct)if(child.matches?.('.page-head,.dash-hero'))return child;
     for(const child of direct){const head=[...child.children].find(node=>node.matches?.('.page-head,.dash-hero'));if(head)return head;}
-    return root.querySelector('.page-head,.dash-hero');
+    const nested=root.querySelector('.page-head,.dash-hero');if(nested)return nested;
+    const fallback=document.createElement('div');fallback.className='page-head kun-section-reload-head';fallback.dataset.kunReloadFallbackHead='1';fallback.innerHTML='<div class="spacer"></div>';root.prepend(fallback);return fallback;
   }
 
   function nativeReload(head){
@@ -73,7 +74,8 @@
     if(view==='orders'||view==='customers'){
       if(await reloadBaseState())return;
     }
-    const nav=document.querySelector(`.nav button[data-view="${CSS.escape(String(view||''))}"]`)||activeNav();
+    const escaped=window.CSS?.escape?CSS.escape(String(view||'')):String(view||'').replace(/"/g,'\\"');
+    const nav=document.querySelector(`.nav button[data-view="${escaped}"]`)||activeNav();
     if(nav){const settled=waitForRootSettled();nav.click();await settled;return;}
     if(await reloadBaseState())return;
     throw new Error('تعذر إعادة تحميل هذا القسم');
@@ -93,7 +95,7 @@
   function ensureButton(){
     if(injecting)return;injecting=true;
     try{
-      ensureStyle();const head=pageHead();if(!head)return;
+      ensureStyle();const head=pageHead();
       const native=nativeReload(head);if(native){decorateNative(native);return;}
       if(head.querySelector('[data-kun-section-reload="1"]'))return;
       const button=document.createElement('button');button.type='button';button.className='btn soft kun-section-reload';button.dataset.kunSectionReload='1';button.title='تحديث بيانات هذا القسم فقط';button.setAttribute('aria-label','تحديث بيانات هذا القسم فقط');button.innerHTML='<span class="kun-reload-icon" aria-hidden="true">↻</span><span class="kun-reload-text">تحديث</span>';button.onclick=()=>clickReload(button);
@@ -109,8 +111,8 @@
     register:(view,handler)=>{if(view&&typeof handler==='function')registry.set(String(view),handler);},
     ensure:ensureButton,
     activeView,
-    version:'57.0'
+    version:'57.1'
   };
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',ensureButton,{once:true});else setTimeout(ensureButton,0);
-  document.documentElement.dataset.sectionReload='v57-ready';
+  document.documentElement.dataset.sectionReload='v57.1-ready';
 })();
