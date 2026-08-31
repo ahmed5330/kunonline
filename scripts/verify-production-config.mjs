@@ -12,11 +12,13 @@ const [config, deployWorkflow, rollbackWorkflow] = await Promise.all([
 
 const requiredConfig = [
   ['Worker name', /^name\s*=\s*"kunonline"\s*$/m],
-  ['Worker entry point', /^main\s*=\s*"src\/index\.js"\s*$/m],
+  ['Production sync-safe entry point', /^main\s*=\s*"src\/index-production-sync\.js"\s*$/m],
   ['Production environment marker', /^APP_ENV\s*=\s*"production"\s*$/m],
   ['D1 binding', /^binding\s*=\s*"DB"\s*$/m],
   ['Production D1 name', /^database_name\s*=\s*"kunonline"\s*$/m],
   ['Production D1 ID', /^database_id\s*=\s*"c426601d-182f-486e-a5c1-bb1bca0ecb0b"\s*$/m],
+  ['Easy Orders five-minute recovery Cron', /^crons\s*=\s*\[[^\]]*"\*\/5 \* \* \* \*"[^\]]*\]\s*$/m],
+  ['Legacy two-hour shipping Cron', /^crons\s*=\s*\[[^\]]*"0 \*\/2 \* \* \*"[^\]]*\]\s*$/m],
 ];
 
 for (const [label, pattern] of requiredConfig) {
@@ -56,4 +58,4 @@ if (!/wrangler\s+rollback\s+"\$\{\{ inputs\.version_id \}\}"\s+--config\s+wrangl
   throw new Error('Production rollback safety check failed: rollback is not pinned to a requested version and Production config.');
 }
 
-console.log('Production deploy and rollback safety checks passed. No database command is present.');
+console.log('Production deploy and rollback safety checks passed. Easy Orders recovery is additive, and no database migration command is present.');
