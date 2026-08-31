@@ -1,7 +1,9 @@
 import { readFileSync } from 'node:fs';
 const config=readFileSync(new URL('../wrangler.preview.toml',import.meta.url),'utf8');
+const syncConfig=readFileSync(new URL('../wrangler.sync.preview.toml',import.meta.url),'utf8');
 const defaultConfig=readFileSync(new URL('../wrangler.toml',import.meta.url),'utf8');
 const workflow=readFileSync(new URL('../.github/workflows/preview.yml',import.meta.url),'utf8');
+const syncWorkflow=readFileSync(new URL('../.github/workflows/sync-preview.yml',import.meta.url),'utf8');
 const packageJson=readFileSync(new URL('../package.json',import.meta.url),'utf8');
 const cronVerifier=readFileSync(new URL('./verify-cloudflare-crons.mjs',import.meta.url),'utf8');
 const d1Block=config.match(/\[\[d1_databases\]\]([\s\S]*?)(?=\n\[|$)/)?.[1]||'';
@@ -10,26 +12,32 @@ const value=(source,key)=>source.match(new RegExp(`^\\s*${key}\\s*=\\s*"([^"]+)"
 const actual={worker:value(config,'name'),entrypoint:value(config,'main'),database:value(d1Block,'database_name'),databaseId:value(d1Block,'database_id'),binding:value(d1Block,'binding')};
 for(const [key,expectedValue] of Object.entries(expected))if(actual[key]!==expectedValue)throw new Error(`Preview safety check failed: ${key} must be ${expectedValue}; got ${actual[key]??'missing'}`);
 if(/database_name\s*=\s*"kunonline"/m.test(config)||/^name\s*=\s*"kunonline"/m.test(config))throw new Error('Preview safety check failed: Production resource detected in Preview config.');
-if(!/crons\s*=\s*\[[^\]]*"\*\/5 \* \* \* \*"[^\]]*"0 \*\/2 \* \* \*"[^\]]*\]/m.test(config))throw new Error('Preview safety check failed: expected Easy Orders five-minute and Meta/shipping two-hour crons are missing.');
+if(!/\[triggers\][\s\S]*?crons\s*=\s*\[\s*\]/m.test(config))throw new Error('Preview safety check failed: app Worker must own zero Cron Triggers after sync scheduler handoff.');
+if(value(syncConfig,'name')!=='kunonline-sync-preview')throw new Error('Preview safety check failed: dedicated sync Worker must be kunonline-sync-preview.');
+if(!/\[\[services\]\][\s\S]*binding\s*=\s*"APP_SYNC"[\s\S]*service\s*=\s*"kunonline-preview"[\s\S]*entrypoint\s*=\s*"SyncEntrypoint"/m.test(syncConfig))throw new Error('Preview safety check failed: dedicated sync Worker must call the app through private SyncEntrypoint RPC.');
+if(!/crons\s*=\s*\[[^\]]*"\*\/5 \* \* \* \*"[^\]]*"0 \*\/2 \* \* \*"[^\]]*\]/m.test(syncConfig))throw new Error('Preview safety check failed: dedicated sync Worker must own the Easy Orders five-minute and Meta/shipping two-hour schedules.');
+if(/\[\[d1_databases\]\]|database_name\s*=|database_id\s*=/m.test(syncConfig))throw new Error('Preview safety check failed: scheduler Worker must not bind D1 directly.');
 
 const defaultName=value(defaultConfig,'name'),defaultMain=value(defaultConfig,'main');
 if(defaultName!=='kunonline-local-dev-guard')throw new Error(`Preview safety check failed: bare Wrangler config must target kunonline-local-dev-guard; got ${defaultName||'missing'}`);
 if(defaultMain!=='src/dev-config-guard.js')throw new Error(`Preview safety check failed: bare Wrangler config must use src/dev-config-guard.js; got ${defaultMain||'missing'}`);
 if(/\bkunonline-preview\b|database_id\s*=\s*"31cd5cdf-fc01-42d7-ba1e-571f3dd58495"|database_name\s*=\s*"kunonline(?:-preview)?"|\[\[d1_databases\]\]|\bcrons\s*=/m.test(defaultConfig))throw new Error('Preview safety check failed: default wrangler.toml must not be able to target shared Preview/Production resources or Cron Triggers.');
 if(!/"dev"\s*:\s*"wrangler dev --config wrangler\.preview\.toml"/.test(packageJson))throw new Error('Preview safety check failed: npm run dev must explicitly select wrangler.preview.toml instead of the guarded default config.');
-if(!/"dev:scheduled"\s*:\s*"wrangler dev --config wrangler\.preview\.toml --test-scheduled"/.test(packageJson))throw new Error('Preview safety check failed: scheduled local testing must explicitly use the Preview config.');
-if(!/"check:preview-crons"\s*:\s*"node scripts\/verify-cloudflare-crons\.mjs kunonline-preview/.test(packageJson))throw new Error('Preview safety check failed: live Cloudflare Cron verification command is missing.');
-if(!/"smoke:preview"\s*:\s*"npm run check:preview-crons &&/.test(packageJson))throw new Error('Preview safety check failed: Preview smoke must verify deployed Cron integrity before functional QA.');
-if(!/workers\/scripts\/\$\{encodeURIComponent\(worker\)\}\/schedules/.test(cronVerifier)||!/CLOUDFLARE_API_TOKEN/.test(cronVerifier))throw new Error('Preview safety check failed: Cron verifier must query the Cloudflare Worker schedules API with CI credentials.');
+if(!/"dev:scheduled"\s*:\s*"wrangler dev --config wrangler\.sync\.preview\.toml --test-scheduled"/.test(packageJson))throw new Error('Preview safety check failed: scheduled local testing must use the dedicated sync scheduler config.');
+if(!/"check:preview-crons"\s*:\s*"node scripts\/verify-cloudflare-crons\.mjs kunonline-preview --none"/.test(packageJson))throw new Error('Preview safety check failed: app Worker live Cron check must require zero schedules.');
+if(!/"check:sync-preview-crons"\s*:\s*"node scripts\/verify-cloudflare-crons\.mjs kunonline-sync-preview/.test(packageJson))throw new Error('Preview safety check failed: dedicated scheduler live Cron verification command is missing.');
+if(!/"smoke:preview"\s*:\s*"npm run check:preview-crons && npm run check:sync-preview-crons && node scripts\/smoke-sync-preview\.mjs/.test(packageJson))throw new Error('Preview safety check failed: Preview smoke must prove app has zero crons and scheduler Cron/RPC health before functional QA.');
+if(!/workers\/scripts\/\$\{encodeURIComponent\(worker\)\}\/schedules/.test(cronVerifier)||!/CLOUDFLARE_API_TOKEN/.test(cronVerifier)||!/--none/.test(cronVerifier))throw new Error('Preview safety check failed: Cron verifier must query live Cloudflare schedules and support explicit zero-Cron checks.');
 for(const script of ['db:init','db:init-local','db:commerce','db:commerce-local'])if(!new RegExp(`"${script.replace(':','\\:')}"\\s*:\\s*"[^"]*--config wrangler\\.preview\\.toml`).test(packageJson))throw new Error(`Preview safety check failed: ${script} must be pinned to wrangler.preview.toml.`);
 
-const automation=`${workflow}\n${packageJson}`;
+const automation=`${workflow}\n${syncWorkflow}\n${packageJson}`;
 const forbiddenAutomation=[['Production Wrangler config',/wrangler\.production\.toml/i],['Production D1 command',/\bwrangler\s+d1\b[^\n]*\bkunonline\b(?!-preview)/i],['Production database script',/"db:[^"]*production[^"]*"\s*:/i],['Cloudflare secret mutation',/\bwrangler\s+secret\s+(?:put|bulk|delete)\b/i]];
 for(const [label,pattern] of forbiddenAutomation)if(pattern.test(automation))throw new Error(`Preview safety check failed: ${label} is forbidden.`);
 if(!/environment:\s*\n\s*name:\s*preview\b/m.test(workflow))throw new Error('Preview safety check failed: workflow must use the preview GitHub Environment.');
 if(!/npm run db:migrate:preview/.test(workflow))throw new Error('Preview safety check failed: Preview migration step is missing.');
 if(!/wrangler d1 migrations apply kunonline-preview --remote --config wrangler\.preview\.toml/.test(packageJson))throw new Error('Preview safety check failed: migration command is not pinned to Preview D1/config.');
 if(!/wrangler deploy --config wrangler\.preview\.toml/.test(packageJson))throw new Error('Preview safety check failed: deployment is not pinned to Preview config.');
+if(!/wrangler deploy --config wrangler\.sync\.preview\.toml/.test(packageJson))throw new Error('Preview safety check failed: sync deployment is not pinned to dedicated scheduler config.');
 if(!/wrangler rollback --config wrangler\.preview\.toml --message/.test(packageJson))throw new Error('Preview safety check failed: fallback rollback command is not pinned to Preview config.');
 if(!/git ls-remote origin refs\/heads\/develop\/ux-system-upgrade/.test(workflow))throw new Error('Preview safety check failed: stale-run branch ownership guard is missing.');
 if(!/id:\s*ownership[\s\S]*if:\s*steps\.ownership\.outputs\.is_latest == 'true'[\s\S]*npm run db:migrate:preview/.test(workflow))throw new Error('Preview safety check failed: Preview migrations are not guarded by latest-HEAD ownership.');
@@ -47,5 +55,6 @@ if(!failureCondition.test(workflow))throw new Error('Preview safety check failed
 if(!/name:\s*Confirm Worker ownership before rollback[\s\S]*id:\s*rollback_worker_ownership[\s\S]*wrangler deployments status --config wrangler\.preview\.toml --json[\s\S]*steps\.deploy\.outputs\.version_id[\s\S]*Automatic rollback suppressed/.test(workflow))throw new Error('Preview safety check failed: rollback must verify the active Worker still belongs to this run.');
 if(!/name:\s*Restore exact Preview version after failed validation[\s\S]*steps\.rollback_worker_ownership\.outputs\.is_current == 'true'[\s\S]*steps\.rollback_base\.outputs\.version_id[\s\S]*wrangler versions deploy "\$previous@100%" --yes --config wrangler\.preview\.toml/.test(workflow))throw new Error('Preview safety check failed: rollback must restore the exact captured Preview version.');
 if(!/name:\s*Mark Preview ownership loss[\s\S]*steps\.rollback_worker_ownership\.outputs\.is_current == 'false'[\s\S]*rollback was intentionally suppressed/.test(workflow))throw new Error('Preview safety check failed: mid-QA Worker replacement must fail safely without rollback.');
+if(!/name:\s*Sync Preview CI\/CD/.test(syncWorkflow)||!/npm run smoke:sync-preview/.test(syncWorkflow))throw new Error('Preview safety check failed: independent sync scheduler CI/CD and live smoke are required.');
 if(!/"wrangler"\s*:\s*"4\.125\.0"/.test(packageJson))throw new Error('Preview safety check failed: Wrangler must be pinned to 4.125.0.');
-console.log('Preview config and workflow safety checks passed, including default-deploy guard, live Cron integrity, exact Worker-version ownership, Customer Service, Easy Orders and Dashboard live QA plus rollback authority.');
+console.log('Preview safety checks passed: app owns zero Cron Triggers; dedicated sync Worker owns schedules via private RPC; live Cron/RPC, deployment ownership and regression gates are enforced.');
