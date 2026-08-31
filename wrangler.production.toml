@@ -1,6 +1,6 @@
-# Production resources. Database migrations are intentionally absent from CI.
+# Production resources. No database migration command is part of this release.
 name = "kunonline"
-main = "src/index.js"
+main = "src/index-production-sync.js"
 compatibility_date = "2026-08-23"
 
 [assets]
@@ -13,7 +13,7 @@ database_name = "kunonline"
 database_id = "c426601d-182f-486e-a5c1-bb1bca0ecb0b"
 
 [triggers]
-crons = ["0 */2 * * *"]
+crons = ["*/5 * * * *", "0 */2 * * *"]
 
 [vars]
 APP_ENV = "production"
@@ -21,4 +21,3 @@ TRACKING_PROVIDER = "track123"
 
 [observability]
 enabled = true
-
