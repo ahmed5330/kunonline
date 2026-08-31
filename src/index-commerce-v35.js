@@ -77,14 +77,14 @@ async function fetchV35(request,env,ctx){
       if(!hasAuth(request))return authRequired();
       const rawFrom=text(url.searchParams.get('from')),rawTo=text(url.searchParams.get('to'));
       if(rawFrom!=='beginning'&&isoDate.test(rawFrom)&&isoDate.test(rawTo)&&rawFrom>rawTo)return json({error:'بداية الفترة يجب أن تكون قبل نهايتها',code:'DATE_RANGE_INVALID',path,method},400);
-      return dashboard(request,env,ctx);
+      return await dashboard(request,env,ctx);
     }
-    if(path==='/api/orders/dedupe/reconcile'&&method==='POST'){if(!hasAuth(request))return authRequired();return reconcileRoute(request,env,ctx);}
-    if(path==='/api/orders/sheet-import'&&method==='POST'){if(!hasAuth(request))return authRequired();return sheetImport(request,env,ctx);}
-    const webhook=path.match(/^\/webhooks\/easyorders\/([^/]+)\/[^/]+\/?$/);if(webhook&&method==='POST')return easyOrdersWebhook(request,env,ctx,decodeURIComponent(webhook[1]));
-    if(path==='/api/state'&&method==='GET'){const response=await commerceV34.fetch(request,env,ctx),data=await response.clone().json().catch(()=>null);if(response.ok&&Array.isArray(data?.orders)&&data.orders[0]?.clientId){const clientId=text(data.orders[0].clientId),storeId=text(data.orders[0].storeId)||null;await reconcileEasyOrdersDuplicates(env,{clientId,storeId,limit:6000}).catch(()=>{});return duplicateFilteredResponse(response,env);}return duplicateFilteredResponse(response,env);}
-    if(path==='/api/customer-service'&&method==='GET'){if(!hasAuth(request))return authRequired();const me=await currentUser(request,env,ctx),clientId=resolveTenant(me,url.searchParams.get('clientId')),scope=await resolveStoreScope(env,me,clientId,text(url.searchParams.get('storeId'))||null,{write:false});await reconcileEasyOrdersDuplicates(env,{clientId,storeId:scope.storeId||null,limit:6000});return duplicateFilteredResponse(await commerceV34.fetch(request,env,ctx),env);}
-    return commerceV34.fetch(request,env,ctx);
+    if(path==='/api/orders/dedupe/reconcile'&&method==='POST'){if(!hasAuth(request))return authRequired();return await reconcileRoute(request,env,ctx);}
+    if(path==='/api/orders/sheet-import'&&method==='POST'){if(!hasAuth(request))return authRequired();return await sheetImport(request,env,ctx);}
+    const webhook=path.match(/^\/webhooks\/easyorders\/([^/]+)\/[^/]+\/?$/);if(webhook&&method==='POST')return await easyOrdersWebhook(request,env,ctx,decodeURIComponent(webhook[1]));
+    if(path==='/api/state'&&method==='GET'){const response=await commerceV34.fetch(request,env,ctx),data=await response.clone().json().catch(()=>null);if(response.ok&&Array.isArray(data?.orders)&&data.orders[0]?.clientId){const clientId=text(data.orders[0].clientId),storeId=text(data.orders[0].storeId)||null;await reconcileEasyOrdersDuplicates(env,{clientId,storeId,limit:6000}).catch(()=>{});return await duplicateFilteredResponse(response,env);}return await duplicateFilteredResponse(response,env);}
+    if(path==='/api/customer-service'&&method==='GET'){if(!hasAuth(request))return authRequired();const me=await currentUser(request,env,ctx),clientId=resolveTenant(me,url.searchParams.get('clientId')),scope=await resolveStoreScope(env,me,clientId,text(url.searchParams.get('storeId'))||null,{write:false});await reconcileEasyOrdersDuplicates(env,{clientId,storeId:scope.storeId||null,limit:6000});return await duplicateFilteredResponse(await commerceV34.fetch(request,env,ctx),env);}
+    return await commerceV34.fetch(request,env,ctx);
   }catch(error){return json({error:error?.message||'حدث خطأ',code:error?.code||'COMMERCE_V35_ERROR',path,method},error?.status||500);}
 }
 
