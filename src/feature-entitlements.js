@@ -96,11 +96,10 @@ export async function setTenantModules(env,clientId,changes,actor='system'){
 }
 
 export async function effectiveOrderFee(env,clientId){
-  const account=await env.DB.prepare('SELECT base_order_fee,min_order_fee,max_order_fee FROM wallet_accounts WHERE client_id=?').bind(clientId).first();
+  const account=await env.DB.prepare('SELECT base_order_fee FROM wallet_accounts WHERE client_id=?').bind(clientId).first();
   if(!account)return 0;
   const features=await getTenantFeatures(env,clientId);
-  let fee=Number(account.base_order_fee)||0;
+  let fee=Math.max(0,Number(account.base_order_fee)||0);
   for(const item of Object.values(features.modules))if(item.enabled)fee+=Math.max(0,Number(item.feeDelta)||0);
-  const min=Math.max(0,Number(account.min_order_fee)||0),max=Math.max(min,Number(account.max_order_fee)||min);
-  return Math.round(Math.min(max,Math.max(min,fee))*100)/100;
+  return Math.round(Math.max(0,fee)*100)/100;
 }
