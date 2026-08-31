@@ -1,7 +1,7 @@
 import {readConnectionSecrets} from './integration-provider-validation.js';
 import {providerById} from './provider-registry.js';
 
-const PRODUCT_COLS='id,client_id,store_id,name,sku,category,price,cost,active,stock,low_stock_threshold,created_at';
+const PRODUCT_COLS='id,client_id,store_id,name,sku,category,price,compare_at_price,cost,active,stock,low_stock_threshold,created_at';
 const text=v=>String(v??'').trim();
 const num=v=>Number.isFinite(Number(v))?Number(v):0;
 const list=v=>Array.isArray(v)?v:[];
@@ -46,12 +46,20 @@ function activeFlag(v,{product=false}={}){
   const status=text(first(v?.status,v?.Status)).toLowerCase();
   return !(product?['draft','archived','inactive','disabled']:['draft','archived','inactive','disabled']).includes(status);
 }
+function pricePair(v){
+  const original=num(first(v?.price,v?.Price,v?.regular_price,v?.regularPrice,v?.RegularPrice));
+  const sale=num(first(v?.sale_price,v?.salePrice,v?.SalePrice));
+  const hasSale=sale>0;
+  return {price:hasSale?sale:original,compareAtPrice:hasSale&&original>sale?original:null};
+}
 function normalizeVariant(v,i){
+  const pricing=pricePair(v);
   return {
     externalId:text(first(v?.id,v?.Id,v?.ID,v?.variant_id,v?.variantId,v?.VariantId,v?.external_id,v?.externalId,v?.ExternalId,i)),
     name:variantName(v),
     sku:text(first(v?.sku,v?.SKU,v?.code,v?.Code,v?.taager_code,v?.taagerCode,v?.TaagerCode)),
-    price:num(first(v?.sale_price,v?.salePrice,v?.SalePrice,v?.price,v?.Price)),
+    price:pricing.price,
+    compareAtPrice:pricing.compareAtPrice,
     stock:Math.max(0,num(first(v?.stock,v?.Stock,v?.quantity,v?.Quantity,v?.inventory_quantity,v?.inventoryQuantity,v?.InventoryQuantity))),
     active:activeFlag(v)
   };
@@ -62,11 +70,13 @@ function normalizeProduct(p,i){
   const parentStock=Math.max(0,num(first(p?.stock,p?.Stock,p?.quantity,p?.Quantity,p?.inventory_quantity,p?.inventoryQuantity,p?.InventoryQuantity)));
   const categories=firstList(p?.categories,p?.Categories).map(x=>text(first(x?.name,x?.Name,x))).filter(Boolean).join('، ');
   const images=firstList(p?.images,p?.Images,p?.image?[p.image]:[],p?.Image?[p.Image]:[]).map(x=>text(first(x?.src,x?.Src,x?.url,x?.Url,x))).filter(Boolean);
+  const pricing=pricePair(p);
   return {
     externalId:text(first(p?.id,p?.Id,p?.ID,p?.product_id,p?.productId,p?.ProductId,p?.external_id,p?.externalId,p?.ExternalId,i)),
     name:text(first(p?.name,p?.Name,p?.title,p?.Title)),
     sku:text(first(p?.sku,p?.SKU,p?.code,p?.Code,p?.taager_code,p?.taagerCode,p?.TaagerCode)),
-    price:num(first(p?.sale_price,p?.salePrice,p?.SalePrice,p?.price,p?.Price,p?.regular_price,p?.regularPrice,p?.RegularPrice)),
+    price:pricing.price,
+    compareAtPrice:pricing.compareAtPrice,
     stock:variants.length?variantStock:parentStock,
     category:text(first(p?.category?.name,p?.Category?.Name,p?.category_name,p?.categoryName,p?.CategoryName,categories)),
     active:activeFlag(p,{product:true}),
@@ -173,17 +183,17 @@ async function classify(env,{clientId,storeId,providerId,products}){
 }
 export async function previewCommerceImport(env,args){
   const pulled=await pullCommerceProducts(env,args),items=await classify(env,{...args,products:pulled.products});
-  return {provider:pulled.item.provider,name:pulled.item.name,total:items.length,created:items.filter(x=>x.action==='created').length,updated:items.filter(x=>x.action==='updated').length,skipped:0,errors:[],items:items.map(x=>({externalId:x.externalId,name:x.name,sku:x.sku,price:x.price,stock:x.stock,category:x.category,action:x.action,variants:x.variants.length,images:x.images.length}))};
+  return {provider:pulled.item.provider,name:pulled.item.name,total:items.length,created:items.filter(x=>x.action==='created').length,updated:items.filter(x=>x.action==='updated').length,skipped:0,errors:[],items:items.map(x=>({externalId:x.externalId,name:x.name,sku:x.sku,price:x.price,compareAtPrice:x.compareAtPrice,stock:x.stock,category:x.category,action:x.action,variants:x.variants.length,images:x.images.length}))};
 }
 export async function importCommerceProducts(env,args){
   const pulled=await pullCommerceProducts(env,args),chosen=selectedProducts(pulled.products,args),items=await classify(env,{...args,products:chosen}),selectionMode=text(args.selectionMode||'all')==='selected'?'selected':'all',summary={provider:pulled.item.provider,name:pulled.item.name,selectionMode,total:items.length,created:0,updated:0,skipped:0,errors:[]},ts=new Date().toISOString();
   for(const p of items){
     try{
       const productId=p.existingId||p.id;
-      await env.DB.prepare(`INSERT INTO products (${PRODUCT_COLS}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,sku=excluded.sku,category=excluded.category,price=excluded.price,active=excluded.active,stock=excluded.stock`).bind(productId,args.clientId,args.storeId||null,p.name,p.sku,p.category,p.price,0,p.active?1:0,p.stock,5,ts).run();
+      await env.DB.prepare(`INSERT INTO products (${PRODUCT_COLS}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,sku=excluded.sku,category=excluded.category,price=excluded.price,compare_at_price=excluded.compare_at_price,active=excluded.active,stock=excluded.stock`).bind(productId,args.clientId,args.storeId||null,p.name,p.sku,p.category,p.price,p.compareAtPrice,0,p.active?1:0,p.stock,5,ts).run();
       for(const [i,v] of p.variants.entries()){
         const variantId=await stableId('IMV',args.clientId,args.storeId||'',args.providerId,p.externalId||p.sku,v.externalId||v.sku||i),match=await env.DB.prepare("SELECT id FROM product_variants WHERE client_id=? AND store_id IS ? AND product_id=? AND (id=? OR (?<>'' AND LOWER(sku)=LOWER(?))) LIMIT 1").bind(args.clientId,args.storeId||null,productId,variantId,v.sku,v.sku).first();
-        await env.DB.prepare('INSERT INTO product_variants (id,product_id,client_id,store_id,name,sku,stock,price,active,created_at) VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,sku=excluded.sku,stock=excluded.stock,price=excluded.price,active=excluded.active').bind(match?.id||variantId,productId,args.clientId,args.storeId||null,v.name,v.sku,v.stock,v.price||null,v.active?1:0,ts).run();
+        await env.DB.prepare('INSERT INTO product_variants (id,product_id,client_id,store_id,name,sku,stock,price,compare_at_price,active,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,sku=excluded.sku,stock=excluded.stock,price=excluded.price,compare_at_price=excluded.compare_at_price,active=excluded.active').bind(match?.id||variantId,productId,args.clientId,args.storeId||null,v.name,v.sku,v.stock,v.price,v.compareAtPrice,v.active?1:0,ts).run();
       }
       summary[p.action]++;
     }catch(error){summary.errors.push({externalId:p.externalId,sku:p.sku,name:p.name,message:error?.message||String(error)});}
