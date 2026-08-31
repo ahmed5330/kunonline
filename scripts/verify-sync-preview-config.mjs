@@ -13,10 +13,11 @@ assert(value(config,'main')==='src/sync-scheduler-preview.js','entrypoint must b
 assert(!/\[\[d1_databases\]\]|database_name\s*=|database_id\s*=/m.test(config),'scheduler must not bind D1 directly');
 assert(!/SESSION_SECRET|INTEGRATION_ENCRYPTION_KEY|EASYORDERS_WEBHOOK_SECRET/m.test(config),'scheduler must not own application secrets');
 assert(/\[\[services\]\][\s\S]*binding\s*=\s*"APP_SYNC"[\s\S]*service\s*=\s*"kunonline-preview"[\s\S]*entrypoint\s*=\s*"SyncEntrypoint"/m.test(config),'APP_SYNC must bind to the app SyncEntrypoint');
-assert(/crons\s*=\s*\[[^\]]*"\*\/5 \* \* \* \*"[^\]]*"0 \*\/2 \* \* \*"[^\]]*\]/m.test(config),'expected Easy Orders and Meta schedules are missing');
+assert(/crons\s*=\s*\[[^\]]*"\* \* \* \* \*"[^\]]*"\*\/5 \* \* \* \*"[^\]]*"0 \*\/2 \* \* \*"[^\]]*\]/m.test(config),'expected one-minute Meta, Easy Orders recovery and deep Meta schedules are missing');
 assert(/\[triggers\][\s\S]*?crons\s*=\s*\[\s*\]/m.test(appConfig),'app Worker must own zero Cron Triggers');
-assert(scheduler.includes("new Set(['*/5 * * * *','0 */2 * * *'])"),'scheduler must allow only the two approved cron expressions');
+assert(scheduler.includes("new Set(['* * * * *','*/5 * * * *','0 */2 * * *'])"),'scheduler must allow only the three approved cron expressions');
 assert(scheduler.includes('env.APP_SYNC.runCron(cron)'),'scheduler must delegate through private RPC');
 assert(appEntry.includes('export class SyncEntrypoint extends WorkerEntrypoint'),'app must export SyncEntrypoint');
 assert(appEntry.includes('async runCron(cron)'),'app RPC must expose runCron');
-console.log('Dedicated Preview sync scheduler config passed: sole Cron owner, private RPC, app has zero schedules, scheduler has no D1/secrets.');
+assert(appEntry.includes("cron==='* * * * *'")&&appEntry.includes('syncAllMetaAdsNearLiveScheduled(env,{days:2})'),'app must refresh Meta campaign, Ad Set and Ad data every minute with a short lookback');
+console.log('Dedicated Preview sync scheduler config passed: sole Cron owner, one-minute Meta refresh, private RPC, app has zero schedules, scheduler has no D1/secrets.');
