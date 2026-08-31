@@ -5,11 +5,14 @@ import {computeDashboardSnapshot} from './dashboard-intelligence.js';
 import {campaignPerformance} from './marketing-performance.js';
 import {decorateDashboardWithManagementFees} from './accounting.js';
 import {prepareIncomingEasyOrdersDedupeV2,prepareEasyOrdersSheetRowsV2,reconcileEasyOrdersDuplicates,reconcileAllEasyOrdersDuplicates,duplicateIdsForOrders} from './order-deduplication-v2.js';
+import {returnsExchangesBoard,saveOutcomeReason} from './returns-exchanges.js';
+import {syncEasyOrdersPrices} from './easyorders-price-sync.js';
 
-const BUILD='preview-v35-2026-08-31-fast-reads-dedupe-v2';
+const BUILD='preview-v35-2026-08-31-returns-reasons-price-sync';
 const json=(data,status=200,extra={})=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Kun-Build':BUILD,'X-Content-Type-Options':'nosniff','X-Frame-Options':'DENY',...extra}});
 const text=v=>String(v??'').trim();
 const num=v=>Number(v)||0;
+const parseArr=v=>{try{const x=JSON.parse(v||'[]');return Array.isArray(x)?x:[];}catch{return [];}};
 const isoDate=/^\d{4}-\d{2}-\d{2}$/;
 function cairoToday(){const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Cairo',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date()),g=t=>parts.find(x=>x.type===t)?.value||'';return `${g('year')}-${g('month')}-${g('day')}`;}
 function parseDate(value,fallback){const v=text(value);return isoDate.test(v)?v:fallback;}
@@ -24,6 +27,21 @@ async function currentUser(request,env,ctx){
 }
 function jsonRequest(request,body){const headers=new Headers(request.headers);headers.set('Content-Type','application/json');headers.delete('content-length');return new Request(request.url,{method:request.method,headers,body:JSON.stringify(body)});}
 async function duplicateFilteredResponse(response,env){if(!response.ok)return response;const data=await response.clone().json().catch(()=>null);if(!data||!Array.isArray(data.orders))return response;const duplicateIds=await duplicateIdsForOrders(env,data.orders);if(!duplicateIds.size)return response;data.orders=data.orders.filter(order=>!duplicateIds.has(text(order.id)));data.duplicateOrdersHidden=duplicateIds.size;return json(data,response.status);}
+async function persistOutcomeReason(env,{clientId,orderId,state,returnType,reason,sourceSection,me}){
+  const row=await env.DB.prepare('SELECT history,return_type FROM orders WHERE id=? AND client_id=?').bind(orderId,clientId).first();if(!row)return;
+  const history=parseArr(row.history),resolvedReturnType=state==='returned'?(text(returnType)||text(row.return_type)||'full'):null,classification=state==='cancelled'?'cancelled':resolvedReturnType==='exchange'?'exchange':'returned',at=new Date().toISOString(),entry={type:'outcome_reason',state,outcomeState:state,classification,returnType:resolvedReturnType,reason,outcomeReason:reason,sourceSection:text(sourceSection)||'customer-service',note:`${classification==='exchange'?'سبب الاستبدال':classification==='returned'?'سبب المرتجع':'سبب الإلغاء'}: ${reason}`,at,by:me?.email||me?.name||me?.role||'user',byName:me?.name||me?.email||me?.role||'user',byUserId:me?.uid||me?.id||null};
+  history.push(entry);await env.DB.prepare('UPDATE orders SET history=? WHERE id=? AND client_id=?').bind(JSON.stringify(history),orderId,clientId).run();
+}
+async function outcomeStateTransition(request,env,ctx,match){
+  const body=await request.clone().json().catch(()=>({})),state=text(body.state);if(!['returned','cancelled'].includes(state))return commerceV34.fetch(request,env,ctx);
+  const reason=text(body.reason||body.outcomeReason);if(reason.length<2)return json({error:'اكتب سبب واضح للمرتجع أو الاستبدال أو الإلغاء قبل تحويل الأوردر',code:'ORDER_OUTCOME_REASON_REQUIRED'},400);if(reason.length>1000)return json({error:'سبب الحالة طويل جدًا',code:'ORDER_OUTCOME_REASON_TOO_LONG'},400);
+  const returnType=state==='returned'?(text(body.returnType||body.return_type)||'full'):null;if(returnType&&!['full','partial','exchange'].includes(returnType))return json({error:'نوع المرتجع غير صحيح',code:'RETURN_TYPE_INVALID'},400);
+  const me=await currentUser(request,env,ctx);requirePermission(me,'orders','update');const clientId=resolveTenant(me,body.clientId||new URL(request.url).searchParams.get('clientId')),orderId=decodeURIComponent(match[1]),forward={...body,state,...(state==='returned'?{returnType}:{}),reason,outcomeReason:reason};
+  const response=await commerceV34.fetch(jsonRequest(request,forward),env,ctx);if(!response.ok)return response;
+  if(state==='returned'&&returnType)await env.DB.prepare('UPDATE orders SET return_type=? WHERE id=? AND client_id=?').bind(returnType,orderId,clientId).run();
+  await persistOutcomeReason(env,{clientId,orderId,state,returnType,reason,sourceSection:body.sourceSection,me});
+  const data=await response.clone().json().catch(()=>({ok:true}));return json({...data,outcomeReason:reason,returnType:state==='returned'?returnType:null,classification:state==='cancelled'?'cancelled':returnType==='exchange'?'exchange':'returned'},response.status);
+}
 
 async function canonicalOrderCounts(env,{clientId,storeId=null}){
   const storeSql=storeId?' AND o.store_id=?':'',binds=storeId?[clientId,storeId]:[clientId],today=cairoToday(),canonical=" AND NOT EXISTS (SELECT 1 FROM order_duplicate_links d WHERE d.duplicate_order_id=o.id)";
@@ -79,6 +97,13 @@ async function fetchV35(request,env,ctx){
       if(rawFrom!=='beginning'&&isoDate.test(rawFrom)&&isoDate.test(rawTo)&&rawFrom>rawTo)return json({error:'بداية الفترة يجب أن تكون قبل نهايتها',code:'DATE_RANGE_INVALID',path,method},400);
       return await dashboard(request,env,ctx);
     }
+    if(path==='/api/returns-exchanges'&&method==='GET'){
+      if(!hasAuth(request))return authRequired();const me=await currentUser(request,env,ctx);requirePermission(me,'orders','read');const clientId=resolveTenant(me,url.searchParams.get('clientId'));return json(await returnsExchangesBoard(env,{clientId,me,selectedStoreId:url.searchParams.get('storeId')||''}));
+    }
+    const reasonMatch=path.match(/^\/api\/returns-exchanges\/orders\/([^/]+)\/reason$/);if(reasonMatch&&method==='PATCH'){
+      if(!hasAuth(request))return authRequired();const me=await currentUser(request,env,ctx);requirePermission(me,'orders','update');const body=await request.clone().json().catch(()=>({})),clientId=resolveTenant(me,body.clientId||url.searchParams.get('clientId'));return json(await saveOutcomeReason(env,{clientId,orderId:decodeURIComponent(reasonMatch[1]),reason:body.reason,me}));
+    }
+    const outcomeMatch=path.match(/^\/api\/customer-service\/orders\/([^/]+)\/state$/);if(outcomeMatch&&method==='PATCH')return await outcomeStateTransition(request,env,ctx,outcomeMatch);
     if(path==='/api/orders/dedupe/reconcile'&&method==='POST'){if(!hasAuth(request))return authRequired();return await reconcileRoute(request,env,ctx);}
     if(path==='/api/orders/sheet-import'&&method==='POST'){if(!hasAuth(request))return authRequired();return await sheetImport(request,env,ctx);}
     const webhook=path.match(/^\/webhooks\/easyorders\/([^/]+)\/[^/]+\/?$/);if(webhook&&method==='POST')return await easyOrdersWebhook(request,env,ctx,decodeURIComponent(webhook[1]));
@@ -90,8 +115,8 @@ async function fetchV35(request,env,ctx){
 }
 
 export class SyncEntrypoint extends SyncEntrypointV34{
-  async health(){const base=await super.health();return {...base,build:BUILD,dedupe:'easyorders-v2'};}
-  async runCron(cron){const result=await super.runCron(cron);if(String(cron||'')==='*/5 * * * *')return {...(result&&typeof result==='object'?result:{result}),orderDedupe:await reconcileAllEasyOrdersDuplicates(this.env,{limitPerStore:8000})};return result;}
+  async health(){const base=await super.health();return {...base,build:BUILD,dedupe:'easyorders-v2',easyOrdersPriceSync:'five-minute'};}
+  async runCron(cron){const result=await super.runCron(cron);if(String(cron||'')==='*/5 * * * *'){const orderDedupe=await reconcileAllEasyOrdersDuplicates(this.env,{limitPerStore:8000}),easyOrdersPriceSync=await syncEasyOrdersPrices(this.env,{limitConnections:40});return {...(result&&typeof result==='object'?result:{result}),orderDedupe,easyOrdersPriceSync};}return result;}
 }
 
 export default {fetch:fetchV35,scheduled(controller,env,ctx){return commerceV34.scheduled?.(controller,env,ctx);}};
