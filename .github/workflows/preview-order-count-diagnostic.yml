@@ -13,6 +13,8 @@ permissions:
 jobs:
   diagnose:
     runs-on: ubuntu-latest
+    environment:
+      name: preview
     steps:
       - name: Read-only Preview D1 order counts
         env:
