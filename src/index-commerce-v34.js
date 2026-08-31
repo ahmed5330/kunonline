@@ -34,6 +34,19 @@ async function rememberEasyOrdersShortId(env,connectionId,rawPayload){
   await env.DB.prepare('UPDATE store_connections SET config_json=?,updated_at=? WHERE id=? AND client_id=?').bind(JSON.stringify(config),new Date().toISOString(),row.id,row.client_id).run();
 }
 
+async function syncAllMetaAdsGranularScheduled(env,{days=30,limit=50}={}){
+  const {results=[]}=await env.DB.prepare("SELECT client_id,config_json FROM store_connections WHERE provider='meta_ads' AND status='connected' ORDER BY updated_at DESC LIMIT ?").bind(Math.max(1,Math.min(200,Number(limit)||50))).all();
+  const seen=new Set(),outcomes=[];
+  for(const row of results){
+    const clientId=text(row.client_id);if(!clientId||seen.has(clientId))continue;seen.add(clientId);
+    const config=parseConfig(row),accountId=text(config.adAccountId||config.ad_account_id).replace(/^act_/i,'');
+    if(config.adAccountConfirmed!==true||!accountId){outcomes.push({clientId,ok:false,code:'META_AD_ACCOUNT_CONFIRMATION_REQUIRED',skipped:true});continue;}
+    try{outcomes.push({clientId,...await syncMetaAdsGranular(env,{clientId,days})});}
+    catch(error){outcomes.push({clientId,ok:false,code:error?.code||'META_GRANULAR_SYNC_FAILED',error:error?.message||String(error)});}
+  }
+  return outcomes;
+}
+
 async function fetchV34(request,env,ctx){
   const url=new URL(request.url),path=url.pathname,method=request.method.toUpperCase();
   try{
@@ -77,7 +90,9 @@ async function runScheduledWithEasyOrdersRecovery(controller,env,ctx){
   let delegated;try{delegated=commerceV33.scheduled?.(controller,env,nestedCtx);}catch(error){pending.push(Promise.reject(error));}
   if(delegated&&typeof delegated.then==='function')pending.push(Promise.resolve(delegated));
   await Promise.allSettled(pending);
-  if(String(controller?.cron||'')!=='*/5 * * * *')return {ok:true,easyOrdersRecovery:'skipped'};
+  const cron=String(controller?.cron||'');
+  if(cron==='0 */2 * * *')return {ok:true,easyOrdersRecovery:'skipped',metaGranular:await syncAllMetaAdsGranularScheduled(env,{days:30})};
+  if(cron!=='*/5 * * * *')return {ok:true,easyOrdersRecovery:'skipped'};
   const result=await reconcileEasyOrdersOrders(env,{maxRequests:30,lookback:80});
   await reconcileRecoveredFees(env,result);
   return result;
