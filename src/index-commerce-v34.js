@@ -1,3 +1,4 @@
+import {WorkerEntrypoint} from 'cloudflare:workers';
 import commerceV33 from './index-commerce-v33.js';
 import {permissionSnapshot,requirePermission,resolveTenant} from './access-control.js';
 import {resolveStoreScope} from './store-scope.js';
@@ -96,6 +97,11 @@ async function runScheduledWithEasyOrdersRecovery(controller,env,ctx){
   const result=await reconcileEasyOrdersOrders(env,{maxRequests:30,lookback:80});
   await reconcileRecoveredFees(env,result);
   return result;
+}
+
+export class SyncEntrypoint extends WorkerEntrypoint{
+  async health(){return {ok:true,build:BUILD,service:'kunonline-sync-rpc',environment:this.env.APP_ENV||'unknown'};}
+  async runCron(cron){return runScheduledWithEasyOrdersRecovery({cron:String(cron||'')},this.env,this.ctx);}
 }
 
 export default {
