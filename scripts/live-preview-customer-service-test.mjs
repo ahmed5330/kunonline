@@ -75,7 +75,11 @@ async function restore(){
 }
 function orderIdOf(d){return d?.id||d?.order?.id||d?.orderId||null;}
 const qs=(client,store)=>`clientId=${encodeURIComponent(client)}${store?`&storeId=${encodeURIComponent(store)}`:''}`;
-const today=new Date().toISOString().slice(0,10),tomorrow=new Date(Date.now()+86400000).toISOString().slice(0,10);
+function cairoDate(offsetDays=0){
+  const date=new Date(Date.now()+(Number(offsetDays)||0)*86400000),parts=new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Cairo',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(date),get=type=>parts.find(part=>part.type===type)?.value||'';
+  return `${get('year')}-${get('month')}-${get('day')}`;
+}
+const today=cairoDate(),tomorrow=cairoDate(2);
 let primaryError=null;
 
 try{
