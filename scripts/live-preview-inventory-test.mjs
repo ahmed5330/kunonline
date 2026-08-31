@@ -65,10 +65,12 @@ try{
   listed=(await api(`/api/inventory/batches?clientId=${encodeURIComponent(clientId)}&storeId=${encodeURIComponent(storeId)}`)).data.batches.find(x=>x.id===batch.id);if(Number(listed?.totalRemaining)!==3)throw new Error(`Batch remaining after ship must be 3: ${JSON.stringify(listed)}`);
   product=(await d1('SELECT stock FROM products WHERE id=?',[productId]))[0];if(Number(product?.stock)!==23)throw new Error(`General stock after batch shipment must be 23, got ${product?.stock}`);
 
-  await api(`/api/customer-service/orders/${encodeURIComponent(order1.id)}/state?clientId=${encodeURIComponent(clientId)}&storeId=${encodeURIComponent(storeId)}`,{method:'PATCH',body:{clientId,storeId,state:'returned'}});
+  const missingReason=await api(`/api/customer-service/orders/${encodeURIComponent(order1.id)}/state?clientId=${encodeURIComponent(clientId)}&storeId=${encodeURIComponent(storeId)}`,{method:'PATCH',ok:[400],body:{clientId,storeId,state:'returned'}});
+  if(missingReason.data?.code!=='ORDER_OUTCOME_REASON_REQUIRED')throw new Error(`Return without reason must be rejected: ${JSON.stringify(missingReason.data)}`);
+  await api(`/api/customer-service/orders/${encodeURIComponent(order1.id)}/state?clientId=${encodeURIComponent(clientId)}&storeId=${encodeURIComponent(storeId)}`,{method:'PATCH',body:{clientId,storeId,state:'returned',returnType:'full',reason:'QA inventory return reason',outcomeReason:'QA inventory return reason',sourceSection:'customer-service'}});
   allocation=(await d1('SELECT status FROM order_stock_allocations WHERE order_id=?',[order1.id]))[0];if(allocation?.status!=='returned')throw new Error('Returned order must restore named batch allocation');
   listed=(await api(`/api/inventory/batches?clientId=${encodeURIComponent(clientId)}&storeId=${encodeURIComponent(storeId)}`)).data.batches.find(x=>x.id===batch.id);if(Number(listed?.totalRemaining)!==5)throw new Error('Returned order must restore named batch quantity to 5');
-  product=(await d1('SELECT stock FROM products WHERE id=?',[productId]))[0];if(Number(product?.stock)!==25)throw new Error(`Legacy return + batch restore must leave general stock at 25, got ${product?.stock}`);
+  product=(await d1('SELECT stock FROM products WHERE id=?',[productId]))[0];if(Number(product?.stock)!==25)throw new Error(`Reasoned return + batch restore must leave general stock at 25, got ${product?.stock}`);
 
   await api(`/api/customer-service/orders/${encodeURIComponent(order1.id)}/state?clientId=${encodeURIComponent(clientId)}&storeId=${encodeURIComponent(storeId)}`,{method:'PATCH',body:{clientId,storeId,state:'shipped',stockBatchId:batch.id}});
   listed=(await api(`/api/inventory/batches?clientId=${encodeURIComponent(clientId)}&storeId=${encodeURIComponent(storeId)}`)).data.batches.find(x=>x.id===batch.id);if(Number(listed?.totalRemaining)!==3)throw new Error('Re-shipping returned order must consume 2 again from the selected batch');
@@ -79,6 +81,6 @@ try{
   listed=(await api(`/api/inventory/batches?clientId=${encodeURIComponent(clientId)}&storeId=${encodeURIComponent(storeId)}`)).data.batches.find(x=>x.id===batch.id);if(Number(listed?.totalRemaining)!==0||listed?.status!=='depleted')throw new Error(`Batch must become depleted at zero: ${JSON.stringify(listed)}`);
   const active=(await api(`/api/inventory/batches?clientId=${encodeURIComponent(clientId)}&storeId=${encodeURIComponent(storeId)}&activeOnly=1`)).data.batches||[];if(active.some(x=>x.id===batch.id))throw new Error('Depleted named batch must disappear from Customer Service active batch choices');
 
-  console.log('Live Inventory QA passed: historic dates, named multi-product batch model, product-delete stock guard, shipping allocation, return restore, re-shipment and depleted-batch hiding.');
+  console.log('Live Inventory QA passed: historic dates, named multi-product batch model, product-delete stock guard, automatic shipping allocation, mandatory return reason, return restore, re-shipment and depleted-batch hiding.');
 }catch(e){error=e;}finally{await cleanup();}
 if(error)throw error;
