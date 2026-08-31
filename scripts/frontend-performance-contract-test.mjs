@@ -32,7 +32,7 @@ assert.ok(rich.includes('if(!active()||scanQueued)return'),'customer-service sca
 assert.equal(ads.includes('if(data.connected&&noGranular'),false,'Meta granular sync must never start automatically from a dashboard read');
 assert.ok(ads.includes('KunPerformanceCore?.idle'),'advanced ads analysis should be deferred until the page is idle');
 
-for(const marker of ['data-kun-section-reload','تحديث بيانات هذا القسم فقط','reloadCurrentSection','KunDashboardV33','KunVariantInventoryV46','KunCustomerServiceV31','KunPostShippingV47','KunReturnsExchangesV56','KunProductCatalogV43','kun:section-reloaded','register:(view,handler)','kun-section-reload-head','data-kun-reload-fallback-head','root.prepend(fallback)','version:\'57.1\''])assert.ok(sectionReload.includes(marker),`section reload missing ${marker}`);
+for(const marker of ['data-kun-section-reload','تحديث بيانات هذا القسم فقط','reloadCurrentSection','KunDashboardV33','KunVariantInventoryV46','KunCustomerServiceV31','KunPostShippingV47','KunReturnsExchangesV56','KunProductCatalogV43','kun:section-reloaded','register:(view,handler)','kun-section-reload-head','kunReloadFallbackHead','root.prepend(fallback)','version:\'57.1\''])assert.ok(sectionReload.includes(marker),`section reload missing ${marker}`);
 assert.ok(sectionReload.includes("observer.observe(root,{childList:true,subtree:false})"),'section reload observer must watch root children only');
 assert.equal(sectionReload.includes('location.reload'),false,'section reload must never refresh the whole browser page');
 assert.doesNotThrow(()=>new Function(sectionReload),'section reload browser module must parse');
