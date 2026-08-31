@@ -1,0 +1,114 @@
+name: Production Easy Orders sync hotfix
+on:
+  push:
+    branches:
+      - release/easyorders-prod-sync-20260831
+      - main
+  workflow_dispatch:
+concurrency:
+  group: kunonline-production
+  cancel-in-progress: false
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: npm install --ignore-scripts
+      - name: Syntax and legacy regression
+        run: |
+          node --check src/index-production-sync.js
+          node tests.mjs
+      - name: Verify production hotfix isolation
+        run: |
+          grep -q 'name = "kunonline"' wrangler.production.toml
+          grep -q 'main = "src/index-production-sync.js"' wrangler.production.toml
+          grep -Fq '*/5 * * * *' wrangler.production.toml
+          grep -Fq '0 */2 * * *' wrangler.production.toml
+          if grep -Eiq 'd1 (migrations|execute)|schema\.sql|migration' .github/workflows/production-easyorders-sync.yml; then
+            echo 'Production workflow must not contain database migration or schema commands.'
+            exit 1
+          fi
+          npx wrangler deploy --dry-run --config wrangler.production.toml
+
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    environment:
+      name: production
+      url: https://app.kun-online.com
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: npm install --ignore-scripts
+      - name: Capture exact current Worker version
+        id: before
+        run: |
+          status="$(npx wrangler deployments status --config wrangler.production.toml --json)"
+          version="$(printf '%s' "$status" | node -e '
+            let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{
+              const root=JSON.parse(raw),hits=[];
+              const walk=x=>{if(Array.isArray(x)){for(const v of x)walk(v);return;}if(!x||typeof x!=="object")return;
+                const id=x.version_id||x.versionId,pct=x.percentage??x.traffic_percentage??x.trafficPercentage;
+                if(id)hits.push({id:String(id),pct:pct==null?null:Number(pct)});for(const v of Object.values(x))walk(v);};walk(root);
+              const unique=[...new Map(hits.map(x=>[x.id,x])).values()],full=unique.find(x=>x.pct===100||x.pct===1)||(unique.length===1?unique[0]:null);
+              if(!full)process.exit(2);process.stdout.write(full.id);
+            });')"
+          test -n "$version"
+          echo "version_id=$version" >> "$GITHUB_OUTPUT"
+          echo "Captured current Production Worker version: $version"
+      - name: Record pre-deploy Easy Orders count
+        run: |
+          npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "SELECT COUNT(*) AS today_easyorders_before FROM orders WHERE source='المتجر (إيزي أوردرز)' AND date=date('now');"
+      - name: Deploy production sync hotfix
+        id: deploy
+        run: |
+          echo "deployed=true" >> "$GITHUB_OUTPUT"
+          echo "deploy_epoch=$(date -u +%s)" >> "$GITHUB_OUTPUT"
+          npx wrangler deploy --config wrangler.production.toml
+      - name: Verify application and Cron ownership
+        run: |
+          curl -fsS https://app.kun-online.com/health >/dev/null
+          schedules="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/kunonline/schedules")"
+          printf '%s' "$schedules" | node -e '
+            let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{const p=JSON.parse(raw);if(p.success===false)throw new Error(JSON.stringify(p.errors));const got=(p.result||[]).map(x=>x.cron).sort();const want=["*/5 * * * *","0 */2 * * *"].sort();if(JSON.stringify(got)!==JSON.stringify(want))throw new Error(`Cron mismatch: ${JSON.stringify(got)}`);console.log(`Production Cron integrity passed: ${got.join(" | ")}`);});'
+      - name: Confirm a real scheduled recovery run
+        run: |
+          deploy_epoch="${{ steps.deploy.outputs.deploy_epoch }}"
+          for i in $(seq 1 45); do
+            payload="$(curl -fsS https://app.kun-online.com/health/easyorders-sync || true)"
+            if [ -n "$payload" ]; then
+              ok="$(printf '%s' "$payload" | node -e '
+                let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{try{const p=JSON.parse(raw),t=Date.parse(p.lastRunAt||"");const deploy=Number(process.argv[1])*1000;if(Number.isFinite(t)&&t>=deploy&&!["error","not_run"].includes(p.status)){console.log("yes");console.error(`Recovery live: status=${p.status} clients=${p.connectedClients} requests=${p.requests} recovered=${p.recovered} updated=${p.updated} lastRunAt=${p.lastRunAt}`)}}catch{}});' "$deploy_epoch")"
+              if [ "$ok" = "yes" ]; then exit 0; fi
+            fi
+            sleep 10
+          done
+          echo 'No healthy Easy Orders scheduled run was observed after deployment.'
+          exit 1
+      - name: Record post-recovery Easy Orders count
+        run: |
+          npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "SELECT COUNT(*) AS today_easyorders_after FROM orders WHERE source='المتجر (إيزي أوردرز)' AND date=date('now');"
+      - name: Roll back exact Worker version on validation failure
+        if: failure() && steps.deploy.outputs.deployed == 'true'
+        run: |
+          npx wrangler rollback "${{ steps.before.outputs.version_id }}" --config wrangler.production.toml --message "Automatic rollback: Easy Orders production hotfix validation failed"
+          curl -fsS -X PUT -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/kunonline/schedules" \
+            --data '[{"cron":"0 */2 * * *"}]' >/dev/null
+          curl -fsS https://app.kun-online.com/health >/dev/null
+          echo 'Production Worker and original 2-hour Cron were restored.'
