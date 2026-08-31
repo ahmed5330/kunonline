@@ -1,4 +1,4 @@
-const BUILD='preview-sync-v2-2026-08-31-minute-meta';
+const BUILD='preview-sync-v2.1-2026-08-31-minute-meta';
 const ALLOWED_CRONS=new Set(['* * * * *','*/5 * * * *','0 */2 * * *']);
 const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Kun-Sync-Build':BUILD,'X-Content-Type-Options':'nosniff','X-Frame-Options':'DENY'}});
 
