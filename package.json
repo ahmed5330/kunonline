@@ -46,6 +46,7 @@
     "test:dashboard-v32": "node scripts/dashboard-v32-test.mjs",
     "test:order-details": "node --check src/order-details.js && node --check src/index-commerce-v32.js && node --check public/v2/modules-v40-order-details.js && node scripts/order-details-contract-test.mjs",
     "test:order-bulk-delete": "node --check public/v2/modules-v41-order-bulk-delete.js && node scripts/order-bulk-delete-test.mjs",
+    "test:commerce-edit-products": "node --check src/order-edit.js && node --check src/order-edit-details.js && node --check src/product-management.js && node --check src/post-shipping.js && node --check src/index-commerce-v33.js && node --check src/index-commerce-v36.js && node --check public/v2/modules-v43-product-catalog.js && node --check public/v2/modules-v44-customer-service-order-edit.js && node --check public/v2/modules-v47-post-shipping.js && node --check public/v2/modules-v47-post-shipping-guard.js && node --check public/v2/modules-v59-shipping-sheet-import.js && node scripts/commerce-edit-products-test.mjs && node scripts/post-shipping-sheet-import-test.mjs",
     "test:frontend-performance": "node --check public/v2/performance-core-v52.js && node --check public/v2/modules-v34-dashboard-ai.js && node --check public/v2/modules-v47-collected-profit.js && node --check public/v2/modules-v48-ad-expert.js && node --check public/v2/modules-v49-easyorders-recovery.js && node --check public/v2/modules-v51-permission-navigation.js && node --check public/v2/modules-v55-customer-search-fifo.js && node --check src/index-commerce-v35.js && node scripts/frontend-performance-contract-test.mjs",
     "test:ads-expert": "node --check src/meta-ads-granular.js && node --check src/meta-ads-expert.js && node --check src/index-commerce-v34.js && node --check public/v2/modules-v48-ad-expert.js && node scripts/meta-ads-expert-contract-test.mjs",
     "test:sync-scheduler": "node --check src/sync-scheduler-preview.js && node scripts/verify-sync-preview-config.mjs",
@@ -67,8 +68,7 @@
     "db:init-local": "wrangler d1 execute kunonline-preview --local --config wrangler.preview.toml --file=./schema.sql",
     "db:commerce": "wrangler d1 execute kunonline-preview --remote --config wrangler.preview.toml --file=./migration_2026-08-23_commerce_os.sql",
     "db:commerce-local": "wrangler d1 execute kunonline-preview --local --config wrangler.preview.toml --file=./migration_2026-08-23_commerce_os.sql",
-    "db:preview:setup": "npm run db:init && npm run db:commerce",
-    "test:commerce-edit-products": "node --check src/order-edit.js && node --check src/order-edit-details.js && node --check src/product-management.js && node --check src/post-shipping.js && node --check src/index-commerce-v33.js && node --check public/v2/modules-v43-product-catalog.js && node --check public/v2/modules-v44-customer-service-order-edit.js && node --check public/v2/modules-v47-post-shipping.js && node --check public/v2/modules-v47-post-shipping-guard.js && node scripts/commerce-edit-products-test.mjs"
+    "db:preview:setup": "npm run db:init && npm run db:commerce"
   },
   "devDependencies": {
     "wrangler": "4.125.0"
