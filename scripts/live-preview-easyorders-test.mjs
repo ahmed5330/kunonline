@@ -17,6 +17,7 @@ async function api(path,{method='GET',cookie=adminCookie,body,ok=[200]}={}){cons
 async function cleanup(){for(const [sql,params] of [['DELETE FROM login_attempts WHERE email=?',[adminEmail]],['DELETE FROM users WHERE email=?',[adminEmail]]])try{await d1(sql,params)}catch{}}
 function parsedConfig(row){try{return JSON.parse(row?.config_json||'{}')}catch{return {};}}
 function providerAccountUnavailable(message){const value=String(message||'').trim().toLowerCase();return value.includes('store not active or has over due')||value.includes('store not active or has overdue')||value.includes('store is not active')||value.includes('subscription expired');}
+function assertAdditivePreviewVersion(version){const buildMatch=String(version?.build||'').match(/^preview-v(\d+)-/),entryMatch=String(version?.entrypoint||'').match(/^index-commerce-v(\d+)\.js$/),buildVersion=Number(buildMatch?.[1]),entryVersion=Number(entryMatch?.[1]);if(version?.environment!=='preview'||!Number.isInteger(buildVersion)||buildVersion<34||entryVersion!==buildVersion)throw new Error(`Expected current additive Preview v34+, got ${JSON.stringify(version)}`);}
 
 let primaryError=null;
 try{
@@ -24,7 +25,7 @@ try{
   await cleanup();const hash=await hashPassword(adminPassword),ts=new Date().toISOString();
   await d1('INSERT INTO users (id,email,name,password,role,client_id,status,created_at,last_login) VALUES (?,?,?,?,?,NULL,?,?,NULL)',[adminId,adminEmail,'CI Easy Orders Admin',hash,'admin','active',ts]);
   const login=await api('/api/login',{method:'POST',cookie:'',body:{email:adminEmail,password:adminPassword}});adminCookie=(login.headers.get('set-cookie')||'').split(';')[0];if(!adminCookie)throw new Error('Temporary admin cookie missing');
-  const version=(await api('/api/preview/version')).data;if(!/^preview-v3[45]-/.test(String(version.build||''))||!/^index-commerce-v3[45]\.js$/.test(String(version.entrypoint||''))||version.environment!=='preview')throw new Error(`Expected current additive Preview v34+, got ${JSON.stringify(version)}`);
+  const version=(await api('/api/preview/version')).data;assertAdditivePreviewVersion(version);
   const rows=await d1("SELECT id,client_id,external_store_id,config_json,updated_at FROM store_connections WHERE provider='easyorders' AND status='connected' ORDER BY updated_at DESC LIMIT 1");
   if(!rows.length){console.log('Live Easy Orders webhook QA: legacy route disabled; no connected Easy Orders Preview row exists, so scoped live probe and gap recovery were skipped.');}
   else{
