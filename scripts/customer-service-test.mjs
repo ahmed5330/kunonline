@@ -3,6 +3,7 @@ import {readFile} from 'node:fs/promises';
 const backend=await readFile(new URL('../src/customer-service.js',import.meta.url),'utf8');
 const fifo=await readFile(new URL('../src/inventory-fifo.js',import.meta.url),'utf8');
 const entry=await readFile(new URL('../src/index-commerce-v31.js',import.meta.url),'utf8');
+const shippingEntry=await readFile(new URL('../src/index-commerce-v36.js',import.meta.url),'utf8');
 const ui=await readFile(new URL('../public/v2/modules-v31-customer-service.js',import.meta.url),'utf8');
 const searchUi=await readFile(new URL('../public/v2/modules-v55-customer-search-fifo.js',import.meta.url),'utf8');
 const confirmUi=await readFile(new URL('../public/v2/modules-v58-confirm-inventory.js',import.meta.url),'utf8');
@@ -52,6 +53,9 @@ must(searchUi.includes('v55-order-date')&&searchUi.includes('تاريخ الطل
 must(searchUi.includes("select.value!=='shipped'")&&searchUi.includes("state:'shipped'")&&searchUi.includes('stateOnlyShip'),'Shipping transition must bypass the legacy stock chooser and remain state-only');
 must(searchUi.includes('بدون أي تعديل على المخزون')&&!searchUi.includes('stockBatchId'),'Shipping UI must not select or send an inventory batch');
 
+for(const marker of ['customerServiceShippingFallback','customerServiceShippingHandoff','الحالة دي برّه الصلاحية المتاحة ليك',"['confirmed','preparing','shipped']","state='shipped'","inventoryChanged:false"])must(shippingEntry.includes(marker),`Tenant Customer Service shipping handoff guard missing ${marker}`);
+must(shippingEntry.includes("checkpoint='جاري الشحن'")&&shippingEntry.includes('customerServiceEnabled'),'Tenant Customer Service must be able to hand a confirmed/preparing order to shipping without expanding access to unrelated states');
+
 for(const marker of ['تأكيد من المخزون','/api/catalog/products','/edit',"state:'confirmed'",'عدد القطع','سعر القطعة','المتاح حاليًا','validateAvailability','حجز/خصم الكمية','KunConfirmInventoryV58'])must(confirmUi.includes(marker),`Inventory confirmation UI missing ${marker}`);
 must(confirmUi.includes('productId')&&confirmUi.includes('variantId')&&confirmUi.includes('unitPrice'),'Confirmation must persist exact product/variant and editable price');
 must(index.includes('/v2/modules-v55-customer-search-fifo.js?v=55.2'),'v55.2 state-only shipping/search/date module must be loaded by v2');
@@ -66,6 +70,6 @@ must(entry.includes("path==='/api/customer-service'")&&entry.includes("path.star
 
 await import('../src/inventory-fifo.js');
 assertBrowserModule(searchUi);assertBrowserModule(confirmUi);
-console.log('Customer Service contract passed: inventory-backed confirmation, FIFO reservation on confirm, state-only shipping, search/filter/date UX and governed order operations.');
+console.log('Customer Service contract passed: inventory-backed confirmation, FIFO reservation on confirm, tenant shipping handoff, state-only shipping, search/filter/date UX and governed order operations.');
 
 function assertBrowserModule(source){try{new Function(source);}catch(error){throw new Error(`Customer Service browser module must parse: ${error.message}`);}}
