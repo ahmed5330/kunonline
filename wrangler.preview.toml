@@ -1,6 +1,6 @@
 # Preview application resources only. Scheduled sync ownership lives in wrangler.sync.preview.toml.
 name = "kunonline-preview"
-main = "src/index-commerce-v35.js"
+main = "src/index-commerce-v36.js"
 compatibility_date = "2026-08-23"
 
 [assets]
