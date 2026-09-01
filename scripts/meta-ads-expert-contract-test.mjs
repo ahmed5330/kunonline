@@ -18,5 +18,5 @@ assert(entry.includes("from 'cloudflare:workers'")&&entry.includes('class SyncEn
 for(const heading of ['تحليل الحملات الإعلانية','تحليل المجموعات الإعلانية','تحليل الإعلانات','قراءة خبير الإعلانات'])assert(ui.includes(heading),`Dashboard expert heading missing: ${heading}`);
 for(const signal of ['مرشح للتوسيع','إجهاد إعلاني','مشكلة بعد النقرة'])assert(ui.includes(signal)||ui.includes('flags'),`Expert signal support missing: ${signal}`);
 assert(index.includes('modules-v48-ad-expert.js'),'Expert dashboard bundle is not loaded');
-assert(/main\s*=\s*"src\/index-commerce-v3[45]\.js"/.test(preview),'Preview is not routed through the v34 Meta layer or its additive v35 wrapper');
+assert(/main\s*=\s*"src\/index-commerce-v3[456]\.js"/.test(preview),'Preview is not routed through the v34 Meta layer or its additive v35/v36 wrapper');
 console.log('Meta Ads expert analysis contract passed, including one-minute Campaign + Ad Set + Ad refresh, deep reconciliation and private sync RPC readiness.');
