@@ -77,11 +77,16 @@ async function rollbackSlices(env,token){
 }
 
 export async function prepareOrderStockTransition(env,{clientId,storeId,orderId,fromState,toState,actor}={}){
-  // Inventory is reserved/deducted only when Customer Service explicitly confirms the order.
+  // Inventory is reserved/deducted only when Customer Service explicitly confirms a product-linked order.
   // Moving to "shipped" is intentionally state-only and never resolves products or touches stock.
   if(toState!=='confirmed')return {kind:'none'};
   const order=await env.DB.prepare('SELECT id,client_id,store_id,product,product_id,variant_id,qty,date,created_at FROM orders WHERE id=? AND client_id=?').bind(orderId,clientId).first();
   if(!order)fail('الأوردر غير موجود',404,'ORDER_NOT_FOUND');storeId=clean(storeId||order.store_id);if(!storeId)fail('الأوردر غير مربوط بمتجر',409,'ORDER_STORE_REQUIRED');order.store_id=storeId;
+  // Legacy/programmatic confirmations without explicit product links stay state-only for backwards compatibility.
+  // The v58 Customer Service confirmation screen writes product_id/variant_id before requesting confirmed.
+  const lineLinks=await env.DB.prepare('SELECT COUNT(*) total,SUM(CASE WHEN product_id IS NOT NULL AND trim(product_id)<>\'\' THEN 1 ELSE 0 END) linked FROM order_items WHERE order_id=? AND client_id=? AND qty>0').bind(orderId,clientId).first().catch(()=>({total:0,linked:0}));
+  const hasExplicitLinks=num(lineLinks?.total)>0?num(lineLinks?.linked)===num(lineLinks?.total):Boolean(clean(order.product_id));
+  if(!hasExplicitLinks)return {kind:'none',reason:'inventory-not-reviewed'};
   const [legacy,active]=await Promise.all([legacyAllocation(env,orderId,clientId),activeAllocations(env,orderId,clientId)]);if(legacy?.status==='allocated'||active.length)return {kind:'none',allocation:legacy||active[0]};
   const lines=await orderLines(env,order),groups=new Map();
   for(const line of lines){const productId=clean(line.product_id),variantId=clean(line.variant_id)||null,qty=Math.max(1,num(line.qty)||1),key=`${productId}::${variantId||''}`;if(!groups.has(key))groups.set(key,{productId,variantId,needed:0,lines:[]});const group=groups.get(key);group.needed+=qty;group.lines.push({...line,qty});}
