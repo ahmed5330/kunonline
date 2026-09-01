@@ -15,7 +15,7 @@ function bucketFor(date,granularity){
 }
 
 function buildCatalogCosts(products,variants){
-  const productCosts=new Map((products||[]).map(row=>[costKey(row.id),n(row.cost)]));
+  const productCosts=new Map((products||[]).map(row=>[costKey(row.id),num(row.cost)]));
   const variantCosts=new Map();
   for(const row of variants||[]){
     const own=row.cost===null||row.cost===undefined?null:Number(row.cost);
