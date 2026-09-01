@@ -15,7 +15,7 @@ function bucketFor(date,granularity){
 }
 
 function buildCatalogCosts(products,variants){
-  const productCosts=new Map((products||[]).map(row=>[costKey(row.id),num(row.cost)]));
+  const productCosts=new Map((products||[]).map(row=>[costKey(row.id),n(row.cost)]));
   const variantCosts=new Map();
   for(const row of variants||[]){
     const own=row.cost===null||row.cost===undefined?null:Number(row.cost);
@@ -32,9 +32,9 @@ function currentLineCost(line,{productCosts,variantCosts}){
 function currentOrderCost(order,items,catalog){
   const orderItems=items.get(costKey(order.id))||[];
   if(orderItems.length){
-    let total=0,matched=false;
-    for(const item of orderItems){const line=currentLineCost(item,catalog);if(line!==null){total+=line;matched=true;}}
-    if(matched)return round(total);
+    let total=0;
+    for(const item of orderItems){const line=currentLineCost(item,catalog);if(line===null)return round(num(order.product_cost));total+=line;}
+    return round(total);
   }
   const direct=currentLineCost(order,catalog);
   if(direct!==null)return direct;
@@ -47,6 +47,11 @@ function updateMarginDetails(snapshot,productCost,netProfit,profitMargin){
     else if(row?.label==='صافي الربح')row.value=netProfit;
     else if(row?.label==='هامش الربح')row.value=profitMargin;
   }
+}
+
+export function currentInventoryOrderCost({order,orderItems=[],products=[],variants=[]}){
+  const items=new Map([[costKey(order?.id),orderItems||[]]]),catalog=buildCatalogCosts(products,variants);
+  return currentOrderCost(order||{},items,catalog);
 }
 
 export async function applyCurrentInventoryCosts(env,{snapshot,clientId,storeId=null}){
