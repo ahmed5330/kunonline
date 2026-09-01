@@ -5,6 +5,7 @@ const fifo=await readFile(new URL('../src/inventory-fifo.js',import.meta.url),'u
 const entry=await readFile(new URL('../src/index-commerce-v31.js',import.meta.url),'utf8');
 const ui=await readFile(new URL('../public/v2/modules-v31-customer-service.js',import.meta.url),'utf8');
 const searchUi=await readFile(new URL('../public/v2/modules-v55-customer-search-fifo.js',import.meta.url),'utf8');
+const confirmUi=await readFile(new URL('../public/v2/modules-v58-confirm-inventory.js',import.meta.url),'utf8');
 const dataUi=await readFile(new URL('../public/v2/modules-v23-data.js',import.meta.url),'utf8');
 const css=await readFile(new URL('../public/v2/kun-v10.css',import.meta.url),'utf8');
 const index=await readFile(new URL('../public/v2/index.html',import.meta.url),'utf8');
@@ -40,16 +41,23 @@ must(backend.includes('byName')&&backend.includes('byUserId')&&ui.includes('بو
 must(ui.includes('سجل الأوردر')&&ui.includes('/history'),'Every card must expose the auditable order timeline');
 must(ui.includes('رقم البوليصة')&&backend.includes("type:'awb'"),'Customer Service must allow AWB recording with audit history');
 
-must(backend.includes("from './inventory-fifo.js'"),'Customer Service shipping must use the dedicated FIFO inventory allocator');
-for(const marker of ['order_item_stock_allocations','ORDER BY b.stock_date ASC,b.created_at ASC','STOCK_FIFO_INSUFFICIENT','virtualRemaining','خصم أوردر ${orderId} تلقائيًا بنظام FIFO'])must(fifo.includes(marker),`FIFO inventory allocator missing ${marker}`);
-must(!fifo.includes('STOCK_BATCH_REQUIRED'),'FIFO shipping must not require a manually selected stock batch');
+must(backend.includes("from './inventory-fifo.js'"),'Customer Service confirmation must use the dedicated FIFO inventory allocator');
+for(const marker of ['order_item_stock_allocations','ORDER BY b.stock_date ASC,b.created_at ASC','STOCK_FIFO_INSUFFICIENT','virtualRemaining','خصم أوردر ${orderId} تلقائيًا بنظام FIFO','if(toState!==\'confirmed\')','HOLDING_STATES'])must(fifo.includes(marker),`FIFO confirmation allocator missing ${marker}`);
+must(fifo.includes('Moving to "shipped" is intentionally state-only'),'Shipping must be explicitly decoupled from inventory allocation');
+must(!fifo.includes('STOCK_BATCH_REQUIRED'),'Confirmation FIFO must not require a manually selected stock batch');
 must(searchUi.includes('operationalCustomerMatches')&&searchUi.includes('كل العملاء المطابقين للاسم'),'Global operational search must return every matching customer under one list');
 must(!searchUi.includes('/api/state?clientId='),'Operational customer search must not load the full state payload');
 must(searchUi.includes('filterOperationalCards')&&searchUi.includes('v55-filter-hidden'),'Customer Service search must filter operational columns to matching customer names');
 must(searchUi.includes('v55-order-date')&&searchUi.includes('تاريخ الطلب'),'Every operational order card must receive an explicit order-date row');
-must(searchUi.includes("select.value!=='shipped'")&&searchUi.includes("state:'shipped'"),'Shipping transition must bypass the old manual stock chooser and call automatic FIFO allocation');
-must(index.includes('/v2/modules-v55-customer-search-fifo.js?v=55.1'),'v55.1 fast FIFO/search/date module must be loaded by v2');
-must(index.indexOf('modules-v55-customer-search-fifo.js')<index.indexOf('modules-v39-stock-batches.js'),'FIFO shipping capture must load before the legacy stock chooser interceptor');
+must(searchUi.includes("select.value!=='shipped'")&&searchUi.includes("state:'shipped'")&&searchUi.includes('stateOnlyShip'),'Shipping transition must bypass the legacy stock chooser and remain state-only');
+must(searchUi.includes('بدون أي تعديل على المخزون')&&!searchUi.includes('stockBatchId'),'Shipping UI must not select or send an inventory batch');
+
+for(const marker of ['تأكيد من المخزون','/api/catalog/products','/edit',"state:'confirmed'",'عدد القطع','سعر القطعة','المتاح حاليًا','validateAvailability','حجز/خصم الكمية','KunConfirmInventoryV58'])must(confirmUi.includes(marker),`Inventory confirmation UI missing ${marker}`);
+must(confirmUi.includes('productId')&&confirmUi.includes('variantId')&&confirmUi.includes('unitPrice'),'Confirmation must persist exact product/variant and editable price');
+must(index.includes('/v2/modules-v55-customer-search-fifo.js?v=55.2'),'v55.2 state-only shipping/search/date module must be loaded by v2');
+must(index.includes('/v2/modules-v58-confirm-inventory.js?v=58.0'),'v58 inventory confirmation module must be loaded by v2');
+must(index.indexOf('modules-v55-customer-search-fifo.js')<index.indexOf('modules-v39-stock-batches.js'),'State-only shipping capture must load before the legacy stock chooser interceptor');
+must(index.indexOf('modules-v58-confirm-inventory.js')>index.indexOf('modules-v57-section-reload.js'),'Confirmation module must load after the operational UI modules');
 
 must(!ui.includes('حذف')&&!ui.includes('data-cs-action="delete"'),'Customer Service board must not expose order deletion');
 must(index.includes('data-view="customer-service"')&&index.includes('/v2/modules-v31-customer-service.js')&&index.includes('/v2/kun-v10.css'),'Customer Service navigation, JS and CSS assets must be loaded by v2');
@@ -57,7 +65,7 @@ must(css.includes('grid-template-columns:repeat(4')&&css.includes('@media(max-wi
 must(entry.includes("path==='/api/customer-service'")&&entry.includes("path.startsWith('/api/customer-service/orders/')"),'Active Preview entrypoint must route Customer Service APIs');
 
 await import('../src/inventory-fifo.js');
-assertBrowserModule(searchUi);
-console.log('Customer Service contract passed: access, audited workflow, automatic FIFO stock allocation, all-match customer search, board filtering, explicit order dates and no delete action inside the Customer Service board.');
+assertBrowserModule(searchUi);assertBrowserModule(confirmUi);
+console.log('Customer Service contract passed: inventory-backed confirmation, FIFO reservation on confirm, state-only shipping, search/filter/date UX and governed order operations.');
 
-function assertBrowserModule(source){try{new Function(source);}catch(error){throw new Error(`Customer search/FIFO browser module must parse: ${error.message}`);}}
+function assertBrowserModule(source){try{new Function(source);}catch(error){throw new Error(`Customer Service browser module must parse: ${error.message}`);}}
