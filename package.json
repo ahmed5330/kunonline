@@ -62,7 +62,7 @@
     "deploy:sync-preview": "npm run check:sync-preview-config && wrangler deploy --config wrangler.sync.preview.toml",
     "rollback:preview": "npm run check:preview-config && wrangler rollback --config wrangler.preview.toml --message \"Automatic rollback after failed Preview smoke test\"",
     "db:migrate:preview": "npm run check:preview-config && wrangler d1 migrations apply kunonline-preview --remote --config wrangler.preview.toml",
-    "smoke:preview": "npm run check:preview-crons && npm run check:sync-preview-crons && node scripts/smoke-sync-preview.mjs https://kunonline-sync-preview.mr-a-mnaa.workers.dev && node scripts/smoke-test.mjs https://kunonline-preview.mr-a-mnaa.workers.dev && node scripts/feature-product-inventory-smoke.mjs https://kunonline-preview.mr-a-mnaa.workers.dev && node scripts/live-preview-stock-clear-test.mjs https://kunonline-preview.mr-a-mnaa.workers.dev",
+    "smoke:preview": "npm run check:preview-crons && npm run check:sync-preview-crons && node scripts/smoke-sync-preview.mjs https://kunonline-sync-preview.mr-a-mnaa.workers.dev && node scripts/smoke-test-v36.mjs https://kunonline-preview.mr-a-mnaa.workers.dev && node scripts/feature-product-inventory-smoke.mjs https://kunonline-preview.mr-a-mnaa.workers.dev && node scripts/live-preview-stock-clear-test.mjs https://kunonline-preview.mr-a-mnaa.workers.dev",
     "smoke:sync-preview": "npm run check:sync-preview-crons && node scripts/smoke-sync-preview.mjs https://kunonline-sync-preview.mr-a-mnaa.workers.dev",
     "db:init": "wrangler d1 execute kunonline-preview --remote --config wrangler.preview.toml --file=./schema.sql",
     "db:init-local": "wrangler d1 execute kunonline-preview --local --config wrangler.preview.toml --file=./schema.sql",
