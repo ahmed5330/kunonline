@@ -1,4 +1,4 @@
-/* Kun Online v46.1 — variant-first inventory + Easy Orders discounted price sync + inline selling-price edit. */
+/* Kun Online v46.2 — variant-first inventory + Easy Orders discounted price sync + inline selling-price and cost edit. */
 (function(){
   const K=window.KunActionsV23;if(!K)return;
   let catalogPromise=null;
@@ -42,9 +42,12 @@
     const compare=num(row.compareAtPrice),hasDiscount=compare>row.price;
     return `<div data-v46-price-display="1"><b>${money(row.price)} EGP</b>${hasDiscount?`<div class="meta"><s>${money(compare)} EGP</s> قبل الخصم</div>`:''}<button class="btn soft" style="margin-top:6px;padding:5px 9px" data-v46-price-edit="1" data-product-id="${esc(row.product.id)}" ${row.variant?`data-variant-id="${esc(row.variant.id)}"`:''} data-price="${esc(row.price)}">تعديل السعر</button></div>`;
   }
+  function costCell(row){
+    return `<div data-v46-cost-display="1"><b>${money(row.cost)} EGP</b><button class="btn soft" style="margin-top:6px;padding:5px 9px" data-v46-cost-edit="1" data-product-id="${esc(row.product.id)}" ${row.variant?`data-variant-id="${esc(row.variant.id)}"`:''} data-cost="${esc(row.cost)}">تعديل التكلفة</button></div>`;
+  }
   function renderTable(rows){
     if(!rows.length)return '<div class="card empty">لا توجد منتجات أو متغيرات في المخزون حتى الآن.</div>';
-    return `<div class="card table-wrap"><div class="page-head"><div><h3 style="margin:0">المخزون حسب المتغير</h3><div class="sub">كل لون / مقاس / اختيار يظهر بكمية مستقلة. سعر Easy Orders المعتمد هو سعر البيع بعد الخصم، وإن لم يوجد خصم يُستخدم السعر الأصلي.</div><div class="meta" style="margin-top:4px">يمكن تعديل سعر البيع من هنا. إذا كان المنتج مربوطًا بـ Easy Orders فقد تستبدل المزامنة الدورية التعديل المحلي بسعر Easy Orders الحالي.</div></div></div><table class="table compact"><thead><tr><th>المنتج</th><th>المتغير</th><th>SKU</th><th>سعر البيع</th><th>المتاح</th><th>حد التنبيه</th><th>تكلفة الوحدة</th><th>قيمة المخزون</th><th>الحالة</th><th></th></tr></thead><tbody>${rows.map(row=>{const [cls,label]=stockState(row);return `<tr><td><b>${esc(row.product.name)}</b></td><td>${row.variant?`<b>${esc(row.label)}</b>`:'<span class="meta">بدون متغيرات</span>'}</td><td>${esc(row.sku||'—')}</td><td data-v46-price-cell="1">${priceCell(row)}</td><td><b>${money(row.stock)}</b></td><td>${money(row.low)}</td><td>${money(row.cost)} EGP</td><td>${money(row.stock*row.cost)} EGP</td><td><span class="stock ${cls}">${label}</span></td><td><button class="btn soft" data-v46-adjust="1" data-product-id="${esc(row.product.id)}" ${row.variant?`data-variant-id="${esc(row.variant.id)}"`:''}>تسوية</button></td></tr>`;}).join('')}</tbody></table></div><div class="card"><h3>تنبيهات المتغيرات</h3>${rows.filter(row=>row.stock<=row.low).slice(0,8).map(row=>`<div class="insight ${row.stock<=0?'danger':'warn'}"><b>${esc(row.product.name)} — ${esc(row.label)}</b><div class="meta">المتاح ${money(row.stock)} — حد التنبيه ${money(row.low)}</div></div>`).join('')||'<div class="insight ok">لا توجد متغيرات منخفضة حاليًا.</div>'}</div>`;
+    return `<div class="card table-wrap"><div class="page-head"><div><h3 style="margin:0">المخزون حسب المتغير</h3><div class="sub">كل لون / مقاس / اختيار يظهر بكمية مستقلة. سعر Easy Orders المعتمد هو سعر البيع بعد الخصم، وإن لم يوجد خصم يُستخدم السعر الأصلي.</div><div class="meta" style="margin-top:4px">يمكن تعديل سعر البيع وتكلفة الوحدة من هنا. مزامنة Easy Orders قد تحدّث سعر البيع، لكنها لا تستبدل تكلفة المنتج المحلية.</div></div></div><table class="table compact"><thead><tr><th>المنتج</th><th>المتغير</th><th>SKU</th><th>سعر البيع</th><th>المتاح</th><th>حد التنبيه</th><th>تكلفة الوحدة</th><th>قيمة المخزون</th><th>الحالة</th><th></th></tr></thead><tbody>${rows.map(row=>{const [cls,label]=stockState(row);return `<tr><td><b>${esc(row.product.name)}</b></td><td>${row.variant?`<b>${esc(row.label)}</b>`:'<span class="meta">بدون متغيرات</span>'}</td><td>${esc(row.sku||'—')}</td><td data-v46-price-cell="1">${priceCell(row)}</td><td><b>${money(row.stock)}</b></td><td>${money(row.low)}</td><td data-v46-cost-cell="1">${costCell(row)}</td><td>${money(row.stock*row.cost)} EGP</td><td><span class="stock ${cls}">${label}</span></td><td><button class="btn soft" data-v46-adjust="1" data-product-id="${esc(row.product.id)}" ${row.variant?`data-variant-id="${esc(row.variant.id)}"`:''}>تسوية</button></td></tr>`;}).join('')}</tbody></table></div><div class="card"><h3>تنبيهات المتغيرات</h3>${rows.filter(row=>row.stock<=row.low).slice(0,8).map(row=>`<div class="insight ${row.stock<=0?'danger':'warn'}"><b>${esc(row.product.name)} — ${esc(row.label)}</b><div class="meta">المتاح ${money(row.stock)} — حد التنبيه ${money(row.low)}</div></div>`).join('')||'<div class="insight ok">لا توجد متغيرات منخفضة حاليًا.</div>'}</div>`;
   }
   async function easyOrdersProvider(){
     const {cid,sid}=await scope(),q=`clientId=${encodeURIComponent(cid)}${sid?`&storeId=${encodeURIComponent(sid)}`:''}`;
@@ -79,6 +82,22 @@
       }catch(error){K.notify(error.message);if(save){save.disabled=false;save.textContent='حفظ';}}
     };
   }
+  async function saveCost(button){
+    const cell=button.closest('[data-v46-cost-cell]');if(!cell)return;
+    const original=num(button.dataset.cost),productId=button.dataset.productId,variantId=button.dataset.variantId||null;
+    cell.innerHTML=`<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><input class="input" type="number" min="0" step="0.01" data-v46-cost-input value="${esc(original)}" style="width:115px"><button class="btn primary" data-v46-cost-save>حفظ</button><button class="btn soft" data-v46-cost-cancel>إلغاء</button></div>`;
+    const input=cell.querySelector('[data-v46-cost-input]');input?.focus();input?.select();
+    cell.querySelector('[data-v46-cost-cancel]').onclick=()=>enhanceInventory(true).catch(error=>K.notify(error.message));
+    cell.querySelector('[data-v46-cost-save]').onclick=async()=>{
+      const cost=Number(input?.value);if(!Number.isFinite(cost)||cost<0){K.notify('اكتب تكلفة صحيحة');return;}
+      const save=cell.querySelector('[data-v46-cost-save]');if(save){save.disabled=true;save.textContent='جاري الحفظ...';}
+      try{
+        const {cid,sid}=await scope();
+        await K.api('/api/inventory/cost',{method:'PATCH',body:JSON.stringify({clientId:cid,storeId:sid||undefined,productId,variantId:variantId||undefined,cost})});
+        catalogPromise=null;K.notify('تم تحديث تكلفة الوحدة');await enhanceInventory(true);
+      }catch(error){K.notify(error.message);if(save){save.disabled=false;save.textContent='حفظ';}}
+    };
+  }
   async function ensureSyncButton(root){
     if(document.getElementById('v46EasyOrdersSync'))return;
     const head=root.querySelector('.page-head .spacer');if(!head)return;
@@ -98,6 +117,7 @@
       updateKpis(root,rows);split.innerHTML=renderTable(rows);split.dataset.v46Ready='1';
       split.querySelectorAll('[data-v46-adjust]').forEach(button=>button.onclick=()=>K.openStockAdjust?.({productId:button.dataset.productId,variantId:button.dataset.variantId||null}));
       split.querySelectorAll('[data-v46-price-edit]').forEach(button=>button.onclick=()=>savePrice(button));
+      split.querySelectorAll('[data-v46-cost-edit]').forEach(button=>button.onclick=()=>saveCost(button));
       document.getElementById('pcVariantInventory')?.remove();
     }catch(error){split.innerHTML=`<div class="card empty"><b>تعذر تحميل مخزون المتغيرات</b><div class="sub">${esc(error.message)}</div></div>`;}
   }
@@ -109,6 +129,6 @@
   document.addEventListener('click',event=>{
     const button=event.target.closest?.('#v46EasyOrdersSync');if(!button)return;event.preventDefault();event.stopImmediatePropagation();syncEasyOrders(button).catch(error=>K.notify(error.message));
   },true);
-  window.KunVariantInventoryV46={refresh:()=>enhanceInventory(true),syncEasyOrders:()=>syncEasyOrders(document.getElementById('v46EasyOrdersSync')),version:'46.1'};
+  window.KunVariantInventoryV46={refresh:()=>enhanceInventory(true),syncEasyOrders:()=>syncEasyOrders(document.getElementById('v46EasyOrdersSync')),version:'46.2'};
   document.documentElement.dataset.variantInventoryV46='ready';
 })();
