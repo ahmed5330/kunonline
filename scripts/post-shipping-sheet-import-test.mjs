@@ -33,9 +33,9 @@ must(jnt.includes('COD Service Fee')&&jnt.includes('عمولة تحصيل منف
 must(jnt.includes('item.returnReason?`مرتجع حسب شيت J&T — ${item.returnReason}`'),'J&T return must preserve Abnormal parcel description as the governed return reason');
 must(jnt.includes("type==='returned'?r2(-totalCarrierFees):r2(codAmount-totalCarrierFees)"),'J&T preview must not treat return COD as receivable and must show delivered net after fees');
 must(jnt.includes('concurrency=Math.min(4')&&jnt.includes('const fresh=await buildPreview()'),'J&T bulk apply must be bounded and revalidate immediately before mutation');
-must(jnt.includes("option[value=\"jnt\"]")&&jnt.includes('option.remove()'),'Generic importer must hand J&T to its dedicated real-sheet flow');
+must(jnt.includes('option[value="jnt"]')&&jnt.includes('option.remove()'),'Generic importer must hand J&T to its dedicated real-sheet flow');
 
-for(const marker of ['carrierFinancialMath','type:\'carrier_financials\'','previousAncillary','baseOther','nextOther','COD Service Fee','order.carrier_financials'])must(financials.includes(marker),`Carrier financial reconciliation missing: ${marker}`);
+for(const marker of ['carrierFinancialMath',"type:'carrier_financials'",'previousAncillary','baseOther','nextOther','codServiceFee','order.carrier_financials'])must(financials.includes(marker),`Carrier financial reconciliation missing: ${marker}`);
 must(financials.includes("sheetType==='returned'?r2(-totalCarrierFees):r2(cod-totalCarrierFees)"),'Backend carrier math must treat return rows as a cost only');
 must(financials.includes('baseOther=r2(n(row.other_cost)-previousAncillary)')&&financials.includes('nextOther=r2(baseOther+financials.ancillaryFee)'),'Repeated sheet imports must replace prior carrier ancillary charges without erasing manual other costs');
 must(entry.includes("from './carrier-financials.js'")&&entry.includes('/carrier-financials')&&entry.includes('carrierFinancials:true'),'Active Preview entrypoint must expose carrier financial reconciliation');
@@ -45,5 +45,9 @@ must(index.includes('modules-v60-jnt-sheet.js?v=60.0'),'Dedicated J&T Signed/Ret
 must(index.indexOf('modules-v59-shipping-sheet-import.js')<index.indexOf('modules-v60-jnt-sheet.js'),'J&T importer must load after the shared XLSX parser');
 must(wrangler.includes('main = "src/index-commerce-v36.js"'),'Preview must use the v36 stock guard wrapper');
 for(const marker of ['returned','restocked=0','explicitInventoryLinks','restoreLegacyReturnFlagIfStillReturned','SyncEntrypoint'])must(entry.includes(marker),`Returned-order reconfirmation guard missing: ${marker}`);
-await import('../src/carrier-financials.js');
+const {carrierFinancialMath}=await import('../src/carrier-financials.js');
+const signed=carrierFinancialMath({sheetType:'delivered',codAmount:690,shippingCost:106.59,codServiceFee:7.87});
+must(signed.totalCarrierFees===114.46&&signed.expectedNet===575.54,`Real J&T Signed math mismatch: ${JSON.stringify(signed)}`);
+const returned=carrierFinancialMath({sheetType:'returned',codAmount:490,shippingCost:95.93,codServiceFee:0});
+must(returned.totalCarrierFees===95.93&&returned.expectedNet===-95.93,`Real J&T Returned math mismatch: ${JSON.stringify(returned)}`);
 console.log('Post-shipping carrier sheet contract passed: generic carriers remain supported, while J&T uses its real Signed/Returned columns, separate delivery/COD fees, finance-only reconciliation, return reasons and idempotent accounting.');
