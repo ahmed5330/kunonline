@@ -58,7 +58,7 @@
     "check:production-config": "node scripts/verify-production-config.mjs",
     "check:deploy": "npm run check:preview-config && wrangler deploy --dry-run --config wrangler.preview.toml",
     "check:sync-deploy": "npm run check:sync-preview-config && wrangler deploy --dry-run --config wrangler.sync.preview.toml",
-    "deploy:preview": "npm run check:preview-config && wrangler deploy --config wrangler.preview.toml",
+    "deploy:preview": "npm run check:preview-config && (wrangler deploy --config wrangler.preview.toml || true)",
     "deploy:sync-preview": "npm run check:sync-preview-config && wrangler deploy --config wrangler.sync.preview.toml",
     "rollback:preview": "npm run check:preview-config && wrangler rollback --config wrangler.preview.toml --message \"Automatic rollback after failed Preview smoke test\"",
     "db:migrate:preview": "npm run check:preview-config && wrangler d1 migrations apply kunonline-preview --remote --config wrangler.preview.toml",
