@@ -65,15 +65,15 @@ jobs:
         if: steps.deploy_ownership.outputs.is_latest == 'true'
         run: |
           base_url="https://kunonline-preview.mr-a-mnaa.workers.dev"
-          # This version passed smoke, Store B, team, Customer Service and Easy Orders live gates.
-          known_healthy="c15baee9-120f-41e3-85a6-fe4f199c140a"
+          # This version passed smoke, Store B, team, Customer Service, Easy Orders, Dashboard and browser live gates.
+          known_healthy="649fa14e-8bef-4b27-9419-1cfbb72b557f"
           health="$(curl -sS --max-time 10 "$base_url/healthz" || true)"
           healthy="$(printf '%s' "$health" | node -e '
             let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{
               try{const p=JSON.parse(raw);if(p?.ok===true&&p?.environment==="preview"&&p?.database==="reachable")process.stdout.write("yes");}catch{}
             });')"
           if [ "$healthy" != "yes" ]; then
-            echo "Current Preview is unhealthy; restoring last verified live Preview version before the new deployment."
+            echo "Current Preview is unhealthy; restoring latest verified live Preview version before the new deployment."
             npx wrangler versions deploy "$known_healthy@100%" --yes --config wrangler.preview.toml --message "Recover verified live Preview baseline before CI deployment"
             node scripts/preview-health-check.mjs "$base_url"
           fi
