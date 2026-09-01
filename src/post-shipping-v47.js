@@ -14,7 +14,7 @@ async function access(env,me,clientId){
 }
 function canWriteStore(context,storeId){if(context.allStores)return true;const row=context.stores.find(item=>String(item.id)===String(storeId||''));return Boolean(row&&row.role!=='viewer');}
 function stageFor(row){if(row.state==='signed'&&clean(row.checkpoint)==='جاري التحصيل')return 'collecting';return row.state;}
-function mapOrder(row){return {id:row.id,clientId:row.client_id,storeId:row.store_id||null,storeName:row.store_name||'بدون متجر',ref:row.ref||null,date:row.date||row.created_at||null,name:row.name||'',phone:row.phone||'',gov:row.gov||'',address:row.address||'',product:row.product||'',productNote:row.product_note||'',qty:Number(row.qty||1),unitPrice:Number(row.unit_price||0),total:Number(row.total||0),awb:row.awb||'',state:row.state,postShippingStage:stageFor(row),checkpoint:row.checkpoint||'',source:row.source||'',collectedAmount:row.collected_amount===null?null:Number(row.collected_amount),collectedAt:row.collected_at||null,history:parseArray(row.history)};}
+function mapOrder(row){return {id:row.id,clientId:row.client_id,storeId:row.store_id||null,storeName:row.store_name||'بدون متجر',ref:row.ref||null,date:row.date||row.created_at||null,name:row.name||'',phone:row.phone||'',gov:row.gov||'',address:row.address||'',product:row.product||'',productNote:row.product_note||'',qty:Number(row.qty||1),unitPrice:Number(row.unit_price||0),total:Number(row.total||0),awb:row.awb||'',state:row.state,postShippingStage:stageFor(row),checkpoint:row.checkpoint||'',source:row.source||'',shippingCost:row.shipping_cost===null||row.shipping_cost===undefined?null:Number(row.shipping_cost),collectedAmount:row.collected_amount===null?null:Number(row.collected_amount),collectedAt:row.collected_at||null,history:parseArray(row.history)};}
 
 export async function postShippingBoardV47(env,{clientId,me,selectedStoreId=''}){
   const context=await access(env,me,clientId),selected=clean(selectedStoreId,120);
@@ -23,7 +23,7 @@ export async function postShippingBoardV47(env,{clientId,me,selectedStoreId=''})
   const binds=[clientId,...STATES];let where=`o.client_id=? AND o.state IN (${STATES.map(()=>'?').join(',')})`;
   if(selected){where+=' AND o.store_id=?';binds.push(selected);}else if(!context.allStores){where+=` AND o.store_id IN (${context.ids.map(()=>'?').join(',')})`;binds.push(...context.ids);}
   const {results=[]}=await env.DB.prepare(`SELECT o.*,s.name store_name FROM orders o LEFT JOIN stores s ON s.id=o.store_id AND s.client_id=o.client_id WHERE ${where} ORDER BY COALESCE(o.date,o.created_at) DESC,o.created_at DESC`).bind(...binds).all();
-  return {ok:true,clientId,allStores:context.allStores,stores:context.stores.map(row=>({id:row.id,name:row.name,code:row.code||'',role:row.role||'owner'})),selectedStoreId:selected||null,stages:[{id:'shipped',label:'جاري الشحن'},{id:'signed',label:'تم الشحن'},{id:'collecting',label:'جاري التحصيل'},{id:'collected',label:'تم التحصيل'}],orders:results.map(mapOrder)};
+  return {ok:true,clientId,allStores:context.allStores,stores:context.stores.map(row=>({id:row.id,name:row.name,code:row.code||'',role:row.role||'owner'})),selectedStoreId:selected||null,stages:[{id:'shipped',label:'جاري الشحن'},{id:'signed',label:'تم التوصيل'},{id:'collecting',label:'جاري التحصيل'},{id:'collected',label:'تم التحصيل'}],orders:results.map(mapOrder)};
 }
 
 async function orderForWrite(env,{clientId,orderId,me}){
@@ -37,15 +37,16 @@ async function audit(env,{row,me,action,before,after,metadata}){try{await env.DB
 
 export async function markPostShippingDeliveredV47(env,{clientId,orderId,me}){
   const row=await orderForWrite(env,{clientId,orderId,me});if(row.state!=='shipped')fail('يمكن نقل الطلب من «جاري الشحن» فقط',409,'POST_SHIPPING_STATE_INVALID');
-  const at=stamp(),history=parseArray(row.history),checkpoint='تم الشحن — في انتظار بدء التحصيل',entry={type:'post_shipping_delivered',state:'signed',note:checkpoint,at,...actor(me)};history.push(entry);
+  const shippingCost=row.shipping_cost===null||row.shipping_cost===undefined?null:Number(row.shipping_cost);if(shippingCost===null||!Number.isFinite(shippingCost)||shippingCost<0)fail('حدد سعر الشحن الفعلي قبل تحويل الأوردر إلى «تم التوصيل»',400,'POST_SHIPPING_COST_REQUIRED');
+  const at=stamp(),history=parseArray(row.history),checkpoint='تم التوصيل — في انتظار بدء التحصيل',entry={type:'post_shipping_delivered',state:'signed',shippingCost:Number(shippingCost.toFixed(2)),note:`تم التوصيل — تكلفة الشحن ${Number(shippingCost.toFixed(2))} جنيه`,at,...actor(me)};history.push(entry);
   await env.DB.prepare("UPDATE orders SET state='signed',checkpoint=?,signed_at=?,history=? WHERE id=? AND client_id=?").bind(checkpoint,at.slice(0,10),JSON.stringify(history),orderId,clientId).run();
-  await audit(env,{row,me,action:'order.post_shipping_delivered',before:{state:row.state,checkpoint:row.checkpoint},after:{state:'signed',checkpoint},metadata:{source:'post_shipping'}});
-  return {ok:true,id:orderId,state:'signed',postShippingStage:'signed',history};
+  await audit(env,{row,me,action:'order.post_shipping_delivered',before:{state:row.state,checkpoint:row.checkpoint,shippingCost:row.shipping_cost},after:{state:'signed',checkpoint,shippingCost:entry.shippingCost},metadata:{source:'post_shipping'}});
+  return {ok:true,id:orderId,state:'signed',postShippingStage:'signed',shippingCost:entry.shippingCost,history};
 }
 
 export async function startPostShippingCollectionV47(env,{clientId,orderId,me}){
   const row=await orderForWrite(env,{clientId,orderId,me});
-  if(row.state!=='signed'||clean(row.checkpoint)==='جاري التحصيل')fail('يمكن بدء التحصيل من قسم «تم الشحن» فقط',409,'POST_SHIPPING_COLLECTION_START_INVALID');
+  if(row.state!=='signed'||clean(row.checkpoint)==='جاري التحصيل')fail('يمكن بدء التحصيل من قسم «تم التوصيل» فقط',409,'POST_SHIPPING_COLLECTION_START_INVALID');
   const at=stamp(),history=parseArray(row.history),checkpoint='جاري التحصيل',entry={type:'post_shipping_collecting',state:'signed',stage:'collecting',note:'بدأت متابعة التحصيل مع شركة الشحن',at,...actor(me)};history.push(entry);
   await env.DB.prepare('UPDATE orders SET checkpoint=?,history=? WHERE id=? AND client_id=?').bind(checkpoint,JSON.stringify(history),orderId,clientId).run();
   await audit(env,{row,me,action:'order.post_shipping_collecting',before:{state:row.state,checkpoint:row.checkpoint},after:{state:'signed',checkpoint},metadata:{source:'post_shipping'}});
