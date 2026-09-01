@@ -1,5 +1,6 @@
 import commerceV35,{SyncEntrypoint as SyncEntrypointV35} from './index-commerce-v35.js';
 import {recordCarrierFinancials} from './carrier-financials.js';
+import {applyCurrentInventoryCosts} from './dashboard-live-product-cost.js';
 
 const BUILD='preview-v36-2026-09-01-jnt-sheet-financials';
 const clean=value=>String(value??'').trim();
@@ -94,10 +95,20 @@ async function carrierFinancialsRoute(request,env,ctx,match){
   return json(await recordCarrierFinancials(env,{clientId,orderId,me,body}));
 }
 
+async function dashboardCurrentCostRoute(request,env,ctx){
+  const response=await commerceV35.fetch(request,env,ctx);if(!response.ok)return response;
+  const snapshot=await response.clone().json().catch(()=>null);if(!snapshot?.ok)return response;
+  const me=await currentUser(request,env,ctx);if(!me)return response;
+  const clientId=resolvedClient(me,request);if(!clientId)return response;
+  const storeId=clean(new URL(request.url).searchParams.get('storeId'))||null;
+  return json(await applyCurrentInventoryCosts(env,{snapshot,clientId,storeId}),response.status);
+}
+
 async function fetchV36(request,env,ctx){
   const url=new URL(request.url),path=url.pathname,method=request.method.toUpperCase();
   try{
     if(path==='/api/preview/version'&&method==='GET')return json({ok:true,build:BUILD,environment:env.APP_ENV||'unknown',entrypoint:'index-commerce-v36.js'});
+    if(path==='/api/dashboard'&&method==='GET')return dashboardCurrentCostRoute(request,env,ctx);
     const financialMatch=path.match(/^\/api\/post-shipping\/orders\/([^/]+)\/carrier-financials$/);
     if(financialMatch&&method==='PATCH')return carrierFinancialsRoute(request,env,ctx,financialMatch);
     const stateMatch=path.match(/^\/api\/customer-service\/orders\/([^/]+)\/state$/);
@@ -107,7 +118,7 @@ async function fetchV36(request,env,ctx){
 }
 
 export class SyncEntrypoint extends SyncEntrypointV35{
-  async health(){const base=await super.health();return {...base,entrypoint:'index-commerce-v36.js',returnReconfirmStockGuard:true,customerServiceShippingHandoff:true,carrierFinancials:true};}
+  async health(){const base=await super.health();return {...base,entrypoint:'index-commerce-v36.js',returnReconfirmStockGuard:true,customerServiceShippingHandoff:true,carrierFinancials:true,dashboardCurrentInventoryCosts:true};}
 }
 
 export default {fetch:fetchV36,scheduled(controller,env,ctx){return commerceV35.scheduled?.(controller,env,ctx);}};
