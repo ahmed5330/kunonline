@@ -1,6 +1,7 @@
 import commerceV35,{SyncEntrypoint as SyncEntrypointV35} from './index-commerce-v35.js';
+import {recordCarrierFinancials} from './carrier-financials.js';
 
-const BUILD='preview-v36-2026-09-01-customer-service-shipping-handoff';
+const BUILD='preview-v36-2026-09-01-jnt-sheet-financials';
 const clean=value=>String(value??'').trim();
 const num=value=>Number(value)||0;
 const parseArr=value=>{try{const parsed=JSON.parse(value||'[]');return Array.isArray(parsed)?parsed:[];}catch{return [];}};
@@ -84,10 +85,21 @@ async function customerServiceStateTransition(request,env,ctx,match){
   return customerServiceShippingFallback(request,env,ctx,match,response,body);
 }
 
+async function carrierFinancialsRoute(request,env,ctx,match){
+  const body=await request.clone().json().catch(()=>({})),me=await currentUser(request,env,ctx);
+  if(!me)return json({error:'محتاج تسجّل دخول',code:'AUTH_REQUIRED'},401);
+  const clientId=resolvedClient(me,request,body);
+  if(!clientId)return json({error:'مش مسموح الوصول لبيانات متجر آخر',code:'TENANT_ISOLATION'},403);
+  const orderId=decodeURIComponent(match[1]);
+  return json(await recordCarrierFinancials(env,{clientId,orderId,me,body}));
+}
+
 async function fetchV36(request,env,ctx){
   const url=new URL(request.url),path=url.pathname,method=request.method.toUpperCase();
   try{
     if(path==='/api/preview/version'&&method==='GET')return json({ok:true,build:BUILD,environment:env.APP_ENV||'unknown',entrypoint:'index-commerce-v36.js'});
+    const financialMatch=path.match(/^\/api\/post-shipping\/orders\/([^/]+)\/carrier-financials$/);
+    if(financialMatch&&method==='PATCH')return carrierFinancialsRoute(request,env,ctx,financialMatch);
     const stateMatch=path.match(/^\/api\/customer-service\/orders\/([^/]+)\/state$/);
     if(stateMatch&&method==='PATCH')return customerServiceStateTransition(request,env,ctx,stateMatch);
     return commerceV35.fetch(request,env,ctx);
@@ -95,7 +107,7 @@ async function fetchV36(request,env,ctx){
 }
 
 export class SyncEntrypoint extends SyncEntrypointV35{
-  async health(){const base=await super.health();return {...base,entrypoint:'index-commerce-v36.js',returnReconfirmStockGuard:true,customerServiceShippingHandoff:true};}
+  async health(){const base=await super.health();return {...base,entrypoint:'index-commerce-v36.js',returnReconfirmStockGuard:true,customerServiceShippingHandoff:true,carrierFinancials:true};}
 }
 
 export default {fetch:fetchV36,scheduled(controller,env,ctx){return commerceV35.scheduled?.(controller,env,ctx);}};
