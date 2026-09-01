@@ -8,7 +8,7 @@ import {postShippingBoardV47,markPostShippingDeliveredV47,startPostShippingColle
 import {collectedProfitOverview} from './collected-profit.js';
 import {reconcileManagementFeeForOrder} from './accounting.js';
 
-const BUILD='preview-v33-2026-08-31-inventory-price-edit';
+const BUILD='preview-v33-2026-09-01-inventory-price-cost-edit';
 const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Kun-Build':BUILD,'X-Content-Type-Options':'nosniff','X-Frame-Options':'DENY'}});
 async function currentUser(request,env,ctx){
   const url=new URL(request.url);url.pathname='/api/me';url.search='';
@@ -40,6 +40,22 @@ async function updateInventorySellingPrice(env,{clientId,storeId=null,productId,
   }
   try{await env.DB.prepare('INSERT INTO audit_log (id,client_id,store_id,actor_user_id,actor_email,action,entity_type,entity_id,before_json,after_json,metadata_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)').bind(`AUD-${crypto.randomUUID().slice(0,10).toUpperCase()}`,clientId,product.store_id||null,me?.uid||me?.id||null,me?.email||me?.name||me?.role||'user','inventory.price_edit',entityType,entityId,JSON.stringify({price:previousPrice}),JSON.stringify({price:value,compareAtPrice}),JSON.stringify({productId,variantId,source:'inventory'}),ts).run();}catch{}
   return {ok:true,productId,variantId,price:value,previousPrice,compareAtPrice,source:'manual-inventory'};
+}
+async function updateInventoryUnitCost(env,{clientId,storeId=null,productId,variantId=null,cost,me}){
+  const value=Number(cost);if(!Number.isFinite(value)||value<0)throw Object.assign(new Error('اكتب تكلفة صحيحة أكبر من أو تساوي صفر'),{status:400,code:'PRODUCT_COST_INVALID'});
+  productId=String(productId||'').trim();variantId=String(variantId||'').trim()||null;if(!productId)throw Object.assign(new Error('حدد المنتج أولًا'),{status:400,code:'PRODUCT_ID_REQUIRED'});
+  const product=await env.DB.prepare('SELECT id,store_id,name,cost FROM products WHERE id=? AND client_id=?').bind(productId,clientId).first();if(!product)throw Object.assign(new Error('المنتج غير موجود'),{status:404,code:'PRODUCT_NOT_FOUND'});
+  if(storeId&&String(product.store_id||'')!==String(storeId))throw Object.assign(new Error('المنتج خارج المتجر المحدد'),{status:403,code:'PRODUCT_STORE_ISOLATION'});
+  await resolveStoreScope(env,me,clientId,product.store_id||null,{write:true});
+  const ts=new Date().toISOString();let previousCost,entityId=productId,entityType='product';
+  if(variantId){
+    const variant=await env.DB.prepare('SELECT id,cost FROM product_variants WHERE id=? AND product_id=? AND client_id=? AND store_id IS ?').bind(variantId,productId,clientId,product.store_id||null).first();if(!variant)throw Object.assign(new Error('المتغير غير موجود أو لا يتبع هذا المنتج'),{status:404,code:'PRODUCT_VARIANT_NOT_FOUND'});
+    previousCost=variant.cost===null?null:Number(variant.cost);await env.DB.prepare('UPDATE product_variants SET cost=?,updated_at=? WHERE id=? AND product_id=? AND client_id=?').bind(value,ts,variantId,productId,clientId).run();entityId=variantId;entityType='product_variant';
+  }else{
+    previousCost=Number(product.cost||0);await env.DB.prepare('UPDATE products SET cost=?,updated_at=? WHERE id=? AND client_id=?').bind(value,ts,productId,clientId).run();
+  }
+  try{await env.DB.prepare('INSERT INTO audit_log (id,client_id,store_id,actor_user_id,actor_email,action,entity_type,entity_id,before_json,after_json,metadata_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)').bind(`AUD-${crypto.randomUUID().slice(0,10).toUpperCase()}`,clientId,product.store_id||null,me?.uid||me?.id||null,me?.email||me?.name||me?.role||'user','inventory.cost_edit',entityType,entityId,JSON.stringify({cost:previousCost}),JSON.stringify({cost:value}),JSON.stringify({productId,variantId,source:'inventory-products'}),ts).run();}catch{}
+  return {ok:true,productId,variantId,cost:value,previousCost,source:'manual-cost-edit'};
 }
 
 async function fetchV33(request,env,ctx){
@@ -79,6 +95,10 @@ async function fetchV33(request,env,ctx){
     if(path==='/api/inventory/price'&&method==='PATCH'){
       const me=await currentUser(request,env,ctx);requirePermission(me,'products','update');const body=await request.clone().json().catch(()=>({})),clientId=resolveTenant(me,body.clientId||body.client_id||url.searchParams.get('clientId'));
       return json(await updateInventorySellingPrice(env,{clientId,storeId:body.storeId||body.store_id||url.searchParams.get('storeId')||null,productId:body.productId||body.product_id,variantId:body.variantId||body.variant_id||null,price:body.price,me}));
+    }
+    if(path==='/api/inventory/cost'&&method==='PATCH'){
+      const me=await currentUser(request,env,ctx);requirePermission(me,'products','update');const body=await request.clone().json().catch(()=>({})),clientId=resolveTenant(me,body.clientId||body.client_id||url.searchParams.get('clientId'));
+      return json(await updateInventoryUnitCost(env,{clientId,storeId:body.storeId||body.store_id||url.searchParams.get('storeId')||null,productId:body.productId||body.product_id,variantId:body.variantId||body.variant_id||null,cost:body.cost,me}));
     }
     const productDetails=path.match(/^\/api\/products\/([^/]+)\/details$/);
     if(productDetails&&method==='GET'){
