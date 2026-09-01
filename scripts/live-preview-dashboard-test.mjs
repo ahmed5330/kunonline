@@ -27,6 +27,7 @@ function assertShape(data,label){
   if(!['day','week','month'].includes(data.trend?.granularity))throw new Error(`${label}: invalid trend granularity ${data.trend?.granularity}`);
   if(!data.overview?.details?.actualOrderCost||!data.overview?.details?.expectedRevenue||!data.overview?.details?.margin||!data.overview?.details?.orders)throw new Error(`${label}: KPI drill-down details missing`);
   if(data.orderCountSemantics?.canonical!==true||data.orderCountSemantics?.totalOrders!=='actual-orders-inside-selected-date-range-after-dedupe')throw new Error(`${label}: actual period order-count semantics missing`);
+  if(data.costing?.source!=='current_inventory'||data.overview?.productCostSource!=='current_inventory'||data.costing?.variantFirst!==true)throw new Error(`${label}: dashboard product cost is not sourced from current variant/product inventory cost`);
 }
 function cairoToday(){const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Cairo',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date()),g=t=>parts.find(x=>x.type===t)?.value||'';return `${g('year')}-${g('month')}-${g('day')}`;}
 function addDays(date,delta){const d=new Date(`${date}T00:00:00Z`);d.setUTCDate(d.getUTCDate()+delta);return d.toISOString().slice(0,10);}
@@ -59,7 +60,7 @@ try{
   const candidate=candidates[0],q=`clientId=${encodeURIComponent(candidate.client_id)}&storeId=${encodeURIComponent(candidate.store_id)}`;
   const all=(await api(`/api/dashboard?${q}&from=beginning&to=${today}`)).data;assertShape(all,'all-time');const allCounts=await canonicalCounts(candidate,all.from,today,today);assertCanonical(all,allCounts,'all-time');if(!/^\d{4}-\d{2}-\d{2}$/.test(String(all.from||''))||all.from>today)throw new Error(`All-time dashboard did not resolve a real first date: ${all.from}`);
   await api(`/api/dashboard?${q}&from=${today}&to=2026-01-01`,[400]);
-  console.log(`Live Dashboard QA passed across ${candidates.length} active Preview store(s): TODAY total equals the actual canonical Cairo-day D1 count; 7d/30d/all-time totals equal their exact D1 date ranges; linked sheet duplicates are excluded; Customer Service count also matches canonical operational states.`);
+  console.log(`Live Dashboard QA passed across ${candidates.length} active Preview store(s): current inventory variant/product cost is authoritative for profitability; TODAY total equals the actual canonical Cairo-day D1 count; 7d/30d/all-time totals equal their exact D1 date ranges; linked sheet duplicates are excluded; Customer Service count also matches canonical operational states.`);
 }catch(e){error=e;}finally{await cleanup();}
 if(error)throw error;
 await import('./live-preview-inventory-test.mjs');
