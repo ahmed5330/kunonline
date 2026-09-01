@@ -30,7 +30,7 @@ export function carrierFinancialMath({sheetType='delivered',codAmount=0,shipping
 
 async function writableOrder(env,{clientId,orderId,me}){
   if(!ALLOWED_ROLES.has(me?.role))fail('غير مسموح بتحديث تكاليف شركة الشحن',403,'CARRIER_FINANCIALS_ROLE_DENIED');
-  const context=await listMyStores(env,me,clientId),stores=context.stores||[],row=await env.DB.prepare('SELECT id,client_id,store_id,state,awb,shipping_cost,other_cost,history FROM orders WHERE id=? AND client_id=?').bind(orderId,clientId).first();
+  const context=await listMyStores(env,me,clientId),stores=context.stores||[],row=await env.DB.prepare('SELECT id,client_id,store_id,state,return_type,awb,shipping_cost,other_cost,history FROM orders WHERE id=? AND client_id=?').bind(orderId,clientId).first();
   if(!row)fail('الأوردر غير موجود',404,'ORDER_NOT_FOUND');
   if(!context.allStores){const store=stores.find(item=>String(item.id)===String(row.store_id||''));if(!store)fail('الأوردر خارج المتاجر المسموح بها',403,'STORE_ISOLATION');if(store.role==='viewer')fail('صلاحية هذا المتجر للعرض فقط',403,'STORE_READ_ONLY');}
   return row;
@@ -47,15 +47,22 @@ export async function recordCarrierFinancials(env,{clientId,orderId,me,body={}})
     insuranceFee:nonNegative(body.insuranceFee,'رسوم التأمين'),
     fuelSurcharge:nonNegative(body.fuelSurcharge,'رسوم الوقود'),
     boxPrice:nonNegative(body.boxPrice,'رسوم العبوة')
-  },financials=carrierFinancialMath(values),history=parseArray(row.history),previous=latestProviderEvent(history,provider),previousAncillary=ancillaryOf(previous),baseOther=r2(n(row.other_cost)-previousAncillary),nextOther=r2(baseOther+financials.ancillaryFee),at=new Date().toISOString(),entry={
+  },financials=carrierFinancialMath(values),history=parseArray(row.history),previous=latestProviderEvent(history,provider),previousAncillary=ancillaryOf(previous),baseOther=r2(n(row.other_cost)-previousAncillary),nextOther=r2(baseOther+financials.ancillaryFee),at=new Date().toISOString(),returnReason=clean(body.returnReason,500),entry={
     type:'carrier_financials',provider,carrierName,sheetType,
     awb:clean(body.awb||row.awb,120)||null,status:clean(body.status,100)||null,
     ...financials,
-    eventTime:clean(body.eventTime,80)||null,returnReason:clean(body.returnReason,500)||null,sourceFile:clean(body.sourceFile,180)||null,
+    eventTime:clean(body.eventTime,80)||null,returnReason:returnReason||null,sourceFile:clean(body.sourceFile,180)||null,
     note:sheetType==='returned'?`${carrierName}: مرتجع — تكلفة شركة الشحن ${financials.totalCarrierFees}`:`${carrierName}: تم التسليم — شحن ${financials.shippingCost} + عمولة تحصيل ${financials.codServiceFee}`,
     at,...actor(me)
   };
   history.push(entry);
+  if(sheetType==='returned'&&row.state==='returned'&&returnReason){
+    const previousReason=[...history].reverse().find(item=>item?.type==='outcome_reason'&&item?.outcomeState==='returned'),existingReason=clean(previousReason?.outcomeReason||previousReason?.reason,1000);
+    if(existingReason!==returnReason){
+      const returnType=clean(row.return_type,30)||'full',classification=returnType==='exchange'?'exchange':'returned';
+      history.push({type:'outcome_reason',state:'returned',outcomeState:'returned',classification,returnType,reason:returnReason,outcomeReason:returnReason,note:`${classification==='exchange'?'سبب الاستبدال':'سبب المرتجع'}: ${returnReason}`,sourceSection:'post-shipping-sheet',at,...actor(me)});
+    }
+  }
   const awb=clean(body.awb,120)||row.awb||null;
   await env.DB.prepare('UPDATE orders SET awb=?,shipping_cost=?,other_cost=?,history=? WHERE id=? AND client_id=?').bind(awb,financials.shippingCost,nextOther,JSON.stringify(history),orderId,clientId).run();
   try{await env.DB.prepare('INSERT INTO audit_log (id,client_id,store_id,actor_user_id,actor_email,action,entity_type,entity_id,before_json,after_json,metadata_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)').bind(`AUD-${crypto.randomUUID().slice(0,10).toUpperCase()}`,clientId,row.store_id||null,me?.uid||me?.id||null,me?.email||me?.name||me?.role||'user','order.carrier_financials','order',orderId,JSON.stringify({shippingCost:row.shipping_cost,otherCost:row.other_cost,previousCarrierAncillary:previousAncillary}),JSON.stringify({shippingCost:financials.shippingCost,otherCost:nextOther,carrierFinancials:financials}),JSON.stringify({provider,carrierName,sheetType,sourceFile:entry.sourceFile}),at).run();}catch{}
