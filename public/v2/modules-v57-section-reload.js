@@ -117,17 +117,17 @@
   document.documentElement.dataset.sectionReload='v57.1-ready';
 })();
 
-// Campaign Hub keeps v66 workspaces and layers comparison v67, analysis v68, readable measurements v70 and reliable controls v71.
+// Campaign Hub keeps v66 workspaces and layers comparison v67, analysis v68, readable measurements v70.1 and reliable controls v71.1.
 {
   const hubId='kunCampaignHubV66Loader',uxId='kunCampaignUXV67Loader',breakdownId='kunBreakdownAnalysisV68Loader',measureId='kunBreakdownMeasurementsV70Loader',controlsId='kunBreakdownControlsV71Loader';
   const loadControls=()=>{
     if(document.getElementById(controlsId))return;
-    const controls=document.createElement('script');controls.id=controlsId;controls.src='/v2/modules-v71-breakdown-controls.js?v=71.0';controls.async=false;document.head.appendChild(controls);
+    const controls=document.createElement('script');controls.id=controlsId;controls.src='/v2/modules-v71-breakdown-controls.js?v=71.1';controls.async=false;document.head.appendChild(controls);
   };
   const loadMeasurements=()=>{
     const existing=document.getElementById(measureId);
     if(existing){if(window.KunBreakdownMeasurementsV70)loadControls();else existing.addEventListener('load',loadControls,{once:true});return;}
-    const measure=document.createElement('script');measure.id=measureId;measure.src='/v2/modules-v70-breakdown-measurements.js?v=70.0';measure.async=false;measure.addEventListener('load',loadControls,{once:true});document.head.appendChild(measure);
+    const measure=document.createElement('script');measure.id=measureId;measure.src='/v2/modules-v70-breakdown-measurements.js?v=70.1';measure.async=false;measure.addEventListener('load',loadControls,{once:true});document.head.appendChild(measure);
   };
   const loadBreakdownUX=()=>{
     const existing=document.getElementById(breakdownId);
