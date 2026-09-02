@@ -2,7 +2,7 @@
 (function(){
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const clean=v=>String(v??'').trim();
-  let sequence=0,activeController=null,activeKey='';
+  let sequence=0,activeController=null,activeKey='',observerQueued=false;
 
   function hub(){return window.KunCampaignHubV66||null;}
   function adState(){return hub()?.state?.sections?.ad||null;}
@@ -15,9 +15,18 @@
     .campaign66 .ux71-status{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 12px;margin:8px 0;border:1px dashed var(--line,#e5e7eb);border-radius:10px;background:color-mix(in srgb,var(--card,#fff) 96%,#2563eb 4%);font-size:12px;color:var(--muted,#64748b);line-height:1.7}
     .campaign66 .ux71-status b{color:inherit}.campaign66 .ux71-error{border-color:#fecaca;background:#fef2f2;color:#991b1b}.campaign66 .ux71-info{border-color:#bfdbfe;background:#eff6ff;color:#1e3a8a}.campaign66 .ux71-retry{margin-inline-start:auto}
   `;document.head.appendChild(s);}
-  function decorateCatalog(){const byId=new Map(catalogList().map(item=>[clean(item?.id),item]));document.querySelectorAll('#campaign66Breakdown option').forEach(option=>{const item=byId.get(clean(option.value));if(!option.dataset.kunBaseLabel)option.dataset.kunBaseLabel=clean(item?.label||option.textContent);const base=option.dataset.kunBaseLabel;if(item?.support==='conditional')option.textContent=`${base} · مشروط`;else if(item?.support==='compatible-composite')option.textContent=`${base} · متوافق تلقائيًا`;else option.textContent=base;option.title=clean(item?.hint);});}
-  function ensureButtons(){document.querySelectorAll('.campaign66 button:not([type])').forEach(b=>b.type='button');const box=document.getElementById('campaign66BreakdownBox');if(box)box.setAttribute('aria-live','polite');decorateCatalog();}
-  function setBusy(value,label=''){const button=document.getElementById('campaign66BreakdownLoad');if(!button)return;button.disabled=Boolean(value);button.setAttribute('aria-busy',value?'true':'false');button.textContent=value?`جاري تحميل ${label||'الـBreakdown'}...`:'تحميل الـBreakdown';}
+  function decorateCatalog(){
+    const byId=new Map(catalogList().map(item=>[clean(item?.id),item]));
+    document.querySelectorAll('#campaign66Breakdown option').forEach(option=>{
+      const item=byId.get(clean(option.value));
+      if(!option.dataset.kunBaseLabel)option.dataset.kunBaseLabel=clean(item?.label||option.textContent);
+      const base=option.dataset.kunBaseLabel,desired=item?.support==='conditional'?`${base} · مشروط`:item?.support==='compatible-composite'?`${base} · متوافق تلقائيًا`:base,desiredTitle=clean(item?.hint);
+      if(option.textContent!==desired)option.textContent=desired;
+      if(option.title!==desiredTitle)option.title=desiredTitle;
+    });
+  }
+  function ensureButtons(){document.querySelectorAll('.campaign66 button:not([type])').forEach(b=>b.type='button');const box=document.getElementById('campaign66BreakdownBox');if(box&&box.getAttribute('aria-live')!=='polite')box.setAttribute('aria-live','polite');decorateCatalog();}
+  function setBusy(value,label=''){const button=document.getElementById('campaign66BreakdownLoad');if(!button)return;const disabled=Boolean(value),busy=value?'true':'false',text=value?`جاري تحميل ${label||'الـBreakdown'}...`:'تحميل الـBreakdown';if(button.disabled!==disabled)button.disabled=disabled;if(button.getAttribute('aria-busy')!==busy)button.setAttribute('aria-busy',busy);if(button.textContent!==text)button.textContent=text;}
   function statusHtml(message,{error=false,retry=false,info=false}={}){return `<div class="ux71-status ${error?'ux71-error':info?'ux71-info':''}"><span>${esc(message)}</span>${retry?'<button type="button" class="btn soft ux71-retry" id="campaign71BreakdownRetry">إعادة المحاولة</button>':''}</div>`;}
   function boxStatus(message,options){const box=document.getElementById('campaign66BreakdownBox');if(box)box.innerHTML=statusHtml(message,options);}
   function enhanceSoon(){setTimeout(()=>{ensureButtons();window.KunBreakdownAnalysisV68?.enhance?.();window.KunBreakdownMeasurementsV70?.render?.();decorateError();decorateEmpty();},0);}
@@ -62,7 +71,8 @@
     if(target){event.preventDefault();event.stopImmediatePropagation();loadSelected();return;}
     if(event.target?.closest?.('.campaign66 [data-status],.campaign66 [data-date-preset],.campaign66 [data-campaign-section],.campaign66 [data-section-mode],#campaign66ApplyCustom'))cancel('campaign-controls-changed');
   },true);
-  const observer=new MutationObserver(()=>{ensureButtons();decorateError();decorateEmpty();});observer.observe(document.documentElement,{childList:true,subtree:true});
+  function scheduleObserverEnhance(){if(observerQueued)return;observerQueued=true;queueMicrotask(()=>{observerQueued=false;ensureButtons();decorateError();decorateEmpty();});}
+  const observer=new MutationObserver(scheduleObserverEnhance);observer.observe(document.documentElement,{childList:true,subtree:true});
   window.addEventListener('kun:section-reloaded',()=>{cancel('section-reloaded');enhanceSoon();});
-  window.KunBreakdownControlsV71={loadSelected,cancel,changeSelection,currentRequestKey,decorateCatalog,version:'71.1'};document.documentElement.dataset.breakdownControls='v71.1-ready';style();ensureButtons();enhanceSoon();
+  window.KunBreakdownControlsV71={loadSelected,cancel,changeSelection,currentRequestKey,decorateCatalog,version:'71.2'};document.documentElement.dataset.breakdownControls='v71.2-ready';style();ensureButtons();enhanceSoon();
 })();
