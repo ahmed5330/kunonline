@@ -117,10 +117,11 @@
   document.documentElement.dataset.sectionReload='v57.1-ready';
 })();
 
-// Additive loader keeps the large v2 index stable while letting Campaigns v63 own only its workspace.
+// Additive loaders keep the large v2 index stable while letting Campaigns own its workspace.
 {
-  const id='kunCampaignHubV63Loader';
-  if(!document.getElementById(id)){
-    const module=document.createElement('script');module.id=id;module.src='/v2/modules-v63-campaign-hub.js?v=63.0';document.head.appendChild(module);
-  }
+  const hubId='kunCampaignHubV63Loader',catalogId='kunMetaBreakdownV64Loader';
+  const loadCatalog=()=>{if(document.getElementById(catalogId))return;const script=document.createElement('script');script.id=catalogId;script.src='/v2/modules-v64-meta-breakdown-catalog.js?v=64.0';script.async=false;document.head.appendChild(script);};
+  if(!document.getElementById(hubId)){
+    const module=document.createElement('script');module.id=hubId;module.src='/v2/modules-v63-campaign-hub.js?v=63.0';module.async=false;module.onload=loadCatalog;document.head.appendChild(module);
+  }else if(window.KunCampaignHubV63)loadCatalog();
 }
