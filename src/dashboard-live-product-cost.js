@@ -2,10 +2,15 @@ const num=value=>Number(value)||0;
 const round=value=>Math.round(num(value)*100)/100;
 const clean=value=>String(value??'').trim();
 const excludedStates=new Set(['cancelled','returned']);
+const confirmedStates=new Set(['confirmed','preparing','shipped','signed','collected']);
+const deliveredStates=new Set(['signed','collected']);
+const shippedStates=new Set(['shipped','signed','collected','returned']);
 
 function itemQty(value){const qty=Number(value);return Number.isFinite(qty)&&qty>0?qty:1;}
 function costKey(value){return clean(value);}
 function dateKey(value){return clean(value).slice(0,10);}
+function daysBetween(from,to){const a=Date.parse(`${from}T00:00:00Z`),b=Date.parse(`${to}T00:00:00Z`);return Number.isFinite(a)&&Number.isFinite(b)?Math.max(1,Math.floor((b-a)/86400000)+1):1;}
+function percent(a,b){return b?round(num(a)/num(b)*100):0;}
 function bucketFor(date,granularity){
   if(granularity==='month')return String(date).slice(0,7);
   if(granularity==='week'){
@@ -39,6 +44,10 @@ function currentOrderCost(order,items,catalog){
   const direct=currentLineCost(order,catalog);
   if(direct!==null)return direct;
   return round(num(order.product_cost));
+}
+function selectedRateSummary(rows,from,to){
+  const set=rows||[],total=set.length,confirmed=set.filter(row=>confirmedStates.has(clean(row.state))).length,delivered=set.filter(row=>deliveredStates.has(clean(row.state))).length,returned=set.filter(row=>clean(row.state)==='returned').length,shippingOutcomes=delivered+returned,shippedPopulation=set.filter(row=>shippedStates.has(clean(row.state))).length;
+  return {days:daysBetween(from,to),from,to,total,confirmed,confirmationRate:percent(confirmed,total),delivered,returned,deliveryRate:percent(delivered,shippingOutcomes),returnRate:percent(returned,shippingOutcomes),returnOfShippedRate:percent(returned,shippedPopulation)};
 }
 function updateMarginDetails(snapshot,productCost,netProfit,profitMargin){
   const details=snapshot?.overview?.details?.margin;if(!Array.isArray(details))return;
@@ -74,6 +83,7 @@ export async function applyCurrentInventoryCosts(env,{snapshot,clientId,storeId=
   const revenue=num(snapshot.finance?.revenue??snapshot.overview?.expectedRevenue),expenses=num(snapshot.finance?.expenses),grossProfit=round(revenue-productCost),netProfit=round(grossProfit-expenses),profitMargin=revenue?round(netProfit/revenue*100):0;
   snapshot.finance={...(snapshot.finance||{}),productCost,grossProfit,netProfit};
   snapshot.overview={...(snapshot.overview||{}),netProfit,profitMargin,productCostSource:'current_inventory'};
+  snapshot.rates={...(snapshot.rates||{}),selected:selectedRateSummary(orders,from,to)};
   updateMarginDetails(snapshot,productCost,netProfit,profitMargin);
 
   if(Array.isArray(snapshot.trend?.points)){
@@ -85,5 +95,6 @@ export async function applyCurrentInventoryCosts(env,{snapshot,clientId,storeId=
     });
   }
   snapshot.costing={source:'current_inventory',variantFirst:true,historicalFallback:true,updatedAt:new Date().toISOString()};
+  snapshot.periodSemantics={...(snapshot.periodSemantics||{}),rates:'selected-dashboard-range'};
   return snapshot;
 }
