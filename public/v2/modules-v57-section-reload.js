@@ -1,4 +1,4 @@
-/* Kun Online v57.2 — one reload control per main workspace section, without browser-page reload. */
+/* Kun Online v57.1 — one reload control per main workspace section, without browser-page reload. */
 (function(){
   const K=window.KunActionsV23||{};
   const root=document.getElementById('root');
@@ -111,10 +111,10 @@
     register:(view,handler)=>{if(view&&typeof handler==='function')registry.set(String(view),handler);},
     ensure:ensureButton,
     activeView,
-    version:'57.2'
+    version:'57.1'
   };
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',ensureButton,{once:true});else setTimeout(ensureButton,0);
-  document.documentElement.dataset.sectionReload='v57.2-ready';
+  document.documentElement.dataset.sectionReload='v57.1-ready';
 })();
 
 // Campaign Hub uses a fresh asset path so Cloudflare cannot reuse a stale asset manifest entry.
