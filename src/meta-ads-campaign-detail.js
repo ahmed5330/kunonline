@@ -7,45 +7,129 @@ const n=value=>Number.isFinite(Number(value))?Number(value):0;
 const r2=value=>Math.round(n(value)*100)/100;
 const pct=(a,b)=>b?r2(n(a)/n(b)*100):0;
 const iso=value=>/^\d{4}-\d{2}-\d{2}$/.test(clean(value))?clean(value):null;
+const breakdown=(group,key,label)=>({id:key,group,key,label,param:'breakdowns'});
+const actionBreakdown=(key,label)=>({id:`action__${key}`,group:'نتائج وأحداث Action Breakdowns',key,label,param:'action_breakdowns'});
 
+// Keep the catalog explicit so the UI can expose the full current Insights enum while
+// requesting one dimension at a time. Meta may reject individual dimensions for a given
+// account/objective/ad type; that is handled as a per-dimension availability result.
 export const META_BREAKDOWN_CATALOG=[
-  {group:'الكرياتيف',key:'image_asset',label:'الصورة'},
-  {group:'الكرياتيف',key:'video_asset',label:'الفيديو'},
-  {group:'الكرياتيف',key:'body_asset',label:'النص الأساسي'},
-  {group:'الكرياتيف',key:'title_asset',label:'العنوان'},
-  {group:'الكرياتيف',key:'description_asset',label:'الوصف'},
-  {group:'الكرياتيف',key:'call_to_action_asset',label:'زر الدعوة CTA'},
-  {group:'الكرياتيف',key:'link_url_asset',label:'رابط الإعلان'},
-  {group:'الكرياتيف',key:'ad_format_asset',label:'صيغة الإعلان'},
-  {group:'الكرياتيف',key:'media_asset_url',label:'رابط أصل الميديا'},
-  {group:'الكرياتيف',key:'media_format',label:'نوع الميديا'},
-  {group:'الكرياتيف',key:'media_text_content',label:'محتوى الميديا النصي'},
-  {group:'الكرياتيف',key:'landing_destination',label:'وجهة الهبوط'},
-  {group:'الجمهور',key:'age',label:'العمر'},
-  {group:'الجمهور',key:'gender',label:'النوع'},
-  {group:'الجمهور',key:'frequency_value',label:'تكرار الظهور'},
-  {group:'الجغرافيا',key:'country',label:'الدولة'},
-  {group:'الجغرافيا',key:'region',label:'المنطقة / المحافظة'},
-  {group:'الجغرافيا',key:'dma',label:'DMA'},
-  {group:'المنصة والموضع',key:'publisher_platform',label:'المنصة'},
-  {group:'المنصة والموضع',key:'platform_position',label:'موضع الظهور'},
-  {group:'المنصة والموضع',key:'device_platform',label:'منصة الجهاز'},
-  {group:'المنصة والموضع',key:'impression_device',label:'جهاز الظهور'},
-  {group:'الوقت',key:'hourly_stats_aggregated_by_advertiser_time_zone',label:'الساعة — توقيت المعلن'},
-  {group:'الوقت',key:'hourly_stats_aggregated_by_audience_time_zone',label:'الساعة — توقيت الجمهور'},
-  {group:'المنتج والمتقدم',key:'product_id',label:'المنتج'},
-  {group:'المنتج والمتقدم',key:'app_id',label:'التطبيق'},
-  {group:'المنتج والمتقدم',key:'standard_event_content_type',label:'نوع محتوى الحدث'},
-  {group:'المنتج والمتقدم',key:'place_page_id',label:'صفحة المكان'},
-  {group:'المنتج والمتقدم',key:'marketing_messages_btn_name',label:'زر رسائل التسويق'},
-  {group:'المنتج والمتقدم',key:'media_creator',label:'منشئ الميديا'},
-  {group:'المنتج والمتقدم',key:'media_destination_url',label:'وجهة الميديا'},
-  {group:'المنتج والمتقدم',key:'media_origin_url',label:'مصدر الميديا'},
-  {group:'المنتج والمتقدم',key:'skan_campaign_id',label:'SKAN Campaign'},
-  {group:'المنتج والمتقدم',key:'skan_conversion_id',label:'SKAN Conversion'},
-  {group:'المنتج والمتقدم',key:'skan_version',label:'SKAN Version'}
+  breakdown('الكرياتيف والأصول','ad_format_asset','صيغة الإعلان / Ad format asset'),
+  breakdown('الكرياتيف والأصول','body_asset','النص الأساسي'),
+  breakdown('الكرياتيف والأصول','call_to_action_asset','زر الدعوة CTA'),
+  breakdown('الكرياتيف والأصول','description_asset','الوصف'),
+  breakdown('الكرياتيف والأصول','image_asset','الصورة'),
+  breakdown('الكرياتيف والأصول','link_url_asset','رابط الإعلان'),
+  breakdown('الكرياتيف والأصول','title_asset','العنوان'),
+  breakdown('الكرياتيف والأصول','video_asset','الفيديو'),
+  breakdown('الكرياتيف والأصول','creative_automation_asset_id','Creative automation asset'),
+  breakdown('الكرياتيف والأصول','creative_relaxation_asset_type','Creative relaxation asset type'),
+  breakdown('الكرياتيف والأصول','flexible_format_asset_type','Flexible format asset type'),
+  breakdown('الكرياتيف والأصول','gen_ai_asset_type','Gen-AI asset type'),
+  breakdown('الكرياتيف والأصول','existing_post_id','Existing post ID'),
+  breakdown('الكرياتيف والأصول','media_asset_url','رابط أصل الميديا'),
+  breakdown('الكرياتيف والأصول','media_creator','منشئ الميديا'),
+  breakdown('الكرياتيف والأصول','media_destination_url','وجهة الميديا'),
+  breakdown('الكرياتيف والأصول','media_format','صيغة الميديا'),
+  breakdown('الكرياتيف والأصول','media_origin_url','مصدر الميديا'),
+  breakdown('الكرياتيف والأصول','media_text_content','محتوى الميديا النصي'),
+  breakdown('الكرياتيف والأصول','media_type','نوع الميديا'),
+  breakdown('الكرياتيف والأصول','landing_destination','وجهة الهبوط'),
+  breakdown('الكرياتيف والأصول','mdsa_landing_destination','MDSA landing destination'),
+  breakdown('الكرياتيف والأصول','marketing_messages_btn_name','زر رسائل التسويق'),
+  breakdown('الكرياتيف والأصول','is_auto_advance','Auto advance'),
+  breakdown('الكرياتيف والأصول','is_rendered_as_delayed_skip_ad','Delayed-skip rendering'),
+
+  breakdown('الجمهور','age','العمر'),
+  breakdown('الجمهور','gender','النوع'),
+  breakdown('الجمهور','frequency_value','تكرار الظهور'),
+  breakdown('الجمهور','user_persona_id','User persona ID'),
+  breakdown('الجمهور','user_persona_name','User persona name'),
+  breakdown('الجمهور','hsid','HSID'),
+  breakdown('الجمهور','overlap_segment','Overlap segment'),
+
+  breakdown('الجغرافيا','country','الدولة'),
+  breakdown('الجغرافيا','region','المنطقة / المحافظة'),
+  breakdown('الجغرافيا','dma','DMA'),
+  breakdown('الجغرافيا','zip','ZIP / Postal code'),
+  breakdown('الجغرافيا','comscore_market','Comscore market'),
+  breakdown('الجغرافيا','place_page_id','صفحة المكان'),
+
+  breakdown('المنصة والموضع والجهاز','publisher_platform','المنصة'),
+  breakdown('المنصة والموضع والجهاز','platform_position','موضع الظهور'),
+  breakdown('المنصة والموضع والجهاز','device_platform','منصة الجهاز'),
+  breakdown('المنصة والموضع والجهاز','impression_device','جهاز الظهور'),
+  breakdown('المنصة والموضع والجهاز','instagram_ads_follow_type','Instagram follow type'),
+  breakdown('المنصة والموضع والجهاز','instagram_ads_instagram_media_product_type','Instagram media product type'),
+  breakdown('المنصة والموضع والجهاز','instagram_ads_time_since_creation_bucket','Instagram time since creation'),
+  breakdown('المنصة والموضع والجهاز','reels_trending_topic','Reels trending topic'),
+
+  breakdown('الوقت','hourly_stats_aggregated_by_advertiser_time_zone','الساعة — توقيت المعلن'),
+  breakdown('الوقت','hourly_stats_aggregated_by_audience_time_zone','الساعة — توقيت الجمهور'),
+  breakdown('الوقت','impression_view_time_advertiser_hour_v2','Impression view hour'),
+
+  breakdown('المنتجات والكتالوج','product_id','المنتج'),
+  breakdown('المنتجات والكتالوج','product_brand_breakdown','Product brand'),
+  breakdown('المنتجات والكتالوج','product_category_breakdown','Product category'),
+  breakdown('المنتجات والكتالوج','product_custom_label_0_breakdown','Product custom label 0'),
+  breakdown('المنتجات والكتالوج','product_custom_label_1_breakdown','Product custom label 1'),
+  breakdown('المنتجات والكتالوج','product_custom_label_2_breakdown','Product custom label 2'),
+  breakdown('المنتجات والكتالوج','product_custom_label_3_breakdown','Product custom label 3'),
+  breakdown('المنتجات والكتالوج','product_custom_label_4_breakdown','Product custom label 4'),
+  breakdown('المنتجات والكتالوج','product_group_content_id_breakdown','Product group content ID'),
+
+  breakdown('الحملة والهدف والتقارير','breakdown_ad_objective','Ad objective'),
+  breakdown('الحملة والهدف والتقارير','breakdown_reporting_ad_id','Reporting Ad ID'),
+  breakdown('الحملة والهدف والتقارير','internal_campaign_id','Internal campaign ID'),
+  breakdown('الحملة والهدف والتقارير','conversion_destination','Conversion destination'),
+  breakdown('الحملة والهدف والتقارير','standard_event_content_type','نوع محتوى الحدث'),
+  breakdown('الحملة والهدف والتقارير','rule_set_id','Rule set ID'),
+  breakdown('الحملة والهدف والتقارير','rule_set_name','Rule set name'),
+  breakdown('الحملة والهدف والتقارير','signal_source_bucket','Signal source bucket'),
+  breakdown('الحملة والهدف والتقارير','sot_attribution_model_type','SOT attribution model'),
+  breakdown('الحملة والهدف والتقارير','sot_attribution_window','SOT attribution window'),
+  breakdown('الحملة والهدف والتقارير','sot_channel','SOT channel'),
+  breakdown('الحملة والهدف والتقارير','sot_event_type','SOT event type'),
+  breakdown('الحملة والهدف والتقارير','sot_source','SOT source'),
+
+  breakdown('التطبيق وSKAN','app_id','التطبيق'),
+  breakdown('التطبيق وSKAN','coarse_conversion_value','Coarse conversion value'),
+  breakdown('التطبيق وSKAN','postback_sequence_index','Postback sequence'),
+  breakdown('التطبيق وSKAN','skan_campaign_id','SKAN Campaign'),
+  breakdown('التطبيق وSKAN','skan_conversion_id','SKAN Conversion'),
+  breakdown('التطبيق وSKAN','skan_version','SKAN Version'),
+  breakdown('التطبيق وSKAN','is_conversion_id_modeled','Modeled conversion ID'),
+
+  breakdown('متقدم','ad_extension_domain','Ad extension domain'),
+  breakdown('متقدم','ad_extension_url','Ad extension URL'),
+  breakdown('متقدم','crm_advertiser_l12_territory_ids','CRM advertiser territory'),
+  breakdown('متقدم','crm_advertiser_subvertical_id','CRM advertiser subvertical'),
+  breakdown('متقدم','crm_advertiser_vertical_id','CRM advertiser vertical'),
+  breakdown('متقدم','crm_ult_advertiser_id','CRM ultimate advertiser'),
+  breakdown('متقدم','fidelity_type','Fidelity type'),
+  breakdown('متقدم','mmm','MMM'),
+  breakdown('متقدم','pa_creator_ig_handle','Creator Instagram handle'),
+  breakdown('متقدم','redownload','Redownload'),
+  breakdown('متقدم','rta_ugc_topic','RTA UGC topic'),
+
+  actionBreakdown('action_canvas_component_name','Action — Canvas component'),
+  actionBreakdown('action_carousel_card_id','Action — Carousel card ID'),
+  actionBreakdown('action_carousel_card_name','Action — Carousel card name'),
+  actionBreakdown('action_destination','Action — Destination'),
+  actionBreakdown('action_device','Action — Device'),
+  actionBreakdown('action_reaction','Action — Reaction'),
+  actionBreakdown('action_target_id','Action — Target ID'),
+  actionBreakdown('action_type','Action — Type'),
+  actionBreakdown('action_video_sound','Action — Video sound'),
+  actionBreakdown('action_video_type','Action — Video type'),
+  actionBreakdown('conversion_destination','Action — Conversion destination'),
+  actionBreakdown('is_business_ai_assisted','Action — Business AI assisted'),
+  actionBreakdown('matched_persona_id','Action — Matched persona ID'),
+  actionBreakdown('matched_persona_name','Action — Matched persona name'),
+  actionBreakdown('signal_source_bucket','Action — Signal source bucket'),
+  actionBreakdown('standard_event_content_type','Action — Standard event content type')
 ];
-const BREAKDOWN_KEYS=new Set(META_BREAKDOWN_CATALOG.map(item=>item.key));
+const BREAKDOWN_BY_ID=new Map(META_BREAKDOWN_CATALOG.map(item=>[item.id,item]));
 
 function rangeOf({from,to,days=7}={}){
   const end=iso(to)||new Date().toISOString().slice(0,10);
@@ -104,7 +188,7 @@ function graphVersion(env,config={}){const raw=clean(config.apiVersion||env?.MET
 function cleanAccountId(value){return clean(value).replace(/^act_/i,'');}
 async function connection(env,clientId){const row=await env.DB.prepare("SELECT * FROM store_connections WHERE client_id=? AND provider=? AND status='connected' ORDER BY updated_at DESC LIMIT 1").bind(clientId,PROVIDER).first();if(!row)throw Object.assign(new Error('اربط Meta Ads من مركز التكاملات أولًا'),{status:409,code:'META_ADS_NOT_CONNECTED'});let config={};try{config=JSON.parse(row.config_json||'{}')}catch{}const secrets=await readConnectionSecrets(env,clientId,row.id),token=clean(secrets?.access_token),accountId=cleanAccountId(config.adAccountId||config.ad_account_id||row.external_store_id);if(!token)throw Object.assign(new Error('Access Token غير موجود في تكامل Meta Ads'),{status:409,code:'META_TOKEN_MISSING'});if(!accountId)throw Object.assign(new Error('الحساب الإعلاني غير محدد في تكامل Meta Ads'),{status:409,code:'META_AD_ACCOUNT_MISSING'});return {row,config,token,accountId,version:graphVersion(env,config)};}
 function graphUrl(version,path,params={}){const url=new URL(`https://graph.facebook.com/${version}/${String(path).replace(/^\/+/, '')}`);for(const [key,value] of Object.entries(params)){if(value===undefined||value===null||value==='')continue;url.searchParams.set(key,typeof value==='object'?JSON.stringify(value):String(value));}return url;}
-async function graphGet(fetcher,url,token){const target=url instanceof URL?url:new URL(String(url));if(target.protocol!=='https:'||target.hostname!=='graph.facebook.com')throw Object.assign(new Error('Meta pagination returned an unexpected host'),{status:502,code:'META_PAGING_HOST_INVALID'});const response=await fetcher(target.toString(),{headers:{Authorization:`Bearer ${token}`,Accept:'application/json'}}),data=await response.json().catch(()=>({}));if(!response.ok||data?.error){const message=clean(data?.error?.message)||`Meta API HTTP ${response.status}`,metaCode=Number(data?.error?.code||0);if(metaCode===190)throw Object.assign(new Error('Meta Access Token غير صالح أو منتهي.'),{status:401,code:'META_TOKEN_INVALID'});if(/breakdown|breakdowns|not supported|not valid|invalid.*field|invalid.*parameter/i.test(message))throw Object.assign(new Error(`Meta لا تسمح بالـ Breakdown المختار مع نوع الإعلان/الحقول الحالية: ${message}`),{status:422,code:'META_BREAKDOWN_UNAVAILABLE'});if([10,100,200,294].includes(metaCode))throw Object.assign(new Error('التوكن لا يملك صلاحية ads_read الكافية لقراءة الـBreakdowns.'),{status:403,code:'META_ADS_READ_PERMISSION'});throw Object.assign(new Error(message),{status:response.status||502,code:'META_BREAKDOWN_FAILED'});}return data;}
+async function graphGet(fetcher,url,token){const target=url instanceof URL?url:new URL(String(url));if(target.protocol!=='https:'||target.hostname!=='graph.facebook.com')throw Object.assign(new Error('Meta pagination returned an unexpected host'),{status:502,code:'META_PAGING_HOST_INVALID'});const response=await fetcher(target.toString(),{headers:{Authorization:`Bearer ${token}`,Accept:'application/json'}}),data=await response.json().catch(()=>({}));if(!response.ok||data?.error){const message=clean(data?.error?.message)||`Meta API HTTP ${response.status}`,metaCode=Number(data?.error?.code||0);if(metaCode===190)throw Object.assign(new Error('Meta Access Token غير صالح أو منتهي.'),{status:401,code:'META_TOKEN_INVALID'});if(/breakdown|breakdowns|action_breakdowns|not supported|not valid|invalid.*field|invalid.*parameter/i.test(message))throw Object.assign(new Error(`Meta لا تسمح بالـ Breakdown المختار مع نوع الإعلان/الحقول الحالية: ${message}`),{status:422,code:'META_BREAKDOWN_UNAVAILABLE'});if([10,100,200,294].includes(metaCode))throw Object.assign(new Error('التوكن لا يملك صلاحية ads_read الكافية لقراءة الـBreakdowns.'),{status:403,code:'META_ADS_READ_PERMISSION'});throw Object.assign(new Error(message),{status:response.status||502,code:'META_BREAKDOWN_FAILED'});}return data;}
 async function pages(fetcher,url,token,{maxPages=35}={}){const rows=[];let next=url,count=0;while(next&&count<maxPages){const data=await graphGet(fetcher,next,token);if(Array.isArray(data?.data))rows.push(...data.data);next=data?.paging?.next||null;count++;}if(next)throw Object.assign(new Error('نتائج الـBreakdown أكبر من حد القراءة الآمن. قلّل الفترة.'),{status:409,code:'META_BREAKDOWN_PAGE_LIMIT'});return rows;}
 function firstActionValue(items=[],keys=[]){const map=new Map((Array.isArray(items)?items:[]).map(row=>[clean(row?.action_type),n(row?.value)]));for(const key of keys)if(map.has(key))return n(map.get(key));return 0;}
 function purchases(row){return firstActionValue(row?.actions,['omni_purchase','purchase','offsite_conversion.fb_pixel_purchase','onsite_web_purchase']);}
@@ -114,15 +198,15 @@ function dimensionValue(value){if(value===null||value===undefined||value==='')re
 
 export async function metaAdsBreakdown(env,{clientId,storeId=null,from,to,days=7,dimension='image_asset',status='active',fetcher=fetch}={}){
   if(!clientId)throw Object.assign(new Error('clientId مطلوب'),{status:400,code:'CLIENT_ID_REQUIRED'});
-  const key=clean(dimension);if(!BREAKDOWN_KEYS.has(key))throw Object.assign(new Error('Breakdown غير مدعوم في واجهة Kun Online'),{status:400,code:'META_BREAKDOWN_INVALID'});
+  const id=clean(dimension),catalogItem=BREAKDOWN_BY_ID.get(id);if(!catalogItem)throw Object.assign(new Error('Breakdown غير مدعوم في واجهة Kun Online'),{status:400,code:'META_BREAKDOWN_INVALID'});
   const range=rangeOf({from,to,days}),conn=await connection(env,clientId),filter=normalizeFilter(status),hasStore=Boolean(clean(storeId));
   const entitySql=`SELECT external_id,name,external_campaign_id,external_adset_id,COALESCE(effective_status,status,'unknown') effective_status FROM meta_ad_entities WHERE client_id=? AND level='ad' ${hasStore?'AND store_id=?':''}`,entityBinds=hasStore?[clientId,storeId]:[clientId],{results:entities=[]}=await env.DB.prepare(entitySql).bind(...entityBinds).all(),entityMap=new Map(entities.map(row=>[clean(row.external_id),row]));
   const labelMaps=await names(env,{clientId,storeId});
   const fields='campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,spend,impressions,reach,clicks,actions,action_values';
-  const raw=await pages(fetcher,graphUrl(conn.version,`act_${conn.accountId}/insights`,{level:'ad',time_range:{since:range.from,until:range.to},breakdowns:key,fields,limit:500}),conn.token);
+  const insightParams={level:'ad',time_range:{since:range.from,until:range.to},fields,limit:500,[catalogItem.param]:catalogItem.key};
+  const raw=await pages(fetcher,graphUrl(conn.version,`act_${conn.accountId}/insights`,insightParams),conn.token);
   const rows=[];
-  for(const item of raw){const adId=clean(item?.ad_id),entity=entityMap.get(adId),effective=normalizeStatus(entity?.effective_status||'unknown');if(filter==='active'&&effective!=='active')continue;const metric=metricShape({spend:item?.spend,impressions:item?.impressions,reach:item?.reach,clicks:item?.clicks,leads:leads(item),purchases:purchases(item),purchaseValue:purchaseValue(item)}),value=item?.[key];rows.push({dimension:key,dimensionValue:dimensionValue(value),dimensionRaw:value??null,adId,adName:clean(item?.ad_name)||entity?.name||'',adsetId:clean(item?.adset_id)||clean(entity?.external_adset_id),adsetName:clean(item?.adset_name)||labelMaps.adset.get(clean(item?.adset_id))||'',campaignId:clean(item?.campaign_id)||clean(entity?.external_campaign_id),campaignName:clean(item?.campaign_name)||labelMaps.campaign.get(clean(item?.campaign_id))||'',status:effective,...metric});}
+  for(const item of raw){const adId=clean(item?.ad_id),entity=entityMap.get(adId),effective=normalizeStatus(entity?.effective_status||'unknown');if(filter==='active'&&effective!=='active')continue;const metric=metricShape({spend:item?.spend,impressions:item?.impressions,reach:item?.reach,clicks:item?.clicks,leads:leads(item),purchases:purchases(item),purchaseValue:purchaseValue(item)}),value=item?.[catalogItem.key];rows.push({dimension:id,dimensionKey:catalogItem.key,dimensionParam:catalogItem.param,dimensionValue:dimensionValue(value),dimensionRaw:value??null,adId,adName:clean(item?.ad_name)||entity?.name||'',adsetId:clean(item?.adset_id)||clean(entity?.external_adset_id),adsetName:clean(item?.adset_name)||labelMaps.adset.get(clean(item?.adset_id))||'',campaignId:clean(item?.campaign_id)||clean(entity?.external_campaign_id),campaignName:clean(item?.campaign_name)||labelMaps.campaign.get(clean(item?.campaign_id))||'',status:effective,...metric});}
   rows.sort((a,b)=>b.spend-a.spend||b.purchases-a.purchases);
-  const catalogItem=META_BREAKDOWN_CATALOG.find(item=>item.key===key);
-  return {ok:true,dimension:key,label:catalogItem?.label||key,group:catalogItem?.group||'Breakdown',statusFilter:filter,from:range.from,to:range.to,capped:range.capped,rows,totals:sumMetrics(rows),catalog:META_BREAKDOWN_CATALOG,note:'يتم طلب كل Breakdown منفردًا لأن Meta قد ترفض بعض التركيبات حسب نوع الإعلان والحساب.'};
+  return {ok:true,dimension:id,key:catalogItem.key,param:catalogItem.param,label:catalogItem.label,group:catalogItem.group,statusFilter:filter,from:range.from,to:range.to,capped:range.capped,rows,totals:sumMetrics(rows),catalog:META_BREAKDOWN_CATALOG,note:'كل Breakdown يتم طلبه منفردًا لأن Meta تفرض قيود توافق تختلف حسب نوع الإعلان والهدف والحساب؛ العنصر غير المتوافق يظهر كتنبيه مستقل بدون تعطيل بقية التحليل.'};
 }
