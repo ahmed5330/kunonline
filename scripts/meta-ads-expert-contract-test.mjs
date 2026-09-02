@@ -1,6 +1,6 @@
 import {readFile} from 'node:fs/promises';
 
-const [migration,entry,ui,index,preview,v36,hub,comparisonUx,detail,detailV2,detailV3,measurements,reload,allFilter]=await Promise.all([
+const [migration,entry,ui,index,preview,v36,hub,comparisonUx,detail,detailV2,detailV3,measurements,controls,reload,allFilter]=await Promise.all([
   readFile(new URL('../migrations/0021_meta_ads_granular_analysis.sql',import.meta.url),'utf8'),
   readFile(new URL('../src/index-commerce-v34.js',import.meta.url),'utf8'),
   readFile(new URL('../public/v2/modules-v48-ad-expert.js',import.meta.url),'utf8'),
@@ -13,6 +13,7 @@ const [migration,entry,ui,index,preview,v36,hub,comparisonUx,detail,detailV2,det
   readFile(new URL('../src/meta-ads-campaign-detail-v2.js',import.meta.url),'utf8'),
   readFile(new URL('../src/meta-ads-campaign-detail-v3.js',import.meta.url),'utf8'),
   readFile(new URL('../public/v2/modules-v70-breakdown-measurements.js',import.meta.url),'utf8'),
+  readFile(new URL('../public/v2/modules-v71-breakdown-controls.js',import.meta.url),'utf8'),
   readFile(new URL('../public/v2/modules-v57-section-reload.js',import.meta.url),'utf8'),
   readFile(new URL('../src/meta-ads-campaign-all.js',import.meta.url),'utf8')
 ]);
@@ -42,7 +43,7 @@ assert(detail.includes("[catalogItem.param]:catalogItem.key")&&detail.includes("
 assert(detail.includes("metricMode:'actions'")&&detail.includes('actionBreakdownRows')&&detail.includes('لا نوزّع Spend أو CPM'),'Action Breakdowns must be modeled as event/result data instead of duplicated delivery spend');
 assert(detailV2.includes("SELECT external_id FROM meta_ad_entities WHERE client_id=? AND level='ad'")&&detailV2.includes("allowed.has(clean(row.adId))")&&detailV2.includes('scopeFiltered:true'),'Meta breakdown rows must be hard-filtered to the selected tenant/store ad catalog');
 assert(detailV2.includes('deliveryTotals(rows)')&&detailV2.includes('actionTotals(rows)'),'Breakdown totals must be recomputed after scope filtering');
-for(const marker of ['readableBreakdownValue','dimensionAssetId','dimensionResolved','asset_feed_spec','object_story_spec','creative-id','creative-single'])assert(detailV3.includes(marker),`Readable creative Breakdown resolver missing marker: ${marker}`);
+for(const marker of ['readableBreakdownValue','dimensionAssetId','dimensionResolved','asset_feed_spec','object_story_spec','creative-id','creative-single','COMPOSITE_BREAKDOWNS','metricAvailability','compatibleFetcher'])assert(detailV3.includes(marker),`Readable/compatible creative Breakdown resolver missing marker: ${marker}`);
 for(const label of ['الشغالة فقط','كل الإعلانات','تحليل الحملات الإعلانية','تحليل المجموعات الإعلانية','تحليل الإعلانات','Breakdown تفصيلي للإعلانات','Action Breakdowns','اليوم','أمس','آخر أسبوع','من بداية الشهر','آخر 30 يوم','فترة معينة'])assert(hub.includes(label),`Campaign hub UI contract missing: ${label}`);
 for(const section of ['data-campaign-section="campaign"','data-campaign-section="adset"','data-campaign-section="ad"'])assert(hub.includes(section),`Independent Campaign Hub section missing: ${section}`);
 assert(hub.includes("sections:{campaign:freshSection(),adset:freshSection(),ad:freshSection()}")&&hub.includes("preset:'7d'")&&hub.includes("mode:'analysis'"),'Campaign, Ad Set and Ad must keep independent date/mode state');
@@ -59,8 +60,9 @@ assert(comparisonUx.includes('buildSignals')&&comparisonUx.includes("severity:'h
 assert(comparisonUx.includes('data-ux67-signal')&&comparisonUx.includes('ux67-marker')&&comparisonUx.includes('الأرقام التي تستحق النظر'),'Flagged comparison numbers must have visual markers tied to analysis below');
 assert(comparisonUx.includes('scrollIntoView')&&comparisonUx.includes('ux67Insight-'),'Clicking a marked number must focus its matching analysis card');
 assert(comparisonUx.includes('إنفاق بدون مشتريات')&&comparisonUx.includes('هبوط واضح في ROAS')&&comparisonUx.includes('ارتفاع تكلفة الشراء')&&comparisonUx.includes('CTR يتراجع')&&comparisonUx.includes('CPM أعلى من اليوم السابق'),'Comparison UX must explain the main efficiency signals rather than only coloring numbers');
-for(const marker of ['كل نص فعلي ظاهر هنا','Asset ID','لا تستخدم الـID بدل النص','Spend','Purchases','CPP','ROAS','CTR','CPC','CPM','Frequency'])assert(measurements.includes(marker),`Readable per-element Breakdown UI missing marker: ${marker}`);
+for(const marker of ['كل نص فعلي ظاهر هنا','Asset ID','لا تستخدم الـID بدل النص','Spend','Purchases','CPP','ROAS','CTR','CPC','CPM','Frequency','metricAvailability'])assert(measurements.includes(marker),`Readable per-element Breakdown UI missing marker: ${marker}`);
 assert(measurements.includes('dimensionAssetId')&&measurements.includes('dimensionValue'),'Per-element Breakdown UI must keep technical ID separate from readable value');
-assert(reload.includes('modules-v66-campaign-hub.js?v=66.0')&&reload.includes('modules-v67-campaign-comparison-ux.js?v=67.0')&&reload.includes('modules-v68-breakdown-analysis-ux.js?v=68.1')&&reload.includes('modules-v70-breakdown-measurements.js?v=70.0')&&!reload.includes('modules-v65-campaign-hub.js?v=65.0'),'Campaign loader must keep v66 workspaces and load the current comparison, analysis and readable measurement layers');
-new Function(hub);new Function(comparisonUx);new Function(measurements);new Function(reload);
-console.log('Meta Ads expert analysis contract passed, including independent Campaign/Ad Set/Ad workspaces, per-section dates, sticky comparison metrics, readable creative Breakdown values with separate asset IDs, per-element measurement cards, exhaustive filtering, current Meta SDK coverage and tenant/store scoping.');
+for(const marker of ['AbortController','activeController.abort','aria-busy','campaign71BreakdownRetry','decorateCatalog','مشروط','متوافق تلقائيًا','الطلب اشتغل بنجاح'])assert(controls.includes(marker),`Reliable Breakdown controls missing marker: ${marker}`);
+assert(reload.includes('modules-v66-campaign-hub.js?v=66.0')&&reload.includes('modules-v67-campaign-comparison-ux.js?v=67.0')&&reload.includes('modules-v68-breakdown-analysis-ux.js?v=68.1')&&reload.includes('modules-v70-breakdown-measurements.js?v=70.1')&&reload.includes('modules-v71-breakdown-controls.js?v=71.1')&&!reload.includes('modules-v65-campaign-hub.js?v=65.0'),'Campaign loader must keep v66 workspaces and load current comparison, analysis, readable measurements and reliable controls layers');
+new Function(hub);new Function(comparisonUx);new Function(measurements);new Function(controls);new Function(reload);
+console.log('Meta Ads expert analysis contract passed, including independent Campaign/Ad Set/Ad workspaces, per-section dates, sticky comparison metrics, readable creative values, compatible Meta Breakdown requests, per-element measurement cards, reliable controls, exhaustive filtering, current Meta SDK coverage and tenant/store scoping.');
