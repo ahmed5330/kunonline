@@ -3,10 +3,11 @@ import {recordCarrierFinancials} from './carrier-financials.js';
 import {applyCurrentInventoryCosts} from './dashboard-live-product-cost.js';
 import {metaAdsExpertAnalysisV2} from './meta-ads-expert.js';
 import {metaAdsDailyComparison,metaAdsBreakdown,META_BREAKDOWN_CATALOG} from './meta-ads-campaign-detail.js';
+import {includeInactiveExpertEntities,includeInactiveComparisonEntities} from './meta-ads-campaign-all.js';
 import {requirePermission,resolveTenant} from './access-control.js';
 import {resolveStoreScope} from './store-scope.js';
 
-const BUILD='preview-v36-2026-09-02-campaign-expert-hub';
+const BUILD='preview-v36-2026-09-02-campaign-expert-hub-all-filter';
 const clean=value=>String(value??'').trim();
 const num=value=>Number(value)||0;
 const parseArr=value=>{try{const parsed=JSON.parse(value||'[]');return Array.isArray(parsed)?parsed:[];}catch{return [];}};
@@ -30,8 +31,17 @@ async function campaignReadScope(request,env,ctx){
   const scope=await resolveStoreScope(env,me,clientId,clean(url.searchParams.get('storeId'))||null,{write:false});
   return {url,me,clientId,storeId:scope.storeId||null};
 }
-async function campaignHubRoute(request,env,ctx){const {url,clientId,storeId}=await campaignReadScope(request,env,ctx);const analysis=await metaAdsExpertAnalysisV2(env,{clientId,storeId,from:url.searchParams.get('from'),to:url.searchParams.get('to')});return json({...analysis,breakdownCatalog:META_BREAKDOWN_CATALOG});}
-async function campaignComparisonRoute(request,env,ctx){const {url,clientId,storeId}=await campaignReadScope(request,env,ctx);return json(await metaAdsDailyComparison(env,{clientId,storeId,level:url.searchParams.get('level')||'campaign',from:url.searchParams.get('from'),to:url.searchParams.get('to'),days:url.searchParams.get('days')||7,status:url.searchParams.get('status')||'active'}));}
+async function campaignHubRoute(request,env,ctx){
+  const {url,clientId,storeId}=await campaignReadScope(request,env,ctx);
+  const base=await metaAdsExpertAnalysisV2(env,{clientId,storeId,from:url.searchParams.get('from'),to:url.searchParams.get('to')});
+  const analysis=await includeInactiveExpertEntities(env,{clientId,storeId,analysis:base});
+  return json({...analysis,breakdownCatalog:META_BREAKDOWN_CATALOG});
+}
+async function campaignComparisonRoute(request,env,ctx){
+  const {url,clientId,storeId}=await campaignReadScope(request,env,ctx),status=url.searchParams.get('status')||'active';
+  const base=await metaAdsDailyComparison(env,{clientId,storeId,level:url.searchParams.get('level')||'campaign',from:url.searchParams.get('from'),to:url.searchParams.get('to'),days:url.searchParams.get('days')||7,status});
+  return json(await includeInactiveComparisonEntities(env,{clientId,storeId,level:base.level,result:base}));
+}
 async function campaignBreakdownRoute(request,env,ctx){const {url,clientId,storeId}=await campaignReadScope(request,env,ctx);return json(await metaAdsBreakdown(env,{clientId,storeId,from:url.searchParams.get('from'),to:url.searchParams.get('to'),days:url.searchParams.get('days')||7,status:url.searchParams.get('status')||'active',dimension:url.searchParams.get('dimension')||'image_asset'}));}
 async function explicitInventoryLinks(env,{clientId,orderId,productId}){
   const row=await env.DB.prepare("SELECT COUNT(*) total,SUM(CASE WHEN product_id IS NOT NULL AND trim(product_id)<>'' THEN 1 ELSE 0 END) linked FROM order_items WHERE order_id=? AND client_id=? AND qty>0").bind(orderId,clientId).first().catch(()=>({total:0,linked:0}));
@@ -135,7 +145,7 @@ async function fetchV36(request,env,ctx){
 }
 
 export class SyncEntrypoint extends SyncEntrypointV35{
-  async health(){const base=await super.health();return {...base,entrypoint:'index-commerce-v36.js',returnReconfirmStockGuard:true,customerServiceShippingHandoff:true,carrierFinancials:true,dashboardCurrentInventoryCosts:true,campaignExpertHub:true,campaignDailyComparison:true,metaBreakdowns:true};}
+  async health(){const base=await super.health();return {...base,entrypoint:'index-commerce-v36.js',returnReconfirmStockGuard:true,customerServiceShippingHandoff:true,carrierFinancials:true,dashboardCurrentInventoryCosts:true,campaignExpertHub:true,campaignDailyComparison:true,metaBreakdowns:true,campaignAllFilterExhaustive:true};}
 }
 
 export default {fetch:fetchV36,scheduled(controller,env,ctx){return commerceV35.scheduled?.(controller,env,ctx);}};
