@@ -119,8 +119,8 @@
 
 // Campaign Hub uses a fresh asset path so Cloudflare cannot reuse a stale asset manifest entry.
 {
-  const hubId='kunCampaignHubV65Loader';
+  const hubId='kunCampaignHubV66Loader';
   if(!document.getElementById(hubId)){
-    const module=document.createElement('script');module.id=hubId;module.src='/v2/modules-v65-campaign-hub.js?v=65.0';module.async=false;document.head.appendChild(module);
+    const module=document.createElement('script');module.id=hubId;module.src='/v2/modules-v66-campaign-hub.js?v=66.0';module.async=false;document.head.appendChild(module);
   }
 }
