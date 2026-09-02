@@ -7,7 +7,7 @@ import {includeInactiveExpertEntities,includeInactiveComparisonEntities} from '.
 import {requirePermission,resolveTenant} from './access-control.js';
 import {resolveStoreScope} from './store-scope.js';
 
-const BUILD='preview-v36-2026-09-02-campaign-anonymous-gate';
+const BUILD='preview-v36-2026-09-02-campaign-level-workspaces';
 const clean=value=>String(value??'').trim();
 const num=value=>Number(value)||0;
 const parseArr=value=>{try{const parsed=JSON.parse(value||'[]');return Array.isArray(parsed)?parsed:[];}catch{return [];}};
@@ -23,8 +23,6 @@ async function currentUser(request,env,ctx){
     const me=await response.json().catch(()=>null);
     return me?.role?me:null;
   }catch{
-    // Authorization helpers fail closed. A session lookup failure must never let a
-    // protected Campaign/finance route continue or surface internals as an auth bypass.
     return null;
   }
 }
@@ -70,9 +68,6 @@ async function guardedReturnedReconfirmation(request,env,ctx,match){
   if(!row||row.state!=='returned'||Number(row.restocked)!==1)return commerceV35.fetch(request,env,ctx);
   if(!await explicitInventoryLinks(env,{clientId,orderId,productId:row.product_id}))return commerceV35.fetch(request,env,ctx);
 
-  // The FIFO confirmation path will deduct current inventory itself. Temporarily clear
-  // the legacy return marker so the old order PATCH does not deduct the same quantity
-  // a second time while leaving the returned state. If confirmation fails, restore it.
   await env.DB.prepare("UPDATE orders SET restocked=0 WHERE id=? AND client_id=? AND state='returned' AND restocked=1").bind(orderId,clientId).run();
   let response;
   try{response=await commerceV35.fetch(request,env,ctx);}catch(error){await restoreLegacyReturnFlagIfStillReturned(env,{clientId,orderId});throw error;}
@@ -94,8 +89,6 @@ async function customerServiceShippingFallback(request,env,ctx,match,response,bo
   const orderId=decodeURIComponent(match[1]),row=await env.DB.prepare('SELECT id,state,store_id,history FROM orders WHERE id=? AND client_id=?').bind(orderId,clientId).first().catch(()=>null);
   if(!row||!['confirmed','preparing','shipped'].includes(clean(row.state)))return response;
 
-  // The Customer Service route has already enforced store assignment/write access before
-  // reaching the legacy order permission gate. Keep the selected-store boundary explicit too.
   const url=new URL(request.url),requestedStore=clean(body.storeId||body.store_id||url.searchParams.get('storeId'));
   if(requestedStore&&requestedStore!==clean(row.store_id))return response;
 
@@ -155,7 +148,7 @@ async function fetchV36(request,env,ctx){
 }
 
 export class SyncEntrypoint extends SyncEntrypointV35{
-  async health(){const base=await super.health();return {...base,entrypoint:'index-commerce-v36.js',returnReconfirmStockGuard:true,customerServiceShippingHandoff:true,carrierFinancials:true,dashboardCurrentInventoryCosts:true,campaignExpertHub:true,campaignDailyComparison:true,metaBreakdowns:true,campaignAllFilterExhaustive:true,metaBreakdownScopeGuard:true,currentMetaSdkBreakdowns:true,campaignAuthFailClosed:true,campaignAnonymousGate:true};}
+  async health(){const base=await super.health();return {...base,entrypoint:'index-commerce-v36.js',returnReconfirmStockGuard:true,customerServiceShippingHandoff:true,carrierFinancials:true,dashboardCurrentInventoryCosts:true,campaignExpertHub:true,campaignDailyComparison:true,metaBreakdowns:true,campaignAllFilterExhaustive:true,metaBreakdownScopeGuard:true,currentMetaSdkBreakdowns:true,campaignAuthFailClosed:true,campaignAnonymousGate:true,campaignLevelWorkspaces:true,campaignIndependentDateRanges:true};}
 }
 
 export default {fetch:fetchV36,scheduled(controller,env,ctx){return commerceV35.scheduled?.(controller,env,ctx);}};
