@@ -11,7 +11,6 @@ for(const marker of [
   "document.addEventListener('click'",
   'event.stopImmediatePropagation()',
   'AbortController',
-  'controller.abort',
   'requestId!==sequence',
   'activeKey!==key',
   'aria-busy',
@@ -23,6 +22,7 @@ for(const marker of [
   "box.setAttribute('aria-live','polite')"
 ])must(controls.includes(marker),`Breakdown v71 missing contract marker: ${marker}`);
 
+must(/activeController\.abort\(/.test(controls),'Breakdown v71 must abort the previous in-flight request');
 must(!/changeSelection\([^)]*\)[\s\S]{0,500}\.render\(/.test(controls),'Breakdown selection change must not repaint the full Campaign Hub');
 must(loader.includes("modules-v71-breakdown-controls.js?v=71.0"),'v57 loader must load Breakdown controls v71');
 must(loader.indexOf('modules-v70-breakdown-measurements.js?v=70.0')<loader.indexOf('modules-v71-breakdown-controls.js?v=71.0'),'v71 controls must load after v70 measurements');
