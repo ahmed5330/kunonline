@@ -1,6 +1,6 @@
 import {readFile} from 'node:fs/promises';
 
-const [migration,entry,ui,index,preview,v36,hub,detail,reload]=await Promise.all([
+const [migration,entry,ui,index,preview,v36,hub,detail,reload,catalogUi]=await Promise.all([
   readFile(new URL('../migrations/0021_meta_ads_granular_analysis.sql',import.meta.url),'utf8'),
   readFile(new URL('../src/index-commerce-v34.js',import.meta.url),'utf8'),
   readFile(new URL('../public/v2/modules-v48-ad-expert.js',import.meta.url),'utf8'),
@@ -9,7 +9,8 @@ const [migration,entry,ui,index,preview,v36,hub,detail,reload]=await Promise.all
   readFile(new URL('../src/index-commerce-v36.js',import.meta.url),'utf8'),
   readFile(new URL('../public/v2/modules-v63-campaign-hub.js',import.meta.url),'utf8'),
   readFile(new URL('../src/meta-ads-campaign-detail.js',import.meta.url),'utf8'),
-  readFile(new URL('../public/v2/modules-v57-section-reload.js',import.meta.url),'utf8')
+  readFile(new URL('../public/v2/modules-v57-section-reload.js',import.meta.url),'utf8'),
+  readFile(new URL('../public/v2/modules-v64-meta-breakdown-catalog.js',import.meta.url),'utf8')
 ]);
 const assert=(ok,message)=>{if(!ok)throw new Error(message)};
 assert(migration.includes('meta_ad_entities')&&migration.includes('meta_ad_daily_metrics'),'Granular Meta tables missing');
@@ -27,10 +28,13 @@ assert(/main\s*=\s*"src\/index-commerce-v3[456]\.js"/.test(preview),'Preview is 
 for(const route of ['/api/integrations/meta-ads/campaign-hub','/api/integrations/meta-ads/daily-comparison','/api/integrations/meta-ads/breakdowns'])assert(v36.includes(route),`Campaign hub route missing: ${route}`);
 assert(v36.includes("requirePermission(me,'campaigns','read')")&&v36.includes('resolveStoreScope'),'Campaign hub must preserve campaign permission and store isolation');
 for(const level of ["'campaign'","'adset'","'ad'"])assert(detail.includes(level),`Daily comparison level missing: ${level}`);
-for(const breakdown of ['image_asset','video_asset','body_asset','title_asset','region','publisher_platform','platform_position','device_platform','impression_device'])assert(detail.includes(breakdown),`Requested Meta breakdown missing: ${breakdown}`);
+for(const breakdown of ['image_asset','video_asset','body_asset','title_asset','region','country','zip','publisher_platform','platform_position','device_platform','impression_device','product_brand_breakdown','product_category_breakdown','gen_ai_asset_type','creative_automation_asset_id'])assert(detail.includes(breakdown),`Requested Meta breakdown missing: ${breakdown}`);
+for(const action of ['action__action_type','action__action_device','action__action_destination','action__action_carousel_card_name','action__standard_event_content_type'])assert(detail.includes(action.split('__')[1])&&detail.includes('actionBreakdown'),`Action breakdown support missing: ${action}`);
+assert(detail.includes("[catalogItem.param]:catalogItem.key")&&detail.includes("param:'action_breakdowns'"),'Breakdown endpoint must route regular and action breakdown parameters separately');
 for(const label of ['الشغالة فقط','كل الإعلانات','تحليل الحملات الإعلانية','تحليل المجموعات الإعلانية','تحليل الإعلانات','Breakdown تفصيلي للإعلانات','مقارنة يوم بيوم'])assert(hub.includes(label),`Campaign hub UI contract missing: ${label}`);
 assert(hub.includes("state.status==='all'?rows:rows.filter(isActive)")&&hub.includes("status:state.status"),'Active/all filter must drive analysis and data APIs together');
 assert(hub.includes("data-compare-level=\"campaign\"")&&hub.includes("data-compare-level=\"adset\"")&&hub.includes("data-compare-level=\"ad\""),'Daily comparison must support Campaign, Ad Set and Ad levels');
-assert(reload.includes('modules-v63-campaign-hub.js?v=63.0'),'Campaign hub loader is missing');
-new Function(hub);
-console.log('Meta Ads expert analysis contract passed, including Campaign/Ad Set/Ad filters, expert recommendations, creative/geography/platform breakdowns and day-by-day comparison.');
+assert(reload.includes('modules-v63-campaign-hub.js?v=63.0')&&reload.includes('modules-v64-meta-breakdown-catalog.js?v=64.0'),'Campaign hub/full breakdown loaders are missing');
+assert(catalogUi.includes('breakdownCatalog')&&catalogUi.includes('optgroup')&&catalogUi.includes('catalogSignature'),'Full server breakdown catalog must hydrate the Campaigns selector');
+new Function(hub);new Function(catalogUi);new Function(reload);
+console.log('Meta Ads expert analysis contract passed, including Campaign/Ad Set/Ad filters, expert recommendations, full Meta/action breakdown catalog and day-by-day comparison.');
