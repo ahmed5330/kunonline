@@ -2,7 +2,7 @@ import {readConnectionSecrets} from './integration-provider-validation.js';
 import {
   metaAdsDailyComparison,
   metaAdsBreakdown as baseBreakdown,
-  META_BREAKDOWN_CATALOG
+  META_BREAKDOWN_CATALOG as SDK_BREAKDOWN_CATALOG
 } from './meta-ads-campaign-detail-v2.js';
 
 const PROVIDER='meta_ads';
@@ -10,8 +10,38 @@ const clean=value=>String(value??'').trim();
 const TEXT_DIMENSIONS=new Set(['body_asset','title_asset','description_asset','media_text_content']);
 const CREATIVE_DIMENSIONS=new Set(['body_asset','title_asset','description_asset','image_asset','video_asset','link_url_asset','call_to_action_asset','ad_format_asset','media_text_content']);
 const ARRAY_BY_DIMENSION={body_asset:'bodies',title_asset:'titles',description_asset:'descriptions',image_asset:'images',video_asset:'videos',link_url_asset:'link_urls'};
+const COMPOSITE_BREAKDOWNS={
+  impression_device:['publisher_platform','impression_device'],
+  platform_position:['publisher_platform','platform_position']
+};
+const NO_REACH_DIMENSIONS=new Set([
+  'impression_device','platform_position',
+  'hourly_stats_aggregated_by_advertiser_time_zone','hourly_stats_aggregated_by_audience_time_zone','impression_view_time_advertiser_hour_v2'
+]);
+const APP_SKAN_DIMENSIONS=new Set(['app_id','coarse_conversion_value','postback_sequence_index','skan_campaign_id','skan_conversion_id','skan_version','is_conversion_id_modeled','fidelity_type','redownload']);
+const CATALOG_DIMENSIONS=new Set(['product_id','product_brand_breakdown','product_category_breakdown','product_custom_label_0_breakdown','product_custom_label_1_breakdown','product_custom_label_2_breakdown','product_custom_label_3_breakdown','product_custom_label_4_breakdown','product_group_content_id_breakdown','msa_seller_name']);
+const INSTAGRAM_DIMENSIONS=new Set(['instagram_ads_follow_type','instagram_ads_instagram_media_product_type','instagram_ads_time_since_creation_bucket','reels_trending_topic','pa_creator_ig_handle']);
+const AFFILIATE_DIMENSIONS=new Set(['affiliate_click_region','affiliate_link_url']);
+const ADVANCED_DIMENSIONS=new Set(['creative_automation_asset_id','creative_relaxation_asset_type','flexible_format_asset_type','gen_ai_asset_type','is_auto_advance','is_rendered_as_delayed_skip_ad','user_persona_id','user_persona_name','hsid','overlap_segment','comscore_market','place_page_id','breakdown_ad_objective','breakdown_reporting_ad_id','internal_campaign_id','rule_set_id','rule_set_name','signal_source_bucket','sot_attribution_model_type','sot_attribution_window','sot_channel','sot_event_type','sot_source','ad_extension_domain','ad_extension_url','crm_advertiser_l12_territory_ids','crm_advertiser_subvertical_id','crm_advertiser_vertical_id','crm_ult_advertiser_id','mmm','rta_ugc_topic','placement_path']);
+const HOURLY_DIMENSIONS=new Set(['hourly_stats_aggregated_by_advertiser_time_zone','hourly_stats_aggregated_by_audience_time_zone','impression_view_time_advertiser_hour_v2']);
 
-export {metaAdsDailyComparison,META_BREAKDOWN_CATALOG};
+function profile(item){
+  const id=clean(item?.id),base={support:'standard',hint:'',requestBreakdowns:COMPOSITE_BREAKDOWNS[id]||[item?.key||id],metricAvailability:{frequency:!NO_REACH_DIMENSIONS.has(id),reach:!NO_REACH_DIMENSIONS.has(id)}};
+  if(id==='impression_device')return {...base,support:'compatible-composite',hint:'Meta لا تسمح بجهاز الظهور منفردًا؛ Kun Online يطلبه تلقائيًا مع Publisher Platform ثم يعرض الجهاز المطلوب.'};
+  if(id==='platform_position')return {...base,support:'compatible-composite',hint:'موضع الظهور يُطلب مع Publisher Platform لضمان توافق طلب Meta.'};
+  if(HOURLY_DIMENSIONS.has(id))return {...base,support:'conditional',hint:'Breakdown بالساعة لا يدعم Reach/Frequency كقياس عادي، وبعض حسابات Meta قد تحتاج تفعيل Reporting Breakdown أو تقرير Async.'};
+  if(id==='frequency_value')return {...base,support:'conditional',hint:'Frequency Value مخصص أساسًا لحملات Reach & Frequency / Reservation وقد لا يرجع بيانات للحملات العادية.'};
+  if(APP_SKAN_DIMENSIONS.has(id))return {...base,support:'conditional',hint:'هذا Breakdown خاص ببيانات App/SKAN؛ قد تكون النتيجة فارغة إذا كانت الحملات Web/Catalog فقط.'};
+  if(CATALOG_DIMENSIONS.has(id))return {...base,support:'conditional',hint:'هذا Breakdown يحتاج إعلانات Catalog/Product تحتوي بيانات المنتج المطلوبة.'};
+  if(INSTAGRAM_DIMENSIONS.has(id))return {...base,support:'conditional',hint:'هذا Breakdown خاص بتسليم/ميديا Instagram وقد لا ينطبق على بقية المواضع.'};
+  if(AFFILIATE_DIMENSIONS.has(id))return {...base,support:'conditional',hint:'هذا Breakdown يظهر فقط عند وجود بيانات Affiliate مدعومة في الحساب.'};
+  if(ADVANCED_DIMENSIONS.has(id))return {...base,support:'conditional',hint:'Breakdown متقدم ومشروط بنوع الإعلان/الهدف/الميزة المفعلة في حساب Meta.'};
+  if(clean(item?.param)==='action_breakdowns'&&id!=='action__action_type')return {...base,support:'conditional',hint:'Action Breakdown مشروط بوجود هذا النوع من الأحداث في نتائج الإعلان؛ عدم وجود صفوف لا يعني أن الزر معطل.'};
+  return base;
+}
+export const META_BREAKDOWN_CATALOG=SDK_BREAKDOWN_CATALOG.map(item=>({...item,...profile(item)}));
+const PROFILE_BY_ID=new Map(META_BREAKDOWN_CATALOG.map(item=>[item.id,item]));
+export {metaAdsDailyComparison};
 
 function firstReadable(object,keys){for(const key of keys){const value=object?.[key];if(value!==undefined&&value!==null&&clean(value))return clean(value);}return '';}
 function rawAssetId(raw){
@@ -85,6 +115,17 @@ async function fetchCreativeAds(env,{clientId,adIds,fetcher}){
   }
   return out;
 }
+function compatibleFetcher(fetcher,dimension){
+  const profile=PROFILE_BY_ID.get(clean(dimension));if(!profile)return fetcher;
+  return async(input,init)=>{
+    let target;try{target=new URL(typeof input==='string'||input instanceof URL?input:input?.url);}catch{return fetcher(input,init);}
+    if(target.protocol==='https:'&&target.hostname==='graph.facebook.com'&&/\/insights$/.test(target.pathname)){
+      if(profile.param==='breakdowns'&&Array.isArray(profile.requestBreakdowns)&&profile.requestBreakdowns.length>1)target.searchParams.set('breakdowns',profile.requestBreakdowns.join(','));
+      if(profile.metricAvailability?.reach===false){const fields=clean(target.searchParams.get('fields')).split(',').map(clean).filter(Boolean).filter(field=>field!=='reach'&&field!=='frequency');target.searchParams.set('fields',fields.join(','));}
+    }
+    return fetcher(target.toString(),init);
+  };
+}
 async function enrichCreativeRows(env,{clientId,result,fetcher}){
   const dimension=clean(result?.dimension);if(result?.metricMode!=='delivery'||!CREATIVE_DIMENSIONS.has(dimension)||!Array.isArray(result?.rows))return result;
   let unresolved=[];
@@ -109,7 +150,14 @@ async function enrichCreativeRows(env,{clientId,result,fetcher}){
   }
   return {...result,rows,readableCreativeAssets:true,note:[result.note,'في Breakdowns الخاصة بالكرياتيف يعرض Kun Online النص/العنوان/الوصف أو الأصل المقروء أولًا، ويحتفظ بـ Asset ID كمرجع تقني منفصل.'].filter(Boolean).join(' ')};
 }
+function decorateResult(result,dimension){
+  const profile=PROFILE_BY_ID.get(clean(dimension));if(!profile)return {...result,catalog:META_BREAKDOWN_CATALOG};
+  const note=[result?.note,profile.hint].filter(Boolean).join(' ');
+  return {...result,catalog:META_BREAKDOWN_CATALOG,support:profile.support,hint:profile.hint,requestBreakdowns:profile.requestBreakdowns,metricAvailability:profile.metricAvailability,note};
+}
 export async function metaAdsBreakdown(env,args={}){
-  const result=await baseBreakdown(env,args);
-  return enrichCreativeRows(env,{clientId:args.clientId,result,fetcher:args.fetcher||fetch});
+  const dimension=clean(args.dimension||'image_asset'),rawFetcher=args.fetcher||fetch,requestFetcher=compatibleFetcher(rawFetcher,dimension);
+  let result=await baseBreakdown(env,{...args,dimension,fetcher:requestFetcher});
+  result=await enrichCreativeRows(env,{clientId:args.clientId,result,fetcher:rawFetcher});
+  return decorateResult(result,dimension);
 }
