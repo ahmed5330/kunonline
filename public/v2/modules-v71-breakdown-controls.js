@@ -74,5 +74,5 @@
   function scheduleObserverEnhance(){if(observerQueued)return;observerQueued=true;queueMicrotask(()=>{observerQueued=false;ensureButtons();decorateError();decorateEmpty();});}
   const observer=new MutationObserver(scheduleObserverEnhance);observer.observe(document.documentElement,{childList:true,subtree:true});
   window.addEventListener('kun:section-reloaded',()=>{cancel('section-reloaded');enhanceSoon();});
-  window.KunBreakdownControlsV71={loadSelected,cancel,changeSelection,currentRequestKey,decorateCatalog,version:'71.2'};document.documentElement.dataset.breakdownControls='v71.2-ready';style();ensureButtons();enhanceSoon();
+  window.KunBreakdownControlsV71={loadSelected,cancel,changeSelection,currentRequestKey,decorateCatalog,version:'71.2'};document.documentElement.dataset.breakdownControls='v71-ready';style();ensureButtons();enhanceSoon();
 })();
