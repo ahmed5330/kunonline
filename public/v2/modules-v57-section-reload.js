@@ -117,12 +117,17 @@
   document.documentElement.dataset.sectionReload='v57.1-ready';
 })();
 
-// Campaign Hub keeps its functional workspace in v66 and layers comparison v67 + selected Breakdown analysis v68.
+// Campaign Hub keeps v66 workspaces and layers comparison v67, analysis v68 and readable element measurements v70.
 {
-  const hubId='kunCampaignHubV66Loader',uxId='kunCampaignUXV67Loader',breakdownId='kunBreakdownAnalysisV68Loader';
+  const hubId='kunCampaignHubV66Loader',uxId='kunCampaignUXV67Loader',breakdownId='kunBreakdownAnalysisV68Loader',measureId='kunBreakdownMeasurementsV70Loader';
+  const loadMeasurements=()=>{
+    if(document.getElementById(measureId))return;
+    const measure=document.createElement('script');measure.id=measureId;measure.src='/v2/modules-v70-breakdown-measurements.js?v=70.0';measure.async=false;document.head.appendChild(measure);
+  };
   const loadBreakdownUX=()=>{
-    if(document.getElementById(breakdownId))return;
-    const breakdown=document.createElement('script');breakdown.id=breakdownId;breakdown.src='/v2/modules-v68-breakdown-analysis-ux.js?v=68.0';breakdown.async=false;document.head.appendChild(breakdown);
+    const existing=document.getElementById(breakdownId);
+    if(existing){if(window.KunBreakdownAnalysisV68)loadMeasurements();else existing.addEventListener('load',loadMeasurements,{once:true});return;}
+    const breakdown=document.createElement('script');breakdown.id=breakdownId;breakdown.src='/v2/modules-v68-breakdown-analysis-ux.js?v=68.1';breakdown.async=false;breakdown.addEventListener('load',loadMeasurements,{once:true});document.head.appendChild(breakdown);
   };
   const loadUX=()=>{
     const existingUX=document.getElementById(uxId);
