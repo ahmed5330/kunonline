@@ -23,7 +23,7 @@ async function waitFor(expression,label,timeout=7000){const start=Date.now();let
 try{
   cdp=await connect(await launch(await findChrome()));await cdp.send('Runtime.enable');
   await evalJs(`(()=>{
-    document.body.innerHTML='<div class="campaign66"><select id="campaign66Breakdown"></select><button id="campaign66BreakdownLoad">تحميل الـBreakdown</button><div id="campaign66BreakdownBox"></div></div>';
+    document.body.innerHTML='<div class="campaign66"><div class="card"><select id="campaign66Breakdown"></select><button id="campaign66BreakdownLoad">تحميل الـBreakdown</button><div id="campaign66BreakdownBox"></div></div></div>';
     const catalog=[
       {id:'body_asset',label:'النص الأساسي',support:'standard',hint:''},
       {id:'title_asset',label:'العنوان',support:'standard',hint:''},
@@ -35,7 +35,7 @@ try{
     const state={status:'active',breakdown:'body_asset',sections:{ad:{breakdownData:null,expert:{breakdownCatalog:catalog}}}};
     function optionHtml(){return catalog.map(x=>'<option value="'+x.id+'" '+(state.breakdown===x.id?'selected':'')+'>'+x.label+'</option>').join('');}
     function tableHtml(data){if(!data)return '<div class="empty">اختَر Breakdown واضغط تحميل.</div>';if(data.error)return '<div class="empty">'+data.error+'</div>';const rows=data.rows||[];if(data.metricMode==='actions')return '<div class="table-wrap"><table><tbody>'+rows.map(x=>'<tr><td>'+x.dimensionValue+'</td><td>'+x.actionType+'</td></tr>').join('')+'</tbody></table></div>';return '<div class="table-wrap"><table><tbody>'+rows.map(x=>'<tr><td>'+x.dimensionValue+'</td><td>'+x.spend+'</td></tr>').join('')+'</tbody></table></div>';}
-    function shell(){document.querySelector('.campaign66').innerHTML='<select id="campaign66Breakdown">'+optionHtml()+'</select><button id="campaign66BreakdownLoad">تحميل الـBreakdown</button><div id="campaign66BreakdownBox">'+tableHtml(state.sections.ad.breakdownData)+'</div>';}
+    function shell(){document.querySelector('.campaign66').innerHTML='<div class="card"><select id="campaign66Breakdown">'+optionHtml()+'</select><button id="campaign66BreakdownLoad">تحميل الـBreakdown</button><div id="campaign66BreakdownBox">'+tableHtml(state.sections.ad.breakdownData)+'</div></div>';}
     window.KunCampaignHubV66={state,rangeFor:()=>({from:'2026-09-01',to:'2026-09-02'}),render:async()=>{shell();}};
     window.kunClientId=async()=> 'fixture-client';window.kunStoreId=async()=>'';
     window.__requests=[];window.__errorDimension='';window.__delays={};window.__emptyDimension='';
