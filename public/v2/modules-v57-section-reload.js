@@ -117,12 +117,17 @@
   document.documentElement.dataset.sectionReload='v57.1-ready';
 })();
 
-// Campaign Hub keeps its functional workspace in v66 and loads v67 as a visual comparison layer.
+// Campaign Hub keeps its functional workspace in v66 and layers comparison v67 + selected Breakdown analysis v68.
 {
-  const hubId='kunCampaignHubV66Loader',uxId='kunCampaignUXV67Loader';
+  const hubId='kunCampaignHubV66Loader',uxId='kunCampaignUXV67Loader',breakdownId='kunBreakdownAnalysisV68Loader';
+  const loadBreakdownUX=()=>{
+    if(document.getElementById(breakdownId))return;
+    const breakdown=document.createElement('script');breakdown.id=breakdownId;breakdown.src='/v2/modules-v68-breakdown-analysis-ux.js?v=68.0';breakdown.async=false;document.head.appendChild(breakdown);
+  };
   const loadUX=()=>{
-    if(document.getElementById(uxId))return;
-    const ux=document.createElement('script');ux.id=uxId;ux.src='/v2/modules-v67-campaign-comparison-ux.js?v=67.0';ux.async=false;document.head.appendChild(ux);
+    const existingUX=document.getElementById(uxId);
+    if(existingUX){if(window.KunCampaignComparisonUXV67)loadBreakdownUX();else existingUX.addEventListener('load',loadBreakdownUX,{once:true});return;}
+    const ux=document.createElement('script');ux.id=uxId;ux.src='/v2/modules-v67-campaign-comparison-ux.js?v=67.0';ux.async=false;ux.addEventListener('load',loadBreakdownUX,{once:true});document.head.appendChild(ux);
   };
   const existing=document.getElementById(hubId);
   if(!existing){
