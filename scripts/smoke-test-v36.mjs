@@ -44,11 +44,12 @@ console.log('Smoke v36 precheck passed: post-shipping carrier sheet importer is 
 
 await propagatedAsset('/v2/modules-v66-campaign-hub.js?v=66.0','Campaign Hub UI',['مركز الحملات الإعلانية — تحليل خبير','الشغالة فقط','كل الإعلانات','تحليل الحملات الإعلانية','تحليل المجموعات الإعلانية','تحليل الإعلانات','Breakdown تفصيلي للإعلانات','data-campaign-section="campaign"','data-campaign-section="adset"','data-campaign-section="ad"','data-section-mode="analysis"','data-section-mode="comparison"','اليوم','أمس','آخر أسبوع','من بداية الشهر','آخر 30 يوم','فترة معينة','metricMode','Action Breakdowns']);
 await propagatedAsset('/v2/modules-v67-campaign-comparison-ux.js?v=67.0','Campaign comparison UX',['ux67-metric-col','position:sticky;left:0','الأرقام التي تستحق النظر','data-ux67-signal','ux67-marker','scrollIntoView','إنفاق بدون مشتريات','هبوط واضح في ROAS','ارتفاع تكلفة الشراء','CTR يتراجع','CPM أعلى من اليوم السابق','راجع الآن','فرصة إيجابية']);
+await propagatedAsset('/v2/modules-v68-breakdown-analysis-ux.js?v=68.0','Selected Breakdown analysis UX',['تحليل الـBreakdown المختار','العنصر محل التحليل:','أفضل عنصر كفاءة','أعلى هدر يحتاج مراجعة','أعلى إنفاق','أعلى مشتريات','أفضل CTR','نقاط تستحق التركيز','إنفاق بدون شراء','ROAS أقل بوضوح من بقية العناصر','CPP مرتفع نسبيًا','CTR منخفض نسبيًا','CPM مرتفع نسبيًا','Frequency يحتاج متابعة','Action Breakdown','breakdownData']);
 for(const path of ['/api/integrations/meta-ads/campaign-hub','/api/integrations/meta-ads/daily-comparison?level=campaign&status=active&days=7','/api/integrations/meta-ads/breakdowns?dimension=image_asset&status=active&days=7']){
   const response=await nativeFetch(`${base}${path}`,{redirect:'manual',headers:{'Cache-Control':'no-cache'}});
   if(response.status!==401)throw new Error(`Campaign protected route must reject anonymous access: ${path} -> ${response.status}`);
 }
-console.log('Smoke v36 precheck passed: independent Campaign/Ad Set/Ad workspaces plus sticky-left comparison metrics, attention markers, linked analysis and protected APIs are deployed.');
+console.log('Smoke v36 precheck passed: independent Campaign/Ad Set/Ad workspaces, sticky-left comparison UX and selected Breakdown analysis are deployed with protected APIs.');
 
 // Keep the established smoke suite intact while its version assertion still names v35.
 // Only the version endpoint response is adapted after the exact current v36 build was verified above.
