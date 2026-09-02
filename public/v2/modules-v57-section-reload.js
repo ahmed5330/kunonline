@@ -1,4 +1,4 @@
-/* Kun Online v57.1 — one reload control per main workspace section, without browser-page reload. */
+/* Kun Online v57.2 — one reload control per main workspace section, without browser-page reload. */
 (function(){
   const K=window.KunActionsV23||{};
   const root=document.getElementById('root');
@@ -111,17 +111,16 @@
     register:(view,handler)=>{if(view&&typeof handler==='function')registry.set(String(view),handler);},
     ensure:ensureButton,
     activeView,
-    version:'57.1'
+    version:'57.2'
   };
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',ensureButton,{once:true});else setTimeout(ensureButton,0);
-  document.documentElement.dataset.sectionReload='v57.1-ready';
+  document.documentElement.dataset.sectionReload='v57.2-ready';
 })();
 
-// Additive loaders keep the large v2 index stable while letting Campaigns own its workspace.
+// Campaign Hub uses a fresh asset path so Cloudflare cannot reuse a stale asset manifest entry.
 {
-  const hubId='kunCampaignHubV63Loader',catalogId='kunMetaBreakdownV64Loader';
-  const loadCatalog=()=>{if(document.getElementById(catalogId))return;const script=document.createElement('script');script.id=catalogId;script.src='/v2/modules-v64-meta-breakdown-catalog.js?v=64.0';script.async=false;document.head.appendChild(script);};
+  const hubId='kunCampaignHubV65Loader';
   if(!document.getElementById(hubId)){
-    const module=document.createElement('script');module.id=hubId;module.src='/v2/modules-v63-campaign-hub.js?v=63.0';module.async=false;module.onload=loadCatalog;document.head.appendChild(module);
-  }else if(window.KunCampaignHubV63)loadCatalog();
+    const module=document.createElement('script');module.id=hubId;module.src='/v2/modules-v65-campaign-hub.js?v=65.0';module.async=false;document.head.appendChild(module);
+  }
 }
