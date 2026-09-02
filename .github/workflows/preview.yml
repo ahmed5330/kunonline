@@ -65,8 +65,9 @@ jobs:
         if: steps.deploy_ownership.outputs.is_latest == 'true'
         run: |
           base_url="https://kunonline-preview.mr-a-mnaa.workers.dev"
-          # This version passed smoke, Store B, team, Customer Service, Easy Orders, Dashboard and browser live gates.
-          known_healthy="649fa14e-8bef-4b27-9419-1cfbb72b557f"
+          # Preview CI/CD #778 (HEAD 7116e552) passed smoke, Store B, team,
+          # Customer Service, Easy Orders, Dashboard and browser live gates on this exact version.
+          known_healthy="2de633ac-b2ad-43df-9b82-1179e91b2787"
           health="$(curl -sS --max-time 10 "$base_url/healthz" || true)"
           healthy="$(printf '%s' "$health" | node -e '
             let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{
