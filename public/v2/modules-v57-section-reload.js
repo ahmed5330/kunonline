@@ -116,3 +116,11 @@
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',ensureButton,{once:true});else setTimeout(ensureButton,0);
   document.documentElement.dataset.sectionReload='v57.1-ready';
 })();
+
+// Additive loader keeps the large v2 index stable while letting Campaigns v63 own only its workspace.
+{
+  const id='kunCampaignHubV63Loader';
+  if(!document.getElementById(id)){
+    const module=document.createElement('script');module.id=id;module.src='/v2/modules-v63-campaign-hub.js?v=63.0';document.head.appendChild(module);
+  }
+}
