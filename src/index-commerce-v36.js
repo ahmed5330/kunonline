@@ -1,8 +1,12 @@
 import commerceV35,{SyncEntrypoint as SyncEntrypointV35} from './index-commerce-v35.js';
 import {recordCarrierFinancials} from './carrier-financials.js';
 import {applyCurrentInventoryCosts} from './dashboard-live-product-cost.js';
+import {metaAdsExpertAnalysisV2} from './meta-ads-expert.js';
+import {metaAdsDailyComparison,metaAdsBreakdown,META_BREAKDOWN_CATALOG} from './meta-ads-campaign-detail.js';
+import {requirePermission,resolveTenant} from './access-control.js';
+import {resolveStoreScope} from './store-scope.js';
 
-const BUILD='preview-v36-2026-09-01-jnt-sheet-financials';
+const BUILD='preview-v36-2026-09-02-campaign-expert-hub';
 const clean=value=>String(value??'').trim();
 const num=value=>Number(value)||0;
 const parseArr=value=>{try{const parsed=JSON.parse(value||'[]');return Array.isArray(parsed)?parsed:[];}catch{return [];}};
@@ -19,6 +23,16 @@ function resolvedClient(me,request,body={}){
   if(me?.clientId){if(requested&&requested!==clean(me.clientId))return null;return clean(me.clientId);}
   return requested||null;
 }
+async function campaignReadScope(request,env,ctx){
+  const url=new URL(request.url),me=await currentUser(request,env,ctx);if(!me)throw Object.assign(new Error('محتاج تسجّل دخول'),{status:401,code:'AUTH_REQUIRED'});
+  requirePermission(me,'campaigns','read');
+  const clientId=resolveTenant(me,url.searchParams.get('clientId'));
+  const scope=await resolveStoreScope(env,me,clientId,clean(url.searchParams.get('storeId'))||null,{write:false});
+  return {url,me,clientId,storeId:scope.storeId||null};
+}
+async function campaignHubRoute(request,env,ctx){const {url,clientId,storeId}=await campaignReadScope(request,env,ctx);const analysis=await metaAdsExpertAnalysisV2(env,{clientId,storeId,from:url.searchParams.get('from'),to:url.searchParams.get('to')});return json({...analysis,breakdownCatalog:META_BREAKDOWN_CATALOG});}
+async function campaignComparisonRoute(request,env,ctx){const {url,clientId,storeId}=await campaignReadScope(request,env,ctx);return json(await metaAdsDailyComparison(env,{clientId,storeId,level:url.searchParams.get('level')||'campaign',from:url.searchParams.get('from'),to:url.searchParams.get('to'),days:url.searchParams.get('days')||7,status:url.searchParams.get('status')||'active'}));}
+async function campaignBreakdownRoute(request,env,ctx){const {url,clientId,storeId}=await campaignReadScope(request,env,ctx);return json(await metaAdsBreakdown(env,{clientId,storeId,from:url.searchParams.get('from'),to:url.searchParams.get('to'),days:url.searchParams.get('days')||7,status:url.searchParams.get('status')||'active',dimension:url.searchParams.get('dimension')||'image_asset'}));}
 async function explicitInventoryLinks(env,{clientId,orderId,productId}){
   const row=await env.DB.prepare("SELECT COUNT(*) total,SUM(CASE WHEN product_id IS NOT NULL AND trim(product_id)<>'' THEN 1 ELSE 0 END) linked FROM order_items WHERE order_id=? AND client_id=? AND qty>0").bind(orderId,clientId).first().catch(()=>({total:0,linked:0}));
   return num(row?.total)>0?num(row?.linked)===num(row?.total):Boolean(clean(productId));
@@ -109,6 +123,9 @@ async function fetchV36(request,env,ctx){
   try{
     if(path==='/api/preview/version'&&method==='GET')return json({ok:true,build:BUILD,environment:env.APP_ENV||'unknown',entrypoint:'index-commerce-v36.js'});
     if(path==='/api/dashboard'&&method==='GET')return dashboardCurrentCostRoute(request,env,ctx);
+    if(path==='/api/integrations/meta-ads/campaign-hub'&&method==='GET')return campaignHubRoute(request,env,ctx);
+    if(path==='/api/integrations/meta-ads/daily-comparison'&&method==='GET')return campaignComparisonRoute(request,env,ctx);
+    if(path==='/api/integrations/meta-ads/breakdowns'&&method==='GET')return campaignBreakdownRoute(request,env,ctx);
     const financialMatch=path.match(/^\/api\/post-shipping\/orders\/([^/]+)\/carrier-financials$/);
     if(financialMatch&&method==='PATCH')return carrierFinancialsRoute(request,env,ctx,financialMatch);
     const stateMatch=path.match(/^\/api\/customer-service\/orders\/([^/]+)\/state$/);
@@ -118,7 +135,7 @@ async function fetchV36(request,env,ctx){
 }
 
 export class SyncEntrypoint extends SyncEntrypointV35{
-  async health(){const base=await super.health();return {...base,entrypoint:'index-commerce-v36.js',returnReconfirmStockGuard:true,customerServiceShippingHandoff:true,carrierFinancials:true,dashboardCurrentInventoryCosts:true};}
+  async health(){const base=await super.health();return {...base,entrypoint:'index-commerce-v36.js',returnReconfirmStockGuard:true,customerServiceShippingHandoff:true,carrierFinancials:true,dashboardCurrentInventoryCosts:true,campaignExpertHub:true,campaignDailyComparison:true,metaBreakdowns:true};}
 }
 
 export default {fetch:fetchV36,scheduled(controller,env,ctx){return commerceV35.scheduled?.(controller,env,ctx);}};
