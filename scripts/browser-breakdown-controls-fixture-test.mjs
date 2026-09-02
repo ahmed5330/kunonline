@@ -44,7 +44,7 @@ try{
     shell();return true;
   })()`);
   await evalJs(`eval(${JSON.stringify(analysisSrc)})`);await evalJs(`eval(${JSON.stringify(measurementsSrc)})`);await evalJs(`eval(${JSON.stringify(controlsSrc)})`);
-  await waitFor(`document.documentElement.dataset.breakdownControls==='v71.1-ready'`,'v71.1 ready');
+  await waitFor(`document.documentElement.dataset.breakdownControls==='v71-ready'&&window.KunBreakdownControlsV71?.version==='71.2'`,'v71.2 ready');
   const decorated=await evalJs(`({device:[...document.querySelectorAll('#campaign66Breakdown option')].find(x=>x.value==='impression_device')?.textContent,hour:[...document.querySelectorAll('#campaign66Breakdown option')].find(x=>x.value==='hourly_stats_aggregated_by_advertiser_time_zone')?.textContent})`);if(!decorated.device?.includes('متوافق تلقائيًا')||!decorated.hour?.includes('مشروط'))throw new Error(`Breakdown support labels missing: ${JSON.stringify(decorated)}`);
 
   const same=await evalJs(`(()=>{const s=document.getElementById('campaign66Breakdown');s.value='body_asset';s.dispatchEvent(new Event('change',{bubbles:true}));return document.getElementById('campaign66Breakdown')===s&&window.KunCampaignHubV66.state.breakdown==='body_asset';})()`);if(!same)throw new Error('Breakdown selection replaced the control');
