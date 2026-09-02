@@ -6,6 +6,9 @@ if(!base)throw new Error('Usage: node scripts/live-preview-campaign-test.mjs <ba
 const accountId=process.env.CLOUDFLARE_ACCOUNT_ID,token=process.env.CLOUDFLARE_API_TOKEN;
 if(!accountId||!token)throw new Error('Preview Campaign QA requires Cloudflare account/token environment');
 const config=await readFile(new URL('../wrangler.preview.toml',import.meta.url),'utf8');
+const entrySource=await readFile(new URL('../src/index-commerce-v36.js',import.meta.url),'utf8');
+const expectedBuild=entrySource.match(/const BUILD=['"]([^'"]+)['"]/i)?.[1]||'';
+if(!expectedBuild)throw new Error('Campaign live QA could not resolve the expected Preview BUILD');
 const databaseId=config.match(/database_id\s*=\s*"([^"]+)"/)?.[1];
 if(!databaseId)throw new Error('Preview database_id missing');
 const d1Url=`https://api.cloudflare.com/client/v4/accounts/${accountId}/d1/database/${databaseId}/query`;
@@ -84,7 +87,7 @@ try{
   adminCookie=await login();
 
   const version=await api('/api/preview/version');
-  must(version.environment==='preview'&&version.entrypoint==='index-commerce-v36.js'&&String(version.build||'').includes('campaign'),'Campaign live QA is not running on the current Campaign Preview build');
+  must(version.environment==='preview'&&version.entrypoint==='index-commerce-v36.js'&&version.build===expectedBuild,`Campaign live QA is not running on the exact current Preview build: expected ${expectedBuild}, got ${version.build||'unknown'}`);
 
   await d1('INSERT INTO stores (id,client_id,name,code,status,is_default,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)',[ids.storeB,clientId,`QA Campaign Foreign Store ${nonce}`,`QAC${nonce}`,'active',0,ts,ts]);
   for(const row of [
@@ -138,7 +141,7 @@ try{
   must(foreignText.includes(names.campaignForeign)&&foreignText.includes(names.adForeign),'Explicit foreign QA store scope did not return its own Campaign data');
   must(!foreignText.includes(names.campaignA)&&!foreignText.includes(names.adA),'Explicit foreign QA store scope leaked Store A Campaign data');
 
-  console.log(`Live Campaign Hub QA passed: authenticated campaign/adset/ad analysis, active/all zero-spend coverage, exact daily totals, current breakdown catalog and Store A/B isolation (${clientId}/${storeA}).`);
+  console.log(`Live Campaign Hub QA passed on exact build ${expectedBuild}: authenticated campaign/adset/ad analysis, active/all zero-spend coverage, exact daily totals, current breakdown catalog and Store A/B isolation (${clientId}/${storeA}).`);
 }catch(error){primaryError=error;
 }finally{try{await cleanup()}catch(cleanupError){primaryError=primaryError?new Error(`${primaryError.message}; ${cleanupError.message}`):cleanupError;}}
 if(primaryError)throw primaryError;
