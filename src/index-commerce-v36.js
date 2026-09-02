@@ -7,17 +7,24 @@ import {includeInactiveExpertEntities,includeInactiveComparisonEntities} from '.
 import {requirePermission,resolveTenant} from './access-control.js';
 import {resolveStoreScope} from './store-scope.js';
 
-const BUILD='preview-v36-2026-09-02-campaign-breakdown-sdk-scope';
+const BUILD='preview-v36-2026-09-02-campaign-auth-scope';
 const clean=value=>String(value??'').trim();
 const num=value=>Number(value)||0;
 const parseArr=value=>{try{const parsed=JSON.parse(value||'[]');return Array.isArray(parsed)?parsed:[];}catch{return [];}};
 const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Kun-Build':BUILD,'X-Content-Type-Options':'nosniff','X-Frame-Options':'DENY'}});
 
 async function currentUser(request,env,ctx){
-  const url=new URL(request.url);url.pathname='/api/me';url.search='';
-  const response=await commerceV35.fetch(new Request(url,{method:'GET',headers:request.headers}),env,ctx),me=await response.json().catch(()=>({}));
-  if(!response.ok||!me?.role)return null;
-  return me;
+  try{
+    const url=new URL(request.url);url.pathname='/api/me';url.search='';
+    const response=await commerceV35.fetch(new Request(url,{method:'GET',headers:request.headers}),env,ctx);
+    if(!response?.ok)return null;
+    const me=await response.json().catch(()=>null);
+    return me?.role?me:null;
+  }catch{
+    // Authorization helpers fail closed. A session lookup failure must never let a
+    // protected Campaign/finance route continue or surface internals as an auth bypass.
+    return null;
+  }
 }
 function resolvedClient(me,request,body={}){
   const requested=clean(body.clientId||body.client_id||new URL(request.url).searchParams.get('clientId'));
@@ -145,7 +152,7 @@ async function fetchV36(request,env,ctx){
 }
 
 export class SyncEntrypoint extends SyncEntrypointV35{
-  async health(){const base=await super.health();return {...base,entrypoint:'index-commerce-v36.js',returnReconfirmStockGuard:true,customerServiceShippingHandoff:true,carrierFinancials:true,dashboardCurrentInventoryCosts:true,campaignExpertHub:true,campaignDailyComparison:true,metaBreakdowns:true,campaignAllFilterExhaustive:true,metaBreakdownScopeGuard:true,currentMetaSdkBreakdowns:true};}
+  async health(){const base=await super.health();return {...base,entrypoint:'index-commerce-v36.js',returnReconfirmStockGuard:true,customerServiceShippingHandoff:true,carrierFinancials:true,dashboardCurrentInventoryCosts:true,campaignExpertHub:true,campaignDailyComparison:true,metaBreakdowns:true,campaignAllFilterExhaustive:true,metaBreakdownScopeGuard:true,currentMetaSdkBreakdowns:true,campaignAuthFailClosed:true};}
 }
 
 export default {fetch:fetchV36,scheduled(controller,env,ctx){return commerceV35.scheduled?.(controller,env,ctx);}};
