@@ -42,12 +42,12 @@ const importer=await propagatedAsset('/v2/modules-v59-shipping-sheet-import.js?v
 if(!importer)throw new Error('Shipping sheet importer body missing');
 console.log('Smoke v36 precheck passed: post-shipping carrier sheet importer is deployed.');
 
-await propagatedAsset('/v2/modules-v65-campaign-hub.js?v=65.0','Campaign Hub UI',['مركز الحملات الإعلانية — تحليل خبير','الشغالة فقط','كل الإعلانات','تحليل الحملات الإعلانية','تحليل المجموعات الإعلانية','تحليل الإعلانات','Breakdown تفصيلي للإعلانات','مقارنة يوم بيوم','data-compare-level="campaign"','data-compare-level="adset"','data-compare-level="ad"','metricMode','Action Breakdowns']);
+await propagatedAsset('/v2/modules-v66-campaign-hub.js?v=66.0','Campaign Hub UI',['مركز الحملات الإعلانية — تحليل خبير','الشغالة فقط','كل الإعلانات','تحليل الحملات الإعلانية','تحليل المجموعات الإعلانية','تحليل الإعلانات','Breakdown تفصيلي للإعلانات','data-campaign-section="campaign"','data-campaign-section="adset"','data-campaign-section="ad"','data-section-mode="analysis"','data-section-mode="comparison"','اليوم','أمس','آخر أسبوع','من بداية الشهر','آخر 30 يوم','فترة معينة','metricMode','Action Breakdowns']);
 for(const path of ['/api/integrations/meta-ads/campaign-hub','/api/integrations/meta-ads/daily-comparison?level=campaign&status=active&days=7','/api/integrations/meta-ads/breakdowns?dimension=image_asset&status=active&days=7']){
   const response=await nativeFetch(`${base}${path}`,{redirect:'manual',headers:{'Cache-Control':'no-cache'}});
   if(response.status!==401)throw new Error(`Campaign protected route must reject anonymous access: ${path} -> ${response.status}`);
 }
-console.log('Smoke v36 precheck passed: fresh Campaign Hub UI, comparison controls, breakdown UI and protected APIs are deployed.');
+console.log('Smoke v36 precheck passed: independent Campaign/Ad Set/Ad workspaces, date presets, per-section comparison, Ads breakdown UI and protected APIs are deployed.');
 
 // Keep the established smoke suite intact while its version assertion still names v35.
 // Only the version endpoint response is adapted after the exact current v36 build was verified above.
