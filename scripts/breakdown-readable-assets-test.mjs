@@ -19,8 +19,8 @@ const [resolver,measurements,loader,index]=await Promise.all([
   readFile(new URL('../src/index-commerce-v36.js',import.meta.url),'utf8')
 ]);
 for(const marker of ['text','message','body','headline','description','dimensionAssetId','dimensionResolved','asset_feed_spec','object_story_spec','creative-single','creative-id'])assert(resolver.includes(marker),`Readable creative resolver missing marker: ${marker}`);
-for(const marker of ['كل ${data.label','Asset ID','Spend','Purchases','CPP','ROAS','CTR','CPC','CPM','Frequency','لا تستخدم الـID بدل النص'])assert(measurements.includes(marker),`Per-element measurement UX missing marker: ${marker}`);
-assert(loader.includes('/v2/modules-v70-breakdown-measurements.js?v=70.0'),'Campaign loader must include v70 readable element measurements');
+for(const marker of ['كل ${data.label','Asset ID','Spend','Purchases','CPP','ROAS','CTR','CPC','CPM','Frequency','لا تستخدم الـID بدل النص','metricAvailability'])assert(measurements.includes(marker),`Per-element measurement UX missing marker: ${marker}`);
+assert(loader.includes('/v2/modules-v70-breakdown-measurements.js?v=70.1'),'Campaign loader must include current v70.1 readable element measurements');
 assert(index.includes("from './meta-ads-campaign-detail-v3.js'")&&index.includes('readableCreativeBreakdowns:true'),'Preview Campaign route must use readable creative Breakdown resolver');
 new Function(measurements);new Function(loader);
-console.log('Readable Meta creative Breakdown test passed: real text/headline/description win over asset IDs, IDs remain references, Creative fallback is wired, and every measured element exposes its own performance metrics.');
+console.log('Readable Meta creative Breakdown test passed: real text/headline/description win over asset IDs, IDs remain references, Creative fallback is wired, and every measured element exposes only metrics supported by its Breakdown profile.');
