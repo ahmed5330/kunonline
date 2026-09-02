@@ -7,7 +7,7 @@ const [migration,entry,ui,index,preview,v36,hub,detail,detailV2,reload,allFilter
   readFile(new URL('../public/v2/index.html',import.meta.url),'utf8'),
   readFile(new URL('../wrangler.preview.toml',import.meta.url),'utf8'),
   readFile(new URL('../src/index-commerce-v36.js',import.meta.url),'utf8'),
-  readFile(new URL('../public/v2/modules-v65-campaign-hub.js',import.meta.url),'utf8'),
+  readFile(new URL('../public/v2/modules-v66-campaign-hub.js',import.meta.url),'utf8'),
   readFile(new URL('../src/meta-ads-campaign-detail.js',import.meta.url),'utf8'),
   readFile(new URL('../src/meta-ads-campaign-detail-v2.js',import.meta.url),'utf8'),
   readFile(new URL('../public/v2/modules-v57-section-reload.js',import.meta.url),'utf8'),
@@ -39,10 +39,15 @@ assert(detail.includes("[catalogItem.param]:catalogItem.key")&&detail.includes("
 assert(detail.includes("metricMode:'actions'")&&detail.includes('actionBreakdownRows')&&detail.includes('لا نوزّع Spend أو CPM'),'Action Breakdowns must be modeled as event/result data instead of duplicated delivery spend');
 assert(detailV2.includes("SELECT external_id FROM meta_ad_entities WHERE client_id=? AND level='ad'")&&detailV2.includes("allowed.has(clean(row.adId))")&&detailV2.includes('scopeFiltered:true'),'Meta breakdown rows must be hard-filtered to the selected tenant/store ad catalog');
 assert(detailV2.includes('deliveryTotals(rows)')&&detailV2.includes('actionTotals(rows)'),'Breakdown totals must be recomputed after scope filtering');
-for(const label of ['الشغالة فقط','كل الإعلانات','تحليل الحملات الإعلانية','تحليل المجموعات الإعلانية','تحليل الإعلانات','Breakdown تفصيلي للإعلانات','مقارنة يوم بيوم','Action Breakdowns'])assert(hub.includes(label),`Campaign hub UI contract missing: ${label}`);
+for(const label of ['الشغالة فقط','كل الإعلانات','تحليل الحملات الإعلانية','تحليل المجموعات الإعلانية','تحليل الإعلانات','Breakdown تفصيلي للإعلانات','Action Breakdowns','اليوم','أمس','آخر أسبوع','من بداية الشهر','آخر 30 يوم','فترة معينة'])assert(hub.includes(label),`Campaign hub UI contract missing: ${label}`);
+for(const section of ['data-campaign-section="campaign"','data-campaign-section="adset"','data-campaign-section="ad"'])assert(hub.includes(section),`Independent Campaign Hub section missing: ${section}`);
+assert(hub.includes("sections:{campaign:freshSection(),adset:freshSection(),ad:freshSection()}")&&hub.includes("preset:'7d'")&&hub.includes("mode:'analysis'"),'Campaign, Ad Set and Ad must keep independent date/mode state');
+assert(hub.includes("data-section-mode=\"analysis\"")&&hub.includes("data-section-mode=\"comparison\""),'Every Campaign Hub section must expose analysis and comparison modes');
+assert(hub.includes("if(s.preset==='today')")&&hub.includes("if(s.preset==='yesterday')")&&hub.includes("if(s.preset==='mtd')")&&hub.includes("if(s.preset==='30d')")&&hub.includes("if(s.preset==='custom')"),'Campaign Hub date presets must map to explicit date ranges');
+assert(hub.includes("scopedPath('/api/integrations/meta-ads/daily-comparison',level,{level,status:state.status,days})"),'Each section comparison must call the daily comparison API at its fixed level');
+assert(hub.includes("level==='ad'?breakdownSection(section):''"),'Detailed Meta breakdown must remain inside the Ads section only');
 assert(hub.includes("state.status==='all'?")&&hub.includes('status:state.status'),'Active/all filter must drive analysis and data APIs together');
-assert(hub.includes('data-compare-level=\"campaign\"')&&hub.includes('data-compare-level=\"adset\"')&&hub.includes('data-compare-level=\"ad\"'),'Daily comparison must support Campaign, Ad Set and Ad levels');
-assert(hub.includes('breakdownCatalog')&&hub.includes('optgroup')&&hub.includes("data.metricMode==='actions'")&&hub.includes('النتائج / الأحداث'),'Full server breakdown catalog and Action Breakdown result table must hydrate the Campaigns UI');
-assert(reload.includes('modules-v65-campaign-hub.js?v=65.0')&&!reload.includes('modules-v63-campaign-hub.js?v=63.0'),'Campaign Hub loader must use the fresh Cloudflare asset path');
+assert(hub.includes('breakdownCatalog')&&hub.includes('optgroup')&&hub.includes("data.metricMode==='actions'")&&hub.includes('النتائج / الأحداث'),'Full server breakdown catalog and Action Breakdown result table must hydrate the Ads workspace');
+assert(reload.includes('modules-v66-campaign-hub.js?v=66.0')&&!reload.includes('modules-v65-campaign-hub.js?v=65.0'),'Campaign Hub loader must use the independent v66 workspace asset');
 new Function(hub);new Function(reload);
-console.log('Meta Ads expert analysis contract passed, including fresh Campaign Hub static asset, exhaustive active/all filtering, current Meta SDK breakdown coverage, hard tenant/store breakdown scoping, fail-closed campaign authentication, safe Action Breakdown accounting and day-by-day comparison.');
+console.log('Meta Ads expert analysis contract passed, including independent Campaign/Ad Set/Ad workspaces, per-section date presets and comparison, exhaustive active/all filtering, current Meta SDK breakdown coverage, hard tenant/store breakdown scoping, fail-closed authentication and safe Action Breakdown accounting.');
