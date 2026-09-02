@@ -26,13 +26,12 @@ const importer=await propagatedAsset('/v2/modules-v59-shipping-sheet-import.js?v
 if(!importer)throw new Error('Shipping sheet importer body missing');
 console.log('Smoke v36 precheck passed: post-shipping carrier sheet importer is deployed.');
 
-await propagatedAsset('/v2/modules-v63-campaign-hub.js?v=63.0','Campaign Hub UI',['مركز الحملات الإعلانية — تحليل خبير','الشغالة فقط','كل الإعلانات','تحليل الحملات الإعلانية','تحليل المجموعات الإعلانية','تحليل الإعلانات','Breakdown تفصيلي للإعلانات','مقارنة يوم بيوم','data-compare-level="campaign"','data-compare-level="adset"','data-compare-level="ad"']);
-await propagatedAsset('/v2/modules-v64-meta-breakdown-catalog.js?v=64.0','Campaign breakdown catalog UI',['breakdownCatalog','optgroup','metricMode','إجمالي النتائج / الأحداث']);
+await propagatedAsset('/v2/modules-v65-campaign-hub.js?v=65.0','Campaign Hub UI',['مركز الحملات الإعلانية — تحليل خبير','الشغالة فقط','كل الإعلانات','تحليل الحملات الإعلانية','تحليل المجموعات الإعلانية','تحليل الإعلانات','Breakdown تفصيلي للإعلانات','مقارنة يوم بيوم','data-compare-level="campaign"','data-compare-level="adset"','data-compare-level="ad"','metricMode','Action Breakdowns']);
 for(const path of ['/api/integrations/meta-ads/campaign-hub','/api/integrations/meta-ads/daily-comparison?level=campaign&status=active&days=7','/api/integrations/meta-ads/breakdowns?dimension=image_asset&status=active&days=7']){
   const response=await nativeFetch(`${base}${path}`,{redirect:'manual'});
   if(response.status!==401)throw new Error(`Campaign protected route must reject anonymous access: ${path} -> ${response.status}`);
 }
-console.log('Smoke v36 precheck passed: Campaign Hub UI, comparison controls, breakdown UI and protected APIs are deployed.');
+console.log('Smoke v36 precheck passed: fresh Campaign Hub UI, comparison controls, breakdown UI and protected APIs are deployed.');
 
 // Keep the established smoke suite intact while its version assertion still names v35.
 // Only the version endpoint response is adapted after the real v36 build was verified above.
