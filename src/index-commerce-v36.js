@@ -2,12 +2,12 @@ import commerceV35,{SyncEntrypoint as SyncEntrypointV35} from './index-commerce-
 import {recordCarrierFinancials} from './carrier-financials.js';
 import {applyCurrentInventoryCosts} from './dashboard-live-product-cost.js';
 import {metaAdsExpertAnalysisV2} from './meta-ads-expert.js';
-import {metaAdsDailyComparison,metaAdsBreakdown,META_BREAKDOWN_CATALOG} from './meta-ads-campaign-detail.js';
+import {metaAdsDailyComparison,metaAdsBreakdown,META_BREAKDOWN_CATALOG} from './meta-ads-campaign-detail-v2.js';
 import {includeInactiveExpertEntities,includeInactiveComparisonEntities} from './meta-ads-campaign-all.js';
 import {requirePermission,resolveTenant} from './access-control.js';
 import {resolveStoreScope} from './store-scope.js';
 
-const BUILD='preview-v36-2026-09-02-campaign-expert-hub-all-filter';
+const BUILD='preview-v36-2026-09-02-campaign-breakdown-sdk-scope';
 const clean=value=>String(value??'').trim();
 const num=value=>Number(value)||0;
 const parseArr=value=>{try{const parsed=JSON.parse(value||'[]');return Array.isArray(parsed)?parsed:[];}catch{return [];}};
@@ -145,7 +145,7 @@ async function fetchV36(request,env,ctx){
 }
 
 export class SyncEntrypoint extends SyncEntrypointV35{
-  async health(){const base=await super.health();return {...base,entrypoint:'index-commerce-v36.js',returnReconfirmStockGuard:true,customerServiceShippingHandoff:true,carrierFinancials:true,dashboardCurrentInventoryCosts:true,campaignExpertHub:true,campaignDailyComparison:true,metaBreakdowns:true,campaignAllFilterExhaustive:true};}
+  async health(){const base=await super.health();return {...base,entrypoint:'index-commerce-v36.js',returnReconfirmStockGuard:true,customerServiceShippingHandoff:true,carrierFinancials:true,dashboardCurrentInventoryCosts:true,campaignExpertHub:true,campaignDailyComparison:true,metaBreakdowns:true,campaignAllFilterExhaustive:true,metaBreakdownScopeGuard:true,currentMetaSdkBreakdowns:true};}
 }
 
 export default {fetch:fetchV36,scheduled(controller,env,ctx){return commerceV35.scheduled?.(controller,env,ctx);}};
