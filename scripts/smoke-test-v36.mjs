@@ -1,22 +1,33 @@
 const base=(process.argv[2]||'').replace(/\/$/,'');
 if(!base)throw new Error('Usage: node scripts/smoke-test-v36.mjs <base-url>');
 const nativeFetch=globalThis.fetch.bind(globalThis);
+const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+async function propagatedAsset(path,label,markers=[],attempts=24){
+  let last='not requested';
+  for(let attempt=1;attempt<=attempts;attempt++){
+    const separator=path.includes('?')?'&':'?';
+    try{
+      const response=await nativeFetch(`${base}${path}${separator}smoke=${Date.now()}-${attempt}`,{redirect:'follow',headers:{'Cache-Control':'no-cache'}}),body=await response.text();
+      const missing=markers.filter(marker=>!body.includes(marker));
+      if(response.ok&&!missing.length)return body;
+      last=`HTTP ${response.status}${missing.length?` missing: ${missing.join(' | ')}`:''}`;
+    }catch(error){last=error?.message||String(error);}
+    if(attempt<attempts)await sleep(500);
+  }
+  throw new Error(`${label} unavailable after static-asset propagation retries: ${last}`);
+}
+
 const versionResponse=await nativeFetch(`${base}/api/preview/version`,{redirect:'follow'}),versionBody=await versionResponse.text();
 if(!versionResponse.ok)throw new Error(`/api/preview/version returned ${versionResponse.status}: ${versionBody}`);
 let version;try{version=JSON.parse(versionBody);}catch{throw new Error(`Invalid Preview version response: ${versionBody}`);}
 if(!String(version.build||'').startsWith('preview-v36-')||version.entrypoint!=='index-commerce-v36.js'||version.environment!=='preview')throw new Error(`Unexpected v36 Preview build: ${versionBody}`);
 console.log(`Smoke v36 precheck passed: ${version.build}`);
-const importer=await nativeFetch(`${base}/v2/modules-v59-shipping-sheet-import.js?v=59.0`,{redirect:'follow'}),importerBody=await importer.text();
-if(!importer.ok)throw new Error(`Shipping sheet importer returned ${importer.status}`);
-for(const marker of ['رفع شيت شركة الشحن','J&T Express','المرتجعات','الكل — حسب حالة كل صف','parseXlsx','post-shipping-sheet'])if(!importerBody.includes(marker))throw new Error(`Shipping sheet importer missing deployed marker: ${marker}`);
+const importer=await propagatedAsset('/v2/modules-v59-shipping-sheet-import.js?v=59.0','Shipping sheet importer',['رفع شيت شركة الشحن','J&T Express','المرتجعات','الكل — حسب حالة كل صف','parseXlsx','post-shipping-sheet']);
+if(!importer)throw new Error('Shipping sheet importer body missing');
 console.log('Smoke v36 precheck passed: post-shipping carrier sheet importer is deployed.');
 
-const campaignHub=await nativeFetch(`${base}/v2/modules-v63-campaign-hub.js?v=63.0&smoke=${Date.now()}`,{redirect:'follow'}),campaignHubBody=await campaignHub.text();
-if(!campaignHub.ok)throw new Error(`Campaign Hub UI returned ${campaignHub.status}`);
-for(const marker of ['مركز الحملات الإعلانية — تحليل خبير','الشغالة فقط','كل الإعلانات','تحليل الحملات الإعلانية','تحليل المجموعات الإعلانية','تحليل الإعلانات','Breakdown تفصيلي للإعلانات','مقارنة يوم بيوم','data-compare-level="campaign"','data-compare-level="adset"','data-compare-level="ad"'])if(!campaignHubBody.includes(marker))throw new Error(`Campaign Hub UI missing deployed marker: ${marker}`);
-const breakdownCatalog=await nativeFetch(`${base}/v2/modules-v64-meta-breakdown-catalog.js?v=64.0&smoke=${Date.now()}`,{redirect:'follow'}),breakdownCatalogBody=await breakdownCatalog.text();
-if(!breakdownCatalog.ok)throw new Error(`Campaign breakdown catalog UI returned ${breakdownCatalog.status}`);
-for(const marker of ['breakdownCatalog','optgroup','metricMode','إجمالي النتائج / الأحداث'])if(!breakdownCatalogBody.includes(marker))throw new Error(`Campaign breakdown catalog UI missing deployed marker: ${marker}`);
+await propagatedAsset('/v2/modules-v63-campaign-hub.js?v=63.0','Campaign Hub UI',['مركز الحملات الإعلانية — تحليل خبير','الشغالة فقط','كل الإعلانات','تحليل الحملات الإعلانية','تحليل المجموعات الإعلانية','تحليل الإعلانات','Breakdown تفصيلي للإعلانات','مقارنة يوم بيوم','data-compare-level="campaign"','data-compare-level="adset"','data-compare-level="ad"']);
+await propagatedAsset('/v2/modules-v64-meta-breakdown-catalog.js?v=64.0','Campaign breakdown catalog UI',['breakdownCatalog','optgroup','metricMode','إجمالي النتائج / الأحداث']);
 for(const path of ['/api/integrations/meta-ads/campaign-hub','/api/integrations/meta-ads/daily-comparison?level=campaign&status=active&days=7','/api/integrations/meta-ads/breakdowns?dimension=image_asset&status=active&days=7']){
   const response=await nativeFetch(`${base}${path}`,{redirect:'manual'});
   if(response.status!==401)throw new Error(`Campaign protected route must reject anonymous access: ${path} -> ${response.status}`);
