@@ -36,9 +36,10 @@ assert(ux.includes('markRows(data)')&&ux.includes('ux68-row-high')&&ux.includes(
 
 for(const marker of ['كل نص فعلي ظاهر هنا','Asset ID','لا تستخدم الـID بدل النص','Spend','Purchases','CPP','ROAS','CTR','CPC','CPM','Frequency','dimensionAssetId','dimensionValue','metricAvailability'])assert(measurements.includes(marker),`Readable Breakdown measurements marker missing: ${marker}`);
 assert(measurements.includes('data-signature')||measurements.includes('dataset.signature'),'Readable Breakdown measurement rendering must remain idempotent');
-for(const marker of ['campaign71BreakdownRetry','AbortController','decorateCatalog','الطلب اشتغل بنجاح'])assert(controls.includes(marker),`Reliable Breakdown controls marker missing: ${marker}`);
+for(const marker of ['campaign71BreakdownRetry','AbortController','decorateCatalog','الطلب اشتغل بنجاح','observerQueued','option.textContent!==desired'])assert(controls.includes(marker),`Reliable Breakdown controls marker missing: ${marker}`);
+assert(controls.includes("version:'71.2'")&&controls.includes("dataset.breakdownControls='v71-ready'"),'Reliable controls must expose v71.2 with stable readiness token');
 assert(loader.includes('/v2/modules-v68-breakdown-analysis-ux.js?v=68.1'),'Campaign loader must deploy the current selected Breakdown analysis layer');
 assert(loader.includes('/v2/modules-v70-breakdown-measurements.js?v=70.1'),'Campaign loader must deploy current readable per-element Breakdown measurements');
-assert(loader.includes('/v2/modules-v71-breakdown-controls.js?v=71.1'),'Campaign loader must deploy current reliable Breakdown controls');
+assert(loader.includes('/v2/modules-v71-breakdown-controls.js?v=71.2'),'Campaign loader must deploy current reliable Breakdown controls');
 new Function(ux);new Function(measurements);new Function(controls);new Function(loader);
-console.log('Selected Meta Breakdown analysis contract passed: current selection is named explicitly, stale analysis is cleared on selection change, rendering is idempotent, delivery/action analysis is separated, readable elements keep Asset IDs separate, unsupported metrics are hidden, and reliable controls are layered after analysis.');
+console.log('Selected Meta Breakdown analysis contract passed: current selection is named explicitly, stale analysis is cleared on selection change, rendering is idempotent, delivery/action analysis is separated, readable elements keep Asset IDs separate, unsupported metrics are hidden, and idempotent reliable controls are layered after analysis.');
