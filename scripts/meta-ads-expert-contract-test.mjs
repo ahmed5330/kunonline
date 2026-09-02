@@ -24,17 +24,17 @@ for(const heading of ['تحليل الحملات الإعلانية','تحليل
 for(const signal of ['مرشح للتوسيع','إجهاد إعلاني','مشكلة بعد النقرة'])assert(ui.includes(signal)||ui.includes('flags'),`Expert signal support missing: ${signal}`);
 assert(index.includes('modules-v48-ad-expert.js'),'Expert dashboard bundle is not loaded');
 assert(/main\s*=\s*"src\/index-commerce-v3[456]\.js"/.test(preview),'Preview is not routed through the v34 Meta layer or its additive v35/v36 wrapper');
-
 for(const route of ['/api/integrations/meta-ads/campaign-hub','/api/integrations/meta-ads/daily-comparison','/api/integrations/meta-ads/breakdowns'])assert(v36.includes(route),`Campaign hub route missing: ${route}`);
 assert(v36.includes("requirePermission(me,'campaigns','read')")&&v36.includes('resolveStoreScope'),'Campaign hub must preserve campaign permission and store isolation');
 for(const level of ["'campaign'","'adset'","'ad'"])assert(detail.includes(level),`Daily comparison level missing: ${level}`);
-for(const breakdown of ['image_asset','video_asset','body_asset','title_asset','region','country','zip','publisher_platform','platform_position','device_platform','impression_device','product_brand_breakdown','product_category_breakdown','gen_ai_asset_type','creative_automation_asset_id'])assert(detail.includes(breakdown),`Requested Meta breakdown missing: ${breakdown}`);
-for(const action of ['action__action_type','action__action_device','action__action_destination','action__action_carousel_card_name','action__standard_event_content_type'])assert(detail.includes(action.split('__')[1])&&detail.includes('actionBreakdown'),`Action breakdown support missing: ${action}`);
+for(const bd of ['image_asset','video_asset','body_asset','title_asset','region','country','zip','publisher_platform','platform_position','device_platform','impression_device','product_brand_breakdown','product_category_breakdown','gen_ai_asset_type','creative_automation_asset_id'])assert(detail.includes(bd),`Requested Meta breakdown missing: ${bd}`);
+for(const action of ['action_type','action_device','action_destination','action_carousel_card_name','standard_event_content_type'])assert(detail.includes(`actionBreakdown('${action}'`),`Action breakdown support missing: ${action}`);
 assert(detail.includes("[catalogItem.param]:catalogItem.key")&&detail.includes("param:'action_breakdowns'"),'Breakdown endpoint must route regular and action breakdown parameters separately');
+assert(detail.includes("metricMode:'actions'")&&detail.includes('actionBreakdownRows')&&detail.includes('لا نوزّع Spend أو CPM'),'Action Breakdowns must be modeled as event/result data instead of duplicated delivery spend');
 for(const label of ['الشغالة فقط','كل الإعلانات','تحليل الحملات الإعلانية','تحليل المجموعات الإعلانية','تحليل الإعلانات','Breakdown تفصيلي للإعلانات','مقارنة يوم بيوم'])assert(hub.includes(label),`Campaign hub UI contract missing: ${label}`);
 assert(hub.includes("state.status==='all'?rows:rows.filter(isActive)")&&hub.includes("status:state.status"),'Active/all filter must drive analysis and data APIs together');
 assert(hub.includes("data-compare-level=\"campaign\"")&&hub.includes("data-compare-level=\"adset\"")&&hub.includes("data-compare-level=\"ad\""),'Daily comparison must support Campaign, Ad Set and Ad levels');
 assert(reload.includes('modules-v63-campaign-hub.js?v=63.0')&&reload.includes('modules-v64-meta-breakdown-catalog.js?v=64.0'),'Campaign hub/full breakdown loaders are missing');
-assert(catalogUi.includes('breakdownCatalog')&&catalogUi.includes('optgroup')&&catalogUi.includes('catalogSignature'),'Full server breakdown catalog must hydrate the Campaigns selector');
+assert(catalogUi.includes('breakdownCatalog')&&catalogUi.includes('optgroup')&&catalogUi.includes('metricMode')&&catalogUi.includes('إجمالي النتائج / الأحداث'),'Full breakdown selector and Action Breakdown result table must hydrate the Campaigns UI');
 new Function(hub);new Function(catalogUi);new Function(reload);
-console.log('Meta Ads expert analysis contract passed, including Campaign/Ad Set/Ad filters, expert recommendations, full Meta/action breakdown catalog and day-by-day comparison.');
+console.log('Meta Ads expert analysis contract passed, including Campaign/Ad Set/Ad filters, expert recommendations, full Meta/action breakdown catalog, safe Action Breakdown accounting and day-by-day comparison.');
