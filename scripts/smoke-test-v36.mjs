@@ -46,11 +46,13 @@ await propagatedAsset('/v2/modules-v66-campaign-hub.js?v=66.0','Campaign Hub UI'
 await propagatedAsset('/v2/modules-v67-campaign-comparison-ux.js?v=67.0','Campaign comparison UX',['ux67-metric-col','position:sticky;left:0','الأرقام التي تستحق النظر','data-ux67-signal','ux67-marker','scrollIntoView','إنفاق بدون مشتريات','هبوط واضح في ROAS','ارتفاع تكلفة الشراء','CTR يتراجع','CPM أعلى من اليوم السابق','راجع الآن','فرصة إيجابية']);
 await propagatedAsset('/v2/modules-v68-breakdown-analysis-ux.js?v=68.1','Selected Breakdown analysis UX',['تحليل الـBreakdown المختار','العنصر محل التحليل:','أفضل عنصر كفاءة','أعلى هدر يحتاج مراجعة','أعلى إنفاق','أعلى مشتريات','أفضل CTR','نقاط تستحق التركيز','إنفاق بدون شراء','ROAS أقل بوضوح من بقية العناصر','CPP مرتفع نسبيًا','CTR منخفض نسبيًا','CPM مرتفع نسبيًا','Frequency يحتاج متابعة','Action Breakdown','breakdownData']);
 await propagatedAsset('/v2/modules-v70-breakdown-measurements.js?v=70.0','Readable Breakdown element measurements',['كل ${data.label','Asset ID','كل نص فعلي ظاهر هنا','Spend','Purchases','CPP','ROAS','CTR','CPC','CPM','Frequency','لا تستخدم الـID بدل النص','dimensionAssetId']);
+await propagatedAsset('/v2/modules-v71-breakdown-controls.js?v=71.0','Reliable Breakdown controls',['KunBreakdownControlsV71','AbortController','campaign71BreakdownRetry','aria-busy','stopImmediatePropagation','requestId!==sequence','activeKey!==key','campaign-controls-changed']);
+await propagatedAsset('/v2/modules-v57-section-reload.js?v=57.1','Campaign layered loader',['modules-v70-breakdown-measurements.js?v=70.0','modules-v71-breakdown-controls.js?v=71.0','loadControls','loadMeasurements']);
 for(const path of ['/api/integrations/meta-ads/campaign-hub','/api/integrations/meta-ads/daily-comparison?level=campaign&status=active&days=7','/api/integrations/meta-ads/breakdowns?dimension=image_asset&status=active&days=7']){
   const response=await nativeFetch(`${base}${path}`,{redirect:'manual',headers:{'Cache-Control':'no-cache'}});
   if(response.status!==401)throw new Error(`Campaign protected route must reject anonymous access: ${path} -> ${response.status}`);
 }
-console.log('Smoke v36 precheck passed: Campaign workspaces, sticky comparison UX, selected Breakdown analysis and readable per-element measurements are deployed with protected APIs.');
+console.log('Smoke v36 precheck passed: Campaign workspaces, sticky comparison UX, selected Breakdown analysis, readable per-element measurements and reliable v71 controls are deployed with protected APIs.');
 
 // Keep the established smoke suite intact while its version assertion still names v35.
 // Only the version endpoint response is adapted after the exact current v36 build was verified above.
