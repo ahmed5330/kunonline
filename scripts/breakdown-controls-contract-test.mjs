@@ -1,11 +1,12 @@
 import {readFile} from 'node:fs/promises';
 
-const [controls,loader,browser,resolver,measurements]=await Promise.all([
+const [controls,loader,browser,resolver,measurements,fixture]=await Promise.all([
   readFile(new URL('../public/v2/modules-v71-breakdown-controls.js',import.meta.url),'utf8'),
   readFile(new URL('../public/v2/modules-v57-section-reload.js',import.meta.url),'utf8'),
   readFile(new URL('./browser-preview-breakdown-controls-test.mjs',import.meta.url),'utf8'),
   readFile(new URL('../src/meta-ads-campaign-detail-v3.js',import.meta.url),'utf8'),
-  readFile(new URL('../public/v2/modules-v70-breakdown-measurements.js',import.meta.url),'utf8')
+  readFile(new URL('../public/v2/modules-v70-breakdown-measurements.js',import.meta.url),'utf8'),
+  readFile(new URL('./browser-breakdown-controls-fixture-test.mjs',import.meta.url),'utf8')
 ]);
 const must=(ok,message)=>{if(!ok)throw new Error(message);};
 
@@ -23,18 +24,23 @@ for(const marker of [
   "state.breakdownData=null",
   "state.breakdownData={error:",
   "button:not([type])",
-  "box.setAttribute('aria-live','polite')",
+  "box.getAttribute('aria-live')!=='polite'",
   'decorateCatalog',
   '· مشروط',
   '· متوافق تلقائيًا',
-  'الطلب اشتغل بنجاح، لكن Meta لم ترجع بيانات'
-])must(controls.includes(marker),`Breakdown v71 missing contract marker: ${marker}`);
+  'الطلب اشتغل بنجاح، لكن Meta لم ترجع بيانات',
+  'observerQueued',
+  'queueMicrotask',
+  'option.textContent!==desired',
+  'option.title!==desiredTitle'
+])must(controls.includes(marker),`Breakdown v71.2 missing contract marker: ${marker}`);
 
 must(/activeController\.abort\(/.test(controls),'Breakdown v71 must abort the previous in-flight request');
 must(!/changeSelection\([^)]*\)[\s\S]{0,500}\.render\(/.test(controls),'Breakdown selection change must not repaint the full Campaign Hub');
+must(controls.includes("version:'71.2'")&&controls.includes("dataset.breakdownControls='v71-ready'"),'Breakdown v71.2 must keep a stable readiness token');
 for(const marker of [
   "modules-v70-breakdown-measurements.js?v=70.1",
-  "modules-v71-breakdown-controls.js?v=71.1",
+  "modules-v71-breakdown-controls.js?v=71.2",
   "measure.addEventListener('load',loadControls,{once:true})",
   "if(window.KunBreakdownMeasurementsV70)loadControls()",
   "breakdown.addEventListener('load',loadMeasurements,{once:true})"
@@ -51,5 +57,6 @@ for(const marker of [
 ])must(resolver.includes(marker),`Meta Breakdown compatibility resolver missing marker: ${marker}`);
 for(const marker of ['availability.frequency!==false','Reach/Frequency غير معروضين هنا','version:\'70.1\''])must(measurements.includes(marker),`Breakdown measurement availability missing marker: ${marker}`);
 for(const marker of ['body_asset','title_asset','action__action_type','campaign71BreakdownRetry','META_BREAKDOWN_UNAVAILABLE','stale-request cancellation','data-status','data-date-preset','data-section-mode','data-campaign-section','data-kun-section-reload'])must(browser.includes(marker),`Browser Breakdown QA missing coverage marker: ${marker}`);
+for(const marker of ['Browser Breakdown fixture QA passed without D1','مشروط','متوافق تلقائيًا','Double-click','stale','action__action_type'])must(fixture.includes(marker),`D1-free Breakdown fixture missing coverage marker: ${marker}`);
 
-console.log('Breakdown controls contract passed: no selection repaint, delegated controls, busy/double-click guard, abort/stale protection, error/empty guidance, compatibility-aware Meta requests, metric availability, current v70.1/v71.1 assets and browser interaction coverage are wired.');
+console.log('Breakdown controls contract passed: no selection repaint, idempotent catalog decoration, delegated controls, busy/double-click guard, abort/stale protection, error/empty guidance, compatibility-aware Meta requests, metric availability, current v70.1/v71.2 assets and both fixture/live browser interaction coverage are wired.');
