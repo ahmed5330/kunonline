@@ -7,11 +7,13 @@ import {includeInactiveExpertEntities,includeInactiveComparisonEntities} from '.
 import {requirePermission,resolveTenant} from './access-control.js';
 import {resolveStoreScope} from './store-scope.js';
 
-const BUILD='preview-v36-2026-09-02-campaign-auth-scope';
+const BUILD='preview-v36-2026-09-02-campaign-anonymous-gate';
 const clean=value=>String(value??'').trim();
 const num=value=>Number(value)||0;
 const parseArr=value=>{try{const parsed=JSON.parse(value||'[]');return Array.isArray(parsed)?parsed:[];}catch{return [];}};
 const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Kun-Build':BUILD,'X-Content-Type-Options':'nosniff','X-Frame-Options':'DENY'}});
+const CAMPAIGN_READ_PATHS=new Set(['/api/integrations/meta-ads/campaign-hub','/api/integrations/meta-ads/daily-comparison','/api/integrations/meta-ads/breakdowns']);
+const hasAuthEnvelope=request=>Boolean(clean(request.headers.get('Cookie'))||clean(request.headers.get('Authorization')));
 
 async function currentUser(request,env,ctx){
   try{
@@ -139,6 +141,7 @@ async function fetchV36(request,env,ctx){
   const url=new URL(request.url),path=url.pathname,method=request.method.toUpperCase();
   try{
     if(path==='/api/preview/version'&&method==='GET')return json({ok:true,build:BUILD,environment:env.APP_ENV||'unknown',entrypoint:'index-commerce-v36.js'});
+    if(method==='GET'&&CAMPAIGN_READ_PATHS.has(path)&&!hasAuthEnvelope(request))return json({error:'محتاج تسجّل دخول',code:'AUTH_REQUIRED'},401);
     if(path==='/api/dashboard'&&method==='GET')return dashboardCurrentCostRoute(request,env,ctx);
     if(path==='/api/integrations/meta-ads/campaign-hub'&&method==='GET')return campaignHubRoute(request,env,ctx);
     if(path==='/api/integrations/meta-ads/daily-comparison'&&method==='GET')return campaignComparisonRoute(request,env,ctx);
@@ -152,7 +155,7 @@ async function fetchV36(request,env,ctx){
 }
 
 export class SyncEntrypoint extends SyncEntrypointV35{
-  async health(){const base=await super.health();return {...base,entrypoint:'index-commerce-v36.js',returnReconfirmStockGuard:true,customerServiceShippingHandoff:true,carrierFinancials:true,dashboardCurrentInventoryCosts:true,campaignExpertHub:true,campaignDailyComparison:true,metaBreakdowns:true,campaignAllFilterExhaustive:true,metaBreakdownScopeGuard:true,currentMetaSdkBreakdowns:true,campaignAuthFailClosed:true};}
+  async health(){const base=await super.health();return {...base,entrypoint:'index-commerce-v36.js',returnReconfirmStockGuard:true,customerServiceShippingHandoff:true,carrierFinancials:true,dashboardCurrentInventoryCosts:true,campaignExpertHub:true,campaignDailyComparison:true,metaBreakdowns:true,campaignAllFilterExhaustive:true,metaBreakdownScopeGuard:true,currentMetaSdkBreakdowns:true,campaignAuthFailClosed:true,campaignAnonymousGate:true};}
 }
 
 export default {fetch:fetchV36,scheduled(controller,env,ctx){return commerceV35.scheduled?.(controller,env,ctx);}};
