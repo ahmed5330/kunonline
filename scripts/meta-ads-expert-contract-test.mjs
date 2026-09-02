@@ -30,6 +30,7 @@ for(const route of ['/api/integrations/meta-ads/campaign-hub','/api/integrations
 assert(v36.includes("requirePermission(me,'campaigns','read')")&&v36.includes('resolveStoreScope'),'Campaign hub must preserve campaign permission and store isolation');
 assert(v36.includes('includeInactiveExpertEntities')&&v36.includes('includeInactiveComparisonEntities'),'Campaigns all filter must augment analysis and comparison with inactive zero-spend entities');
 assert(v36.includes("from './meta-ads-campaign-detail-v2.js'")&&v36.includes('metaBreakdownScopeGuard:true')&&v36.includes('currentMetaSdkBreakdowns:true'),'Preview entrypoint must use the hardened current Meta breakdown layer');
+assert(v36.includes('campaignAuthFailClosed:true')&&v36.includes('catch{')&&v36.includes("code:'AUTH_REQUIRED'"),'Campaign protected routes must fail closed to explicit authentication instead of surfacing session lookup failures');
 for(const marker of ['allEntitiesIncluded','meta_ad_entities',"statusFilter!=='all'",'zeroMetrics','includeInactiveExpertEntities','includeInactiveComparisonEntities'])assert(allFilter.includes(marker),`Exhaustive all-ad helper missing marker: ${marker}`);
 for(const level of ["'campaign'","'adset'","'ad'"])assert(detail.includes(level),`Daily comparison level missing: ${level}`);
 for(const bd of ['image_asset','video_asset','body_asset','title_asset','region','country','zip','publisher_platform','platform_position','device_platform','impression_device','product_brand_breakdown','product_category_breakdown','gen_ai_asset_type','creative_automation_asset_id'])assert(detail.includes(bd),`Requested Meta breakdown missing: ${bd}`);
@@ -45,4 +46,4 @@ assert(hub.includes("data-compare-level=\"campaign\"")&&hub.includes("data-compa
 assert(reload.includes('modules-v63-campaign-hub.js?v=63.0')&&reload.includes('modules-v64-meta-breakdown-catalog.js?v=64.0'),'Campaign hub/full breakdown loaders are missing');
 assert(catalogUi.includes('breakdownCatalog')&&catalogUi.includes('optgroup')&&catalogUi.includes('metricMode')&&catalogUi.includes('إجمالي النتائج / الأحداث'),'Full breakdown selector and Action Breakdown result table must hydrate the Campaigns UI');
 new Function(hub);new Function(catalogUi);new Function(reload);
-console.log('Meta Ads expert analysis contract passed, including exhaustive active/all filtering, current Meta SDK breakdown coverage, hard tenant/store breakdown scoping, safe Action Breakdown accounting and day-by-day comparison.');
+console.log('Meta Ads expert analysis contract passed, including exhaustive active/all filtering, current Meta SDK breakdown coverage, hard tenant/store breakdown scoping, fail-closed campaign authentication, safe Action Breakdown accounting and day-by-day comparison.');
