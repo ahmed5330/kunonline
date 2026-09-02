@@ -29,7 +29,7 @@ function rangeOf({from,to,days=7}={}){
   const end=iso(to)||new Date().toISOString().slice(0,10);
   let start=iso(from);
   if(!start){
-    const count=Math.max(1,Math.min(90,Math.floor(n(days)||7));
+    const count=Math.max(1,Math.min(90,Math.floor(n(days)||7)));
     start=new Date(new Date(`${end}T12:00:00Z`).getTime()-(count-1)*86400000).toISOString().slice(0,10);
   }
   let diff=Math.floor((new Date(`${end}T00:00:00Z`)-new Date(`${start}T00:00:00Z`))/86400000)+1;
