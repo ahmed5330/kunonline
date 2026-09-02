@@ -1,6 +1,6 @@
 import {readFile} from 'node:fs/promises';
 
-const [migration,entry,ui,index,preview,v36,hub,detail,reload,catalogUi]=await Promise.all([
+const [migration,entry,ui,index,preview,v36,hub,detail,reload,catalogUi,allFilter]=await Promise.all([
   readFile(new URL('../migrations/0021_meta_ads_granular_analysis.sql',import.meta.url),'utf8'),
   readFile(new URL('../src/index-commerce-v34.js',import.meta.url),'utf8'),
   readFile(new URL('../public/v2/modules-v48-ad-expert.js',import.meta.url),'utf8'),
@@ -10,7 +10,8 @@ const [migration,entry,ui,index,preview,v36,hub,detail,reload,catalogUi]=await P
   readFile(new URL('../public/v2/modules-v63-campaign-hub.js',import.meta.url),'utf8'),
   readFile(new URL('../src/meta-ads-campaign-detail.js',import.meta.url),'utf8'),
   readFile(new URL('../public/v2/modules-v57-section-reload.js',import.meta.url),'utf8'),
-  readFile(new URL('../public/v2/modules-v64-meta-breakdown-catalog.js',import.meta.url),'utf8')
+  readFile(new URL('../public/v2/modules-v64-meta-breakdown-catalog.js',import.meta.url),'utf8'),
+  readFile(new URL('../src/meta-ads-campaign-all.js',import.meta.url),'utf8')
 ]);
 const assert=(ok,message)=>{if(!ok)throw new Error(message)};
 assert(migration.includes('meta_ad_entities')&&migration.includes('meta_ad_daily_metrics'),'Granular Meta tables missing');
@@ -26,6 +27,8 @@ assert(index.includes('modules-v48-ad-expert.js'),'Expert dashboard bundle is no
 assert(/main\s*=\s*"src\/index-commerce-v3[456]\.js"/.test(preview),'Preview is not routed through the v34 Meta layer or its additive v35/v36 wrapper');
 for(const route of ['/api/integrations/meta-ads/campaign-hub','/api/integrations/meta-ads/daily-comparison','/api/integrations/meta-ads/breakdowns'])assert(v36.includes(route),`Campaign hub route missing: ${route}`);
 assert(v36.includes("requirePermission(me,'campaigns','read')")&&v36.includes('resolveStoreScope'),'Campaign hub must preserve campaign permission and store isolation');
+assert(v36.includes('includeInactiveExpertEntities')&&v36.includes('includeInactiveComparisonEntities'),'Campaigns all filter must augment analysis and comparison with inactive zero-spend entities');
+for(const marker of ['allEntitiesIncluded','meta_ad_entities','statusFilter!==\'all\'','zeroMetrics','includeInactiveExpertEntities','includeInactiveComparisonEntities'])assert(allFilter.includes(marker.replace('\\\'','\'')),`Exhaustive all-ad helper missing marker: ${marker}`);
 for(const level of ["'campaign'","'adset'","'ad'"])assert(detail.includes(level),`Daily comparison level missing: ${level}`);
 for(const bd of ['image_asset','video_asset','body_asset','title_asset','region','country','zip','publisher_platform','platform_position','device_platform','impression_device','product_brand_breakdown','product_category_breakdown','gen_ai_asset_type','creative_automation_asset_id'])assert(detail.includes(bd),`Requested Meta breakdown missing: ${bd}`);
 for(const action of ['action_type','action_device','action_destination','action_carousel_card_name','standard_event_content_type'])assert(detail.includes(`actionBreakdown('${action}'`),`Action breakdown support missing: ${action}`);
@@ -37,4 +40,4 @@ assert(hub.includes("data-compare-level=\"campaign\"")&&hub.includes("data-compa
 assert(reload.includes('modules-v63-campaign-hub.js?v=63.0')&&reload.includes('modules-v64-meta-breakdown-catalog.js?v=64.0'),'Campaign hub/full breakdown loaders are missing');
 assert(catalogUi.includes('breakdownCatalog')&&catalogUi.includes('optgroup')&&catalogUi.includes('metricMode')&&catalogUi.includes('إجمالي النتائج / الأحداث'),'Full breakdown selector and Action Breakdown result table must hydrate the Campaigns UI');
 new Function(hub);new Function(catalogUi);new Function(reload);
-console.log('Meta Ads expert analysis contract passed, including Campaign/Ad Set/Ad filters, expert recommendations, full Meta/action breakdown catalog, safe Action Breakdown accounting and day-by-day comparison.');
+console.log('Meta Ads expert analysis contract passed, including exhaustive active/all Campaign-AdSet-Ad filtering, expert recommendations, full Meta/action breakdown catalog, safe Action Breakdown accounting and day-by-day comparison.');
