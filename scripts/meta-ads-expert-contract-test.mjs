@@ -1,6 +1,6 @@
 import {readFile} from 'node:fs/promises';
 
-const [migration,entry,ui,index,preview,v36,hub,detail,detailV2,reload,allFilter]=await Promise.all([
+const [migration,entry,ui,index,preview,v36,hub,comparisonUx,detail,detailV2,reload,allFilter]=await Promise.all([
   readFile(new URL('../migrations/0021_meta_ads_granular_analysis.sql',import.meta.url),'utf8'),
   readFile(new URL('../src/index-commerce-v34.js',import.meta.url),'utf8'),
   readFile(new URL('../public/v2/modules-v48-ad-expert.js',import.meta.url),'utf8'),
@@ -8,6 +8,7 @@ const [migration,entry,ui,index,preview,v36,hub,detail,detailV2,reload,allFilter
   readFile(new URL('../wrangler.preview.toml',import.meta.url),'utf8'),
   readFile(new URL('../src/index-commerce-v36.js',import.meta.url),'utf8'),
   readFile(new URL('../public/v2/modules-v66-campaign-hub.js',import.meta.url),'utf8'),
+  readFile(new URL('../public/v2/modules-v67-campaign-comparison-ux.js',import.meta.url),'utf8'),
   readFile(new URL('../src/meta-ads-campaign-detail.js',import.meta.url),'utf8'),
   readFile(new URL('../src/meta-ads-campaign-detail-v2.js',import.meta.url),'utf8'),
   readFile(new URL('../public/v2/modules-v57-section-reload.js',import.meta.url),'utf8'),
@@ -48,6 +49,13 @@ assert(hub.includes("scopedPath('/api/integrations/meta-ads/daily-comparison',le
 assert(hub.includes("level==='ad'?breakdownSection(section):''"),'Detailed Meta breakdown must remain inside the Ads section only');
 assert(hub.includes("state.status==='all'?")&&hub.includes('status:state.status'),'Active/all filter must drive analysis and data APIs together');
 assert(hub.includes('breakdownCatalog')&&hub.includes('optgroup')&&hub.includes("data.metricMode==='actions'")&&hub.includes('النتائج / الأحداث'),'Full server breakdown catalog and Action Breakdown result table must hydrate the Ads workspace');
-assert(reload.includes('modules-v66-campaign-hub.js?v=66.0')&&!reload.includes('modules-v65-campaign-hub.js?v=65.0'),'Campaign Hub loader must use the independent v66 workspace asset');
-new Function(hub);new Function(reload);
-console.log('Meta Ads expert analysis contract passed, including independent Campaign/Ad Set/Ad workspaces, per-section date presets and comparison, exhaustive active/all filtering, current Meta SDK breakdown coverage, hard tenant/store breakdown scoping, fail-closed authentication and safe Action Breakdown accounting.');
+for(const metric of ['الإنفاق','المشتريات','تكلفة الشراء','العائد على الإنفاق','نسبة النقر','تكلفة ألف ظهور','التكرار'])assert(comparisonUx.includes(metric),`Comparison UX core metric missing: ${metric}`);
+assert(comparisonUx.includes('ux67-metric-col')&&comparisonUx.includes('position:sticky;left:0'),'Comparison measurement column must remain sticky on the left while dates scroll');
+assert(comparisonUx.includes('direction:ltr')&&comparisonUx.includes('ux67-scroll'),'Comparison matrix must keep chronological horizontal scrolling independent from the RTL app shell');
+assert(comparisonUx.includes('buildSignals')&&comparisonUx.includes("severity:'high'")&&comparisonUx.includes("severity:'watch'")&&comparisonUx.includes("severity:'good'"),'Comparison UX must classify urgent, watch and positive signals');
+assert(comparisonUx.includes('data-ux67-signal')&&comparisonUx.includes('ux67-marker')&&comparisonUx.includes('الأرقام التي تستحق النظر'),'Flagged comparison numbers must have visual markers tied to analysis below');
+assert(comparisonUx.includes('scrollIntoView')&&comparisonUx.includes('ux67Insight-'),'Clicking a marked number must focus its matching analysis card');
+assert(comparisonUx.includes('إنفاق بدون مشتريات')&&comparisonUx.includes('هبوط واضح في ROAS')&&comparisonUx.includes('ارتفاع تكلفة الشراء')&&comparisonUx.includes('CTR يتراجع')&&comparisonUx.includes('CPM أعلى من اليوم السابق'),'Comparison UX must explain the main efficiency signals rather than only coloring numbers');
+assert(reload.includes('modules-v66-campaign-hub.js?v=66.0')&&reload.includes('modules-v67-campaign-comparison-ux.js?v=67.0')&&!reload.includes('modules-v65-campaign-hub.js?v=65.0'),'Campaign loader must keep v66 workspaces and add the v67 comparison UX layer');
+new Function(hub);new Function(comparisonUx);new Function(reload);
+console.log('Meta Ads expert analysis contract passed, including independent Campaign/Ad Set/Ad workspaces, per-section date presets, sticky-left comparison metrics, visual attention markers linked to analysis, exhaustive active/all filtering, current Meta SDK breakdown coverage, hard tenant/store breakdown scoping and safe Action Breakdown accounting.');
