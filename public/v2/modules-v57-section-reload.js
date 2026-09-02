@@ -117,10 +117,15 @@
   document.documentElement.dataset.sectionReload='v57.1-ready';
 })();
 
-// Campaign Hub uses a fresh asset path so Cloudflare cannot reuse a stale asset manifest entry.
+// Campaign Hub keeps its functional workspace in v66 and loads v67 as a visual comparison layer.
 {
-  const hubId='kunCampaignHubV66Loader';
-  if(!document.getElementById(hubId)){
-    const module=document.createElement('script');module.id=hubId;module.src='/v2/modules-v66-campaign-hub.js?v=66.0';module.async=false;document.head.appendChild(module);
-  }
+  const hubId='kunCampaignHubV66Loader',uxId='kunCampaignUXV67Loader';
+  const loadUX=()=>{
+    if(document.getElementById(uxId))return;
+    const ux=document.createElement('script');ux.id=uxId;ux.src='/v2/modules-v67-campaign-comparison-ux.js?v=67.0';ux.async=false;document.head.appendChild(ux);
+  };
+  const existing=document.getElementById(hubId);
+  if(!existing){
+    const module=document.createElement('script');module.id=hubId;module.src='/v2/modules-v66-campaign-hub.js?v=66.0';module.async=false;module.addEventListener('load',loadUX,{once:true});document.head.appendChild(module);
+  }else if(window.KunCampaignHubV66)loadUX();else existing.addEventListener('load',loadUX,{once:true});
 }
