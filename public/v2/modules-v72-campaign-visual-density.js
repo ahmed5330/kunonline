@@ -45,21 +45,25 @@
       .campaign67-comparison .ux67-entity-head h4{font-size:13px;line-height:1.3}
       .campaign67-comparison .ux67-entity-head .muted{font-size:10px}
       .campaign67-comparison .ux67-summary{gap:4px}
-      .campaign67-comparison .ux67-summary span{min-width:62px;padding:4px 6px;border-radius:7px}
+      .campaign67-comparison .ux67-summary span{min-width:62px;padding:4px 6px;border-radius:7px;text-align:center}
       .campaign67-comparison .ux67-summary small{font-size:9px}
       .campaign67-comparison .ux67-summary b{font-size:11px}
       .campaign67-comparison .ux67-summary span[data-ux72-summary="spend"]{background:color-mix(in srgb,var(--card,#fff) 80%,#3b82f6 20%)}
       .campaign67-comparison .ux67-summary span[data-ux72-summary="purchases"]{background:color-mix(in srgb,var(--card,#fff) 80%,#10b981 20%)}
       .campaign67-comparison .ux67-summary span[data-ux72-summary="cpp"]{background:color-mix(in srgb,var(--card,#fff) 80%,#f59e0b 20%)}
       .campaign67-comparison .ux67-summary span[data-ux72-summary="roas"]{background:color-mix(in srgb,var(--card,#fff) 78%,#22c55e 22%)}
-      .campaign67-comparison .ux67-scroll{scrollbar-gutter:stable both-edges;overscroll-behavior-inline:contain}
-      .campaign67-comparison .ux67-matrix th,.campaign67-comparison .ux67-matrix td{min-width:88px;width:88px;padding:5px 6px;font-size:11px}
-      .campaign67-comparison .ux67-matrix thead th{font-size:10px;line-height:1.25;padding-block:6px}
+      .campaign67-comparison .ux67-scroll{overflow:auto;direction:ltr;scrollbar-gutter:stable both-edges;overscroll-behavior-inline:contain;padding-bottom:2px;background:var(--card,#fff)}
+      .campaign67-comparison .ux67-matrix{border-collapse:separate;border-spacing:0;min-width:max-content;width:100%;direction:ltr}
+      .campaign67-comparison .ux67-matrix th,.campaign67-comparison .ux67-matrix td{box-sizing:border-box;min-width:88px;width:88px;padding:5px 6px;border-bottom:1px solid var(--line,#e5e7eb);border-inline-end:1px solid var(--line,#e5e7eb);text-align:center;white-space:nowrap;background:var(--card,#fff);font-size:11px}
+      .campaign67-comparison .ux67-matrix thead th{position:sticky;top:0;z-index:3;font-size:10px;line-height:1.25;padding-block:6px;color:var(--muted,#64748b);font-weight:800;background:var(--card,#fff)}
       .campaign67-comparison .ux67-matrix thead th small{font-size:9px;opacity:.78}
-      .campaign67-comparison .ux67-matrix .ux67-metric-col{min-width:132px;max-width:132px;width:132px;padding:6px 8px}
-      .campaign67-comparison .ux67-metric-col b{font-size:11px}
-      .campaign67-comparison .ux67-metric-col small{font-size:9px;margin-top:1px}
-      .campaign67-comparison .ux67-value{min-width:50px;padding:4px 6px;border-radius:7px;font-size:11px;line-height:1.15;border-color:color-mix(in srgb,var(--line,#e5e7eb) 82%,transparent);box-shadow:none}
+      .campaign67-comparison .ux67-matrix .ux67-metric-col{position:sticky;left:0;z-index:5;box-sizing:border-box;min-width:132px;max-width:132px;width:132px;padding:6px 8px;text-align:right;direction:rtl;background:var(--card,#fff);box-shadow:10px 0 18px -18px rgba(15,23,42,.8)}
+      .campaign67-comparison .ux67-matrix thead .ux67-metric-col{z-index:7}
+      .campaign67-comparison .ux67-metric-col b{display:block;font-size:11px}
+      .campaign67-comparison .ux67-metric-col small{display:block;font-size:9px;margin-top:1px;color:var(--muted,#64748b)}
+      .campaign67-comparison .ux67-value{display:inline-flex;align-items:center;justify-content:center;position:relative;box-sizing:border-box;min-width:50px;padding:4px 6px;border:1px solid color-mix(in srgb,var(--line,#e5e7eb) 82%,transparent);border-radius:7px;font-size:11px;line-height:1.15;font-weight:800;cursor:default;transition:transform .15s ease,box-shadow .15s ease;box-shadow:none}
+      .campaign67-comparison .ux67-value[data-ux67-signal]{cursor:pointer}
+      .campaign67-comparison .ux67-value[data-ux67-signal]:hover{transform:translateY(-1px)}
       .campaign67-comparison .ux67-value[data-ux72-metric="spend"]{background:color-mix(in srgb,var(--card,#fff) 78%,#3b82f6 22%)}
       .campaign67-comparison .ux67-value[data-ux72-metric="purchases"]{background:color-mix(in srgb,var(--card,#fff) 76%,#10b981 24%)}
       .campaign67-comparison .ux67-value[data-ux72-metric="cpp"]{background:color-mix(in srgb,var(--card,#fff) 76%,#f59e0b 24%)}
@@ -70,14 +74,15 @@
       .campaign67-comparison .ux67-value.high{background:color-mix(in srgb,var(--card,#fff) 68%,#ef4444 32%);border-color:#dc2626;box-shadow:0 0 0 1px rgba(220,38,38,.12)}
       .campaign67-comparison .ux67-value.watch{background:color-mix(in srgb,var(--card,#fff) 67%,#f59e0b 33%);border-color:#d97706;box-shadow:0 0 0 1px rgba(217,119,6,.12)}
       .campaign67-comparison .ux67-value.good{background:color-mix(in srgb,var(--card,#fff) 66%,#22c55e 34%);border-color:#16a34a;box-shadow:0 0 0 1px rgba(22,163,74,.12)}
-      .campaign67-comparison .ux67-marker{top:-7px;right:-7px;width:16px;height:16px;font-size:9px}
+      .campaign67-comparison .ux67-marker{position:absolute;top:-7px;right:-7px;width:16px;height:16px;border-radius:50%;display:grid;place-items:center;font-size:9px;font-weight:900;color:white;box-shadow:0 1px 5px rgba(15,23,42,.25)}
+      .campaign67-comparison .ux67-value.high .ux67-marker{background:#dc2626}.campaign67-comparison .ux67-value.watch .ux67-marker{background:#d97706}.campaign67-comparison .ux67-value.good .ux67-marker{background:#16a34a}
       .campaign67-comparison .ux67-matrix thead th:last-child{position:sticky;right:0;z-index:7;background:color-mix(in srgb,var(--card,#fff) 88%,#64748b 12%);box-shadow:-10px 0 18px -18px rgba(15,23,42,.9)}
       .campaign67-comparison .ux67-matrix tbody td:last-child{position:sticky;right:0;z-index:4;background:color-mix(in srgb,var(--card,#fff) 90%,#64748b 10%);box-shadow:-10px 0 18px -18px rgba(15,23,42,.9)}
-      .campaign67-comparison .ux67-analysis{padding:8px 10px 10px}
-      .campaign67-comparison .ux67-analysis-title{margin-bottom:6px}
-      .campaign67-comparison .ux67-analysis-grid{gap:6px}
-      .campaign67-comparison .ux67-insight{gap:7px;padding:8px;border-radius:9px}
-      .campaign67-comparison .ux67-insight p{margin:2px 0;font-size:10px;line-height:1.55}
+      .campaign67-comparison .ux67-analysis{padding:8px 10px 10px;direction:rtl;background:color-mix(in srgb,var(--card,#fff) 96%,#64748b 4%)}
+      .campaign67-comparison .ux67-analysis-title{display:flex;gap:8px;align-items:center;margin-bottom:6px}
+      .campaign67-comparison .ux67-analysis-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+      .campaign67-comparison .ux67-insight{position:relative;display:grid;grid-template-columns:auto 1fr;gap:7px;padding:8px;border:1px solid var(--line,#e5e7eb);border-radius:9px;background:var(--card,#fff);scroll-margin-top:90px}
+      .campaign67-comparison .ux67-insight p{margin:2px 0;font-size:10px;line-height:1.55;color:var(--muted,#64748b)}
       .campaign67-comparison .ux67-insight strong,.campaign67-comparison .ux67-insight em{font-size:10px}
       .campaign67-comparison .ux72-expand{display:inline-flex;align-items:center;gap:5px;white-space:nowrap;padding:6px 9px;min-height:31px}
       .campaign67-comparison .ux72-expand-icon{font-size:14px;line-height:1}
