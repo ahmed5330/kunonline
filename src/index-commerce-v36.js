@@ -98,31 +98,57 @@ async function customerServiceShippingFallback(request,env,ctx,match,response,bo
 
   if(row.state==='shipped')return json({ok:true,state:'shipped',history:parseArr(row.history),customerServiceShippingHandoff:true},200);
   const history=parseArr(row.history),at=new Date().toISOString();
-  history.push({from:row.state,to:'shipped',at,by:me.email||me.id||'client',note:'Customer Service shipping handoff'});
-  await env.DB.prepare("UPDATE orders SET state='shipped',history=?,updated_at=? WHERE id=? AND client_id=?").bind(JSON.stringify(history),at,orderId,clientId).run();
-  return json({ok:true,state:'shipped',history,customerServiceShippingHandoff:true},200);
+  history.push({type:'state',state:'shipped',at,by:me?.email||me?.name||me?.role||'client',byName:me?.name||me?.email||me?.role||'client',byUserId:me?.uid||me?.id||null,note:'تم التسليم إلى مرحلة جاري الشحن من خدمة العملاء'});
+  await env.DB.prepare("UPDATE orders SET state='shipped',checkpoint='جاري الشحن',history=? WHERE id=? AND client_id=? AND state IN ('confirmed','preparing')").bind(JSON.stringify(history),orderId,clientId).run();
+  const fresh=await env.DB.prepare('SELECT state FROM orders WHERE id=? AND client_id=?').bind(orderId,clientId).first().catch(()=>null);
+  if(fresh?.state!=='shipped')return response;
+  return json({ok:true,state:'shipped',history,customerServiceShippingHandoff:true,inventoryChanged:false},200);
 }
 
-const app={
-  async fetch(request,env,ctx){
-    const url=new URL(request.url),path=url.pathname,method=request.method;
-    if(path==='/api/preview/version'&&method==='GET')return json({ok:true,build:BUILD,entrypoint:'index-commerce-v36.js',environment:'preview'});
-    if(method==='GET'&&CAMPAIGN_READ_PATHS.has(path)&&!hasAuthEnvelope(request))return json({error:'محتاج تسجّل دخول',code:'AUTH_REQUIRED'},401);
-    try{
-      if(path==='/api/integrations/meta-ads/campaign-hub'&&method==='GET'){requirePermission(await currentUser(request,env,ctx),'campaigns','read');return campaignHubRoute(request,env,ctx);}
-      if(path==='/api/integrations/meta-ads/daily-comparison'&&method==='GET'){requirePermission(await currentUser(request,env,ctx),'campaigns','read');return campaignComparisonRoute(request,env,ctx);}
-      if(path==='/api/integrations/meta-ads/breakdowns'&&method==='GET'){requirePermission(await currentUser(request,env,ctx),'campaigns','read');return campaignBreakdownRoute(request,env,ctx);}
-      const stateMatch=path.match(/^\/api\/orders\/([^/]+)\/state$/);
-      if(stateMatch&&method==='PATCH')return guardedReturnedReconfirmation(request,env,ctx,stateMatch);
-      if(stateMatch&&method==='PATCH')return commerceV35.fetch(request,env,ctx);
-      const response=await commerceV35.fetch(request,env,ctx);
-      if(stateMatch&&method==='PATCH')return customerServiceShippingFallback(request,env,ctx,stateMatch,response,await request.clone().json().catch(()=>({})));
-      return response;
-    }catch(error){
-      const status=Number(error?.status)||403,code=error?.code||'FORBIDDEN';return json({error:error?.message||'ممنوع',code},status);
-    }
-  }
-};
+async function customerServiceStateTransition(request,env,ctx,match){
+  const body=await request.clone().json().catch(()=>({}));
+  if(clean(body.state)==='confirmed')return guardedReturnedReconfirmation(request,env,ctx,match);
+  const response=await commerceV35.fetch(request,env,ctx);
+  return customerServiceShippingFallback(request,env,ctx,match,response,body);
+}
 
-export class SyncEntrypoint extends SyncEntrypointV35{}
-export default app;
+async function carrierFinancialsRoute(request,env,ctx,match){
+  const body=await request.clone().json().catch(()=>({})),me=await currentUser(request,env,ctx);
+  if(!me)return json({error:'محتاج تسجّل دخول',code:'AUTH_REQUIRED'},401);
+  const clientId=resolvedClient(me,request,body);
+  if(!clientId)return json({error:'مش مسموح الوصول لبيانات متجر آخر',code:'TENANT_ISOLATION'},403);
+  const orderId=decodeURIComponent(match[1]);
+  return json(await recordCarrierFinancials(env,{clientId,orderId,me,body}));
+}
+
+async function dashboardCurrentCostRoute(request,env,ctx){
+  const response=await commerceV35.fetch(request,env,ctx);if(!response.ok)return response;
+  const snapshot=await response.clone().json().catch(()=>null);if(!snapshot?.ok)return response;
+  const me=await currentUser(request,env,ctx);if(!me)return response;
+  const clientId=resolvedClient(me,request);if(!clientId)return response;
+  const storeId=clean(new URL(request.url).searchParams.get('storeId'))||null;
+  return json(await applyCurrentInventoryCosts(env,{snapshot,clientId,storeId}),response.status);
+}
+
+async function fetchV36(request,env,ctx){
+  const url=new URL(request.url),path=url.pathname,method=request.method.toUpperCase();
+  try{
+    if(path==='/api/preview/version'&&method==='GET')return json({ok:true,build:BUILD,environment:env.APP_ENV||'unknown',entrypoint:'index-commerce-v36.js'});
+    if(method==='GET'&&CAMPAIGN_READ_PATHS.has(path)&&!hasAuthEnvelope(request))return json({error:'محتاج تسجّل دخول',code:'AUTH_REQUIRED'},401);
+    if(path==='/api/dashboard'&&method==='GET')return dashboardCurrentCostRoute(request,env,ctx);
+    if(path==='/api/integrations/meta-ads/campaign-hub'&&method==='GET')return campaignHubRoute(request,env,ctx);
+    if(path==='/api/integrations/meta-ads/daily-comparison'&&method==='GET')return campaignComparisonRoute(request,env,ctx);
+    if(path==='/api/integrations/meta-ads/breakdowns'&&method==='GET')return campaignBreakdownRoute(request,env,ctx);
+    const financialMatch=path.match(/^\/api\/post-shipping\/orders\/([^/]+)\/carrier-financials$/);
+    if(financialMatch&&method==='PATCH')return carrierFinancialsRoute(request,env,ctx,financialMatch);
+    const stateMatch=path.match(/^\/api\/customer-service\/orders\/([^/]+)\/state$/);
+    if(stateMatch&&method==='PATCH')return customerServiceStateTransition(request,env,ctx,stateMatch);
+    return commerceV35.fetch(request,env,ctx);
+  }catch(error){return json({error:error?.message||'حدث خطأ',code:error?.code||'COMMERCE_V36_ERROR',path,method},error?.status||500);}
+}
+
+export class SyncEntrypoint extends SyncEntrypointV35{
+  async health(){const base=await super.health();return {...base,entrypoint:'index-commerce-v36.js',returnReconfirmStockGuard:true,customerServiceShippingHandoff:true,carrierFinancials:true,dashboardCurrentInventoryCosts:true,campaignExpertHub:true,campaignDailyComparison:true,metaBreakdowns:true,campaignAllFilterExhaustive:true,metaBreakdownScopeGuard:true,currentMetaSdkBreakdowns:true,campaignAuthFailClosed:true,campaignAnonymousGate:true,campaignLevelWorkspaces:true,campaignIndependentDateRanges:true,readableCreativeBreakdowns:true};}
+}
+
+export default {fetch:fetchV36,scheduled(controller,env,ctx){return commerceV35.scheduled?.(controller,env,ctx);}};
