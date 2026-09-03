@@ -139,7 +139,7 @@
       :`<label>الحملة<select data-scope73-campaign>${optionMarkup(campaigns,state.ad.campaignId,'كل الحملات')}</select></label><label>المجموعة المراد تحليل إعلاناتها<select data-scope73-adset>${optionMarkup(adsets,state.ad.adsetId,'كل المجموعات')}</select></label><span class="scope73-current">🎯 نطاق تحليل الإعلانات</span><div class="scope73-note">اختيار الحملة يضيّق قائمة المجموعات، واختيار المجموعة يطبق على مؤشرات الإعلانات وجدولها ومقارنتها.</div>`;
     if(existing&&existing.dataset.scopeSignature===`${level}|${state.adset.campaignId}|${state.ad.campaignId}|${state.ad.adsetId}|${campaigns.length}|${adsets.length}`)return;
     const card=existing||document.createElement('div');card.className='parent-scope73';card.dataset.scopeSignature=`${level}|${state.adset.campaignId}|${state.ad.campaignId}|${state.ad.adsetId}|${campaigns.length}|${adsets.length}`;card.innerHTML=html;
-    if(!existing){const anchor=shell.querySelector('.date-card')||shell.querySelector('.kpis')||shell.children[2];anchor?.before(card)||shell.appendChild(card);}bind(card);
+    if(!existing){const anchor=shell.querySelector('.date-card')||shell.querySelector('.kpis')||shell.children[2];if(anchor)anchor.before(card);else shell.appendChild(card);}bind(card);
   }
   let queued=false;function queueDecorate(){if(queued)return;queued=true;queueMicrotask(()=>{queued=false;decorate();});}
   installFetchScope();const observer=new MutationObserver(queueDecorate);observer.observe(root,{childList:true,subtree:true});
