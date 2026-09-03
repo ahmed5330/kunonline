@@ -53,7 +53,7 @@
       .campaign67-comparison .ux67-summary span[data-ux72-summary="cpp"]{background:color-mix(in srgb,var(--card,#fff) 80%,#f59e0b 20%)}
       .campaign67-comparison .ux67-summary span[data-ux72-summary="roas"]{background:color-mix(in srgb,var(--card,#fff) 78%,#22c55e 22%)}
       .campaign67-comparison .ux67-scroll{overflow:auto;direction:ltr;scrollbar-gutter:stable both-edges;overscroll-behavior-inline:contain;padding-bottom:2px;background:var(--card,#fff)}
-      .campaign67-comparison .ux67-matrix{border-collapse:separate;border-spacing:0;min-width:max-content;width:100%;direction:ltr}
+      .campaign67-comparison .ux67-matrix{border-collapse:separate;border-spacing:0;width:max-content;table-layout:fixed;direction:ltr}
       .campaign67-comparison .ux67-matrix th,.campaign67-comparison .ux67-matrix td{box-sizing:border-box;min-width:88px;width:88px;padding:5px 6px;border-bottom:1px solid var(--line,#e5e7eb);border-inline-end:1px solid var(--line,#e5e7eb);text-align:center;white-space:nowrap;background:var(--card,#fff);font-size:11px}
       .campaign67-comparison .ux67-matrix thead th{position:sticky;top:0;z-index:3;font-size:10px;line-height:1.25;padding-block:6px;color:var(--muted,#64748b);font-weight:800;background:var(--card,#fff)}
       .campaign67-comparison .ux67-matrix thead th small{font-size:9px;opacity:.78}
