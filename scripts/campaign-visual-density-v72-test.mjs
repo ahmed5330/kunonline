@@ -21,3 +21,4 @@ must(/modules-v72-campaign-visual-density\.js\?v=72\.0/.test(loader),'v72 must l
 must(/loadVisual/.test(loader)&&/loadControls/.test(loader),'v72 must be chained after the reliable v71 controls');
 
 console.log('Campaign v72 visual-density contract passed: compact colored metrics, sticky context/total columns, semantic KPI surfaces and full-screen comparison focus are wired.');
+await import('./campaign-parent-scope-v73-test.mjs');
