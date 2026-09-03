@@ -117,12 +117,17 @@
   document.documentElement.dataset.sectionReload='v57.1-ready';
 })();
 
-// Campaign Hub keeps v66 workspaces and layers comparison v67, analysis v68, readable measurements v70.1, reliable controls v71.2 and compact visual density v72.
+// Campaign Hub keeps v66 workspaces and layers comparison v67, analysis v68, readable measurements v70.1, reliable controls v71.2, compact visual density v72 and parent scopes v73.
 {
-  const hubId='kunCampaignHubV66Loader',uxId='kunCampaignUXV67Loader',breakdownId='kunBreakdownAnalysisV68Loader',measureId='kunBreakdownMeasurementsV70Loader',controlsId='kunBreakdownControlsV71Loader',visualId='kunCampaignVisualDensityV72Loader';
+  const hubId='kunCampaignHubV66Loader',uxId='kunCampaignUXV67Loader',breakdownId='kunBreakdownAnalysisV68Loader',measureId='kunBreakdownMeasurementsV70Loader',controlsId='kunBreakdownControlsV71Loader',visualId='kunCampaignVisualDensityV72Loader',parentId='kunCampaignParentScopeV73Loader';
+  const loadParent=()=>{
+    if(document.getElementById(parentId))return;
+    const parent=document.createElement('script');parent.id=parentId;parent.src='/v2/modules-v73-campaign-parent-scope.js?v=73.0';parent.async=false;document.head.appendChild(parent);
+  };
   const loadVisual=()=>{
-    if(document.getElementById(visualId))return;
-    const visual=document.createElement('script');visual.id=visualId;visual.src='/v2/modules-v72-campaign-visual-density.js?v=72.0';visual.async=false;document.head.appendChild(visual);
+    const existing=document.getElementById(visualId);
+    if(existing){if(window.KunCampaignVisualDensityV72)loadParent();else existing.addEventListener('load',loadParent,{once:true});return;}
+    const visual=document.createElement('script');visual.id=visualId;visual.src='/v2/modules-v72-campaign-visual-density.js?v=72.0';visual.async=false;visual.addEventListener('load',loadParent,{once:true});document.head.appendChild(visual);
   };
   const loadControls=()=>{
     const existing=document.getElementById(controlsId);
