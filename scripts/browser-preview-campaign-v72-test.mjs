@@ -42,7 +42,7 @@ try{
   const login=await evalJs(`(async()=>{const r=await fetch('/api/login',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify(${JSON.stringify({email,password})})});return {status:r.status,text:(await r.text()).slice(0,300)}})()`);if(login?.status!==200)throw new Error(`Campaign v72 browser login failed ${login?.status}: ${login?.text||''}`);
   const version=await evalJs(`(async()=>{const r=await fetch('/api/preview/version',{credentials:'include',cache:'no-store'});return r.json()})()`);if(version?.build!==expectedBuild)throw new Error(`Campaign v72 browser is not on exact build ${expectedBuild}; got ${version?.build||'unknown'}`);
   await navigate(`${base}/v2/`);
-  await waitFor(`!!window.KunCampaignHubV66&&!!window.KunCampaignComparisonUXV67&&!!window.KunCampaignVisualDensityV72&&document.documentElement.dataset.campaignVisualDensity==='v72-ready'`,'Campaign v66/v67/v72 layers');
+  await waitFor(`!!window.KunCampaignHubV66&&!!window.KunCampaignUXV67&&!!window.KunCampaignVisualDensityV72&&document.documentElement.dataset.campaignVisualDensity==='v72-ready'`,'Campaign v66/v67/v72 layers');
   exceptions.length=0;consoleErrors.length=0;serverErrors.length=0;
 
   await evalJs(`(()=>{
