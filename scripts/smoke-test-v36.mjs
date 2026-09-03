@@ -48,12 +48,13 @@ await propagatedAsset('/v2/modules-v68-breakdown-analysis-ux.js?v=68.1','Selecte
 await propagatedAsset('/v2/modules-v70-breakdown-measurements.js?v=70.1','Readable Breakdown element measurements',['كل ${data.label','Asset ID','كل نص فعلي ظاهر هنا','Spend','Purchases','CPP','ROAS','CTR','CPC','CPM','Frequency','لا تستخدم الـID بدل النص','dimensionAssetId','metricAvailability']);
 await propagatedAsset('/v2/modules-v71-breakdown-controls.js?v=71.2','Reliable Breakdown controls',['KunBreakdownControlsV71','AbortController','campaign71BreakdownRetry','aria-busy','stopImmediatePropagation','requestId!==sequence','activeKey!==key','campaign-controls-changed','option.textContent!==desired','observerQueued',"version:'71.2'"]);
 await propagatedAsset('/v2/modules-v72-campaign-visual-density.js?v=72.0','Compact Campaign visual density',['KunCampaignVisualDensityV72','metricOrder','min-width:88px;width:88px','data-ux72-metric','data-ux72-summary','data-ux72-kpi','position:sticky;right:0','ux72-focus','عرض موسّع','aria-pressed',"version:'72.0'"]);
-await propagatedAsset('/v2/modules-v57-section-reload.js?v=57.1','Campaign layered loader',['modules-v70-breakdown-measurements.js?v=70.1','modules-v71-breakdown-controls.js?v=71.2','modules-v72-campaign-visual-density.js?v=72.0','loadControls','loadMeasurements','loadVisual']);
+await propagatedAsset('/v2/modules-v73-campaign-parent-scope.js?v=73.0','Campaign parent analysis scope',['KunCampaignParentScopeV73','الحملة المراد تحليل مجموعاتها','المجموعة المراد تحليل إعلاناتها','نطاق تحليل المجموعات','نطاق تحليل الإعلانات','filterHubPayload','filterComparisonPayload','parentScopeApplied',"version:'73.0'"]);
+await propagatedAsset('/v2/modules-v57-section-reload.js?v=57.1','Campaign layered loader',['modules-v70-breakdown-measurements.js?v=70.1','modules-v71-breakdown-controls.js?v=71.2','modules-v72-campaign-visual-density.js?v=72.0','modules-v73-campaign-parent-scope.js?v=73.0','loadControls','loadMeasurements','loadVisual','loadParent']);
 for(const path of ['/api/integrations/meta-ads/campaign-hub','/api/integrations/meta-ads/daily-comparison?level=campaign&status=active&days=7','/api/integrations/meta-ads/breakdowns?dimension=image_asset&status=active&days=7']){
   const response=await nativeFetch(`${base}${path}`,{redirect:'manual',headers:{'Cache-Control':'no-cache'}});
   if(response.status!==401)throw new Error(`Campaign protected route must reject anonymous access: ${path} -> ${response.status}`);
 }
-console.log('Smoke v36 precheck passed: Campaign workspaces, compact colored comparison v72, sticky context/period totals, selected Breakdown analysis, readable measurements and reliable controls are deployed with protected APIs.');
+console.log('Smoke v36 precheck passed: Campaign workspaces, compact colored comparison v72, parent selection v73, sticky context/period totals, selected Breakdown analysis, readable measurements and reliable controls are deployed with protected APIs.');
 
 // Keep the established smoke suite intact while its version assertion still names v35.
 // Only the version endpoint response is adapted after the exact current v36 build was verified above.
