@@ -7,8 +7,9 @@ import {includeInactiveExpertEntities,includeInactiveComparisonEntities} from '.
 import {requirePermission,resolveTenant} from './access-control.js';
 import {resolveStoreScope} from './store-scope.js';
 import {gateShippingSheetInventory,markShippingSheetInventoryResolved,pendingShippingSheetInventoryBlock,decorateShippingSheetInventoryBlocks,sanitizeShippingSheetPending} from './shipping-sheet-inventory-gate.js';
+import {matchShippingSheetRows} from './shipping-sheet-order-match.js';
 
-const BUILD='preview-v36-2026-09-04-shipping-sheet-inventory-gate';
+const BUILD='preview-v36-2026-09-04-shipping-sheet-smart-match';
 const clean=value=>String(value??'').trim();
 const num=value=>Number(value)||0;
 const parseArr=value=>{try{const parsed=JSON.parse(value||'[]');return Array.isArray(parsed)?parsed:[];}catch{return [];}};
@@ -131,6 +132,11 @@ async function decoratedOperationalBoard(request,env,ctx){
   const response=await commerceV35.fetch(request,env,ctx);if(!response.ok)return response;const data=await response.clone().json().catch(()=>null);if(!data?.ok||!Array.isArray(data.orders))return response;return json(decorateShippingSheetInventoryBlocks(data),response.status);
 }
 
+async function shippingSheetMatchRoute(request,env,ctx){
+  const body=await request.clone().json().catch(()=>({})),me=await currentUser(request,env,ctx);if(!me)return json({error:'محتاج تسجّل دخول',code:'AUTH_REQUIRED'},401);const clientId=resolvedClient(me,request,body);if(!clientId)return json({error:'مش مسموح الوصول لبيانات متجر آخر',code:'TENANT_ISOLATION'},403);
+  return json(await matchShippingSheetRows(env,{clientId,storeId:clean(body.storeId||body.store_id),rows:body.rows,me}));
+}
+
 async function carrierFinancialsRoute(request,env,ctx,match){
   const body=await request.clone().json().catch(()=>({})),me=await currentUser(request,env,ctx);
   if(!me)return json({error:'محتاج تسجّل دخول',code:'AUTH_REQUIRED'},401);
@@ -173,10 +179,10 @@ async function settleShippingSheetState(request,env,ctx,{clientId,orderId,me,pen
 
 async function applyShippingSheetWorkflow(request,env,ctx,{orderId,body,me,clientId}){
   const target=clean(body.target||body.sheetType).toLowerCase(),pending=sanitizeShippingSheetPending({target,flow:'shipping-sheet-apply',shippingCost:body.shippingCost,reason:body.reason||body.outcomeReason,sourceFile:body.sourceFile,carrierName:body.carrierName,returnBody:body.returnBody||body,carrierFinancials:body.carrierFinancials});
-  await gateShippingSheetInventory(env,{clientId,orderId,me,pending});const settled=await settleShippingSheetState(request,env,ctx,{clientId,orderId,me,pending});let carrier=null;
+  const inventory=await gateShippingSheetInventory(env,{clientId,orderId,me,pending});const settled=await settleShippingSheetState(request,env,ctx,{clientId,orderId,me,pending});let carrier=null;
   if(pending.carrierFinancials)carrier=await recordCarrierFinancials(env,{clientId,orderId,me,body:{...pending.carrierFinancials,sheetType:target==='returned'?'returned':'delivered'}});
   await markShippingSheetInventoryResolved(env,{clientId,orderId,me,note:target==='returned'?'تمت مزامنة المخزون وتسجيل المرتجع والحسابات من شيت الشحن':target==='delivered'?'تم خصم المخزون وتسجيل التوصيل والمستحقات من شيت الشحن':'تم خصم المخزون وتسجيل جاري الشحن من الشيت'});
-  const fresh=await orderRow(env,{clientId,orderId});return {ok:true,id:orderId,target,state:fresh?.state||settled.state,inventorySynced:true,carrierFinancials:carrier?.financials||null,expectedCarrierCollection:carrier?.financials?.expectedNet??null};
+  const fresh=await orderRow(env,{clientId,orderId});return {ok:true,id:orderId,target,state:fresh?.state||settled.state,inventorySynced:true,inventoryAlreadySynced:Boolean(inventory?.alreadySynced||(!inventory?.allocatedNow&&inventory?.coverage?.complete)),inventoryAllocatedNow:Boolean(inventory?.allocatedNow),carrierFinancials:carrier?.financials||null,expectedCarrierCollection:carrier?.financials?.expectedNet??null};
 }
 async function shippingSheetApplyRoute(request,env,ctx,match){
   const body=await request.clone().json().catch(()=>({})),me=await currentUser(request,env,ctx);if(!me)return json({error:'محتاج تسجّل دخول',code:'AUTH_REQUIRED'},401);const clientId=resolvedClient(me,request,body);if(!clientId)return json({error:'مش مسموح الوصول لبيانات متجر آخر',code:'TENANT_ISOLATION'},403);return json(await applyShippingSheetWorkflow(request,env,ctx,{orderId:decodeURIComponent(match[1]),body,me,clientId}));
@@ -209,6 +215,7 @@ async function fetchV36(request,env,ctx){
     if(path==='/api/preview/version'&&method==='GET')return json({ok:true,build:BUILD,environment:env.APP_ENV||'unknown',entrypoint:'index-commerce-v36.js'});
     if(method==='GET'&&CAMPAIGN_READ_PATHS.has(path)&&!hasAuthEnvelope(request))return json({error:'محتاج تسجّل دخول',code:'AUTH_REQUIRED'},401);
     if((path==='/api/customer-service'||path==='/api/post-shipping')&&method==='GET')return decoratedOperationalBoard(request,env,ctx);
+    if(path==='/api/post-shipping/shipping-sheet-match'&&method==='POST')return shippingSheetMatchRoute(request,env,ctx);
     if(path==='/api/dashboard'&&method==='GET')return dashboardCurrentCostRoute(request,env,ctx);
     if(path==='/api/integrations/meta-ads/campaign-hub'&&method==='GET')return campaignHubRoute(request,env,ctx);
     if(path==='/api/integrations/meta-ads/daily-comparison'&&method==='GET')return campaignComparisonRoute(request,env,ctx);
@@ -223,7 +230,7 @@ async function fetchV36(request,env,ctx){
 }
 
 export class SyncEntrypoint extends SyncEntrypointV35{
-  async health(){const base=await super.health();return {...base,entrypoint:'index-commerce-v36.js',returnReconfirmStockGuard:true,customerServiceShippingHandoff:true,carrierFinancials:true,shippingSheetInventoryGate:true,shippingSheetInventoryPrivacyBlock:true,shippingSheetFinancialDependency:true,shippingSheetAutomaticRetry:true,dashboardCurrentInventoryCosts:true,campaignExpertHub:true,campaignDailyComparison:true,metaBreakdowns:true,campaignAllFilterExhaustive:true,metaBreakdownScopeGuard:true,currentMetaSdkBreakdowns:true,campaignAuthFailClosed:true,campaignAnonymousGate:true,campaignLevelWorkspaces:true,campaignIndependentDateRanges:true,readableCreativeBreakdowns:true};}
+  async health(){const base=await super.health();return {...base,entrypoint:'index-commerce-v36.js',returnReconfirmStockGuard:true,customerServiceShippingHandoff:true,carrierFinancials:true,shippingSheetInventoryGate:true,shippingSheetInventoryPrivacyBlock:true,shippingSheetFinancialDependency:true,shippingSheetAutomaticRetry:true,shippingSheetSmartMatch:true,shippingSheetIdempotentInventory:true,dashboardCurrentInventoryCosts:true,campaignExpertHub:true,campaignDailyComparison:true,metaBreakdowns:true,campaignAllFilterExhaustive:true,metaBreakdownScopeGuard:true,currentMetaSdkBreakdowns:true,campaignAuthFailClosed:true,campaignAnonymousGate:true,campaignLevelWorkspaces:true,campaignIndependentDateRanges:true,readableCreativeBreakdowns:true};}
 }
 
 export default {fetch:fetchV36,scheduled(controller,env,ctx){return commerceV35.scheduled?.(controller,env,ctx);}};
