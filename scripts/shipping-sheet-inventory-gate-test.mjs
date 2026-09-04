@@ -9,8 +9,9 @@ const [entry,gate,fifo,ui,smartUi,matcher,editBackend,editUi,index]=await Promis
 new Function(smartUi);
 
 for(const marker of ['gateShippingSheetInventory','shipping_sheet_inventory_blocked','shipping_sheet_inventory_resolved','ORDER_INVENTORY_COVERAGE_INCOMPLETE','ORDER_INVENTORY_NOT_LINKED','STOCK_FIFO_INSUFFICIENT','resetOrderStockAllocationForRepair','finalizeHistoricalReturnedInventoryBackfill'])must(gate.includes(marker)||fifo.includes(marker),`backend marker missing: ${marker}`);
-must(gate.indexOf('if(coverage.complete)return')>=0&&gate.indexOf('if(coverage.complete)return')<gate.indexOf('prepareOrderStockTransition'),'a fully allocated order must return before any fresh FIFO allocation, preventing double stock deduction');
-must(gate.indexOf('resetOrderStockAllocationForRepair')<gate.indexOf('prepareOrderStockTransition'),'partial allocation repair must be wired before a fresh FIFO allocation path');
+const gateBody=gate.slice(gate.indexOf('export async function gateShippingSheetInventory'));
+must(gateBody.indexOf('if(coverage.complete)return')>=0&&gateBody.indexOf('if(coverage.complete)return')<gateBody.indexOf('const allocation=await prepareOrderStockTransition'),'a fully allocated order must return before any fresh FIFO allocation, preventing double stock deduction');
+must(gateBody.indexOf('resetOrderStockAllocationForRepair')<gateBody.indexOf('const allocation=await prepareOrderStockTransition'),'partial allocation repair must be wired before a fresh FIFO allocation path');
 must(fifo.includes("toState:'cancelled',actor,restoreGeneral:true")&&fifo.includes("toState:'returned',actor,restoreGeneral:true"),'FIFO repair hooks must restore both lot and general stock');
 
 for(const marker of ['/shipping-sheet-apply','/shipping-sheet-retry','/api/post-shipping/shipping-sheet-match','shippingSheetInventoryGate:true','shippingSheetInventoryPrivacyBlock:true','shippingSheetFinancialDependency:true','shippingSheetSmartMatch:true','shippingSheetIdempotentInventory:true','decorateShippingSheetInventoryBlocks'])must(entry.includes(marker),`active v36 entrypoint missing: ${marker}`);
