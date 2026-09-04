@@ -1,4 +1,7 @@
+import {latestShippingSheetInventoryBlock} from './shipping-sheet-inventory-gate.js';
+
 const EDITABLE_STATES=new Set(['pending','confirmed','preparing','deferred']);
+const INVENTORY_REPAIR_STATES=new Set(['shipped','signed']);
 const clean=(value,max=2000)=>String(value??'').trim().slice(0,max);
 const number=value=>{const n=Number(value);return Number.isFinite(n)?n:0;};
 const parseArray=value=>{try{const data=JSON.parse(value||'[]');return Array.isArray(data)?data:[];}catch{return [];}};
@@ -60,7 +63,8 @@ async function existingItems(env,row){
 export async function editCustomerServiceOrder(env,{clientId,orderId,body={},me,storeId=null}){
   const row=await env.DB.prepare('SELECT * FROM orders WHERE id=? AND client_id=?').bind(orderId,clientId).first();
   if(!row)fail('الأوردر غير موجود',404,'ORDER_NOT_FOUND');
-  if(!EDITABLE_STATES.has(row.state))fail('لا يمكن تعديل محتوى الطلب بعد خروجه للشحن. ارجعه لمرحلة ما قبل الشحن أولًا إذا كان ذلك صحيحًا تشغيليًا.',409,'ORDER_EDIT_STATE_LOCKED');
+  const inventoryBlock=latestShippingSheetInventoryBlock(row.history),inventoryRepair=Boolean(inventoryBlock&&INVENTORY_REPAIR_STATES.has(row.state));
+  if(!EDITABLE_STATES.has(row.state)&&!inventoryRepair)fail('لا يمكن تعديل محتوى الطلب بعد خروجه للشحن. الاستثناء الوحيد هو أوردر موقوف مخزنيًا بسبب شيت شركة الشحن.',409,'ORDER_EDIT_STATE_LOCKED');
   const [legacyAllocation,itemAllocation]=await Promise.all([
     env.DB.prepare("SELECT order_id FROM order_stock_allocations WHERE order_id=? AND client_id=? AND status='allocated'").bind(orderId,clientId).first().catch(()=>null),
     env.DB.prepare("SELECT id FROM order_item_stock_allocations WHERE order_id=? AND client_id=? AND status='allocated' LIMIT 1").bind(orderId,clientId).first().catch(()=>null)
@@ -74,15 +78,15 @@ export async function editCustomerServiceOrder(env,{clientId,orderId,body={},me,
   const subtotal=items.reduce((sum,item)=>sum+item.lineTotal,0),total=body.total===undefined?subtotal:Math.max(0,number(body.total));
   const first=items[0],after={name,phone,gov,address,items:items.map(({id,lineKey,...item})=>item),total,couponCode:clean(body.couponCode||body.coupon_code,100),customerNote:clean(body.customerNote??body.note,2000)};
   const fields=changedFields(before,after);if(!fields.length)fail('لم يتم تغيير أي بيانات في الطلب',400,'ORDER_EDIT_NO_CHANGES');
-  const history=parseArray(row.history),at=stamp(),a=actor(me),event={type:'order_edit',fields,at,...a,note:`تم تعديل الطلب: ${fields.map(x=>x.label).join('، ')}`,before,after};history.push(event);
+  const history=parseArray(row.history),at=stamp(),a=actor(me),event={type:'order_edit',fields,at,...a,note:`تم تعديل الطلب: ${fields.map(x=>x.label).join('، ')}`,before,after,...(inventoryRepair?{inventoryRepair:true,shippingSheetBlockAt:inventoryBlock?.at||null}:{})};history.push(event);
   const statements=[
     env.DB.prepare(`UPDATE orders SET name=?,phone=?,gov=?,address=?,product=?,product_id=?,variant_id=?,product_note=?,qty=?,unit_price=?,total=?,coupon_code=?,note=?,history=? WHERE id=? AND client_id=?`).bind(name,phone,gov||null,address||null,first.productName,first.productId,first.variantId,first.variantLabel,items.reduce((sum,item)=>sum+item.qty,0),first.unitPrice,total,after.couponCode||null,after.customerNote||null,JSON.stringify(history),orderId,clientId),
     env.DB.prepare('DELETE FROM order_items WHERE order_id=? AND client_id=?').bind(orderId,clientId)
   ];
   for(const item of items)statements.push(env.DB.prepare(`INSERT INTO order_items (id,order_id,client_id,store_id,line_key,product_id,variant_id,sku,product_name,variant_label,qty,unit_price,line_total,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(item.id,orderId,clientId,row.store_id||storeId||null,item.lineKey,item.productId,item.variantId,item.sku,item.productName,item.variantLabel,item.qty,item.unitPrice,item.lineTotal,at,at));
   await env.DB.batch(statements);
-  try{await env.DB.prepare('INSERT INTO audit_log (id,client_id,store_id,actor_user_id,actor_email,action,entity_type,entity_id,before_json,after_json,metadata_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)').bind(`AUD-${crypto.randomUUID().slice(0,10).toUpperCase()}`,clientId,row.store_id||storeId||null,a.byUserId,a.by,'order.edit','order',orderId,JSON.stringify(before),JSON.stringify(after),JSON.stringify({source:'customer_service',fields:fields.map(x=>x.key)}),at).run();}catch{}
-  return {ok:true,id:orderId,edited:true,editedAt:at,fields,history,total,items:after.items};
+  try{await env.DB.prepare('INSERT INTO audit_log (id,client_id,store_id,actor_user_id,actor_email,action,entity_type,entity_id,before_json,after_json,metadata_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)').bind(`AUD-${crypto.randomUUID().slice(0,10).toUpperCase()}`,clientId,row.store_id||storeId||null,a.byUserId,a.by,'order.edit','order',orderId,JSON.stringify(before),JSON.stringify(after),JSON.stringify({source:'customer_service',fields:fields.map(x=>x.key),inventoryRepair}),at).run();}catch{}
+  return {ok:true,id:orderId,edited:true,editedAt:at,fields,history,total,items:after.items,inventoryRepair};
 }
 
 export const editableOrderStates=[...EDITABLE_STATES];
