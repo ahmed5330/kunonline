@@ -134,3 +134,15 @@ export async function finalizeOrderStockTransition(env,{clientId,orderId,fromSta
   const restoreGeneral=toState!=='returned';
   return await releaseActive(env,{clientId,orderId,toState,actor,restoreGeneral})||await releaseLegacy(env,{clientId,orderId,toState,actor,restoreGeneral})||{kind:'none'};
 }
+
+// Shipping-sheet reconciliation can encounter legacy orders that were moved forward without a complete FIFO allocation.
+// Resetting those partial allocations restores both the FIFO lots and general stock before a clean, all-or-nothing retry.
+export async function resetOrderStockAllocationForRepair(env,{clientId,orderId,actor}={}){
+  return await releaseActive(env,{clientId,orderId,toState:'cancelled',actor,restoreGeneral:true})||await releaseLegacy(env,{clientId,orderId,toState:'cancelled',actor,restoreGeneral:true})||{kind:'none'};
+}
+
+// Historical orders may already be marked returned before Kun Online had FIFO lineage. A repair backfill must leave
+// stock net-neutral while preserving a returned allocation trail, so both the lot and general stock are restored here.
+export async function finalizeHistoricalReturnedInventoryBackfill(env,{clientId,orderId,actor}={}){
+  return await releaseActive(env,{clientId,orderId,toState:'returned',actor,restoreGeneral:true})||await releaseLegacy(env,{clientId,orderId,toState:'returned',actor,restoreGeneral:true})||{kind:'none'};
+}
