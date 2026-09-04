@@ -10,6 +10,11 @@ const actor=me=>({by:me?.email||me?.name||me?.role||'user',byName:me?.name||me?.
 const fail=(message,status=409,code='SHIPPING_SHEET_INVENTORY_BLOCKED')=>{throw Object.assign(new Error(message),{status,code});};
 const BLOCK='shipping_sheet_inventory_blocked',RESOLVED='shipping_sheet_inventory_resolved';
 const SHEET_TARGETS=new Set(['shipped','delivered','returned']);
+const PREALLOCATION_STATES={
+  shipped:new Set(['confirmed','preparing','shipped']),
+  delivered:new Set(['confirmed','preparing','shipped','signed','collected']),
+  returned:new Set(['confirmed','preparing','shipped','signed','returned'])
+};
 
 function safeFinancials(value={}){
   if(!value||typeof value!=='object')return null;
@@ -65,12 +70,19 @@ async function throwBlocked(env,args){const event=await persistBlock(env,args),e
 async function accessOrder(env,{clientId,orderId,me}){
   requirePermission(me,'orders','update');const row=await env.DB.prepare('SELECT id,store_id FROM orders WHERE id=? AND client_id=?').bind(orderId,clientId).first();if(!row)fail('الأوردر غير موجود',404,'ORDER_NOT_FOUND');await resolveStoreScope(env,me,clientId,clean(row.store_id)||null,{write:true});return row;
 }
+function assertPreallocationState(order,target){
+  const state=clean(order?.state,30),allowed=PREALLOCATION_STATES[target];if(allowed?.has(state))return;
+  if(target==='returned'&&state==='collected')fail('الأوردر تم تحصيله بالفعل ويحتاج مراجعة يدوية قبل تسجيل المرتجع',409,'SHIPPING_SHEET_COLLECTED_RETURN_REVIEW');
+  fail(`حالة الأوردر «${state||'غير معروفة'}» لا تسمح بمزامنة ${target} من شيت الشحن`,409,'SHIPPING_SHEET_STATE_INVALID');
+}
 
 export async function gateShippingSheetInventory(env,{clientId,orderId,me,pending={}}={}){
   const safePending=sanitizeShippingSheetPending(pending),target=safePending.target;if(!SHEET_TARGETS.has(target))fail('هدف شيت الشحن غير صحيح',400,'SHIPPING_SHEET_TARGET_INVALID');
   const access=await accessOrder(env,{clientId,orderId,me});let snapshot=await orderSnapshot(env,{clientId,orderId}),order=snapshot.order;
   const historicalReturned=target==='returned'&&clean(order.state)==='returned';let coverage=inventoryCoverage(snapshot,{historicalReturned});
   if(coverage.complete)return {ok:true,orderId,storeId:access.store_id||null,target,inventorySynced:true,historicalReturned,coverage};
+  // State/race validation must happen before partial repair or new FIFO allocation. A stale sheet can never consume stock first and fail state settlement second.
+  assertPreallocationState(order,target);
 
   // A partial active allocation is unsafe: restore it first, then perform one clean FIFO allocation for the current order lines.
   const activeCoverage=inventoryCoverage(snapshot,{historicalReturned:false});
