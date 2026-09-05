@@ -5,11 +5,13 @@ import {metaAdsExpertAnalysisV2} from './meta-ads-expert.js';
 import {metaAdsDailyComparison,metaAdsBreakdown,META_BREAKDOWN_CATALOG} from './meta-ads-campaign-detail-v3.js';
 import {includeInactiveExpertEntities,includeInactiveComparisonEntities} from './meta-ads-campaign-all.js';
 import {requirePermission,resolveTenant} from './access-control.js';
+import {requireAdmin} from './admin-control.js';
+import {adminClientCommandCenter,adminClientCommandBrief,resolveAdminBriefRange} from './admin-client-command-center.js';
 import {resolveStoreScope} from './store-scope.js';
 import {gateShippingSheetInventory,markShippingSheetInventoryResolved,pendingShippingSheetInventoryBlock,decorateShippingSheetInventoryBlocks,sanitizeShippingSheetPending} from './shipping-sheet-inventory-gate.js';
 import {matchShippingSheetRows} from './shipping-sheet-order-match.js';
 
-const BUILD='preview-v36-2026-09-04-shipping-sheet-smart-match';
+const BUILD='preview-v36-2026-09-05-admin-client-command-center';
 const clean=value=>String(value??'').trim();
 const num=value=>Number(value)||0;
 const parseArr=value=>{try{const parsed=JSON.parse(value||'[]');return Array.isArray(parsed)?parsed:[];}catch{return [];}};
@@ -61,6 +63,9 @@ async function campaignComparisonRoute(request,env,ctx){
   return json(await includeInactiveComparisonEntities(env,{clientId,storeId,level:base.level,result:base}));
 }
 async function campaignBreakdownRoute(request,env,ctx){const {url,clientId,storeId}=await campaignReadScope(request,env,ctx);return json(await metaAdsBreakdown(env,{clientId,storeId,from:url.searchParams.get('from'),to:url.searchParams.get('to'),days:url.searchParams.get('days')||7,status:url.searchParams.get('status')||'active',dimension:url.searchParams.get('dimension')||'image_asset'}));}
+async function adminCommandScope(request,env,ctx){const me=await currentUser(request,env,ctx);if(!me)throw Object.assign(new Error('محتاج تسجّل دخول'),{status:401,code:'AUTH_REQUIRED'});requireAdmin(me);const url=new URL(request.url),range=resolveAdminBriefRange({preset:url.searchParams.get('preset')||'today',from:url.searchParams.get('from')||'',to:url.searchParams.get('to')||''});return {me,url,range};}
+async function adminCommandCenterRoute(request,env,ctx){const {me,range}=await adminCommandScope(request,env,ctx);return json(await adminClientCommandCenter(env,{me,range}));}
+async function adminClientBriefRoute(request,env,ctx,match){const {me,range}=await adminCommandScope(request,env,ctx);return json(await adminClientCommandBrief(env,{me,clientId:decodeURIComponent(match[1]),range}));}
 async function explicitInventoryLinks(env,{clientId,orderId,productId}){
   const row=await env.DB.prepare("SELECT COUNT(*) total,SUM(CASE WHEN product_id IS NOT NULL AND trim(product_id)<>'' THEN 1 ELSE 0 END) linked FROM order_items WHERE order_id=? AND client_id=? AND qty>0").bind(orderId,clientId).first().catch(()=>({total:0,linked:0}));
   return num(row?.total)>0?num(row?.linked)===num(row?.total):Boolean(clean(productId));
@@ -214,6 +219,8 @@ async function fetchV36(request,env,ctx){
   try{
     if(path==='/api/preview/version'&&method==='GET')return json({ok:true,build:BUILD,environment:env.APP_ENV||'unknown',entrypoint:'index-commerce-v36.js'});
     if(method==='GET'&&CAMPAIGN_READ_PATHS.has(path)&&!hasAuthEnvelope(request))return json({error:'محتاج تسجّل دخول',code:'AUTH_REQUIRED'},401);
+    if(path==='/api/admin/client-command-center'&&method==='GET')return adminCommandCenterRoute(request,env,ctx);
+    const adminBriefMatch=path.match(/^\/api\/admin\/clients\/([^/]+)\/command-brief$/);if(adminBriefMatch&&method==='GET')return adminClientBriefRoute(request,env,ctx,adminBriefMatch);
     if((path==='/api/customer-service'||path==='/api/post-shipping')&&method==='GET')return decoratedOperationalBoard(request,env,ctx);
     if(path==='/api/post-shipping/shipping-sheet-match'&&method==='POST')return shippingSheetMatchRoute(request,env,ctx);
     if(path==='/api/dashboard'&&method==='GET')return dashboardCurrentCostRoute(request,env,ctx);
@@ -230,7 +237,7 @@ async function fetchV36(request,env,ctx){
 }
 
 export class SyncEntrypoint extends SyncEntrypointV35{
-  async health(){const base=await super.health();return {...base,entrypoint:'index-commerce-v36.js',returnReconfirmStockGuard:true,customerServiceShippingHandoff:true,carrierFinancials:true,shippingSheetInventoryGate:true,shippingSheetInventoryPrivacyBlock:true,shippingSheetFinancialDependency:true,shippingSheetAutomaticRetry:true,shippingSheetSmartMatch:true,shippingSheetIdempotentInventory:true,dashboardCurrentInventoryCosts:true,campaignExpertHub:true,campaignDailyComparison:true,metaBreakdowns:true,campaignAllFilterExhaustive:true,metaBreakdownScopeGuard:true,currentMetaSdkBreakdowns:true,campaignAuthFailClosed:true,campaignAnonymousGate:true,campaignLevelWorkspaces:true,campaignIndependentDateRanges:true,readableCreativeBreakdowns:true};}
+  async health(){const base=await super.health();return {...base,entrypoint:'index-commerce-v36.js',returnReconfirmStockGuard:true,customerServiceShippingHandoff:true,carrierFinancials:true,shippingSheetInventoryGate:true,shippingSheetInventoryPrivacyBlock:true,shippingSheetFinancialDependency:true,shippingSheetAutomaticRetry:true,shippingSheetSmartMatch:true,shippingSheetIdempotentInventory:true,dashboardCurrentInventoryCosts:true,adminClientCommandCenter:true,adminClientPeriodBrief:true,adminClientPreviousPeriodComparison:true,campaignExpertHub:true,campaignDailyComparison:true,metaBreakdowns:true,campaignAllFilterExhaustive:true,metaBreakdownScopeGuard:true,currentMetaSdkBreakdowns:true,campaignAuthFailClosed:true,campaignAnonymousGate:true,campaignLevelWorkspaces:true,campaignIndependentDateRanges:true,readableCreativeBreakdowns:true};}
 }
 
 export default {fetch:fetchV36,scheduled(controller,env,ctx){return commerceV35.scheduled?.(controller,env,ctx);}};
