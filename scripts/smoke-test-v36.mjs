@@ -44,6 +44,10 @@ await propagatedAsset('/v2/modules-v64-shipping-smart-sync.js?v=64.1','Smart Shi
 await propagatedAsset('/v2/','v2 Smart Shipping shell',['modules-v64-shipping-smart-sync.js?v=64.1']);
 console.log('Smoke v36 precheck passed: post-shipping carrier importer + Smart Shipping v64.1 UI are deployed.');
 
+await propagatedAsset('/v2/modules-v75-customer-service-interactions.js?v=75.0','Customer Service reliable interactions',['KunCustomerServiceInteractionsV75','saveNote','saveContact','keepalive:isCall','تم تسجيل المكالمة في سجل الأوردر',"version:'75.0'"]);
+await propagatedAsset('/v2/','v2 Customer Service interaction shell',['modules-v75-customer-service-interactions.js?v=75.0']);
+console.log('Smoke v36 precheck passed: Customer Service v75 note/contact/call interaction layer is deployed.');
+
 await propagatedAsset('/v2/modules-v74-admin-client-command-center.js?v=74.0','Admin Client Command Center',['Client Command Center','فتح بريف العميل','الطلبات والتحصيل','التسويق والإعلانات','المالية والمخزون','ما يحتاج انتباهك','ملخص الحملات في الفترة','مقابل الفترة السابقة','فترة معينة']);
 await propagatedAsset('/v2/modules-v23-admin.js?v=23.3','Admin Client Command Center loader',['modules-v74-admin-client-command-center.js?v=74.0','kunAdminClientCommandV74Loader']);
 const anonymousAdmin=await nativeFetch(`${base}/api/admin/client-command-center?preset=today`,{redirect:'manual',headers:{'Cache-Control':'no-cache'}});if(anonymousAdmin.status!==401)throw new Error(`Admin Command Center must reject anonymous access -> ${anonymousAdmin.status}`);
