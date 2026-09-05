@@ -16,3 +16,11 @@
   document.addEventListener('click',e=>{const c=e.target.closest?.('.v27ClientOpen[data-id]');if(c){setTimeout(()=>K.enhanceClientDrawer(c.dataset.id),30);return}if(e.target.closest?.('.nav button[data-view="admin-clients"]'))setTimeout(K.enhanceAdminPage,100)},true);
   const observer=new MutationObserver(()=>{if(document.querySelector('.nav button.active[data-view="admin-clients"]'))setTimeout(K.enhanceAdminPage,30)});observer.observe(document.body,{subtree:true,childList:true});setTimeout(K.enhanceAdminPage,100);
 })();
+
+// Admin v74 is additive: v23 keeps account lifecycle controls while v74 owns the command-center overview and per-client brief workspace.
+{
+  const id='kunAdminClientCommandV74Loader';
+  if(!document.getElementById(id)){
+    const script=document.createElement('script');script.id=id;script.src='/v2/modules-v74-admin-client-command-center.js?v=74.0';script.async=false;document.head.appendChild(script);
+  }
+}
