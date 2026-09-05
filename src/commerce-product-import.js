@@ -48,7 +48,7 @@ function activeFlag(v,{product=false}={}){
 }
 function pricePair(v){
   const original=num(first(v?.price,v?.Price,v?.regular_price,v?.regularPrice,v?.RegularPrice));
-  const sale=num(first(v?.sale_price,v?.salePrice,v?.SalePrice));
+  const sale=num(first(v?.discounted_price,v?.discountedPrice,v?.DiscountedPrice,v?.price_after_discount,v?.priceAfterDiscount,v?.PriceAfterDiscount,v?.sale_price,v?.salePrice,v?.SalePrice));
   const hasSale=sale>0;
   return {price:hasSale?sale:original,compareAtPrice:hasSale&&original>sale?original:null};
 }
@@ -165,13 +165,33 @@ export async function pullCommerceProducts(env,{clientId,storeId,providerId,fetc
   const c=await connection(env,{clientId,storeId,providerId}),products=(await c.adapter.fetchProducts({...c,fetcher})).filter(x=>x.name&&(x.externalId||x.sku));
   return {...c,products};
 }
+function requireSelectionMode(args){
+  const mode=text(args.selectionMode).toLowerCase();
+  if(!['all','selected'].includes(mode))throw Object.assign(new Error('اختر بشكل صريح: مزامنة كل المنتجات أو منتجات محددة'),{status:400,code:'PRODUCT_IMPORT_MODE_REQUIRED'});
+  return mode;
+}
 function selectedProducts(products,args){
-  if(text(args.selectionMode||'all')!=='selected')return products;
+  const mode=requireSelectionMode(args);
+  if(mode==='all')return products;
   const selected=new Set(list(args.selectedExternalIds).map(text).filter(Boolean));
-  if(!selected.size)throw Object.assign(new Error('حدد منتجًا واحدًا على الأقل للاستيراد'),{status:400,code:'PRODUCT_IMPORT_SELECTION_REQUIRED'});
+  if(!selected.size)throw Object.assign(new Error('حدد منتجًا واحدًا على الأقل للمزامنة'),{status:400,code:'PRODUCT_IMPORT_SELECTION_REQUIRED'});
   const chosen=products.filter(p=>selected.has(text(p.externalId)));
   if(!chosen.length)throw Object.assign(new Error('المنتجات المحددة لم تعد موجودة لدى مزود المتجر. حدّث المعاينة وحاول مرة أخرى.'),{status:409,code:'PRODUCT_IMPORT_SELECTION_STALE'});
   return chosen;
+}
+function requiredProductCosts(products,args){
+  const raw=args.productCosts&&typeof args.productCosts==='object'&&!Array.isArray(args.productCosts)?args.productCosts:{};
+  const costs=new Map(),missing=[],invalid=[];
+  for(const product of products){
+    const id=text(product.externalId),has=Object.prototype.hasOwnProperty.call(raw,id),value=has?raw[id]:undefined;
+    if(!has||value===''||value===null||value===undefined){missing.push(product.name||product.sku||id);continue;}
+    const cost=Number(value);
+    if(!Number.isFinite(cost)||cost<0){invalid.push(product.name||product.sku||id);continue;}
+    costs.set(id,Math.round(cost*100)/100);
+  }
+  if(missing.length)throw Object.assign(new Error(`تكلفة المنتج مطلوبة قبل المزامنة: ${missing.slice(0,5).join('، ')}${missing.length>5?` (+${missing.length-5})`:''}`),{status:400,code:'PRODUCT_IMPORT_COST_REQUIRED'});
+  if(invalid.length)throw Object.assign(new Error(`تكلفة المنتج يجب أن تكون رقمًا صحيحًا غير سالب: ${invalid.slice(0,5).join('، ')}${invalid.length>5?` (+${invalid.length-5})`:''}`),{status:400,code:'PRODUCT_IMPORT_COST_INVALID'});
+  return costs;
 }
 async function classify(env,{clientId,storeId,providerId,products}){
   const result=[];
@@ -183,17 +203,17 @@ async function classify(env,{clientId,storeId,providerId,products}){
 }
 export async function previewCommerceImport(env,args){
   const pulled=await pullCommerceProducts(env,args),items=await classify(env,{...args,products:pulled.products});
-  return {provider:pulled.item.provider,name:pulled.item.name,total:items.length,created:items.filter(x=>x.action==='created').length,updated:items.filter(x=>x.action==='updated').length,skipped:0,errors:[],items:items.map(x=>({externalId:x.externalId,name:x.name,sku:x.sku,price:x.price,compareAtPrice:x.compareAtPrice,stock:x.stock,category:x.category,action:x.action,variants:x.variants.length,images:x.images.length}))};
+  return {provider:pulled.item.provider,name:pulled.item.name,total:items.length,created:items.filter(x=>x.action==='created').length,updated:items.filter(x=>x.action==='updated').length,skipped:0,errors:[],priceRule:pulled.item.provider==='easyorders'?'discounted_price':'provider_price',items:items.map(x=>({externalId:x.externalId,name:x.name,sku:x.sku,price:x.price,compareAtPrice:x.compareAtPrice,stock:x.stock,category:x.category,action:x.action,variants:x.variants.length,images:x.images.length}))};
 }
 export async function importCommerceProducts(env,args){
-  const pulled=await pullCommerceProducts(env,args),chosen=selectedProducts(pulled.products,args),items=await classify(env,{...args,products:chosen}),selectionMode=text(args.selectionMode||'all')==='selected'?'selected':'all',summary={provider:pulled.item.provider,name:pulled.item.name,selectionMode,total:items.length,created:0,updated:0,skipped:0,errors:[]},ts=new Date().toISOString();
+  const pulled=await pullCommerceProducts(env,args),selectionMode=requireSelectionMode(args),chosen=selectedProducts(pulled.products,{...args,selectionMode}),costs=requiredProductCosts(chosen,args),costed=chosen.map(p=>({...p,importCost:costs.get(text(p.externalId))})),items=await classify(env,{...args,products:costed}),summary={provider:pulled.item.provider,name:pulled.item.name,selectionMode,total:items.length,created:0,updated:0,skipped:0,errors:[],costsCaptured:items.length},ts=new Date().toISOString();
   for(const p of items){
     try{
       const productId=p.existingId||p.id;
-      await env.DB.prepare(`INSERT INTO products (${PRODUCT_COLS}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,sku=excluded.sku,category=excluded.category,price=excluded.price,compare_at_price=excluded.compare_at_price,active=excluded.active,stock=excluded.stock`).bind(productId,args.clientId,args.storeId||null,p.name,p.sku,p.category,p.price,p.compareAtPrice,0,p.active?1:0,p.stock,5,ts).run();
+      await env.DB.prepare(`INSERT INTO products (${PRODUCT_COLS}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,sku=excluded.sku,category=excluded.category,price=excluded.price,compare_at_price=excluded.compare_at_price,cost=excluded.cost,active=excluded.active,stock=excluded.stock`).bind(productId,args.clientId,args.storeId||null,p.name,p.sku,p.category,p.price,p.compareAtPrice,p.importCost,p.active?1:0,p.stock,5,ts).run();
       for(const [i,v] of p.variants.entries()){
         const variantId=await stableId('IMV',args.clientId,args.storeId||'',args.providerId,p.externalId||p.sku,v.externalId||v.sku||i),match=await env.DB.prepare("SELECT id FROM product_variants WHERE client_id=? AND store_id IS ? AND product_id=? AND (id=? OR (?<>'' AND LOWER(sku)=LOWER(?))) LIMIT 1").bind(args.clientId,args.storeId||null,productId,variantId,v.sku,v.sku).first();
-        await env.DB.prepare('INSERT INTO product_variants (id,product_id,client_id,store_id,name,sku,stock,price,compare_at_price,active,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,sku=excluded.sku,stock=excluded.stock,price=excluded.price,compare_at_price=excluded.compare_at_price,active=excluded.active').bind(match?.id||variantId,productId,args.clientId,args.storeId||null,v.name,v.sku,v.stock,v.price,v.compareAtPrice,v.active?1:0,ts).run();
+        await env.DB.prepare('INSERT INTO product_variants (id,product_id,client_id,store_id,name,sku,stock,price,compare_at_price,cost,active,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,sku=excluded.sku,stock=excluded.stock,price=excluded.price,compare_at_price=excluded.compare_at_price,cost=excluded.cost,active=excluded.active').bind(match?.id||variantId,productId,args.clientId,args.storeId||null,v.name,v.sku,v.stock,v.price,v.compareAtPrice,p.importCost,v.active?1:0,ts).run();
       }
       summary[p.action]++;
     }catch(error){summary.errors.push({externalId:p.externalId,sku:p.sku,name:p.name,message:error?.message||String(error)});}
