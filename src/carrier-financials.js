@@ -18,7 +18,8 @@ function latestProviderEvent(history,provider){
   for(let i=history.length-1;i>=0;i--){const item=history[i];if(item?.type==='carrier_financials'&&clean(item.provider,40)===provider)return item;}
   return null;
 }
-function ancillaryOf(event={}){
+function ancillaryOf(event){
+  if(!event||typeof event!=='object')return 0;
   if(Number.isFinite(Number(event.ancillaryFee)))return r2(event.ancillaryFee);
   return r2(n(event.codServiceFee)+n(event.insuranceFee)+n(event.fuelSurcharge)+n(event.boxPrice));
 }
