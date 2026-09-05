@@ -5,7 +5,6 @@ import {metaAdsExpertAnalysisV2} from './meta-ads-expert.js';
 import {metaAdsDailyComparison,metaAdsBreakdown,META_BREAKDOWN_CATALOG} from './meta-ads-campaign-detail-v3.js';
 import {includeInactiveExpertEntities,includeInactiveComparisonEntities} from './meta-ads-campaign-all.js';
 import {requirePermission,resolveTenant} from './access-control.js';
-import {requireAdmin} from './admin-control.js';
 import {adminClientCommandCenter,adminClientCommandBrief,resolveAdminBriefRange} from './admin-client-command-center.js';
 import {resolveStoreScope} from './store-scope.js';
 import {gateShippingSheetInventory,markShippingSheetInventoryResolved,pendingShippingSheetInventoryBlock,decorateShippingSheetInventoryBlocks,sanitizeShippingSheetPending} from './shipping-sheet-inventory-gate.js';
@@ -64,9 +63,13 @@ async function campaignComparisonRoute(request,env,ctx){
   return json(await includeInactiveComparisonEntities(env,{clientId,storeId,level:base.level,result:base}));
 }
 async function campaignBreakdownRoute(request,env,ctx){const {url,clientId,storeId}=await campaignReadScope(request,env,ctx);return json(await metaAdsBreakdown(env,{clientId,storeId,from:url.searchParams.get('from'),to:url.searchParams.get('to'),days:url.searchParams.get('days')||7,status:url.searchParams.get('status')||'active',dimension:url.searchParams.get('dimension')||'image_asset'}));}
-async function adminCommandScope(request,env,ctx){const me=await currentUser(request,env,ctx);if(!me)throw Object.assign(new Error('محتاج تسجّل دخول'),{status:401,code:'AUTH_REQUIRED'});requireAdmin(me);const url=new URL(request.url),range=resolveAdminBriefRange({preset:url.searchParams.get('preset')||'today',from:url.searchParams.get('from')||'',to:url.searchParams.get('to')||''});return {me,url,range};}
-async function adminCommandCenterRoute(request,env,ctx){const {me,range}=await adminCommandScope(request,env,ctx);return json(await adminClientCommandCenter(env,{me,range}));}
-async function adminClientBriefRoute(request,env,ctx,match){const {me,range}=await adminCommandScope(request,env,ctx);return json(await adminClientCommandBrief(env,{me,clientId:decodeURIComponent(match[1]),range}));}
+async function adminCommandIdentity(request,env,ctx){
+  const me=await currentUser(request,env,ctx);if(!me)return {response:json({error:'محتاج تسجّل دخول',code:'AUTH_REQUIRED'},401)};
+  if(me?.role!=='admin')return {response:json({error:'المسار متاح لإدارة Kun Online فقط',code:'ADMIN_ONLY'},403)};
+  const url=new URL(request.url),range=resolveAdminBriefRange({preset:url.searchParams.get('preset')||'today',from:url.searchParams.get('from')||'',to:url.searchParams.get('to')||''});return {me,url,range};
+}
+async function adminCommandCenterRoute(request,env,ctx){const scope=await adminCommandIdentity(request,env,ctx);if(scope.response)return scope.response;return json(await adminClientCommandCenter(env,{me:scope.me,range:scope.range}));}
+async function adminClientBriefRoute(request,env,ctx,match){const scope=await adminCommandIdentity(request,env,ctx);if(scope.response)return scope.response;return json(await adminClientCommandBrief(env,{me:scope.me,clientId:decodeURIComponent(match[1]),range:scope.range}));}
 async function explicitInventoryLinks(env,{clientId,orderId,productId}){
   const row=await env.DB.prepare("SELECT COUNT(*) total,SUM(CASE WHEN product_id IS NOT NULL AND trim(product_id)<>'' THEN 1 ELSE 0 END) linked FROM order_items WHERE order_id=? AND client_id=? AND qty>0").bind(orderId,clientId).first().catch(()=>({total:0,linked:0}));
   return num(row?.total)>0?num(row?.linked)===num(row?.total):Boolean(clean(productId));
