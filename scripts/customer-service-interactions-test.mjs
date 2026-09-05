@@ -50,7 +50,7 @@ const feed=await timeline({DB},{clientId:'c1',orderId:'o1',storeId:'s1'});
 assert.equal(feed.notes.length,3);assert.equal(feed.events.length,5);
 assert.equal(feed.events.filter(x=>x.type==='contact_phone').length,2);
 const callEvent=feed.events.find(x=>x.metadata.intent==='call');assert.ok(callEvent);
-assert.equal(callEvent.actor.email,me.email);assert.ok(!Number.isNaN(Date.parse(callEvent.at)));assert.match(String(callEvent.metadata.message||''),/مكالمة/);
+assert.equal(callEvent.actor,me.email);assert.ok(!Number.isNaN(Date.parse(callEvent.at)));assert.match(String(callEvent.metadata.message||''),/مكالمة/);
 const before=read().history;failBatch=true;
 await assert.rejects(act('notes',{note:'must roll back'}),/simulated write failure/);failBatch=false;
 assert.equal(read().history,before);assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM order_notes').get().n,3);
