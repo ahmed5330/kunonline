@@ -65,7 +65,7 @@ async function persistBlock(env,{snapshot,clientId,orderId,me,pending,reason,cod
   const event={type:BLOCK,at:stamp(),code:clean(code,80)||'SHIPPING_SHEET_INVENTORY_BLOCKED',reason:safeReason,pending:safePending,pendingSignature:signature,...actor(me)};
   await appendHistory(env,{clientId,orderId,event});return event;
 }
-async function throwBlocked(env,args){const event=await persistBlock(env,args),error=new Error(event.reason);error.status=409;error.code='SHIPPING_SHEET_INVENTORY_BLOCKED';error.inventoryBlocked=true;error.inventoryBlock={code:event.code,reason:event.reason,at:event.at,pending:event.pending};throw error;}
+async function throwBlocked(env,args){const event=await persistBlock(env,args),error=new Error(event.reason);error.status=409;error.code=clean(event.code,80)||'SHIPPING_SHEET_INVENTORY_BLOCKED';error.inventoryBlocked=true;error.inventoryBlock={code:event.code,reason:event.reason,at:event.at,pending:event.pending};throw error;}
 
 async function accessOrder(env,{clientId,orderId,me}){
   requirePermission(me,'orders','update');const row=await env.DB.prepare('SELECT id,store_id FROM orders WHERE id=? AND client_id=?').bind(orderId,clientId).first();if(!row)fail('الأوردر غير موجود',404,'ORDER_NOT_FOUND');await resolveStoreScope(env,me,clientId,clean(row.store_id)||null,{write:true});return row;
