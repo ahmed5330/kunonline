@@ -11,7 +11,7 @@ assert.ok(ui.includes("card.classList.add('cs-rich-loaded')"),'rich cards must r
 for(const removedLabel of ['نسخ اسم العميل','نسخ نسبة التسليم','نسخ اسم المنتج','نسخ اللون/المقاس/الاختيارات','نسخ الكمية والسعر','نسخ إجمالي المنتج','نسخ الإجمالي','نسخ الكمية','نسخ التاريخ'])assert.ok(!ui.includes(removedLabel),`redundant copy action still present: ${removedLabel}`);
 assert.ok(customerService.includes('class="cs-field cs-note-field"')&&customerService.includes('class="btn primary cs-note-add" data-cs-action="note">إضافة</button>'),'internal note must have a nearby Add button');
 assert.equal((customerService.match(/data-cs-action="note"/g)||[]).length,1,'internal note action must not be duplicated');
-assert.ok(index.includes('modules-v31-customer-service.js?v=31.1'),'v31.1 Customer Service module is not loaded by the app shell');
+assert.ok(index.includes('modules-v31-customer-service.js?v=31.2'),'v31.2 Customer Service module is not loaded by the app shell');
 assert.ok(index.includes('modules-v42-customer-service-rich-cards.js'),'rich card module is not loaded by the app shell');
 assert.doesNotThrow(()=>new Function(ui),'v42 Customer Service rich card module must parse as browser JavaScript');
 console.log('Customer Service rich card contract passed: framed orders, focused copy actions, prominent total and inline internal-note add.');
