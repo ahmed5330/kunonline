@@ -9,6 +9,7 @@ import {adminClientCommandCenter,adminClientCommandBrief,resolveAdminBriefRange}
 import {resolveStoreScope} from './store-scope.js';
 import {gateShippingSheetInventory,markShippingSheetInventoryResolved,pendingShippingSheetInventoryBlock,decorateShippingSheetInventoryBlocks,sanitizeShippingSheetPending} from './shipping-sheet-inventory-gate.js';
 import {matchShippingSheetRows} from './shipping-sheet-order-match.js';
+import {applyShippingSheetWorkflowDirect} from './shipping-sheet-direct-workflow.js';
 
 const BUILD='preview-v36-2026-09-05-admin-client-command-center';
 const clean=value=>String(value??'').trim();
@@ -194,14 +195,14 @@ async function applyShippingSheetWorkflow(request,env,ctx,{orderId,body,me,clien
   const fresh=await orderRow(env,{clientId,orderId});return {ok:true,id:orderId,target,state:fresh?.state||settled.state,inventorySynced:true,inventoryAlreadySynced:Boolean(inventory?.alreadySynced||(!inventory?.allocatedNow&&inventory?.coverage?.complete)),inventoryAllocatedNow:Boolean(inventory?.allocatedNow),carrierFinancials:carrier?.financials||null,expectedCarrierCollection:carrier?.financials?.expectedNet??null};
 }
 async function shippingSheetApplyRoute(request,env,ctx,match){
-  const body=await request.clone().json().catch(()=>({})),me=await currentUser(request,env,ctx);if(!me)return json({error:'محتاج تسجّل دخول',code:'AUTH_REQUIRED'},401);const clientId=resolvedClient(me,request,body);if(!clientId)return json({error:'مش مسموح الوصول لبيانات متجر آخر',code:'TENANT_ISOLATION'},403);return json(await applyShippingSheetWorkflow(request,env,ctx,{orderId:decodeURIComponent(match[1]),body,me,clientId}));
+  const body=await request.clone().json().catch(()=>({})),me=await currentUser(request,env,ctx);if(!me)return json({error:'محتاج تسجّل دخول',code:'AUTH_REQUIRED'},401);const clientId=resolvedClient(me,request,body);if(!clientId)return json({error:'مش مسموح الوصول لبيانات متجر آخر',code:'TENANT_ISOLATION'},403);return json(await applyShippingSheetWorkflowDirect(env,{orderId:decodeURIComponent(match[1]),body,me,clientId}));
 }
 async function shippingSheetRetryRoute(request,env,ctx,match){
   const body=await request.clone().json().catch(()=>({})),me=await currentUser(request,env,ctx);if(!me)return json({error:'محتاج تسجّل دخول',code:'AUTH_REQUIRED'},401);const clientId=resolvedClient(me,request,body);if(!clientId)return json({error:'مش مسموح الوصول لبيانات متجر آخر',code:'TENANT_ISOLATION'},403);const orderId=decodeURIComponent(match[1]),block=await pendingShippingSheetInventoryBlock(env,{clientId,orderId});if(!block)return json({ok:true,id:orderId,noPendingInventoryBlock:true});const pending=sanitizeShippingSheetPending(block.pending||{});
   if(pending.flow==='carrier-financials-only'){
     await gateShippingSheetInventory(env,{clientId,orderId,me,pending});const carrier=await recordCarrierFinancials(env,{clientId,orderId,me,body:pending.carrierFinancials||{sheetType:pending.target==='returned'?'returned':'delivered'}});await markShippingSheetInventoryResolved(env,{clientId,orderId,me,note:'تم حل مشكلة المخزون واستكمال تسوية شركة الشحن المالية'});return json({ok:true,id:orderId,inventorySynced:true,financials:carrier.financials});
   }
-  return json(await applyShippingSheetWorkflow(request,env,ctx,{orderId,body:{...pending,target:pending.target,returnBody:pending.returnBody,carrierFinancials:pending.carrierFinancials},me,clientId}));
+  return json(await applyShippingSheetWorkflowDirect(env,{orderId,body:{...pending,target:pending.target,returnBody:pending.returnBody,carrierFinancials:pending.carrierFinancials},me,clientId}));
 }
 
 async function guardedDirectDelivered(request,env,ctx,match){
@@ -224,25 +225,25 @@ async function fetchV36(request,env,ctx){
     if(path==='/api/preview/version'&&method==='GET')return json({ok:true,build:BUILD,environment:env.APP_ENV||'unknown',entrypoint:'index-commerce-v36.js'});
     if(method==='GET'&&CAMPAIGN_READ_PATHS.has(path)&&!hasAuthEnvelope(request))return json({error:'محتاج تسجّل دخول',code:'AUTH_REQUIRED'},401);
     if(method==='GET'&&ADMIN_COMMAND_PATH.test(path)&&!hasAuthEnvelope(request))return json({error:'محتاج تسجّل دخول',code:'AUTH_REQUIRED'},401);
-    if(path==='/api/admin/client-command-center'&&method==='GET')return adminCommandCenterRoute(request,env,ctx);
-    const adminBriefMatch=path.match(/^\/api\/admin\/clients\/([^/]+)\/command-brief$/);if(adminBriefMatch&&method==='GET')return adminClientBriefRoute(request,env,ctx,adminBriefMatch);
-    if((path==='/api/customer-service'||path==='/api/post-shipping')&&method==='GET')return decoratedOperationalBoard(request,env,ctx);
-    if(path==='/api/post-shipping/shipping-sheet-match'&&method==='POST')return shippingSheetMatchRoute(request,env,ctx);
-    if(path==='/api/dashboard'&&method==='GET')return dashboardCurrentCostRoute(request,env,ctx);
-    if(path==='/api/integrations/meta-ads/campaign-hub'&&method==='GET')return campaignHubRoute(request,env,ctx);
-    if(path==='/api/integrations/meta-ads/daily-comparison'&&method==='GET')return campaignComparisonRoute(request,env,ctx);
-    if(path==='/api/integrations/meta-ads/breakdowns'&&method==='GET')return campaignBreakdownRoute(request,env,ctx);
-    const applyMatch=path.match(/^\/api\/post-shipping\/orders\/([^/]+)\/shipping-sheet-apply$/);if(applyMatch&&method==='PATCH')return shippingSheetApplyRoute(request,env,ctx,applyMatch);
-    const retryMatch=path.match(/^\/api\/post-shipping\/orders\/([^/]+)\/shipping-sheet-retry$/);if(retryMatch&&method==='PATCH')return shippingSheetRetryRoute(request,env,ctx,retryMatch);
-    const financialMatch=path.match(/^\/api\/post-shipping\/orders\/([^/]+)\/carrier-financials$/);if(financialMatch&&method==='PATCH')return carrierFinancialsRoute(request,env,ctx,financialMatch);
-    const deliveredMatch=path.match(/^\/api\/post-shipping\/orders\/([^/]+)\/delivered$/);if(deliveredMatch&&method==='PATCH')return guardedDirectDelivered(request,env,ctx,deliveredMatch);
-    const stateMatch=path.match(/^\/api\/customer-service\/orders\/([^/]+)\/state$/);if(stateMatch&&method==='PATCH')return customerServiceStateTransition(request,env,ctx,stateMatch);
-    return commerceV35.fetch(request,env,ctx);
+    if(path==='/api/admin/client-command-center'&&method==='GET')return await adminCommandCenterRoute(request,env,ctx);
+    const adminBriefMatch=path.match(/^\/api\/admin\/clients\/([^/]+)\/command-brief$/);if(adminBriefMatch&&method==='GET')return await adminClientBriefRoute(request,env,ctx,adminBriefMatch);
+    if((path==='/api/customer-service'||path==='/api/post-shipping')&&method==='GET')return await decoratedOperationalBoard(request,env,ctx);
+    if(path==='/api/post-shipping/shipping-sheet-match'&&method==='POST')return await shippingSheetMatchRoute(request,env,ctx);
+    if(path==='/api/dashboard'&&method==='GET')return await dashboardCurrentCostRoute(request,env,ctx);
+    if(path==='/api/integrations/meta-ads/campaign-hub'&&method==='GET')return await campaignHubRoute(request,env,ctx);
+    if(path==='/api/integrations/meta-ads/daily-comparison'&&method==='GET')return await campaignComparisonRoute(request,env,ctx);
+    if(path==='/api/integrations/meta-ads/breakdowns'&&method==='GET')return await campaignBreakdownRoute(request,env,ctx);
+    const applyMatch=path.match(/^\/api\/post-shipping\/orders\/([^/]+)\/shipping-sheet-apply$/);if(applyMatch&&method==='PATCH')return await shippingSheetApplyRoute(request,env,ctx,applyMatch);
+    const retryMatch=path.match(/^\/api\/post-shipping\/orders\/([^/]+)\/shipping-sheet-retry$/);if(retryMatch&&method==='PATCH')return await shippingSheetRetryRoute(request,env,ctx,retryMatch);
+    const financialMatch=path.match(/^\/api\/post-shipping\/orders\/([^/]+)\/carrier-financials$/);if(financialMatch&&method==='PATCH')return await carrierFinancialsRoute(request,env,ctx,financialMatch);
+    const deliveredMatch=path.match(/^\/api\/post-shipping\/orders\/([^/]+)\/delivered$/);if(deliveredMatch&&method==='PATCH')return await guardedDirectDelivered(request,env,ctx,deliveredMatch);
+    const stateMatch=path.match(/^\/api\/customer-service\/orders\/([^/]+)\/state$/);if(stateMatch&&method==='PATCH')return await customerServiceStateTransition(request,env,ctx,stateMatch);
+    return await commerceV35.fetch(request,env,ctx);
   }catch(error){return json({error:error?.message||'حدث خطأ',code:error?.code||'COMMERCE_V36_ERROR',path,method,inventoryBlocked:Boolean(error?.inventoryBlocked),inventoryBlock:error?.inventoryBlock||null},error?.status||500);}
 }
 
 export class SyncEntrypoint extends SyncEntrypointV35{
-  async health(){const base=await super.health();return {...base,entrypoint:'index-commerce-v36.js',returnReconfirmStockGuard:true,customerServiceShippingHandoff:true,carrierFinancials:true,shippingSheetInventoryGate:true,shippingSheetInventoryPrivacyBlock:true,shippingSheetFinancialDependency:true,shippingSheetAutomaticRetry:true,shippingSheetSmartMatch:true,shippingSheetIdempotentInventory:true,dashboardCurrentInventoryCosts:true,adminClientCommandCenter:true,adminClientPeriodBrief:true,adminClientPreviousPeriodComparison:true,campaignExpertHub:true,campaignDailyComparison:true,metaBreakdowns:true,campaignAllFilterExhaustive:true,metaBreakdownScopeGuard:true,currentMetaSdkBreakdowns:true,campaignAuthFailClosed:true,campaignAnonymousGate:true,campaignLevelWorkspaces:true,campaignIndependentDateRanges:true,readableCreativeBreakdowns:true};}
+  async health(){const base=await super.health();return {...base,entrypoint:'index-commerce-v36.js',returnReconfirmStockGuard:true,customerServiceShippingHandoff:true,carrierFinancials:true,shippingSheetInventoryGate:true,shippingSheetInventoryPrivacyBlock:true,shippingSheetFinancialDependency:true,shippingSheetAutomaticRetry:true,shippingSheetSmartMatch:true,shippingSheetIdempotentInventory:true,shippingSheetDirectSettlement:true,dashboardCurrentInventoryCosts:true,adminClientCommandCenter:true,adminClientPeriodBrief:true,adminClientPreviousPeriodComparison:true,campaignExpertHub:true,campaignDailyComparison:true,metaBreakdowns:true,campaignAllFilterExhaustive:true,metaBreakdownScopeGuard:true,currentMetaSdkBreakdowns:true,campaignAuthFailClosed:true,campaignAnonymousGate:true,campaignLevelWorkspaces:true,campaignIndependentDateRanges:true,readableCreativeBreakdowns:true};}
 }
 
 export default {fetch:fetchV36,scheduled(controller,env,ctx){return commerceV35.scheduled?.(controller,env,ctx);}};
