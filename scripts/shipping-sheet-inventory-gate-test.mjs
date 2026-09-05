@@ -24,10 +24,11 @@ must(entry.includes("clean(body.state)==='returned'&&clean(body.sourceSection)==
 must(entry.includes("/api/post-shipping/orders/${encodeURIComponent(orderId)}/delivered")&&entry.includes('guardedDirectDelivered'),'direct delivered settlement must also remain inventory guarded');
 
 for(const marker of ['inventory63-blocked','border:2px solid #dc2626','بيانات الطلب محجوبة','لن تظهر بيانات العميل أو المنتجات أو المبالغ','data-inventory63-retry','data-inventory63-edit','data-inventory63-stock','shipping-sheet-retry','expectedCarrierCollection','المستحق المتوقع'])must(ui.includes(marker),`privacy/blocker UI marker missing: ${marker}`);
-for(const marker of ['Smart Shipping Sync','رقم الهاتف + الاسم + قيمة التحصيل','shipping-sheet-match','shipping-sheet-apply','inventoryAlreadySynced','inventoryAllocatedNow','كان مسمّع مسبقًا','خصم مخزون جديد',"phone:'رقم الهاتف'","name:'اسم العميل/المستلم'","codAmount:'قيمة التحصيل / COD'"])must(smartUi.includes(marker),`smart shipping UI marker missing: ${marker}`);
+for(const marker of ['Smart Shipping Sync','رقم الهاتف + الاسم + قيمة التحصيل','shipping-sheet-match','shipping-sheet-apply','inventoryAlreadySynced','inventoryAllocatedNow','كان مسمّع مسبقًا','خصم مخزون جديد',"phone:'رقم الهاتف'","name:'اسم العميل/المستلم'","codAmount:'قيمة التحصيل / COD'",'inventoryBlocked:Boolean(error?.data?.inventoryBlocked)','inventoryBlockCode',"version:'64.1'"])must(smartUi.includes(marker),`smart shipping UI marker missing: ${marker}`);
 must(smartUi.includes('#psSheetImportV59,#jntSheetV60{display:none!important}'),'v64 must replace the split legacy importer UI to keep one governed workflow');
+must(smartUi.includes('blocked=failed.filter(row=>row.inventoryBlocked).length'),'precise backend stock codes must still be classified as inventory-blocked in the Smart Shipping UI');
 must(index.includes('/v2/modules-v63-shipping-inventory-gate.js?v=63.0'),'v63 shipping inventory UI must load in the active v2 shell');
-must(index.includes('/v2/modules-v64-shipping-smart-sync.js?v=64.0'),'v64 smart shipping sync UI must load in the active v2 shell');
+must(index.includes('/v2/modules-v64-shipping-smart-sync.js?v=64.1'),'v64.1 smart shipping sync UI must load in the active v2 shell');
 
 for(const marker of ['normalizeShippingPhone','normalizeShippingName','shippingNameSimilarity','shippingAmountMatches','chooseShippingOrderMatch','autoMatchRequiresUnique','ambiguousRowsBlocked','phone+name+collection-amount'])must(matcher.includes(marker),`smart matcher backend marker missing: ${marker}`);
 must(normalizeShippingPhone('+20 10 1234 5678')==='01012345678','Egyptian phone normalization must make local/international formats comparable');
@@ -67,4 +68,4 @@ must(redacted.inventoryBlocked===true&&redacted.id==='ORD-1'&&redacted.awb==='AW
 for(const [field,value] of [['phone',''],['gov',''],['address',''],['total',null]])must(redacted[field]===value,`blocked order must redact ${field}`);
 must(!String(redacted.name).includes('Secret')&&!String(redacted.product).includes('Secret'),'blocked order must not expose customer/product values');
 
-console.log('Shipping-sheet inventory gate contract passed: fully allocated orders never deduct twice; new rows use unique AWB/order identifiers first then safe phone+name+collection-value scoring; ambiguous/conflicting matches stop for review; inventory remains all-or-nothing and finance starts only after inventory validation.');
+console.log('Shipping-sheet inventory gate contract passed: fully allocated orders never deduct twice; new rows use unique AWB/order identifiers first then safe phone+name+collection-value scoring; ambiguous/conflicting matches stop for review; precise stock blocker codes stay classified as inventory-blocked in v64.1; inventory remains all-or-nothing and finance starts only after inventory validation.');
