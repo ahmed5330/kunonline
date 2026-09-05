@@ -35,7 +35,7 @@
     "test:team": "node scripts/team-management-test.mjs",
     "test:v28-contract": "node scripts/team-v28-contract-test.mjs",
     "test:release": "node scripts/release-readiness-test.mjs",
-    "test:product-import": "node scripts/product-import-test.mjs",
+    "test:product-import": "node --check public/v2/modules-v29-product-import.js && node --check scripts/browser-product-import-required-fields-fixture-test.mjs && node scripts/product-import-test.mjs && node scripts/browser-product-import-required-fields-fixture-test.mjs",
     "test:inventory-stock-date": "node scripts/inventory-stock-date-test.mjs && node --check scripts/live-preview-inventory-test.mjs && node --check scripts/live-preview-stock-clear-test.mjs && node --check scripts/feature-product-inventory-smoke.mjs",
     "test:order-sync": "node scripts/order-sync-test.mjs",
     "test:manual-order-form": "node scripts/manual-order-form-test.mjs",
