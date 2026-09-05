@@ -17,6 +17,7 @@ const num=value=>Number(value)||0;
 const parseArr=value=>{try{const parsed=JSON.parse(value||'[]');return Array.isArray(parsed)?parsed:[];}catch{return [];}};
 const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Kun-Build':BUILD,'X-Content-Type-Options':'nosniff','X-Frame-Options':'DENY'}});
 const CAMPAIGN_READ_PATHS=new Set(['/api/integrations/meta-ads/campaign-hub','/api/integrations/meta-ads/daily-comparison','/api/integrations/meta-ads/breakdowns']);
+const ADMIN_COMMAND_PATH=/^\/api\/admin\/(?:client-command-center|clients\/[^/]+\/command-brief)$/;
 const hasAuthEnvelope=request=>Boolean(clean(request.headers.get('Cookie'))||clean(request.headers.get('Authorization')));
 
 async function currentUser(request,env,ctx){
@@ -219,6 +220,7 @@ async function fetchV36(request,env,ctx){
   try{
     if(path==='/api/preview/version'&&method==='GET')return json({ok:true,build:BUILD,environment:env.APP_ENV||'unknown',entrypoint:'index-commerce-v36.js'});
     if(method==='GET'&&CAMPAIGN_READ_PATHS.has(path)&&!hasAuthEnvelope(request))return json({error:'محتاج تسجّل دخول',code:'AUTH_REQUIRED'},401);
+    if(method==='GET'&&ADMIN_COMMAND_PATH.test(path)&&!hasAuthEnvelope(request))return json({error:'محتاج تسجّل دخول',code:'AUTH_REQUIRED'},401);
     if(path==='/api/admin/client-command-center'&&method==='GET')return adminCommandCenterRoute(request,env,ctx);
     const adminBriefMatch=path.match(/^\/api\/admin\/clients\/([^/]+)\/command-brief$/);if(adminBriefMatch&&method==='GET')return adminClientBriefRoute(request,env,ctx,adminBriefMatch);
     if((path==='/api/customer-service'||path==='/api/post-shipping')&&method==='GET')return decoratedOperationalBoard(request,env,ctx);
