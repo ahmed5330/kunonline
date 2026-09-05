@@ -55,7 +55,7 @@
     "check:preview-config": "node scripts/verify-preview-config.mjs",
     "check:preview-crons": "node scripts/verify-cloudflare-crons.mjs kunonline-preview --none",
     "check:sync-preview-config": "node scripts/verify-sync-preview-config.mjs",
-    "check:sync-preview-crons": "node scripts/verify-cloudflare-crons.mjs kunonline-sync-preview \"* * * * *\" \"*/5 * * * * *\" \"0 */2 * * *\"",
+    "check:sync-preview-crons": "node scripts/verify-cloudflare-crons.mjs kunonline-sync-preview \"* * * * *\" \"*/5 * * * *\" \"0 */2 * * *\"",
     "check:production-config": "node scripts/verify-production-config.mjs",
     "check:deploy": "npm run check:preview-config && wrangler deploy --dry-run --config wrangler.preview.toml",
     "check:sync-deploy": "npm run check:sync-preview-config && wrangler deploy --dry-run --config wrangler.sync.preview.toml",
