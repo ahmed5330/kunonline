@@ -1,7 +1,7 @@
 import {readFile} from 'node:fs/promises';
 
 const read=path=>readFile(new URL(`../${path}`,import.meta.url),'utf8');
-const [entry,direct,carrier]=await Promise.all([read('src/index-commerce-v36.js'),read('src/shipping-sheet-direct-workflow.js'),read('src/carrier-financials.js')]);
+const [entry,direct,carrier,gate]=await Promise.all([read('src/index-commerce-v36.js'),read('src/shipping-sheet-direct-workflow.js'),read('src/carrier-financials.js'),read('src/shipping-sheet-inventory-gate.js')]);
 const must=(ok,message)=>{if(!ok)throw new Error(`Direct Smart Shipping contract failed: ${message}`);};
 const has=(text,needle,message=needle)=>must(text.includes(needle),message);
 
@@ -17,6 +17,7 @@ has(direct,'inventoryAllocatedNow','direct result must expose newly allocated in
 
 has(carrier,"if(!event||typeof event!=='object')return 0;",'first carrier reconciliation must treat a missing previous carrier event as zero ancillary fees');
 has(carrier,'previousAncillary=ancillaryOf(previous)','repeated carrier reconciliation must subtract the previous same-provider ancillary amount before applying the latest sheet values');
+has(gate,"error.code=clean(event.code,80)||'SHIPPING_SHEET_INVENTORY_BLOCKED'",'inventory blocker errors must expose the precise persisted blocker code at the API boundary, such as STOCK_FIFO_INSUFFICIENT');
 
 has(entry,"import {applyShippingSheetWorkflowDirect} from './shipping-sheet-direct-workflow.js'",'v36 must import the direct workflow');
 const applyRoute=entry.slice(entry.indexOf('async function shippingSheetApplyRoute'),entry.indexOf('async function shippingSheetRetryRoute'));
@@ -28,4 +29,4 @@ has(entry,"if(retryMatch&&method==='PATCH')return await shippingSheetRetryRoute"
 has(entry,'shippingSheetDirectSettlement:true','health must advertise direct settlement');
 
 new Function(direct.replace(/^import .*$/gm,'').replace(/^export /gm,''));
-console.log('Direct Smart Shipping contract passed: apply/retry run inventory -> state -> financials in one Worker invocation, first carrier reconciliation safely starts from zero previous fees, repeated carrier fees stay idempotent, and async failures remain inside the v36 JSON error boundary.');
+console.log('Direct Smart Shipping contract passed: apply/retry run inventory -> state -> financials in one Worker invocation, first carrier reconciliation safely starts from zero previous fees, precise inventory blocker codes stay visible, repeated carrier fees stay idempotent, and async failures remain inside the v36 JSON error boundary.');
