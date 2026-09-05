@@ -62,8 +62,8 @@ export async function timeline(env,{clientId,storeId=null,orderId}){
   const items=[];
   for(const e of events)items.push({id:e.id,type:e.event_type,at:e.created_at,actor:e.actor_email||e.actor_user_id||'system',source:e.source,fromState:e.from_state,toState:e.to_state,metadata:safeParse(e.metadata_json,{})});
   // Legacy history/contact logs are retained so old events are not lost during v27 rollout.
-  for(const h of safeParse(order.history,[]))items.push({id:`legacy-history:${h.at||h.state}`,type:'legacy_status',at:h.at||order.created_at||order.date,actor:'غير مسجل (Legacy)',source:'legacy',toState:h.state,metadata:{}});
-  for(const c of safeParse(order.contact_log,[]))items.push({id:`legacy-contact:${c.at||Math.random()}`,type:'legacy_contact',at:c.at||c.createdAt||order.created_at||order.date,actor:c.by||'غير مسجل (Legacy)',source:'legacy',metadata:c});
+  for(const h of safeParse(order.history,[])){if(h.eventId)continue;items.push({id:`legacy-history:${h.at||h.state}`,type:h.type==='internal_note'?'note_added':h.type==='contact'?`contact_${h.channel||'phone'}`:'legacy_status',at:h.at||order.created_at||order.date,actor:h.byName||h.by||'غير مسجل (Legacy)',source:'legacy',toState:h.state,metadata:{...h,...(h.type==='internal_note'?{body:h.note}:{})}});}
+  for(const c of safeParse(order.contact_log,[])){if(c.eventId)continue;items.push({id:`legacy-contact:${c.at||Math.random()}`,type:'legacy_contact',at:c.at||c.createdAt||order.created_at||order.date,actor:c.by||'غير مسجل (Legacy)',source:'legacy',metadata:c});}
   for(const a of audit)items.push({id:`audit:${a.id}`,type:'audit',at:a.created_at,actor:a.actor_email||a.actor_user_id||'system',source:'audit',metadata:{action:a.action,before:safeParse(a.before_json,null),after:safeParse(a.after_json,null),...safeParse(a.metadata_json,{})}});
   items.sort((a,b)=>String(b.at||'').localeCompare(String(a.at||'')));
   return {order:{id:order.id,name:order.name,phone:order.phone,state:order.state,stage:stageForState(order.state),awb:order.awb,total:order.total,source:order.source,storeId:order.store_id||null},notes,events:items.slice(0,400)};

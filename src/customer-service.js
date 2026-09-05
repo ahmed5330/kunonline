@@ -124,12 +124,26 @@ async function decorateLatestState(env,clientId,orderId,state,me,metadata={}){
   if(!found)history.push({type:'state',state,at:now(),...a,...metadata});
   await env.DB.prepare('UPDATE orders SET history=? WHERE id=? AND client_id=?').bind(JSON.stringify(history),orderId,clientId).run();
 }
-async function appendContactMirror(env,clientId,orderId,me,channel='phone'){
-  const row=await env.DB.prepare('SELECT history,contact_log FROM orders WHERE id=? AND client_id=?').bind(orderId,clientId).first();if(!row)return {contactCount:0};
-  const stamp=now(),a=actor(me),history=parseArr(row.history),contactLog=parseArr(row.contact_log),entry={type:'contact',channel,at:stamp,...a};
-  history.push(entry);contactLog.push({channel,at:stamp,by:a.by,byName:a.byName,byUserId:a.byUserId});
-  await env.DB.prepare('UPDATE orders SET history=?,contact_log=? WHERE id=? AND client_id=?').bind(JSON.stringify(history),JSON.stringify(contactLog),orderId,clientId).run();
-  return {contactCount:contactLog.length,entry};
+// Append inside SQLite rather than replacing a previously read JSON array: concurrent staff actions must not erase each other.
+async function saveInteraction(env,row,me,{note=null,channel='phone',intent='contact'}){
+  const clientId=row.client_id,orderId=row.id,storeId=row.store_id||null,a=actor(me),at=now();
+  const eventId=`OEV-${crypto.randomUUID()}`,noteId=note!==null?`ON-${crypto.randomUUID()}`:null;
+  const entry=note!==null?{type:'internal_note',note,at,...a,eventId,noteId}:{type:'contact',channel,intent,at,...a,eventId};
+  const array=column=>`CASE WHEN json_valid(${column}) AND json_type(${column})='array' THEN ${column} ELSE '[]' END`;
+  const statements=[];
+  if(note!==null){
+    statements.push(env.DB.prepare(`UPDATE orders SET history=json_insert(${array('history')},'$[#]',json(?)) WHERE id=? AND client_id=?`).bind(JSON.stringify(entry),orderId,clientId));
+    statements.push(env.DB.prepare('INSERT INTO order_notes (id,client_id,store_id,order_id,body,created_by,created_at) VALUES (?,?,?,?,?,?,?)').bind(noteId,clientId,storeId,orderId,note,a.by,at));
+  }else{
+    statements.push(env.DB.prepare(`UPDATE orders SET history=json_insert(${array('history')},'$[#]',json(?)),contact_log=json_insert(${array('contact_log')},'$[#]',json(?)) WHERE id=? AND client_id=?`).bind(JSON.stringify(entry),JSON.stringify(entry),orderId,clientId));
+  }
+  const metadata=note!==null?{noteId,body:note,byName:a.byName}:{kind:channel,intent,message:intent==='call'?'إجراء مكالمة — تم الضغط على زر الاتصال':'محاولة تواصل مع العميل',byName:a.byName};
+  statements.push(env.DB.prepare('INSERT INTO order_events (id,client_id,store_id,order_id,event_type,actor_user_id,actor_email,source,metadata_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)').bind(eventId,clientId,storeId,orderId,note!==null?'note_added':`contact_${channel}`,a.byUserId,a.by,'customer-service',JSON.stringify(metadata),at));
+  await env.DB.batch(statements);
+  const saved=await env.DB.prepare('SELECT history,contact_log FROM orders WHERE id=? AND client_id=?').bind(orderId,clientId).first();
+  if(!saved)fail('الأوردر غير موجود',404,'ORDER_NOT_FOUND');
+  const history=parseArr(saved.history),log=parseArr(saved.contact_log);
+  return {ok:true,entry,note:note!==null?entry:undefined,history,log,contactCount:log.length,todayCount:log.filter(x=>x.at&&cairoDate(new Date(x.at))===cairoDate()).length};
 }
 async function decorateLatestType(env,clientId,orderId,type,me,metadata={}){
   const row=await env.DB.prepare('SELECT history FROM orders WHERE id=? AND client_id=?').bind(orderId,clientId).first();if(!row)return;
@@ -163,7 +177,7 @@ export async function handleAction(request,env,me,delegate){
     try{await env.DB.prepare('INSERT INTO audit_log (id,client_id,store_id,actor_user_id,actor_email,action,entity_type,entity_id,before_json,metadata_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)').bind(`AUD-${crypto.randomUUID().slice(0,10).toUpperCase()}`,clientId,storeId,a.byUserId,a.by,'order.delete','order',orderId,JSON.stringify(snapshot),JSON.stringify({source:'orders_ui'}),stamp).run();}catch{}
     return {data:{ok:true,id:orderId,deleted:true},status:200};
   }
-  if(['state','contact','whatsapp-log'].includes(action))await ensureLegacyCustomerServiceEnabled(env,me,clientId);
+  if(['state','whatsapp-log'].includes(action))await ensureLegacyCustomerServiceEnabled(env,me,clientId);
   if(action==='state'&&method==='PATCH'){
     const state=clean(body.state);if(!ALL_STATES.includes(state))fail('حالة الأوردر غير معروفة',400,'ORDER_STATE_INVALID');
     if(state==='deferred'&&!/^\d{4}-\d{2}-\d{2}$/.test(clean(body.deferUntil)))fail('حدد تاريخ التأجيل',400,'DEFER_DATE_REQUIRED');
@@ -179,10 +193,9 @@ export async function handleAction(request,env,me,delegate){
   }
   if(action==='contact'&&method==='POST'){
     const channel=['phone','whatsapp','messenger','instagram','tiktok'].includes(clean(body.channel).toLowerCase())?clean(body.channel).toLowerCase():'phone';
-    const response=await delegate(canonicalRequest(request,`/api/orders/${encodeURIComponent(orderId)}/contact`,{channel},clientId,storeId));
-    if(!response.ok)return proxyJson(response);
-    const mirrored=await appendContactMirror(env,clientId,orderId,me,channel),proxied=await proxyJson(response);
-    return {data:{...proxied.data,contactCount:mirrored.contactCount},status:200};
+    const intent=body.intent==='call'?'call':'contact';
+    if(intent==='call'&&channel!=='phone')fail('المكالمة تتطلب قناة الهاتف',400,'CONTACT_CHANNEL_INVALID');
+    return {data:await saveInteraction(env,row,me,{channel,intent}),status:200};
   }
   if(action==='whatsapp-log'&&method==='POST'){
     const template=['confirm','shipped','review'].includes(body.template)?body.template:'other';
@@ -190,8 +203,7 @@ export async function handleAction(request,env,me,delegate){
   }
   if(action==='notes'&&method==='POST'){
     const note=clean(body.note);if(!note)fail('اكتب الملاحظة أولًا',400,'NOTE_REQUIRED');if(note.length>2000)fail('الملاحظة طويلة جدًا',400,'NOTE_TOO_LONG');
-    const current=await env.DB.prepare('SELECT history FROM orders WHERE id=? AND client_id=?').bind(orderId,clientId).first(),history=parseArr(current?.history),a=actor(me),entry={type:'internal_note',note,at:now(),...a};history.push(entry);
-    await env.DB.prepare('UPDATE orders SET history=? WHERE id=? AND client_id=?').bind(JSON.stringify(history),orderId,clientId).run();return {data:{ok:true,note:entry,history},status:201};
+    return {data:await saveInteraction(env,row,me,{note}),status:201};
   }
   if(action==='awb'&&method==='PATCH'){
     const awb=clean(body.awb);if(awb.length>120)fail('رقم البوليصة غير صحيح',400,'AWB_INVALID');

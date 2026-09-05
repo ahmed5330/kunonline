@@ -1,4 +1,4 @@
-/* Kun Online v31.1 — multi-store Customer Service workspace */
+/* Kun Online v31.1 — multi-store Customer Service workspace — persistent notes, contact and call events */
 (function(){
   const ALLOWED=new Set(['admin','client','ops','support']);
   const STAGES=['pending','confirmed','preparing','shipped'];
@@ -79,7 +79,36 @@
   function bindCard(card){
     const select=card.querySelector('[data-cs-state]');
     select.onchange=async()=>{const o=orderByCard(card),next=select.value;if(!o)return;if(next==='deferred'){select.value=select.dataset.current||o.state;openDefer(o);return;}try{await changeState(o,next);select.dataset.current=next;}catch(e){notify(e.message);select.value=select.dataset.current||o.state;}};
-    card.querySelectorAll('[data-cs-action]').forEach(btn=>{const a=btn.dataset.csAction;if(a==='call')return;btn.onclick=async()=>{const o=orderByCard(card);if(!o)return;if(a==='history')return openHistory(o);if(a==='contact')return registerContact(o);if(a==='whatsapp')return openWhatsApp(o);if(a==='note')return saveNote(o,card);if(a==='awb')return saveAwb(o,card);};});
+
+  }
+  const pendingActions=new Set();
+  // One delegated listener survives card decoration and subsequent board renders.
+  document.addEventListener('click',event=>{
+    const button=event.target.closest?.('[data-cs-action]'),card=button?.closest?.('#root [data-cs-order]');
+    if(!card)return;
+    const action=button.dataset.csAction,o=orderByCard(card);
+    if(!['history','contact','call','whatsapp','note','awb'].includes(action))return;
+    if(action!=='call')event.preventDefault();
+    if(!o){notify('تعذر تحديد الأوردر، حدّث القسم وحاول مرة أخرى');return;}
+    const key=`${o.id}:${action}`;if(pendingActions.has(key))return;
+    if(action==='history'){openHistory(o);return;}
+    if(action==='whatsapp'){openWhatsApp(o);return;}
+    pendingActions.add(key);button.setAttribute('aria-busy','true');if(action!=='call')button.disabled=true;
+    const work=action==='note'?saveNote(o,card):action==='awb'?saveAwb(o,card):registerContact(o,action==='call');
+    Promise.resolve(work).finally(()=>{pendingActions.delete(key);button.removeAttribute('aria-busy');if(action!=='call')button.disabled=false;});
+  });
+  function applyInteraction(o,d){
+    if(Array.isArray(d.history)){o.history=d.history;o.internalNotes=d.history.filter(h=>h.type==='internal_note');o.latestInternalNote=o.internalNotes.at(-1)?.note||'';}
+    if(Array.isArray(d.log)){o.contactLog=d.log;o.contactCount=d.contactCount??d.log.length;}
+    root()?.querySelectorAll('[data-cs-order]').forEach(card=>{
+      if(String(card.dataset.csOrder)!==String(o.id))return;
+      const contact=card.querySelector('[data-cs-action="contact"]');if(contact)contact.textContent=`تواصل (${Number(o.contactCount)||0})`;
+      if(o.latestInternalNote){
+        let latest=card.querySelector('.cs-internal-latest');
+        if(!latest){latest=document.createElement('div');latest.className='cs-internal-latest';const field=card.querySelector('.cs-note-field');if(field)field.before(latest);else card.appendChild(latest);}
+        latest.textContent=`آخر ملاحظة داخلية: ${o.latestInternalNote}`;
+      }
+    });
   }
   async function changeState(o,state,deferUntil){
     await api(urlFor(`/api/customer-service/orders/${encodeURIComponent(o.id)}/state`,o.storeId),{method:'PATCH',body:bodyFor({state,...(deferUntil?{deferUntil}: {})},o.storeId)});
@@ -92,7 +121,7 @@
     m.querySelector('#csConfirmDefer').onclick=async e=>{const date=m.querySelector('#csDeferDate').value;if(!date){notify('حدد تاريخ الرجوع');return;}e.currentTarget.disabled=true;try{await changeState(o,'deferred',date);closeModal();}catch(err){notify(err.message);e.currentTarget.disabled=false;}};
   }
   function eventText(h){
-    if(h.type==='contact')return 'محاولة تواصل مع العميل';
+    if(h.type==='contact')return h.intent==='call'?'إجراء مكالمة — تم الضغط على زر الاتصال':'محاولة تواصل مع العميل';
     if(h.type==='whatsapp'){const x={confirm:'إرسال رسالة تأكيد الطلب',shipped:'إرسال رسالة الشحن',review:'إرسال رسالة طلب تقييم',other:'إرسال رسالة واتساب'};return x[h.template]||'إرسال رسالة واتساب';}
     if(h.type==='internal_note')return `ملاحظة داخلية: ${h.note||''}`;
     if(h.type==='awb')return `تحديث رقم البوليصة${h.awb?`: ${h.awb}`:''}`;
@@ -107,13 +136,14 @@
       modal(`<h2>سجل الأوردر — ${esc(order.name)}</h2><div class="sub">كل تغيير أو تواصل أو ملاحظة مسجل باسم من نفذه ووقته.</div><div class="cs-history">${history.length?history.map(h=>`<div class="cs-history-row"><div><div class="cs-history-event">${esc(eventText(h))}</div><div class="cs-history-who">بواسطة: ${esc(h.byName||h.by||(h.system?'النظام':'غير مسجل'))}</div></div><div class="cs-history-time">${esc(formatWhen(h.at))}</div></div>`).join(''):'<div class="cs-empty">لا يوجد سجل بعد</div>'}</div><div class="cs-modal-actions"><button class="btn soft" data-cs-close>قفل</button></div>`);
     }catch(e){notify(e.message);}
   }
-  async function registerContact(o){
+  async function registerContact(o,isCall=false){
     try{
-      const d=await api(urlFor(`/api/customer-service/orders/${encodeURIComponent(o.id)}/contact`,o.storeId),{method:'POST',body:bodyFor({},o.storeId)}),count=(d.log||[]).length;
+      const d=await api(urlFor(`/api/customer-service/orders/${encodeURIComponent(o.id)}/contact`,o.storeId),{method:'POST',keepalive:isCall,body:bodyFor({channel:'phone',intent:isCall?'call':'contact'},o.storeId)}),count=d.contactCount??(d.log||[]).length;
+      applyInteraction(o,d);
+      if(isCall){notify('تم تسجيل إجراء المكالمة في سجل الأوردر');return;}
       notify('تم تسجيل محاولة التواصل');
       modal(`<h2>محاولات التواصل — ${esc(o.name)}</h2><div class="cs-contact-summary">إجمالي المحاولات المسجلة: <b>${count}</b>${d.todayCount!==undefined?` · اليوم: <b>${Number(d.todayCount)||0}</b>`:''}</div><div class="sub">المحاولة اتسجلت باسم المستخدم الحالي ووقتها داخل سجل الأوردر.</div><div class="cs-modal-actions"><button class="btn soft" data-cs-close>قفل</button></div>`);
-      await refreshDataSilently();
-    }catch(e){notify(e.message);}
+    }catch(e){notify(isCall?`تم فتح الاتصال، لكن تعذر تسجيل المكالمة: ${e.message}`:e.message);}
   }
   function templatesFor(o){
     const name=o.name||'حضرتك',product=o.product||'طلبك',total=money(o.total),base={};
@@ -142,7 +172,7 @@
   }
   async function saveNote(o,card){
     const input=card.querySelector('[data-cs-note]'),note=input?.value.trim();if(!note){notify('اكتب الملاحظة الأول');return;}
-    try{await api(urlFor(`/api/customer-service/orders/${encodeURIComponent(o.id)}/notes`,o.storeId),{method:'POST',body:bodyFor({note},o.storeId)});input.value='';notify('تم حفظ الملاحظة الداخلية');await renderWorkspace();}catch(e){notify(e.message);}
+    try{const saved=await api(urlFor(`/api/customer-service/orders/${encodeURIComponent(o.id)}/notes`,o.storeId),{method:'POST',body:bodyFor({note},o.storeId)});applyInteraction(o,saved);if(input.value.trim()===note)input.value='';notify('تم حفظ الملاحظة الداخلية');}catch(e){notify(e.message);}
   }
   async function saveAwb(o,card){
     const awb=card.querySelector('[data-cs-awb]')?.value.trim()||'';

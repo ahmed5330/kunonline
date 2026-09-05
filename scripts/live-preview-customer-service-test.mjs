@@ -2,6 +2,7 @@ import {readFile} from 'node:fs/promises';
 import {randomBytes,webcrypto} from 'node:crypto';
 
 const base=(process.argv[2]||'').replace(/\/$/,'');
+if(base!=='https://kunonline-preview.mr-a-mnaa.workers.dev')throw new Error('Customer Service QA is restricted to the Kun Online Preview');
 if(!base)throw new Error('Usage: node scripts/live-preview-customer-service-test.mjs <base-url>');
 const accountId=process.env.CLOUDFLARE_ACCOUNT_ID,token=process.env.CLOUDFLARE_API_TOKEN;
 if(!accountId||!token)throw new Error('Preview Customer Service QA requires Cloudflare account/token environment');
@@ -160,6 +161,14 @@ try{
 
   await api(supportCookie,`/api/customer-service/orders/${encodeURIComponent(orderA)}/contact?${qs(clientId,storeA)}`,{method:'POST',body:{clientId,storeId:storeA}});
   await api(supportCookie,`/api/customer-service/orders/${encodeURIComponent(orderA)}/notes?${qs(clientId,storeA)}`,{method:'POST',ok:[201],body:{clientId,storeId:storeA,note:'ملاحظة داخلية QA'}});
+  await api(supportCookie,`/api/customer-service/orders/${encodeURIComponent(orderA)}/contact?${qs(clientId,storeA)}`,{method:'POST',body:{clientId,storeId:storeA,channel:'phone',intent:'call'}});
+  const interactionEvents=await d1('SELECT event_type,actor_user_id,created_at,metadata_json FROM order_events WHERE client_id=? AND order_id=? AND source=?',[clientId,orderA,'customer-service']);
+  if(interactionEvents.filter(e=>e.event_type==='contact_phone').length!==2||interactionEvents.filter(e=>e.event_type==='note_added').length!==1)throw new Error('Canonical contact/call/note events missing or duplicated');
+  if(interactionEvents.some(e=>e.actor_user_id!==supportId||!e.created_at))throw new Error('Interaction actor or timestamp missing');
+  if(interactionEvents.filter(e=>JSON.parse(e.metadata_json).intent==='call').length!==1)throw new Error('Call intent was not saved exactly once');
+  const canonicalNotes=await d1('SELECT body FROM order_notes WHERE client_id=? AND order_id=?',[clientId,orderA]);
+  if(!canonicalNotes.some(n=>n.body==='ملاحظة داخلية QA'))throw new Error('Internal note missing from order_notes');
+
   await api(supportCookie,`/api/customer-service/orders/${encodeURIComponent(orderA)}/awb?${qs(clientId,storeA)}`,{method:'PATCH',body:{clientId,storeId:storeA,awb:'QA-AWB-123'}});
   await api(supportCookie,`/api/customer-service/orders/${encodeURIComponent(orderA)}/whatsapp-log?${qs(clientId,storeA)}`,{method:'POST',body:{clientId,storeId:storeA,template:'confirm'}});
   await api(supportCookie,`/api/customer-service/orders/${encodeURIComponent(orderA)}/state?${qs(clientId,storeA)}`,{method:'PATCH',body:{clientId,storeId:storeA,state:'confirmed'}});

@@ -30,7 +30,7 @@ must(backend.includes("state='deferred'")&&backend.includes("type:'defer_return'
 must(ui.includes("next==='deferred'")&&ui.includes('csDeferDate')&&ui.includes('الطلبات المؤجلة'),'Deferred orders must have a date picker and a separate deferred section');
 must(ui.includes('returnedFromDeferredToday')&&ui.includes('رجع من التأجيل اليوم'),'Orders returning from deferral today must be visually called out');
 
-must(backend.includes("action==='contact'")&&backend.includes('/contact'),'Contact attempts must route through the recorded order contact action');
+must(backend.includes("action==='contact'")&&backend.includes('saveInteraction')&&backend.includes('INSERT INTO order_events'),'Contact attempts must persist the order history and canonical event together');
 must(ui.includes('/contact')&&ui.includes('تواصل ('),'Customer Service cards must record and expose contact-attempt counts');
 must(ui.includes('href="tel:')&&ui.includes('مكالمة'),'Customer Service cards must provide native phone calling');
 must(ui.includes('https://wa.me/')&&ui.includes('/whatsapp-log')&&ui.includes('templatesFor'),'WhatsApp templates must open WhatsApp and record the event');

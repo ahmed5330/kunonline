@@ -5,6 +5,7 @@ import {spawn} from 'node:child_process';
 import {randomBytes,webcrypto} from 'node:crypto';
 
 const base=(process.argv[2]||'').replace(/\/$/,'');
+if(base!=='https://kunonline-preview.mr-a-mnaa.workers.dev')throw new Error('Browser QA is restricted to the Kun Online Preview');
 if(!base)throw new Error('Usage: node scripts/browser-preview-qa.mjs <base-url>');
 const accountId=process.env.CLOUDFLARE_ACCOUNT_ID,token=process.env.CLOUDFLARE_API_TOKEN;
 if(!accountId||!token)throw new Error('Preview browser QA requires Cloudflare account/token environment');
@@ -18,6 +19,8 @@ const createdAt=new Date().toISOString();
 const origin=new URL(base).origin;
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 let chrome=null,userDir=null,cdp=null,chromeErr='';
+const interactionOrderId=`QA-CS-UI-${randomBytes(8).toString('hex')}`;
+let interactionClientId=null;
 
 async function d1(sql,params=[]){
   const response=await fetch(d1Url,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({sql,params})});
@@ -160,6 +163,43 @@ try{
   const roleCount=await evaluate(`document.querySelectorAll('#v28MemberRole option').length`);if(Number(roleCount)<5)throw new Error(`Team create drawer role catalog incomplete: ${roleCount}`);
   await evaluate(`document.getElementById('v23Close')?.click()`);await sleep(250);
 
+
+  // Exercise actual Customer Service controls against an isolated disposable Preview order.
+  interactionClientId=await evaluate("window.kunClientId()");
+  if(!interactionClientId)throw new Error('Customer Service browser QA needs a client context');
+  const fixtureStore=(await d1("SELECT id FROM stores WHERE client_id=? AND status='active' ORDER BY is_default DESC LIMIT 1",[interactionClientId]))[0]?.id||null;
+  await d1("INSERT INTO orders (id,client_id,store_id,name,phone,product,qty,total,state,date,created_at,history,contact_log,note) VALUES (?,?,?,?,?,?,1,10,'pending',?,?, '[]','[]',?)",[interactionOrderId,interactionClientId,fixtureStore,'QA customer service interactions','00000000000','QA disposable order',createdAt.slice(0,10),createdAt,'QA original customer note']);
+  const cardSelector=`[data-cs-order="${interactionOrderId}"]`,cardExpr=`document.querySelector(${JSON.stringify(cardSelector)})`;
+  await evaluate("document.querySelector('[data-view=customer-service]').click()");
+  await waitFor(`${cardExpr}?.querySelector('[data-cs-action=note]')`,'Customer Service fixture card');
+  const noteText='QA note saved through the Customer Service button';
+  await evaluate(`(()=>{const card=${cardExpr};card.querySelector('[data-cs-note]').value=${JSON.stringify(noteText)};card.querySelector('[data-cs-action=note]').click();})()`);
+  await waitFor(`${cardExpr}?.querySelector('.cs-internal-latest')?.textContent.includes(${JSON.stringify(noteText)})`,'note immediately visible after save');
+  await evaluate(`${cardExpr}.querySelector('[data-cs-action=contact]').click()`);
+  await waitFor(`${cardExpr}?.querySelector('[data-cs-action=contact]')?.textContent==='تواصل (1)'`,'contact counter updated');
+  await evaluate("document.querySelector('#csModalBack [data-cs-close]')?.click()");
+  const tel=await evaluate(`${cardExpr}.querySelector('[data-cs-action=call]').getAttribute('href')`);
+  if(tel!=='tel:00000000000')throw new Error('Native telephone action changed');
+  // Suppress only the OS dialer in QA; the production click listener still executes.
+  await evaluate(`(()=>{const call=${cardExpr}.querySelector('[data-cs-action=call]');call.addEventListener('click',e=>e.preventDefault(),{once:true});call.click();})()`);
+  await waitFor(`${cardExpr}?.querySelector('[data-cs-action=contact]')?.textContent==='تواصل (2)'`,'call automatically recorded once');
+  await evaluate(`${cardExpr}.querySelector('[data-cs-action=history]').click()`);
+  await waitFor("document.querySelector('#csModalBack')?.textContent.includes('تم الضغط على زر الاتصال')",'call visible in order history');
+  const historyText=await evaluate("document.querySelector('#csModalBack').textContent");
+  if(!historyText.includes(noteText)||!historyText.includes('CI Browser QA'))throw new Error('Order history is missing saved note or actor');
+  await evaluate("document.querySelector('#csModalBack [data-cs-close]').click()");
+  await navigate(`${base}/v2/`);
+  await waitFor("document.querySelector('[data-view=customer-service]')?.onclick",'Customer Service ready after page reload');
+  await evaluate("document.querySelector('[data-view=customer-service]').click()");
+  await waitFor(`${cardExpr}?.querySelector('.cs-internal-latest')?.textContent.includes(${JSON.stringify(noteText)})`,'note persisted after full reload');
+  await waitFor(`${cardExpr}?.querySelector('[data-cs-action=contact]')?.textContent==='تواصل (2)'`,'contact and call persisted after full reload');
+  const savedEvents=await d1('SELECT event_type,actor_user_id,created_at,metadata_json FROM order_events WHERE order_id=? AND client_id=?',[interactionOrderId,interactionClientId]);
+  if(savedEvents.length!==3||savedEvents.filter(e=>e.event_type==='contact_phone').length!==2||savedEvents.some(e=>e.actor_user_id!==userId||!e.created_at))throw new Error('Browser interaction events missing, duplicated or missing actor/time');
+  if((await d1('SELECT body FROM order_notes WHERE order_id=? AND client_id=?',[interactionOrderId,interactionClientId]))[0]?.body!==noteText)throw new Error('Browser note missing from canonical order notes');
+  console.log('Customer Service browser interactions passed: note button, contact button, native call link + automatic event, immediate UI, history actor and persistence after full reload.');
+  await evaluate("document.querySelector('[data-view=access]').click()");
+  await waitFor("!!document.getElementById('v28AddMember')",'return to responsive QA workspace');
+
   const viewportResults=[];
   for(const [width,height] of [[1440,1000],[820,1000],[390,844]]){
     await cdp.send('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:width<=390});
@@ -196,6 +236,7 @@ try{
   console.log(`Browser Preview QA passed: authenticated v28 navigation + team controls, console/network clean, responsive screenshots ${viewportResults.join('/')} and themes ${themes.join('/')}.`);
 }catch(error){primaryError=error;
 }finally{
+  if(interactionClientId){try{for(const table of ['order_notes','order_events'])await d1(`DELETE FROM ${table} WHERE order_id=? AND client_id=?`,[interactionOrderId,interactionClientId]);await d1('DELETE FROM orders WHERE id=? AND client_id=?',[interactionOrderId,interactionClientId]);}catch(error){primaryError=new Error(`${primaryError?.message||''} Interaction fixture cleanup failed: ${error.message}`);}}
   try{cdp?.close();}catch{}
   try{if(chrome&&!chrome.killed)chrome.kill('SIGTERM');}catch{}
   try{if(userDir)await rm(userDir,{recursive:true,force:true});}catch{}
