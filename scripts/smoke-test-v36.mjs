@@ -40,7 +40,9 @@ const version=await currentPreviewBuild();
 console.log(`Smoke v36 precheck passed: exact Preview Worker build ${version.build}`);
 const importer=await propagatedAsset('/v2/modules-v59-shipping-sheet-import.js?v=59.0','Shipping sheet importer',['رفع شيت شركة الشحن','J&T Express','المرتجعات','الكل — حسب حالة كل صف','parseXlsx','post-shipping-sheet']);
 if(!importer)throw new Error('Shipping sheet importer body missing');
-console.log('Smoke v36 precheck passed: post-shipping carrier sheet importer is deployed.');
+await propagatedAsset('/v2/modules-v64-shipping-smart-sync.js?v=64.1','Smart Shipping v64.1',['Smart Shipping Sync','Inventory-first + Safe Match','inventoryBlocked:Boolean(error?.data?.inventoryBlocked)','inventoryBlockCode','موقوف مخزنيًا',"version:'64.1'"]);
+await propagatedAsset('/v2/','v2 Smart Shipping shell',['modules-v64-shipping-smart-sync.js?v=64.1']);
+console.log('Smoke v36 precheck passed: post-shipping carrier importer + Smart Shipping v64.1 UI are deployed.');
 
 await propagatedAsset('/v2/modules-v74-admin-client-command-center.js?v=74.0','Admin Client Command Center',['Client Command Center','فتح بريف العميل','الطلبات والتحصيل','التسويق والإعلانات','المالية والمخزون','ما يحتاج انتباهك','ملخص الحملات في الفترة','مقابل الفترة السابقة','فترة معينة']);
 await propagatedAsset('/v2/modules-v23-admin.js?v=23.3','Admin Client Command Center loader',['modules-v74-admin-client-command-center.js?v=74.0','kunAdminClientCommandV74Loader']);
