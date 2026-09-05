@@ -40,15 +40,18 @@ assert.equal(read().note,'customer original');
 const contact=await act('contact');assert.equal(contact.data.contactCount,1);
 const call=await act('contact',{channel:'phone',intent:'call'});assert.equal(call.data.contactCount,2);assert.equal(call.data.entry.intent,'call');
 assert.equal(call.data.entry.byName,me.name);assert.ok(!Number.isNaN(Date.parse(call.data.entry.at)));
+const persistedCall=JSON.parse(read().history).find(x=>x.type==='contact'&&x.intent==='call');
+assert.ok(persistedCall,'call click must persist a call entry in the order history itself');
+assert.equal(persistedCall.channel,'phone');assert.equal(persistedCall.byName,me.name);assert.ok(!Number.isNaN(Date.parse(persistedCall.at)));
 // Both reads may interleave before the append; SQL appends must preserve both writes.
 await Promise.all([act('notes',{note:'parallel A'}),act('notes',{note:'parallel B'})]);
 const notes=JSON.parse(read().history).filter(x=>x.type==='internal_note');assert.equal(notes.length,3);
 const feed=await timeline({DB},{clientId:'c1',orderId:'o1',storeId:'s1'});
 assert.equal(feed.notes.length,3);assert.equal(feed.events.length,5);
 assert.equal(feed.events.filter(x=>x.type==='contact_phone').length,2);
-assert.equal(feed.events.filter(x=>x.metadata.intent==='call').length,1);
+const callEvent=feed.events.find(x=>x.metadata.intent==='call');assert.ok(callEvent);
+assert.equal(callEvent.actor.email,me.email);assert.ok(!Number.isNaN(Date.parse(callEvent.at)));assert.match(String(callEvent.metadata.message||''),/مكالمة/);
 const before=read().history;failBatch=true;
 await assert.rejects(act('notes',{note:'must roll back'}),/simulated write failure/);failBatch=false;
 assert.equal(read().history,before);assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM order_notes').get().n,3);
-console.log('Customer Service interactions passed: persisted notes/contact/call, actor/time, exact timeline counts, concurrent notes, rollback, validation and tenant/store permissions.');
-
+console.log('Customer Service interactions passed: persisted notes/contact/call, call is present in order history + timeline with actor/time, exact timeline counts, concurrent notes, rollback, validation and tenant/store permissions.');
