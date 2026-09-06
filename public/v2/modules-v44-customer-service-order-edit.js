@@ -1,6 +1,6 @@
-/* Kun Online v44 — editable Customer Service orders with an audited "معدّل" marker. */
+/* Kun Online v44.1 — editable Customer Service orders with audited marker and in-place card refresh. */
 (function(){
-  const EDITABLE=new Set(['pending','confirmed','preparing','deferred']),REPAIR_STATES=new Set(['shipped','signed']),seen=new WeakSet(),metaCache=new Map();
+  const EDITABLE=new Set(['pending','no_answer','confirmed','preparing','deferred']),REPAIR_STATES=new Set(['shipped','signed']),seen=new WeakSet(),metaCache=new Map();
   const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
   const num=value=>Number.isFinite(Number(value))?Number(value):0;
   const money=value=>new Intl.NumberFormat('ar-EG',{maximumFractionDigits:2}).format(num(value));
@@ -25,10 +25,12 @@
     if(!card||seen.has(card))return;seen.add(card);const orderId=card.dataset.csOrder;if(!orderId)return;
     const actions=card.querySelector('.cs-actions');if(actions&&!actions.querySelector('[data-oe-edit]')){const button=document.createElement('button');button.type='button';button.className='btn soft cs-edit-order-btn';button.dataset.oeEdit=orderId;button.textContent='تعديل الطلب';button.onclick=event=>{event.preventDefault();event.stopPropagation();openEditor(orderId).catch(error=>notify(error.message));};actions.prepend(button);}
     const cid=await clientId();if(!cid)return;const order=await orderMeta(orderId,cid),lastEdit=[...(order.history||[])].reverse().find(item=>item?.type==='order_edit'),inventoryRepair=repairable(order);
-    const button=card.querySelector('[data-oe-edit]');if(button&&!EDITABLE.has(order.state)&&!inventoryRepair){button.disabled=true;button.title='التعديل متاح قبل خروج الطلب للشحن فقط';}else if(button&&inventoryRepair){button.disabled=false;button.textContent='إصلاح الطلب';button.title='مسموح بالتعديل لأن الأوردر موقوف مخزنيًا من شيت شركة الشحن';}
-    if(lastEdit&&!card.querySelector('.cs-edit-badge')){const badge=document.createElement('div');badge.className='cs-edit-badge';badge.title=lastEdit.at?`آخر تعديل: ${new Date(lastEdit.at).toLocaleString('ar-EG')}`:'تم تعديل هذا الطلب';badge.innerHTML=`${editIcon()}<span>معدّل</span>${lastEdit.byName||lastEdit.by?`<span>· ${esc(lastEdit.byName||lastEdit.by)}</span>`:''}`;card.prepend(badge);}
+    const button=card.querySelector('[data-oe-edit]');if(button&&!EDITABLE.has(order.state)&&!inventoryRepair){button.disabled=true;button.title='التعديل متاح قبل خروج الطلب للشحن فقط';}else if(button&&inventoryRepair){button.disabled=false;button.textContent='إصلاح الطلب';button.title='مسموح بالتعديل لأن الأوردر موقوف مخزنيًا من شيت شركة الشحن';}else if(button){button.disabled=false;button.textContent='تعديل الطلب';button.title='';}
+    card.querySelector('.cs-edit-badge')?.remove();
+    if(lastEdit){const badge=document.createElement('div');badge.className='cs-edit-badge';badge.title=lastEdit.at?`آخر تعديل: ${new Date(lastEdit.at).toLocaleString('ar-EG')}`:'تم تعديل هذا الطلب';badge.innerHTML=`${editIcon()}<span>معدّل</span>${lastEdit.byName||lastEdit.by?`<span>· ${esc(lastEdit.byName||lastEdit.by)}</span>`:''}`;card.prepend(badge);}
   }
   function scan(){document.querySelectorAll('#root .cs-page .cs-order[data-cs-order]').forEach(card=>decorate(card));}
+  async function refreshDecorations(orderId){const cards=[...document.querySelectorAll('#root .cs-page .cs-order[data-cs-order]')].filter(card=>String(card.dataset.csOrder)===String(orderId));for(const card of cards)seen.delete(card);await Promise.all(cards.map(card=>decorate(card)));}
   function productOptions(catalog,selected){return `<option value="">— منتج يدوي —</option>${catalog.map(product=>`<option value="${esc(product.id)}" ${String(product.id)===String(selected||'')?'selected':''}>${esc(product.name)}${product.sku?` — ${esc(product.sku)}`:''}</option>`).join('')}`;}
   function variantOptions(product,selected){return `<option value="">— بدون اختيار —</option>${(product?.variants||[]).filter(item=>item.active!==false).map(variant=>`<option value="${esc(variant.id)}" ${String(variant.id)===String(selected||'')?'selected':''}>${esc(variant.name)}${variant.sku?` — ${esc(variant.sku)}`:''}</option>`).join('')}`;}
   function initialItems(details){return (details.items||[]).map(item=>({productId:item.productId||'',variantId:item.variantId||'',productName:item.name||'',variantLabel:item.variantName||item.note||'',sku:item.variantSku||item.sku||'',qty:Math.max(1,Math.floor(num(item.quantity)||1)),unitPrice:Math.max(0,num(item.price))}));}
@@ -56,13 +58,16 @@
     }
     renderItems();back.querySelector('#oeAddItem').onclick=()=>{items.push({productId:'',variantId:'',productName:'',variantLabel:'',sku:'',qty:1,unitPrice:0});renderItems();};
     back.querySelector('#oeSave').onclick=async event=>{const button=event.currentTarget;try{
-      const name=back.querySelector('#oeName').value.trim(),phone=back.querySelector('#oePhone').value.trim();if(!name)throw new Error('اسم العميل مطلوب');if(!phone)throw new Error('رقم الهاتف مطلوب');if(items.some(item=>!String(item.productName||'').trim()))throw new Error('اكتب اسم كل منتج في الطلب');
-      button.disabled=true;button.textContent='جارٍ حفظ التعديلات...';await api(query(`/api/customer-service/orders/${encodeURIComponent(orderId)}/edit`,cid),{method:'PATCH',body:JSON.stringify({clientId:cid,name,phone,gov:back.querySelector('#oeGov').value.trim(),address:back.querySelector('#oeAddress').value.trim(),couponCode:back.querySelector('#oeCoupon').value.trim(),customerNote:back.querySelector('#oeCustomerNote').value.trim(),total:Math.max(0,num(totalInput.value)),items})});
+      const name=back.querySelector('#oeName').value.trim(),phone=back.querySelector('#oePhone').value.trim(),gov=back.querySelector('#oeGov').value.trim(),deliveryAddress=back.querySelector('#oeAddress').value.trim(),couponCode=back.querySelector('#oeCoupon').value.trim(),customerNote=back.querySelector('#oeCustomerNote').value.trim(),total=Math.max(0,num(totalInput.value));if(!name)throw new Error('اسم العميل مطلوب');if(!phone)throw new Error('رقم الهاتف مطلوب');if(items.some(item=>!String(item.productName||'').trim()))throw new Error('اكتب اسم كل منتج في الطلب');
+      button.disabled=true;button.textContent='جارٍ حفظ التعديلات...';await api(query(`/api/customer-service/orders/${encodeURIComponent(orderId)}/edit`,cid),{method:'PATCH',body:JSON.stringify({clientId:cid,name,phone,gov,address:deliveryAddress,couponCode,customerNote,total,items})});
       metaCache.delete(orderId);window.KunCustomerServiceRichCards?.cache?.delete(orderId);let retryError=null;if(inventoryRepair){try{await api(query(`/api/post-shipping/orders/${encodeURIComponent(orderId)}/shipping-sheet-retry`,cid),{method:'PATCH',body:JSON.stringify({clientId:cid})});}catch(error){retryError=error;}}
-      closeModal();notify(retryError?`تم تعديل الطلب، لكن ما زال موقوفًا: ${retryError.message}`:inventoryRepair?'تم تعديل الطلب ومزامنة المخزون واستكمال نتيجة شيت الشحن':'تم تعديل الطلب وتسجيل التغييرات');if(wasPostShipping&&window.KunPostShippingV47?.render)await window.KunPostShippingV47.render();else await window.KunCustomerServiceV31?.render?.();
+      const qty=items.reduce((sum,item)=>sum+Math.max(1,Math.floor(num(item.qty)||1)),0),productSummary=items.map(item=>`${String(item.productName||'').trim()}${String(item.variantLabel||'').trim()?` — ${String(item.variantLabel).trim()}`:''}`).filter(Boolean).join(' + ');
+      window.KunCustomerServiceV31?.patchOrder?.(orderId,{name,phone,gov,address:deliveryAddress,customerNote,total,qty,product:productSummary||order.product||'',productNote:items.length===1?(items[0].variantLabel||''):''});
+      if(!wasPostShipping){try{await window.KunCustomerServiceRichCards?.refresh?.(orderId);}catch{}try{await refreshDecorations(orderId);}catch{}}
+      closeModal();notify(retryError?`تم تعديل الطلب، لكن ما زال موقوفًا: ${retryError.message}`:inventoryRepair?'تم تعديل الطلب ومزامنة المخزون واستكمال نتيجة شيت الشحن':'تم تعديل الطلب وتسجيل التغييرات بدون إعادة تحميل الصفحة');if(wasPostShipping&&window.KunPostShippingV47?.render)await window.KunPostShippingV47.render();
     }catch(error){notify(error.message);button.disabled=false;button.textContent='حفظ التعديلات';}};
   }
   function boot(){ensureStyle();const root=document.getElementById('root')||document.body;new MutationObserver(scan).observe(root,{childList:true,subtree:true});scan();}
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
-  window.KunCustomerServiceOrderEdit={scan,openEditor,version:'44.0'};
+  window.KunCustomerServiceOrderEdit={scan,refresh:refreshDecorations,openEditor,version:'44.1'};
 })();
