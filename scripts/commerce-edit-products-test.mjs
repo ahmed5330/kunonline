@@ -15,12 +15,13 @@ for(const marker of ['shipped','signed','collected','collected_amount','cod_coll
 for(const marker of ['خدمات ما بعد الشحن','جاري الشحن','تم الشحن','تم التحصيل','المبلغ المستلم من شركة الشحن','/collect'])assert.ok(postShippingUi.includes(marker),`legacy post-shipping UI missing ${marker}`);
 for(const marker of ['إدارة الطلب','تحديث الحالة','تعديل الطلب','STATUS_ORDER','collecting','deferred','/api/customer-service/orders/','/api/post-shipping/orders/','refreshVisibleWorkspace','KunCustomerServiceV31','KunPostShippingV47','kun:order-workflow-updated'])assert.ok(orderWorkflowUi.includes(marker),`order details workflow UI missing ${marker}`);
 for(const marker of ['compare_at_price','pricePolicy','sale_price_when_positive_else_price','UPDATE products SET price=?','UPDATE product_variants SET price=?'])assert.ok(priceSync.includes(marker),`Easy Orders price sync missing ${marker}`);
-for(const marker of ['سعر البيع','سعر البيع بعد الخصم','data-v46-price-edit','data-v46-price-save','/api/inventory/price','تم تحديث سعر البيع','تكلفة الوحدة','data-v46-cost-edit','data-v46-cost-save','/api/inventory/cost','تم تحديث تكلفة الوحدة',"version:'46.2'"])assert.ok(inventoryUi.includes(marker),`inventory price/cost UI missing ${marker}`);
+for(const marker of ['سعر البيع','سعر البيع بعد الخصم','data-v46-price-edit','data-v46-price-save','/api/inventory/price','تم تحديث سعر البيع','تكلفة الوحدة','data-v46-cost-edit','data-v46-cost-save','/api/inventory/cost','تم تحديث تكلفة الوحدة','KunCommerceProductImportV29',"review.open('easyorders')",'مراجعة تكاليف Easy Orders',"version:'46.3'"])assert.ok(inventoryUi.includes(marker),`inventory price/cost UI missing ${marker}`);
+assert.ok(!inventoryUi.includes("K.api('/api/commerce/product-import',{method:'POST'"),'inventory Easy Orders sync must not bypass the in-system cost review');
 for(const marker of ['تعديل التكاليف','تكلفة المنتجات','التكلفة الأساسية للمنتج','/api/inventory/cost','حفظ التكلفة','variantId','مزامنة Easy Orders لا تستبدل تكلفة المنتج المحلية',"version:'61.0'"])assert.ok(costUi.includes(marker),`product cost manager missing ${marker}`);
 for(const marker of ['تم التوصيل','POST_SHIPPING_COST_REQUIRED','shipping_cost','shippingCost','تكلفة الشحن'])assert.ok(postShippingV47.includes(marker),`v47 delivered backend missing ${marker}`);
 for(const marker of ['تم التوصيل','v47ShippingCost','shippingCost','حفظ السعر وتأكيد التوصيل','/api/orders/','تكلفة الشحن الفعلية',"version:'47.3'"])assert.ok(postShippingUiV47.includes(marker),`v47 delivered UI missing ${marker}`);
 assert.ok(index.includes('/v2/modules-v54-order-workflow-controls.js?v=54.0'),'v2 shell must load the order-details workflow controls');
-assert.ok(index.includes('/v2/modules-v46-variant-inventory-sync.js?v=46.2'),'v2 shell must load the current inventory price/cost editor asset');
+assert.ok(index.includes('/v2/modules-v46-variant-inventory-sync.js?v=46.3'),'v2 shell must load the current inventory price/cost editor asset');
 assert.ok(index.includes('/v2/modules-v61-product-cost-editor.js?v=61.0'),'v2 shell must load the product cost manager asset');
 assert.ok(index.includes('/v2/modules-v47-post-shipping.js?v=47.3'),'v2 shell must load the delivery/shipping-cost post-shipping asset');
 assert.ok(postShippingMigration.includes('ALTER TABLE orders ADD COLUMN collected_amount REAL'),'post-shipping collected amount migration is missing');
@@ -31,4 +32,4 @@ assert.doesNotThrow(()=>new Function(postShippingUiV47),'v47 delivery browser mo
 assert.doesNotThrow(()=>new Function(orderWorkflowUi),'order-details workflow controls browser module must parse');
 assert.doesNotThrow(()=>new Function(inventoryUi),'variant inventory price/cost editor browser module must parse');
 assert.doesNotThrow(()=>new Function(costUi),'product cost manager browser module must parse');
-console.log('Order edit + detailed product catalog + inventory price/cost edit + product cost manager + discounted Easy Orders price sync + delivery shipping-cost gate + post-shipping workflow controls contract passed.');
+console.log('Order edit + detailed product catalog + inventory price/cost edit + governed Easy Orders cost review + product cost manager + discounted Easy Orders price sync + delivery shipping-cost gate + post-shipping workflow controls contract passed.');
