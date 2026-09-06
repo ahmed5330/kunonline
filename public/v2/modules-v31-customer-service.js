@@ -1,9 +1,9 @@
-/* Kun Online v31.1 — multi-store Customer Service workspace — persistent notes, contact and call events */
+/* Kun Online v31.2 — multi-store Customer Service workspace — persistent notes, no-answer follow-up and in-place updates */
 (function(){
   const ALLOWED=new Set(['admin','client','ops','support']);
-  const STAGES=['pending','confirmed','preparing','shipped'];
-  const LABELS={pending:'في انتظار التأكيد',confirmed:'تم التأكيد',preparing:'التجهيز والتغليف',shipped:'جاري الشحن',signed:'تحصيل منتظر',collected:'تم التحصيل',returned:'مرتجع',cancelled:'تم إلغاء الطلب',deferred:'مؤجل'};
-  const STATUS_ORDER=['pending','confirmed','preparing','shipped','signed','collected','returned','cancelled','deferred'];
+  const STAGES=['pending','no_answer','confirmed','preparing','shipped'];
+  const LABELS={pending:'في انتظار التأكيد',no_answer:'العميل لا يرد',confirmed:'تم التأكيد',preparing:'التجهيز والتغليف',shipped:'جاري الشحن',signed:'تحصيل منتظر',collected:'تم التحصيل',returned:'مرتجع',cancelled:'تم إلغاء الطلب',deferred:'مؤجل'};
+  const STATUS_ORDER=['pending','no_answer','confirmed','preparing','shipped','signed','collected','returned','cancelled','deferred'];
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const money=v=>new Intl.NumberFormat('ar-EG',{maximumFractionDigits:2}).format(Number(v)||0);
   const notify=msg=>typeof window.showToast==='function'?window.showToast(msg):console.log(msg);
@@ -24,13 +24,17 @@
   }
   function formatWhen(v){if(!v)return '—';const d=new Date(v);if(Number.isNaN(d.getTime()))return esc(v);return new Intl.DateTimeFormat('ar-EG',{dateStyle:'medium',timeStyle:'short',timeZone:'Africa/Cairo'}).format(d);}
   function phoneIntl(raw){let d=String(raw||'').replace(/\D/g,'');if(d.startsWith('00'))d=d.slice(2);if(/^01\d{9}$/.test(d))return '20'+d.slice(1);if(/^05\d{8}$/.test(d))return '966'+d.slice(1);return d;}
-  function statusOptions(current){return STATUS_ORDER.map(s=>`<option value="${s}" ${s===current?'selected':''}>${esc(LABELS[s]||s)}</option>`).join('');}
+  function statusOptions(current,contactCount=0){
+    const noAnswerAllowed=['pending','no_answer','deferred'].includes(current);
+    return STATUS_ORDER.filter(s=>s!=='no_answer'||noAnswerAllowed).map(s=>{const label=s==='no_answer'?`${LABELS[s]} — ${Number(contactCount)||0} محاولة تواصل`:(LABELS[s]||s);return `<option value="${s}" ${s===current?'selected':''}>${esc(label)}</option>`;}).join('');
+  }
 
   function storeTabs(){
     const tabs=[{id:'',name:'كل المتاجر'},...(data?.stores||[])];
     return `<div class="cs-store-tabs" role="tablist" aria-label="المتاجر المسموحة">${tabs.map(s=>`<button class="cs-store-tab ${String(selectedStore)===String(s.id||'')?'active':''}" data-cs-store="${esc(s.id||'')}">${esc(s.name||s.id)}</button>`).join('')}</div>`;
   }
   function orderCard(o,{deferred=false}={}){
+    const attempts=Number(o.contactCount)||0;
     return `<article class="cs-order ${o.returnedFromDeferredToday?'cs-returned-today':''}" data-cs-order="${esc(o.id)}">
       ${o.returnedFromDeferredToday?'<div class="cs-return-banner">⏰ رجع من التأجيل اليوم — يحتاج متابعة</div>':''}
       <div class="cs-order-head"><div><div class="cs-customer">${esc(o.name||'بدون اسم')}</div><div class="cs-phone">${esc(o.phone||'بدون رقم')}</div></div><span class="cs-store" title="${esc(o.storeName||'')}">${esc(o.storeName||'بدون متجر')}</span></div>
@@ -41,12 +45,13 @@
       ${o.customerNote?`<div class="cs-customer-note"><strong>ملاحظة العميل عند الطلب:</strong> ${esc(o.customerNote)}</div>`:''}
       ${o.latestInternalNote?`<div class="cs-internal-latest"><b>آخر ملاحظة داخلية:</b> ${esc(o.latestInternalNote)}</div>`:''}
       ${deferred&&o.deferUntil?`<div class="cs-defer-chip">⏰ مؤجل حتى ${esc(o.deferUntil)}</div>`:''}
+      <div class="cs-contact-attempts" data-cs-contact-attempts><span>محاولات التواصل (مكالمة + تواصل)</span><b data-cs-contact-count>${attempts}</b></div>
       <div class="cs-field cs-note-field"><input class="input" data-cs-note placeholder="ملاحظة داخلية لخدمة العملاء"><button type="button" class="btn primary cs-note-add" data-cs-action="note">إضافة</button></div>
-      <div class="cs-field"><select class="select" data-cs-state data-current="${esc(o.state)}">${statusOptions(o.state)}</select></div>
+      <div class="cs-field"><select class="select" data-cs-state data-current="${esc(o.state)}">${statusOptions(o.state,attempts)}</select></div>
       <div class="cs-field"><div style="display:grid;grid-template-columns:1fr auto;gap:6px"><input class="input" data-cs-awb value="${esc(o.awb||'')}" placeholder="رقم البوليصة"><button class="btn soft" data-cs-action="awb">حفظ</button></div></div>
       <div class="cs-actions">
         <button class="btn soft" data-cs-action="history">سجل الأوردر</button>
-        <button class="btn soft" data-cs-action="contact">تواصل (${Number(o.contactCount)||0})</button>
+        <button class="btn soft" data-cs-action="contact">تواصل (${attempts})</button>
         <a class="btn soft" href="tel:${esc(o.phone||'')}" data-cs-action="call">مكالمة</a>
         <button class="btn soft" data-cs-action="whatsapp">واتساب</button>
       </div>
@@ -79,10 +84,9 @@
   function bindCard(card){
     const select=card.querySelector('[data-cs-state]');
     select.onchange=async()=>{const o=orderByCard(card),next=select.value;if(!o)return;if(next==='deferred'){select.value=select.dataset.current||o.state;openDefer(o);return;}try{await changeState(o,next);select.dataset.current=next;}catch(e){notify(e.message);select.value=select.dataset.current||o.state;}};
-
   }
+
   const pendingActions=new Set();
-  // One delegated listener survives card decoration and subsequent board renders.
   document.addEventListener('click',event=>{
     const button=event.target.closest?.('[data-cs-action]'),card=button?.closest?.('#root [data-cs-order]');
     if(!card)return;
@@ -97,22 +101,60 @@
     const work=action==='note'?saveNote(o,card):action==='awb'?saveAwb(o,card):registerContact(o,action==='call');
     Promise.resolve(work).finally(()=>{pendingActions.delete(key);button.removeAttribute('aria-busy');if(action!=='call')button.disabled=false;});
   });
+
+  function cardsForOrder(orderId){return [...(root()?.querySelectorAll('[data-cs-order]')||[])].filter(card=>String(card.dataset.csOrder)===String(orderId));}
+  function updateContactUi(card,count){
+    const n=Number(count)||0,contact=card.querySelector('[data-cs-action="contact"]'),counter=card.querySelector('[data-cs-contact-count]'),select=card.querySelector('[data-cs-state]');
+    if(contact)contact.textContent=`تواصل (${n})`;if(counter)counter.textContent=String(n);
+    const option=select?.querySelector('option[value="no_answer"]');if(option)option.textContent=`${LABELS.no_answer} — ${n} محاولة تواصل`;
+  }
   function applyInteraction(o,d){
     if(Array.isArray(d.history)){o.history=d.history;o.internalNotes=d.history.filter(h=>h.type==='internal_note');o.latestInternalNote=o.internalNotes.at(-1)?.note||'';}
     if(Array.isArray(d.log)){o.contactLog=d.log;o.contactCount=d.contactCount??d.log.length;}
-    root()?.querySelectorAll('[data-cs-order]').forEach(card=>{
-      if(String(card.dataset.csOrder)!==String(o.id))return;
-      const contact=card.querySelector('[data-cs-action="contact"]');if(contact)contact.textContent=`تواصل (${Number(o.contactCount)||0})`;
+    cardsForOrder(o.id).forEach(card=>{
+      updateContactUi(card,o.contactCount);
       if(o.latestInternalNote){
         let latest=card.querySelector('.cs-internal-latest');
         if(!latest){latest=document.createElement('div');latest.className='cs-internal-latest';const field=card.querySelector('.cs-note-field');if(field)field.before(latest);else card.appendChild(latest);}
-        latest.textContent=`آخر ملاحظة داخلية: ${o.latestInternalNote}`;
+        latest.innerHTML=`<b>آخر ملاحظة داخلية:</b> ${esc(o.latestInternalNote)}`;
       }
     });
   }
+  function ensureCustomerNote(card,note){
+    let box=card.querySelector('.cs-customer-note');
+    if(note){if(!box){box=document.createElement('div');box.className='cs-customer-note';const anchor=card.querySelector('.cs-contact-attempts,.cs-note-field');anchor?.before(box);}if(box)box.innerHTML=`<strong>ملاحظة العميل عند الطلب:</strong> ${esc(note)}`;}
+    else box?.remove();
+  }
+  function patchCardBasics(card,o){
+    const name=card.querySelector('.cs-customer'),phone=card.querySelector('.cs-phone'),address=card.querySelector('.cs-address'),product=card.querySelector('.cs-product'),productNote=card.querySelector('.cs-product-note'),meta=card.querySelector('.cs-order-meta'),awb=card.querySelector('[data-cs-awb]'),call=card.querySelector('[data-cs-action="call"]'),select=card.querySelector('[data-cs-state]');
+    if(name)name.textContent=o.name||'بدون اسم';if(phone)phone.textContent=o.phone||'بدون رقم';if(address)address.textContent=`📍 ${[o.gov,o.address].filter(Boolean).join(' — ')||'لا يوجد عنوان'}`;if(product)product.textContent=o.product||'بدون منتج';if(productNote)productNote.textContent=o.productNote||'';if(meta)meta.textContent=`${money(o.total)} جنيه · الكمية ${money(o.qty||1)} · ${String(o.date||'').slice(0,10)||'بدون تاريخ'}`;if(awb&&document.activeElement!==awb)awb.value=o.awb||'';if(call)call.href=`tel:${o.phone||''}`;if(select){select.innerHTML=statusOptions(o.state,o.contactCount);select.value=o.state;select.dataset.current=o.state;}ensureCustomerNote(card,o.customerNote||'');updateContactUi(card,o.contactCount);
+  }
+  function patchOrder(orderId,patch={}){
+    const o=(data?.orders||[]).find(item=>String(item.id)===String(orderId));if(!o)return false;Object.assign(o,patch);cardsForOrder(orderId).forEach(card=>patchCardBasics(card,o));return true;
+  }
+  function listForState(state){
+    if(state==='deferred')return root()?.querySelector('.cs-deferred-grid')||null;
+    if(STAGES.includes(state))return root()?.querySelector(`.cs-column[data-state="${state}"] .cs-list`)||null;
+    return null;
+  }
+  function refreshContainerSummaries(){
+    root()?.querySelectorAll('.cs-column[data-state]').forEach(column=>{const list=column.querySelector('.cs-list'),count=list?.querySelectorAll(':scope > .cs-order').length||0,countEl=column.querySelector('.cs-count');if(countEl)countEl.textContent=String(count);if(list){list.querySelector('.cs-empty')?.remove();if(!count)list.innerHTML='<div class="cs-empty">مفيش أوردرات هنا دلوقتي</div>';}});
+    const deferred=root()?.querySelector('.cs-deferred'),list=deferred?.querySelector('.cs-deferred-grid'),count=list?.querySelectorAll(':scope > .cs-order').length||0,countEl=deferred?.querySelector('.cs-deferred-head .cs-count');if(countEl)countEl.textContent=String(count);if(list){list.querySelector('.cs-empty')?.remove();if(!count)list.innerHTML='<div class="cs-empty">لا توجد طلبات مؤجلة حاليًا</div>';}
+  }
+  function moveOrderState(o,state,deferUntil){
+    o.state=state;if(state==='deferred')o.deferUntil=deferUntil||o.deferUntil||cairoToday();else if(state!=='deferred')o.deferUntil=null;
+    const target=listForState(state),cards=cardsForOrder(o.id);
+    cards.forEach(card=>{
+      const select=card.querySelector('[data-cs-state]');if(select){select.innerHTML=statusOptions(state,o.contactCount);select.value=state;select.dataset.current=state;}
+      let chip=card.querySelector('.cs-defer-chip');if(state==='deferred'){if(!chip){chip=document.createElement('div');chip.className='cs-defer-chip';const attempts=card.querySelector('.cs-contact-attempts');attempts?.before(chip);}if(chip)chip.textContent=`⏰ مؤجل حتى ${o.deferUntil}`;}else chip?.remove();
+      if(target){target.querySelector('.cs-empty')?.remove();target.prepend(card);}else card.remove();
+    });
+    refreshContainerSummaries();window.KunCustomerServiceOrderEdit?.scan?.();window.KunConfirmInventoryV58?.scan?.();window.KunCustomerServiceRichCards?.scan?.();
+    return true;
+  }
   async function changeState(o,state,deferUntil){
     await api(urlFor(`/api/customer-service/orders/${encodeURIComponent(o.id)}/state`,o.storeId),{method:'PATCH',body:bodyFor({state,...(deferUntil?{deferUntil}: {})},o.storeId)});
-    notify(state==='deferred'?`تم تأجيل الأوردر حتى ${deferUntil}`:`تم نقل الأوردر إلى ${LABELS[state]||state}`);await renderWorkspace();
+    moveOrderState(o,state,deferUntil);notify(state==='deferred'?`تم تأجيل الأوردر حتى ${deferUntil}`:`تم نقل الأوردر إلى ${LABELS[state]||state}`);
   }
   function modal(html){closeModal();const back=document.createElement('div');back.className='cs-modal-back';back.id='csModalBack';back.innerHTML=`<div class="cs-modal" role="dialog" aria-modal="true">${html}</div>`;document.body.appendChild(back);back.addEventListener('click',e=>{if(e.target===back)closeModal();});back.querySelectorAll('[data-cs-close]').forEach(b=>b.onclick=closeModal);return back;}
   function closeModal(){document.getElementById('csModalBack')?.remove();}
@@ -142,7 +184,7 @@
       applyInteraction(o,d);
       if(isCall){notify('تم تسجيل إجراء المكالمة في سجل الأوردر');return;}
       notify('تم تسجيل محاولة التواصل');
-      modal(`<h2>محاولات التواصل — ${esc(o.name)}</h2><div class="cs-contact-summary">إجمالي المحاولات المسجلة: <b>${count}</b>${d.todayCount!==undefined?` · اليوم: <b>${Number(d.todayCount)||0}</b>`:''}</div><div class="sub">المحاولة اتسجلت باسم المستخدم الحالي ووقتها داخل سجل الأوردر.</div><div class="cs-modal-actions"><button class="btn soft" data-cs-close>قفل</button></div>`);
+      modal(`<h2>محاولات التواصل — ${esc(o.name)}</h2><div class="cs-contact-summary">إجمالي المحاولات المسجلة: <b>${count}</b>${d.todayCount!==undefined?` · اليوم: <b>${Number(d.todayCount)||0}</b>`:''}</div><div class="sub">العدد يجمع زر «مكالمة» وزر «تواصل»، وكل محاولة مسجلة باسم المستخدم الحالي ووقتها داخل سجل الأوردر.</div><div class="cs-modal-actions"><button class="btn soft" data-cs-close>قفل</button></div>`);
     }catch(e){notify(isCall?`تم فتح الاتصال، لكن تعذر تسجيل المكالمة: ${e.message}`:e.message);}
   }
   function templatesFor(o){
@@ -152,7 +194,9 @@
     base.shipped={label:'رسالة جاري الشحن',log:'shipped',text:`مرحبًا ${name}، طلبك ${product} خرج للشحن وهو في الطريق ليك.${o.awb?` رقم البوليصة: ${o.awb}.`:''}`};
     base.review={label:'رسالة طلب تقييم',log:'review',text:`مرحبًا ${name}، نتمنى تكون تجربتك مع الطلب كانت كويسة. يسعدنا نعرف تقييمك وملاحظاتك.`};
     base.deferred={label:'متابعة الطلب المؤجل',log:'other',text:`مرحبًا ${name}، بنتابع مع حضرتك بخصوص طلبك ${product} اللي اتفقنا نرجع نتواصل عليه${o.deferUntil?` بتاريخ ${o.deferUntil}`:''}. هل مناسب نأكد الطلب دلوقتي؟`};
+    base.noAnswer={label:'متابعة عميل لا يرد',log:'other',text:`مرحبًا ${name}، حاولنا نتواصل مع حضرتك بخصوص طلبك ${product}. لو مناسب، ابعتلنا رد علشان نأكد الطلب ونبدأ التجهيز.`};
     if(o.state==='pending')return [base.confirm,base.preparing];
+    if(o.state==='no_answer')return [base.noAnswer,base.confirm];
     if(o.state==='confirmed')return [base.preparing,base.shipped];
     if(o.state==='preparing')return [base.preparing,base.shipped];
     if(o.state==='shipped')return [base.shipped,base.review];
@@ -168,7 +212,7 @@
     const win=window.open(`https://wa.me/${encodeURIComponent(p)}?text=${encodeURIComponent(t.text)}`,'_blank','noopener,noreferrer');
     if(!win)notify('المتصفح منع فتح واتساب — اسمح بالنوافذ المنبثقة وحاول تاني');
     closeModal();
-    try{await api(urlFor(`/api/customer-service/orders/${encodeURIComponent(o.id)}/whatsapp-log`,o.storeId),{method:'POST',body:bodyFor({template:t.log},o.storeId)});notify('تم تسجيل فتح رسالة واتساب في سجل الأوردر');await refreshDataSilently();}catch(e){notify(`واتساب اتفتح، لكن تعذر تسجيل الحدث: ${e.message}`);}
+    try{await api(urlFor(`/api/customer-service/orders/${encodeURIComponent(o.id)}/whatsapp-log`,o.storeId),{method:'POST',body:bodyFor({template:t.log},o.storeId)});notify('تم تسجيل فتح رسالة واتساب في سجل الأوردر');}catch(e){notify(`واتساب اتفتح، لكن تعذر تسجيل الحدث: ${e.message}`);}
   }
   async function saveNote(o,card){
     const input=card.querySelector('[data-cs-note]'),note=input?.value.trim();if(!note){notify('اكتب الملاحظة الأول');return;}
@@ -176,15 +220,12 @@
   }
   async function saveAwb(o,card){
     const awb=card.querySelector('[data-cs-awb]')?.value.trim()||'';
-    try{await api(urlFor(`/api/customer-service/orders/${encodeURIComponent(o.id)}/awb`,o.storeId),{method:'PATCH',body:bodyFor({awb},o.storeId)});notify('تم حفظ رقم البوليصة');await refreshDataSilently();}catch(e){notify(e.message);}
-  }
-  async function refreshDataSilently(){
-    try{data=await api(urlFor('/api/customer-service'));const current=root();if(current?.querySelector('.cs-page')){current.innerHTML=workspace();bindWorkspace();}}catch{}
+    try{const saved=await api(urlFor(`/api/customer-service/orders/${encodeURIComponent(o.id)}/awb`,o.storeId),{method:'PATCH',body:bodyFor({awb},o.storeId)});o.awb=saved.awb??awb;if(Array.isArray(saved.history))o.history=saved.history;cardsForOrder(o.id).forEach(c=>{const input=c.querySelector('[data-cs-awb]');if(input&&document.activeElement!==input)input.value=o.awb||'';});notify('تم حفظ رقم البوليصة');}catch(e){notify(e.message);}
   }
   async function boot(){
     const nav=document.querySelector('.nav button[data-view="customer-service"]');if(!nav)return;
     try{me=await api('/api/me');if(!ALLOWED.has(me.role)){nav.remove();return;}nav.classList.add('is-visible');nav.onclick=()=>{document.querySelectorAll('.nav button').forEach(b=>b.classList.toggle('active',b===nav));renderWorkspace();};}catch{nav.remove();}
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
-  window.KunCustomerServiceV31={render:renderWorkspace};
+  window.KunCustomerServiceV31={render:renderWorkspace,patchOrder,moveState:(orderId,state,deferUntil)=>{const o=(data?.orders||[]).find(item=>String(item.id)===String(orderId));return o?moveOrderState(o,state,deferUntil):false;},updateContactCount:(orderId,count)=>{const o=(data?.orders||[]).find(item=>String(item.id)===String(orderId));if(o)o.contactCount=Number(count)||0;cardsForOrder(orderId).forEach(card=>updateContactUi(card,count));},version:'31.2'};
 })();
