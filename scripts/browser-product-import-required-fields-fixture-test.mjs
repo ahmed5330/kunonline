@@ -42,13 +42,14 @@ try{
     return true;
   })()`);
   await evalJs(`eval(${JSON.stringify(uiSrc)})`);
-  await waitFor(`document.documentElement.dataset.productImport==='required-costs-v29.1'`,'v29.1 UI ready');
+  await waitFor(`document.documentElement.dataset.productImport==='required-costs-v29.2'`,'v29.2 UI ready');
   await evalJs(`products()`);await waitFor(`!!document.getElementById('commerceProductImport')`,'product import button');
-  await evalJs(`document.getElementById('commerceProductImport').click()`);await waitFor(`!!document.getElementById('syncCommerceProducts')`,'required sync drawer');
+  const opened=await evalJs(`window.KunCommerceProductImportV29?.open?.('easyorders')`);if(!opened)throw new Error('Public Easy Orders review entrypoint did not open');
+  await waitFor(`!!document.getElementById('syncCommerceProducts')`,'required sync drawer');
 
   const initial=await evalJs(`(()=>({disabled:document.getElementById('syncCommerceProducts').disabled,modeChecked:!!document.querySelector('input[name="commerceImportMode"]:checked'),costs:document.querySelectorAll('.commerceImportCost').length,text:document.getElementById('drawer').innerText}))()`);
   if(!initial.disabled||initial.modeChecked||initial.costs!==2)throw new Error(`Initial mandatory state is wrong: ${JSON.stringify(initial)}`);
-  if(!initial.text.includes('السعر بعد الخصم')||!initial.text.includes('599')||!initial.text.includes('800'))throw new Error('Discounted Easy Orders selling-price explanation/values are not visible');
+  if(!initial.text.includes('راجع التكاليف قبل المزامنة')||!initial.text.includes('السعر بعد الخصم')||!initial.text.includes('599')||!initial.text.includes('800'))throw new Error('In-system cost review or discounted Easy Orders selling-price explanation/values are not visible');
 
   await evalJs(`document.querySelector('input[name="commerceImportMode"][value="all"]').click()`);
   let disabled=await evalJs(`document.getElementById('syncCommerceProducts').disabled`);if(!disabled)throw new Error('All-products sync enabled before costs were entered');
@@ -67,5 +68,5 @@ try{
   await waitFor(`window.__importPayload!==null`,'sync payload');
   const payload=await evalJs(`window.__importPayload`);
   if(payload.selectionMode!=='selected'||payload.selectedExternalIds?.length!==1||payload.selectedExternalIds[0]!=='P1'||Number(payload.productCosts?.P1)!==220)throw new Error(`Mandatory sync payload is wrong: ${JSON.stringify(payload)}`);
-  console.log('Browser product import fixture QA passed: scope choice is explicit, all/selected modes stay blocked until every targeted product has a cost, Easy Orders discounted price is visible as selling price, and sync sends selection + productCosts.');
+  console.log('Browser product import fixture QA passed: inventory/public entry opens the in-system cost review, scope choice is explicit, all/selected modes stay blocked until every targeted product has a cost, and sync sends selection + productCosts.');
 }finally{await cleanupBrowser();}
