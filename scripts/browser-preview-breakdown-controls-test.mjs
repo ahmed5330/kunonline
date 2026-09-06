@@ -68,8 +68,11 @@ try{
   await waitFor(`window.KunCampaignHubV66.state.sections.ad.breakdownData?.dimension==='country'&&!window.KunCampaignHubV66.state.sections.ad.breakdownData?.error`,'Breakdown retry success');
   await waitFor(`document.getElementById('campaign66BreakdownLoad')&&!document.getElementById('campaign66BreakdownLoad').disabled&&document.getElementById('campaign66BreakdownLoad').getAttribute('aria-busy')!=='true'`,'Breakdown retry load re-enabled');
 
-  await evalJs(`(()=>{window.__kunBreakdownDelay.body_asset=650;window.__kunBreakdownDelay.title_asset=35;const s=document.getElementById('campaign66Breakdown');s.value='body_asset';s.dispatchEvent(new Event('change',{bubbles:true}));document.getElementById('campaign66BreakdownLoad').click();return true;})()`);await sleep(70);
-  await evalJs(`(()=>{const s=document.getElementById('campaign66Breakdown');s.value='title_asset';s.dispatchEvent(new Event('change',{bubbles:true}));document.getElementById('campaign66BreakdownLoad').click();return true;})()`);
+  await evalJs(`(()=>{window.__kunBreakdownDelay.body_asset=650;window.__kunBreakdownDelay.title_asset=35;const s=document.getElementById('campaign66Breakdown');s.value='body_asset';s.dispatchEvent(new Event('change',{bubbles:true}));document.getElementById('campaign66BreakdownLoad').click();return true;})()`);
+  await waitFor(`window.__kunBreakdownRequests.filter(x=>x.dimension==='body_asset').length>=2`,'Slow body Breakdown request started');await sleep(70);
+  await evalJs(`(()=>{const s=document.getElementById('campaign66Breakdown');s.value='title_asset';s.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`);
+  await waitFor(`document.getElementById('campaign66BreakdownLoad')&&!document.getElementById('campaign66BreakdownLoad').disabled&&document.getElementById('campaign66BreakdownLoad').getAttribute('aria-busy')!=='true'`,'Breakdown race switch re-enabled');
+  await evalJs(`document.getElementById('campaign66BreakdownLoad').click()`);
   await waitFor(`window.KunCampaignHubV66.state.sections.ad.breakdownData?.dimension==='title_asset'&&document.querySelector('.ux70-item b')?.textContent.includes('عنوان تجريبي واضح')`,'Latest Breakdown wins race');await sleep(750);
   const raceSafe=await evalJs(`window.KunCampaignHubV66.state.sections.ad.breakdownData?.dimension==='title_asset'&&document.querySelector('.ux70-item b')?.textContent.includes('عنوان تجريبي واضح')`);if(!raceSafe)throw new Error('Stale Breakdown response overwrote the latest selection');
 
