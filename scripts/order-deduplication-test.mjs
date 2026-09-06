@@ -2,9 +2,10 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {sameBusinessOrder,__dedupeV2Test} from '../src/order-deduplication-v2.js';
 
-const [entry,moduleSource,migration]=await Promise.all([
+const [entry,moduleSource,targetedSource,migration]=await Promise.all([
   readFile(new URL('../src/index-commerce-v35.js',import.meta.url),'utf8'),
   readFile(new URL('../src/order-deduplication-v2.js',import.meta.url),'utf8'),
+  readFile(new URL('../src/order-deduplication.js',import.meta.url),'utf8'),
   readFile(new URL('../migrations/0022_order_duplicate_links.sql',import.meta.url),'utf8')
 ]);
 const easy={id:'2fa1a840-1111-4444-9999-123456789abc',short_id:7315,created_at:'2026-08-31T08:00:00.000Z',full_name:'أحمد محمد',phone:'201012345678',government:'القاهرة',address:'مدينة نصر - شارع 10',total_cost:1199,shipping_cost:50,cart_items:[{product:{name:'جيبة بليسيه'},variant:{sku:'BURG-L',variation_props:[{variation:'اللون',variation_prop:'برجاندي'},{variation:'المقاس',variation_prop:'L'}]},quantity:2,price:574.5}]};
@@ -22,6 +23,10 @@ assert.equal(sameBusinessOrder(a,preciseFar),false,'Two precise timestamps far a
 const missingShipping=__dedupeV2Test.sheetSnapshot({...sheet,shippingCost:''});
 assert.equal(sameBusinessOrder(a,missingShipping),true,'Missing sheet shipping must be treated as unknown, not as a false mismatch');
 for(const marker of ['prepareIncomingEasyOrdersDedupeV2','prepareEasyOrdersSheetRowsV2','reconcileEasyOrdersDuplicates','unique-business-fingerprint','provider-alias','ambiguous'])assert.ok(moduleSource.includes(marker),`Dedupe v2 module missing ${marker}`);
+for(const marker of ['prepareIncomingEasyOrdersDedupe','prepareEasyOrdersSheetRows','LIMIT 30'])assert.ok(targetedSource.includes(marker),`Targeted Easy Orders dedupe path missing ${marker}`);
 for(const marker of ['order_duplicate_links','duplicate_order_id','canonical_order_id','match_mode'])assert.ok(migration.includes(marker),`Dedupe registry migration missing ${marker}`);
-for(const marker of ['/api/orders/dedupe/reconcile','prepareIncomingEasyOrdersDedupeV2','prepareEasyOrdersSheetRowsV2','reconcileEasyOrdersDuplicates','duplicateFilteredResponse','actual-orders-inside-selected-date-range-after-dedupe'])assert.ok(entry.includes(marker),`v35 dedupe/daily-count wiring missing ${marker}`);
-console.log('Easy Orders dedupe v2 contract passed: provider aliases first, date-only sheet timestamps supported, unique business fingerprint fallback, variant/price safety and reversible duplicate links.');
+for(const marker of ['/api/orders/dedupe/reconcile','reconcileEasyOrdersDuplicates','duplicateFilteredResponse','actual-orders-inside-selected-date-range-after-dedupe','manual-or-targeted-only'])assert.ok(entry.includes(marker),`v35 dedupe/daily-count wiring missing ${marker}`);
+assert.ok(!entry.includes('reconcileAllEasyOrdersDuplicates(this.env'),'Full dedupe must never run from a scheduled job');
+assert.ok(!entry.includes('prepareIncomingEasyOrdersDedupeV2(env,{connectionId,payload})'),'Webhook path must not launch the v2 multi-thousand-row scan');
+assert.ok(!entry.includes('prepareEasyOrdersSheetRowsV2(env,{clientId'),'Sheet import must not launch the v2 multi-thousand-row scan');
+console.log('Easy Orders dedupe contract passed: targeted webhook/import matching stays bounded, full registry reconciliation is manual-only, and v2 fingerprint safety remains available for deliberate maintenance.');
