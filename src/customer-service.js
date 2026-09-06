@@ -23,6 +23,8 @@ const now=()=>new Date().toISOString();
 const parseArr=v=>{try{const x=JSON.parse(v||'[]');return Array.isArray(x)?x:[];}catch{return [];}};
 const actor=me=>({by:me?.email||me?.name||me?.role||'user',byName:me?.name||me?.email||me?.role||'user',byUserId:me?.uid||me?.id||null});
 const fail=(message,status=400,code='CUSTOMER_SERVICE_ERROR')=>{throw Object.assign(new Error(message),{status,code});};
+const LATEST_NOTE_SELECT=`ln.id canonical_latest_note_id,ln.body canonical_latest_note,ln.created_at canonical_latest_note_at,ln.created_by canonical_latest_note_by`;
+const LATEST_NOTE_JOIN=`LEFT JOIN order_notes ln ON ln.id=(SELECT n.id FROM order_notes n WHERE n.order_id=o.id AND n.client_id=o.client_id ORDER BY n.created_at DESC,n.id DESC LIMIT 1)`;
 function cairoDate(value=new Date()){
   const parts=new Intl.DateTimeFormat('en-US',{timeZone:'Africa/Cairo',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(value);
   const get=t=>parts.find(x=>x.type===t)?.value||'';
@@ -48,11 +50,12 @@ function storeCanWrite(access,storeId){
 }
 async function orderForAccess(env,me,clientId,orderId,{write=false}={}){
   const access=await accessContext(env,me,clientId);
-  const row=await env.DB.prepare(`SELECT o.*,s.name store_name,s.code store_code,osa.batch_id stock_batch_id,osa.status stock_allocation_status,ib.name stock_batch_name
+  const row=await env.DB.prepare(`SELECT o.*,s.name store_name,s.code store_code,osa.batch_id stock_batch_id,osa.status stock_allocation_status,ib.name stock_batch_name,${LATEST_NOTE_SELECT}
     FROM orders o
     LEFT JOIN stores s ON s.id=o.store_id AND s.client_id=o.client_id
     LEFT JOIN order_stock_allocations osa ON osa.order_id=o.id AND osa.client_id=o.client_id
     LEFT JOIN inventory_batches ib ON ib.id=osa.batch_id AND ib.client_id=o.client_id
+    ${LATEST_NOTE_JOIN}
     WHERE o.id=? AND o.client_id=?`).bind(orderId,clientId).first();
   if(!row)fail('الأوردر غير موجود',404,'ORDER_NOT_FOUND');
   if(!access.allStores&&!access.ids.includes(String(row.store_id||'')))fail('الأوردر خارج المتاجر المسموح بها',403,'STORE_ISOLATION');
@@ -90,15 +93,22 @@ function historyMeta(history=[]){
   const returned=[...history].reverse().find(x=>x?.type==='defer_return'||x?.note==='رجع تلقائي من التأجيل');
   return {internalNotes:notes,latestInternalNote:notes.at(-1)?.note||'',returnedAt:returned?.at||null};
 }
+function canonicalNoteEvent(row){
+  const note=clean(row?.canonical_latest_note);if(!note)return null;
+  const by=clean(row?.canonical_latest_note_by)||'user';
+  return {type:'internal_note',note,at:row?.canonical_latest_note_at||null,by,byName:by,byUserId:null,noteId:row?.canonical_latest_note_id||null,canonical:true};
+}
 function mapOrder(row,today){
-  const history=parseArr(row.history),contactLog=parseArr(row.contact_log),meta=historyMeta(history),returnedToday=Boolean(meta.returnedAt&&cairoDate(new Date(meta.returnedAt))===today&&row.state==='pending');
+  const history=parseArr(row.history),canonical=canonicalNoteEvent(row);
+  if(canonical&&!history.some(x=>(canonical.noteId&&x?.noteId===canonical.noteId)||(x?.type==='internal_note'&&clean(x.note)===canonical.note&&String(x.at||'')===String(canonical.at||''))))history.push(canonical);
+  const contactLog=parseArr(row.contact_log),meta=historyMeta(history),returnedToday=Boolean(meta.returnedAt&&cairoDate(new Date(meta.returnedAt))===today&&row.state==='pending');
   return {
     id:row.id,clientId:row.client_id,storeId:row.store_id||null,storeName:row.store_name||'بدون متجر محدد',storeCode:row.store_code||null,
     ref:row.ref||null,date:row.date||row.created_at||null,createdAt:row.created_at||null,name:row.name||'',phone:row.phone||'',gov:row.gov||'',address:row.address||'',
     product:row.product||'',productId:row.product_id||null,variantId:row.variant_id||null,productNote:row.product_note||'',qty:Number(row.qty||1),unitPrice:Number(row.unit_price||0),total:Number(row.total||0),
     source:row.source||'',customerNote:row.note||'',awb:row.awb||'',state:row.state||'pending',checkpoint:row.checkpoint||'',deferUntil:row.defer_until||null,
     stockBatchId:row.stock_batch_id||null,stockBatchName:row.stock_batch_name||null,stockAllocationStatus:row.stock_allocation_status||null,
-    contactLog,contactCount:contactLog.length,history,internalNotes:meta.internalNotes,latestInternalNote:meta.latestInternalNote,returnedFromDeferredToday:returnedToday
+    contactLog,contactCount:contactLog.length,history,internalNotes:meta.internalNotes,latestInternalNote:canonical?.note||meta.latestInternalNote,returnedFromDeferredToday:returnedToday
   };
 }
 export async function board(request,env,me){
@@ -108,11 +118,12 @@ export async function board(request,env,me){
   const dueReturned=await processDueDeferred(env,clientId,access),states=BOARD_AND_DEFERRED,binds=[clientId,...states];
   let where=`o.client_id=? AND o.state IN (${states.map(()=>'?').join(',')})`;
   if(selected){where+=' AND o.store_id=?';binds.push(selected);}else if(!access.allStores){where+=` AND o.store_id IN (${access.ids.map(()=>'?').join(',')})`;binds.push(...access.ids);}
-  const {results=[]}=await env.DB.prepare(`SELECT o.*,s.name store_name,s.code store_code,osa.batch_id stock_batch_id,osa.status stock_allocation_status,ib.name stock_batch_name
+  const {results=[]}=await env.DB.prepare(`SELECT o.*,s.name store_name,s.code store_code,osa.batch_id stock_batch_id,osa.status stock_allocation_status,ib.name stock_batch_name,${LATEST_NOTE_SELECT}
     FROM orders o
     LEFT JOIN stores s ON s.id=o.store_id AND s.client_id=o.client_id
     LEFT JOIN order_stock_allocations osa ON osa.order_id=o.id AND osa.client_id=o.client_id
     LEFT JOIN inventory_batches ib ON ib.id=osa.batch_id AND ib.client_id=o.client_id
+    ${LATEST_NOTE_JOIN}
     WHERE ${where} ORDER BY COALESCE(o.date,o.created_at) DESC,o.created_at DESC`).bind(...binds).all();
   const today=cairoDate(),orders=results.map(r=>mapOrder(r,today));
   return {ok:true,clientId,role:me.role,allStores:access.allStores,stores:access.stores.map(s=>({id:s.id,name:s.name,code:s.code||'',role:s.role||'owner'})),selectedStoreId:selected||null,dueReturned,today,stages:BOARD_STATES.map(id=>({id,label:STATE_LABELS[id]})),stateLabels:STATE_LABELS,orders};
