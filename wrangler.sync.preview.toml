@@ -10,7 +10,7 @@ service = "kunonline-preview"
 entrypoint = "SyncEntrypoint"
 
 [triggers]
-crons = ["* * * * *", "*/5 * * * *", "0 */2 * * *"]
+crons = ["*/15 * * * *", "*/5 * * * *", "0 */2 * * *"]
 
 [vars]
 APP_ENV = "preview-sync"
