@@ -1,9 +1,10 @@
 import app from './index.js';
 
-const BUILD='production-sync-hotfix-2026-08-31';
+const BUILD='production-sync-free-tier-safe-2026-09-06';
 const SHORT_ORDER_BASE='https://api.easy-orders.net/api/v1/external-apps/orders/short/';
 const ORDER_BY_ID_BASE='https://api.easy-orders.net/api/v1/external-apps/orders/';
-const MAX_REQUESTS_PER_CLIENT=35;
+const MAX_REQUESTS_PER_RUN=30;
+const MAX_REQUESTS_PER_CLIENT=10;
 const IMMEDIATE_WINDOW=10;
 const FAR_WINDOW=20;
 const MAX_FAR_OFFSET=210;
@@ -72,8 +73,9 @@ function scanIds(base,farOffset){
   return [...new Set(ids)].slice(0,30);
 }
 
-async function reconcileClient(env,client,previousOffset){
-  const result={status:'healthy',requests:0,recovered:0,updated:0,baseShortId:0,highestFoundShortId:0,nextFarOffset:IMMEDIATE_WINDOW,error:null};
+async function reconcileClient(env,client,previousOffset,requestBudget){
+  const budget=Math.max(1,Math.min(MAX_REQUESTS_PER_CLIENT,positiveInt(requestBudget)||1));
+  const result={status:'healthy',requests:0,recovered:0,updated:0,baseShortId:0,highestFoundShortId:0,nextFarOffset:IMMEDIATE_WINDOW,error:null,budget};
   try{
     const apiKey=text(await decryptSecret(client.easyOrdersToken,env));
     if(!apiKey)throw new Error('Easy Orders API key is missing or cannot be decrypted');
@@ -81,7 +83,7 @@ async function reconcileClient(env,client,previousOffset){
     const recent=await latestEasyOrdersRows(env,client.id);
     let base=0;
     for(const row of recent){
-      if(result.requests>=5)break;
+      if(result.requests>=Math.min(3,budget))break;
       const fetched=await fetchById(apiKey,row.id);result.requests++;
       if(fetched.kind==='rate_limited'){result.status='rate_limited';return result;}
       if(fetched.kind!=='found')continue;
@@ -92,7 +94,7 @@ async function reconcileClient(env,client,previousOffset){
     result.baseShortId=base;
     let foundAny=false;
     for(const shortId of scanIds(base,previousOffset)){
-      if(result.requests>=MAX_REQUESTS_PER_CLIENT)break;
+      if(result.requests>=budget)break;
       const fetched=await fetchByShort(apiKey,shortId);result.requests++;
       if(fetched.kind==='rate_limited'){result.status='rate_limited';break;}
       if(fetched.kind!=='found')continue;
@@ -117,20 +119,23 @@ async function persistHealth(env,health){
 }
 async function runRecovery(env){
   const state=await rawState(env),clients=(state.clients||[]).filter(c=>text(c.storeId)&&c.easyOrdersToken),previous=state.easyOrdersRecovery?.probeOffsets||{};
-  const health={build:BUILD,lastRunAt:new Date().toISOString(),status:'healthy',connectedClients:clients.length,checkedClients:0,requests:0,recovered:0,updated:0,rateLimited:false,errors:0,probeOffsets:{},results:[]};
-  for(const client of clients){
-    const r=await reconcileClient(env,client,previous?.[client.id]);health.checkedClients++;health.requests+=r.requests;health.recovered+=r.recovered;health.updated+=r.updated;if(r.status==='rate_limited')health.rateLimited=true;if(r.status==='error')health.errors++;
+  const health={build:BUILD,lastRunAt:new Date().toISOString(),status:'healthy',connectedClients:clients.length,checkedClients:0,skippedClients:0,requests:0,requestLimit:MAX_REQUESTS_PER_RUN,recovered:0,updated:0,rateLimited:false,errors:0,probeOffsets:{},results:[]};
+  let remaining=MAX_REQUESTS_PER_RUN;
+  for(let i=0;i<clients.length&&remaining>0;i++){
+    const client=clients[i],left=clients.length-i,fairShare=Math.max(1,Math.floor(remaining/Math.max(1,left))),budget=Math.min(MAX_REQUESTS_PER_CLIENT,fairShare,remaining);
+    const r=await reconcileClient(env,client,previous?.[client.id],budget);health.checkedClients++;remaining=Math.max(0,remaining-r.requests);health.requests+=r.requests;health.recovered+=r.recovered;health.updated+=r.updated;if(r.status==='rate_limited')health.rateLimited=true;if(r.status==='error')health.errors++;
     health.probeOffsets[client.id]=r.nextFarOffset;
-    health.results.push({status:r.status,requests:r.requests,recovered:r.recovered,updated:r.updated,baseShortId:r.baseShortId,highestFoundShortId:r.highestFoundShortId,error:r.error});
+    health.results.push({status:r.status,requests:r.requests,budget:r.budget,recovered:r.recovered,updated:r.updated,baseShortId:r.baseShortId,highestFoundShortId:r.highestFoundShortId,error:r.error});
   }
-  health.status=health.errors?'error':health.rateLimited?'rate_limited':clients.length?'healthy':'no_connections';
+  health.skippedClients=Math.max(0,clients.length-health.checkedClients);
+  health.status=health.errors?'error':health.rateLimited?'rate_limited':health.skippedClients?'budget_limited':clients.length?'healthy':'no_connections';
   await persistHealth(env,health);
-  console.log(`Easy Orders production recovery: clients=${health.connectedClients} requests=${health.requests} recovered=${health.recovered} updated=${health.updated} status=${health.status}`);
+  console.log(`Easy Orders production recovery: clients=${health.connectedClients} checked=${health.checkedClients} requests=${health.requests}/${MAX_REQUESTS_PER_RUN} recovered=${health.recovered} updated=${health.updated} status=${health.status}`);
   return health;
 }
 async function healthPayload(env){
   const state=await rawState(env),h=state.easyOrdersRecovery||{};
-  return {ok:true,service:'easyorders-production-sync',build:BUILD,status:h.status||'not_run',lastRunAt:h.lastRunAt||null,connectedClients:Number(h.connectedClients||0),checkedClients:Number(h.checkedClients||0),requests:Number(h.requests||0),recovered:Number(h.recovered||0),updated:Number(h.updated||0),rateLimited:!!h.rateLimited,errors:Number(h.errors||0)};
+  return {ok:true,service:'easyorders-production-sync',build:BUILD,status:h.status||'not_run',lastRunAt:h.lastRunAt||null,connectedClients:Number(h.connectedClients||0),checkedClients:Number(h.checkedClients||0),skippedClients:Number(h.skippedClients||0),requests:Number(h.requests||0),requestLimit:Number(h.requestLimit||MAX_REQUESTS_PER_RUN),recovered:Number(h.recovered||0),updated:Number(h.updated||0),rateLimited:!!h.rateLimited,errors:Number(h.errors||0)};
 }
 
 export default {
