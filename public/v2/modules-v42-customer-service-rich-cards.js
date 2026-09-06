@@ -1,4 +1,4 @@
-/* Kun Online v42.2 — rich Customer Service cards matching order details */
+/* Kun Online v42.3 — rich Customer Service cards matching order details with in-place refresh */
 (function(){
   const cache=new Map();
   const pending=new Map();
@@ -65,14 +65,22 @@
     for(const selector of targets){const el=card.querySelector(selector);if(!el||!present(el.textContent)||el.querySelector('.cs-copy-btn'))continue;const b=document.createElement('button');b.type='button';b.className='cs-copy-btn';b.dataset.csCopyValue=el.textContent.trim();b.title='نسخ';b.setAttribute('aria-label','نسخ');b.innerHTML=iconCopy();el.style.display='flex';el.style.alignItems='center';el.style.gap='5px';el.appendChild(b);}
   }
   async function clientId(){return window.kunClientId?await window.kunClientId():'';}
-  async function fetchDetails(orderId){
+  async function fetchDetails(orderId,{force=false}={}){
+    if(force){cache.delete(orderId);pending.delete(orderId);}
     if(cache.has(orderId))return cache.get(orderId);if(pending.has(orderId))return pending.get(orderId);
     const work=(async()=>{const cid=await clientId();if(!cid)throw new Error('تعذر تحديد الحساب');const r=await fetch(`/api/orders/${encodeURIComponent(orderId)}/details?clientId=${encodeURIComponent(cid)}`,{credentials:'include'}),d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||`HTTP ${r.status}`);cache.set(orderId,d);return d;})().finally(()=>pending.delete(orderId));pending.set(orderId,work);return work;
+  }
+  function placeDetails(card,details){
+    const existing=card.querySelector('.cs-rich-card');if(existing){existing.outerHTML=renderDetails(details);card.classList.add('cs-rich-loaded');return;}
+    card.querySelector('.cs-rich-loading')?.remove();const anchor=card.querySelector('.cs-customer-note,.cs-internal-latest,.cs-defer-chip,.cs-contact-attempts,.cs-field,.cs-actions'),box=document.createElement('div');box.innerHTML=renderDetails(details);const node=box.firstElementChild;if(anchor)card.insertBefore(node,anchor);else card.prepend(node);card.classList.add('cs-rich-loaded');card.dataset.csRichRequested='1';
+  }
+  async function refresh(orderId){
+    const id=String(orderId||'').trim();if(!id)return null;const details=await fetchDetails(id,{force:true});document.querySelectorAll('#root .cs-order[data-cs-order]').forEach(card=>{if(String(card.dataset.csOrder)===id)placeDetails(card,details);});return details;
   }
   async function enrich(card){
     if(!card||card.dataset.csRichRequested==='1')return;card.dataset.csRichRequested='1';
     const orderId=card.dataset.csOrder;if(!orderId)return;
-    const anchor=card.querySelector('.cs-customer-note,.cs-internal-latest,.cs-defer-chip,.cs-field,.cs-actions');
+    const anchor=card.querySelector('.cs-customer-note,.cs-internal-latest,.cs-defer-chip,.cs-contact-attempts,.cs-field,.cs-actions');
     const box=document.createElement('div');box.className='cs-rich-loading';box.textContent='جارٍ تحميل بيانات العميل والمنتجات...';if(anchor)card.insertBefore(box,anchor);else card.appendChild(box);
     try{const details=await fetchDetails(orderId);box.outerHTML=renderDetails(details);card.classList.add('cs-rich-loaded');}
     catch{box.remove();basicFallback(card);}
@@ -86,5 +94,5 @@
   function scheduleScan(){if(!active()||scanQueued)return;scanQueued=true;queueMicrotask(()=>{scanQueued=false;scan();});}
   function boot(){ensureStyle();document.addEventListener('click',e=>{const b=e.target.closest?.('[data-cs-copy-value]');if(b){e.preventDefault();e.stopImmediatePropagation();copyValue(b.dataset.csCopyValue||'');return;}if(e.target.closest?.('.nav button[data-view="customer-service"]'))setTimeout(scheduleScan,0);},true);const root=document.getElementById('root')||document.body;new MutationObserver(scheduleScan).observe(root,{childList:true,subtree:true});scheduleScan();}
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
-  window.KunCustomerServiceRichCards={scan:scheduleScan,cache,version:'42.2'};
+  window.KunCustomerServiceRichCards={scan:scheduleScan,refresh,cache,version:'42.3'};
 })();
