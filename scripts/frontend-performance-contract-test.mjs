@@ -27,6 +27,9 @@ assert.ok(index.indexOf('/v2/modules-v57-section-reload.js')>index.indexOf('/v2/
 assert.ok(index.indexOf('/v2/modules-v58-confirm-inventory.js')>index.indexOf('/v2/modules-v57-section-reload.js'),'confirmation capture must load after the base operational UI');
 assert.ok(post.includes('.ps-page{display:grid'), 'v47 must own its base post-shipping styles after v45 removal');
 assert.ok(perf.includes("if(path==='/api/me')return 15000"), 'repeated /api/me calls must be cached');
+assert.ok(perf.includes("if(path==='/api/state')return 3000"), 'bursty /api/state reads should have a short browser cache');
+assert.ok(perf.includes("if(path==='/api/customer-service')return 2000"), 'bursty customer-service reads should have a short browser cache');
+assert.ok(perf.includes("if(path==='/api/dashboard')return 2000"), 'bursty dashboard reads should have a short browser cache');
 assert.equal(permissions.includes('new MutationObserver'),false,'permission navigation must not observe every nav class change');
 assert.equal(recovery.includes('new MutationObserver'),false,'Easy Orders recovery button must not observe the whole root');
 assert.ok(ai.includes("observe(root,{childList:true,subtree:false})"),'dashboard AI observer must stay root-only');
@@ -58,6 +61,7 @@ const customerServiceStart=v35.indexOf("if(path==='/api/customer-service'&&metho
 const delegateStart=v35.indexOf('return await commerceV34.fetch(request,env,ctx);',customerServiceStart);
 assert.equal(v35.slice(stateStart,customerServiceStart).includes('reconcileEasyOrdersDuplicates('),false,'/api/state GET must not run dedupe reconciliation');
 assert.equal(v35.slice(customerServiceStart,delegateStart).includes('reconcileEasyOrdersDuplicates('),false,'customer-service GET must not run dedupe reconciliation');
-assert.ok(v35.includes('Fast read paths'),'v35 should document the non-blocking dedupe read policy');
+assert.ok(v35.includes("dedupe:'targeted-on-webhook-and-import;full-manual-only'"),'v35 must explicitly advertise the non-blocking dedupe read policy');
+assert.ok(v35.includes("orderDedupe:{ok:true,skipped:true,mode:'manual-or-targeted-only'}"),'scheduled sync must keep full dedupe disabled');
 
 console.log('Frontend performance contract passed');
