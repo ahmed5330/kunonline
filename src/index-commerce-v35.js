@@ -1,14 +1,17 @@
 import commerceV34,{SyncEntrypoint as SyncEntrypointV34} from './index-commerce-v34.js';
+import commerceV33 from './index-commerce-v33.js';
 import {requirePermission,resolveTenant} from './access-control.js';
 import {resolveStoreScope} from './store-scope.js';
 import {computeDashboardSnapshot} from './dashboard-intelligence.js';
 import {campaignPerformance} from './marketing-performance.js';
 import {decorateDashboardWithManagementFees} from './accounting.js';
-import {prepareIncomingEasyOrdersDedupeV2,prepareEasyOrdersSheetRowsV2,reconcileEasyOrdersDuplicates,reconcileAllEasyOrdersDuplicates,duplicateIdsForOrders} from './order-deduplication-v2.js';
+import {reconcileEasyOrdersDuplicates,duplicateIdsForOrders} from './order-deduplication-v2.js';
 import {returnsExchangesBoard,saveOutcomeReason} from './returns-exchanges.js';
 import {syncEasyOrdersPrices} from './easyorders-price-sync.js';
+import {syncMetaAdsForClient} from './meta-ads-sync.js';
+import {syncMetaAdsGranular} from './meta-ads-granular.js';
 
-const BUILD='preview-v35-2026-08-31-returns-reasons-price-sync';
+const BUILD='preview-v35-2026-09-06-free-tier-safe-sync';
 const json=(data,status=200,extra={})=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Kun-Build':BUILD,'X-Content-Type-Options':'nosniff','X-Frame-Options':'DENY',...extra}});
 const text=v=>String(v??'').trim();
 const num=v=>Number(v)||0;
@@ -73,7 +76,6 @@ async function dashboard(request,env,ctx){
   const url=new URL(request.url),me=await currentUser(request,env,ctx);requirePermission(me,'analytics','read');const clientId=resolveTenant(me,url.searchParams.get('clientId')),scope=await resolveStoreScope(env,me,clientId,text(url.searchParams.get('storeId'))||null,{write:false}),storeId=scope.storeId||null;
   const rawFrom=text(url.searchParams.get('from')),rawTo=text(url.searchParams.get('to'));
   if(rawFrom!=='beginning'&&isoDate.test(rawFrom)&&isoDate.test(rawTo)&&rawFrom>rawTo)throw Object.assign(new Error('بداية الفترة يجب أن تكون قبل نهايتها'),{status:400,code:'DATE_RANGE_INVALID'});
-  // Fast read path: dedupe links are maintained on Easy Orders writes/imports and by the sync worker, not rebuilt on every dashboard GET.
   let from=url.searchParams.get('from');if(from==='beginning')from=await canonicalBeginning(env,clientId,storeId);
   let data=await canonicalDashboardData(env,{clientId,storeId,from,to:url.searchParams.get('to')}),counts=await canonicalOrderCounts(env,{clientId,storeId});
   data=await decorateDashboardWithManagementFees(env,data,{clientId,storeId});
@@ -82,10 +84,26 @@ async function dashboard(request,env,ctx){
   data.orderCountSemantics={canonical:true,totalOrders:'actual-orders-inside-selected-date-range-after-dedupe',todayOrders:'actual-cairo-day-orders-after-dedupe',allOrders:'all-canonical-orders-in-selected-scope',duplicates:'linked-sheet-duplicates-are-excluded'};
   return json(data);
 }
-async function reconcileRoute(request,env,ctx){const me=await currentUser(request,env,ctx);requirePermission(me,'orders','update');const body=await request.clone().json().catch(()=>({})),url=new URL(request.url),clientId=resolveTenant(me,body.clientId||url.searchParams.get('clientId')),scope=await resolveStoreScope(env,me,clientId,text(body.storeId||url.searchParams.get('storeId'))||null,{write:true});return json(await reconcileEasyOrdersDuplicates(env,{clientId,storeId:scope.storeId||null,limit:Math.min(10000,Math.max(100,Number(body.limit)||6000))}));}
-async function sheetImport(request,env,ctx){const body=await request.clone().json().catch(()=>({}));if(lower(body.source)!=='easyorders')return commerceV34.fetch(request,env,ctx);const me=await currentUser(request,env,ctx);requirePermission(me,'orders','write');const clientId=resolveTenant(me,body.clientId||new URL(request.url).searchParams.get('clientId')),scope=await resolveStoreScope(env,me,clientId,text(body.storeId)||null,{write:true}),prepared=await prepareEasyOrdersSheetRowsV2(env,{clientId,storeId:scope.storeId||null,rows:Array.isArray(body.rows)?body.rows:[]}),delegated=await commerceV34.fetch(jsonRequest(request,{...body,rows:prepared.rows}),env,ctx);if(!delegated.ok)return delegated;const dedupe=await reconcileEasyOrdersDuplicates(env,{clientId,storeId:scope.storeId||null,limit:8000}),data=await delegated.clone().json().catch(()=>({ok:true}));return json({...data,dedupeV2:{preMatched:prepared.deduplicated,modes:prepared.modes,...dedupe}});}
+async function reconcileRoute(request,env,ctx){const me=await currentUser(request,env,ctx);requirePermission(me,'orders','update');const body=await request.clone().json().catch(()=>({})),url=new URL(request.url),clientId=resolveTenant(me,body.clientId||url.searchParams.get('clientId')),scope=await resolveStoreScope(env,me,clientId,text(body.storeId||url.searchParams.get('storeId'))||null,{write:true});return json(await reconcileEasyOrdersDuplicates(env,{clientId,storeId:scope.storeId||null,limit:Math.min(10000,Math.max(100,Number(body.limit)||2000))}));}
 const lower=v=>text(v).toLowerCase();
-async function easyOrdersWebhook(request,env,ctx,connectionId){const payload=await request.clone().json().catch(()=>({})),prepared=await prepareIncomingEasyOrdersDedupeV2(env,{connectionId,payload}),delegated=await commerceV34.fetch(request,env,ctx);if(delegated.ok&&prepared.clientId)await reconcileEasyOrdersDuplicates(env,{clientId:prepared.clientId,storeId:prepared.storeId||null,limit:8000});return delegated;}
+async function sheetImport(request,env,ctx){const body=await request.clone().json().catch(()=>({}));if(lower(body.source)!=='easyorders')return commerceV34.fetch(request,env,ctx);return commerceV34.fetch(request,env,ctx);}
+async function easyOrdersWebhook(request,env,ctx){return commerceV34.fetch(request,env,ctx);}
+
+async function connectedMetaClients(env,{limit=20}={}){
+  const {results=[]}=await env.DB.prepare("SELECT client_id FROM store_connections WHERE provider='meta_ads' AND status='connected' ORDER BY updated_at DESC LIMIT ?").bind(Math.max(1,Math.min(50,Number(limit)||20))).all(),seen=new Set(),out=[];
+  for(const row of results){const clientId=text(row.client_id);if(clientId&&!seen.has(clientId)){seen.add(clientId);out.push(clientId);}}
+  return out;
+}
+async function syncMetaCampaignScheduled(env,{days=2,limit=20}={}){
+  const clients=await connectedMetaClients(env,{limit}),results=[];
+  for(const clientId of clients){try{results.push(await syncMetaAdsForClient(env,{clientId,days}));}catch(error){results.push({ok:false,clientId,code:error?.code||'META_SYNC_FAILED',error:error?.message||String(error)});}}
+  return {ok:results.every(x=>x.ok!==false),clients:clients.length,days,results};
+}
+async function syncMetaGranularScheduled(env,{days=2,limit=20}={}){
+  const clients=await connectedMetaClients(env,{limit}),results=[];
+  for(const clientId of clients){try{results.push(await syncMetaAdsGranular(env,{clientId,days}));}catch(error){results.push({ok:false,clientId,code:error?.code||'META_GRANULAR_SYNC_FAILED',error:error?.message||String(error)});}}
+  return {ok:results.every(x=>x.ok!==false),clients:clients.length,days,results};
+}
 
 async function fetchV35(request,env,ctx){
   const url=new URL(request.url),path=url.pathname,method=request.method.toUpperCase();
@@ -106,8 +124,7 @@ async function fetchV35(request,env,ctx){
     const outcomeMatch=path.match(/^\/api\/customer-service\/orders\/([^/]+)\/state$/);if(outcomeMatch&&method==='PATCH')return await outcomeStateTransition(request,env,ctx,outcomeMatch);
     if(path==='/api/orders/dedupe/reconcile'&&method==='POST'){if(!hasAuth(request))return authRequired();return await reconcileRoute(request,env,ctx);}
     if(path==='/api/orders/sheet-import'&&method==='POST'){if(!hasAuth(request))return authRequired();return await sheetImport(request,env,ctx);}
-    const webhook=path.match(/^\/webhooks\/easyorders\/([^/]+)\/[^/]+\/?$/);if(webhook&&method==='POST')return await easyOrdersWebhook(request,env,ctx,decodeURIComponent(webhook[1]));
-    // Fast read paths: filter from the existing duplicate registry only; never rescan thousands of orders while opening a screen.
+    const webhook=path.match(/^\/webhooks\/easyorders\/([^/]+)\/[^/]+\/?$/);if(webhook&&method==='POST')return await easyOrdersWebhook(request,env,ctx);
     if(path==='/api/state'&&method==='GET')return await duplicateFilteredResponse(await commerceV34.fetch(request,env,ctx),env);
     if(path==='/api/customer-service'&&method==='GET'){if(!hasAuth(request))return authRequired();return await duplicateFilteredResponse(await commerceV34.fetch(request,env,ctx),env);}
     return await commerceV34.fetch(request,env,ctx);
@@ -115,8 +132,22 @@ async function fetchV35(request,env,ctx){
 }
 
 export class SyncEntrypoint extends SyncEntrypointV34{
-  async health(){const base=await super.health();return {...base,build:BUILD,dedupe:'easyorders-v2',easyOrdersPriceSync:'five-minute'};}
-  async runCron(cron){const result=await super.runCron(cron);if(String(cron||'')==='*/5 * * * *'){const orderDedupe=await reconcileAllEasyOrdersDuplicates(this.env,{limitPerStore:8000}),easyOrdersPriceSync=await syncEasyOrdersPrices(this.env,{limitConnections:40});return {...(result&&typeof result==='object'?result:{result}),orderDedupe,easyOrdersPriceSync};}return result;}
+  async health(){const base=await super.health();return {...base,build:BUILD,dedupe:'targeted-on-webhook-and-import;full-manual-only',easyOrdersPriceSync:'four-hour',metaCampaignSync:'15-minute-gated',metaGranularSync:'two-hour'};}
+  async runCron(cron){
+    const key=String(cron||''),now=new Date(),hour=now.getUTCHours(),minute=now.getUTCMinutes();
+    if(key==='* * * * *')return {ok:true,metaCampaign:await syncMetaCampaignScheduled(this.env,{days:2,limit:20}),policy:'scheduler forwards only every 15 minutes'};
+    if(key==='*/5 * * * *'){
+      const result=await super.runCron(key);let easyOrdersPriceSync={ok:true,skipped:true,reason:'four-hour cadence'};
+      if(minute<5&&hour%4===0)easyOrdersPriceSync=await syncEasyOrdersPrices(this.env,{limitConnections:20});
+      return {...(result&&typeof result==='object'?result:{result}),orderDedupe:{ok:true,skipped:true,mode:'manual-or-targeted-only'},easyOrdersPriceSync};
+    }
+    if(key==='0 */2 * * *'){
+      let legacy=null;try{legacy=await Promise.resolve(commerceV33.scheduled?.({cron:key,scheduledTime:Date.now()},this.env,this.ctx));}catch(error){legacy={ok:false,error:error?.message||String(error)};}
+      const days=hour===2?7:2,metaGranular=await syncMetaGranularScheduled(this.env,{days,limit:20});
+      return {ok:metaGranular.ok!==false,legacy,metaGranular,policy:hour===2?'daily-seven-day-reconciliation':'two-day-incremental'};
+    }
+    return super.runCron(key);
+  }
 }
 
 export default {fetch:fetchV35,scheduled(controller,env,ctx){return commerceV34.scheduled?.(controller,env,ctx);}};
