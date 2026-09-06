@@ -1,4 +1,4 @@
-/* Kun Online v52 — lightweight shared frontend performance primitives. */
+/* Kun Online v52.1 — lightweight shared frontend performance primitives. */
 (function(){
   if(window.KunPerformanceCore)return;
   const baseFetch=window.fetch.bind(window);
@@ -16,6 +16,10 @@
     if(path==='/api/tenant/features')return 5000;
     if(path==='/api/catalog/products')return 1200;
     if(path==='/api/team-role-catalog')return 15000;
+    if(path==='/api/state')return 3000;
+    if(path==='/api/customer-service')return 2000;
+    if(path==='/api/post-shipping')return 2000;
+    if(path==='/api/dashboard')return 2000;
     return 0;
   }
   function cached(key){const hit=cache.get(key);if(!hit)return null;if(hit.expires<=now()){cache.delete(key);return null;}return hit.response.clone();}
@@ -39,6 +43,5 @@
     return setTimeout(fn,Math.min(timeout,600));
   }
   const activeView=()=>document.querySelector('.nav button.active[data-view]')?.dataset.view||'';
-  window.KunPerformanceCore={invalidate,idle,activeView,inflight,cache,version:'52.0'};
-  document.documentElement.dataset.performanceCore='v52-ready';
+  window.KunPerformanceCore={invalidate,idle,activeView,inflight,cache,version:'52.1'};
 })();
