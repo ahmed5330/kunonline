@@ -78,6 +78,6 @@
 
   document.addEventListener('click',handle,true);
   document.addEventListener('change',handleConfirm,true);
-  window.KunCustomerServiceInteractionsV75={version:'75.1',pending,saveNote,saveContact,confirmState:handleConfirm};
-  document.documentElement.dataset.customerServiceInteractions='v75.1-ready';
+  window.KunCustomerServiceInteractionsV75={version:'75.0',pending,saveNote,saveContact,confirmState:handleConfirm};
+  document.documentElement.dataset.customerServiceInteractions='v75-ready';
 })();
