@@ -19,8 +19,9 @@ async function waitFor(expression,label,timeout=7000){const start=Date.now();let
 try{
   cdp=await connect(await launch(await findChrome()));await cdp.send('Runtime.enable');
   await evalJs(`(()=>{
-    window.__requests=[];window.__toasts=[];window.__oldBubbleCalls=0;window.__oldChangeCalls=0;window.__contactCount=0;window.__confirmCalls=[];
+    window.__requests=[];window.__toasts=[];window.__oldBubbleCalls=0;window.__oldChangeCalls=0;window.__contactCount=0;window.__confirmCalls=[];window.__boardCounts=[];
     window.kunClientId=async()=> 'CLI-QA';window.showToast=message=>window.__toasts.push(String(message));
+    window.KunCustomerServiceV31={updateContactCount:(id,count)=>window.__boardCounts.push({id,count})};
     window.KunConfirmInventoryV58={open:async(orderId,select)=>{window.__confirmCalls.push(orderId);select.value='confirmed';select.dataset.current='confirmed';return {ok:true};}};
     window.fetch=async(url,options={})=>{
       const body=options.body?JSON.parse(options.body):{};window.__requests.push({url:String(url),method:options.method||'GET',body,keepalive:Boolean(options.keepalive)});
@@ -29,13 +30,13 @@ try{
       if(String(url).includes('/contact')){window.__contactCount++;data={ok:true,contactCount:window.__contactCount,log:Array.from({length:window.__contactCount},(_,i)=>({type:'contact',intent:body.intent,at:String(i)})),history:[{type:'contact',intent:body.intent}]};}
       return new Response(JSON.stringify(data),{status:String(url).includes('/notes')?201:200,headers:{'Content-Type':'application/json'}});
     };
-    document.body.innerHTML='<nav class="nav"><button class="active" data-view="customer-service">خدمة العملاء</button></nav><div id="root"><div class="cs-page"><article class="cs-order" data-cs-order="ORD-QA"><div class="cs-field cs-note-field"><input data-cs-note value="ملاحظة اختبار"><button type="button" data-cs-action="note">إضافة</button></div><div class="cs-field"><select data-cs-state data-current="pending"><option value="pending" selected>في انتظار التأكيد</option><option value="confirmed">تم التأكيد</option></select></div><div class="cs-actions"><button type="button" data-cs-action="contact">تواصل (0)</button><a href="#dial" data-cs-action="call">مكالمة</a></div></article></div></div>';
+    document.body.innerHTML='<nav class="nav"><button class="active" data-view="customer-service">خدمة العملاء</button></nav><div id="root"><div class="cs-page"><article class="cs-order" data-cs-order="ORD-QA"><div class="cs-contact-attempts">محاولات التواصل <b data-cs-contact-count>0</b></div><div class="cs-field cs-note-field"><input data-cs-note value="ملاحظة اختبار"><button type="button" data-cs-action="note">إضافة</button></div><div class="cs-field"><select data-cs-state data-current="pending"><option value="pending" selected>في انتظار التأكيد</option><option value="no_answer">العميل لا يرد — 0 محاولة تواصل</option><option value="confirmed">تم التأكيد</option></select></div><div class="cs-actions"><button type="button" data-cs-action="contact">تواصل (0)</button><a href="#dial" data-cs-action="call">مكالمة</a></div></article></div></div>';
     document.addEventListener('click',event=>{if(event.target.closest?.('[data-cs-action]'))window.__oldBubbleCalls++;});
     document.addEventListener('change',event=>{if(event.target.closest?.('[data-cs-state]'))window.__oldChangeCalls++;});
     return true;
   })()`);
   await evalJs(`eval(${JSON.stringify(uiSrc)})`);
-  await waitFor(`document.documentElement.dataset.customerServiceInteractions==='v75-ready'&&window.KunCustomerServiceInteractionsV75?.version==='75.0'`,'v75 ready');
+  await waitFor(`document.documentElement.dataset.customerServiceInteractions==='v75-ready'&&window.KunCustomerServiceInteractionsV75?.version==='75.2'`,'v75.2 ready');
 
   await evalJs(`document.querySelector('[data-cs-action="note"]').click()`);
   await waitFor(`window.__requests.filter(x=>x.url.includes('/notes')).length===1`,'note request');
@@ -44,19 +45,19 @@ try{
 
   await evalJs(`document.querySelector('[data-cs-action="contact"]').click()`);
   await waitFor(`window.__requests.filter(x=>x.url.includes('/contact')&&x.body.intent==='contact').length===1`,'contact request');
-  const contact=await evalJs(`(()=>({requests:window.__requests.filter(x=>x.url.includes('/contact')&&x.body.intent==='contact'),label:document.querySelector('[data-cs-action="contact"]').textContent,old:window.__oldBubbleCalls}))()`);
-  if(contact.requests.length!==1||contact.requests[0].body.channel!=='phone'||contact.label.trim()!=='تواصل (1)'||contact.old!==0)throw new Error(`Customer Service contact interaction failed or duplicated: ${JSON.stringify(contact)}`);
+  const contact=await evalJs(`(()=>({requests:window.__requests.filter(x=>x.url.includes('/contact')&&x.body.intent==='contact'),label:document.querySelector('[data-cs-action="contact"]').textContent,counter:document.querySelector('[data-cs-contact-count]').textContent,noAnswer:document.querySelector('option[value="no_answer"]').textContent,board:window.__boardCounts.slice(),old:window.__oldBubbleCalls}))()`);
+  if(contact.requests.length!==1||contact.requests[0].body.channel!=='phone'||contact.label.trim()!=='تواصل (1)'||contact.counter.trim()!=='1'||!contact.noAnswer.includes('1 محاولة تواصل')||contact.board.at(-1)?.count!==1||contact.old!==0)throw new Error(`Customer Service contact interaction failed or duplicated: ${JSON.stringify(contact)}`);
 
   const callDispatch=await evalJs(`(()=>{const link=document.querySelector('[data-cs-action="call"]'),event=new MouseEvent('click',{bubbles:true,cancelable:true});return link.dispatchEvent(event);})()`);
   if(callDispatch!==true)throw new Error('Call click was incorrectly preventDefault-ed; tel action must remain available');
   await waitFor(`window.__requests.filter(x=>x.url.includes('/contact')&&x.body.intent==='call').length===1`,'call request');
-  const call=await evalJs(`(()=>({requests:window.__requests.filter(x=>x.url.includes('/contact')&&x.body.intent==='call'),label:document.querySelector('[data-cs-action="contact"]').textContent,old:window.__oldBubbleCalls,toasts:window.__toasts}))()`);
-  if(call.requests.length!==1||call.requests[0].body.channel!=='phone'||call.requests[0].keepalive!==true||call.label.trim()!=='تواصل (2)'||call.old!==0||!call.toasts.some(x=>x.includes('تم تسجيل المكالمة')))throw new Error(`Customer Service call interaction failed or duplicated: ${JSON.stringify(call)}`);
+  const call=await evalJs(`(()=>({requests:window.__requests.filter(x=>x.url.includes('/contact')&&x.body.intent==='call'),label:document.querySelector('[data-cs-action="contact"]').textContent,counter:document.querySelector('[data-cs-contact-count]').textContent,noAnswer:document.querySelector('option[value="no_answer"]').textContent,board:window.__boardCounts.slice(),old:window.__oldBubbleCalls,toasts:window.__toasts}))()`);
+  if(call.requests.length!==1||call.requests[0].body.channel!=='phone'||call.requests[0].keepalive!==true||call.label.trim()!=='تواصل (2)'||call.counter.trim()!=='2'||!call.noAnswer.includes('2 محاولة تواصل')||call.board.at(-1)?.count!==2||call.old!==0||!call.toasts.some(x=>x.includes('تم تسجيل المكالمة')))throw new Error(`Customer Service call interaction failed or duplicated: ${JSON.stringify(call)}`);
 
   await evalJs(`(()=>{const select=document.querySelector('[data-cs-state]');select.value='confirmed';select.dispatchEvent(new Event('change',{bubbles:true,cancelable:true}));})()`);
   await waitFor(`window.__confirmCalls.length===1`,'confirmation workflow opened');
   const confirm=await evalJs(`(()=>{const select=document.querySelector('[data-cs-state]');return {calls:window.__confirmCalls.slice(),value:select.value,current:select.dataset.current,old:window.__oldChangeCalls,error:document.querySelector('.cs-v75-error')?.textContent||''};})()`);
   if(confirm.calls.length!==1||confirm.calls[0]!=='ORD-QA'||confirm.value!=='confirmed'||confirm.current!=='confirmed'||confirm.old!==0||confirm.error)throw new Error(`Customer Service confirmation selection failed or fell through to the old handler: ${JSON.stringify(confirm)}`);
 
-  console.log('Browser Customer Service v75 fixture QA passed: note, contact, call and confirmation selection are handled exactly once; note/count UI updates immediately, call keeps the native tel action, confirmation opens the inventory workflow, and old handlers cannot duplicate the action.');
+  console.log('Browser Customer Service v75 fixture QA passed: note, unified Contact + Call count and confirmation are handled exactly once; visible count updates immediately, call keeps native tel, and old handlers cannot duplicate the action.');
 }finally{try{cdp?.close();}catch{}try{if(chrome&&!chrome.killed)chrome.kill('SIGTERM');}catch{}try{if(userDir)await rm(userDir,{recursive:true,force:true});}catch{}}
