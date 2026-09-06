@@ -4,10 +4,11 @@ import {prepareOrderStockTransition,rollbackOrderStockTransition,finalizeOrderSt
 
 const ALLOWED_ROLES=new Set(['admin','client','ops','support']);
 const DELETE_ROLES=new Set(['admin','client','ops']);
-const BOARD_STATES=['pending','confirmed','preparing','shipped'];
+const BOARD_STATES=['pending','no_answer','confirmed','preparing','shipped'];
 const BOARD_AND_DEFERRED=[...BOARD_STATES,'deferred'];
 const STATE_LABELS={
   pending:'في انتظار التأكيد',
+  no_answer:'العميل لا يرد',
   confirmed:'تم التأكيد',
   preparing:'التجهيز والتغليف',
   shipped:'جاري الشحن',
@@ -191,6 +192,7 @@ export async function handleAction(request,env,me,delegate){
   if(['state','whatsapp-log'].includes(action))await ensureLegacyCustomerServiceEnabled(env,me,clientId);
   if(action==='state'&&method==='PATCH'){
     const state=clean(body.state);if(!ALL_STATES.includes(state))fail('حالة الأوردر غير معروفة',400,'ORDER_STATE_INVALID');
+    if(state==='no_answer'&&!['pending','deferred','no_answer'].includes(clean(row.state)))fail('حالة «العميل لا يرد» متاحة قبل تأكيد الطلب فقط',409,'NO_ANSWER_STATE_INVALID_FROM_CONFIRMED');
     if(state==='deferred'&&!/^\d{4}-\d{2}-\d{2}$/.test(clean(body.deferUntil)))fail('حدد تاريخ التأجيل',400,'DEFER_DATE_REQUIRED');
     let stockTransition={kind:'none'};
     try{
