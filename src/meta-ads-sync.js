@@ -8,7 +8,7 @@ const n=value=>Number.isFinite(Number(value))?Number(value):0;
 const clean=value=>String(value??'').trim();
 const cleanAccountId=value=>clean(value).replace(/^act_/i,'');
 const isoDate=value=>/^\d{4}-\d{2}-\d{2}$/.test(clean(value))?clean(value):null;
-const clampDays=value=>Math.max(1,Math.min(MAX_DAYS,Math.floor(n(value)||DEFAULT_DAYS));
+const clampDays=value=>Math.max(1,Math.min(MAX_DAYS,Math.floor(n(value)||DEFAULT_DAYS)));
 const campaignPk=(clientId,externalId)=>`META-${String(clientId).replace(/[^a-zA-Z0-9_-]/g,'').slice(0,24)}-${String(externalId)}`;
 const eqNum=(a,b)=>Math.abs(n(a)-n(b))<0.000001;
 const sameNullText=(a,b)=>clean(a)===clean(b);
