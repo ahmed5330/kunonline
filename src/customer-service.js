@@ -130,11 +130,11 @@ export async function board(request,env,me){
   return {ok:true,clientId,role:me.role,allStores:access.allStores,stores:access.stores.map(s=>({id:s.id,name:s.name,code:s.code||'',role:s.role||'owner'})),selectedStoreId:selected||null,dueReturned,today,stages:BOARD_STATES.map(id=>({id,label:STATE_LABELS[id]})),stateLabels:STATE_LABELS,orders};
 }
 async function decorateLatestState(env,clientId,orderId,state,me,metadata={}){
-  const row=await env.DB.prepare('SELECT history FROM orders WHERE id=? AND client_id=?').bind(orderId,clientId).first();if(!row)return;
+  const row=await env.DB.prepare('SELECT history FROM orders WHERE id=? AND client_id=?').bind(orderId,clientId).first();if(!row)return [];
   const history=parseArr(row.history),a=actor(me);let found=false;
   for(let i=history.length-1;i>=0;i--){const h=history[i];if(h?.state===state&&!h.by){history[i]={...h,...a,...metadata,type:h.type||'state'};found=true;break;}if(h?.state&&h.state!==state)break;}
   if(!found)history.push({type:'state',state,at:now(),...a,...metadata});
-  await env.DB.prepare('UPDATE orders SET history=? WHERE id=? AND client_id=?').bind(JSON.stringify(history),orderId,clientId).run();
+  await env.DB.prepare('UPDATE orders SET history=? WHERE id=? AND client_id=?').bind(JSON.stringify(history),orderId,clientId).run();return history;
 }
 // Append inside SQLite rather than replacing a previously read JSON array: concurrent staff actions must not erase each other.
 async function saveInteraction(env,row,me,{note=null,channel='phone',intent='contact'}){
@@ -194,6 +194,11 @@ export async function handleAction(request,env,me,delegate){
     const state=clean(body.state);if(!ALL_STATES.includes(state))fail('حالة الأوردر غير معروفة',400,'ORDER_STATE_INVALID');
     if(state==='no_answer'&&!['pending','deferred','no_answer'].includes(clean(row.state)))fail('حالة «العميل لا يرد» متاحة قبل تأكيد الطلب فقط',409,'NO_ANSWER_STATE_INVALID_FROM_CONFIRMED');
     if(state==='deferred'&&!/^\d{4}-\d{2}-\d{2}$/.test(clean(body.deferUntil)))fail('حدد تاريخ التأجيل',400,'DEFER_DATE_REQUIRED');
+    if(state==='no_answer'){
+      await env.DB.prepare('UPDATE orders SET state=?,checkpoint=?,defer_until=NULL WHERE id=? AND client_id=?').bind(state,STATE_LABELS.no_answer,orderId,clientId).run();
+      const history=await decorateLatestState(env,clientId,orderId,state,me,{contactCount:parseArr(row.contact_log).length});
+      return {data:{ok:true,state,checkpoint:STATE_LABELS.no_answer,deferUntil:null,history,contactCount:parseArr(row.contact_log).length},status:200};
+    }
     let stockTransition={kind:'none'};
     try{
       stockTransition=await prepareOrderStockTransition(env,{clientId,storeId,orderId,fromState:row.state,toState:state,stockBatchId:body.stockBatchId||body.stock_batch_id,actor:me});
