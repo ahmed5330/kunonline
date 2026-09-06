@@ -1,4 +1,4 @@
-/* Kun Online v75.1 — reliable Customer Service note/contact/call/confirm interactions. */
+/* Kun Online v75.2 — reliable Customer Service note/contact/call/confirm interactions with unified attempt counters. */
 (function(){
   if(window.KunCustomerServiceInteractionsV75)return;
   const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
@@ -32,8 +32,9 @@
     latest.innerHTML=`<b>آخر ملاحظة داخلية:</b> ${esc(note)}`;
   }
   function updateContactCount(card,data){
-    const log=Array.isArray(data?.log)?data.log:[],count=Number.isFinite(Number(data?.contactCount))?Number(data.contactCount):log.length;
-    const button=card.querySelector('[data-cs-action="contact"]');if(button)button.textContent=`تواصل (${count})`;
+    const log=Array.isArray(data?.log)?data.log:[],count=Number.isFinite(Number(data?.contactCount))?Number(data.contactCount):log.length,id=orderId(card);
+    const button=card.querySelector('[data-cs-action="contact"]'),counter=card.querySelector('[data-cs-contact-count]'),noAnswer=card.querySelector('[data-cs-state] option[value="no_answer"]');
+    if(button)button.textContent=`تواصل (${count})`;if(counter)counter.textContent=String(count);if(noAnswer)noAnswer.textContent=`العميل لا يرد — ${count} محاولة تواصل`;window.KunCustomerServiceV31?.updateContactCount?.(id,count);
   }
   async function saveNote(card,button){
     const id=orderId(card),input=card.querySelector('[data-cs-note]'),note=String(input?.value||'').trim();
@@ -78,6 +79,6 @@
 
   document.addEventListener('click',handle,true);
   document.addEventListener('change',handleConfirm,true);
-  window.KunCustomerServiceInteractionsV75={version:'75.0',pending,saveNote,saveContact,confirmState:handleConfirm};
+  window.KunCustomerServiceInteractionsV75={version:'75.2',pending,saveNote,saveContact,confirmState:handleConfirm};
   document.documentElement.dataset.customerServiceInteractions='v75-ready';
 })();
