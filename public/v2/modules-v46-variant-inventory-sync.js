@@ -1,4 +1,4 @@
-/* Kun Online v46.2 — variant-first inventory + Easy Orders discounted price sync + inline selling-price and cost edit. */
+/* Kun Online v46.3 — variant-first inventory + governed Easy Orders cost review + inline selling-price and cost edit. */
 (function(){
   const K=window.KunActionsV23;if(!K)return;
   let catalogPromise=null;
@@ -47,7 +47,7 @@
   }
   function renderTable(rows){
     if(!rows.length)return '<div class="card empty">لا توجد منتجات أو متغيرات في المخزون حتى الآن.</div>';
-    return `<div class="card table-wrap"><div class="page-head"><div><h3 style="margin:0">المخزون حسب المتغير</h3><div class="sub">كل لون / مقاس / اختيار يظهر بكمية مستقلة. سعر Easy Orders المعتمد هو سعر البيع بعد الخصم، وإن لم يوجد خصم يُستخدم السعر الأصلي.</div><div class="meta" style="margin-top:4px">يمكن تعديل سعر البيع وتكلفة الوحدة من هنا. مزامنة Easy Orders قد تحدّث سعر البيع، لكنها لا تستبدل تكلفة المنتج المحلية.</div></div></div><table class="table compact"><thead><tr><th>المنتج</th><th>المتغير</th><th>SKU</th><th>سعر البيع</th><th>المتاح</th><th>حد التنبيه</th><th>تكلفة الوحدة</th><th>قيمة المخزون</th><th>الحالة</th><th></th></tr></thead><tbody>${rows.map(row=>{const [cls,label]=stockState(row);return `<tr><td><b>${esc(row.product.name)}</b></td><td>${row.variant?`<b>${esc(row.label)}</b>`:'<span class="meta">بدون متغيرات</span>'}</td><td>${esc(row.sku||'—')}</td><td data-v46-price-cell="1">${priceCell(row)}</td><td><b>${money(row.stock)}</b></td><td>${money(row.low)}</td><td data-v46-cost-cell="1">${costCell(row)}</td><td>${money(row.stock*row.cost)} EGP</td><td><span class="stock ${cls}">${label}</span></td><td><button class="btn soft" data-v46-adjust="1" data-product-id="${esc(row.product.id)}" ${row.variant?`data-variant-id="${esc(row.variant.id)}"`:''}>تسوية</button></td></tr>`;}).join('')}</tbody></table></div><div class="card"><h3>تنبيهات المتغيرات</h3>${rows.filter(row=>row.stock<=row.low).slice(0,8).map(row=>`<div class="insight ${row.stock<=0?'danger':'warn'}"><b>${esc(row.product.name)} — ${esc(row.label)}</b><div class="meta">المتاح ${money(row.stock)} — حد التنبيه ${money(row.low)}</div></div>`).join('')||'<div class="insight ok">لا توجد متغيرات منخفضة حاليًا.</div>'}</div>`;
+    return `<div class="card table-wrap"><div class="page-head"><div><h3 style="margin:0">المخزون حسب المتغير</h3><div class="sub">كل لون / مقاس / اختيار يظهر بكمية مستقلة. سعر Easy Orders المعتمد هو سعر البيع بعد الخصم، وإن لم يوجد خصم يُستخدم السعر الأصلي.</div><div class="meta" style="margin-top:4px">يمكن تعديل سعر البيع وتكلفة الوحدة من هنا. زر مزامنة Easy Orders يفتح أولًا شاشة مراجعة داخل السيستم لإدخال التكاليف المطلوبة قبل تحديث المخزون.</div></div></div><table class="table compact"><thead><tr><th>المنتج</th><th>المتغير</th><th>SKU</th><th>سعر البيع</th><th>المتاح</th><th>حد التنبيه</th><th>تكلفة الوحدة</th><th>قيمة المخزون</th><th>الحالة</th><th></th></tr></thead><tbody>${rows.map(row=>{const [cls,label]=stockState(row);return `<tr><td><b>${esc(row.product.name)}</b></td><td>${row.variant?`<b>${esc(row.label)}</b>`:'<span class="meta">بدون متغيرات</span>'}</td><td>${esc(row.sku||'—')}</td><td data-v46-price-cell="1">${priceCell(row)}</td><td><b>${money(row.stock)}</b></td><td>${money(row.low)}</td><td data-v46-cost-cell="1">${costCell(row)}</td><td>${money(row.stock*row.cost)} EGP</td><td><span class="stock ${cls}">${label}</span></td><td><button class="btn soft" data-v46-adjust="1" data-product-id="${esc(row.product.id)}" ${row.variant?`data-variant-id="${esc(row.variant.id)}"`:''}>تسوية</button></td></tr>`;}).join('')}</tbody></table></div><div class="card"><h3>تنبيهات المتغيرات</h3>${rows.filter(row=>row.stock<=row.low).slice(0,8).map(row=>`<div class="insight ${row.stock<=0?'danger':'warn'}"><b>${esc(row.product.name)} — ${esc(row.label)}</b><div class="meta">المتاح ${money(row.stock)} — حد التنبيه ${money(row.low)}</div></div>`).join('')||'<div class="insight ok">لا توجد متغيرات منخفضة حاليًا.</div>'}</div>`;
   }
   async function easyOrdersProvider(){
     const {cid,sid}=await scope(),q=`clientId=${encodeURIComponent(cid)}${sid?`&storeId=${encodeURIComponent(sid)}`:''}`;
@@ -57,13 +57,12 @@
   async function syncEasyOrders(button){
     const provider=await easyOrdersProvider();
     if(!provider)throw new Error('ربط Easy Orders غير موجود أو لا يملك صلاحية قراءة المنتجات');
-    const {cid,sid}=await scope();
-    const old=button?.textContent;if(button){button.disabled=true;button.textContent='جاري مزامنة Easy Orders...';}
+    const review=window.KunCommerceProductImportV29;
+    if(!review?.open)throw new Error('شاشة مراجعة تكاليف Easy Orders غير جاهزة. حدّث الصفحة وحاول مرة أخرى.');
+    const old=button?.textContent;if(button){button.disabled=true;button.textContent='جاري فتح مراجعة التكاليف...';}
     try{
-      const result=await K.api('/api/commerce/product-import',{method:'POST',body:JSON.stringify({clientId:cid,storeId:sid||undefined,provider:'easyorders',selectionMode:'all'})});
-      catalogPromise=null;
-      K.notify(`تمت مزامنة Easy Orders: ${num(result.created)} جديد، ${num(result.updated)} تحديث`);
-      await enhanceInventory(true);
+      const opened=await review.open('easyorders');
+      if(!opened)throw new Error('تعذر فتح شاشة مراجعة منتجات Easy Orders');
     }finally{if(button?.isConnected){button.disabled=false;button.textContent=old||'مزامنة Easy Orders';}}
   }
   async function savePrice(button){
@@ -101,7 +100,7 @@
   async function ensureSyncButton(root){
     if(document.getElementById('v46EasyOrdersSync'))return;
     const head=root.querySelector('.page-head .spacer');if(!head)return;
-    const button=document.createElement('button');button.id='v46EasyOrdersSync';button.className='btn soft';button.textContent='مزامنة Easy Orders';button.title='سحب المنتجات والمتغيرات والكميات وسعر البيع بعد الخصم من Easy Orders';
+    const button=document.createElement('button');button.id='v46EasyOrdersSync';button.className='btn soft';button.textContent='مزامنة Easy Orders';button.title='راجع التكاليف داخل السيستم ثم اسحب المنتجات والمتغيرات والكميات وسعر البيع من Easy Orders';
     button.onclick=()=>syncEasyOrders(button).catch(error=>K.notify(error.message));head.after(button);
   }
   async function enhanceInventory(force=false){
@@ -129,6 +128,6 @@
   document.addEventListener('click',event=>{
     const button=event.target.closest?.('#v46EasyOrdersSync');if(!button)return;event.preventDefault();event.stopImmediatePropagation();syncEasyOrders(button).catch(error=>K.notify(error.message));
   },true);
-  window.KunVariantInventoryV46={refresh:()=>enhanceInventory(true),syncEasyOrders:()=>syncEasyOrders(document.getElementById('v46EasyOrdersSync')),version:'46.2'};
+  window.KunVariantInventoryV46={refresh:()=>enhanceInventory(true),syncEasyOrders:()=>syncEasyOrders(document.getElementById('v46EasyOrdersSync')),version:'46.3'};
   document.documentElement.dataset.variantInventoryV46='ready';
 })();
