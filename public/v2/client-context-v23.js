@@ -28,10 +28,17 @@
   ];
   let cached='',resolving=null,storeCached='',storeResolving=null,storeLoadedFor='',meCached=null,meResolving=null,clientContext=null;
   const fromState=()=>{try{return String((typeof activeClientId!=='undefined'&&activeClientId)||(typeof state!=='undefined'&&state?.businessClients?.[0]?.id)||(typeof state!=='undefined'&&state?.orders?.find?.(x=>x?.clientId||x?.client_id)?.clientId)||(typeof state!=='undefined'&&state?.orders?.find?.(x=>x?.client_id)?.client_id)||'');}catch{return '';}};
-  const apply=id=>{if(!id)return '';cached=String(id);try{if(typeof activeClientId!=='undefined')activeClientId=cached;}catch{};document.documentElement.dataset.clientContext='ready';return cached;};
   const html=v=>String(v||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const clientKey='kunActiveClient';
   const storeKey=id=>`kunActiveStore:${id}`;
+  const apply=id=>{
+    if(!id)return '';
+    cached=String(id);
+    try{if(typeof activeClientId!=='undefined')activeClientId=cached;}catch{}
+    try{localStorage.setItem(clientKey,cached);}catch{}
+    document.documentElement.dataset.clientContext='ready';
+    return cached;
+  };
 
   async function getMe(){
     if(meCached)return meCached;
@@ -56,6 +63,14 @@
   async function accessibleClientContext(me){
     const r=await nativeFetch('/api/my-client-context',{credentials:'include'}),d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||'تعذر تحميل المتاجر المسموحة');return d;
   }
+  async function adminSavedClient(){
+    const saved=localStorage.getItem(clientKey)||'';if(!saved)return '';
+    const s=await nativeFetch('/api/state',{credentials:'include'}).then(r=>r.ok?r.json():null).catch(()=>null);
+    const clients=s?.clients||s?.state?.clients||s?.businessClients||[];
+    if(Array.isArray(clients)&&clients.some(c=>String(c?.id)===String(saved)))return saved;
+    try{localStorage.removeItem(clientKey);}catch{}
+    return '';
+  }
   async function resolveFresh(){
     const me=await getMe();
     if(me?.clientId)return apply(me.clientId);
@@ -64,6 +79,10 @@
       if(!clients.length)return '';
       const saved=localStorage.getItem(clientKey)||'',chosen=clients.some(c=>String(c.id)===saved)?saved:String(clients[0].id);
       apply(chosen);renderClientPicker(context);return chosen;
+    }
+    if(me?.role==='admin'){
+      const saved=await adminSavedClient();
+      if(saved)return apply(saved);
     }
     const local=fromState();if(local)return apply(local);if(cached)return cached;
     let s=await nativeFetch('/api/state',{credentials:'include'}).then(r=>r.ok?r.json():null).catch(()=>null);
