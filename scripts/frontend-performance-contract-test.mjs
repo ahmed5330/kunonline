@@ -22,7 +22,7 @@ assert.ok(index.indexOf('/v2/performance-core-v52.js')<index.indexOf('/v2/module
 assert.equal(index.includes('/v2/modules-v45-post-shipping.js'),false,'superseded v45 post-shipping bundle must not load');
 assert.ok(index.includes('/v2/modules-v55-customer-search-fifo.js?v=55.2'),'state-only shipping/customer-search bundle must be cache-busted');
 assert.ok(index.includes('/v2/modules-v57-section-reload.js?v=57.1'),'per-section reload bundle must be loaded');
-assert.ok(index.includes('/v2/modules-v58-confirm-inventory.js?v=58.0'),'inventory confirmation bundle must be loaded');
+assert.ok(index.includes('/v2/modules-v58-confirm-inventory.js?v=58.1'),'no-reload inventory confirmation bundle must be loaded');
 assert.ok(index.indexOf('/v2/modules-v57-section-reload.js')>index.indexOf('/v2/modules-v56-returns-exchanges.js'),'section reload must load after the feature-specific workspace renderers');
 assert.ok(index.indexOf('/v2/modules-v58-confirm-inventory.js')>index.indexOf('/v2/modules-v57-section-reload.js'),'confirmation capture must load after the base operational UI');
 assert.ok(post.includes('.ps-page{display:grid'), 'v47 must own its base post-shipping styles after v45 removal');
@@ -49,6 +49,7 @@ assert.equal(search.includes('/api/state?clientId='),false,'operational name sea
 assert.ok(search.includes("observe(root,{childList:true,subtree:false})"),'customer-search observer must be root-only instead of watching the full document tree');
 assert.ok(search.includes('stateOnlyShip')&&search.includes('بدون أي تعديل على المخزون'),'shipping transition must stay independent from inventory');
 assert.ok(confirmInventory.includes('validateAvailability')&&confirmInventory.includes('تأكيد من المخزون'),'confirmation UI must validate live inventory before confirming');
+assert.ok(confirmInventory.includes('KunCustomerServiceV31?.moveState?.')&&!confirmInventory.includes('KunCustomerServiceV31?.render?.'),'confirmation must update Customer Service in place instead of rebuilding the board');
 assert.ok(confirmInventory.includes("observe(root,{childList:true,subtree:false})"),'confirmation observer must watch root children only');
 assert.doesNotThrow(()=>new Function(confirmInventory),'inventory confirmation browser module must parse');
 
