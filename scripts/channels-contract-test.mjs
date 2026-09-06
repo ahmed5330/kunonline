@@ -1,0 +1,14 @@
+import {readFile} from 'node:fs/promises';
+const migration=await readFile(new URL('../migrations/0006_channels_campaigns.sql',import.meta.url),'utf8');
+const worker=await readFile(new URL('../src/index-commerce-v8.js',import.meta.url),'utf8');
+const access=await readFile(new URL('../src/access-control.js',import.meta.url),'utf8');
+const must=(ok,msg)=>{if(!ok)throw new Error(msg)};
+for(const t of ['conversations','channel_messages','marketing_campaigns','campaign_daily_metrics'])must(migration.includes(`CREATE TABLE IF NOT EXISTS ${t}`),`Missing ${t}`);
+for(const e of ['/api/inbox/conversations','/api/campaigns','/api/campaigns/summary'])must(worker.includes(e),`Missing ${e}`);
+must(worker.includes("status:'queued'"),'Outbound inbox messages must queue instead of pretending to send');
+must(worker.includes("method==='POST')return createCampaign"),'Campaign creation route missing');
+must(worker.includes('DUPLICATE_CAMPAIGN'),'Campaign creation must prevent duplicate platform/name pairs');
+must(worker.includes("'campaign.create'"),'Campaign creation must write an audit event');
+must(access.includes("'inbox.*'"),'Inbox permissions missing');
+must(access.includes("'campaigns.*'"),'Campaign permissions missing');
+console.log('Channels contract checks passed: unified inbox + campaign analytics foundation.');

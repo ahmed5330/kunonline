@@ -1,0 +1,45 @@
+name: Production deploy (no database migrations)
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+concurrency:
+  group: kunonline-production
+  cancel-in-progress: false
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: npm install --ignore-scripts
+      - run: npm test
+      - name: Verify production resource isolation
+        run: npm run check:production-config
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: production
+      url: https://app.kun-online.com
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: npm install --ignore-scripts
+      - name: Recheck production isolation before approval-gated deploy
+        run: npm run check:production-config
+      - name: Deploy production Worker only
+        run: npx wrangler deploy --config wrangler.production.toml

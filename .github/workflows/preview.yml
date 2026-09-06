@@ -1,0 +1,336 @@
+name: Preview CI/CD
+# Preview-only automation; production resources are forbidden.
+on:
+  push:
+    branches: [develop/ux-system-upgrade]
+  workflow_dispatch:
+concurrency:
+  group: kunonline-preview
+  cancel-in-progress: true
+permissions:
+  contents: write
+jobs:
+  test-build-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: preview
+      url: https://kunonline-preview.mr-a-mnaa.workers.dev/v2/
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: npm install --ignore-scripts
+      - run: npm test
+      - run: npm run check:deploy
+      - name: Verify Production remains migration-free
+        run: npm run check:production-config
+
+      - name: Confirm latest branch HEAD before Preview mutation
+        id: ownership
+        run: |
+          latest="$(git ls-remote origin refs/heads/develop/ux-system-upgrade | awk '{print $1}')"
+          echo "latest_sha=$latest" >> "$GITHUB_OUTPUT"
+          if [ "$latest" = "$GITHUB_SHA" ]; then
+            echo "is_latest=true" >> "$GITHUB_OUTPUT"
+            echo "This run owns the latest Preview branch HEAD: $GITHUB_SHA"
+          else
+            echo "is_latest=false" >> "$GITHUB_OUTPUT"
+            echo "Stale Preview run detected. Run=$GITHUB_SHA Latest=$latest. Preview mutation will be skipped."
+          fi
+
+      - name: Apply preview migrations only
+        if: steps.ownership.outputs.is_latest == 'true'
+        run: npm run db:migrate:preview
+
+      - name: Reconfirm latest branch HEAD before deploy
+        id: deploy_ownership
+        if: steps.ownership.outputs.is_latest == 'true'
+        run: |
+          latest="$(git ls-remote origin refs/heads/develop/ux-system-upgrade | awk '{print $1}')"
+          if [ "$latest" = "$GITHUB_SHA" ]; then
+            echo "is_latest=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_latest=false" >> "$GITHUB_OUTPUT"
+            echo "Run became stale before deploy. Run=$GITHUB_SHA Latest=$latest. Deploy skipped."
+          fi
+
+      - name: Resolve verified stable Preview source
+        id: stable_source
+        if: steps.deploy_ownership.outputs.is_latest == 'true'
+        run: |
+          set -euo pipefail
+          # Preview CI/CD #841 fully passed smoke + every live/browser gate on this commit.
+          bootstrap_sha="05787d92d16d5b0da2bdf8dfcdd9a9cf54b875b5"
+          stable_sha="$(git ls-remote origin refs/tags/preview-stable | awk '{print $1}')"
+          if [ -z "$stable_sha" ]; then
+            stable_sha="$bootstrap_sha"
+            echo "preview-stable tag is not initialized yet; bootstrapping from fully validated Preview CI #841: $stable_sha"
+          else
+            echo "Resolved preview-stable source: $stable_sha"
+          fi
+          git fetch --no-tags --depth=1 origin "$stable_sha"
+          git cat-file -e "$stable_sha^{commit}"
+          echo "source_sha=$stable_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Create fresh verified rollback baseline from stable Git source
+        id: rollback_base
+        if: steps.deploy_ownership.outputs.is_latest == 'true'
+        run: |
+          set -euo pipefail
+          base_url="https://kunonline-preview.mr-a-mnaa.workers.dev"
+          stable_sha="${{ steps.stable_source.outputs.source_sha }}"
+          test -n "$stable_sha"
+          stable_dir="$(mktemp -d)"
+          cleanup(){ git worktree remove --force "$stable_dir" >/dev/null 2>&1 || true; rm -rf "$stable_dir" >/dev/null 2>&1 || true; }
+          trap cleanup EXIT
+          git worktree add --detach "$stable_dir" "$stable_sha"
+          set +e
+          output="$(cd "$stable_dir" && "$GITHUB_WORKSPACE/node_modules/.bin/wrangler" deploy --config wrangler.preview.toml --message "CI rollback baseline from stable source $stable_sha" 2>&1)"
+          rc=$?
+          set -e
+          printf '%s\n' "$output"
+          if [ "$rc" -ne 0 ]; then
+            echo "Could not deploy the stable Git source as a fresh rollback baseline. Candidate deployment is blocked."
+            exit "$rc"
+          fi
+          version="$(printf '%s\n' "$output" | sed -nE 's/.*Current Version ID: ([0-9a-f-]{36}).*/\1/p' | tail -1)"
+          if [ -z "$version" ]; then
+            echo "Could not capture fresh rollback baseline Worker version ID."
+            exit 1
+          fi
+          node scripts/preview-health-check.mjs "$base_url"
+          status="$(npx wrangler deployments status --config wrangler.preview.toml --json)"
+          current="$(printf '%s' "$status" | node -e '
+            let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{
+              const root=JSON.parse(raw),hits=[];
+              const walk=x=>{if(Array.isArray(x)){for(const v of x)walk(v);return;}if(!x||typeof x!=="object")return;
+                const id=x.version_id||x.versionId;
+                const pct=x.percentage??x.traffic_percentage??x.trafficPercentage;
+                if(id)hits.push({id:String(id),pct:pct==null?null:Number(pct)});
+                for(const v of Object.values(x))walk(v);
+              };walk(root);
+              const unique=[...new Map(hits.map(x=>[x.id,x])).values()];
+              const full=unique.find(x=>x.pct===100||x.pct===1)||(unique.length===1?unique[0]:null);
+              if(!full)process.exit(2);process.stdout.write(full.id);
+            });')"
+          if [ "$current" != "$version" ]; then
+            echo "Fresh rollback baseline lost Worker ownership. Expected=$version Current=$current"
+            exit 1
+          fi
+          echo "version_id=$version" >> "$GITHUB_OUTPUT"
+          echo "source_sha=$stable_sha" >> "$GITHUB_OUTPUT"
+          echo "Fresh rollback authority created and health-verified: source=$stable_sha version=$version"
+
+      - name: Deploy preview Worker
+        id: deploy
+        if: steps.deploy_ownership.outputs.is_latest == 'true'
+        run: |
+          set -euo pipefail
+          output="$(npx wrangler deploy --config wrangler.preview.toml --message "Preview candidate $GITHUB_SHA" 2>&1)"
+          printf '%s\n' "$output"
+          version="$(printf '%s\n' "$output" | sed -nE 's/.*Current Version ID: ([0-9a-f-]{36}).*/\1/p' | tail -1)"
+          if [ -z "$version" ]; then
+            echo "Could not capture deployed Preview Worker version ID."
+            exit 1
+          fi
+          echo "version_id=$version" >> "$GITHUB_OUTPUT"
+          echo "Captured deployed Preview Worker version: $version"
+
+      - name: Confirm deployed Worker owns Preview traffic
+        id: worker_ownership
+        if: steps.deploy.outcome == 'success'
+        run: |
+          status="$(npx wrangler deployments status --config wrangler.preview.toml --json)"
+          current="$(printf '%s' "$status" | node -e '
+            let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{
+              const root=JSON.parse(raw),hits=[];
+              const walk=x=>{if(Array.isArray(x)){for(const v of x)walk(v);return;}if(!x||typeof x!=="object")return;
+                const id=x.version_id||x.versionId;
+                const pct=x.percentage??x.traffic_percentage??x.trafficPercentage;
+                if(id)hits.push({id:String(id),pct:pct==null?null:Number(pct)});
+                for(const v of Object.values(x))walk(v);
+              };walk(root);
+              const unique=[...new Map(hits.map(x=>[x.id,x])).values()];
+              const full=unique.find(x=>x.pct===100||x.pct===1)||(unique.length===1?unique[0]:null);
+              if(!full)process.exit(2);process.stdout.write(full.id);
+            });')"
+          expected="${{ steps.deploy.outputs.version_id }}"
+          if [ "$current" = "$expected" ]; then
+            echo "is_current=true" >> "$GITHUB_OUTPUT"
+            echo "Preview Worker ownership confirmed: $current"
+          else
+            echo "is_current=false" >> "$GITHUB_OUTPUT"
+            echo "Preview Worker ownership lost immediately after deploy. Expected=$expected Current=$current"
+            exit 1
+          fi
+
+      - name: Smoke test deployed preview
+        id: smoke
+        if: steps.worker_ownership.outputs.is_current == 'true'
+        continue-on-error: true
+        run: npm run smoke:preview
+
+      - name: Live authenticated Store B regression
+        id: live
+        if: steps.worker_ownership.outputs.is_current == 'true' && steps.smoke.outcome == 'success'
+        continue-on-error: true
+        run: node scripts/live-preview-functional-test.mjs https://kunonline-preview.mr-a-mnaa.workers.dev
+
+      - name: Live team and branch permission regression
+        id: team_live
+        if: steps.worker_ownership.outputs.is_current == 'true' && steps.smoke.outcome == 'success' && steps.live.outcome == 'success'
+        continue-on-error: true
+        run: node scripts/live-preview-team-test.mjs https://kunonline-preview.mr-a-mnaa.workers.dev
+
+      - name: Live Customer Service regression
+        id: customer_service_live
+        if: steps.worker_ownership.outputs.is_current == 'true' && steps.smoke.outcome == 'success' && steps.live.outcome == 'success' && steps.team_live.outcome == 'success'
+        continue-on-error: true
+        run: node scripts/live-preview-customer-service-test.mjs https://kunonline-preview.mr-a-mnaa.workers.dev
+
+      - name: Live Easy Orders webhook regression
+        id: easyorders_live
+        if: steps.worker_ownership.outputs.is_current == 'true' && steps.smoke.outcome == 'success' && steps.live.outcome == 'success' && steps.team_live.outcome == 'success' && steps.customer_service_live.outcome == 'success'
+        continue-on-error: true
+        run: node scripts/live-preview-easyorders-test.mjs https://kunonline-preview.mr-a-mnaa.workers.dev
+
+      - name: Live Dashboard regression
+        id: dashboard_live
+        if: steps.worker_ownership.outputs.is_current == 'true' && steps.smoke.outcome == 'success' && steps.live.outcome == 'success' && steps.team_live.outcome == 'success' && steps.customer_service_live.outcome == 'success' && steps.easyorders_live.outcome == 'success'
+        continue-on-error: true
+        run: node scripts/live-preview-dashboard-test.mjs https://kunonline-preview.mr-a-mnaa.workers.dev
+
+      - name: Browser runtime and responsive QA
+        id: browser
+        if: steps.worker_ownership.outputs.is_current == 'true' && steps.smoke.outcome == 'success' && steps.live.outcome == 'success' && steps.team_live.outcome == 'success' && steps.customer_service_live.outcome == 'success' && steps.easyorders_live.outcome == 'success' && steps.dashboard_live.outcome == 'success'
+        continue-on-error: true
+        run: node scripts/browser-preview-qa.mjs https://kunonline-preview.mr-a-mnaa.workers.dev
+
+      - name: Require every Preview validation gate to succeed
+        id: qa_summary
+        if: always() && steps.worker_ownership.outputs.is_current == 'true'
+        env:
+          SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
+          STORE_B_OUTCOME: ${{ steps.live.outcome }}
+          TEAM_OUTCOME: ${{ steps.team_live.outcome }}
+          CUSTOMER_SERVICE_OUTCOME: ${{ steps.customer_service_live.outcome }}
+          EASYORDERS_OUTCOME: ${{ steps.easyorders_live.outcome }}
+          DASHBOARD_OUTCOME: ${{ steps.dashboard_live.outcome }}
+          BROWSER_OUTCOME: ${{ steps.browser.outcome }}
+        run: |
+          set -euo pipefail
+          failed=0
+          for gate in SMOKE_OUTCOME STORE_B_OUTCOME TEAM_OUTCOME CUSTOMER_SERVICE_OUTCOME EASYORDERS_OUTCOME DASHBOARD_OUTCOME BROWSER_OUTCOME; do
+            outcome="${!gate:-missing}"
+            echo "$gate=$outcome"
+            if [ "$outcome" != "success" ]; then failed=1; fi
+          done
+          if [ "$failed" -ne 0 ]; then
+            echo "Preview validation is incomplete or failed; skipped gates are failures, not success."
+            exit 1
+          fi
+          echo "all_success=true" >> "$GITHUB_OUTPUT"
+          echo "Every required Preview validation gate completed successfully."
+
+      - name: Promote fully validated HEAD to preview-stable
+        id: stable_marker
+        if: steps.qa_summary.outputs.all_success == 'true'
+        run: |
+          set -euo pipefail
+          latest="$(git ls-remote origin refs/heads/develop/ux-system-upgrade | awk '{print $1}')"
+          if [ "$latest" != "$GITHUB_SHA" ]; then
+            echo "Branch moved during QA. Stable marker will not move. Run=$GITHUB_SHA Latest=$latest"
+            exit 1
+          fi
+          status="$(npx wrangler deployments status --config wrangler.preview.toml --json)"
+          current="$(printf '%s' "$status" | node -e '
+            let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{
+              const root=JSON.parse(raw),hits=[];
+              const walk=x=>{if(Array.isArray(x)){for(const v of x)walk(v);return;}if(!x||typeof x!=="object")return;
+                const id=x.version_id||x.versionId;
+                const pct=x.percentage??x.traffic_percentage??x.trafficPercentage;
+                if(id)hits.push({id:String(id),pct:pct==null?null:Number(pct)});
+                for(const v of Object.values(x))walk(v);
+              };walk(root);
+              const unique=[...new Map(hits.map(x=>[x.id,x])).values()];
+              const full=unique.find(x=>x.pct===100||x.pct===1)||(unique.length===1?unique[0]:null);
+              if(!full)process.exit(2);process.stdout.write(full.id);
+            });')"
+          expected="${{ steps.deploy.outputs.version_id }}"
+          if [ "$current" != "$expected" ]; then
+            echo "Preview Worker changed after QA. Stable marker will not move. Expected=$expected Current=$current"
+            exit 1
+          fi
+          git tag -f preview-stable "$GITHUB_SHA"
+          git push origin +refs/tags/preview-stable
+          echo "Fully validated Preview source promoted: $GITHUB_SHA (Worker $current)"
+
+      - name: Confirm branch ownership before rollback
+        id: rollback_ownership
+        if: always() && steps.qa_summary.outcome == 'failure'
+        run: |
+          latest="$(git ls-remote origin refs/heads/develop/ux-system-upgrade | awk '{print $1}')"
+          if [ "$latest" = "$GITHUB_SHA" ]; then
+            echo "is_latest=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_latest=false" >> "$GITHUB_OUTPUT"
+            echo "Validation failed in a stale run. Rollback suppressed so it cannot overwrite a newer deployment."
+          fi
+
+      - name: Confirm Worker ownership before rollback
+        id: rollback_worker_ownership
+        if: always() && steps.rollback_ownership.outputs.is_latest == 'true' && steps.qa_summary.outcome == 'failure'
+        run: |
+          status="$(npx wrangler deployments status --config wrangler.preview.toml --json)"
+          current="$(printf '%s' "$status" | node -e '
+            let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{
+              const root=JSON.parse(raw),hits=[];
+              const walk=x=>{if(Array.isArray(x)){for(const v of x)walk(v);return;}if(!x||typeof x!=="object")return;
+                const id=x.version_id||x.versionId;
+                const pct=x.percentage??x.traffic_percentage??x.trafficPercentage;
+                if(id)hits.push({id:String(id),pct:pct==null?null:Number(pct)});
+                for(const v of Object.values(x))walk(v);
+              };walk(root);
+              const unique=[...new Map(hits.map(x=>[x.id,x])).values()];
+              const full=unique.find(x=>x.pct===100||x.pct===1)||(unique.length===1?unique[0]:null);
+              if(!full)process.exit(2);process.stdout.write(full.id);
+            });')"
+          expected="${{ steps.deploy.outputs.version_id }}"
+          if [ "$current" = "$expected" ]; then
+            echo "is_current=true" >> "$GITHUB_OUTPUT"
+            echo "Failed validation still belongs to this run's Worker: $current"
+          else
+            echo "is_current=false" >> "$GITHUB_OUTPUT"
+            echo "Preview changed during QA. Expected=$expected Current=$current. Automatic rollback suppressed."
+          fi
+
+      - name: Restore same-run verified Preview baseline after failed validation
+        if: always() && steps.rollback_ownership.outputs.is_latest == 'true' && steps.rollback_worker_ownership.outputs.is_current == 'true' && steps.qa_summary.outcome == 'failure'
+        run: |
+          previous="${{ steps.rollback_base.outputs.version_id }}"
+          source="${{ steps.rollback_base.outputs.source_sha }}"
+          test -n "$previous"
+          test -n "$source"
+          npx wrangler versions deploy "$previous@100%" --yes --config wrangler.preview.toml --message "Automatic restore to same-run stable source $source after failed validation"
+
+      - name: Verify restored Preview health
+        if: always() && steps.rollback_ownership.outputs.is_latest == 'true' && steps.rollback_worker_ownership.outputs.is_current == 'true' && steps.qa_summary.outcome == 'failure'
+        run: node scripts/preview-health-check.mjs https://kunonline-preview.mr-a-mnaa.workers.dev
+
+      - name: Mark failed owned deployment
+        if: always() && steps.rollback_ownership.outputs.is_latest == 'true' && steps.rollback_worker_ownership.outputs.is_current == 'true' && steps.qa_summary.outcome == 'failure'
+        run: |
+          echo "The latest owned Preview deployment failed validation and the fresh same-run stable baseline was restored."
+          exit 1
+
+      - name: Mark Preview ownership loss
+        if: always() && steps.rollback_ownership.outputs.is_latest == 'true' && steps.rollback_worker_ownership.outputs.is_current == 'false' && steps.qa_summary.outcome == 'failure'
+        run: |
+          echo "Preview Worker changed during QA; validation result is not attributable to this run and rollback was intentionally suppressed."
+          exit 1

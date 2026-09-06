@@ -1,0 +1,14 @@
+import {readFile} from 'node:fs/promises';
+const worker=await readFile(new URL('../src/index-commerce-v18.js',import.meta.url),'utf8');
+const ui=await readFile(new URL('../public/v2/modules-v16.js',import.meta.url),'utf8');
+const must=(ok,msg)=>{if(!ok)throw new Error(msg)};
+for(const marker of ['/api/integrations/connections','providerById','integration.connection.create','integration.connection.delete'])must(worker.includes(marker),`Integration setup missing ${marker}`);
+must(worker.includes("requirePermission(m,'integrations'"),'Integration setup must require permissions');
+must(worker.includes('deduplicated:true')&&worker.includes('lower(store_name)=lower(?)'),'Repeated setup must reuse an existing provider/store connection');
+must(worker.includes('DELETE FROM integration_secrets'),'Connection delete must remove encrypted secrets');
+must(ui.includes('/api/integration-secrets/'),'UI must send credentials directly to encrypted secret API');
+must(ui.includes('/api/integrations/connections'),'UI must create governed connections');
+must(/function remove\(row,load,root\)\{[\s\S]*?panel\.scrollIntoView\(\{behavior:'smooth',block:'start'\}\)/.test(ui),'Removal confirmation must be brought into view');
+must(ui.includes("btn.textContent='جاري الإزالة...'")&&ui.includes("method:'DELETE'"),'Removal action must expose progress and call the delete route');
+must(!ui.includes('localStorage.setItem')&&!ui.includes('sessionStorage.setItem'),'Integration UI must not persist credentials in browser storage');
+console.log('Integration setup checks passed: governed connections, encrypted credential handoff, visible confirmation and safe deletion.');

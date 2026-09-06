@@ -1,0 +1,13 @@
+-- Preview-only POS stock compatibility migration.
+--
+-- IMPORTANT:
+-- The original version created multi-statement SQLite triggers. Cloudflare D1's
+-- remote migrations runner parsed those trigger bodies as incomplete input in
+-- CI, preventing every later Preview deployment.
+--
+-- POS stock validation is already enforced in the Worker before a sale is
+-- written (src/index-commerce-v9.js). Keep this migration deliberately free of
+-- CREATE TRIGGER statements so Wrangler migrations remain portable on D1.
+--
+-- Do not add Production resources or D1 commands here.
+SELECT 1;

@@ -1,0 +1,19 @@
+# Dedicated Preview scheduler. It owns Cron Triggers only and delegates sync work to the app through private RPC.
+name = "kunonline-sync-preview"
+main = "src/sync-scheduler-preview.js"
+compatibility_date = "2026-08-23"
+workers_dev = true
+
+[[services]]
+binding = "APP_SYNC"
+service = "kunonline-preview"
+entrypoint = "SyncEntrypoint"
+
+[triggers]
+crons = ["* * * * *", "*/5 * * * *", "0 */2 * * *"]
+
+[vars]
+APP_ENV = "preview-sync"
+
+[observability]
+enabled = true

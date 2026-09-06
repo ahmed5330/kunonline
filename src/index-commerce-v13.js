@@ -1,0 +1,26 @@
+import commerceV12 from './index-commerce-v12.js';
+import {requirePermission} from './access-control.js';
+import {PROVIDERS,publicProvider,providerById} from './provider-registry.js';
+const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8'}});
+async function meFromBase(request,env,ctx){const u=new URL(request.url);u.pathname='/api/me';u.search='';const r=await commerceV12.fetch(new Request(u,{method:'GET',headers:request.headers}),env,ctx);const me=await r.json().catch(()=>({}));if(!r.ok||!me?.role)throw Object.assign(new Error(me?.error||'محتاج تسجّل دخول'),{status:!r.ok?r.status:401});return me;}
+function targetClient(me,requested){if(me.role==='client'){if(requested&&String(requested)!==String(me.clientId))throw Object.assign(new Error('مش مسموح'),{status:403});return me.clientId;}if(!requested)throw Object.assign(new Error('محتاج clientId'),{status:400});return requested;}
+async function readiness(env,clientId){
+  const {results:connections=[]}=await env.DB.prepare('SELECT id,provider,store_name,external_store_id,status,last_sync_at,last_error,config_json FROM store_connections WHERE client_id=? ORDER BY provider').bind(clientId).all();
+  const out=[];
+  for(const p of PROVIDERS){
+    const matches=connections.filter(c=>c.provider===p.id);
+    if(!matches.length){out.push({...publicProvider(p),connection:null,readiness:'disconnected',missingSecrets:[...p.requiredSecrets]});continue;}
+    for(const c of matches){
+      const {results:secretRows=[]}=await env.DB.prepare('SELECT secret_name FROM integration_secrets WHERE client_id=? AND connection_id=?').bind(clientId,c.id).all();
+      const names=new Set(secretRows.map(x=>x.secret_name)),missing=p.requiredSecrets.filter(x=>!names.has(x));
+      let config={};try{config=JSON.parse(c.config_json||'{}')}catch{}
+      const metaNeedsAccount=p.id==='meta_ads'&&!(config.adAccountConfirmed===true&&String(config.adAccountId||'').trim());
+      const connection={id:c.id,provider:c.provider,store_name:c.store_name,external_store_id:metaNeedsAccount?null:c.external_store_id,status:c.status,last_sync_at:metaNeedsAccount?null:c.last_sync_at,last_error:c.last_error,requires_ad_account_id:metaNeedsAccount,ad_account_id:metaNeedsAccount?null:String(config.adAccountId||'')||null};
+      const readinessState=missing.length?'needs_secrets':metaNeedsAccount?'configured':c.status==='connected'||c.status==='healthy'?'connected':'configured';
+      out.push({...publicProvider(p),connection,readiness:readinessState,missingSecrets:missing,requiresAdAccountId:metaNeedsAccount});
+    }
+  }
+  return out;
+}
+async function fetchV13(request,env,ctx){const url=new URL(request.url),path=url.pathname,method=request.method.toUpperCase();try{if(path==='/api/integrations/catalog'&&method==='GET')return json(PROVIDERS.map(publicProvider));if(path==='/api/integrations/provider'&&method==='GET'){const p=providerById(url.searchParams.get('id'));return p?json(publicProvider(p)):json({error:'Provider غير موجود'},404);}if(path==='/api/integrations/readiness'&&method==='GET'){const me=await meFromBase(request,env,ctx);requirePermission(me,'integrations','read');const clientId=targetClient(me,url.searchParams.get('clientId')||(me.role==='client'?me.clientId:null));return json(await readiness(env,clientId));}return commerceV12.fetch(request,env,ctx);}catch(e){return json({error:e.message||'حدث خطأ',code:e.code||null},e.status||500);}}
+export default {fetch:fetchV13,scheduled(controller,env,ctx){return commerceV12.scheduled?.(controller,env,ctx);}};

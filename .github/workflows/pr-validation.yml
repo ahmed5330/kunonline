@@ -1,0 +1,26 @@
+name: PR validation
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: kunonline-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: npm install --ignore-scripts
+      - name: Run full contract and unit suite
+        run: npm test
+      - name: Verify Preview isolation
+        run: npm run check:preview-config
+      - name: Verify Production remains migration-free
+        run: npm run check:production-config

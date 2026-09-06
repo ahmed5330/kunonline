@@ -1,25 +1,13 @@
-# إعدادات النشر على Cloudflare
-# بعد أول نشر، حط database_id اللي هيطلعلك من الأمر:
-#   npx wrangler d1 create konline
+# SAFETY GUARD: default Wrangler config is intentionally NOT Preview or Production.
+# Local development must use `npm run dev` with the explicit Preview config in local mode.
+# Shared Preview deployment must use `npm run deploy:preview`.
+# A bare `wrangler deploy` therefore targets only this isolated guard Worker and cannot replace shared sync code or Cron Triggers.
+name = "kunonline-local-dev-guard"
+main = "src/dev-config-guard.js"
+compatibility_date = "2026-08-23"
 
-name = "konline-system"
-main = "src/index.js"
-compatibility_date = "2026-05-01"
-
-# الداشبورد نفسه — أي مسار مش /api أو /webhooks بيتقدّم من هنا
-[assets]
-directory = "./public"
-binding = "ASSETS"
-
-# قاعدة البيانات
-[[d1_databases]]
-binding = "DB"
-database_name = "kunonline"
-database_id = "c426601d-182f-486e-a5c1-bb1bca0ecb0b"
-# تتبع شحنات J&T كل ساعتين (بتوقيت UTC)
-[triggers]
-crons = ["0 */2 * * *"]
-
-# متغيرات عادية (مش أسرار) — الأسرار تتحط بأمر wrangler secret put
 [vars]
-TRACKING_PROVIDER = "track123"
+APP_ENV = "local-guard"
+
+[observability]
+enabled = false

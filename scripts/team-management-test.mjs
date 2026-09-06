@@ -1,0 +1,55 @@
+import {DatabaseSync} from 'node:sqlite';
+import {createTeamMember,listTeamMembers,updateTeamMember,replaceTeamMemberStoreAccess,resetTeamMemberPassword,deleteTeamMember,teamStaffCount,teamRoleCatalog,listAccessibleClients,listTeamAccessCatalog} from '../src/team-management.js';
+import {resolveStoreScope} from '../src/store-scope.js';
+const must=(ok,msg)=>{if(!ok)throw new Error(msg)};
+const normalize=v=>{if(v===undefined)throw new TypeError('undefined bind');return v};
+class Stmt{constructor(db,sql){this.db=db;this.sql=sql;this.args=[]}bind(...a){this.args=a.map(normalize);return this}p(){return this.db.prepare(this.sql)}async first(){return this.p().get(...this.args)||null}async all(){return {results:this.p().all(...this.args)}}async run(){const r=this.p().run(...this.args);return {success:true,meta:{changes:Number(r.changes||0)}}}}
+class D1{constructor(db){this.db=db}prepare(sql){return new Stmt(this.db,sql)}async batch(ss){const out=[];this.db.exec('BEGIN');try{for(const s of ss)out.push(await s.run());this.db.exec('COMMIT');return out}catch(e){this.db.exec('ROLLBACK');throw e}}}
+const db=new DatabaseSync(':memory:');
+db.exec(`
+CREATE TABLE users(id TEXT PRIMARY KEY,email TEXT NOT NULL UNIQUE,name TEXT,password TEXT NOT NULL,role TEXT NOT NULL,client_id TEXT,status TEXT DEFAULT 'active',created_at TEXT,last_login TEXT);
+CREATE TABLE login_attempts(email TEXT PRIMARY KEY,fails INTEGER DEFAULT 0,locked_until TEXT);
+CREATE TABLE stores(id TEXT PRIMARY KEY,client_id TEXT NOT NULL,name TEXT NOT NULL,code TEXT,status TEXT DEFAULT 'active',is_default INTEGER DEFAULT 0,created_at TEXT,updated_at TEXT);
+CREATE TABLE user_store_access(id TEXT PRIMARY KEY,client_id TEXT NOT NULL,user_id TEXT NOT NULL,store_id TEXT NOT NULL,role TEXT,created_at TEXT);
+CREATE UNIQUE INDEX idx_user_store_unique ON user_store_access(client_id,user_id,store_id);
+CREATE TABLE audit_log(id TEXT PRIMARY KEY,client_id TEXT,actor_user_id TEXT,actor_email TEXT,action TEXT NOT NULL,entity_type TEXT,entity_id TEXT,metadata_json TEXT,created_at TEXT NOT NULL);
+`);
+const env={DB:new D1(db)},client='C1',other='C2',A='SA',B='SB',X='SX',ts=new Date().toISOString(),actor={uid:'OWNER',email:'owner@test',role:'client',clientId:'C1'};
+await env.DB.prepare("INSERT INTO users VALUES ('OWNER','owner@test','Owner','hash','client',?,'active',?,NULL)").bind(client,ts).run();
+await env.DB.prepare("INSERT INTO stores VALUES (?,?,'Store A','A','active',1,?,?)").bind(A,client,ts,ts).run();
+await env.DB.prepare("INSERT INTO stores VALUES (?,?,'Store B','B','active',0,?,?)").bind(B,client,ts,ts).run();
+await env.DB.prepare("INSERT INTO stores VALUES (?,?,'Other','X','active',1,?,?)").bind(X,other,ts,ts).run();
+const created=await createTeamMember(env,client,{name:'Ops A',email:'ops@test.com',password:'StrongPass9!',role:'ops',storeAccess:[{storeId:A,role:'manager'}]},actor);
+must(created.role==='ops'&&created.storeAccess.length===1,'create team member failed');
+must(await teamStaffCount(env,client)===1,'team count must exclude owner');
+let rows=await listTeamMembers(env,client);const ops=rows.find(x=>x.id===created.id);must(ops&&ops.storeAccess[0].storeId===A&&ops.storeAccess[0].role==='manager','list/store access failed');
+let duplicate=false;try{await createTeamMember(env,client,{name:'Dup',email:'ops@test.com',password:'StrongPass9!',role:'support',storeAccess:[{storeId:A}]},actor)}catch(e){duplicate=e.code==='EMAIL_EXISTS'}must(duplicate,'duplicate email guard failed');
+let cross=false;try{await replaceTeamMemberStoreAccess(env,client,created.id,{storeAccess:[{storeId:X,role:'member'}]},actor)}catch(e){cross=e.code==='STORE_INVALID'}must(cross,'cross-tenant store assignment must fail');
+await replaceTeamMemberStoreAccess(env,client,created.id,{storeAccess:[{storeId:B,role:'member'}]},actor);
+const staffMe={uid:created.id,role:'ops',clientId:client,perms:[]};
+let denied=false;try{await resolveStoreScope(env,staffMe,client,A,{write:false})}catch(e){denied=e.code==='STORE_ISOLATION'}must(denied,'member must not access removed Store A');
+const scope=await resolveStoreScope(env,staffMe,client,B,{write:true});must(scope.storeId===B,'member must access assigned Store B');
+await updateTeamMember(env,client,created.id,{role:'viewer',status:'active'},actor);
+rows=await listTeamMembers(env,client);const viewer=rows.find(x=>x.id===created.id);must(viewer.role==='viewer'&&viewer.storeAccess.every(x=>x.role==='viewer'),'viewer role must force read-only store roles');
+let writeBlocked=false;try{await resolveStoreScope(env,{uid:created.id,role:'viewer',clientId:client},client,B,{write:true})}catch(e){writeBlocked=e.code==='STORE_READ_ONLY'}must(writeBlocked,'viewer write must be blocked at store scope');
+await resetTeamMemberPassword(env,client,created.id,{password:'ResetPass10!'},actor);const stored=await env.DB.prepare('SELECT password FROM users WHERE id=?').bind(created.id).first();must(stored.password.startsWith('pbkdf2$100000$')&&!stored.password.includes('ResetPass10!'),'reset password must be PBKDF2 and not plaintext');
+await updateTeamMember(env,client,created.id,{status:'disabled'},actor);must((await env.DB.prepare('SELECT status FROM users WHERE id=?').bind(created.id).first()).status==='disabled','disable failed');
+await updateTeamMember(env,client,created.id,{status:'active'},actor);
+let ownerDelete=false;try{await deleteTeamMember(env,client,'OWNER',actor)}catch(e){ownerDelete=e.code==='OWNER_PROTECTED'}must(ownerDelete,'owner must be protected');
+await deleteTeamMember(env,client,created.id,actor);must(!(await env.DB.prepare('SELECT id FROM users WHERE id=?').bind(created.id).first()),'member delete failed');must((await env.DB.prepare('SELECT COUNT(*) n FROM user_store_access WHERE user_id=?').bind(created.id).first()).n===0,'store access cleanup failed');
+
+const admin={uid:'ADMIN',email:'admin@test',role:'admin',clientId:null},platformPassword='PlatformPass11!';
+const accessCatalog=await listTeamAccessCatalog(env,admin,null,{platformScope:true});
+must(accessCatalog.clients.length===2&&accessCatalog.clients.flatMap(x=>x.stores).length===3,'platform access catalog must include all clients/stores');
+const platform=await createTeamMember(env,null,{platformScope:true,name:'Platform Support',email:'platform@test.com',password:platformPassword,role:'support',storeAccess:[{clientId:client,storeId:A,role:'member'},{clientId:other,storeId:X,role:'member'}]},admin);
+must(platform.platformMember===true&&platform.storeAccess.length===2,'platform member must support cross-client assignments');
+const platformRow=await env.DB.prepare('SELECT client_id,password FROM users WHERE id=?').bind(platform.id).first();must(platformRow.client_id===null&&platformRow.password.startsWith('pbkdf2$100000$'),'platform member must be global and password hashed');
+const platformList=await listTeamMembers(env,null,{platformScope:true});must(platformList.some(x=>x.id===platform.id&&x.storeAccess.length===2),'platform team list must expose all assigned stores');
+const clientContext=await listAccessibleClients(env,{uid:platform.id,role:'support',clientId:null});must(clientContext.clients.length===2,'global staff must receive both assigned client contexts');
+const platformMe={uid:platform.id,role:'support',clientId:null,perms:[]};must((await resolveStoreScope(env,platformMe,client,A,{write:true})).storeId===A,'platform member must access assigned store in first client');must((await resolveStoreScope(env,platformMe,other,X,{write:true})).storeId===X,'platform member must access assigned store in second client');
+let hidden=false;try{await resolveStoreScope(env,platformMe,client,B,{write:false})}catch(e){hidden=e.code==='STORE_ISOLATION'}must(hidden,'platform member must not access unassigned branch');
+await resetTeamMemberPassword(env,null,platform.id,{platformScope:true,password:'PlatformReset12!'},admin);const platformReset=await env.DB.prepare('SELECT password FROM users WHERE id=?').bind(platform.id).first();must(platformReset.password.startsWith('pbkdf2$100000$')&&!platformReset.password.includes('PlatformReset12!'),'platform password reset must persist securely');
+await deleteTeamMember(env,null,platform.id,admin,{platformScope:true});must(!(await env.DB.prepare('SELECT id FROM users WHERE id=?').bind(platform.id).first()),'platform member deletion failed');must(Number((await env.DB.prepare('SELECT COUNT(*) n FROM user_store_access WHERE user_id=?').bind(platform.id).first()).n)===0,'platform access rows must be deleted');
+
+const catalog=teamRoleCatalog();must(catalog.businessRoles.some(x=>x.id==='support')&&catalog.storeRoles.some(x=>x.id==='manager'),'role catalog missing canonical roles');
+console.log('Team management checks passed: tenant lifecycle, password safety, owner protection, platform multi-client/store assignments, client switch context and store isolation.');

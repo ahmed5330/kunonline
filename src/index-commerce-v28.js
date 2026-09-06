@@ -1,0 +1,116 @@
+import commerceV27 from './index-commerce-v27.js';
+import {
+  requireTeamManager,resolveTeamClient,teamRoleCatalog,listTeamMembers,createTeamMember,updateTeamMember,
+  resetTeamMemberPassword,replaceTeamMemberStoreAccess,deleteTeamMember,teamStaffCount,listTeamAccessCatalog,listAccessibleClients
+} from './team-management.js';
+import {requirePermission,resolveTenant} from './access-control.js';
+import {resolveStoreScope,requestedStoreId} from './store-scope.js';
+import {campaignPerformance,dateRange} from './marketing-performance.js';
+import {syncMetaAdsForClient} from './meta-ads-sync.js';
+
+const BUILD='preview-v28-2026-08-28';
+const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{
+  'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Kun-Build':BUILD,
+  'X-Content-Type-Options':'nosniff','X-Frame-Options':'DENY','Referrer-Policy':'strict-origin-when-cross-origin',
+  'Cross-Origin-Opener-Policy':'same-origin','Cross-Origin-Resource-Policy':'same-origin',
+  'Content-Security-Policy':"default-src 'none'; frame-ancestors 'none'; base-uri 'none'",
+  'Permissions-Policy':'camera=(), microphone=(), geolocation=(), payment=()'
+}});
+
+async function currentUser(request,env,ctx){
+  const u=new URL(request.url);u.pathname='/api/me';u.search='';
+  const response=await commerceV27.fetch(new Request(u,{method:'GET',headers:request.headers}),env,ctx);
+  const me=await response.json().catch(()=>({}));
+  if(!response.ok||!me?.role)throw Object.assign(new Error(me?.error||'محتاج تسجّل دخول'),{status:response.ok?401:response.status,code:'AUTH_REQUIRED'});
+  return me;
+}
+async function bodyOf(request){return ['POST','PUT','PATCH','DELETE'].includes(request.method.toUpperCase())?await request.clone().json().catch(()=>({})):{};}
+function requestedClient(url,body={}){return body.clientId||body.client_id||url.searchParams.get('clientId')||null;}
+async function audit(env,me,clientId,storeId,action,entityId,metadata={}){try{await env.DB.prepare('INSERT INTO audit_log (id,client_id,store_id,actor_user_id,actor_email,action,entity_type,entity_id,metadata_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)').bind(`AUD-${crypto.randomUUID().slice(0,10).toUpperCase()}`,clientId,storeId||null,me?.uid||null,me?.email||me?.role||'user',action,'store_connection',entityId||null,JSON.stringify(metadata),new Date().toISOString()).run();}catch{}}
+function parseConfig(row){try{return JSON.parse(row?.config_json||'{}')}catch{return {}};}
+async function explicitMetaBinding(env,clientId){
+  const row=await env.DB.prepare("SELECT id,status,config_json FROM store_connections WHERE client_id=? AND provider='meta_ads' ORDER BY updated_at DESC LIMIT 1").bind(clientId).first();
+  if(!row)throw Object.assign(new Error('اربط Meta Ads من مركز التكاملات أولًا'),{status:409,code:'META_ADS_NOT_CONNECTED'});
+  const config=parseConfig(row),accountId=String(config.adAccountId||'').trim().replace(/^act_/i,'');
+  if(row.status!=='connected'||config.adAccountConfirmed!==true||!accountId)throw Object.assign(new Error('لازم تدخل رقم الحساب الإعلاني Ad Account ID وتؤكده من مركز التكاملات قبل عرض أو مزامنة بيانات Meta.'),{status:409,code:'META_AD_ACCOUNT_CONFIRMATION_REQUIRED'});
+  return {connectionId:row.id,accountId,config};
+}
+async function syncAllExplicitMeta(env,{days=30,limit=50}={}){
+  const {results=[]}=await env.DB.prepare("SELECT DISTINCT client_id FROM store_connections WHERE provider='meta_ads' ORDER BY updated_at DESC LIMIT ?").bind(Math.max(1,Math.min(200,Number(limit)||50))).all();
+  const outcomes=[];
+  for(const row of results){try{await explicitMetaBinding(env,row.client_id);outcomes.push({clientId:row.client_id,...await syncMetaAdsForClient(env,{clientId:row.client_id,days})});}catch(error){outcomes.push({clientId:row.client_id,ok:false,code:error?.code||'META_SYNC_SKIPPED',error:error?.message||String(error)});}}
+  return outcomes;
+}
+
+async function onboardingV28(request,env,ctx,me,clientId){
+  const response=await commerceV27.fetch(request,env,ctx);if(!response.ok)return response;
+  const data=await response.clone().json().catch(()=>null);if(!data||!Array.isArray(data.checks))return response;
+  const staff=await teamStaffCount(env,clientId);data.checks=data.checks.map(x=>x.key==='team'?{...x,label:'إضافة عضو فريق بصلاحية فرع',done:staff>0}:x);
+  data.completed=data.checks.filter(x=>x.done).length;data.total=data.checks.length;data.percent=data.total?Math.round(data.completed/data.total*100):100;data.ready=data.completed===data.total;data.teamMembers=staff;
+  return json(data,response.status);
+}
+
+async function fetchV28(request,env,ctx){
+  const url=new URL(request.url),path=url.pathname,method=request.method.toUpperCase();
+  try{
+    if(path==='/api/preview/version')return json({ok:true,build:BUILD,environment:env.APP_ENV||'unknown',entrypoint:'index-commerce-v28.js'});
+    const isTeam=path==='/api/team-role-catalog'||path==='/api/team-access-catalog'||path==='/api/my-client-context'||path==='/api/team-members'||path.startsWith('/api/team-members/')||path==='/api/onboarding/status';
+    const isMetaAds=path==='/api/integrations/meta-ads/sync'||path==='/api/integrations/meta-ads/performance';
+    if(!isTeam&&!isMetaAds)return commerceV27.fetch(request,env,ctx);
+    const me=await currentUser(request,env,ctx),body=await bodyOf(request);
+
+    if(isMetaAds){
+      const clientId=resolveTenant(me,requestedClient(url,body));
+      const write=path.endsWith('/sync');
+      requirePermission(me,'campaigns',write?'write':'read');
+      const binding=await explicitMetaBinding(env,clientId);
+      const scope=await resolveStoreScope(env,me,clientId,requestedStoreId(request,body),{write});
+      if(path==='/api/integrations/meta-ads/performance'&&method==='GET'){
+        const range=dateRange(url);return json({...await campaignPerformance(env,{clientId,storeId:scope.storeId||null,...range,platform:'meta_ads'}),metaAccountId:binding.accountId});
+      }
+      if(path==='/api/integrations/meta-ads/sync'&&method==='POST'){
+        const result=await syncMetaAdsForClient(env,{clientId,storeId:scope.storeId||null,from:body.from,to:body.to,days:body.days});
+        await audit(env,me,clientId,result.storeId,'integration.meta_ads.sync',`act_${result.account?.accountId||''}`,{campaigns:result.campaigns,activeCampaigns:result.activeCampaigns,dailyMetrics:result.dailyMetrics,from:result.from,to:result.to});
+        return json(result);
+      }
+      return json({error:'المسار غير مدعوم',code:'METHOD_NOT_ALLOWED'},405);
+    }
+
+    if(path==='/api/my-client-context'&&method==='GET')return json(await listAccessibleClients(env,me));
+    if(path==='/api/team-role-catalog'&&method==='GET'){requireTeamManager(me);return json(teamRoleCatalog());}
+
+    const requestedPlatform=url.searchParams.get('scope')==='platform'||body?.platformScope===true;
+    if(requestedPlatform&&me.role!=='admin')return json({error:'صلاحيات فريق الإدارة غير متاحة',code:'PLATFORM_TEAM_DENIED'},403);
+    const platformScope=me.role==='admin'&&requestedPlatform;
+    const requestedId=requestedClient(url,body);
+
+    if(path==='/api/team-access-catalog'&&method==='GET'){
+      requireTeamManager(me);
+      const clientId=platformScope?null:resolveTeamClient(me,requestedId);
+      return json(await listTeamAccessCatalog(env,me,clientId,{platformScope}));
+    }
+
+    const clientId=platformScope?null:resolveTeamClient(me,requestedId);requireTeamManager(me);
+    if(path==='/api/onboarding/status'&&method==='GET')return onboardingV28(request,env,ctx,me,clientId);
+    if(path==='/api/team-members'&&method==='GET')return json(await listTeamMembers(env,clientId,{platformScope}));
+    if(path==='/api/team-members'&&method==='POST')return json(await createTeamMember(env,clientId,{...body,platformScope},me),201);
+    let m=path.match(/^\/api\/team-members\/([^/]+)$/);
+    if(m&&method==='PATCH')return json(await updateTeamMember(env,clientId,decodeURIComponent(m[1]),{...body,platformScope},me));
+    if(m&&method==='DELETE')return json(await deleteTeamMember(env,clientId,decodeURIComponent(m[1]),me,{...body,platformScope}));
+    m=path.match(/^\/api\/team-members\/([^/]+)\/reset-password$/);
+    if(m&&method==='POST')return json(await resetTeamMemberPassword(env,clientId,decodeURIComponent(m[1]),{...body,platformScope},me));
+    m=path.match(/^\/api\/team-members\/([^/]+)\/store-access$/);
+    if(m&&method==='PUT')return json(await replaceTeamMemberStoreAccess(env,clientId,decodeURIComponent(m[1]),{...body,platformScope},me));
+    return json({error:'المسار غير مدعوم',code:'METHOD_NOT_ALLOWED'},405);
+  }catch(error){
+    return json({error:error?.message||'حدث خطأ',code:error?.code||'V28_ERROR',path,method},error?.status||500);
+  }
+}
+
+export default {
+  fetch:fetchV28,
+  scheduled(controller,env,ctx){
+    if(controller?.cron==='0 */2 * * *')ctx.waitUntil(syncAllExplicitMeta(env,{days:30}).catch(()=>[]));
+    return commerceV27.scheduled?.(controller,env,ctx);
+  }
+};
