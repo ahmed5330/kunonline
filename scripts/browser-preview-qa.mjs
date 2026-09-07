@@ -116,7 +116,6 @@ try{
   const executable=await findChrome();
   const wsUrl=await launchChrome(executable);
   cdp=await connectCDP(wsUrl);
-
   const exceptions=[],consoleErrors=[],logErrors=[],networkFailures=[],serverErrors=[],criticalResponses=[];
   const requests=new Map();
   cdp.on('Runtime.exceptionThrown',p=>{const d=p.exceptionDetails||{},desc=d.exception?.description||String(d.exception?.value||''),frames=(d.stackTrace?.callFrames||[]).slice(0,5).map(f=>`${f.functionName||'<anon>'}@${f.url||'inline'}:${Number(f.lineNumber)+1}:${Number(f.columnNumber)+1}`).join(' <- ');exceptions.push([desc,d.text,frames].filter(Boolean).join(' :: ')||'uncaught exception');});
@@ -163,7 +162,6 @@ try{
   const roleCount=await evaluate(`document.querySelectorAll('#v28MemberRole option').length`);if(Number(roleCount)<5)throw new Error(`Team create drawer role catalog incomplete: ${roleCount}`);
   await evaluate(`document.getElementById('v23Close')?.click()`);await sleep(250);
 
-
   // Exercise actual Customer Service controls against an isolated disposable Preview order.
   interactionClientId=await evaluate("window.kunClientId()");
   if(!interactionClientId)throw new Error('Customer Service browser QA needs a client context');
@@ -188,9 +186,14 @@ try{
   const historyText=await evaluate("document.querySelector('#csModalBack').textContent");
   if(!historyText.includes(noteText)||!historyText.includes('CI Browser QA'))throw new Error('Order history is missing saved note or actor');
   await evaluate("document.querySelector('#csModalBack [data-cs-close]').click()");
+
+  // A full navigation must not race the base navigation handler against the async Customer Service boot.
   await navigate(`${base}/v2/`);
-  await waitFor("document.querySelector('[data-view=customer-service]')?.onclick",'Customer Service ready after page reload');
+  await waitFor("window.KunCustomerServiceV31?.version==='31.2'&&window.KunCustomerServiceInteractionsV75?.version==='75.2'&&document.documentElement.dataset.clientContext==='ready'&&document.querySelector('[data-view=customer-service]')?.classList.contains('is-visible')",'Customer Service V31/V75 ready after page reload',20000);
+  const reloadedClientId=await evaluate("window.kunClientId()");
+  if(String(reloadedClientId)!==String(interactionClientId))throw new Error(`Customer Service client context changed after full reload: ${reloadedClientId} != ${interactionClientId}`);
   await evaluate("document.querySelector('[data-view=customer-service]').click()");
+  await waitFor(`${cardExpr}?.querySelector('[data-cs-action=note]')`,'Customer Service fixture card after full reload');
   await waitFor(`${cardExpr}?.querySelector('.cs-internal-latest')?.textContent.includes(${JSON.stringify(noteText)})`,'note persisted after full reload');
   await waitFor(`${cardExpr}?.querySelector('[data-cs-action=contact]')?.textContent==='تواصل (2)'`,'contact and call persisted after full reload');
   const savedEvents=await d1('SELECT event_type,actor_user_id,created_at,metadata_json FROM order_events WHERE order_id=? AND client_id=?',[interactionOrderId,interactionClientId]);
