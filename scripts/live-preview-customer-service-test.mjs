@@ -148,7 +148,9 @@ try{
   if(boardA.stores?.length!==2||!boardA.stores.some(x=>String(x.id)===String(storeA))||!boardA.stores.some(x=>String(x.id)===String(storeB)))throw new Error(`Support multi-store assignments missing: ${JSON.stringify(boardA.stores)}`);
   const idsA=new Set((boardA.orders||[]).map(x=>String(x.id)));
   if(!idsA.has(String(orderA))||idsA.has(String(orderB))||idsA.has(String(orderC)))throw new Error(`Store A board isolation failed: ${JSON.stringify([...idsA])}`);
-  if(!boardA.stages?.map(x=>x.id).join(',').includes('pending,confirmed,preparing,shipped'))throw new Error('Customer Service four-stage board missing');
+  const expectedStages=['pending','no_answer','confirmed','preparing','shipped'];
+  const actualStages=boardA.stages?.map(x=>x.id)||[];
+  if(expectedStages.some((stage,index)=>actualStages[index]!==stage))throw new Error(`Customer Service five-stage board missing or out of order: ${JSON.stringify(actualStages)}`);
 
   let boardB=(await api(supportCookie,`/api/customer-service?${qs(clientId,storeB)}`)).data;
   if(boardB.selectedStoreId!==storeB)throw new Error(`Store B was not selected: ${JSON.stringify(boardB.selectedStoreId)}`);
@@ -193,7 +195,7 @@ try{
   const returned=boardB.orders.find(x=>String(x.id)===String(orderB));
   if(returned?.state!=='pending'||returned.returnedFromDeferredToday!==true)throw new Error(`Due deferred order did not return highlighted: ${JSON.stringify(returned)}`);
 
-  console.log(`Live Customer Service QA passed: combined assigned-store board + per-store isolation, hidden C, owner legacy bridge/delete governance, four stages, actor history, contact, AWB, WhatsApp, internal notes and deferred return (${clientId}).`);
+  console.log(`Live Customer Service QA passed: combined assigned-store board + per-store isolation, hidden C, owner legacy bridge/delete governance, five stages including no-answer, actor history, contact, AWB, WhatsApp, internal notes and deferred return (${clientId}).`);
 }catch(error){
   primaryError=error;
 }finally{
