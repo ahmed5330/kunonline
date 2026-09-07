@@ -1,4 +1,4 @@
-/* Kun Online v77.0 — authoritative Customer Service no-reload guard + post-shipping click isolation. */
+/* Kun Online v77.1 — authoritative Customer Service no-reload guard + post-shipping click isolation. */
 (function(){
   if(window.KunCustomerServiceNoReloadV77)return;
   const cs=()=>window.KunCustomerServiceV31;
@@ -31,7 +31,7 @@
       if(workflowSuppression&&workflowSuppression.expires<now)workflowSuppression=null;
       if(classification&&classification.expires<now)classification=null;
       if(workflowSuppression&&activeCustomerService()){
-        const item=workflowSuppression;workflowSuppression=null;localMove(item);return {ok:true,suppressedRender:true,source:'workflow'};
+        const item=workflowSuppression;workflowSuppression=null;localMove(item);return {ok:true,suppressedRender:true,source:item.source||'workflow'};
       }
       if(classification?.armed){
         const item=classification;classification=null;localMove(item);return {ok:true,suppressedRender:true,source:'classification'};
@@ -44,14 +44,18 @@
   window.addEventListener('kun:order-workflow-updated',event=>{
     if(!activeCustomerService())return;
     const detail=event.detail||{},orderId=String(detail.orderId||''),state=normalizeState(detail.state);if(!orderId||!state)return;
-    workflowSuppression={orderId,state,deferUntil:detail.deferUntil||'',scroll:captureScroll(),expires:Date.now()+5000};
+    workflowSuppression={orderId,state,deferUntil:detail.deferUntil||'',scroll:captureScroll(),source:'order-workflow',expires:Date.now()+5000};
     localMove(workflowSuppression);
   });
 
   window.addEventListener('change',event=>{
     const select=event.target.closest?.('#root .cs-page select[data-cs-state]');if(!select)return;
-    const state=String(select.value||'');if(!['returned','cancelled','exchange'].includes(state))return;
-    const card=select.closest('.cs-order[data-cs-order]'),orderId=String(card?.dataset?.csOrder||'');if(!orderId)return;
+    const state=String(select.value||''),card=select.closest('.cs-order[data-cs-order]'),orderId=String(card?.dataset?.csOrder||'');if(!orderId)return;
+    if(state==='shipped'&&String(select.dataset.current||'')!=='shipped'){
+      workflowSuppression={orderId,state:'shipped',scroll:captureScroll(),source:'state-only-shipping',expires:Date.now()+10000};
+      return;
+    }
+    if(!['returned','cancelled','exchange'].includes(state))return;
     classification={orderId,state:normalizeState(state),scroll:captureScroll(),armed:false,expires:Date.now()+600000};
   },true);
   window.addEventListener('click',event=>{
@@ -65,6 +69,6 @@
   }
   const observer=new MutationObserver(()=>{wrapCustomerServiceRender();isolateDeliveredButton();});observer.observe(document.body,{childList:true,subtree:true});
   wrapCustomerServiceRender();isolateDeliveredButton();
-  window.KunCustomerServiceNoReloadV77={wrap:wrapCustomerServiceRender,captureScroll,restoreScroll,version:'77.0'};
-  document.documentElement.dataset.customerServiceNoReload='v77-ready';
+  window.KunCustomerServiceNoReloadV77={wrap:wrapCustomerServiceRender,captureScroll,restoreScroll,version:'77.1'};
+  document.documentElement.dataset.customerServiceNoReload='v77.1-ready';
 })();
