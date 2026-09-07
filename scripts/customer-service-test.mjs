@@ -56,8 +56,8 @@ must(backend.includes("from './inventory-fifo.js'"),'Customer Service confirmati
 for(const marker of ['order_item_stock_allocations','ORDER BY b.stock_date ASC,b.created_at ASC','STOCK_FIFO_INSUFFICIENT','virtualRemaining','خصم أوردر ${orderId} تلقائيًا بنظام FIFO','if(toState!==\'confirmed\')','HOLDING_STATES'])must(fifo.includes(marker),`FIFO confirmation allocator missing ${marker}`);
 must(fifo.includes('Moving to "shipped" is intentionally state-only'),'Shipping must be explicitly decoupled from inventory allocation');
 must(!fifo.includes('STOCK_BATCH_REQUIRED'),'Confirmation FIFO must not require a manually selected stock batch');
-must(searchUi.includes('operationalCustomerMatches')&&searchUi.includes('كل العملاء المطابقين للاسم أو رقم الهاتف'),'Global operational search must return matching customers by name or phone');
-must(searchUi.includes('phoneQuery')&&searchUi.includes('digits(phone).includes(phoneQuery)'),'Customer Service search must match normalized phone digits');
+must(searchUi.includes('operationalCustomerMatches')&&searchUi.includes('العملاء المطابقون للاسم أو الرقم'),'Global operational search must return matching customers by name or phone');
+must(searchUi.includes('phoneMatch=phone.length>=3&&digits(cardPhone(card)).includes(phone)'),'Customer Service search must match normalized phone digits');
 must(!searchUi.includes('/api/state?clientId='),'Operational customer search must not load the full state payload');
 must(searchUi.includes('filterOperationalCards')&&searchUi.includes('v55-filter-hidden'),'Customer Service search must filter operational columns to matching customer names or phone numbers');
 must(searchUi.includes('v55-order-date')&&searchUi.includes('تاريخ الطلب'),'Every operational order card must receive an explicit order-date row');
