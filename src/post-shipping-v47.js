@@ -35,13 +35,14 @@ async function orderForWrite(env,{clientId,orderId,me}){
 }
 async function audit(env,{row,me,action,before,after,metadata}){try{await env.DB.prepare('INSERT INTO audit_log (id,client_id,store_id,actor_user_id,actor_email,action,entity_type,entity_id,before_json,after_json,metadata_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)').bind(`AUD-${crypto.randomUUID().slice(0,10).toUpperCase()}`,row.client_id,row.store_id||null,me?.uid||me?.id||null,me?.email||me?.name||me?.role||'user',action,'order',row.id,JSON.stringify(before),JSON.stringify(after),JSON.stringify(metadata||{}),stamp()).run();}catch{}}
 
-export async function markPostShippingDeliveredV47(env,{clientId,orderId,me}){
+export async function markPostShippingDeliveredV47(env,{clientId,orderId,shippingCost,me}){
   const row=await orderForWrite(env,{clientId,orderId,me});if(row.state!=='shipped')fail('يمكن نقل الطلب من «جاري الشحن» فقط',409,'POST_SHIPPING_STATE_INVALID');
-  const shippingCost=row.shipping_cost===null||row.shipping_cost===undefined?null:Number(row.shipping_cost);if(shippingCost===null||!Number.isFinite(shippingCost)||shippingCost<0)fail('حدد سعر الشحن الفعلي قبل تحويل الأوردر إلى «تم التوصيل»',400,'POST_SHIPPING_COST_REQUIRED');
-  const at=stamp(),history=parseArray(row.history),checkpoint='تم التوصيل — في انتظار بدء التحصيل',entry={type:'post_shipping_delivered',state:'signed',shippingCost:Number(shippingCost.toFixed(2)),note:`تم التوصيل — تكلفة الشحن ${Number(shippingCost.toFixed(2))} جنيه`,at,...actor(me)};history.push(entry);
-  await env.DB.prepare("UPDATE orders SET state='signed',checkpoint=?,signed_at=?,history=? WHERE id=? AND client_id=?").bind(checkpoint,at.slice(0,10),JSON.stringify(history),orderId,clientId).run();
-  await audit(env,{row,me,action:'order.post_shipping_delivered',before:{state:row.state,checkpoint:row.checkpoint,shippingCost:row.shipping_cost},after:{state:'signed',checkpoint,shippingCost:entry.shippingCost},metadata:{source:'post_shipping'}});
-  return {ok:true,id:orderId,state:'signed',postShippingStage:'signed',shippingCost:entry.shippingCost,history};
+  const requested=shippingCost===null||shippingCost===undefined||shippingCost===''?null:Number(shippingCost),stored=row.shipping_cost===null||row.shipping_cost===undefined?null:Number(row.shipping_cost),resolved=requested===null?stored:requested;
+  if(resolved===null||!Number.isFinite(resolved)||resolved<0)fail('حدد سعر الشحن الفعلي قبل تحويل الأوردر إلى «تم التوصيل»',400,'POST_SHIPPING_COST_REQUIRED');
+  const actualShippingCost=Number(resolved.toFixed(2)),at=stamp(),history=parseArray(row.history),checkpoint='تم التوصيل — في انتظار بدء التحصيل',entry={type:'post_shipping_delivered',state:'signed',shippingCost:actualShippingCost,note:`تم التوصيل — تكلفة الشحن ${actualShippingCost} جنيه`,at,...actor(me)};history.push(entry);
+  await env.DB.prepare("UPDATE orders SET shipping_cost=?,state='signed',checkpoint=?,signed_at=?,history=? WHERE id=? AND client_id=?").bind(actualShippingCost,checkpoint,at.slice(0,10),JSON.stringify(history),orderId,clientId).run();
+  await audit(env,{row,me,action:'order.post_shipping_delivered',before:{state:row.state,checkpoint:row.checkpoint,shippingCost:row.shipping_cost},after:{state:'signed',checkpoint,shippingCost:actualShippingCost},metadata:{source:'post_shipping',atomicDelivery:true}});
+  return {ok:true,id:orderId,state:'signed',postShippingStage:'signed',shippingCost:actualShippingCost,history};
 }
 
 export async function startPostShippingCollectionV47(env,{clientId,orderId,me}){

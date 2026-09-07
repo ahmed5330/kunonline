@@ -56,9 +56,10 @@ must(backend.includes("from './inventory-fifo.js'"),'Customer Service confirmati
 for(const marker of ['order_item_stock_allocations','ORDER BY b.stock_date ASC,b.created_at ASC','STOCK_FIFO_INSUFFICIENT','virtualRemaining','خصم أوردر ${orderId} تلقائيًا بنظام FIFO','if(toState!==\'confirmed\')','HOLDING_STATES'])must(fifo.includes(marker),`FIFO confirmation allocator missing ${marker}`);
 must(fifo.includes('Moving to "shipped" is intentionally state-only'),'Shipping must be explicitly decoupled from inventory allocation');
 must(!fifo.includes('STOCK_BATCH_REQUIRED'),'Confirmation FIFO must not require a manually selected stock batch');
-must(searchUi.includes('operationalCustomerMatches')&&searchUi.includes('كل العملاء المطابقين للاسم'),'Global operational search must return every matching customer under one list');
+must(searchUi.includes('operationalCustomerMatches')&&searchUi.includes('كل العملاء المطابقين للاسم أو رقم الهاتف'),'Global operational search must return matching customers by name or phone');
+must(searchUi.includes('phoneQuery')&&searchUi.includes('digits(phone).includes(phoneQuery)'),'Customer Service search must match normalized phone digits');
 must(!searchUi.includes('/api/state?clientId='),'Operational customer search must not load the full state payload');
-must(searchUi.includes('filterOperationalCards')&&searchUi.includes('v55-filter-hidden'),'Customer Service search must filter operational columns to matching customer names');
+must(searchUi.includes('filterOperationalCards')&&searchUi.includes('v55-filter-hidden'),'Customer Service search must filter operational columns to matching customer names or phone numbers');
 must(searchUi.includes('v55-order-date')&&searchUi.includes('تاريخ الطلب'),'Every operational order card must receive an explicit order-date row');
 must(searchUi.includes("select.value!=='shipped'")&&searchUi.includes("state:'shipped'")&&searchUi.includes('stateOnlyShip'),'Shipping transition must bypass the legacy stock chooser and remain state-only');
 must(searchUi.includes('بدون أي تعديل على المخزون')&&!searchUi.includes('stockBatchId'),'Shipping UI must not select or send an inventory batch');
@@ -68,7 +69,7 @@ must(shippingEntry.includes("checkpoint='جاري الشحن'")&&shippingEntry.i
 
 for(const marker of ['تأكيد من المخزون','/api/catalog/products','/edit',"state:'confirmed'",'عدد القطع','سعر القطعة','المتاح حاليًا','validateAvailability','حجز/خصم الكمية','KunConfirmInventoryV58','no_answer'])must(confirmUi.includes(marker),`Inventory confirmation UI missing ${marker}`);
 must(confirmUi.includes('productId')&&confirmUi.includes('variantId')&&confirmUi.includes('unitPrice'),'Confirmation must persist exact product/variant and editable price');
-must(index.includes('/v2/modules-v55-customer-search-fifo.js?v=55.2'),'v55.2 state-only shipping/search/date module must be loaded by v2');
+must(index.includes('/v2/modules-v55-customer-search-fifo.js?v=55.3'),'v55.3 name/phone shipping/search/date module must be loaded by v2');
 must(index.includes('/v2/modules-v58-confirm-inventory.js?v=58.1'),'v58.1 no-reload inventory confirmation module must be loaded by v2');
 must(index.includes('/v2/modules-v75-customer-service-interactions.js?v=75.2'),'v75.2 unified interaction counter must be loaded by v2');
 must(index.includes('/v2/modules-v42-customer-service-rich-cards.js?v=42.3')&&index.includes('/v2/modules-v44-customer-service-order-edit.js?v=44.1'),'In-place Customer Service detail/edit assets must be cache-busted');
@@ -82,6 +83,6 @@ must(entry.includes("path==='/api/customer-service'")&&entry.includes("path.star
 
 await import('../src/inventory-fifo.js');
 assertBrowserModule(ui);assertBrowserModule(richUi);assertBrowserModule(editUi);assertBrowserModule(interactionsUi);assertBrowserModule(searchUi);assertBrowserModule(confirmUi);
-console.log('Customer Service contract passed: no-answer follow-up, unified Call + Contact attempts, in-place edits without board reload, inventory-backed confirmation, FIFO reservation and governed multi-store operations.');
+console.log('Customer Service contract passed: no-answer follow-up, name/phone search, unified Call + Contact attempts, in-place edits without board reload, inventory-backed confirmation, FIFO reservation and governed multi-store operations.');
 
 function assertBrowserModule(source){try{new Function(source);}catch(error){throw new Error(`Customer Service browser module must parse: ${error.message}`);}}

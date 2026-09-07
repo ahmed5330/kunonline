@@ -68,7 +68,7 @@ async function fetchV33(request,env,ctx){
     const postShippingAction=path.match(/^\/api\/post-shipping\/orders\/([^/]+)\/(delivered|collecting|collect)$/);
     if(postShippingAction&&method==='PATCH'){
       const me=await currentUser(request,env,ctx);requirePermission(me,'orders','update');const body=await request.clone().json().catch(()=>({})),clientId=resolveTenant(me,body.clientId||body.client_id||url.searchParams.get('clientId')),orderId=decodeURIComponent(postShippingAction[1]);let result;
-      if(postShippingAction[2]==='delivered')result=await markPostShippingDeliveredV47(env,{clientId,orderId,me});
+      if(postShippingAction[2]==='delivered')result=await markPostShippingDeliveredV47(env,{clientId,orderId,shippingCost:body.shippingCost??body.shipping_cost,me});
       else if(postShippingAction[2]==='collecting')result=await startPostShippingCollectionV47(env,{clientId,orderId,me});
       else {result=await collectPostShippingOrderV47(env,{clientId,orderId,amount:body.amount,me});await reconcileManagementFeeForOrder(env,orderId).catch(()=>{});}return json(result);
     }
