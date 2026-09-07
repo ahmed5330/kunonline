@@ -44,8 +44,8 @@ assert.equal(sectionReload.includes('location.reload'),false,'section reload mus
 assert.doesNotThrow(()=>new Function(sectionReload),'section reload browser module must parse');
 
 assert.ok(search.includes('operationalCustomerMatches'),'customer-service/post-shipping search must list all local matching customers');
-assert.ok(search.includes('كل العملاء المطابقين للاسم أو رقم الهاتف'),'operational search must clearly expose name-or-phone matching');
-assert.ok(search.includes('phoneQuery')&&search.includes('digits(phone).includes(phoneQuery)'),'operational search must match normalized customer phone digits');
+assert.ok(search.includes('العملاء المطابقون للاسم أو الرقم'),'operational search must clearly expose name-or-phone matching');
+assert.ok(search.includes('phoneMatch=phone.length>=3&&digits(cardPhone(card)).includes(phone)'),'operational search must match normalized customer phone digits');
 assert.equal(search.includes('/api/state?clientId='),false,'operational name/phone search must never load the full /api/state payload');
 assert.ok(search.includes("observe(root,{childList:true,subtree:false})"),'customer-search observer must be root-only instead of watching the full document tree');
 assert.ok(search.includes('stateOnlyShip')&&search.includes('بدون أي تعديل على المخزون'),'shipping transition must stay independent from inventory');
