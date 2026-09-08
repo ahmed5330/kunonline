@@ -90,7 +90,8 @@ must(channelsJs.includes('if(!kpis||!box)return')&&channelsJs.includes("const bo
 must(multiAiJs.includes("if(!box?.isConnected)return")&&multiAiJs.includes("if(!ib?.isConnected||!ab?.isConnected)return"),'Store and AI async rendering must ignore stale views after rapid navigation');
 must(supplierJs.includes('/api/procurement/supplier-balances'), 'Supplier finance must expose aggregate supplier balances');
 must(integrationsJs.includes('/api/integrations/readiness'), 'Integrations center must use readiness API');
-must(integrationsJs.includes('type="password"')&&integrationsJs.includes('autocomplete="new-password"'), 'Integration secrets must use non-prefilled password fields');
+must(integrationsJs.includes("row.id==='jt'&&secret!=='private_key'?'text':'password'")&&integrationsJs.includes('autocomplete="new-password"'), 'Integration fields must keep J&T Private Key masked while allowing public API Account/Source Code identifiers');
+must(integrationsJs.includes("source_code:'Source Code'"), 'J&T Source Code field must be labeled explicitly');
 must(integrationsJs.includes('id="intSetupPanel"'), 'Integration setup must render inside the page');
 must(!/\b(?:prompt|confirm|alert)\s*\(/.test(integrationsJs), 'Integration setup must not use blocking native dialogs');
 must(multiAiJs.includes('/api/stores'), 'Multi-store UI must use stores API');
