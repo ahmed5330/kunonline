@@ -1,7 +1,9 @@
 import {decryptSecret} from './integration-secrets.js';
+import {validateJtExpressConnection} from './jt-express-eg-validation.js';
 
 const META_PROVIDER='meta_ads';
 const EASYORDERS_PROVIDER='easyorders';
+const JT_PROVIDER='jt';
 const EASYORDERS_AUTH_PROFILES=[
   {id:'api-key-external-apps',url:'https://api.easy-orders.net/api/v1/external-apps/products',headers:apiKey=>({'Api-Key':apiKey,Accept:'application/json'})},
   {id:'bearer-v1',url:'https://api.easy-orders.net/v1/products',headers:apiKey=>({Authorization:`Bearer ${apiKey}`,Accept:'application/json'})}
@@ -82,7 +84,6 @@ export async function validateEasyOrdersConnection({secrets,fetcher=fetch}){
 export async function validateProviderConnection({env,provider,secrets,selectedAdAccountId,fetcher=fetch}){
   if(provider?.id===META_PROVIDER)return validateMetaAdsConnection({env,secrets,selectedAdAccountId,fetcher});
   if(provider?.id===EASYORDERS_PROVIDER)return validateEasyOrdersConnection({secrets,fetcher});
+  if(provider?.id===JT_PROVIDER)return validateJtExpressConnection({secrets,fetcher});
   return {ok:true,status:'configured',externalConnectivityChecked:false,code:'PROVIDER_EXTERNAL_VALIDATION_PENDING',message:`بيانات ${provider?.name||provider?.id||'التكامل'} محفوظة، لكن التحقق الخارجي لهذا المزود لم يتم تفعيله بعد.`};
 }
-
-
