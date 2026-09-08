@@ -4,7 +4,8 @@ const worker=await readFile(new URL('../src/index-commerce-v13.js',import.meta.u
 const must=(ok,msg)=>{if(!ok)throw new Error(msg)};
 for(const p of ['shopify','woocommerce','easyorders','meta_whatsapp','meta_messenger','instagram','meta_ads','google_ads','tiktok_ads','jt','track123'])must(registry.includes(`id:'${p}'`),`Provider missing: ${p}`);
 for(const category of ['commerce','social','marketing','shipping'])must(registry.includes(`category:'${category}'`),`Provider category missing: ${category}`);
-for(const secret of ['api_account','private_key','customer_code','customer_password'])must(registry.includes(secret),`J&T Egypt credential missing: ${secret}`);
+for(const secret of ['api_account','private_key','source_code'])must(registry.includes(secret),`J&T Egypt Developer Info field missing: ${secret}`);
+must(!registry.includes("requiredSecrets:['api_account','private_key','customer_code','customer_password']"),'J&T current setup must not require legacy Customer Code/Password');
 must(!registry.includes("id:'jt',category:'shipping',name:'J&T Express',requiredSecrets:['api_key']"),'J&T must not be modeled as one API key');
 must(worker.includes('/api/integrations/catalog'),'Integration catalog endpoint missing');
 must(worker.includes('/api/integrations/readiness'),'Integration readiness endpoint missing');
@@ -12,4 +13,4 @@ must(worker.includes('missingSecrets'),'Readiness must identify missing credenti
 must(worker.includes("readiness:'disconnected'"),'Disconnected readiness state missing');
 must(worker.includes("'needs_secrets'"),'Needs-secrets readiness state missing');
 await import('./jt-express-eg-validation-test.mjs');
-console.log('Provider registry checks passed: commerce, social, ads and shipping readiness catalog including J&T Egypt OpenAPI credentials.');
+console.log('Provider registry checks passed: commerce, social, ads and shipping readiness catalog including current J&T Egypt Developer Info fields.');
