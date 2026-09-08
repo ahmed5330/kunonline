@@ -9,7 +9,7 @@ export const PROVIDERS=[
   {id:'meta_ads',category:'marketing',name:'Meta Ads',requiredSecrets:['access_token'],capabilities:['campaigns.read','metrics.read','campaigns.write','ads.write','budgets.write']},
   {id:'google_ads',category:'marketing',name:'Google Ads',requiredSecrets:['developer_token','refresh_token','client_id','client_secret'],capabilities:['campaigns.read','metrics.read','campaigns.write','ads.write','budgets.write']},
   {id:'tiktok_ads',category:'marketing',name:'TikTok Ads',requiredSecrets:['access_token'],capabilities:['campaigns.read','metrics.read','campaigns.write','ads.write','budgets.write']},
-  {id:'jt',category:'shipping',name:'J&T Express',requiredSecrets:['api_account','private_key','customer_code','customer_password'],capabilities:['shipments.create','tracking.read'],activationNote:'J&T Express Egypt OpenAPI يحتاج بيانات apiAccount وprivateKey وcustomerCode وCustomer Password الأربعة.'},
+  {id:'jt',category:'shipping',name:'J&T Express',requiredSecrets:['api_account','private_key','source_code'],capabilities:['shipments.create','tracking.read'],activationNote:'J&T Express Egypt Developer Info الحالي يعرض API Account وPrivate Key وSource Code. Source Name تعريفي فقط وليس Credential مطلوبًا.'},
   {id:'bosta',category:'shipping',name:'Bosta',requiredSecrets:['api_key'],capabilities:['shipments.create','tracking.read','webhooks']},
   {id:'mylerz',category:'shipping',name:'Mylerz',requiredSecrets:['api_key'],capabilities:['shipments.create','tracking.read','webhooks']},
   {id:'aramex',category:'shipping',name:'Aramex',requiredSecrets:['api_key'],capabilities:['shipments.create','tracking.read','webhooks']},
