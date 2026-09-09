@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
-import {easyOrdersWebhookPath,easyOrdersBusinessDate,mapEasyOrdersStatus} from '../src/commerce-order-sync.js';
-import {easyOrdersRecoveryStatus,reconcileEasyOrdersOrders,easyOrdersReconciliationDefaults} from '../src/easyorders-order-reconciliation.js';
-import {normalizeEasyOrdersWebhookPayload} from '../src/index-commerce-v31.js';
 const root=new URL('../',import.meta.url),read=p=>readFile(new URL(p,root),'utf8');
 const [sync,worker,ui,loader,validator,preview,recovery,v34,recoveryUi,index]=await Promise.all([read('src/commerce-order-sync.js'),read('src/index-commerce-v31.js'),read('public/v2/modules-v30-order-sync.js'),read('public/v2/modules-v29-product-import.js'),read('src/integration-provider-validation.js'),read('wrangler.preview.toml'),read('src/easyorders-order-reconciliation.js'),read('src/index-commerce-v34.js'),read('public/v2/modules-v49-easyorders-recovery.js'),read('public/v2/index.html')]);
+const {easyOrdersWebhookPath,easyOrdersBusinessDate,mapEasyOrdersStatus}=await import('../src/commerce-order-sync.js');
+const {easyOrdersRecoveryStatus,reconcileEasyOrdersOrders,easyOrdersReconciliationDefaults}=await import('../src/easyorders-order-reconciliation.js');
+const {normalizeEasyOrdersWebhookPayload}=await import('../src/index-commerce-v31.js');
 const env={SESSION_SECRET:'qa-session-secret'};
 const hookA=await easyOrdersWebhookPath(env,{id:'CON-A',client_id:'CLIENT-A'}),hookA2=await easyOrdersWebhookPath(env,{id:'CON-A',client_id:'CLIENT-A'}),hookB=await easyOrdersWebhookPath(env,{id:'CON-B',client_id:'CLIENT-B'});
 assert.equal(hookA,hookA2,'Webhook URL must remain stable for the same connection');
@@ -20,6 +20,7 @@ assert.equal(wrapped.id,'EO-2');assert.equal(wrapped.store_id,'STORE-2');assert.
 const status=normalizeEasyOrdersWebhookPayload({eventType:'order-status-update',payload:{orderId:'EO-3',newStatus:'confirmed',oldStatus:'pending'}});
 assert.equal(status.event_type,'order-status-update');assert.equal(status.order_id,'EO-3');assert.equal(status.new_status,'confirmed');
 for(const marker of ['all','month','seven_days','day','since_connection','orders.read','EASYORDERS_HISTORICAL_ORDERS_UNAVAILABLE','easyOrdersWebhookPath','easyOrdersBusinessDate','date=excluded.date','verifyRoute','bindExternalStore','EASYORDERS_STORE_MISMATCH','client_id=? AND store_id IS ? AND phone=?','kunStoreId','webhook_secret','ON CONFLICT(id)','last_sync_at'])assert.ok(sync.includes(marker),`sync missing ${marker}`);
+for(const marker of ["orders.state IN ('no_answer','deferred')","state IN ('no_answer','deferred') THEN state","checkpoint=CASE WHEN orders.state IN ('no_answer','deferred')","checkpoint=CASE WHEN state IN ('no_answer','deferred') THEN checkpoint"])assert.ok(sync.includes(marker),`Easy Orders must preserve local hold state: ${marker}`);
 for(const marker of ['/api/commerce/order-sync/diagnostics','normalizeEasyOrdersWebhookPayload','webhookLastReceivedAt','webhookLastProbeAt','webhookLastHttpStatus','last_error','method===\'GET\'||method===\'HEAD\'','\\/?$','EASYORDERS_WEBHOOK_LEGACY_ROUTE_DISABLED','legacyRouteDisabled:true','routeMode:\'connection-scoped\'','X-Kun-Webhook-Deprecated'])assert.ok(worker.includes(marker),`v31 webhook diagnostics missing ${marker}`);
 for(const marker of ['provider.modes','orderSyncMode','supported','commerceOrderSync','رابط Webhook','Webhook Secret','saveEasyOrdersWebhookSecret','Public API','Create Webhook','checkEasyOrdersWebhook','probeWebhook','probeEasyOrdersWebhook','probeDiagWebhook','lastProbeAt','الرابط العام القديم'])assert.ok(ui.includes(marker),`UI missing ${marker}`);
 for(const marker of ['orders/short/','Api-Key','webhookLastOrderId','webhookLastShortId','record not found','waiting_for_short_id','easyOrdersRecoveryHighestShortId','easyOrdersRecoveryCursor','MAX_AHEAD_MISSES','rate_limited','handleEasyOrdersWebhook','recoveredOrderIds','maxRequests:DEFAULT_MAX_REQUESTS','recoveryState','aggregateRecovery','easyOrdersRecoveryStatus','estimatedRemaining','recoveredTotal','catching_up'])assert.ok(recovery.includes(marker),`recovery missing ${marker}`);
@@ -38,4 +39,4 @@ async function delegatedChain(path,seen=new Set()){
   return chain;
 }
 const chain=await delegatedChain(previewEntry);assert.ok(chain.some(x=>x.path==='src/index-commerce-v34.js'&&x.source.includes('/api/commerce/order-sync/reconcile')),'Preview additive wrapper chain must retain v34 Easy Orders recovery routes');assert.ok(chain.some(x=>x.path==='src/index-commerce-v31.js'&&x.source.includes('normalizeEasyOrdersWebhookPayload')),'Preview additive wrapper chain must retain v31 Easy Orders webhook routes');
-console.log(`Commerce order sync contract passed: scoped webhook + Cairo business dates + persisted Short ID + resilient gap recovery + health/progress status + five-minute reconciliation + manual repair are wired through ${previewEntry}.`);
+console.log(`Commerce order sync contract passed: scoped webhook + Cairo business dates + persisted Short ID + resilient gap recovery + local no-answer/deferred state preservation + health/progress status + five-minute reconciliation + manual repair are wired through ${previewEntry}.`);
