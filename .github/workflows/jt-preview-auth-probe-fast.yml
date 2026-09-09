@@ -1,4 +1,5 @@
 name: J&T Preview Auth Probe Fast
+# Isolated diagnostic run: reads Preview only and never deploys Production.
 on:
   push:
     branches: [diagnostic/jt-auth-probe-fast]
