@@ -1,0 +1,27 @@
+name: J&T Preview Diagnostic
+on:
+  push:
+    branches: [develop/ux-system-upgrade]
+    paths:
+      - '.github/workflows/jt-preview-diagnostic.yml'
+      - 'scripts/live-preview-jt-diagnose.mjs'
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    if: github.event.head_commit.message == 'Run one-time J&T Preview diagnostic'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment:
+      name: preview
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - name: Read actual Preview J&T diagnostic state
+        run: node scripts/live-preview-jt-diagnose.mjs
