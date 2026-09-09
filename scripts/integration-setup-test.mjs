@@ -12,3 +12,4 @@ must(/function remove\(row,load,root\)\{[\s\S]*?panel\.scrollIntoView\(\{behavio
 must(ui.includes("btn.textContent='جاري الإزالة...'")&&ui.includes("method:'DELETE'"),'Removal action must expose progress and call the delete route');
 must(!ui.includes('localStorage.setItem')&&!ui.includes('sessionStorage.setItem'),'Integration UI must not persist credentials in browser storage');
 console.log('Integration setup checks passed: governed connections, encrypted credential handoff, visible confirmation and safe deletion.');
+await import('./jt-live-shipping-test.mjs');
