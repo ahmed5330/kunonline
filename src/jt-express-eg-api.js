@@ -1,0 +1,53 @@
+import {__jtValidationInternals} from './jt-express-eg-validation.js';
+
+const {md5Hex,md5Base64,LIVE_BASE}=__jtValidationInternals;
+const ADD_ORDER_PATH='/webopenplatformapi/api/order/addOrder';
+const CREATE_ORDER_PATH='/webopenplatformapi/api/order/createOrder';
+const GET_ORDERS_PATH='/webopenplatformapi/api/order/getOrders';
+const TRACE_PATH='/webopenplatformapi/api/logistics/trace';
+const PASSWORD_SALT='jadada236t2';
+const clean=(value,max=2000)=>String(value??'').trim().slice(0,max);
+const number=value=>Number.isFinite(Number(value))?Number(value):0;
+const integer=value=>Math.max(1,Math.floor(number(value)||1));
+const compact=value=>value&&typeof value==='object'&&!Array.isArray(value)?Object.fromEntries(Object.entries(value).filter(([,v])=>v!==undefined&&v!==null&&v!=='')):value;
+const b64url=value=>String(value||'').replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+
+export function jtCredentials(secrets={}){
+  const fields={
+    apiAccount:clean(secrets.api_account||secrets.apiAccount,240),
+    privateKey:clean(secrets.private_key||secrets.privateKey,500),
+    sourceCode:clean(secrets.source_code||secrets.sourceCode,240),
+    customerCode:clean(secrets.customer_code||secrets.customerCode,240),
+    customerPassword:clean(secrets.customer_password||secrets.customer_pwd||secrets.customerPassword,500)
+  };
+  return {fields,missing:['apiAccount','privateKey','sourceCode'].filter(key=>!fields[key]),enterpriseReady:Boolean(fields.customerCode&&fields.customerPassword)};
+}
+function businessDigest(customerCode,password,privateKey){const hashedPassword=md5Hex(password+PASSWORD_SALT).toUpperCase();return md5Base64(customerCode+hashedPassword+privateKey);}
+export function jtWebhookToken(connectionId,secrets={}){const {fields,missing}=jtCredentials(secrets);if(missing.length)throw Object.assign(new Error('بيانات J&T الأساسية غير مكتملة'),{code:'JT_CREDENTIALS_MISSING'});return b64url(md5Base64(`kun-jt-webhook:${clean(connectionId,240)}:${fields.apiAccount}:${fields.sourceCode}:${fields.privateKey}`));}
+function normalizePhone(value){let raw=clean(value,80).replace(/[\s()\-]/g,'');if(raw.startsWith('+20'))raw='0'+raw.slice(3);else if(raw.startsWith('20')&&raw.length>=12)raw='0'+raw.slice(2);return raw;}
+function egyptCountry(value){const v=clean(value,30);return v==='100000'||v==='+20'||v==='20'?'EGY':(v||'EGY');}
+function mapGoodsType(value){const v=clean(value,120).toLowerCase();if(/clothes|cloth|apparel|fashion|ملابس/.test(v))return 'ITN6';if(/food|طعام|غذ/.test(v))return 'ITN8';if(/book|كتاب/.test(v))return 'ITN2';if(/fragile|قابل للكسر/.test(v))return 'ITN9';return 'ITN1';}
+
+export function buildJtCreatePayload(shipment={},secrets={}){
+  const {fields,missing,enterpriseReady}=jtCredentials(secrets);if(missing.length)throw Object.assign(new Error('J&T Express يحتاج API Account وPrivate Key وSource Code'),{code:'JT_CREDENTIALS_MISSING'});
+  const txlogisticId=clean(shipment.customerOrderNo||shipment.txlogisticId||shipment.orderRef||shipment.orderId,120),receiverName=clean(shipment.receiverName,220),mobile=normalizePhone(shipment.receiverPhone),phone2=normalizePhone(shipment.receiverPhone2)||mobile,province=clean(shipment.province,160),city=clean(shipment.city,160),area=clean(shipment.area,220),street=clean(shipment.street,900);
+  if(!txlogisticId||!receiverName||!mobile||!province||!city||!area||!street)throw Object.assign(new Error('أكمل رقم الطلب واسم وهاتف وعنوان المستلم قبل إرسال الشحنة'),{code:'JT_SHIPMENT_FIELDS_MISSING'});
+  const weight=Math.max(.01,number(shipment.weight)||1),quantity=integer(shipment.quantity),codAmount=Math.max(0,number(shipment.codAmount)),itemName=clean(shipment.itemName,500)||'Goods',currency=clean(shipment.currency,12)||'EGP',goodsType=mapGoodsType(shipment.itemType);
+  const receiver=compact({name:receiverName,company:receiverName,mobile,phone:phone2,countryCode:egyptCountry(shipment.countryCode),prov:province,city,area,street,provCode:clean(shipment.provinceCode,80)||undefined,cityCode:clean(shipment.cityCode,80)||undefined,areaCode:clean(shipment.districtCode||shipment.areaCode,100)||undefined,countryAreaCode:clean(shipment.addressCountryCode,80)||undefined});
+  const item={itemType:goodsType,itemName,chineseName:itemName,englishName:itemName,number:quantity,itemValue:codAmount,priceCurrency:currency,desc:itemName,itemUrl:''};
+  const payload=compact({sourceCode:fields.sourceCode,txlogisticId,orderType:'2',serviceType:'02',deliveryType:'04',payType:codAmount>0?'PP_CASH':'PP_PM',expressType:'EZ',goodsType,invoceNumber:txlogisticId,weight,totalQuantity:quantity,itemsValue:codAmount,priceCurrency:currency,operateType:1,remark:clean(shipment.notes||shipment.pickupInfo,500),receiver,items:[item]});
+  if(enterpriseReady){payload.customerCode=fields.customerCode;payload.digest=businessDigest(fields.customerCode,fields.customerPassword,fields.privateKey);}
+  return payload;
+}
+async function readResponse(response){const text=await response.text().catch(()=>''),data=(()=>{try{return text?JSON.parse(text):{};}catch{return {raw:text};}})();return {response,data,code:clean(data?.code??data?.resultCode??data?.statusCode,80),message:clean(data?.msg||data?.message||data?.error||'',700)};}
+async function signedPost(path,payload,secrets,{fetcher=fetch}={}){const {fields,missing}=jtCredentials(secrets);if(missing.length)throw Object.assign(new Error('بيانات J&T الأساسية غير مكتملة'),{code:'JT_CREDENTIALS_MISSING'});const bizContent=JSON.stringify(payload),timestamp=String(Math.floor(Date.now()/1000));let response;try{response=await fetcher(`${LIVE_BASE}${path}`,{method:'POST',headers:{Accept:'application/json','Content-Type':'application/x-www-form-urlencoded',apiAccount:fields.apiAccount,digest:md5Base64(bizContent+fields.privateKey),timestamp},body:new URLSearchParams({bizContent}).toString()});}catch(error){throw Object.assign(new Error(`تعذر الاتصال بـ J&T: ${clean(error?.message,300)||'network error'}`),{code:'JT_NETWORK_ERROR',cause:error});}return {...await readResponse(response),path,bizContent};}
+function dataCandidates(data){const roots=[data?.data,data?.result,data?.response,data],out=[];for(const root of roots){if(Array.isArray(root))out.push(...root);else if(root&&typeof root==='object')out.push(root);}return out;}
+function firstValue(data,keys){for(const row of dataCandidates(data))for(const key of keys){const value=row?.[key];if(value!==undefined&&value!==null&&clean(value))return clean(value,300);}return '';}
+export function parseJtShipmentResult(data={}){return {awb:firstValue(data,['billCode','waybillCode','waybillNo','waybillNumber','trackingNumber','logisticsNo']),txlogisticId:firstValue(data,['txlogisticId','txLogisticId','customerOrderNo','orderNo','serialNumber']),sortingCode:firstValue(data,['sortingCode','sortCode','sorting_code','shortAddress']),lastCenterName:firstValue(data,['lastCenterName','centerName','dispatchCenterName'])};}
+function success(result){return result.response.ok&&(result.code==='1'||result.code==='200'||result.data?.success===true||result.data?.ok===true);}
+function duplicateLike(result){return /duplicate|already|exist|repeat|repeated|exists|duplicat|مكرر|موجود بالفعل/i.test(`${result.code} ${result.message}`);}
+function enterpriseCredentialHint(result){return /(customer\s*code|customer\s*password|customer\s*pwd|business.*digest|parameter.*digest|customer.*digest)/i.test(`${result.code} ${result.message}`);}
+async function recoverExisting(txlogisticId,secrets,options={}){if(!txlogisticId)return null;try{const {fields,enterpriseReady}=jtCredentials(secrets),payload=enterpriseReady?{customerCode:fields.customerCode,digest:businessDigest(fields.customerCode,fields.customerPassword,fields.privateKey),command:1,serialNumber:[txlogisticId],sourceCode:fields.sourceCode}:{sourceCode:fields.sourceCode,command:1,serialNumber:[txlogisticId]};const result=await signedPost(GET_ORDERS_PATH,payload,secrets,options);if(!success(result))return null;const parsed=parseJtShipmentResult(result.data);return parsed.awb?{...parsed,recovered:true,raw:result.data}:null;}catch{return null;}}
+export async function createJtShipment({shipment,secrets,fetcher=fetch}){const payload=buildJtCreatePayload(shipment,secrets),txlogisticId=payload.txlogisticId;let result;try{result=await signedPost(ADD_ORDER_PATH,payload,secrets,{fetcher});}catch(error){const recovered=await recoverExisting(txlogisticId,secrets,{fetcher});if(recovered)return {ok:true,...recovered,txlogisticId:recovered.txlogisticId||txlogisticId,payload};throw error;}if(result.response.status===404||result.response.status===405)result=await signedPost(CREATE_ORDER_PATH,payload,secrets,{fetcher});if(success(result)){const parsed=parseJtShipmentResult(result.data);if(!parsed.awb)throw Object.assign(new Error('J&T قبلت الطلب لكن لم ترجع رقم بوليصة AWB في الاستجابة'),{code:'JT_AWB_MISSING',jtResponse:result.data});return {ok:true,...parsed,txlogisticId:parsed.txlogisticId||txlogisticId,payload,raw:result.data,path:result.path};}if(duplicateLike(result)){const recovered=await recoverExisting(txlogisticId,secrets,{fetcher});if(recovered)return {ok:true,...recovered,txlogisticId:recovered.txlogisticId||txlogisticId,payload};}const needsEnterprise=enterpriseCredentialHint(result),hint=needsEnterprise?' حساب J&T رجّع طلبًا لبيانات Enterprise Info؛ أضف Customer Code وCustomer Password من Enterprise Info داخل إعداد J&T ثم أعد المحاولة.':'';throw Object.assign(new Error(`J&T رفضت إنشاء الشحنة${result.code?` (${result.code})`:''}: ${result.message||`HTTP ${result.response.status}`}.${hint}`),{code:'JT_CREATE_REJECTED',jtCode:result.code,httpStatus:result.response.status,jtResponse:result.data,enterpriseCredentialsRequired:needsEnterprise});}
+export async function trackJtShipment({awb,secrets,fetcher=fetch}){const code=clean(awb,160);if(!code)throw Object.assign(new Error('رقم البوليصة مطلوب للتتبع'),{code:'JT_AWB_REQUIRED'});const {fields,enterpriseReady}=jtCredentials(secrets),payload=enterpriseReady?{customerCode:fields.customerCode,digest:businessDigest(fields.customerCode,fields.customerPassword,fields.privateKey),billCodes:code,sourceCode:fields.sourceCode}:{sourceCode:fields.sourceCode,billCodes:code};const result=await signedPost(TRACE_PATH,payload,secrets,{fetcher});if(!success(result))throw Object.assign(new Error(`تعذر جلب تتبع J&T${result.code?` (${result.code})`:''}: ${result.message||`HTTP ${result.response.status}`}`),{code:'JT_TRACK_REJECTED',jtCode:result.code,jtResponse:result.data});return {ok:true,awb:code,data:result.data};}
+export const __jtApiInternals={ADD_ORDER_PATH,CREATE_ORDER_PATH,GET_ORDERS_PATH,TRACE_PATH,LIVE_BASE,businessDigest,signedPost,success,parseJtShipmentResult};

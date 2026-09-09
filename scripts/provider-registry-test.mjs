@@ -13,4 +13,5 @@ must(worker.includes('missingSecrets'),'Readiness must identify missing credenti
 must(worker.includes("readiness:'disconnected'"),'Disconnected readiness state missing');
 must(worker.includes("'needs_secrets'"),'Needs-secrets readiness state missing');
 await import('./jt-express-eg-validation-test.mjs');
-console.log('Provider registry checks passed: commerce, social, ads and shipping readiness catalog including current J&T Egypt Developer Info fields.');
+await import('./jt-live-shipping-test.mjs');
+console.log('Provider registry checks passed: commerce, social, ads and shipping readiness catalog including current J&T Egypt Developer Info fields and live shipment contracts.');
