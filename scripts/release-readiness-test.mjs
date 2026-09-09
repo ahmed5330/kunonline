@@ -11,9 +11,20 @@ const must=(ok,msg)=>{if(!ok)throw new Error(msg)};
 const entry=wrangler.match(/^\s*main\s*=\s*"([^"]+)"/m)?.[1];
 must(Boolean(entry),'Preview entrypoint is missing from wrangler.preview.toml');
 must(/^src\/index-commerce-v\d+\.js$/.test(entry),`Unexpected Preview entrypoint: ${entry}`);
-await access(new URL(`../${entry}`,import.meta.url));
-const current=await readFile(new URL(`../${entry}`,import.meta.url),'utf8');
-must(/\/api\/preview\/version/.test(current),'Current Preview entry must expose /api/preview/version for deployed-build verification');
+const currentUrl=new URL(`../${entry}`,import.meta.url);await access(currentUrl);
+async function previewVersionOwner(url,seen=new Set()){
+  if(seen.has(url.href))return null;seen.add(url.href);
+  const source=await readFile(url,'utf8');
+  if(/\/api\/preview\/version/.test(source))return url;
+  const imports=[...source.matchAll(/import\s+([A-Za-z_$][\w$]*)\s*(?:,\s*\{[^}]*\})?\s+from\s+['"](\.\/index-commerce-v\d+\.js)['"]/g)];
+  for(const [,symbol,relative] of imports){
+    if(!source.includes(`${symbol}.fetch`))continue;
+    const owner=await previewVersionOwner(new URL(relative,url),seen);if(owner)return owner;
+  }
+  return null;
+}
+const previewVersionSource=await previewVersionOwner(currentUrl);
+must(Boolean(previewVersionSource),'Current Preview entry delegation chain must expose /api/preview/version for deployed-build verification');
 must(/name\s*=\s*"kunonline-preview"/.test(wrangler),'Preview Worker name mismatch');
 must(/database_name\s*=\s*"kunonline-preview"/.test(wrangler),'Preview D1 mismatch');
 for(const expected of ['0000_preview_baseline.sql','0001_preview_schema.sql','0002_profit_cod.sql','0003_approvals_ai_gateway.sql','0004_execution_ops.sql','0005_saas_control_plane.sql','0006_channels_campaigns.sql','0007_pos.sql','0008_integration_secrets.sql','0009_pos_stock_guards.sql','0010_procurement_finance.sql','0011_multistore_ai.sql','0012_pos_inventory_consistency.sql','0013_store_data_scope.sql','0014_platform_control_wallet_marketing.sql'])must(migrations.includes(expected),`Missing migration ${expected}`);
@@ -28,4 +39,4 @@ must(recovery.includes("env.APP_ENV!=='preview'"),'Admin recovery must be Previe
 must(recovery.includes("__preview_admin_recovery_used__"),'Admin recovery must be one-time');
 must(recovery.includes("UPDATE users SET status='disabled' WHERE role='admin'"),'Admin recovery must disable stale Preview admins');
 must(recoveryPage.includes('/api/preview-admin-recovery'),'Preview recovery page is not wired');
-console.log(`Release readiness checks passed with ${migrations.length} migrations, current entry ${entry}, Preview recovery, real core/team actions and current v2 assets.`);
+console.log(`Release readiness checks passed with ${migrations.length} migrations, current entry ${entry}, preview-version owner ${previewVersionSource.pathname.split('/').pop()}, Preview recovery, real core/team actions and current v2 assets.`);
