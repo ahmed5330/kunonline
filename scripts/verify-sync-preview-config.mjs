@@ -8,6 +8,10 @@ const [config,appConfig,scheduler,syncEntry]=await Promise.all([
 ]);
 const assert=(ok,message)=>{if(!ok)throw new Error(`Sync Preview safety check failed: ${message}`);};
 const value=(source,key)=>source.match(new RegExp(`^\\s*${key}\\s*=\\s*"([^"]+)"`,'m'))?.[1];
+const appEntry=value(appConfig,'main');
+assert(/^src\/index-commerce-v\d+\.js$/.test(appEntry||''),'app Preview entrypoint must be a versioned Commerce wrapper');
+const appEntrySource=await readFile(new URL(`../${appEntry}`,import.meta.url),'utf8');
+assert(/export\s+(?:class\s+SyncEntrypoint\b|\{\s*SyncEntrypoint\s*\}\s+from\b)/.test(appEntrySource),'current app Preview entrypoint must export SyncEntrypoint for the dedicated scheduler service binding');
 assert(value(config,'name')==='kunonline-sync-preview','worker name must be kunonline-sync-preview');
 assert(value(config,'main')==='src/sync-scheduler-preview.js','entrypoint must be src/sync-scheduler-preview.js');
 assert(!/\[\[d1_databases\]\]|database_name\s*=|database_id\s*=/m.test(config),'scheduler must not bind D1 directly');
@@ -25,4 +29,4 @@ assert(syncEntry.includes("easyOrdersPriceSync:'four-hour'"),'price sync must be
 assert(syncEntry.includes("metaCampaignSync:'15-minute-gated'"),'Meta campaign sync policy must remain 15-minute');
 assert(syncEntry.includes("metaGranularSync:'two-hour'"),'Meta granular sync must run every two hours');
 assert(syncEntry.includes("return commerceV34.fetch(request,env,ctx);"),'Easy Orders webhook/import must delegate to targeted v34 dedupe paths');
-console.log('Dedicated Preview sync scheduler config passed: Meta uses a native 15-minute Cron, Easy Orders recovery stays five-minute with a global budget, price sync is four-hour, granular Meta is two-hour, and full dedupe is manual-only.');
+console.log(`Dedicated Preview sync scheduler config passed: current app entry ${appEntry} exports SyncEntrypoint; Meta uses a native 15-minute Cron, Easy Orders recovery stays five-minute with a global budget, price sync is four-hour, granular Meta is two-hour, and full dedupe is manual-only.`);
