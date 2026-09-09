@@ -1,0 +1,25 @@
+name: J&T Preview Auth Probe Fast
+on:
+  push:
+    branches: [diagnostic/jt-auth-probe-fast]
+    paths:
+      - '.github/workflows/jt-preview-auth-probe-fast.yml'
+      - 'scripts/live-preview-jt-auth-probe-fast.mjs'
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment:
+      name: preview
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: node scripts/live-preview-jt-auth-probe-fast.mjs https://kunonline-preview.mr-a-mnaa.workers.dev
