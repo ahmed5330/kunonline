@@ -1,0 +1,26 @@
+name: J&T Preview Create Order QA Once
+on:
+  push:
+    branches: [develop/ux-system-upgrade]
+    paths:
+      - '.github/workflows/jt-preview-create-order-qa-once.yml'
+      - 'scripts/live-preview-jt-create-order-qa-once.mjs'
+permissions:
+  contents: read
+jobs:
+  create-order-qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment:
+      name: preview
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - name: Create one synthetic Preview order and call the real J&T Create Order route
+        run: node scripts/live-preview-jt-create-order-qa-once.mjs https://kunonline-preview.mr-a-mnaa.workers.dev
