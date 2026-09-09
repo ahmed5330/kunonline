@@ -28,7 +28,7 @@ assert(entry.includes("from 'cloudflare:workers'")&&entry.includes('class SyncEn
 for(const heading of ['تحليل الحملات الإعلانية','تحليل المجموعات الإعلانية','تحليل الإعلانات','قراءة خبير الإعلانات'])assert(ui.includes(heading),`Dashboard expert heading missing: ${heading}`);
 for(const signal of ['مرشح للتوسيع','إجهاد إعلاني','مشكلة بعد النقرة'])assert(ui.includes(signal)||ui.includes('flags'),`Expert signal support missing: ${signal}`);
 assert(index.includes('modules-v48-ad-expert.js'),'Expert dashboard bundle is not loaded');
-assert(/main\s*=\s*"src\/index-commerce-v3[4567]\.js"/.test(preview),'Preview is not routed through the v34 Meta layer or its additive v35/v36/v37 wrapper');
+assert(/main\s*=\s*"src\/index-commerce-v3[45678]\.js"/.test(preview),'Preview is not routed through the v34 Meta layer or its additive v35/v36/v37/v38 wrapper');
 for(const route of ['/api/integrations/meta-ads/campaign-hub','/api/integrations/meta-ads/daily-comparison','/api/integrations/meta-ads/breakdowns'])assert(v36.includes(route),`Campaign hub route missing: ${route}`);
 assert(v36.includes("requirePermission(me,'campaigns','read')")&&v36.includes('resolveStoreScope'),'Campaign hub must preserve campaign permission and store isolation');
 assert(v36.includes('includeInactiveExpertEntities')&&v36.includes('includeInactiveComparisonEntities'),'Campaigns all filter must augment analysis and comparison with inactive zero-spend entities');
