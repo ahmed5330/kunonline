@@ -30,5 +30,12 @@ assert.equal(typeof reconcileEasyOrdersOrders,'function');assert.equal(typeof ea
 assert.equal(easyOrdersReconciliationDefaults.maxRequests,30);assert.ok(easyOrdersReconciliationDefaults.lookback>=80);assert.ok(easyOrdersReconciliationDefaults.aheadMisses>=3);
 assert.ok(loader.includes('/v2/modules-v30-order-sync.js?v=30.2'),'order sync UI cache bust not loaded');
 assert.ok(validator.includes('easyOrdersStoreId')&&validator.includes('externalStoreId'),'Easy Orders validation must bind the external store id when discoverable');
-assert.match(preview,/main\s*=\s*"src\/index-commerce-v3[3456]\.js"/,'Preview must use the current additive wrapper over v32/v31 Easy Orders routes');
-console.log('Commerce order sync contract passed: scoped webhook + Cairo business dates + persisted Short ID + resilient gap recovery + health/progress status + five-minute reconciliation + manual repair are wired.');
+const previewEntry=preview.match(/^\s*main\s*=\s*"([^"]+)"/m)?.[1];assert.match(previewEntry||'',/^src\/index-commerce-v\d+\.js$/,'Preview must use a versioned additive commerce wrapper');
+async function delegatedChain(path,seen=new Set()){
+  if(seen.has(path))return [];seen.add(path);const source=await read(path),chain=[{path,source}];
+  const imports=[...source.matchAll(/import\s+([A-Za-z_$][\w$]*)\s*(?:,\s*\{[^}]*\})?\s+from\s+['"](\.\/index-commerce-v\d+\.js)['"]/g)];
+  for(const [,symbol,relative] of imports){if(!source.includes(`${symbol}.fetch`))continue;const next=`src/${relative.replace(/^\.\//,'')}`;chain.push(...await delegatedChain(next,seen));}
+  return chain;
+}
+const chain=await delegatedChain(previewEntry);assert.ok(chain.some(x=>x.path==='src/index-commerce-v34.js'&&x.source.includes('/api/commerce/order-sync/reconcile')),'Preview additive wrapper chain must retain v34 Easy Orders recovery routes');assert.ok(chain.some(x=>x.path==='src/index-commerce-v31.js'&&x.source.includes('normalizeEasyOrdersWebhookPayload')),'Preview additive wrapper chain must retain v31 Easy Orders webhook routes');
+console.log(`Commerce order sync contract passed: scoped webhook + Cairo business dates + persisted Short ID + resilient gap recovery + health/progress status + five-minute reconciliation + manual repair are wired through ${previewEntry}.`);
