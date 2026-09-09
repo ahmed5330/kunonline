@@ -38,16 +38,23 @@ must(jnt.includes('option[value="jnt"]')&&jnt.includes('option.remove()'),'Gener
 for(const marker of ['carrierFinancialMath',"type:'carrier_financials'",'previousAncillary','baseOther','nextOther','codServiceFee','order.carrier_financials'])must(financials.includes(marker),`Carrier financial reconciliation missing: ${marker}`);
 must(financials.includes("sheetType==='returned'?r2(-totalCarrierFees):r2(cod-totalCarrierFees)"),'Backend carrier math must treat return rows as a cost only');
 must(financials.includes('baseOther=r2(n(row.other_cost)-previousAncillary)')&&financials.includes('nextOther=r2(baseOther+financials.ancillaryFee)'),'Repeated sheet imports must replace prior carrier ancillary charges without erasing manual other costs');
-must(entry.includes("from './carrier-financials.js'")&&entry.includes('/carrier-financials')&&entry.includes('carrierFinancials:true'),'Active Preview entrypoint must expose carrier financial reconciliation');
+must(entry.includes("from './carrier-financials.js'")&&entry.includes('/carrier-financials')&&entry.includes('carrierFinancials:true'),'v36 stock-guard layer must expose carrier financial reconciliation');
 
 must(index.includes('modules-v59-shipping-sheet-import.js?v=59.0'),'Generic shipping sheet importer asset is not loaded');
 must(index.includes('modules-v60-jnt-sheet.js?v=60.0'),'Dedicated J&T Signed/Returned importer asset is not loaded');
 must(index.indexOf('modules-v59-shipping-sheet-import.js')<index.indexOf('modules-v60-jnt-sheet.js'),'J&T importer must load after the shared XLSX parser');
-must(wrangler.includes('main = "src/index-commerce-v36.js"'),'Preview must use the v36 stock guard wrapper');
+const previewEntry=wrangler.match(/^\s*main\s*=\s*"([^"]+)"/m)?.[1];must(/^src\/index-commerce-v\d+\.js$/.test(previewEntry||''),'Preview must use a versioned additive commerce wrapper');
+async function delegatedChain(path,seen=new Set()){
+  if(seen.has(path))return [];seen.add(path);const source=await read(path),chain=[{path,source}];
+  const imports=[...source.matchAll(/import\s+([A-Za-z_$][\w$]*)\s*(?:,\s*\{[^}]*\})?\s+from\s+['"](\.\/index-commerce-v\d+\.js)['"]/g)];
+  for(const [,symbol,relative] of imports){if(!source.includes(`${symbol}.fetch`))continue;const next=`src/${relative.replace(/^\.\//,'')}`;chain.push(...await delegatedChain(next,seen));}
+  return chain;
+}
+const chain=await delegatedChain(previewEntry);must(chain.some(x=>x.path==='src/index-commerce-v36.js'&&x.source.includes('shippingSheetInventoryGate:true')),'Preview additive wrapper chain must retain the v36 shipping-sheet stock guard layer');
 for(const marker of ['returned','restocked=0','explicitInventoryLinks','restoreLegacyReturnFlagIfStillReturned','SyncEntrypoint'])must(entry.includes(marker),`Returned-order reconfirmation guard missing: ${marker}`);
 const {carrierFinancialMath}=await import('../src/carrier-financials.js');
 const signed=carrierFinancialMath({sheetType:'delivered',codAmount:690,shippingCost:106.59,codServiceFee:7.87});
 must(signed.totalCarrierFees===114.46&&signed.expectedNet===575.54,`Real J&T Signed math mismatch: ${JSON.stringify(signed)}`);
 const returned=carrierFinancialMath({sheetType:'returned',codAmount:490,shippingCost:95.93,codServiceFee:0});
 must(returned.totalCarrierFees===95.93&&returned.expectedNet===-95.93,`Real J&T Returned math mismatch: ${JSON.stringify(returned)}`);
-console.log('Post-shipping carrier sheet contract passed: generic carriers remain supported, while J&T uses its real Signed/Returned columns, separate delivery/COD fees, finance-only reconciliation, return reasons and idempotent accounting.');
+console.log(`Post-shipping carrier sheet contract passed through ${previewEntry}: generic carriers remain supported, while J&T uses its real Signed/Returned columns, separate delivery/COD fees, finance-only reconciliation, return reasons and idempotent accounting.`);
