@@ -18,7 +18,7 @@ const value=(source,key)=>source.match(new RegExp(`^\\s*${key}\\s*=\\s*"([^"]+)"
 const d1Block=config.match(/\[\[d1_databases\]\]([\s\S]*?)(?=\n\[|$)/)?.[1]||'';
 const expected={
   worker:'kunonline-preview',
-  entrypoint:'src/index-commerce-v37.js',
+  entrypoint:'src/index-commerce-v38.js',
   database:'kunonline-preview',
   databaseId:'31cd5cdf-fc01-42d7-ba1e-571f3dd58495',
   binding:'DB'
@@ -73,7 +73,6 @@ requireText(workflow,'npm run db:migrate:preview','Preview migration gate is mis
 requireText(workflow,"if: steps.ownership.outputs.is_latest == 'true'",'Preview mutations must be gated by latest branch ownership.');
 requireText(workflow,'id: deploy_ownership','deploy ownership recheck is missing.');
 
-// Durable rollback source: Git commit/tag, not an old Cloudflare Worker UUID.
 forbidPattern(workflow,/known_healthy\s*=/,'hard-coded known_healthy Worker versions are forbidden.');
 forbidPattern(workflow,/wrangler versions deploy\s+["']?[0-9a-f]{8}-[0-9a-f-]{27,}@100%/i,'static Worker UUID rollback targets are forbidden.');
 for(const [text,message] of [
@@ -95,7 +94,6 @@ for(const [text,message] of [
   ['name: Confirm deployed Worker owns Preview traffic','candidate Worker ownership check is missing.']
 ])requireText(workflow,text,message);
 
-// Required live/browser gates must all exist and be sequentially gated by success.
 const gates=[
   ['Live authenticated Store B regression','live-preview-functional-test.mjs'],
   ['Live team and branch permission regression','live-preview-team-test.mjs'],
