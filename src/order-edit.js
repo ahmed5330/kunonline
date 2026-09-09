@@ -1,6 +1,6 @@
 import {latestShippingSheetInventoryBlock} from './shipping-sheet-inventory-gate.js';
 
-const EDITABLE_STATES=new Set(['pending','confirmed','preparing','deferred']);
+const EDITABLE_STATES=new Set(['pending','no_answer','confirmed','preparing','deferred']);
 const INVENTORY_REPAIR_STATES=new Set(['shipped','signed']);
 const clean=(value,max=2000)=>String(value??'').trim().slice(0,max);
 const number=value=>{const n=Number(value);return Number.isFinite(n)?n:0;};
