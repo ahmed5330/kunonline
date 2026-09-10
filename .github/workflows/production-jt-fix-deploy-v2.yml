@@ -39,8 +39,17 @@ jobs:
           grep -q "import app from './index-commerce-v38.js';" src/index-production-sync.js
           grep -q "JT_BUSINESS_CREDENTIALS_MISSING" src/index-commerce-v38.js
           npm run check:production-config
-          result="$(npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "SELECT COUNT(*) AS migration_count FROM d1_migrations; SELECT name AS last_migration FROM d1_migrations ORDER BY id DESC LIMIT 1; SELECT COUNT(*) AS unmapped_orders FROM orders WHERE client_id IS NOT NULL AND trim(client_id)<>'' AND store_id IS NULL;" --json)"
-          printf '%s' "$result" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const p=JSON.parse(s),a=[];const w=x=>{if(Array.isArray(x))return x.forEach(w);if(x&&typeof x==="object"){if(Array.isArray(x.results))a.push(...x.results);Object.values(x).forEach(w)}};w(p);const g=k=>a.find(x=>x[k]!=null)?.[k];if(Number(g("migration_count"))!==23||g("last_migration")!=="0022_order_duplicate_links.sql"||Number(g("unmapped_orders"))!==0)throw new Error("Production D1 readiness failed");console.log("Production D1 readiness passed")})'
+
+          migration_json="$(npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "SELECT COUNT(*) AS migration_count FROM d1_migrations;" --json)"
+          migration_count="$(printf '%s' "$migration_json" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const p=JSON.parse(s),x=Array.isArray(p)?p[0]:p;process.stdout.write(String(x?.results?.[0]?.migration_count??""))})')"
+          last_json="$(npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "SELECT name AS last_migration FROM d1_migrations ORDER BY id DESC LIMIT 1;" --json)"
+          last_migration="$(printf '%s' "$last_json" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const p=JSON.parse(s),x=Array.isArray(p)?p[0]:p;process.stdout.write(String(x?.results?.[0]?.last_migration??""))})')"
+          unmapped_json="$(npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "SELECT COUNT(*) AS unmapped_orders FROM orders WHERE client_id IS NOT NULL AND trim(client_id)<>'' AND store_id IS NULL;" --json)"
+          unmapped_orders="$(printf '%s' "$unmapped_json" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const p=JSON.parse(s),x=Array.isArray(p)?p[0]:p;process.stdout.write(String(x?.results?.[0]?.unmapped_orders??""))})')"
+          echo "Production D1 readiness: migrations=$migration_count last=$last_migration unmapped_orders=$unmapped_orders"
+          test "$migration_count" = "23"
+          test "$last_migration" = "0022_order_duplicate_links.sql"
+          test "$unmapped_orders" = "0"
       - name: Capture current Production Worker version
         id: before
         run: |
