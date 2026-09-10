@@ -45,23 +45,24 @@ jobs:
           TOML
       - name: Deploy isolated canary
         run: npx wrangler deploy --config wrangler.canary.tmp.toml
-      - name: Probe Worker routing
+      - name: Probe Worker routing with propagation retry
         run: |
           set -euo pipefail
           base="https://${CANARY_NAME}.mr-a-mnaa.workers.dev"
-          h="$(curl -sS -o /tmp/h -w '%{http_code}' "$base/health")"
-          j="$(curl -sS -o /tmp/j -w '%{http_code}' -X POST -H 'Content-Type: application/json' "$base/api/jt/shipments/KUN-SMOKE-NO-ORDER" --data '{}')"
-          e="$(curl -sS -o /tmp/e -w '%{http_code}' "$base/health/easyorders-sync")"
-          echo "CANARY_HEALTH_HTTP=$h"
-          echo "CANARY_JT_HTTP=$j"
-          echo "CANARY_EASYORDERS_HEALTH_HTTP=$e"
+          passed=0
+          for i in $(seq 1 15); do
+            h="$(curl -sS -o /tmp/h -w '%{http_code}' "$base/health" || true)"
+            j="$(curl -sS -o /tmp/j -w '%{http_code}' -X POST -H 'Content-Type: application/json' "$base/api/jt/shipments/KUN-SMOKE-NO-ORDER" --data '{}' || true)"
+            e="$(curl -sS -o /tmp/e -w '%{http_code}' "$base/health/easyorders-sync" || true)"
+            echo "CANARY_ATTEMPT=$i HEALTH=$h JT=$j EASY=$e"
+            if [ "$h" = "200" ] && [ "$j" = "401" ] && [ "$e" = "200" ]; then passed=1; break; fi
+            sleep 4
+          done
           node - <<'NODE'
           const fs=require('fs');
           for(const [n,p] of [['HEALTH','/tmp/h'],['JT','/tmp/j'],['EASY','/tmp/e']]){let x={};try{x=JSON.parse(fs.readFileSync(p,'utf8'))}catch{};const y={};for(const k of ['ok','code','error','service','build','status','message'])if(x[k]!=null)y[k]=x[k];console.log(`CANARY_${n}_SAFE=${JSON.stringify(y)}`)}
           NODE
-          test "$h" = "200"
-          test "$j" = "401"
-          test "$e" = "200"
+          test "$passed" = "1"
       - name: Delete isolated canary
         if: always()
         run: |
