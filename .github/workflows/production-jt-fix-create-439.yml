@@ -102,7 +102,8 @@ jobs:
           printf '%s' "$schedules" | node -e 'let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{const p=JSON.parse(raw);if(p.success===false)throw new Error("Cloudflare schedules failed");const got=(p.result||[]).map(x=>x.cron).sort(),want=["*/5 * * * *","0 */2 * * *"].sort();if(JSON.stringify(got)!==JSON.stringify(want))throw new Error(`Cron mismatch ${JSON.stringify(got)}`);console.log("Cron integrity passed.")})'
       - name: Roll back exact prior Worker on deploy validation failure
         if: failure() && steps.deploy.outputs.attempted == 'true'
-        run: npx wrangler rollback "${{ steps.before.outputs.version_id }}" --config wrangler.production.toml --message "Automatic rollback: J&T Production fix validation failed"
+        run: |
+          npx wrangler rollback "${{ steps.before.outputs.version_id }}" --config wrangler.production.toml --message "Automatic rollback - J&T Production fix validation failed"
       - name: Clean deployment temp files
         if: always()
         run: rm -f /tmp/prod-secrets.json /tmp/prod-dry-run.log /tmp/health /tmp/easy /tmp/jt /tmp/v2
