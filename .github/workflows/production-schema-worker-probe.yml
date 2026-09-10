@@ -1,0 +1,117 @@
+name: Production schema Worker probe (read-only)
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/production-schema-worker-probe.yml
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      RELEASE_SHA: ad9a49d1a8805d5c402bb512838e0e62db5f4c72
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: npm install --ignore-scripts
+      - name: Deploy isolated read-only schema probe
+        id: deploy_probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          worker="kunonline-schema-${GITHUB_RUN_ID}"
+          probe_key="$(node -e "process.stdout.write(require('crypto').randomBytes(24).toString('hex'))")"
+          cat > .schema-probe-worker.js <<'EOF'
+          export default {
+            async fetch(request, env) {
+              if (request.headers.get('X-Probe-Key') !== env.PROBE_KEY) return new Response('Not found', {status: 404});
+              const {results=[]} = await env.DB.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all();
+              const tables=[];
+              for (const row of results) {
+                const name=String(row?.name||'');
+                if (!/^[A-Za-z0-9_]+$/.test(name)) continue;
+                let columns=[];
+                try {
+                  const info=await env.DB.prepare(`PRAGMA table_info(\"${name}\")`).all();
+                  columns=(info.results||[]).map(x=>String(x.name||'')).filter(Boolean);
+                } catch {}
+                tables.push({name,columns});
+              }
+              return new Response(JSON.stringify({ok:true,tables}), {headers:{'Content-Type':'application/json','Cache-Control':'no-store'}});
+            }
+          };
+          EOF
+          cat > .schema-probe.toml <<EOF
+          name = "$worker"
+          main = ".schema-probe-worker.js"
+          compatibility_date = "2026-08-23"
+          workers_dev = true
+
+          [[d1_databases]]
+          binding = "DB"
+          database_name = "kunonline"
+          database_id = "c426601d-182f-486e-a5c1-bb1bca0ecb0b"
+
+          [vars]
+          PROBE_KEY = "$probe_key"
+          EOF
+          output="$(npx wrangler deploy --config .schema-probe.toml 2>&1)"
+          printf '%s\n' "$output"
+          url="$(printf '%s\n' "$output" | grep -Eo 'https://[^[:space:]]+workers\.dev' | tail -1)"
+          test -n "$url"
+          echo "worker=$worker" >> "$GITHUB_OUTPUT"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "probe_key=$probe_key" >> "$GITHUB_OUTPUT"
+      - name: Read Production schema through isolated Worker
+        id: schema
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 4 --retry-delay 2 \
+            -H "X-Probe-Key: ${{ steps.deploy_probe.outputs.probe_key }}" \
+            "${{ steps.deploy_probe.outputs.url }}" > /tmp/prod-schema.json
+          node - <<'NODE'
+          const fs=require('fs');
+          const actual=JSON.parse(fs.readFileSync('/tmp/prod-schema.json','utf8'));
+          if(!actual?.ok||!Array.isArray(actual.tables)) throw new Error('Production schema probe returned an invalid payload');
+          const map=new Map(actual.tables.map(t=>[t.name,new Set(t.columns||[])]));
+          const files=fs.readdirSync('migrations').filter(x=>x.endsWith('.sql')).sort();
+          const requiredTables=new Set();
+          const requiredColumns=[];
+          for(const file of files){
+            const sql=fs.readFileSync(`migrations/${file}`,'utf8');
+            for(const m of sql.matchAll(/CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?["`\[]?([A-Za-z0-9_]+)["`\]]?/gi)) requiredTables.add(m[1]);
+            for(const m of sql.matchAll(/ALTER\s+TABLE\s+["`\[]?([A-Za-z0-9_]+)["`\]]?\s+ADD\s+(?:COLUMN\s+)?["`\[]?([A-Za-z0-9_]+)["`\]]?/gi)) requiredColumns.push([m[1],m[2],file]);
+          }
+          const missingTables=[...requiredTables].filter(t=>!map.has(t));
+          const missingColumns=requiredColumns.filter(([t,c])=>!map.get(t)?.has(c));
+          const key=['stores','wallet_accounts','integration_connections','inventory_batches','order_duplicate_links'];
+          console.log(`Production tables visible: ${actual.tables.length}`);
+          console.log(`Migration-created tables expected: ${requiredTables.size}`);
+          console.log(`Key tables: ${key.map(t=>`${t}=${map.has(t)?'present':'MISSING'}`).join(', ')}`);
+          if(missingTables.length) console.log(`Missing tables: ${missingTables.join(', ')}`);
+          if(missingColumns.length) console.log(`Missing ALTER columns: ${missingColumns.map(([t,c,f])=>`${t}.${c} (${f})`).join(', ')}`);
+          if(missingTables.length||missingColumns.length){
+            console.error('Production D1 is not compatible with the Commerce v38 release without schema changes.');
+            process.exit(2);
+          }
+          console.log('Production D1 schema is compatible with all migration-declared tables/columns required by this release.');
+          NODE
+      - name: Delete isolated schema probe Worker
+        if: always() && steps.deploy_probe.outputs.worker != ''
+        shell: bash
+        run: |
+          set +e
+          npx wrangler delete --name "${{ steps.deploy_probe.outputs.worker }}" --force
+          exit 0
