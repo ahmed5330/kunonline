@@ -1,0 +1,1 @@
+Authorized by the user on 2026-09-10. Run exactly one synthetic Preview Create Order test. Do not print credentials. Production must remain untouched.
