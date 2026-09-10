@@ -24,7 +24,7 @@ jobs:
       - name: List Production Worker secret names only
         run: |
           set -euo pipefail
-          npx wrangler secret list --config wrangler.production.toml --json | node -e '
+          npx wrangler secret list --config wrangler.production.toml | node -e '
             let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{
               const p=JSON.parse(raw);const a=Array.isArray(p)?p:(p.result||[]);
               console.log("Production Worker secret names:");
