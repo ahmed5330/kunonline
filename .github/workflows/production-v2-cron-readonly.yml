@@ -15,16 +15,18 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
-      - name: Inspect public v2 status and Cloudflare schedule shape
+      - name: Inspect public app paths and Cloudflare schedule shape
         run: |
           set -euo pipefail
-          for base in https://kunonline.mr-a-mnaa.workers.dev https://app.kun-online.com; do
-            code="$(curl -sS -o /tmp/v2 -w '%{http_code}' "$base/v2/" || true)"
-            bytes="$(wc -c </tmp/v2 | tr -d ' ')"
-            html="$(grep -Eiq '<html|<!doctype' /tmp/v2 && echo yes || echo no)"
-            echo "V2_STATUS base=$base http=$code bytes=$bytes html=$html"
+          for base in https://kunonline.mr-a-mnaa.workers.dev https://app.kun-online.com https://kunonline-preview.mr-a-mnaa.workers.dev; do
+            for path in / /v2/ /v2/index.html; do
+              code="$(curl -sS -o /tmp/body -w '%{http_code}' "$base$path" || true)"
+              bytes="$(wc -c </tmp/body | tr -d ' ')"
+              html="$(grep -Eiq '<html|<!doctype' /tmp/body && echo yes || echo no)"
+              echo "APP_STATUS base=$base path=$path http=$code bytes=$bytes html=$html"
+            done
           done
           schedules="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/kunonline/schedules")"
           printf '%s' "$schedules" | node -e '
             let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{const p=JSON.parse(raw),crons=[];const walk=x=>{if(Array.isArray(x)){x.forEach(walk);return}if(!x||typeof x!=="object")return;if(typeof x.cron==="string")crons.push(x.cron);Object.values(x).forEach(walk)};walk(p);console.log(`SCHEDULE_SUCCESS=${p.success!==false}`);console.log(`SCHEDULE_CRONS=${JSON.stringify([...new Set(crons)].sort())}`);console.log(`RESULT_KIND=${Array.isArray(p.result)?"array":typeof p.result}`);});'
-          rm -f /tmp/v2
+          rm -f /tmp/body
