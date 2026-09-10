@@ -16,7 +16,7 @@ const basicPayload=buildJtCreatePayload(shipment,senderSecrets);
 assert.equal(basicPayload.sourceCode,'D452');assert.equal(basicPayload.customerCode,undefined);assert.equal(basicPayload.digest,undefined);assert.equal(basicPayload.serviceType,'02');assert.equal(basicPayload.deliveryType,'04');assert.equal(basicPayload.receiver.areaCode,'A000001');assert.equal(basicPayload.sender.name,'Kun Warehouse');
 
 const payload=buildJtCreatePayload(shipment,secrets);
-assert.equal(payload.sourceCode,'D452');assert.equal(payload.customerCode,undefined,'Stored business credentials are not sent before the server determines they are required');assert.equal(payload.digest,undefined);assert.equal(payload.txlogisticId,'ORD-1');assert.equal(payload.serviceType,'02');assert.equal(payload.deliveryType,'04');assert.equal(payload.receiver.prov,'القاهرة');assert.equal(payload.receiver.provCode,'1011');assert.equal(payload.receiver.cityCode,'1011001');assert.equal(payload.receiver.areaCode,'A000001');assert.equal(payload.receiver.countryCode,'EGY');assert.equal(payload.sender.name,'Kun Warehouse');assert.equal(payload.sender.mobile,'01000000000');assert.equal(payload.sender.prov,'القاهرة');assert.equal(payload.sender.city,'مدينة نصر');assert.equal(payload.sender.area,'الحي السابع');assert.equal(payload.sender.street,'شارع الاختبار 1');assert.equal(payload.payType,'PP_CASH');assert.equal(payload.itemsValue,1200);assert.equal(payload.totalQuantity,2);
+assert.equal(payload.sourceCode,'D452');assert.equal(payload.customerCode,undefined,'Stored business credentials are not sent before the server determines they are required');assert.equal(payload.digest,undefined);assert.equal(payload.txlogisticId,'ORD-1');assert.equal(payload.serviceType,'02');assert.equal(payload.deliveryType,'04');assert.equal(payload.receiver.prov,'القاهرة');assert.equal(payload.receiver.provCode,'1011');assert.equal(payload.receiver.cityCode,'1011001');assert.equal(payload.receiver.areaCode,'A000001');assert.equal(payload.receiver.countryCode,'EGY');assert.equal(payload.sender.name,'Kun Warehouse');assert.equal(payload.sender.mobile,'01000000000');assert.equal(payload.sender.prov,'القاهرة');assert.equal(payload.sender.city,'مدينة نصر');assert.equal(payload.sender.area,'الحي السابع');assert.equal(payload.sender.street,'شارع الاختبار 1');assert.equal(payload.payType,'PP_CASH');assert.equal(payload.itemsValue,1200);assert.equal(payload.totalQuantity,2);assert.equal(payload.goodsType,'ITN1');
 const enterprisePayload=buildJtCreatePayload(shipment,secrets,{includeEnterprise:true});
 assert.equal(enterprisePayload.customerCode,'J0088');assert.ok(enterprisePayload.digest,'Explicit business-auth payload must contain a digest');
 
@@ -26,7 +26,7 @@ const result=await createJtShipment({shipment,secrets,fetcher:async(url,options)
   assert.equal(url,`${__jtApiInternals.LIVE_BASE}${__jtApiInternals.ADD_ORDER_PATH}`);
   assert.equal(options.method,'POST');
   assert.equal(options.headers.apiAccount,secrets.api_account);
-  assert.match(options.headers.timestamp,/^\d{10}$/);
+  assert.match(options.headers.timestamp,/^\d{13}$/);
   const bizContent=new URLSearchParams(options.body).get('bizContent');assert.ok(bizContent);
   assert.equal(options.headers.digest,__jtValidationInternals.md5Base64(bizContent+secrets.private_key));
   const sent=JSON.parse(bizContent);
