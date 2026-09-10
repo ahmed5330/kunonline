@@ -1,0 +1,54 @@
+name: Production release readiness (local only)
+on:
+  push:
+    branches:
+      - diagnostic/prod-release-readiness-20260910
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: npm install --ignore-scripts
+      - name: Find default-store provisioning paths
+        run: |
+          set -euo pipefail
+          echo '=== SQL/code references that can create or seed stores ==='
+          grep -RniE --include='*.sql' --include='*.js' --include='*.mjs' "INSERT[[:space:]]+(OR[[:space:]]+[A-Z]+[[:space:]]+)?INTO[[:space:]]+stores|INSERT[[:space:]]+(OR[[:space:]]+[A-Z]+[[:space:]]+)?INTO[[:space:]]+\"stores\"|CREATE[[:space:]]+TABLE.*stores|ensure.*store|default.*store" migrations src scripts || true
+      - name: Build Production wrapper over Commerce v38 (dry-run only)
+        run: |
+          set -euo pipefail
+          cp src/index-production-sync.js src/index-production-v38-dryrun.js
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('src/index-production-v38-dryrun.js')
+          s=p.read_text(encoding='utf-8')
+          old="import app from './index.js';"
+          new="import app from './index-commerce-v38.js';"
+          if old not in s:
+              raise SystemExit('legacy wrapper import was not found')
+          p.write_text(s.replace(old,new,1),encoding='utf-8')
+          PY
+          cp wrangler.production.toml .wrangler-production-v38-dryrun.toml
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('.wrangler-production-v38-dryrun.toml')
+          s=p.read_text(encoding='utf-8')
+          old='main = "src/index-production-sync.js"'
+          new='main = "src/index-production-v38-dryrun.js"'
+          if old not in s:
+              raise SystemExit('production main config was not found')
+          p.write_text(s.replace(old,new,1),encoding='utf-8')
+          PY
+          npx wrangler deploy --dry-run --config .wrangler-production-v38-dryrun.toml
+      - name: Syntax-check production v38 wrapper
+        run: node --check src/index-production-v38-dryrun.js
+      - name: Clean temporary files
+        if: always()
+        run: rm -f src/index-production-v38-dryrun.js .wrangler-production-v38-dryrun.toml
