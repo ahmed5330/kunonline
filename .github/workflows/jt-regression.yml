@@ -1,0 +1,39 @@
+name: J&T shipping regression
+on:
+  push:
+    branches: [develop/ux-system-upgrade]
+    paths:
+      - 'src/jt-express-eg-api.js'
+      - 'src/jt-express-eg-validation.js'
+      - 'src/index-commerce-v37.js'
+      - 'src/index-commerce-v38.js'
+      - 'public/v2/modules-v78-jt-shipping-order.js'
+      - 'public/v2/modules-v81-jt-live-setup.js'
+      - 'public/v2/modules-v84-jt-create-setup.js'
+      - 'public/v2/index.html'
+      - 'scripts/jt-live-shipping-test.mjs'
+      - '.github/workflows/jt-regression.yml'
+  pull_request:
+    paths:
+      - 'src/jt-express-eg-api.js'
+      - 'src/jt-express-eg-validation.js'
+      - 'src/index-commerce-v37.js'
+      - 'src/index-commerce-v38.js'
+      - 'public/v2/modules-v78-jt-shipping-order.js'
+      - 'public/v2/modules-v81-jt-live-setup.js'
+      - 'public/v2/modules-v84-jt-create-setup.js'
+      - 'public/v2/index.html'
+      - 'scripts/jt-live-shipping-test.mjs'
+permissions:
+  contents: read
+jobs:
+  jt-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Validate J&T Create Order contract
+        run: node scripts/jt-live-shipping-test.mjs
