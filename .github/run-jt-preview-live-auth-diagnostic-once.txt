@@ -1,1 +1,1 @@
-Re-run the safe authenticated J&T Create Order merchant-mapping diagnostic on Preview after exposing only non-secret shape metadata. This must not create a shipment. Production remains untouched.
+Re-run the safe authenticated J&T Trace merchant-mapping diagnostic on fully validated Preview after commit 0b31f673412d00f1a37dab23de4ac9fb936363a0. Read-only carrier call only; must not create a shipment. Production remains untouched.
