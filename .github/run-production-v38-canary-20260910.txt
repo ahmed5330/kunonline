@@ -1,1 +1,2 @@
 Run isolated v38 canary against fully migrated Production D1. No cron, no custom domain, delete canary after probe.
+Attempt 2: config path fixed to repository root.
