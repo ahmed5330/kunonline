@@ -16,15 +16,30 @@ jobs:
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: release/commerce-v38-production-20260910
+          fetch-depth: 1
       - uses: actions/setup-node@v5
         with:
           node-version: 22
           package-manager-cache: false
       - run: npm install --ignore-scripts
-      - name: Read Production D1 state only
+      - name: Inspect J&T connection and saved secret names only
         run: |
-          set -euxo pipefail
-          npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "SELECT COUNT(*) AS migration_count FROM d1_migrations;" --json
-          npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "SELECT name AS last_migration FROM d1_migrations ORDER BY id DESC LIMIT 1;" --json
-          npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "SELECT COUNT(*) AS unmapped_orders FROM orders WHERE client_id IS NOT NULL AND trim(client_id)<>'' AND store_id IS NULL;" --json
-          npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "SELECT COUNT(*) AS stores_count FROM stores;" --json
+          set -euo pipefail
+          q(){
+            local sql="$1"
+            for i in 1 2 3 4 5; do
+              if npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "$sql" --json; then return 0; fi
+              sleep $((i*2))
+            done
+            return 1
+          }
+          echo '=== J&T connection rows (no secret values) ==='
+          q "SELECT id,client_id,provider,status,external_store_id,CASE WHEN last_error IS NULL OR trim(last_error)='' THEN 0 ELSE 1 END AS has_last_error FROM store_connections WHERE lower(provider) LIKE '%jt%' OR lower(provider) LIKE '%j&t%' ORDER BY updated_at DESC;"
+          echo '=== Saved secret names for J&T-linked connections (names only) ==='
+          q "SELECT s.connection_id,s.secret_name,CASE WHEN length(COALESCE(s.ciphertext_b64,''))>0 THEN 1 ELSE 0 END AS has_ciphertext FROM integration_secrets s JOIN store_connections c ON c.id=s.connection_id AND c.client_id=s.client_id WHERE lower(c.provider) LIKE '%jt%' OR lower(c.provider) LIKE '%j&t%' ORDER BY s.connection_id,s.secret_name;"
+          echo '=== All provider ids, counts only ==='
+          q "SELECT provider,COUNT(*) AS connections FROM store_connections GROUP BY provider ORDER BY provider;"
+          echo '=== Source locations that write integration_secrets ==='
+          grep -RIn "integration_secrets" src --include='*.js' | grep -E "INSERT|UPDATE|DELETE|prepare" | head -80 || true
