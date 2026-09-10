@@ -36,7 +36,7 @@ jobs:
             let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{const p=JSON.parse(raw),rows=[];const walk=x=>{if(Array.isArray(x))return x.forEach(walk);if(x&&typeof x==="object"){if(Array.isArray(x.results))rows.push(...x.results);Object.values(x).forEach(walk)}};walk(p);if(!rows.some(x=>Number(x.n)===23)||!rows.some(x=>x.name==="0022_order_duplicate_links.sql"))throw new Error("Production D1 is not at 0022");console.log("Production D1 ledger is fully migrated through 0022.");});'
       - name: Create isolated no-cron canary config
         run: |
-          cat >/tmp/wrangler.canary.toml <<'TOML'
+          cat >wrangler.canary.tmp.toml <<'TOML'
           name = "kunonline-prod-canary-20260910"
           main = "src/index-production-sync.js"
           compatibility_date = "2026-08-23"
@@ -57,7 +57,7 @@ jobs:
       - name: Deploy isolated canary
         run: |
           set -euo pipefail
-          npx wrangler deploy --config /tmp/wrangler.canary.toml
+          npx wrangler deploy --config wrangler.canary.tmp.toml
       - name: Probe health and safe unauthenticated J&T route
         run: |
           set -euo pipefail
@@ -80,10 +80,10 @@ jobs:
           NODE
           test "$health_code" = "200"
           test "$jt_code" = "401"
-          node -e 'const p=require("/tmp/jt.body");if(p.code!=="AUTH_REQUIRED")process.exit(1)'
+          node -e 'const fs=require("fs");const p=JSON.parse(fs.readFileSync("/tmp/jt.body","utf8"));if(p.code!=="AUTH_REQUIRED")process.exit(1)'
           test "$easy_code" = "200"
       - name: Delete isolated canary
         if: always()
         run: |
-          npx wrangler delete --config /tmp/wrangler.canary.toml --force >/tmp/canary-delete.log 2>&1 || true
-          rm -f /tmp/canary-delete.log /tmp/health.body /tmp/jt.body /tmp/easy.body /tmp/wrangler.canary.toml
+          npx wrangler delete --config wrangler.canary.tmp.toml --force >/tmp/canary-delete.log 2>&1 || true
+          rm -f /tmp/canary-delete.log /tmp/health.body /tmp/jt.body /tmp/easy.body wrangler.canary.tmp.toml
