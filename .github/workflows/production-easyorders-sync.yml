@@ -67,6 +67,14 @@ jobs:
           test -n "$version"
           echo "version_id=$version" >> "$GITHUB_OUTPUT"
           echo "Captured current Production Worker version: $version"
+      - name: Read Commerce OS Production schema compatibility
+        run: |
+          echo '=== Production tables ==='
+          npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name;"
+          echo '=== D1 migration ledger presence ==='
+          npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "SELECT CASE WHEN EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='d1_migrations') THEN 1 ELSE 0 END AS has_d1_migrations;"
+          echo '=== Commerce OS key-table compatibility ==='
+          npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "SELECT name, CASE WHEN EXISTS(SELECT 1 FROM sqlite_master s WHERE s.type='table' AND s.name=req.name) THEN 1 ELSE 0 END AS present FROM (SELECT 'stores' AS name UNION ALL SELECT 'wallet_accounts' UNION ALL SELECT 'integration_connections' UNION ALL SELECT 'inventory_batches' UNION ALL SELECT 'order_duplicate_links') req;"
       - name: Record pre-deploy Easy Orders count
         run: |
           npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "SELECT COUNT(*) AS today_easyorders_before FROM orders WHERE source='المتجر (إيزي أوردرز)' AND date=date('now');"
