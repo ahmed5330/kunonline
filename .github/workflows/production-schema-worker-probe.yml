@@ -78,9 +78,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          curl --fail --silent --show-error --retry 4 --retry-delay 2 \
-            -H "X-Probe-Key: ${{ steps.deploy_probe.outputs.probe_key }}" \
-            "${{ steps.deploy_probe.outputs.url }}" > /tmp/prod-schema.json
+          ready=0
+          for attempt in $(seq 1 30); do
+            code="$(curl --silent --show-error -o /tmp/prod-schema.json -w '%{http_code}' \
+              -H "X-Probe-Key: ${{ steps.deploy_probe.outputs.probe_key }}" \
+              "${{ steps.deploy_probe.outputs.url }}" || true)"
+            if [ "$code" = "200" ]; then
+              ready=1
+              break
+            fi
+            echo "Schema probe not ready yet (HTTP ${code:-000}); attempt $attempt/30"
+            sleep 2
+          done
+          test "$ready" -eq 1
           node - <<'NODE'
           const fs=require('fs');
           const actual=JSON.parse(fs.readFileSync('/tmp/prod-schema.json','utf8'));
