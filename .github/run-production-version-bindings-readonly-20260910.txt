@@ -1,0 +1,1 @@
+Compare binding names/types only between the current safe Production Worker version and the failed v38 version. No values, no writes.
