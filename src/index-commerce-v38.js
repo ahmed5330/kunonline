@@ -5,7 +5,18 @@ import {jtCredentials,__jtApiInternals} from './jt-express-eg-api.js';
 
 const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}});
 const clean=(value,max=1000)=>String(value??'').trim().slice(0,max);
-async function currentUser(request,env,ctx){const url=new URL(request.url);url.pathname='/api/me';url.search='';const response=await commerceV37.fetch(new Request(url,{method:'GET',headers:request.headers}),env,ctx),data=await response.json().catch(()=>({}));if(!response.ok||!data?.role){const status=!response.ok&&response.status>=400?response.status:401;throw Object.assign(new Error(data?.error||'محتاج تسجّل دخول'),{status,code:'AUTH_REQUIRED'});}return data;}
+async function currentUser(request,env,ctx){
+  const hasAuth=Boolean(clean(request.headers.get('Cookie'))||clean(request.headers.get('Authorization')));
+  if(!hasAuth)throw Object.assign(new Error('محتاج تسجّل دخول'),{status:401,code:'AUTH_REQUIRED'});
+  const url=new URL(request.url);url.pathname='/api/me';url.search='';
+  const response=await commerceV37.fetch(new Request(url,{method:'GET',headers:request.headers}),env,ctx),data=await response.json().catch(()=>({}));
+  if(!response.ok||!data?.role){
+    const explicitAuthFailure=data?.code==='AUTH_REQUIRED'||/محتاج\s*تسج[ّ]?ل\s*دخول/i.test(String(data?.error||''));
+    const status=explicitAuthFailure?401:(!response.ok&&response.status>=400?response.status:401);
+    throw Object.assign(new Error(data?.error||'محتاج تسجّل دخول'),{status,code:'AUTH_REQUIRED'});
+  }
+  return data;
+}
 function clientIdFor(me,request,body={}){const url=new URL(request.url),requested=clean(body.clientId||body.client_id||url.searchParams.get('clientId')||me?.clientId,160);if(me.role==='client'){if(requested&&String(requested)!==String(me.clientId))throw Object.assign(new Error('مش مسموح الوصول لبيانات متجر آخر'),{status:403});return clean(me.clientId,160);}if(!requested)throw Object.assign(new Error('محتاج clientId'),{status:400});return requested;}
 async function connectionFor(env,clientId){const row=await env.DB.prepare("SELECT * FROM store_connections WHERE client_id=? AND provider='jt' ORDER BY CASE status WHEN 'connected' THEN 0 WHEN 'configured' THEN 1 ELSE 2 END,updated_at DESC,created_at DESC LIMIT 1").bind(clientId).first();if(!row)throw Object.assign(new Error('لا يوجد ربط J&T لهذا العميل'),{status:404});return {row,secrets:await readConnectionSecrets(env,clientId,row.id)};}
 function authFailure(text=''){return /(auth|credential|customer\s*code|customer\s*password|customer\s*pwd|digest|signature|sign|account|password|unauthor|forbidden|密钥|签名|密码|客户)/i.test(text);}
