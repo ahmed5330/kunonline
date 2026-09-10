@@ -1,2 +1,1 @@
-Run a safe authenticated J&T Create Order credential diagnostic on Preview only using an intentionally incomplete payload that cannot create a shipment. Do not print secret values.
-Redeploy requested 2026-09-10T15:58:00Z to load the current Developer Info-only J&T preflight; Production must remain untouched.
+Run a safe authenticated J&T Create Order credential diagnostic on Preview only using an intentionally incomplete payload that cannot create a shipment. Compare Developer Info, saved business info, source-code + legacy api_key, and API-account + legacy api_key mappings. Do not print secret values. Production must remain untouched.
