@@ -1,0 +1,1 @@
+Approved by user in chat on 2026-09-10. Deploy Production release 1d5653238151197c1d3952aab077cc891d0c1353 with J&T optional-Enterprise and AUTH_REQUIRED fixes. Worker-only; Production D1 already migrated through 0022. Roll back exact prior Worker on validation failure.
