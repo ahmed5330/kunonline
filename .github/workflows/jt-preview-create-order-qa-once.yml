@@ -1,6 +1,10 @@
 name: J&T Preview Create Order QA Once
 on:
   workflow_dispatch:
+  push:
+    branches: [develop/ux-system-upgrade]
+    paths:
+      - '.github/run-jt-preview-create-order-qa-once.txt'
 permissions:
   contents: read
 jobs:
