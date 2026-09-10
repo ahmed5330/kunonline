@@ -112,19 +112,59 @@ jobs:
         id: acceptance
         run: |
           set -euo pipefail
-          curl --fail --silent --show-error --retry 5 --retry-delay 2 "$BASE_URL/healthz" > /tmp/health.json
-          curl --fail --silent --show-error --retry 5 --retry-delay 2 "$BASE_URL/v2/" > /tmp/v2.html
-          grep -F '/v2/modules-v81-jt-live-setup.js?v=81.2' /tmp/v2.html
-          grep -F '/v2/modules-v84-jt-create-setup.js?v=84.2' /tmp/v2.html
-          curl --fail --silent --show-error --retry 5 --retry-delay 2 "$BASE_URL/v2/modules-v81-jt-live-setup.js?v=81.2" > /tmp/jt81.js
-          curl --fail --silent --show-error --retry 5 --retry-delay 2 "$BASE_URL/v2/modules-v84-jt-create-setup.js?v=84.2" > /tmp/jt84.js
-          grep -F 'اختياري — فقط لو J&T طلبته لحسابك' /tmp/jt81.js
-          grep -F 'markBusinessOptional' /tmp/jt84.js
-          status="$(curl --silent --show-error -o /tmp/jt-protected.json -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{}' "$BASE_URL/api/jt/shipments/KUN-PROD-AUTH-PROBE")"
-          test "$status" = "401"
+          ready=0
+          for attempt in $(seq 1 40); do
+            health_code="$(curl --silent --show-error -o /tmp/health.json -w '%{http_code}' "$BASE_URL/healthz" || true)"
+            v2_code="$(curl --silent --show-error -o /tmp/v2.html -w '%{http_code}' "$BASE_URL/v2/" || true)"
+            if [ "$health_code" = "200" ] && [ "$v2_code" = "200" ] && \
+               grep -Fq '/v2/modules-v81-jt-live-setup.js?v=81.2' /tmp/v2.html && \
+               grep -Fq '/v2/modules-v84-jt-create-setup.js?v=84.2' /tmp/v2.html; then
+              ready=1
+              echo "Custom domain reached the new J&T release on attempt $attempt/40."
+              break
+            fi
+            echo "Waiting for Production propagation: health=$health_code v2=$v2_code attempt=$attempt/40"
+            sleep 2
+          done
+          test "$ready" -eq 1
+
+          assets_ready=0
+          for attempt in $(seq 1 20); do
+            a81="$(curl --silent --show-error -o /tmp/jt81.js -w '%{http_code}' "$BASE_URL/v2/modules-v81-jt-live-setup.js?v=81.2" || true)"
+            a84="$(curl --silent --show-error -o /tmp/jt84.js -w '%{http_code}' "$BASE_URL/v2/modules-v84-jt-create-setup.js?v=84.2" || true)"
+            if [ "$a81" = "200" ] && [ "$a84" = "200" ] && \
+               grep -Fq 'اختياري — فقط لو J&T طلبته لحسابك' /tmp/jt81.js && \
+               grep -Fq 'markBusinessOptional' /tmp/jt84.js; then
+              assets_ready=1
+              break
+            fi
+            echo "Waiting for J&T assets: v81=$a81 v84=$a84 attempt=$attempt/20"
+            sleep 2
+          done
+          test "$assets_ready" -eq 1
+
+          api_ready=0
+          for attempt in $(seq 1 20); do
+            status="$(curl --silent --show-error -o /tmp/jt-protected.json -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{}' "$BASE_URL/api/jt/shipments/KUN-PROD-AUTH-PROBE" || true)"
+            if [ "$status" = "401" ]; then api_ready=1; break; fi
+            echo "Waiting for protected J&T API boundary: HTTP $status attempt=$attempt/20"
+            sleep 2
+          done
+          test "$api_ready" -eq 1
           ! grep -F 'JT_BUSINESS_CREDENTIALS_MISSING' /tmp/jt-protected.json
-          curl --fail --silent --show-error --retry 5 --retry-delay 2 "$BASE_URL/health/easyorders-sync" > /tmp/easy-health.json
-          node -e "const x=JSON.parse(require('fs').readFileSync('/tmp/easy-health.json','utf8')); if(!x.ok) process.exit(2); console.log('Easy Orders Production wrapper healthy:', x.build||x.status||'ok')"
+
+          easy_ready=0
+          for attempt in $(seq 1 20); do
+            easy_code="$(curl --silent --show-error -o /tmp/easy-health.json -w '%{http_code}' "$BASE_URL/health/easyorders-sync" || true)"
+            if [ "$easy_code" = "200" ] && node -e "const x=JSON.parse(require('fs').readFileSync('/tmp/easy-health.json','utf8')); process.exit(x.ok?0:1)"; then
+              easy_ready=1
+              break
+            fi
+            echo "Waiting for Easy Orders wrapper: HTTP $easy_code attempt=$attempt/20"
+            sleep 2
+          done
+          test "$easy_ready" -eq 1
+          node -e "const x=JSON.parse(require('fs').readFileSync('/tmp/easy-health.json','utf8')); console.log('Easy Orders Production wrapper healthy:', x.build||x.status||'ok')"
           node scripts/verify-cloudflare-crons.mjs kunonline '*/5 * * * *' '0 */2 * * *'
           echo 'Production acceptance passed: app, J&T optional Enterprise credentials, protected API boundary, Easy Orders wrapper and Cron ownership are healthy.'
       - name: Roll back exact prior Worker version if Production acceptance fails
