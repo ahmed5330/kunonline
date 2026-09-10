@@ -1,0 +1,49 @@
+name: J&T Preview live auth diagnostic once
+on:
+  push:
+    branches: [develop/ux-system-upgrade]
+    paths: [.github/run-jt-preview-live-auth-diagnostic-once.txt]
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    environment:
+      name: preview
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      PREVIEW_BASE: https://kunonline-preview.mr-a-mnaa.workers.dev
+    steps:
+      - uses: actions/checkout@v5
+      - name: Run safe authenticated Get Orders credential diagnostic
+        run: |
+          node - <<'NODE'
+          const fs=require('fs'),crypto=require('crypto');
+          const {webcrypto,randomBytes}=crypto;
+          const account=process.env.CLOUDFLARE_ACCOUNT_ID,token=process.env.CLOUDFLARE_API_TOKEN,base=process.env.PREVIEW_BASE;
+          const cfg=fs.readFileSync('wrangler.preview.toml','utf8'),db=cfg.match(/database_id\s*=\s*"([^"]+)"/)?.[1];
+          if(!account||!token||!base||!db)throw new Error('Preview config missing');
+          async function q(sql,params=[]){for(let i=1;i<=5;i++){const r=await fetch(`https://api.cloudflare.com/client/v4/accounts/${account}/d1/database/${db}/query`,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({sql,params})});const p=await r.json().catch(()=>({}));if(r.ok&&p.success!==false&&p.result?.[0]?.success!==false)return p.result?.[0]?.results||[];if(i===5)throw new Error('Preview D1 query failed');await new Promise(x=>setTimeout(x,1200*i));}}
+          async function hashPassword(value){const salt=randomBytes(16),key=await webcrypto.subtle.importKey('raw',new TextEncoder().encode(value),'PBKDF2',false,['deriveBits']);const bits=await webcrypto.subtle.deriveBits({name:'PBKDF2',salt,iterations:100000,hash:'SHA-256'},key,256);return `pbkdf2$100000$${salt.toString('base64')}$${Buffer.from(bits).toString('base64')}`;}
+          (async()=>{
+            const cons=await q("SELECT id,client_id FROM store_connections WHERE provider='jt' ORDER BY updated_at DESC");
+            if(cons.length!==1)throw new Error(`Expected exactly one Preview J&T connection; got ${cons.length}`);
+            const clientId=String(cons[0].client_id||'').trim();if(!clientId)throw new Error('Preview J&T client id missing');
+            const nonce=randomBytes(6).toString('hex'),id=`QA-JT-${nonce}`,email=`qa-jt-${nonce}@example.test`,password=`JtDiag!${randomBytes(12).toString('hex')}Aa1`,hash=await hashPassword(password),ts=new Date().toISOString();
+            try{
+              await q('INSERT INTO users (id,email,name,password,role,client_id,status,created_at,last_login) VALUES (?,?,?,?,?,NULL,?,?,NULL)',[id,email,'CI J&T Diagnostic Admin',hash,'admin','active',ts]);
+              const login=await fetch(`${base}/api/login`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password})});
+              if(!login.ok)throw new Error(`Preview admin login failed ${login.status}`);
+              const cookie=(login.headers.get('set-cookie')||'').split(';')[0];if(!cookie)throw new Error('Preview login cookie missing');
+              const r=await fetch(`${base}/api/jt/diagnostic`,{method:'POST',headers:{Cookie:cookie,'Content-Type':'application/json'},body:JSON.stringify({clientId})});
+              const p=await r.json().catch(()=>({}));if(!r.ok)throw new Error(`J&T diagnostic HTTP ${r.status}: ${String(p.error||p.code||'unknown').slice(0,250)}`);
+              const safe={connectionStatus:p.connectionStatus,has:p.has,attempts:(p.attempts||[]).map(a=>({label:a.label,httpStatus:a.httpStatus,code:a.code,message:a.message,success:a.success,credentialLikelyAccepted:a.credentialLikelyAccepted}))};
+              console.log(JSON.stringify(safe,null,2));
+            } finally {
+              await q('DELETE FROM login_attempts WHERE email=?',[email]).catch(()=>{});
+              await q('DELETE FROM users WHERE email=?',[email]).catch(()=>{});
+            }
+          })().catch(e=>{console.error(e.message);process.exit(1)});
+          NODE
