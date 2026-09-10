@@ -1,0 +1,44 @@
+name: Production J&T final release validation
+on:
+  push:
+    branches: [release/commerce-v38-production-20260910]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - run: npm install --ignore-scripts
+      - name: Validate J&T Create Order regression
+        run: node scripts/jt-live-shipping-test.mjs
+      - name: Validate Production release entry and syntax
+        run: |
+          set -euo pipefail
+          node --check src/index-commerce-v38.js
+          node --check src/index-production-sync.js
+          node --check src/jt-express-eg-api.js
+          grep -F "import app from './index-commerce-v38.js';" src/index-production-sync.js
+          grep -F 'name = "kunonline"' wrangler.production.toml
+          grep -F 'main = "src/index-production-sync.js"' wrangler.production.toml
+          grep -F 'database_name = "kunonline"' wrangler.production.toml
+          grep -F 'database_id = "c426601d-182f-486e-a5c1-bb1bca0ecb0b"' wrangler.production.toml
+          grep -F '/v2/modules-v81-jt-live-setup.js?v=81.2' public/v2/index.html
+          grep -F '/v2/modules-v84-jt-create-setup.js?v=84.2' public/v2/index.html
+          grep -F 'اختياري — فقط لو J&T طلبته لحسابك' public/v2/modules-v81-jt-live-setup.js
+          grep -F 'markBusinessOptional' public/v2/modules-v84-jt-create-setup.js
+          ! grep -F 'JT_BUSINESS_CREDENTIALS_MISSING' src/index-commerce-v38.js
+          ! grep -F 'requireCreateBusinessCredentials' src/index-commerce-v38.js
+      - name: Enforce migration-free release validation
+        run: |
+          set -euo pipefail
+          if grep -R -nE 'd1 (migrations apply|execute).*kunonline([^ -]|$)|db:migrate:production|migration.*production' .github/workflows/production-jt-final-release-validate.yml; then
+            echo 'Production database mutation command detected in J&T validation workflow.'
+            exit 1
+          fi
+          echo 'Validation is Production-D1-mutation-free.'
