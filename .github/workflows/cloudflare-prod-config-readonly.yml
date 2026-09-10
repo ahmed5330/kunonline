@@ -33,3 +33,6 @@ jobs:
       - name: Count Preview integration connections by provider/status only
         run: |
           npx wrangler d1 execute kunonline-preview --remote --config wrangler.preview.toml --command "SELECT provider,status,COUNT(*) AS connections FROM store_connections GROUP BY provider,status ORDER BY provider,status;"
+      - name: Inspect Preview D1 migration ledger schema and names only
+        run: |
+          npx wrangler d1 execute kunonline-preview --remote --config wrangler.preview.toml --command "PRAGMA table_info(d1_migrations); SELECT id,name,applied_at FROM d1_migrations ORDER BY id;"
