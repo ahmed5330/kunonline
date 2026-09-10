@@ -1,0 +1,22 @@
+name: J&T Enterprise optional regression
+on:
+  push:
+    branches: [develop/ux-system-upgrade]
+    paths:
+      - src/jt-express-eg-api.js
+      - scripts/jt-live-shipping-test.mjs
+      - .github/workflows/jt-enterprise-optional-test.yml
+permissions:
+  contents: read
+jobs:
+  jt-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - name: Validate J&T Create Order Enterprise fallback
+        run: node scripts/jt-live-shipping-test.mjs
