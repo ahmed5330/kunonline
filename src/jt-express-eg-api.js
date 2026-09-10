@@ -95,6 +95,19 @@ function requireSenderSetup(fields,senderReady){
   throw Object.assign(new Error(`بيانات الراسل المطلوبة لـ J&T ناقصة: ${missing.join('، ')}. افتح مركز التكاملات → J&T وأكمل بيانات شركتك/المخزن مرة واحدة ثم أعد إرسال الطلب.`),{status:409,code:'JT_SENDER_INFO_MISSING',missingSenderFields:missing});
 }
 
+function missingBusinessFields(fields){
+  const missing=[];
+  if(!fields.customerCode)missing.push('رقم حساب J&T / Customer Code');
+  if(!fields.customerPassword)missing.push('Customer Password / API Password');
+  return missing;
+}
+
+function requireCreateBusinessCredentials(fields,enterpriseReady){
+  if(enterpriseReady)return;
+  const missing=missingBusinessFields(fields);
+  throw Object.assign(new Error(`إنشاء بوليصة J&T يحتاج بيانات Business Info بالإضافة إلى Developer Info: ${missing.join('، ')}. أدخل القيم التي سلّمتها J&T للحساب من مركز التكاملات؛ لا تستخدم Private Key بدل Customer Password.`),{status:409,code:'JT_BUSINESS_CREDENTIALS_MISSING',enterpriseCredentialsRequired:true,missingBusinessFields:missing});
+}
+
 function senderFrom(fields){
   const mobile=normalizePhone(fields.senderMobile),phone=normalizePhone(fields.senderPhone)||mobile;
   return compact({name:fields.senderName,company:fields.senderCompany||fields.senderName,mobile,phone,countryCode:'EGY',prov:fields.senderProv,city:fields.senderCity,area:fields.senderArea,street:fields.senderStreet});
@@ -104,13 +117,14 @@ export function buildJtCreatePayload(shipment={},secrets={},options={}){
   const {fields,missing,enterpriseReady,senderReady}=jtCredentials(secrets);
   if(missing.length)throw Object.assign(new Error('J&T Express يحتاج API Account وPrivate Key وSource Code'),{status:409,code:'JT_CREDENTIALS_MISSING'});
   requireSenderSetup(fields,senderReady);
+  if(options?.requireBusiness===true)requireCreateBusinessCredentials(fields,enterpriseReady);
   const txlogisticId=clean(shipment.customerOrderNo||shipment.txlogisticId||shipment.orderRef||shipment.orderId,120),receiverName=clean(shipment.receiverName,220),mobile=normalizePhone(shipment.receiverPhone),phone2=normalizePhone(shipment.receiverPhone2)||mobile,province=clean(shipment.province,160),city=clean(shipment.city,160),area=clean(shipment.area,220),street=clean(shipment.street,900);
   if(!txlogisticId||!receiverName||!mobile||!province||!city||!area||!street)throw Object.assign(new Error('أكمل رقم الطلب واسم وهاتف وعنوان المستلم قبل إرسال الشحنة'),{status:400,code:'JT_SHIPMENT_FIELDS_MISSING'});
   const weight=Math.max(.01,number(shipment.weight)||1),quantity=integer(shipment.quantity),codAmount=Math.max(0,number(shipment.codAmount)),itemName=clean(shipment.itemName,500)||'Goods',currency=clean(shipment.currency,12)||'EGP',goodsType=mapGoodsType(shipment.itemType);
   const receiver=compact({name:receiverName,company:receiverName,mobile,phone:phone2,countryCode:egyptCountry(shipment.countryCode),prov:province,city,area,street,provCode:clean(shipment.provinceCode,80)||undefined,cityCode:clean(shipment.cityCode,80)||undefined,areaCode:clean(shipment.districtCode||shipment.areaCode,100)||undefined,countryAreaCode:clean(shipment.addressCountryCode,80)||undefined});
   const item={itemType:goodsType,itemName,chineseName:itemName,englishName:itemName,number:quantity,itemValue:codAmount,priceCurrency:currency,desc:itemName,itemUrl:''};
   let payload=compact({sourceCode:fields.sourceCode,txlogisticId,orderType:'2',serviceType:'02',deliveryType:'04',payType:codAmount>0?'PP_CASH':'PP_PM',expressType:'EZ',goodsType,invoceNumber:txlogisticId,weight,totalQuantity:quantity,itemsValue:codAmount,priceCurrency:currency,operateType:1,remark:clean(shipment.notes||shipment.pickupInfo,500),receiver,sender:senderFrom(fields),items:[item]});
-  if(options?.includeEnterprise===true&&enterpriseReady)payload=withEnterprise(payload,fields);
+  if((options?.includeEnterprise===true||options?.requireBusiness===true)&&enterpriseReady)payload=withEnterprise(payload,fields);
   return payload;
 }
 
@@ -161,15 +175,15 @@ function duplicateLike(result){
 }
 
 function enterpriseCredentialHint(result){
-  return /(customer\s*code|customer\s*password|customer\s*pwd|business.*digest|parameter.*digest|customer.*digest)/i.test(`${result.code} ${result.message}`);
+  return /(customer\s*code|customer\s*password|customer\s*pwd|business.*digest|parameter.*digest|customer.*digest|signature verification failed)/i.test(`${result.code} ${result.message}`);
 }
 
 async function recoverExisting(txlogisticId,secrets,options={}){
   if(!txlogisticId)return null;
   try{
     const {fields,enterpriseReady}=jtCredentials(secrets),base={sourceCode:fields.sourceCode,command:1,serialNumber:[txlogisticId]};
-    let result=await signedPost(GET_ORDERS_PATH,base,secrets,options);
-    if(!success(result)&&enterpriseReady&&enterpriseCredentialHint(result))result=await signedPost(GET_ORDERS_PATH,withEnterprise(base,fields),secrets,options);
+    let result=await signedPost(GET_ORDERS_PATH,enterpriseReady?withEnterprise(base,fields):base,secrets,options);
+    if(!success(result)&&enterpriseReady&&!enterpriseCredentialHint(result))result=await signedPost(GET_ORDERS_PATH,base,secrets,options);
     if(!success(result))return null;
     const parsed=parseJtShipmentResult(result.data);
     return parsed.awb?{...parsed,recovered:true,raw:result.data}:null;
@@ -183,41 +197,33 @@ async function postCreate(payload,secrets,{fetcher=fetch}={}){
 }
 
 export async function createJtShipment({shipment,secrets,fetcher=fetch}){
-  const basePayload=buildJtCreatePayload(shipment,secrets),txlogisticId=basePayload.txlogisticId;
-  let payload=basePayload,result,enterpriseRetried=false;
+  const {fields,enterpriseReady}=jtCredentials(secrets);
+  requireCreateBusinessCredentials(fields,enterpriseReady);
+  const payload=buildJtCreatePayload(shipment,secrets,{requireBusiness:true}),txlogisticId=payload.txlogisticId;
+  let result;
   try{
     result=await postCreate(payload,secrets,{fetcher});
-    const {fields,enterpriseReady}=jtCredentials(secrets);
-    if(!success(result)&&enterpriseReady&&enterpriseCredentialHint(result)){
-      enterpriseRetried=true;
-      payload=withEnterprise(basePayload,fields);
-      result=await signedPost(result.path||ADD_ORDER_PATH,payload,secrets,{fetcher});
-    }
   }catch(error){
     const recovered=await recoverExisting(txlogisticId,secrets,{fetcher});
-    if(recovered)return {ok:true,...recovered,txlogisticId:recovered.txlogisticId||txlogisticId,payload};
+    if(recovered)return {ok:true,...recovered,txlogisticId:recovered.txlogisticId||txlogisticId,payload,businessAuthUsed:true};
     throw error;
   }
   if(success(result)){
     const parsed=parseJtShipmentResult(result.data);
     if(!parsed.awb){
       const recovered=await recoverExisting(txlogisticId,secrets,{fetcher});
-      if(recovered)return {ok:true,...recovered,txlogisticId:recovered.txlogisticId||txlogisticId,payload,path:result.path};
+      if(recovered)return {ok:true,...recovered,txlogisticId:recovered.txlogisticId||txlogisticId,payload,path:result.path,businessAuthUsed:true};
       throw Object.assign(new Error('J&T قبلت الطلب لكن لم ترجع Bill Code (رقم البوليصة) في الاستجابة، ولم يظهر الرقم بعد في Get Orders. لم ننقل الأوردر إلى جاري الشحن حتى لا نفقد رقم التتبع.'),{status:502,code:'JT_AWB_MISSING',jtResponse:result.data});
     }
-    return {ok:true,...parsed,txlogisticId:parsed.txlogisticId||txlogisticId,payload,raw:result.data,path:result.path,enterpriseRetried};
+    return {ok:true,...parsed,txlogisticId:parsed.txlogisticId||txlogisticId,payload,raw:result.data,path:result.path,businessAuthUsed:true,enterpriseRetried:false};
   }
   if(duplicateLike(result)){
     const recovered=await recoverExisting(txlogisticId,secrets,{fetcher});
-    if(recovered)return {ok:true,...recovered,txlogisticId:recovered.txlogisticId||txlogisticId,payload};
+    if(recovered)return {ok:true,...recovered,txlogisticId:recovered.txlogisticId||txlogisticId,payload,businessAuthUsed:true};
   }
-  const needsEnterprise=enterpriseRetried||enterpriseCredentialHint(result);
-  const hint=enterpriseRetried
-    ?' J&T طلبت Enterprise Info وتمت إعادة المحاولة تلقائيًا بالقيم المحفوظة، لكنها ما زالت مرفوضة. راجع Customer Code وCustomer Password من J&T قبل تعديلهما داخل Kun Online.'
-    :needsEnterprise
-      ?' حساب J&T نفسه طلب Customer Code/Customer Password. أضفهما فقط إذا أكدت J&T أن حسابك Enterprise.'
-      :'';
-  throw Object.assign(new Error(`J&T رفضت إنشاء الشحنة${result.code?` (${result.code})`:''}: ${result.message||`HTTP ${result.response.status}`}.${hint}`),{status:result.response.status>=500?502:422,code:'JT_CREATE_REJECTED',jtCode:result.code,httpStatus:result.response.status,jtResponse:result.data,enterpriseCredentialsRequired:needsEnterprise,enterpriseRetried});
+  const businessRejected=enterpriseCredentialHint(result);
+  const hint=businessRejected?' راجع رقم حساب J&T / Customer Code وCustomer Password (API Password) من بيانات التكامل؛ لا تستخدم Private Key مكان كلمة المرور.':'';
+  throw Object.assign(new Error(`J&T رفضت إنشاء الشحنة${result.code?` (${result.code})`:''}: ${result.message||`HTTP ${result.response.status}`}.${hint}`),{status:result.response.status>=500?502:422,code:businessRejected?'JT_BUSINESS_CREDENTIALS_REJECTED':'JT_CREATE_REJECTED',jtCode:result.code,httpStatus:result.response.status,jtResponse:result.data,enterpriseCredentialsRequired:businessRejected,businessAuthUsed:true});
 }
 
 export async function trackJtShipment({awb,secrets,fetcher=fetch}){
@@ -230,4 +236,4 @@ export async function trackJtShipment({awb,secrets,fetcher=fetch}){
   return {ok:true,awb:code,data:result.data};
 }
 
-export const __jtApiInternals={ADD_ORDER_PATH,CREATE_ORDER_PATH,GET_ORDERS_PATH,TRACE_PATH,LIVE_BASE,businessDigest,signedPost,success,parseJtShipmentResult,senderFrom,missingSenderFields,enterpriseCredentialHint,withEnterprise};
+export const __jtApiInternals={ADD_ORDER_PATH,CREATE_ORDER_PATH,GET_ORDERS_PATH,TRACE_PATH,LIVE_BASE,businessDigest,signedPost,success,parseJtShipmentResult,senderFrom,missingSenderFields,missingBusinessFields,requireCreateBusinessCredentials,enterpriseCredentialHint,withEnterprise};
