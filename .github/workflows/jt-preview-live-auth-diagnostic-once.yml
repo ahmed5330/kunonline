@@ -39,7 +39,7 @@ jobs:
               const cookie=(login.headers.get('set-cookie')||'').split(';')[0];if(!cookie)throw new Error('Preview login cookie missing');
               const r=await fetch(`${base}/api/jt/diagnostic`,{method:'POST',headers:{Cookie:cookie,'Content-Type':'application/json'},body:JSON.stringify({clientId,mode:'create-auth'})});
               const p=await r.json().catch(()=>({}));if(!r.ok)throw new Error(`J&T diagnostic HTTP ${r.status}: ${String(p.error||p.code||'unknown').slice(0,250)}`);
-              const safe={mode:p.mode,connectionStatus:p.connectionStatus,has:p.has,attempts:(p.attempts||[]).map(a=>({label:a.label,httpStatus:a.httpStatus,code:a.code,message:a.message,success:a.success,credentialLikelyAccepted:a.credentialLikelyAccepted}))};
+              const safe={mode:p.mode,connectionStatus:p.connectionStatus,has:p.has,shapes:p.shapes||{},attempts:(p.attempts||[]).map(a=>({label:a.label,httpStatus:a.httpStatus,code:a.code,message:a.message,success:a.success,credentialLikelyAccepted:a.credentialLikelyAccepted}))};
               console.log(JSON.stringify(safe,null,2));
             } finally {
               await q('DELETE FROM login_attempts WHERE email=?',[email]).catch(()=>{});
