@@ -1,1 +1,2 @@
 Authorized by the user on 2026-09-10. Run exactly one synthetic Preview Create Order test. Do not print credentials. Production must remain untouched.
+Rerun authorized once after the J&T millisecond timestamp and goods-type mapping fix: 2026-09-10.
