@@ -110,7 +110,8 @@ jobs:
             code="$(curl -sS -o /tmp/v2 -w '%{http_code}' "$base/v2/" || true)";test "$code" = "200";grep -qi '<html\|<!DOCTYPE html' /tmp/v2
           done
           schedules="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/kunonline/schedules")"
-          printf '%s' "$schedules" | node -e 'let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{const p=JSON.parse(raw);if(p.success===false)throw new Error("Cloudflare schedules failed");const got=(p.result||[]).map(x=>x.cron).sort(),want=["*/5 * * * *","0 */2 * * *"].sort();if(JSON.stringify(got)!==JSON.stringify(want))throw new Error(`Cron mismatch ${JSON.stringify(got)}`);console.log("Cron integrity passed.")})'
+          printf '%s' "$schedules" | node -e '
+            let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{const p=JSON.parse(raw);if(p.success===false)throw new Error("Cloudflare schedules failed");const crons=[];const walk=x=>{if(Array.isArray(x)){x.forEach(walk);return;}if(!x||typeof x!=="object")return;if(typeof x.cron==="string")crons.push(x.cron);Object.values(x).forEach(walk);};walk(p.result);const got=[...new Set(crons)].sort(),want=["*/5 * * * *","0 */2 * * *"].sort();if(JSON.stringify(got)!==JSON.stringify(want))throw new Error(`Cron mismatch ${JSON.stringify(got)}`);console.log(`Cron integrity passed: ${got.join(" | ")}`);});'
       - name: Roll back exact prior Worker on deploy validation failure
         if: failure() && steps.deploy.outputs.attempted == 'true'
         run: |
