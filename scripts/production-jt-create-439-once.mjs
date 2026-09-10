@@ -52,7 +52,7 @@ async function selectTarget(){
   const preferred=clean(failedConnections[0]?.client_id);
   const params=preferred?[preferred]:[];
   const scope=preferred?' AND client_id=?':'';
-  const candidates=await d1(`SELECT id,client_id,store_id,total,state,awb FROM orders WHERE state='confirmed' AND (awb IS NULL OR trim(awb)='') AND abs(CAST(total AS REAL)-439.0)<0.001${scope} ORDER BY COALESCE(updated_at,created_at) DESC LIMIT 3`,params);
+  const candidates=await d1(`SELECT id,client_id,store_id,total,state,awb FROM orders WHERE state='confirmed' AND (awb IS NULL OR trim(awb)='') AND abs(CAST(total AS REAL)-439.0)<0.001${scope} ORDER BY COALESCE(created_at,date) DESC LIMIT 3`,params);
   if(candidates.length!==1)throw Object.assign(new Error(`Target guard stopped: expected exactly one confirmed/unshipped 439 EGP order, found ${candidates.length}. No J&T request was sent.`),{code:'TARGET_NOT_UNIQUE'});
   return candidates[0];
 }
@@ -63,7 +63,7 @@ try{
   const hash=await hashPassword(password);
   await d1('INSERT INTO users (id,email,name,password,role,client_id,status,created_at,last_login) VALUES (?,?,?,?,?,NULL,?,?,NULL)',[tempId,email,'Production J&T one-shot',hash,'admin','active',new Date().toISOString()]);
   const login=await fetch(`${base}/api/login`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password})});
-  const loginText=await login.text();if(!login.ok)throw new Error(`Temporary admin login failed (${login.status})`);
+  await login.text();if(!login.ok)throw new Error(`Temporary admin login failed (${login.status})`);
   cookie=(login.headers.get('set-cookie')||'').split(';')[0];if(!cookie)throw new Error('Temporary admin login returned no session cookie');
 
   const q=`clientId=${encodeURIComponent(target.client_id)}${target.store_id?`&storeId=${encodeURIComponent(target.store_id)}`:''}`;
