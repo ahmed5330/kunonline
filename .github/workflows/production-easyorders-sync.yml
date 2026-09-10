@@ -1,9 +1,5 @@
 name: Production Easy Orders sync hotfix
 on:
-  push:
-    branches:
-      - release/easyorders-prod-sync-20260831
-      - main
   workflow_dispatch:
 concurrency:
   group: kunonline-production-20260910
