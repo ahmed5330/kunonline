@@ -1,2 +1,2 @@
 Run isolated v38 canary against fully migrated Production D1. No cron, no custom domain, delete canary after probe.
-Attempt 3: Worker-first static asset routing enabled.
+Attempt 4: Worker-first routing with up to 60 seconds propagation retry.
