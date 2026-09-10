@@ -34,14 +34,15 @@ function credentials(secrets){
 export async function validateJtExpressConnection({secrets}){
   const {fields,missing}=credentials(secrets);
   if(missing.length)return {ok:false,status:'disconnected',externalConnectivityChecked:false,code:'JT_CREDENTIALS_MISSING',message:'J&T Express Egypt يحتاج API Account وPrivate Key وSource Code من Developer Info.'};
+  const businessReady=Boolean(clean(secrets?.customer_code||secrets?.customerCode)&&clean(secrets?.customer_password||secrets?.customer_pwd||secrets?.customerPassword));
   return {
     ok:true,
     status:'configured',
     externalConnectivityChecked:false,
-    code:'JT_DEVELOPER_INFO_READY',
+    code:businessReady?'JT_CREATE_ORDER_CONFIG_READY':'JT_DEVELOPER_INFO_READY',
     externalStoreId:fields.sourceCode,
-    config:{jtEnvironment:'production',jtApiBase:LIVE_BASE,sourceCode:fields.sourceCode,developerCredentialsReady:true},
-    message:'تم حفظ بيانات J&T Developer Info الثلاثة: API Account + Private Key + Source Code. Source Name غير مطلوب. لن نعتبر الربط متصلًا بالكامل قبل اختبار API مفعّل للحساب؛ وCreate Order يجب أن تكون Online في بوابة J&T قبل إنشاء الشحنات.'
+    config:{jtEnvironment:'production',jtApiBase:LIVE_BASE,sourceCode:fields.sourceCode,developerCredentialsReady:true,createOrderBusinessCredentialsReady:businessReady},
+    message:businessReady?'تم حفظ Developer Info وBusiness Info المطلوبة لإنشاء بوليصات J&T. سيظل الربط بحالة configured إلى أن يتم نجاح اتصال/عملية حقيقية موثوقة.':'تم حفظ J&T Developer Info: API Account + Private Key + Source Code. التتبع والتهيئة يمكنهما استخدام هذه البيانات، لكن إنشاء البوليصة Create Order يحتاج أيضًا Customer Code / Merchant Code + Customer Password / API Password وبيانات الراسل.'
   };
 }
 
