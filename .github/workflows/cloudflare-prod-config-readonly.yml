@@ -30,9 +30,10 @@ jobs:
               console.log("Production Worker secret names:");
               for(const x of a) console.log(x.name||x.key||String(x));
             });'
+      - name: Inspect partial Production migration state without PII
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "SELECT COUNT(*) AS migrations_applied FROM d1_migrations; SELECT id,name FROM d1_migrations ORDER BY id; SELECT COUNT(*) AS stores FROM stores; SELECT COUNT(*) AS user_store_access_rows FROM user_store_access; SELECT COUNT(*) AS distinct_active_default_clients FROM (SELECT client_id FROM stores WHERE status='active' AND is_default=1 GROUP BY client_id); SELECT COUNT(*) AS orders FROM orders; SELECT COUNT(*) AS users FROM users; SELECT COUNT(*) AS customers FROM customers; SELECT COUNT(*) AS products FROM products; PRAGMA table_info(stores); PRAGMA table_info(user_store_access);"
       - name: Count Preview integration connections by provider/status only
         run: |
           npx wrangler d1 execute kunonline-preview --remote --config wrangler.preview.toml --command "SELECT provider,status,COUNT(*) AS connections FROM store_connections GROUP BY provider,status ORDER BY provider,status;"
-      - name: Inspect Preview D1 migration ledger schema and names only
-        run: |
-          npx wrangler d1 execute kunonline-preview --remote --config wrangler.preview.toml --command "PRAGMA table_info(d1_migrations); SELECT id,name,applied_at FROM d1_migrations ORDER BY id;"
