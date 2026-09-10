@@ -1,0 +1,86 @@
+name: Production J&T fix deploy
+on:
+  push:
+    branches: [develop/ux-system-upgrade]
+    paths: [.github/run-production-jt-fix-deploy-20260910.txt]
+concurrency:
+  group: kunonline-production-20260910
+  cancel-in-progress: false
+permissions:
+  contents: read
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    environment:
+      name: preview
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      RELEASE_REF: release/commerce-v38-production-20260910
+      EXPECTED_RELEASE_SHA: 1d5653238151197c1d3952aab077cc891d0c1353
+      PROD_CUSTOM: https://app.kun-online.com
+      PROD_WORKERS: https://kunonline.mr-a-mnaa.workers.dev
+    steps:
+      - name: Checkout exact approved release
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ env.RELEASE_REF }}
+          fetch-depth: 1
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: npm install --ignore-scripts
+      - name: Verify release, tests, DB and secrets
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_RELEASE_SHA"
+          node scripts/jt-live-shipping-test.mjs
+          grep -q "import app from './index-commerce-v38.js';" src/index-production-sync.js
+          npm run check:production-config
+          result="$(npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "SELECT COUNT(*) AS migration_count FROM d1_migrations; SELECT name AS last_migration FROM d1_migrations ORDER BY id DESC LIMIT 1; SELECT COUNT(*) AS unmapped_orders FROM orders WHERE client_id IS NOT NULL AND trim(client_id)<>'' AND store_id IS NULL;" --json)"
+          printf '%s' "$result" | node -e 'let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{const p=JSON.parse(raw),r=[];const w=x=>{if(Array.isArray(x))return x.forEach(w);if(x&&typeof x==="object"){if(Array.isArray(x.results))r.push(...x.results);Object.values(x).forEach(w)}};w(p);const g=k=>r.find(x=>x[k]!=null)?.[k];if(Number(g("migration_count"))!==23||g("last_migration")!=="0022_order_duplicate_links.sql"||Number(g("unmapped_orders"))!==0)throw new Error(JSON.stringify(r));console.log("Production D1 readiness passed")})'
+          npx wrangler secret list --config wrangler.production.toml >/tmp/secrets.json
+          node -e 'const a=JSON.parse(require("fs").readFileSync("/tmp/secrets.json","utf8"));const n=new Set((Array.isArray(a)?a:a.result||[]).map(x=>x.name||x.key));for(const k of ["SESSION_SECRET","TOKEN_ENC_KEY","INTEGRATION_ENCRYPTION_KEY"])if(!n.has(k))throw new Error("Missing "+k);console.log("Production secret names passed")'
+          rm -f /tmp/secrets.json
+      - name: Capture current Production Worker version
+        id: before
+        run: |
+          set -euo pipefail
+          status="$(npx wrangler deployments status --config wrangler.production.toml --json)"
+          version="$(printf '%s' "$status" | node -e 'let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{const p=JSON.parse(raw),h=[];const w=x=>{if(Array.isArray(x)){x.forEach(w);return}if(!x||typeof x!=="object")return;const id=x.version_id||x.versionId,q=x.percentage??x.traffic_percentage??x.trafficPercentage;if(id)h.push({id:String(id),q:q==null?null:Number(q)});Object.values(x).forEach(w)};w(p);const u=[...new Map(h.map(x=>[x.id,x])).values()],f=u.find(x=>x.q===100||x.q===1)||(u.length===1?u[0]:null);if(!f)process.exit(2);process.stdout.write(f.id)})')"
+          test -n "$version"
+          echo "version_id=$version" >> "$GITHUB_OUTPUT"
+      - name: Dry-run Production bundle
+        run: npx wrangler deploy --dry-run --config wrangler.production.toml >/dev/null
+      - name: Deploy fixed v38 Worker
+        id: deploy
+        run: |
+          echo "attempted=true" >> "$GITHUB_OUTPUT"
+          npx wrangler deploy --config wrangler.production.toml
+      - name: Wait for Production propagation and verify runtime
+        run: |
+          set -euo pipefail
+          for base in "$PROD_WORKERS" "$PROD_CUSTOM"; do
+            ok=0
+            for i in $(seq 1 20); do
+              h="$(curl -sS -o /tmp/h -w '%{http_code}' "$base/health" || true)"
+              e="$(curl -sS -o /tmp/e -w '%{http_code}' "$base/health/easyorders-sync" || true)"
+              if [ "$h" = 200 ] && [ "$e" = 200 ] && node -e 'const p=JSON.parse(require("fs").readFileSync("/tmp/e","utf8"));if(p.ok!==true||p.service!=="easyorders-production-sync"||p.build!=="production-commerce-v38-free-tier-safe-2026-09-10")process.exit(1)' >/dev/null 2>&1; then ok=1; break; fi
+              sleep 4
+            done
+            test "$ok" = 1
+            code="$(curl -sS -o /tmp/j -w '%{http_code}' -X POST -H 'Content-Type: application/json' "$base/api/jt/shipments/KUN-SMOKE-NO-ORDER" --data '{}' || true)"
+            route="$(node -e 'try{const p=JSON.parse(require("fs").readFileSync("/tmp/j","utf8"));process.stdout.write(p.code==="AUTH_REQUIRED"?"yes":"no")}catch{process.stdout.write("no")}' || true)"
+            test "$code" = 401
+            test "$route" = yes
+            v="$(curl -sS -o /tmp/v -w '%{http_code}' "$base/v2/" || true)"
+            test "$v" = 200
+          done
+          schedules="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/kunonline/schedules")"
+          printf '%s' "$schedules" | node -e 'let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{const p=JSON.parse(raw);if(p.success===false)throw new Error(JSON.stringify(p.errors));const got=(p.result||[]).map(x=>x.cron).sort(),want=["*/5 * * * *","0 */2 * * *"].sort();if(JSON.stringify(got)!==JSON.stringify(want))throw new Error(JSON.stringify(got));console.log("Production runtime + cron passed")})'
+          rm -f /tmp/h /tmp/e /tmp/j /tmp/v
+      - name: Roll back exact prior Worker on failure
+        if: failure() && steps.deploy.outputs.attempted == 'true'
+        run: npx wrangler rollback "${{ steps.before.outputs.version_id }}" --config wrangler.production.toml --message "Automatic rollback after J&T Production fix validation failure"
