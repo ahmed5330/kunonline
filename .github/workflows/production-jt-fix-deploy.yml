@@ -32,18 +32,27 @@ jobs:
           node-version: 22
           package-manager-cache: false
       - run: npm install --ignore-scripts
-      - name: Verify release, tests, DB and secrets
+
+      - name: Verify release, tests, migration ledger and secrets
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_RELEASE_SHA"
           node scripts/jt-live-shipping-test.mjs
           grep -q "import app from './index-commerce-v38.js';" src/index-production-sync.js
           npm run check:production-config
-          result="$(npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "SELECT COUNT(*) AS migration_count FROM d1_migrations; SELECT name AS last_migration FROM d1_migrations ORDER BY id DESC LIMIT 1; SELECT COUNT(*) AS unmapped_orders FROM orders WHERE client_id IS NOT NULL AND trim(client_id)<>'' AND store_id IS NULL;" --json)"
-          printf '%s' "$result" | node -e 'let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{const p=JSON.parse(raw),r=[];const w=x=>{if(Array.isArray(x))return x.forEach(w);if(x&&typeof x==="object"){if(Array.isArray(x.results))r.push(...x.results);Object.values(x).forEach(w)}};w(p);const g=k=>r.find(x=>x[k]!=null)?.[k];if(Number(g("migration_count"))!==23||g("last_migration")!=="0022_order_duplicate_links.sql"||Number(g("unmapped_orders"))!==0)throw new Error(JSON.stringify(r));console.log("Production D1 readiness passed")})'
+          result="$(npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "SELECT COUNT(*) AS migration_count FROM d1_migrations; SELECT name AS last_migration FROM d1_migrations ORDER BY id DESC LIMIT 1;" --json)"
+          printf '%s' "$result" | node -e 'let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{const p=JSON.parse(raw),r=[];const w=x=>{if(Array.isArray(x))return x.forEach(w);if(x&&typeof x==="object"){if(Array.isArray(x.results))r.push(...x.results);Object.values(x).forEach(w)}};w(p);const g=k=>r.find(x=>x[k]!=null)?.[k];if(Number(g("migration_count"))!==23||g("last_migration")!=="0022_order_duplicate_links.sql")throw new Error(JSON.stringify(r));console.log("Production migration ledger passed")})'
           npx wrangler secret list --config wrangler.production.toml >/tmp/secrets.json
           node -e 'const a=JSON.parse(require("fs").readFileSync("/tmp/secrets.json","utf8"));const n=new Set((Array.isArray(a)?a:a.result||[]).map(x=>x.name||x.key));for(const k of ["SESSION_SECRET","TOKEN_ENC_KEY","INTEGRATION_ENCRYPTION_KEY"])if(!n.has(k))throw new Error("Missing "+k);console.log("Production secret names passed")'
           rm -f /tmp/secrets.json
+
+      - name: Backfill orders created by legacy Worker during migration window
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "UPDATE orders SET store_id=(SELECT id FROM stores s WHERE s.client_id=orders.client_id AND s.status='active' ORDER BY s.is_default DESC,s.created_at LIMIT 1) WHERE store_id IS NULL AND client_id IS NOT NULL AND trim(client_id)<>'';" >/dev/null
+          result="$(npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "SELECT COUNT(*) AS unmapped_orders FROM orders WHERE client_id IS NOT NULL AND trim(client_id)<>'' AND store_id IS NULL; SELECT COUNT(*) AS missing_default_store_clients FROM (SELECT DISTINCT o.client_id FROM orders o WHERE o.client_id IS NOT NULL AND trim(o.client_id)<>'' AND NOT EXISTS (SELECT 1 FROM stores s WHERE s.client_id=o.client_id AND s.status='active'));" --json)"
+          printf '%s' "$result" | node -e 'let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{const p=JSON.parse(raw),r=[];const w=x=>{if(Array.isArray(x))return x.forEach(w);if(x&&typeof x==="object"){if(Array.isArray(x.results))r.push(...x.results);Object.values(x).forEach(w)}};w(p);const g=k=>Number(r.find(x=>x[k]!=null)?.[k]);if(g("unmapped_orders")!==0||g("missing_default_store_clients")!==0)throw new Error(JSON.stringify(r));console.log("Transition-order backfill passed")})'
+
       - name: Capture current Production Worker version
         id: before
         run: |
@@ -52,13 +61,21 @@ jobs:
           version="$(printf '%s' "$status" | node -e 'let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{const p=JSON.parse(raw),h=[];const w=x=>{if(Array.isArray(x)){x.forEach(w);return}if(!x||typeof x!=="object")return;const id=x.version_id||x.versionId,q=x.percentage??x.traffic_percentage??x.trafficPercentage;if(id)h.push({id:String(id),q:q==null?null:Number(q)});Object.values(x).forEach(w)};w(p);const u=[...new Map(h.map(x=>[x.id,x])).values()],f=u.find(x=>x.q===100||x.q===1)||(u.length===1?u[0]:null);if(!f)process.exit(2);process.stdout.write(f.id)})')"
           test -n "$version"
           echo "version_id=$version" >> "$GITHUB_OUTPUT"
+
       - name: Dry-run Production bundle
         run: npx wrangler deploy --dry-run --config wrangler.production.toml >/dev/null
+
+      - name: Final pre-deploy transition-order backfill
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "UPDATE orders SET store_id=(SELECT id FROM stores s WHERE s.client_id=orders.client_id AND s.status='active' ORDER BY s.is_default DESC,s.created_at LIMIT 1) WHERE store_id IS NULL AND client_id IS NOT NULL AND trim(client_id)<>'';" >/dev/null
+
       - name: Deploy fixed v38 Worker
         id: deploy
         run: |
           echo "attempted=true" >> "$GITHUB_OUTPUT"
           npx wrangler deploy --config wrangler.production.toml
+
       - name: Wait for Production propagation and verify runtime
         run: |
           set -euo pipefail
@@ -81,6 +98,14 @@ jobs:
           schedules="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/kunonline/schedules")"
           printf '%s' "$schedules" | node -e 'let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{const p=JSON.parse(raw);if(p.success===false)throw new Error(JSON.stringify(p.errors));const got=(p.result||[]).map(x=>x.cron).sort(),want=["*/5 * * * *","0 */2 * * *"].sort();if(JSON.stringify(got)!==JSON.stringify(want))throw new Error(JSON.stringify(got));console.log("Production runtime + cron passed")})'
           rm -f /tmp/h /tmp/e /tmp/j /tmp/v
+
+      - name: Final transition invariant after v38 is live
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "UPDATE orders SET store_id=(SELECT id FROM stores s WHERE s.client_id=orders.client_id AND s.status='active' ORDER BY s.is_default DESC,s.created_at LIMIT 1) WHERE store_id IS NULL AND client_id IS NOT NULL AND trim(client_id)<>'';" >/dev/null
+          result="$(npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "SELECT COUNT(*) AS unmapped_orders FROM orders WHERE client_id IS NOT NULL AND trim(client_id)<>'' AND store_id IS NULL;" --json)"
+          printf '%s' "$result" | node -e 'let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{const p=JSON.parse(raw),r=[];const w=x=>{if(Array.isArray(x))return x.forEach(w);if(x&&typeof x==="object"){if(Array.isArray(x.results))r.push(...x.results);Object.values(x).forEach(w)}};w(p);const n=Number(r.find(x=>x.unmapped_orders!=null)?.unmapped_orders);if(n!==0)throw new Error("unmapped_orders="+n);console.log("Final transition invariant passed")})'
+
       - name: Roll back exact prior Worker on failure
         if: failure() && steps.deploy.outputs.attempted == 'true'
         run: npx wrangler rollback "${{ steps.before.outputs.version_id }}" --config wrangler.production.toml --message "Automatic rollback after J&T Production fix validation failure"
