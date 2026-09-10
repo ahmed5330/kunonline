@@ -1,1 +1,1 @@
-Run a safe authenticated J&T Get Orders credential diagnostic on Preview only. Do not create or modify any J&T shipment and do not print secret values.
+Run a safe authenticated J&T Create Order credential diagnostic on Preview only using an intentionally incomplete payload that cannot create a shipment. Do not print secret values.
