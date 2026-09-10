@@ -1,1 +1,1 @@
-User-approved Production J&T fix v2 run. Exact release 1d5653238151197c1d3952aab077cc891d0c1353. Propagation-aware runtime gate; real shipment will only be created after this deploy is fully validated.
+User-approved Production J&T fix deployment. Exact release 54f43ddeb3880862bad520238c7cbcd0a5f507c8. No database migrations in this run; API, J&T auth, v2 asset propagation, Cron, and exact rollback are validated before live shipment creation.
