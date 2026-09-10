@@ -1,0 +1,246 @@
+name: Resume approved Production Commerce v38 release
+on:
+  push:
+    branches:
+      - develop/ux-system-upgrade
+    paths:
+      - .github/release-production-v38-resume-approved-20260910.txt
+concurrency:
+  group: kunonline-production-20260910
+  cancel-in-progress: false
+permissions:
+  contents: read
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: preview
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      RELEASE_REF: release/commerce-v38-production-20260910
+    steps:
+      - name: Checkout approved release candidate
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ env.RELEASE_REF }}
+          fetch-depth: 1
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: npm install --ignore-scripts
+      - name: Revalidate unchanged release candidate
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "964286d3eddb8c7302b038f002024e883acaf946"
+          grep -q "import app from './index-commerce-v38.js';" src/index-production-sync.js
+          node --check src/index-production-sync.js
+          npm run check:production-config
+          npx wrangler deploy --dry-run --config wrangler.production.toml >/tmp/prod-dry-run.log 2>&1
+          rm -f /tmp/prod-dry-run.log
+          echo 'Approved release candidate unchanged and valid.'
+
+      - name: Capture exact current Production Worker version
+        id: before_worker
+        run: |
+          set -euo pipefail
+          status="$(npx wrangler deployments status --config wrangler.production.toml --json)"
+          version="$(printf '%s' "$status" | node -e '
+            let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{
+              const root=JSON.parse(raw),hits=[];
+              const walk=x=>{if(Array.isArray(x)){for(const v of x)walk(v);return;}if(!x||typeof x!=="object")return;
+                const id=x.version_id||x.versionId,pct=x.percentage??x.traffic_percentage??x.trafficPercentage;
+                if(id)hits.push({id:String(id),pct:pct==null?null:Number(pct)});for(const v of Object.values(x))walk(v);};walk(root);
+              const unique=[...new Map(hits.map(x=>[x.id,x])).values()],full=unique.find(x=>x.pct===100||x.pct===1)||(unique.length===1?unique[0]:null);
+              if(!full)process.exit(2);process.stdout.write(full.id);
+            });')"
+          test -n "$version"
+          echo "version_id=$version" >> "$GITHUB_OUTPUT"
+          echo "Captured current Production Worker version: $version"
+
+      - name: Verify resumable Production database state and capture baseline
+        run: |
+          set -euo pipefail
+          rm -f /tmp/prod-before.sql /tmp/prod-before.db /tmp/export-before.log
+          if ! npx wrangler d1 export kunonline --remote --config wrangler.production.toml --output=/tmp/prod-before.sql >/tmp/export-before.log 2>&1; then
+            echo 'Production resume snapshot failed; output suppressed.'
+            exit 1
+          fi
+          sqlite3 /tmp/prod-before.db < /tmp/prod-before.sql
+          rm -f /tmp/prod-before.sql /tmp/export-before.log
+          test "12" = "$(sqlite3 /tmp/prod-before.db 'SELECT COUNT(*) FROM d1_migrations;')"
+          test "0011_multistore_ai.sql" = "$(sqlite3 /tmp/prod-before.db 'SELECT name FROM d1_migrations ORDER BY id DESC LIMIT 1;')"
+          test "1" = "$(sqlite3 /tmp/prod-before.db "SELECT COUNT(*) FROM pragma_table_info('chat_messages') WHERE name='client_id';")"
+          for table in orders users customers products; do
+            count="$(sqlite3 /tmp/prod-before.db "SELECT COUNT(*) FROM $table;")"
+            key="BEFORE_$(printf '%s' "$table" | tr '[:lower:]' '[:upper:]')"
+            echo "$key=$count" >> "$GITHUB_ENV"
+            echo "Resume baseline $table rows: $count"
+          done
+          test "$BEFORE_ORDERS" -ge 270
+          test "$BEFORE_USERS" -ge 8
+          test "$BEFORE_CUSTOMERS" -ge 97
+          test "$BEFORE_PRODUCTS" -ge 11
+          clients="$(sqlite3 /tmp/prod-before.db "SELECT COUNT(*) FROM (SELECT client_id FROM users WHERE client_id IS NOT NULL AND trim(client_id)<>'' UNION SELECT client_id FROM orders WHERE client_id IS NOT NULL AND trim(client_id)<>'' UNION SELECT client_id FROM customers WHERE client_id IS NOT NULL AND trim(client_id)<>'' UNION SELECT client_id FROM products WHERE client_id IS NOT NULL AND trim(client_id)<>'');")"
+          test "$clients" -ge 5
+          echo "BEFORE_CLIENTS=$clients" >> "$GITHUB_ENV"
+          echo "Resume legacy client ids: $clients; ledger=12 through 0011."
+
+      - name: Seed deterministic default stores without TEMP tables
+        run: |
+          set -euo pipefail
+          store_sql="WITH legacy_clients(client_id) AS (SELECT client_id FROM users WHERE client_id IS NOT NULL AND trim(client_id)<>'' UNION SELECT client_id FROM orders WHERE client_id IS NOT NULL AND trim(client_id)<>'' UNION SELECT client_id FROM customers WHERE client_id IS NOT NULL AND trim(client_id)<>'' UNION SELECT client_id FROM products WHERE client_id IS NOT NULL AND trim(client_id)<>'') INSERT OR IGNORE INTO stores (id,client_id,name,code,currency,timezone,status,is_default,created_at,updated_at) SELECT 'STR-LEGACY-'||client_id,client_id,'Main Store','MAIN','EGP','Africa/Cairo','active',1,datetime('now'),datetime('now') FROM legacy_clients;"
+          npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "$store_sql" >/tmp/store-seed.log 2>&1
+          access_sql="INSERT OR IGNORE INTO user_store_access (id,client_id,user_id,store_id,role,created_at) SELECT 'USA-LEGACY-'||u.id,u.client_id,u.id,s.id,CASE WHEN u.role='client' THEN 'owner' ELSE 'member' END,datetime('now') FROM users u JOIN stores s ON s.client_id=u.client_id AND s.is_default=1 AND s.status='active' WHERE u.client_id IS NOT NULL AND trim(u.client_id)<>'';"
+          npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "$access_sql" >>/tmp/store-seed.log 2>&1
+          rm -f /tmp/store-seed.log
+          echo 'Legacy default stores and user access seeded idempotently.'
+
+      - name: Validate seed before remaining migrations
+        run: |
+          set -euo pipefail
+          result="$(npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "SELECT COUNT(*) AS default_clients FROM (SELECT client_id FROM stores WHERE status='active' AND is_default=1 GROUP BY client_id); SELECT COUNT(*) AS unmapped_users FROM users u WHERE u.client_id IS NOT NULL AND trim(u.client_id)<>'' AND u.role<>'admin' AND NOT EXISTS (SELECT 1 FROM user_store_access a WHERE a.user_id=u.id AND a.client_id=u.client_id);" --json)"
+          printf '%s' "$result" | node -e '
+            let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{const p=JSON.parse(raw),a=Array.isArray(p)?p:(p.result||p);const rows=[];const walk=x=>{if(Array.isArray(x))return x.forEach(walk);if(x&&typeof x==="object"){if(Array.isArray(x.results))rows.push(...x.results);Object.values(x).forEach(walk)}};walk(a);const d=rows.find(x=>x.default_clients!=null),u=rows.find(x=>x.unmapped_users!=null);if(!d||Number(d.default_clients)<Number(process.argv[1])||!u||Number(u.unmapped_users)!==0)throw new Error(`Seed validation failed: ${JSON.stringify({d,u})}`);console.log(`Seed validation passed: default clients=${d.default_clients}, unmapped users=0`);});' "$BEFORE_CLIENTS"
+
+      - name: Apply migrations 0012 through 0022 with Wrangler ledger
+        run: |
+          set -euo pipefail
+          npx wrangler d1 migrations apply kunonline --remote --config wrangler.production.toml
+          echo 'Remaining Production migrations completed.'
+
+      - name: Final store backfill for writes that arrived during migration window
+        run: |
+          set -euo pipefail
+          cat >/tmp/final-backfill.sql <<'SQL'
+          UPDATE orders SET store_id=(SELECT id FROM stores s WHERE s.client_id=orders.client_id AND s.status='active' ORDER BY s.is_default DESC,s.created_at LIMIT 1) WHERE store_id IS NULL;
+          UPDATE customers SET store_id=(SELECT id FROM stores s WHERE s.client_id=customers.client_id AND s.status='active' ORDER BY s.is_default DESC,s.created_at LIMIT 1) WHERE store_id IS NULL;
+          UPDATE coupons SET store_id=(SELECT id FROM stores s WHERE s.client_id=coupons.client_id AND s.status='active' ORDER BY s.is_default DESC,s.created_at LIMIT 1) WHERE store_id IS NULL;
+          UPDATE products SET store_id=(SELECT id FROM stores s WHERE s.client_id=products.client_id AND s.status='active' ORDER BY s.is_default DESC,s.created_at LIMIT 1) WHERE store_id IS NULL;
+          UPDATE product_variants SET store_id=(SELECT id FROM stores s WHERE s.client_id=product_variants.client_id AND s.status='active' ORDER BY s.is_default DESC,s.created_at LIMIT 1) WHERE store_id IS NULL;
+          UPDATE transactions SET store_id=(SELECT id FROM stores s WHERE s.client_id=transactions.client_id AND s.status='active' ORDER BY s.is_default DESC,s.created_at LIMIT 1) WHERE store_id IS NULL;
+          UPDATE whatsapp_outbox SET store_id=(SELECT id FROM stores s WHERE s.client_id=whatsapp_outbox.client_id AND s.status='active' ORDER BY s.is_default DESC,s.created_at LIMIT 1) WHERE store_id IS NULL;
+          UPDATE stock_log SET store_id=(SELECT id FROM stores s WHERE s.client_id=stock_log.client_id AND s.status='active' ORDER BY s.is_default DESC,s.created_at LIMIT 1) WHERE store_id IS NULL;
+          UPDATE suppliers SET store_id=(SELECT id FROM stores s WHERE s.client_id=suppliers.client_id AND s.status='active' ORDER BY s.is_default DESC,s.created_at LIMIT 1) WHERE store_id IS NULL;
+          UPDATE wallet_log SET store_id=(SELECT id FROM stores s WHERE s.client_id=wallet_log.client_id AND s.status='active' ORDER BY s.is_default DESC,s.created_at LIMIT 1) WHERE store_id IS NULL;
+          UPDATE chat_messages SET store_id=(SELECT id FROM stores s WHERE s.client_id=chat_messages.client_id AND s.status='active' ORDER BY s.is_default DESC,s.created_at LIMIT 1) WHERE store_id IS NULL;
+          UPDATE purchase_orders SET store_id=(SELECT id FROM stores s WHERE s.client_id=purchase_orders.client_id AND s.status='active' ORDER BY s.is_default DESC,s.created_at LIMIT 1) WHERE store_id IS NULL;
+          UPDATE goods_receipts SET store_id=(SELECT id FROM stores s WHERE s.client_id=goods_receipts.client_id AND s.status='active' ORDER BY s.is_default DESC,s.created_at LIMIT 1) WHERE store_id IS NULL;
+          UPDATE workflows SET store_id=(SELECT id FROM stores s WHERE s.client_id=workflows.client_id AND s.status='active' ORDER BY s.is_default DESC,s.created_at LIMIT 1) WHERE store_id IS NULL;
+          UPDATE workflow_runs SET store_id=(SELECT id FROM stores s WHERE s.client_id=workflow_runs.client_id AND s.status='active' ORDER BY s.is_default DESC,s.created_at LIMIT 1) WHERE store_id IS NULL;
+          UPDATE audit_log SET store_id=(SELECT id FROM stores s WHERE s.client_id=audit_log.client_id AND s.status='active' ORDER BY s.is_default DESC,s.created_at LIMIT 1) WHERE store_id IS NULL;
+          UPDATE marketing_touchpoints SET store_id=(SELECT id FROM stores s WHERE s.client_id=marketing_touchpoints.client_id AND s.status='active' ORDER BY s.is_default DESC,s.created_at LIMIT 1) WHERE store_id IS NULL;
+          UPDATE cod_reconciliations SET store_id=(SELECT id FROM stores s WHERE s.client_id=cod_reconciliations.client_id AND s.status='active' ORDER BY s.is_default DESC,s.created_at LIMIT 1) WHERE store_id IS NULL;
+          UPDATE cod_reconciliation_items SET store_id=(SELECT id FROM stores s WHERE s.client_id=cod_reconciliation_items.client_id AND s.status='active' ORDER BY s.is_default DESC,s.created_at LIMIT 1) WHERE store_id IS NULL;
+          UPDATE approval_requests SET store_id=(SELECT id FROM stores s WHERE s.client_id=approval_requests.client_id AND s.status='active' ORDER BY s.is_default DESC,s.created_at LIMIT 1) WHERE store_id IS NULL;
+          UPDATE ai_action_requests SET store_id=(SELECT id FROM stores s WHERE s.client_id=ai_action_requests.client_id AND s.status='active' ORDER BY s.is_default DESC,s.created_at LIMIT 1) WHERE store_id IS NULL;
+          UPDATE execution_jobs SET store_id=(SELECT id FROM stores s WHERE s.client_id=execution_jobs.client_id AND s.status='active' ORDER BY s.is_default DESC,s.created_at LIMIT 1) WHERE store_id IS NULL;
+          UPDATE notifications SET store_id=(SELECT id FROM stores s WHERE s.client_id=notifications.client_id AND s.status='active' ORDER BY s.is_default DESC,s.created_at LIMIT 1) WHERE store_id IS NULL;
+          UPDATE conversations SET store_id=(SELECT id FROM stores s WHERE s.client_id=conversations.client_id AND s.status='active' ORDER BY s.is_default DESC,s.created_at LIMIT 1) WHERE store_id IS NULL;
+          UPDATE channel_messages SET store_id=(SELECT id FROM stores s WHERE s.client_id=channel_messages.client_id AND s.status='active' ORDER BY s.is_default DESC,s.created_at LIMIT 1) WHERE store_id IS NULL;
+          UPDATE marketing_campaigns SET store_id=(SELECT id FROM stores s WHERE s.client_id=marketing_campaigns.client_id AND s.status='active' ORDER BY s.is_default DESC,s.created_at LIMIT 1) WHERE store_id IS NULL;
+          UPDATE campaign_daily_metrics SET store_id=(SELECT id FROM stores s WHERE s.client_id=campaign_daily_metrics.client_id AND s.status='active' ORDER BY s.is_default DESC,s.created_at LIMIT 1) WHERE store_id IS NULL;
+          UPDATE pos_sessions SET store_id=(SELECT id FROM stores s WHERE s.client_id=pos_sessions.client_id AND s.status='active' ORDER BY s.is_default DESC,s.created_at LIMIT 1) WHERE store_id IS NULL;
+          UPDATE pos_sales SET store_id=(SELECT id FROM stores s WHERE s.client_id=pos_sales.client_id AND s.status='active' ORDER BY s.is_default DESC,s.created_at LIMIT 1) WHERE store_id IS NULL;
+          UPDATE pos_sale_items SET store_id=(SELECT s.store_id FROM pos_sales s WHERE s.id=pos_sale_items.sale_id) WHERE store_id IS NULL;
+          UPDATE supplier_invoices SET store_id=(SELECT id FROM stores s WHERE s.client_id=supplier_invoices.client_id AND s.status='active' ORDER BY s.is_default DESC,s.created_at LIMIT 1) WHERE store_id IS NULL;
+          UPDATE supplier_payments SET store_id=(SELECT id FROM stores s WHERE s.client_id=supplier_payments.client_id AND s.status='active' ORDER BY s.is_default DESC,s.created_at LIMIT 1) WHERE store_id IS NULL;
+          UPDATE purchase_returns SET store_id=(SELECT id FROM stores s WHERE s.client_id=purchase_returns.client_id AND s.status='active' ORDER BY s.is_default DESC,s.created_at LIMIT 1) WHERE store_id IS NULL;
+          SQL
+          npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --file=/tmp/final-backfill.sql >/tmp/final-backfill.log 2>&1
+          rm -f /tmp/final-backfill.sql /tmp/final-backfill.log
+          echo 'Final concurrent-write store backfill completed.'
+
+      - name: Validate fully migrated Production data
+        run: |
+          set -euo pipefail
+          rm -f /tmp/prod-after.sql /tmp/prod-after.db /tmp/export-after.log
+          if ! npx wrangler d1 export kunonline --remote --config wrangler.production.toml --output=/tmp/prod-after.sql >/tmp/export-after.log 2>&1; then
+            echo 'Production post-migration export failed; output suppressed.'
+            exit 1
+          fi
+          sqlite3 /tmp/prod-after.db < /tmp/prod-after.sql
+          rm -f /tmp/prod-after.sql /tmp/export-after.log
+          test "$BEFORE_ORDERS" -le "$(sqlite3 /tmp/prod-after.db 'SELECT COUNT(*) FROM orders;')"
+          test "$BEFORE_USERS" -le "$(sqlite3 /tmp/prod-after.db 'SELECT COUNT(*) FROM users;')"
+          test "$BEFORE_CUSTOMERS" -le "$(sqlite3 /tmp/prod-after.db 'SELECT COUNT(*) FROM customers;')"
+          test "$BEFORE_PRODUCTS" -le "$(sqlite3 /tmp/prod-after.db 'SELECT COUNT(*) FROM products;')"
+          test "$BEFORE_CLIENTS" -le "$(sqlite3 /tmp/prod-after.db "SELECT COUNT(*) FROM (SELECT client_id FROM stores WHERE status='active' AND is_default=1 GROUP BY client_id);")"
+          test "0" = "$(sqlite3 /tmp/prod-after.db "SELECT COUNT(*) FROM orders WHERE client_id IS NOT NULL AND trim(client_id)<>'' AND store_id IS NULL;")"
+          test "0" = "$(sqlite3 /tmp/prod-after.db "SELECT COUNT(*) FROM customers WHERE client_id IS NOT NULL AND trim(client_id)<>'' AND store_id IS NULL;")"
+          test "0" = "$(sqlite3 /tmp/prod-after.db "SELECT COUNT(*) FROM products WHERE client_id IS NOT NULL AND trim(client_id)<>'' AND store_id IS NULL;")"
+          test "0" = "$(sqlite3 /tmp/prod-after.db "SELECT COUNT(*) FROM users u WHERE u.client_id IS NOT NULL AND trim(u.client_id)<>'' AND u.role<>'admin' AND NOT EXISTS (SELECT 1 FROM user_store_access a WHERE a.user_id=u.id AND a.client_id=u.client_id);")"
+          test "23" = "$(sqlite3 /tmp/prod-after.db 'SELECT COUNT(*) FROM d1_migrations;')"
+          test "0022_order_duplicate_links.sql" = "$(sqlite3 /tmp/prod-after.db 'SELECT name FROM d1_migrations ORDER BY id DESC LIMIT 1;')"
+          for table in stores user_store_access store_connections integration_secrets order_events inventory_batches order_duplicate_links wallet_accounts; do
+            test "1" = "$(sqlite3 /tmp/prod-after.db "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='$table';")"
+          done
+          echo 'Production database is fully migrated through 0022 with preserved legacy rows and store isolation.'
+
+      - name: Ensure Production integration encryption key exists
+        run: |
+          set -euo pipefail
+          npx wrangler secret list --config wrangler.production.toml >/tmp/prod-secret-list.json
+          if node -e 'const fs=require("fs");const p=JSON.parse(fs.readFileSync("/tmp/prod-secret-list.json","utf8"));const a=Array.isArray(p)?p:(p.result||[]);process.exit(a.some(x=>(x.name||x.key)==="INTEGRATION_ENCRYPTION_KEY")?0:1)'; then
+            echo 'Production integration encryption key already exists.'
+          else
+            key="$(openssl rand -base64 32 | tr -d '\n')"
+            printf '%s' "$key" | npx wrangler secret put INTEGRATION_ENCRYPTION_KEY --config wrangler.production.toml >/tmp/secret-put.log 2>&1
+            unset key
+            rm -f /tmp/secret-put.log
+            echo 'Created Production integration encryption key securely.'
+          fi
+          rm -f /tmp/prod-secret-list.json
+
+      - name: Deploy Production Commerce v38 Worker
+        id: deploy
+        run: |
+          set -euo pipefail
+          echo "deployed=true" >> "$GITHUB_OUTPUT"
+          echo "deploy_epoch=$(date -u +%s)" >> "$GITHUB_OUTPUT"
+          npx wrangler deploy --config wrangler.production.toml
+
+      - name: Verify Production health, J&T v38 route, Easy Orders and Cron
+        run: |
+          set -euo pipefail
+          curl -fsS https://app.kun-online.com/health >/dev/null
+          code="$(curl -sS -o /tmp/jt-smoke.json -w '%{http_code}' -X POST -H 'Content-Type: application/json' https://app.kun-online.com/api/jt/shipments/KUN-SMOKE-NO-ORDER --data '{}')"
+          test "$code" = "401"
+          node -e 'const fs=require("fs");const p=JSON.parse(fs.readFileSync("/tmp/jt-smoke.json","utf8"));if(p.code!=="AUTH_REQUIRED")throw new Error(`Unexpected J&T smoke payload: ${JSON.stringify(p)}`);console.log("Production J&T v38 route smoke passed without creating a shipment.");'
+          rm -f /tmp/jt-smoke.json
+          curl -fsS https://app.kun-online.com/health/easyorders-sync >/tmp/easy-health.json
+          node -e 'const fs=require("fs");const p=JSON.parse(fs.readFileSync("/tmp/easy-health.json","utf8"));if(p.ok!==true||p.service!=="easyorders-production-sync")throw new Error("Easy Orders production wrapper health failed");console.log(`Easy Orders wrapper live: status=${p.status} build=${p.build}`);'
+          rm -f /tmp/easy-health.json
+          schedules="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/kunonline/schedules")"
+          printf '%s' "$schedules" | node -e '
+            let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{const p=JSON.parse(raw);if(p.success===false)throw new Error(JSON.stringify(p.errors));const got=(p.result||[]).map(x=>x.cron).sort();const want=["*/5 * * * *","0 */2 * * *"].sort();if(JSON.stringify(got)!==JSON.stringify(want))throw new Error(`Cron mismatch: ${JSON.stringify(got)}`);console.log(`Production Cron integrity passed: ${got.join(" | ")}`);});'
+
+      - name: Confirm a real scheduled Easy Orders recovery run
+        run: |
+          set -euo pipefail
+          deploy_epoch="${{ steps.deploy.outputs.deploy_epoch }}"
+          for i in $(seq 1 42); do
+            payload="$(curl -fsS https://app.kun-online.com/health/easyorders-sync || true)"
+            if [ -n "$payload" ]; then
+              ok="$(printf '%s' "$payload" | node -e '
+                let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{try{const p=JSON.parse(raw),t=Date.parse(p.lastRunAt||"");const deploy=Number(process.argv[1])*1000;if(Number.isFinite(t)&&t>=deploy&&!["error","not_run"].includes(p.status)){console.log("yes");console.error(`Recovery live: status=${p.status} clients=${p.connectedClients} requests=${p.requests} recovered=${p.recovered} updated=${p.updated} lastRunAt=${p.lastRunAt}`)}}catch{}});' "$deploy_epoch")"
+              if [ "$ok" = "yes" ]; then exit 0; fi
+            fi
+            sleep 10
+          done
+          echo 'No healthy Easy Orders scheduled run was observed after Production v38 deployment.'
+          exit 1
+
+      - name: Roll back exact Production Worker version on post-deploy validation failure
+        if: failure() && steps.deploy.outputs.deployed == 'true'
+        run: |
+          set -euo pipefail
+          npx wrangler rollback "${{ steps.before_worker.outputs.version_id }}" --config wrangler.production.toml --message "Automatic rollback: Production Commerce v38 resume validation failed"
+          curl -fsS https://app.kun-online.com/health >/dev/null
+          echo 'Production Worker rolled back to exact pre-resume version; additive DB migrations remain.'
+
+      - name: Remove ephemeral snapshots and logs
+        if: always()
+        run: rm -f /tmp/prod-before.sql /tmp/prod-before.db /tmp/prod-after.sql /tmp/prod-after.db /tmp/export-before.log /tmp/export-after.log /tmp/prod-dry-run.log /tmp/store-seed.log /tmp/final-backfill.sql /tmp/final-backfill.log /tmp/secret-put.log /tmp/prod-secret-list.json /tmp/jt-smoke.json /tmp/easy-health.json
