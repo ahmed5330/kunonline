@@ -37,8 +37,9 @@ jobs:
       - name: Enforce migration-free release validation
         run: |
           set -euo pipefail
-          if grep -R -nE 'd1 (migrations apply|execute).*kunonline([^ -]|$)|db:migrate:production|migration.*production' .github/workflows/production-jt-final-release-validate.yml; then
-            echo 'Production database mutation command detected in J&T validation workflow.'
+          workflow='.github/workflows/production-jt-final-release-validate.yml'
+          if grep -nE '^[[:space:]]+(npx[[:space:]]+)?wrangler[[:space:]]+d1[[:space:]]+(migrations[[:space:]]+apply|execute)|^[[:space:]]+npm[[:space:]]+run[[:space:]]+db:migrate:production' "$workflow"; then
+            echo 'Production database command detected in J&T validation workflow.'
             exit 1
           fi
           echo 'Validation is Production-D1-mutation-free.'
