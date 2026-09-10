@@ -1,0 +1,1 @@
+Run a safe authenticated J&T Get Orders credential diagnostic on Preview only. Do not create or modify any J&T shipment and do not print secret values.
