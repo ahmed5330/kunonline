@@ -17,8 +17,8 @@ jobs:
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      RELEASE_REF: release/commerce-v38-production-20260910
-      EXPECTED_RELEASE_SHA: 54f43ddeb3880862bad520238c7cbcd0a5f507c8
+      RELEASE_REF: dcfe77e96a92968077aa371f7a6b734f96819263
+      EXPECTED_RELEASE_SHA: dcfe77e96a92968077aa371f7a6b734f96819263
       PROD_CUSTOM: https://app.kun-online.com
       PROD_WORKERS: https://kunonline.mr-a-mnaa.workers.dev
     steps:
