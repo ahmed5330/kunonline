@@ -61,11 +61,21 @@ function egyptCountry(value){
 
 function mapGoodsType(value){
   const v=clean(value,120).toLowerCase();
-  if(/clothes|cloth|apparel|fashion|ملابس/.test(v))return 'ITN6';
-  if(/food|طعام|غذ/.test(v))return 'ITN8';
-  if(/book|كتاب/.test(v))return 'ITN2';
-  if(/fragile|قابل للكسر/.test(v))return 'ITN9';
-  return 'ITN1';
+  if(/clothes|cloth|apparel|fashion|ملابس/.test(v))return 'ITN1';
+  if(/document|docs|مستند/.test(v))return 'ITN2';
+  if(/food|طعام|غذ/.test(v))return 'ITN3';
+  if(/digital|رقمي/.test(v))return 'ITN5';
+  if(/daily|necessit|احتياجات/.test(v))return 'ITN6';
+  if(/fragile|قابل للكسر/.test(v))return 'ITN7';
+  if(/tool|أدوات/.test(v))return 'ITN8';
+  if(/stationery|قرطاسية/.test(v))return 'ITN9';
+  if(/furniture|أثاث/.test(v))return 'ITN10';
+  if(/certificate|شهادة/.test(v))return 'ITN11';
+  if(/machine|parts|قطع غيار/.test(v))return 'ITN12';
+  if(/handicraft|حرف/.test(v))return 'ITN13';
+  if(/production|materials|خامات/.test(v))return 'ITN14';
+  if(/book|كتاب/.test(v))return 'ITN15';
+  return 'ITN16';
 }
 
 function missingSenderFields(fields){
@@ -112,7 +122,7 @@ async function readResponse(response){
 async function signedPost(path,payload,secrets,{fetcher=fetch}={}){
   const {fields,missing}=jtCredentials(secrets);
   if(missing.length)throw Object.assign(new Error('بيانات J&T الأساسية غير مكتملة'),{status:409,code:'JT_CREDENTIALS_MISSING'});
-  const bizContent=JSON.stringify(payload),timestamp=String(Math.floor(Date.now()/1000));
+  const bizContent=JSON.stringify(payload),timestamp=String(Date.now());
   let response;
   try{
     response=await fetcher(`${LIVE_BASE}${path}`,{method:'POST',headers:{Accept:'application/json','Content-Type':'application/x-www-form-urlencoded',apiAccount:fields.apiAccount,digest:md5Base64(bizContent+fields.privateKey),timestamp},body:new URLSearchParams({bizContent}).toString()});
