@@ -1,0 +1,30 @@
+name: Production D1 read-only diagnostic v2
+on:
+  push:
+    branches: [develop/ux-system-upgrade]
+    paths: [.github/workflows/production-d1-readonly-diagnostic-v2.yml]
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    environment:
+      name: preview
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: npm install --ignore-scripts
+      - name: Read Production D1 state only
+        run: |
+          set -euxo pipefail
+          npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "SELECT COUNT(*) AS migration_count FROM d1_migrations;" --json
+          npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "SELECT name AS last_migration FROM d1_migrations ORDER BY id DESC LIMIT 1;" --json
+          npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "SELECT COUNT(*) AS unmapped_orders FROM orders WHERE client_id IS NOT NULL AND trim(client_id)<>'' AND store_id IS NULL;" --json
+          npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "SELECT COUNT(*) AS stores_count FROM stores;" --json
