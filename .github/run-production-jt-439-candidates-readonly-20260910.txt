@@ -1,1 +1,1 @@
-Read-only diagnostic retry after Production J&T fix: list only non-PII references for confirmed unshipped 439 EGP orders belonging to clients with configured or connected J&T.
+Read-only diagnostic retry: list non-PII references for confirmed unshipped 439 EGP orders belonging to any client with a J&T connection, regardless of connection status.
