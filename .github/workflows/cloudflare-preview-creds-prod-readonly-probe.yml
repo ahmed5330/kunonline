@@ -1,13 +1,12 @@
-name: Cloudflare Production schema read-only diagnostic
+name: Cloudflare Production migration rehearsal
 on:
   push:
     branches:
       - develop/ux-system-upgrade
 permissions:
   contents: read
-  actions: write
 jobs:
-  probe:
+  rehearse:
     runs-on: ubuntu-latest
     timeout-minutes: 8
     environment:
@@ -15,73 +14,51 @@ jobs:
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      GH_TOKEN: ${{ github.token }}
     steps:
-      - name: Remove prior diagnostic logs containing an expired export URL
-        run: |
-          curl -fsS -X DELETE \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs/34440677018/logs" || true
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
           node-version: 22
           package-manager-cache: false
       - run: npm install --ignore-scripts
-      - name: Production D1 connectivity probe (SELECT-only)
-        run: npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "SELECT 1 AS ok;"
-      - name: Scan migrations for destructive SQL
+      - name: Export Production snapshot silently (remote read-only)
         run: |
           set -euo pipefail
-          if grep -RniE '(^|[;[:space:]])(DROP[[:space:]]+TABLE|DROP[[:space:]]+COLUMN|DELETE[[:space:]]+FROM|TRUNCATE|ALTER[[:space:]]+TABLE[^;]*DROP|REPLACE[[:space:]]+INTO)' migrations/*.sql; then
-            echo 'Potentially destructive statements found; review required.'
-          else
-            echo 'No DROP TABLE / DROP COLUMN / DELETE FROM / TRUNCATE / REPLACE INTO statements found.'
-          fi
-      - name: Export Production snapshot silently for ephemeral schema comparison
-        run: |
-          set -euo pipefail
-          rm -f /tmp/kunonline-prod.sql /tmp/kunonline-prod.db /tmp/wrangler-export.log
-          if ! npx wrangler d1 export kunonline --remote --config wrangler.production.toml --output=/tmp/kunonline-prod.sql >/tmp/wrangler-export.log 2>&1; then
-            echo 'Production export failed; output intentionally suppressed because it can contain a signed URL.'
+          rm -f /tmp/prod.sql /tmp/prod.db /tmp/export.log
+          if ! npx wrangler d1 export kunonline --remote --config wrangler.production.toml --output=/tmp/prod.sql >/tmp/export.log 2>&1; then
+            echo 'Production export failed; output suppressed.'
             exit 1
           fi
-          test -s /tmp/kunonline-prod.sql
-          sqlite3 /tmp/kunonline-prod.db < /tmp/kunonline-prod.sql
-          rm -f /tmp/wrangler-export.log /tmp/kunonline-prod.sql
-          echo 'Ephemeral Production snapshot loaded locally; no data contents were printed or uploaded.'
-      - name: Compare legacy Production columns with Commerce OS baseline
+          sqlite3 /tmp/prod.db < /tmp/prod.sql
+          rm -f /tmp/prod.sql /tmp/export.log
+          echo 'Ephemeral snapshot ready.'
+      - name: Apply legacy-to-baseline bridge locally
         run: |
-          python - <<'PY'
-          import re, sqlite3, pathlib
-          sql = pathlib.Path('migrations/0001_preview_schema.sql').read_text(encoding='utf-8')
-          db = sqlite3.connect('/tmp/kunonline-prod.db')
-          existing_tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-          pat = re.compile(r'CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+([A-Za-z_][A-Za-z0-9_]*)\s*\((.*?)\)\s*;', re.I|re.S)
-          missing_total = 0
-          for table, body in pat.findall(sql):
-              if table not in existing_tables:
-                  continue
-              have = {r[1] for r in db.execute(f'PRAGMA table_info("{table}")')}
-              wanted=[]
-              for raw in body.splitlines():
-                  line=raw.strip()
-                  if not line or line.startswith('--'): continue
-                  line=line.split('--',1)[0].strip().rstrip(',').strip()
-                  if not line: continue
-                  m=re.match(r'([A-Za-z_][A-Za-z0-9_]*)\s+(.+)$', line)
-                  if not m: continue
-                  col, definition=m.groups()
-                  if col.upper() in {'PRIMARY','FOREIGN','UNIQUE','CHECK','CONSTRAINT'}: continue
-                  wanted.append((col, definition))
-              missing=[(c,d) for c,d in wanted if c not in have]
-              if missing:
-                  missing_total += len(missing)
-                  print(f'{table}:')
-                  for c,d in missing: print(f'  MISSING {c} {d}')
-          print(f'BASELINE_MISSING_COLUMN_COUNT={missing_total}')
-          PY
-      - name: Remove ephemeral Production snapshot
+          set -euo pipefail
+          sqlite3 /tmp/prod.db "ALTER TABLE chat_messages ADD COLUMN client_id TEXT;"
+          echo 'Applied local bridge: chat_messages.client_id'
+      - name: Rehearse all Commerce OS migrations locally
+        run: |
+          set -euo pipefail
+          before_orders="$(sqlite3 /tmp/prod.db 'SELECT COUNT(*) FROM orders;')"
+          before_users="$(sqlite3 /tmp/prod.db 'SELECT COUNT(*) FROM users;')"
+          before_customers="$(sqlite3 /tmp/prod.db 'SELECT COUNT(*) FROM customers;')"
+          before_products="$(sqlite3 /tmp/prod.db 'SELECT COUNT(*) FROM products;')"
+          for file in migrations/*.sql; do
+            echo "Applying locally: $file"
+            if ! sqlite3 /tmp/prod.db < "$file"; then
+              echo "LOCAL_MIGRATION_REHEARSAL_FAILED=$file"
+              exit 1
+            fi
+          done
+          test "$before_orders" = "$(sqlite3 /tmp/prod.db 'SELECT COUNT(*) FROM orders;')"
+          test "$before_users" = "$(sqlite3 /tmp/prod.db 'SELECT COUNT(*) FROM users;')"
+          test "$before_customers" = "$(sqlite3 /tmp/prod.db 'SELECT COUNT(*) FROM customers;')"
+          test "$before_products" = "$(sqlite3 /tmp/prod.db 'SELECT COUNT(*) FROM products;')"
+          echo "Legacy row counts preserved: orders=$before_orders users=$before_users customers=$before_customers products=$before_products"
+          missing="$(sqlite3 /tmp/prod.db "SELECT group_concat(name, ',') FROM (SELECT 'stores' name UNION ALL SELECT 'wallet_accounts' UNION ALL SELECT 'integration_connections' UNION ALL SELECT 'inventory_batches' UNION ALL SELECT 'order_duplicate_links') req WHERE NOT EXISTS (SELECT 1 FROM sqlite_master s WHERE s.type='table' AND s.name=req.name);")"
+          test -z "$missing"
+          echo 'All key Commerce OS tables exist after local rehearsal.'
+      - name: Remove ephemeral snapshot
         if: always()
-        run: rm -f /tmp/kunonline-prod.sql /tmp/kunonline-prod.db /tmp/wrangler-export.log
+        run: rm -f /tmp/prod.sql /tmp/prod.db /tmp/export.log
