@@ -32,7 +32,7 @@ jobs:
           node-version: 22
           package-manager-cache: false
       - run: npm install --ignore-scripts
-      - name: Verify release and Production D1 readiness
+      - name: Verify exact release
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_RELEASE_SHA"
@@ -41,6 +41,17 @@ jobs:
           node --check src/index-commerce-v38.js
           node --check src/jt-express-eg-api.js
           npm run check:production-config
+      - name: Safely map late legacy orders to their only store
+        run: |
+          set -euo pipefail
+          result="$(npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "SELECT COUNT(*) AS ambiguous FROM orders o WHERE o.client_id IS NOT NULL AND trim(o.client_id)<>'' AND o.store_id IS NULL AND (SELECT COUNT(*) FROM stores s WHERE s.client_id=o.client_id)<>1; SELECT COUNT(*) AS unmapped_before FROM orders WHERE client_id IS NOT NULL AND trim(client_id)<>'' AND store_id IS NULL;" --json)"
+          printf '%s' "$result" | node -e '
+            let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{const p=JSON.parse(raw),rows=[];const walk=x=>{if(Array.isArray(x))return x.forEach(walk);if(x&&typeof x==="object"){if(Array.isArray(x.results))rows.push(...x.results);Object.values(x).forEach(walk)}};walk(p);const a=Number(rows.find(x=>x.ambiguous!=null)?.ambiguous||0),u=Number(rows.find(x=>x.unmapped_before!=null)?.unmapped_before||0);if(a!==0)throw new Error(`Ambiguous unmapped orders=${a}; refusing to guess store mapping`);console.log(`Safe late-order mapping preflight passed; unmapped=${u}.`);});'
+          npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "UPDATE orders SET store_id=(SELECT s.id FROM stores s WHERE s.client_id=orders.client_id LIMIT 1) WHERE client_id IS NOT NULL AND trim(client_id)<>'' AND store_id IS NULL AND (SELECT COUNT(*) FROM stores s WHERE s.client_id=orders.client_id)=1;" >/tmp/map-result.txt
+          rm -f /tmp/map-result.txt
+      - name: Verify Production D1 readiness
+        run: |
+          set -euo pipefail
           result="$(npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "SELECT COUNT(*) AS migration_count FROM d1_migrations; SELECT name AS last_migration FROM d1_migrations ORDER BY id DESC LIMIT 1; SELECT COUNT(*) AS unmapped_orders FROM orders WHERE client_id IS NOT NULL AND trim(client_id)<>'' AND store_id IS NULL;" --json)"
           printf '%s' "$result" | node -e '
             let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{const p=JSON.parse(raw),rows=[];const walk=x=>{if(Array.isArray(x))return x.forEach(walk);if(x&&typeof x==="object"){if(Array.isArray(x.results))rows.push(...x.results);Object.values(x).forEach(walk)}};walk(p);const get=k=>rows.find(x=>x[k]!=null)?.[k];if(Number(get("migration_count"))!==23)throw new Error(`migration_count=${get("migration_count")}`);if(get("last_migration")!=="0022_order_duplicate_links.sql")throw new Error(`last_migration=${get("last_migration")}`);if(Number(get("unmapped_orders"))!==0)throw new Error(`unmapped_orders=${get("unmapped_orders")}`);console.log("Production D1 readiness passed.");});'
@@ -106,7 +117,7 @@ jobs:
           npx wrangler rollback "${{ steps.before.outputs.version_id }}" --config wrangler.production.toml --message "Automatic rollback - J&T Production fix validation failed"
       - name: Clean deployment temp files
         if: always()
-        run: rm -f /tmp/prod-secrets.json /tmp/prod-dry-run.log /tmp/health /tmp/easy /tmp/jt /tmp/v2
+        run: rm -f /tmp/prod-secrets.json /tmp/prod-dry-run.log /tmp/health /tmp/easy /tmp/jt /tmp/v2 /tmp/map-result.txt
 
   create-shipment:
     needs: deploy
