@@ -25,7 +25,7 @@ jobs:
           node-version: 22
           package-manager-cache: false
       - run: npm install --ignore-scripts
-      - name: Create Worker-first canary config
+      - name: Create default-routing canary config
         run: |
           cat >wrangler.canary.tmp.toml <<'TOML'
           name = "kunonline-prod-canary-20260910"
@@ -34,7 +34,6 @@ jobs:
           [assets]
           directory = "./public"
           binding = "ASSETS"
-          run_worker_first = true
           [[d1_databases]]
           binding = "DB"
           database_name = "kunonline"
@@ -45,7 +44,7 @@ jobs:
           TOML
       - name: Deploy isolated canary
         run: npx wrangler deploy --config wrangler.canary.tmp.toml
-      - name: Probe Worker routing with propagation retry
+      - name: Probe default routing with propagation retry
         run: |
           set -euo pipefail
           base="https://${CANARY_NAME}.mr-a-mnaa.workers.dev"
@@ -54,8 +53,9 @@ jobs:
             h="$(curl -sS -o /tmp/h -w '%{http_code}' "$base/health" || true)"
             j="$(curl -sS -o /tmp/j -w '%{http_code}' -X POST -H 'Content-Type: application/json' "$base/api/jt/shipments/KUN-SMOKE-NO-ORDER" --data '{}' || true)"
             e="$(curl -sS -o /tmp/e -w '%{http_code}' "$base/health/easyorders-sync" || true)"
-            echo "CANARY_ATTEMPT=$i HEALTH=$h JT=$j EASY=$e"
-            if [ "$h" = "200" ] && [ "$j" = "401" ] && [ "$e" = "200" ]; then passed=1; break; fi
+            jt_route="$(node -e 'const fs=require("fs");try{const p=JSON.parse(fs.readFileSync("/tmp/j","utf8"));process.stdout.write(p.code==="AUTH_REQUIRED"?"yes":"no")}catch{process.stdout.write("no")}' || true)"
+            echo "CANARY_ATTEMPT=$i HEALTH=$h JT=$j JT_ROUTE=$jt_route EASY=$e"
+            if [ "$h" = "200" ] && [ "$jt_route" = "yes" ] && [ "$e" = "200" ]; then passed=1; break; fi
             sleep 4
           done
           node - <<'NODE'
