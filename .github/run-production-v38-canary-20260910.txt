@@ -1,2 +1,2 @@
 Run isolated v38 canary against fully migrated Production D1. No cron, no custom domain, delete canary after probe.
-Attempt 4: Worker-first routing with up to 60 seconds propagation retry.
+Attempt 5: default asset routing with propagation retry; J&T route proof by AUTH_REQUIRED payload.
