@@ -1,0 +1,37 @@
+name: Production J&T guarded 439 shipment once
+on:
+  push:
+    branches: [develop/ux-system-upgrade]
+    paths: [.github/run-production-jt-create-439-once-20260910.txt]
+permissions:
+  contents: read
+jobs:
+  create:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    environment:
+      name: preview
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      PROD_BASE: https://app.kun-online.com
+      RESULT_PATH: /tmp/jt-result.json
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: develop/ux-system-upgrade
+          fetch-depth: 1
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - name: Create exactly one guarded live J&T shipment
+        run: node scripts/production-jt-create-439-once.mjs
+      - name: Upload one-day shipment result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-jt-create-439-result
+          path: /tmp/jt-result.json
+          if-no-files-found: ignore
+          retention-days: 1
