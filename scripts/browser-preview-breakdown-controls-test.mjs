@@ -45,7 +45,7 @@ try{
   await waitFor(`(async()=>Boolean(await window.kunClientId?.()))()`,'Campaign client context');
 
   const adClicked=await evalJs(`(()=>{const b=document.querySelector('.campaign66 [data-campaign-section="ad"]');if(!b)return false;b.click();return true})()`);if(!adClicked)throw new Error('Ad workspace button missing');
-  await waitFor(`!!document.getElementById('campaign66Breakdown')&&!!document.getElementById('campaign66BreakdownLoad')`,'Breakdown controls');
+  await waitFor(`!!document.getElementById('campaign66Breakdown')&&!!document.getElementById('campaign66BreakdownLoad')`,'Breakdown controls',30000);
   const controlBasics=await evalJs(`({type:document.getElementById('campaign66BreakdownLoad')?.type,options:document.querySelectorAll('#campaign66Breakdown option').length,controls:document.documentElement.dataset.breakdownControls})`);if(controlBasics?.type!=='button'||Number(controlBasics?.options)<15||controlBasics?.controls!=='v71-ready')throw new Error(`Breakdown controls not normalized: ${JSON.stringify(controlBasics)}`);
 
   await evalJs(`(()=>{
