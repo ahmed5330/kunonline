@@ -1,1 +1,1 @@
-Read-only diagnostic to distinguish the three confirmed unshipped 439 EGP orders without exposing customer names, phones, or addresses.
+Read-only diagnostic retry after Production J&T fix: list only non-PII references for confirmed unshipped 439 EGP orders belonging to clients with configured or connected J&T.
