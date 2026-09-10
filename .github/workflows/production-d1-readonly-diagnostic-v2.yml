@@ -24,7 +24,7 @@ jobs:
           node-version: 22
           package-manager-cache: false
       - run: npm install --ignore-scripts
-      - name: Inspect J&T connection and saved secret names only
+      - name: Inspect legacy J&T state structure only
         run: |
           set -euo pipefail
           q(){
@@ -35,11 +35,9 @@ jobs:
             done
             return 1
           }
-          echo '=== J&T connection rows (no secret values) ==='
-          q "SELECT id,client_id,provider,status,external_store_id,CASE WHEN last_error IS NULL OR trim(last_error)='' THEN 0 ELSE 1 END AS has_last_error FROM store_connections WHERE lower(provider) LIKE '%jt%' OR lower(provider) LIKE '%j&t%' ORDER BY updated_at DESC;"
-          echo '=== Saved secret names for J&T-linked connections (names only) ==='
-          q "SELECT s.connection_id,s.secret_name,CASE WHEN length(COALESCE(s.ciphertext_b64,''))>0 THEN 1 ELSE 0 END AS has_ciphertext FROM integration_secrets s JOIN store_connections c ON c.id=s.connection_id AND c.client_id=s.client_id WHERE lower(c.provider) LIKE '%jt%' OR lower(c.provider) LIKE '%j&t%' ORDER BY s.connection_id,s.secret_name;"
-          echo '=== All provider ids, counts only ==='
-          q "SELECT provider,COUNT(*) AS connections FROM store_connections GROUP BY provider ORDER BY provider;"
-          echo '=== Source locations that write integration_secrets ==='
-          grep -RIn "integration_secrets" src --include='*.js' | grep -E "INSERT|UPDATE|DELETE|prepare" | head -80 || true
+          echo '=== state rows ==='
+          q "SELECT id,length(json) AS json_length,updated_at FROM state ORDER BY id;"
+          echo '=== J&T-related JSON keys/paths only; no values ==='
+          q "SELECT DISTINCT j.fullkey,j.key,j.type FROM state s,json_tree(s.json) j WHERE lower(CAST(j.key AS TEXT)) LIKE '%jt%' OR lower(CAST(j.key AS TEXT)) LIKE '%j&t%' OR lower(CAST(j.key AS TEXT)) LIKE '%customer_code%' OR lower(CAST(j.key AS TEXT)) LIKE '%customerpassword%' OR lower(CAST(j.key AS TEXT)) LIKE '%customer_password%' OR lower(CAST(j.key AS TEXT)) LIKE '%source_code%' OR lower(CAST(j.key AS TEXT)) LIKE '%private_key%' OR lower(CAST(j.key AS TEXT)) LIKE '%api_account%' ORDER BY j.fullkey LIMIT 200;"
+          echo '=== top-level and client object key names only ==='
+          q "SELECT DISTINCT j.path,j.key,j.type FROM state s,json_tree(s.json) j WHERE j.type IN ('object','array') AND (j.path='$' OR j.path LIKE '$.clients%') ORDER BY j.path,j.key LIMIT 250;"
