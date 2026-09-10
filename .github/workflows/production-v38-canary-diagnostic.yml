@@ -1,0 +1,89 @@
+name: Production v38 isolated canary diagnostic
+on:
+  push:
+    branches:
+      - develop/ux-system-upgrade
+    paths:
+      - .github/run-production-v38-canary-20260910.txt
+permissions:
+  contents: read
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: preview
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      RELEASE_REF: release/commerce-v38-production-20260910
+      CANARY_NAME: kunonline-prod-canary-20260910
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.RELEASE_REF }}
+          fetch-depth: 1
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: npm install --ignore-scripts
+      - name: Verify Production database is fully migrated
+        run: |
+          set -euo pipefail
+          result="$(npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "SELECT COUNT(*) AS n FROM d1_migrations; SELECT name FROM d1_migrations ORDER BY id DESC LIMIT 1;" --json)"
+          printf '%s' "$result" | node -e '
+            let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{const p=JSON.parse(raw),rows=[];const walk=x=>{if(Array.isArray(x))return x.forEach(walk);if(x&&typeof x==="object"){if(Array.isArray(x.results))rows.push(...x.results);Object.values(x).forEach(walk)}};walk(p);if(!rows.some(x=>Number(x.n)===23)||!rows.some(x=>x.name==="0022_order_duplicate_links.sql"))throw new Error("Production D1 is not at 0022");console.log("Production D1 ledger is fully migrated through 0022.");});'
+      - name: Create isolated no-cron canary config
+        run: |
+          cat >/tmp/wrangler.canary.toml <<'TOML'
+          name = "kunonline-prod-canary-20260910"
+          main = "src/index-production-sync.js"
+          compatibility_date = "2026-08-23"
+
+          [assets]
+          directory = "./public"
+          binding = "ASSETS"
+
+          [[d1_databases]]
+          binding = "DB"
+          database_name = "kunonline"
+          database_id = "c426601d-182f-486e-a5c1-bb1bca0ecb0b"
+
+          [vars]
+          APP_ENV = "production"
+          TRACKING_PROVIDER = "track123"
+          TOML
+      - name: Deploy isolated canary
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --config /tmp/wrangler.canary.toml
+      - name: Probe health and safe unauthenticated J&T route
+        run: |
+          set -euo pipefail
+          base="https://${CANARY_NAME}.mr-a-mnaa.workers.dev"
+          health_code="$(curl -sS -o /tmp/health.body -w '%{http_code}' "$base/health")"
+          jt_code="$(curl -sS -o /tmp/jt.body -w '%{http_code}' -X POST -H 'Content-Type: application/json' "$base/api/jt/shipments/KUN-SMOKE-NO-ORDER" --data '{}')"
+          easy_code="$(curl -sS -o /tmp/easy.body -w '%{http_code}' "$base/health/easyorders-sync")"
+          echo "CANARY_HEALTH_HTTP=$health_code"
+          echo "CANARY_JT_HTTP=$jt_code"
+          echo "CANARY_EASYORDERS_HEALTH_HTTP=$easy_code"
+          node - <<'NODE'
+          const fs=require('fs');
+          for(const [name,path] of [['health','/tmp/health.body'],['jt','/tmp/jt.body'],['easy','/tmp/easy.body']]){
+            const raw=fs.readFileSync(path,'utf8');
+            let p;try{p=JSON.parse(raw)}catch{p={non_json:true,length:raw.length}}
+            const safe={};
+            for(const k of ['ok','code','error','service','build','status','message']) if(p&&p[k]!=null) safe[k]=p[k];
+            console.log(`CANARY_${name.toUpperCase()}_BODY_SAFE=${JSON.stringify(safe)}`);
+          }
+          NODE
+          test "$health_code" = "200"
+          test "$jt_code" = "401"
+          node -e 'const p=require("/tmp/jt.body");if(p.code!=="AUTH_REQUIRED")process.exit(1)'
+          test "$easy_code" = "200"
+      - name: Delete isolated canary
+        if: always()
+        run: |
+          npx wrangler delete --config /tmp/wrangler.canary.toml --force >/tmp/canary-delete.log 2>&1 || true
+          rm -f /tmp/canary-delete.log /tmp/health.body /tmp/jt.body /tmp/easy.body /tmp/wrangler.canary.toml
