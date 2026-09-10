@@ -6,7 +6,7 @@ on:
       - main
   workflow_dispatch:
 concurrency:
-  group: kunonline-production
+  group: kunonline-production-20260910
   cancel-in-progress: false
 permissions:
   contents: read
