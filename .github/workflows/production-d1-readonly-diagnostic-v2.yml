@@ -24,20 +24,32 @@ jobs:
           node-version: 22
           package-manager-cache: false
       - run: npm install --ignore-scripts
-      - name: Inspect legacy J&T state structure only
+      - name: Compare Preview J&T metadata with Production without secret values
         run: |
           set -euo pipefail
-          q(){
-            local sql="$1"
-            for i in 1 2 3 4 5; do
-              if npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "$sql" --json; then return 0; fi
-              sleep $((i*2))
-            done
-            return 1
+          node - <<'NODE'
+          const fs=require('fs');
+          const account=process.env.CLOUDFLARE_ACCOUNT_ID, token=process.env.CLOUDFLARE_API_TOKEN;
+          const prod=fs.readFileSync('wrangler.production.toml','utf8').match(/database_id\s*=\s*"([^"]+)"/)?.[1];
+          const prev=fs.readFileSync('wrangler.preview.toml','utf8').match(/database_id\s*=\s*"([^"]+)"/)?.[1];
+          if(!account||!token||!prod||!prev)throw new Error('Cloudflare/D1 config missing');
+          async function q(db,sql,params=[]){
+            for(let i=1;i<=5;i++){
+              const r=await fetch(`https://api.cloudflare.com/client/v4/accounts/${account}/d1/database/${db}/query`,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({sql,params})});
+              const p=await r.json().catch(()=>({}));
+              if(r.ok&&p.success!==false&&p.result?.[0]?.success!==false)return p.result?.[0]?.results||[];
+              if(i===5)throw new Error('D1 query failed after retries');
+              await new Promise(res=>setTimeout(res,i*1500));
+            }
           }
-          echo '=== state rows ==='
-          q "SELECT id,length(json) AS json_length,updated_at FROM state ORDER BY id;"
-          echo '=== J&T-related JSON keys/paths only; no values ==='
-          q "SELECT DISTINCT j.fullkey,j.key,j.type FROM state s,json_tree(s.json) j WHERE lower(CAST(j.key AS TEXT)) LIKE '%jt%' OR lower(CAST(j.key AS TEXT)) LIKE '%j&t%' OR lower(CAST(j.key AS TEXT)) LIKE '%customer_code%' OR lower(CAST(j.key AS TEXT)) LIKE '%customerpassword%' OR lower(CAST(j.key AS TEXT)) LIKE '%customer_password%' OR lower(CAST(j.key AS TEXT)) LIKE '%source_code%' OR lower(CAST(j.key AS TEXT)) LIKE '%private_key%' OR lower(CAST(j.key AS TEXT)) LIKE '%api_account%' ORDER BY j.fullkey LIMIT 200;"
-          echo '=== top-level and client object key names only ==='
-          q "SELECT DISTINCT j.path,j.key,j.type FROM state s,json_tree(s.json) j WHERE j.type IN ('object','array') AND (j.path='$' OR j.path LIKE '$.clients%') ORDER BY j.path,j.key LIMIT 250;"
+          (async()=>{
+            const con=await q(prev,"SELECT id,client_id,status,store_name,external_store_id FROM store_connections WHERE provider='jt' ORDER BY updated_at DESC");
+            const safe=[];
+            for(const c of con){
+              const names=(await q(prev,'SELECT secret_name FROM integration_secrets WHERE client_id=? AND connection_id=? ORDER BY secret_name',[c.client_id,c.id])).map(x=>x.secret_name);
+              const prodClient=await q(prod,'SELECT COUNT(*) AS n FROM clients WHERE id=?',[c.client_id]).catch(async()=>q(prod,'SELECT COUNT(*) AS n FROM stores WHERE client_id=?',[c.client_id]));
+              safe.push({status:c.status,hasMatchingProductionClient:Number(prodClient[0]?.n||0)>0,secretNames:names,hasAllCreateOrderSecrets:['api_account','private_key','source_code','customer_code','customer_password','sender_name','sender_mobile','sender_prov','sender_city','sender_area','sender_street'].every(k=>names.includes(k))});
+            }
+            console.log(JSON.stringify({previewJtConnections:safe.length,connections:safe},null,2));
+          })().catch(e=>{console.error(e.message);process.exit(1)});
+          NODE
