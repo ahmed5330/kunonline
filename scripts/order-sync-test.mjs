@@ -34,7 +34,7 @@ assert.ok(validator.includes('easyOrdersStoreId')&&validator.includes('externalS
 const previewEntry=preview.match(/^\s*main\s*=\s*"([^"]+)"/m)?.[1];assert.match(previewEntry||'',/^src\/index-commerce-v\d+\.js$/,'Preview must use a versioned additive commerce wrapper');
 async function delegatedChain(path,seen=new Set()){
   if(seen.has(path))return [];seen.add(path);const source=await read(path),chain=[{path,source}];
-  const imports=[...source.matchAll(/import\s+([A-Za-z_$][\w$]*)\s*(?:,\s*\{[^}]*\})?\s+from\s+['"](\.\/index-commerce-v\d+\.js)['"]/g)];
+  const imports=[...source.matchAll(/import\s+([A-Za-z_$][\w$]*)\s*(?:,\s*\{[^}]*\})?\s+from\s+['"](\.\/index-commerce-v\d+(?:-[A-Za-z0-9-]+)?\.js)['"]/g)];
   for(const [,symbol,relative] of imports){if(!source.includes(`${symbol}.fetch`))continue;const next=`src/${relative.replace(/^\.\//,'')}`;chain.push(...await delegatedChain(next,seen));}
   return chain;
 }
