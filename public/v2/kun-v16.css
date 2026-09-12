@@ -1,0 +1,50 @@
+/* Kun Online v88 — phone-first shell, safe areas and cross-section responsive hardening. */
+html,body{max-width:100%;overflow-x:clip}.main,.content,#root,.card,.grid,.page-head{min-width:0;max-width:100%}.content{width:100%}.table-wrap,.dash-table-wrap{max-width:100%;overscroll-behavior-inline:contain;-webkit-overflow-scrolling:touch}#root img,#root svg,#root canvas,#root video{max-width:100%}.kun-mobile-call-restore{animation:kunMobileCallRestore 1.15s ease-out}@keyframes kunMobileCallRestore{0%{box-shadow:0 0 0 3px color-mix(in srgb,var(--blue) 32%,transparent)}100%{box-shadow:inherit}}
+@media(max-width:820px){
+  body.kun-mobile-nav-open{overflow:hidden;touch-action:none}
+  .app{display:block;min-height:100dvh}
+  .side{height:100dvh;max-height:100dvh;padding-top:calc(12px + env(safe-area-inset-top));padding-bottom:calc(18px + env(safe-area-inset-bottom));overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+  .nav{padding-bottom:18px}.nav button{min-height:44px}
+  .top{top:0;z-index:45;min-height:62px;padding-top:calc(8px + env(safe-area-inset-top));padding-bottom:8px}
+  .content{padding:12px;overflow-x:clip}
+  .page-head{flex-direction:column;align-items:stretch;gap:10px}.page-head .spacer{display:none}.page-head>.btn,.page-head>button{align-self:stretch}
+  .table-wrap,.dash-table-wrap,#root [class*="table-wrap"],#root [class*="matrix-wrap"],#root [class*="compare-wrap"],#root [class*="comparison-wrap"]{width:100%;max-width:100%;overflow-x:auto;overflow-y:hidden;overscroll-behavior-inline:contain;-webkit-overflow-scrolling:touch}
+  .drawer{width:100vw;max-width:100vw;height:100dvh;padding-bottom:calc(14px + env(safe-area-inset-bottom))}
+  .drawer-back{overscroll-behavior:contain}
+  #root .rowline{grid-template-columns:minmax(0,1fr) auto;align-items:start}#root .rowline>*{min-width:0}
+}
+@media(max-width:560px){
+  .top{gap:6px;padding-inline:8px;align-items:center}
+  #mobileMenuBtn{order:1;flex:0 0 44px;min-width:44px}
+  .top #storeBtn{display:block!important;order:2;flex:1 1 120px;min-width:0;max-width:none}
+  #themeSwitcher{order:3;margin-inline-start:0;flex:0 0 auto}
+  .top>button[aria-label="مركز المساعدة"]{order:4;flex:0 0 44px}
+  #quickBtn{order:5;flex:0 0 auto}
+  .top .search{order:10;flex:1 0 100%;max-width:none;margin:0}
+  .input,.select,input,select,textarea{font-size:16px!important}
+  .btn,.nav button,.tab,a.btn{min-height:44px}
+  .content{padding:8px}.card{padding:11px;border-radius:12px}.title{font-size:20px;line-height:1.4}.sub{font-size:11.5px;line-height:1.65}.page-head{margin-bottom:12px}.page-head>.btn,.page-head>button{width:100%}
+  .tabs,.cs-store-tabs,.dash-trend-tabs{margin-inline:-8px;padding-inline:8px;scroll-padding-inline:8px}
+  .toolbar,.crm-tools,.products-tools,.v5-form,.v5-summary,.v6-metrics,.v27-form,.v27-modules,.v27-order-actions,.v27-topup,.v27-wa-box,.v35-top-grid,.v35-map-grid,.qa-supplier-forms .toolbar{grid-template-columns:1fr!important}
+  .v5-wide,.v27-form .wide{grid-column:auto!important}
+  .v5-actions{flex-direction:column}.v5-actions .btn{width:100%}
+  .dash-hero{display:block;min-height:0;padding:15px;border-radius:16px}.dash-hero .title{font-size:23px}.dash-hero-side{width:100%;min-width:0;margin:12px 0 0;padding:11px}
+  .dash-section{padding:12px;border-radius:16px}.dash-section-head{display:grid;gap:9px}.dash-section-actions{width:100%;margin-inline-start:0;align-items:stretch;justify-content:stretch}.dash-section-actions>*{max-width:100%}.dash-section-actions .btn{flex:1}
+  .dash-range{width:100%;max-width:100%;overflow-x:auto;flex-wrap:nowrap;justify-content:flex-start}.dash-range-btn{flex:0 0 auto}.dash-custom-range{flex:0 0 auto;min-width:max-content}
+  .dash-kpis{grid-template-columns:repeat(2,minmax(0,1fr))!important}.dash-finance-grid,.dash-rate-grid,.dash-ai-grid,.dash-ai-signals,.dash-detail-list,.dash-trend-head{grid-template-columns:1fr!important}.dash-ad-summary,.dash-ai-ad-kpis,.dash-ad-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}.dash-detail-group{grid-column:auto}.dash-campaign-row{min-width:620px}.dash-rate-main{grid-template-columns:1fr!important}.dash-ai-analysis-head{gap:8px}.dash-ai-period-badge{max-width:100%;white-space:normal}.dash-chart-card{padding:10px}
+  .cs-board,.cs-deferred-grid{grid-template-columns:1fr!important;overflow:visible}.cs-order{padding:10px;border-radius:13px}.cs-order-head{gap:6px}.cs-note-field{grid-template-columns:1fr!important}.cs-note-field .cs-note-add{width:100%;min-width:0}.cs-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.cs-actions .btn,.cs-actions a.btn{width:100%;min-width:0;min-height:44px;padding:9px 7px}.cs-store{max-width:58%}.cs-rich-product-price{align-items:flex-start;flex-direction:column}.cs-contact-attempts{align-items:flex-start}.cs-modal-back,.dash-period-modal{padding:0;align-items:end}.cs-modal,.dash-period-dialog{width:100%;max-width:100%;max-height:88dvh;border-radius:18px 18px 0 0;padding:14px;padding-bottom:calc(14px + env(safe-area-inset-bottom))}.cs-history-row{grid-template-columns:1fr}.cs-history-time{text-align:right}
+  .v35-result-grid{grid-template-columns:1fr!important}.v35-section-title{align-items:flex-start;flex-direction:column}.v35-section-title span{margin-inline-start:0}.v35-preview{min-width:760px}
+  #root [class*="-toolbar"],#root [class*="-actions"],#root [class*="-filters"]{max-width:100%}
+  #root [class*="-matrix"],#root [class*="-comparison"],#root [class*="-compare"]{min-width:0;max-width:100%}
+  .toast{left:8px;right:8px;bottom:calc(8px + env(safe-area-inset-bottom));width:auto;max-width:none;text-align:center}
+  .help-popover{max-height:62dvh}
+}
+@media(max-width:390px){
+  .top>button[aria-label="مركز المساعدة"]{display:none}
+  #quickBtn{font-size:0;min-width:44px;padding-inline:10px}#quickBtn::after{content:'+';font-size:20px}
+  #themeSwitcher{gap:3px;padding:3px}.theme-switcher button{min-width:31px;width:31px;padding:0}
+  .dash-kpis,.dash-ad-summary,.dash-ai-ad-kpis,.dash-ad-grid{grid-template-columns:1fr!important}
+  .cs-actions{grid-template-columns:1fr}.cs-store{display:inline-flex;max-width:100%;margin-top:6px}.cs-order-head{display:block}
+  .rowline{display:grid!important;grid-template-columns:1fr!important}.rowline>.btn,.rowline>button,.rowline>.select{width:100%}
+}
+@media(max-width:340px){.content{padding-inline:6px}.card{padding-inline:9px}.top{padding-inline:6px}.theme-switcher{display:none}}
