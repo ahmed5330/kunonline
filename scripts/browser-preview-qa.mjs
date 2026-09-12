@@ -1,20 +1,20 @@
-// The full Preview browser/runtime/responsive assertions live in browser-preview-qa-once.mjs.
-// This runner retries the complete test once only for transient browser/render timing failures.
-// No assertion, runtime error check, network failure check, responsive check, or Customer Service check is skipped.
-
+// Full Preview desktop/runtime plus exhaustive phone QA. The combined suite is retried once only for transient timing failures.
 const target=new URL('./browser-preview-qa-once.mjs',import.meta.url);
+const mobileTarget=new URL('./browser-preview-mobile-qa.mjs',import.meta.url);
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const message=error=>String(error?.stack||error?.message||error||'unknown error');
+async function runAttempt(attempt){
+  const nonce=Date.now();
+  await import(`${target.href}?attempt=${attempt}&nonce=${nonce}`);
+  await import(`${mobileTarget.href}?attempt=${attempt}&nonce=${nonce}`);
+}
 let firstError=null;
 try{
-  await import(`${target.href}?attempt=1&nonce=${Date.now()}`);
+  await runAttempt(1);
 }catch(error){
   firstError=error;
-  console.warn(`Preview Browser QA transient failure; retrying the exact same assertions once: ${message(error)}`);
+  console.warn(`Preview Browser QA transient failure; retrying desktop + exhaustive mobile assertions once: ${message(error)}`);
   await sleep(1200);
-  try{
-    await import(`${target.href}?attempt=2&nonce=${Date.now()}`);
-  }catch(secondError){
-    throw new Error(`Preview Browser QA failed twice. First: ${message(firstError)}\nSecond: ${message(secondError)}`);
-  }
+  try{await runAttempt(2);}
+  catch(secondError){throw new Error(`Preview Browser QA failed twice. First: ${message(firstError)}\nSecond: ${message(secondError)}`);}
 }
