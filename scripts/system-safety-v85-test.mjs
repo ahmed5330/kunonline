@@ -12,7 +12,7 @@ const [index,bootstrap,main,customer,dashboard,reset,backend,currentCost,migrati
   read('src/dashboard-live-product-cost-v2.js'),
   read('migrations/0023_system_safety_controls.sql')
 ]);
-assert.ok(index.includes('/v2/modules-v84-jt-create-setup.js?v=84.3'),'global page must still load the v84 bootstrap host');
+assert.ok(index.includes('/v2/modules-v84-jt-create-setup.js?v=84.4'),'global page must cache-bust and load the v84.4 bootstrap host');
 assert.ok(bootstrap.includes('/v2/modules-v85-system-safety.js?v=85.0'),'v84 bootstrap host must load v85 safety globally');
 for(const [name,source] of [['main',main],['customer',customer],['dashboard',dashboard],['reset',reset]])assert.doesNotThrow(()=>new Function(source),`${name} v85 module must parse`);
 for(const source of [main,customer,dashboard,reset])assert.equal(source.includes('location.reload'),false,'v85 modules must never refresh the whole browser page');
