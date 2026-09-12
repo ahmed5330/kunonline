@@ -16,7 +16,7 @@ async function previewVersionOwner(url,seen=new Set()){
   if(seen.has(url.href))return null;seen.add(url.href);
   const source=await readFile(url,'utf8');
   if(/\/api\/preview\/version/.test(source))return url;
-  const imports=[...source.matchAll(/import\s+([A-Za-z_$][\w$]*)\s*(?:,\s*\{[^}]*\})?\s+from\s+['"](\.\/index-commerce-v\d+\.js)['"]/g)];
+  const imports=[...source.matchAll(/import\s+([A-Za-z_$][\w$]*)\s*(?:,\s*\{[^}]*\})?\s+from\s+['"](\.\/index-commerce-v\d+(?:-[A-Za-z0-9-]+)?\.js)['"]/g)];
   for(const [,symbol,relative] of imports){
     if(!source.includes(`${symbol}.fetch`))continue;
     const owner=await previewVersionOwner(new URL(relative,url),seen);if(owner)return owner;
