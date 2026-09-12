@@ -66,4 +66,5 @@ assert.equal(v35.slice(customerServiceStart,delegateStart).includes('reconcileEa
 assert.ok(v35.includes("dedupe:'targeted-on-webhook-and-import;full-manual-only'"),'v35 must explicitly advertise the non-blocking dedupe read policy');
 assert.ok(v35.includes("orderDedupe:{ok:true,skipped:true,mode:'manual-or-targeted-only'}"),'scheduled sync must keep full dedupe disabled');
 
+await import('./system-safety-v85-test.mjs');
 console.log('Frontend performance contract passed');
