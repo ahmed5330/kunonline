@@ -40,7 +40,7 @@ try{
   for(const m of ['Page.enable','Runtime.enable','Network.enable'])await cdp.send(m);
   await setViewport(390,844);await navigate(`${base}/healthz`);
   const login=await evalJs(`(async()=>{const r=await fetch('/api/login',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify(${JSON.stringify({email,password})})});return r.status})()`);if(login!==200)throw new Error(`Mobile QA login failed: ${login}`);
-  await navigate(`${base}/v2/`);await waitFor(`document.documentElement.dataset.mobileUx==='v88-ready'&&document.getElementById('mobileMenuBtn')&&document.getElementById('root')`,'mobile UX v88 ready',20000);await sleep(700);
+  await navigate(`${base}/v2/`);await waitFor(`document.documentElement.dataset.mobileUx==='v88-ready'&&window.KunMobileUXV88?.version==='88.1'&&document.getElementById('mobileMenuBtn')&&document.getElementById('root')`,'mobile UX v88.1 ready',20000);await sleep(700);
   const menu=await evalJs(`(()=>{const b=document.getElementById('mobileMenuBtn'),side=document.querySelector('.side'),back=document.getElementById('mobileNavBack');b.click();const r=side.getBoundingClientRect();return {open:side.classList.contains('mobile-open'),overlay:back.classList.contains('show'),left:r.left,right:r.right,width:r.width,vw:innerWidth,bodyLock:document.body.classList.contains('kun-mobile-nav-open')};})()`);
   if(!menu.open||!menu.overlay||!menu.bodyLock||menu.width>menu.vw*.9||menu.left<-2||menu.right>menu.vw+2)throw new Error(`Mobile navigation drawer is unsafe: ${JSON.stringify(menu)}`);
   await evalJs(`document.getElementById('mobileNavBack').click()`);await waitFor(`!document.querySelector('.side').classList.contains('mobile-open')`,'mobile nav close');
@@ -52,8 +52,8 @@ try{
     await setViewport(width,height);
     for(const view of views){
       const clicked=await evalJs(`(()=>{const b=document.querySelector('.nav button[data-view="${view}"]');if(!b||getComputedStyle(b).display==='none')return false;b.click();return true;})()`);if(!clicked)continue;
-      await sleep(['campaigns','admin-clients','customer-service','inventory','integrations'].includes(view)?520:280);
-      const text=await evalJs(`(document.getElementById('root')?.innerText||'').trim()`);if(String(text).length<2)throw new Error(`Mobile section ${view} rendered empty at ${width}px`);
+      await waitFor(`(document.getElementById('root')?.innerText||'').trim().length>=2`, `mobile section ${view} content at ${width}px`, 7000);
+      await sleep(['campaigns','admin-clients','customer-service','inventory','integrations'].includes(view)?380:180);
       const layout=await layoutFor(view,width);
       if(layout.overflow>12)throw new Error(`Global horizontal overflow in ${view} at ${width}px: ${JSON.stringify(layout)}`);
       if(layout.bad.length)throw new Error(`Off-screen mobile content in ${view} at ${width}px: ${JSON.stringify(layout.bad)}`);
@@ -66,8 +66,8 @@ try{
   const store=(await d1("SELECT id FROM stores WHERE client_id=? AND status='active' ORDER BY is_default DESC LIMIT 1",[clientId]))[0]?.id||null;if(!store)throw new Error('Mobile call QA could not resolve an active store');
   await d1("INSERT INTO orders (id,client_id,store_id,name,phone,product,qty,total,state,date,created_at,history,contact_log,note) VALUES (?,?,?,?,?,?,1,25,'pending',?,?, '[]','[]',?)",[orderId,clientId,store,'Mobile Call QA','01012345678','Mobile QA product',createdAt.slice(0,10),createdAt,'mobile call persistence']);
   await evalJs(`document.querySelector('.nav button[data-view="customer-service"]').click()`);const selector=`.cs-order[data-cs-order="${orderId}"]`;await waitFor(`document.querySelector(${JSON.stringify(selector)})?.querySelector('[data-cs-action="call"]')`,'mobile call card',15000);
-  const callMeta=await evalJs(`(()=>{const a=document.querySelector(${JSON.stringify(selector)}).querySelector('[data-cs-action="call"]');return {target:a.target,rel:a.rel,href:a.getAttribute('href'),safe:a.dataset.mobileSafeCall};})()`);if(callMeta.target!=='_blank'||!callMeta.rel.includes('noopener')||callMeta.safe!=='1')throw new Error(`Call link is not resume-safe on mobile: ${JSON.stringify(callMeta)}`);
-  await evalJs(`(()=>{const a=document.querySelector(${JSON.stringify(selector)}).querySelector('[data-cs-action="call"]'),event=new MouseEvent('click',{bubbles:true,cancelable:true});a.dispatchEvent(event);})()`);
+  const callMeta=await evalJs(`(()=>{const a=document.querySelector(${JSON.stringify(selector)}).querySelector('[data-cs-action="call"]');return {href:a.getAttribute('href'),safe:a.dataset.mobileSafeCall};})()`);if(callMeta.href!=='tel:01012345678'||callMeta.safe!=='1')throw new Error(`Call link is not native/resume-safe on mobile: ${JSON.stringify(callMeta)}`);
+  await evalJs(`(()=>{const a=document.querySelector(${JSON.stringify(selector)}).querySelector('[data-cs-action="call"]');a.addEventListener('click',event=>event.preventDefault(),{once:true});a.click();})()`);
   await waitFor(`document.querySelector(${JSON.stringify(selector)})?.querySelector('[data-cs-action="contact"]')?.textContent.includes('(1)')`,'mobile call recorded once');
   const state=(await d1('SELECT state FROM orders WHERE id=? AND client_id=?',[orderId,clientId]))[0]?.state;if(state!=='pending')throw new Error(`Call action changed order state unexpectedly: ${state}`);
   await evalJs(`window.dispatchEvent(new Event('blur'));document.querySelector(${JSON.stringify(selector)})?.remove();window.dispatchEvent(new Event('focus'));`);
