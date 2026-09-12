@@ -46,7 +46,7 @@ must(index.indexOf('modules-v59-shipping-sheet-import.js')<index.indexOf('module
 const previewEntry=wrangler.match(/^\s*main\s*=\s*"([^"]+)"/m)?.[1];must(/^src\/index-commerce-v\d+\.js$/.test(previewEntry||''),'Preview must use a versioned additive commerce wrapper');
 async function delegatedChain(path,seen=new Set()){
   if(seen.has(path))return [];seen.add(path);const source=await read(path),chain=[{path,source}];
-  const imports=[...source.matchAll(/import\s+([A-Za-z_$][\w$]*)\s*(?:,\s*\{[^}]*\})?\s+from\s+['"](\.\/index-commerce-v\d+\.js)['"]/g)];
+  const imports=[...source.matchAll(/import\s+([A-Za-z_$][\w$]*)\s*(?:,\s*\{[^}]*\})?\s+from\s+['"](\.\/index-commerce-v\d+(?:-[A-Za-z0-9-]+)?\.js)['"]/g)];
   for(const [,symbol,relative] of imports){if(!source.includes(`${symbol}.fetch`))continue;const next=`src/${relative.replace(/^\.\//,'')}`;chain.push(...await delegatedChain(next,seen));}
   return chain;
 }
