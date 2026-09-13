@@ -1,2 +1,3 @@
 Authorized by the user on 2026-09-10. Run exactly one synthetic Preview Create Order test. Do not print credentials. Production must remain untouched.
 Rerun authorized once after the J&T millisecond timestamp and goods-type mapping fix: 2026-09-10.
+Rerun authorized by the user on 2026-09-13 to verify the live J&T service and Kun Online order integration on Preview only. Do not print credentials; use the encrypted integration configuration only.
