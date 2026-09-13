@@ -1,4 +1,4 @@
-/* Kun Online v88.1 — phone shell hardening + Customer Service resume safety after native phone actions. */
+/* Kun Online v88.2 — phone shell hardening + Customer Service resume safety after native phone actions. */
 (function(){
   if(window.KunMobileUXV88)return;
   const mobile=()=>window.matchMedia?.('(max-width: 820px)').matches??window.innerWidth<=820;
@@ -69,14 +69,17 @@
     });
     bodyObserver.observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['class']});
     document.addEventListener('pointerdown',event=>{const call=event.target.closest?.('a[data-cs-action="call"]');if(call)rememberResumePoint(call.closest?.('[data-cs-order]')?.dataset?.csOrder||'');},true);
+    document.addEventListener('click',event=>{
+      if(event.target.closest?.('#mobileMenuBtn,#mobileNavBack,.side .nav button'))syncNavLock();
+    });
     window.addEventListener('blur',()=>rememberResumePoint(),{passive:true});
     document.addEventListener('visibilitychange',()=>{if(document.hidden)rememberResumePoint();else void restoreCustomerService();},{passive:true});
     window.addEventListener('focus',()=>{if(!document.hidden)void restoreCustomerService();},{passive:true});
     window.addEventListener('pageshow',()=>void restoreCustomerService(),{passive:true});
     window.addEventListener('resize',()=>{syncNavLock();callLinks();},{passive:true});
     window.addEventListener('orientationchange',()=>setTimeout(()=>{syncNavLock();callLinks();},80),{passive:true});
-    document.documentElement.dataset.mobileUx='v88-ready';
+    document.documentElement.dataset.mobileUx='v88.2-ready';
   }
-  window.KunMobileUXV88={version:'88.1',rememberResumePoint,restoreCustomerService,decorateCallLinks:callLinks,syncNavLock};
+  window.KunMobileUXV88={version:'88.2',rememberResumePoint,restoreCustomerService,decorateCallLinks:callLinks,syncNavLock};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();
 })();
