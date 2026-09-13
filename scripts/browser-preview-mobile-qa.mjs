@@ -40,10 +40,13 @@ try{
   for(const m of ['Page.enable','Runtime.enable','Network.enable'])await cdp.send(m);
   await setViewport(390,844);await navigate(`${base}/healthz`);
   const login=await evalJs(`(async()=>{const r=await fetch('/api/login',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify(${JSON.stringify({email,password})})});return r.status})()`);if(login!==200)throw new Error(`Mobile QA login failed: ${login}`);
-  await navigate(`${base}/v2/`);await waitFor(`document.documentElement.dataset.mobileUx==='v88-ready'&&window.KunMobileUXV88?.version==='88.1'&&document.getElementById('mobileMenuBtn')&&document.getElementById('root')`,'mobile UX v88.1 ready',20000);await sleep(700);
-  const menu=await evalJs(`(()=>{const b=document.getElementById('mobileMenuBtn'),side=document.querySelector('.side'),back=document.getElementById('mobileNavBack');b.click();const r=side.getBoundingClientRect();return {open:side.classList.contains('mobile-open'),overlay:back.classList.contains('show'),left:r.left,right:r.right,width:r.width,vw:innerWidth,bodyLock:document.body.classList.contains('kun-mobile-nav-open')};})()`);
+  await navigate(`${base}/v2/`);await waitFor(`document.documentElement.dataset.mobileUx==='v88.2-ready'&&window.KunMobileUXV88?.version==='88.2'&&document.getElementById('mobileMenuBtn')&&document.getElementById('root')`,'mobile UX v88.2 ready',20000);await sleep(700);
+  await evalJs(`document.getElementById('mobileMenuBtn').click()`);
+  await waitFor(`document.querySelector('.side')?.classList.contains('mobile-open')&&document.getElementById('mobileNavBack')?.classList.contains('show')&&document.body.classList.contains('kun-mobile-nav-open')`,'mobile nav open');
+  await sleep(240);
+  const menu=await evalJs(`(()=>{const side=document.querySelector('.side'),back=document.getElementById('mobileNavBack'),r=side.getBoundingClientRect();return {open:side.classList.contains('mobile-open'),overlay:back.classList.contains('show'),left:r.left,right:r.right,width:r.width,vw:innerWidth,bodyLock:document.body.classList.contains('kun-mobile-nav-open')};})()`);
   if(!menu.open||!menu.overlay||!menu.bodyLock||menu.width>menu.vw*.9||menu.left<-2||menu.right>menu.vw+2)throw new Error(`Mobile navigation drawer is unsafe: ${JSON.stringify(menu)}`);
-  await evalJs(`document.getElementById('mobileNavBack').click()`);await waitFor(`!document.querySelector('.side').classList.contains('mobile-open')`,'mobile nav close');
+  await evalJs(`document.getElementById('mobileNavBack').click()`);await waitFor(`!document.querySelector('.side').classList.contains('mobile-open')&&!document.body.classList.contains('kun-mobile-nav-open')`,'mobile nav close');
 
   const views=await evalJs(`[...document.querySelectorAll('.nav button[data-view]')].filter(b=>{const s=getComputedStyle(b);return s.display!=='none'&&s.visibility!=='hidden'&&!b.disabled}).map(b=>b.dataset.view)`);
   if(!Array.isArray(views)||views.length<25)throw new Error(`Mobile QA expected at least 25 visible sections, got ${views?.length||0}`);
