@@ -1,4 +1,4 @@
-/* Kun Online v88.2 — phone-first shell, safe areas and cross-section responsive hardening. */
+/* Kun Online v88.2.1 — phone-first shell, safe areas and cross-section responsive hardening. */
 html,body{max-width:100%;overflow-x:clip}.main,.content,#root,.card,.grid,.page-head{min-width:0;max-width:100%}.content{width:100%}.table-wrap,.dash-table-wrap{max-width:100%;overscroll-behavior-inline:contain;-webkit-overflow-scrolling:touch}#root img,#root svg,#root canvas,#root video{max-width:100%}.kun-mobile-call-restore{animation:kunMobileCallRestore 1.15s ease-out}@keyframes kunMobileCallRestore{0%{box-shadow:0 0 0 3px color-mix(in srgb,var(--blue) 32%,transparent)}100%{box-shadow:inherit}}
 @media(max-width:820px){
   body.kun-mobile-nav-open{overflow:hidden;touch-action:none}
@@ -42,6 +42,9 @@ html,body{max-width:100%;overflow-x:clip}.main,.content,#root,.card,.grid,.page-
   .v35-result-grid{grid-template-columns:1fr!important}.v35-section-title{align-items:flex-start;flex-direction:column}.v35-section-title span{margin-inline-start:0}.v35-preview{min-width:760px}
   #root [class*="-toolbar"],#root [class*="-actions"],#root [class*="-filters"]{max-width:100%}
   #root [class*="-matrix"],#root [class*="-comparison"],#root [class*="-compare"]{min-width:0;max-width:100%}
+  #root .chips{display:flex;flex-wrap:wrap!important;max-width:100%;min-width:0;gap:6px}
+  #root *:has(> .chip){max-width:100%;min-width:0;flex-wrap:wrap!important}
+  #root .chip{max-width:100%;min-width:0;white-space:normal;overflow-wrap:anywhere;word-break:break-word}
   .toast{left:8px;right:8px;bottom:calc(8px + env(safe-area-inset-bottom));width:auto;max-width:none;text-align:center}
   .help-popover{max-height:62dvh}
 }
