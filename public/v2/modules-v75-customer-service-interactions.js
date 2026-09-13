@@ -83,4 +83,11 @@
   document.addEventListener('change',handleConfirm,true);
   window.KunCustomerServiceInteractionsV75={version:'75.3',pending,saveNote,saveContact,confirmState:handleConfirm};
   document.documentElement.dataset.customerServiceInteractions='v75-ready';
+  if(!window.KunMobileUXV88&&!document.querySelector('script[data-kun-cs-mobile-call-resume]')){
+    const script=document.createElement('script');
+    script.src='/v2/modules-v88-mobile-ux.js?v=88.4';
+    script.dataset.kunCsMobileCallResume='1';
+    script.async=true;
+    document.head.appendChild(script);
+  }
 })();
