@@ -1,7 +1,7 @@
 name: J&T Preview encrypted business bootstrap keygen
 on:
   push:
-    branches: [ops/jt-preview-business-bootstrap-20260913]
+    branches: [develop/ux-system-upgrade]
     paths: [.github/run-jt-preview-business-bootstrap-keygen.txt]
 permissions:
   contents: read
@@ -22,7 +22,6 @@ jobs:
           const {webcrypto,randomBytes,createHash}=crypto;
           const token=process.env.CLOUDFLARE_API_TOKEN;
           if(!token)throw new Error('Preview transport secret is unavailable');
-          const enc=new TextEncoder();
           const b64=b=>Buffer.from(b).toString('base64url');
           (async()=>{
             const pair=await webcrypto.subtle.generateKey({name:'RSA-OAEP',modulusLength:2048,publicExponent:new Uint8Array([1,0,1]),hash:'SHA-256'},true,['encrypt','decrypt']);
