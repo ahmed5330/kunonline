@@ -1,4 +1,4 @@
-/* Kun Online v89.0 — narrowly isolate stale writes from legacy async operational views. */
+/* Kun Online v89.1 — isolate stale async writes and prevent old Campaign Hub loads from blocking a newly selected mode. */
 (function(){
   if(window.KunStaleAsyncGuardV89)return;
   const guarded=new Set([
@@ -22,6 +22,13 @@
     }});
     root.dataset.kunStaleAsyncGuard='1';return true;
   }
+  function releaseCampaignModeLoading(event){
+    const button=event.target.closest?.('.campaign66 [data-section-mode]');if(!button)return;
+    const hub=window.KunCampaignHubV66,state=hub?.state,section=state?.sections?.[state?.level],next=String(button.dataset.sectionMode||'');
+    if(!section||!next||section.mode===next)return;
+    section.loading=false;
+  }
+  document.addEventListener('click',releaseCampaignModeLoading,true);
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',install,{once:true});else install();
-  window.KunStaleAsyncGuardV89={version:'89.0',install,guarded:[...guarded]};
+  window.KunStaleAsyncGuardV89={version:'89.1',install,guarded:[...guarded],releaseCampaignModeLoading};
 })();
