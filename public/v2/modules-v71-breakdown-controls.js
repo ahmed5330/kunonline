@@ -1,6 +1,6 @@
 /* Kun Online v71 — reliable Breakdown controls: delegated events, busy state, cancellation and stale-response protection. */
 (function(){
-  const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[c]));
+  const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const clean=v=>String(v??'').trim();
   let sequence=0,activeController=null,activeKey='',observerQueued=false;
 
