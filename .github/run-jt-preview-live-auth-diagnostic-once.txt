@@ -1,1 +1,2 @@
 Re-run the safe authenticated J&T Trace merchant-mapping diagnostic on fully validated Preview after commit 0b31f673412d00f1a37dab23de4ac9fb936363a0. Read-only carrier call only; must not create a shipment. Production remains untouched.
+Re-run authorized by the user on 2026-09-13 after the Create Order QA confirmed missing Business Info. Verify current Developer Info against J&T Trace only; do not print secrets or create a shipment.
