@@ -69,10 +69,12 @@
   document.addEventListener('click',event=>{
     const target=event.target?.closest?.('#campaign66BreakdownLoad,#campaign71BreakdownRetry');
     if(target){event.preventDefault();event.stopImmediatePropagation();loadSelected();return;}
+    const mode=event.target?.closest?.('.campaign66 [data-section-mode]');
+    if(mode){const h=hub(),state=h?.state?.sections?.[h?.state?.level];if(state)state.loading=false;}
     if(event.target?.closest?.('.campaign66 [data-status],.campaign66 [data-date-preset],.campaign66 [data-campaign-section],.campaign66 [data-section-mode],#campaign66ApplyCustom'))cancel('campaign-controls-changed');
   },true);
   function scheduleObserverEnhance(){if(observerQueued)return;observerQueued=true;queueMicrotask(()=>{observerQueued=false;ensureButtons();decorateError();decorateEmpty();});}
   const observer=new MutationObserver(scheduleObserverEnhance);observer.observe(document.documentElement,{childList:true,subtree:true});
   window.addEventListener('kun:section-reloaded',()=>{cancel('section-reloaded');enhanceSoon();});
-  window.KunBreakdownControlsV71={loadSelected,cancel,changeSelection,currentRequestKey,decorateCatalog,version:'71.2'};document.documentElement.dataset.breakdownControls='v71-ready';style();ensureButtons();enhanceSoon();
+  window.KunBreakdownControlsV71={loadSelected,cancel,changeSelection,currentRequestKey,decorateCatalog,version:'71.3'};document.documentElement.dataset.breakdownControls='v71-ready';style();ensureButtons();enhanceSoon();
 })();
