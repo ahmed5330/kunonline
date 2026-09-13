@@ -189,7 +189,7 @@ try{
 
   // A full navigation must not race the base navigation handler against the async Customer Service boot.
   await navigate(`${base}/v2/`);
-  await waitFor("window.KunCustomerServiceV31?.version==='31.2'&&window.KunCustomerServiceInteractionsV75?.version==='75.2'&&document.documentElement.dataset.clientContext==='ready'&&document.querySelector('[data-view=customer-service]')?.classList.contains('is-visible')",'Customer Service V31/V75 ready after page reload',20000);
+  await waitFor("window.KunCustomerServiceV31?.version==='31.2'&&window.KunCustomerServiceInteractionsV75?.version==='75.3'&&document.documentElement.dataset.clientContext==='ready'&&document.querySelector('[data-view=customer-service]')?.classList.contains('is-visible')",'Customer Service V31/V75 ready after page reload',20000);
   const reloadedClientId=await evaluate("window.kunClientId()");
   if(String(reloadedClientId)!==String(interactionClientId))throw new Error(`Customer Service client context changed after full reload: ${reloadedClientId} != ${interactionClientId}`);
   await evaluate("document.querySelector('[data-view=customer-service]').click()");
