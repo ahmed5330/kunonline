@@ -1,7 +1,7 @@
-/* Kun Online v75.2 — reliable Customer Service note/contact/call/confirm interactions with unified attempt counters. */
+/* Kun Online v75.3 — reliable Customer Service note/contact/call/confirm interactions with unified attempt counters. */
 (function(){
   if(window.KunCustomerServiceInteractionsV75)return;
-  const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+  const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[char]));
   const notify=message=>window.showToast?.(message)||console.log(message);
   const pending=new Set();
 
@@ -35,6 +35,7 @@
     const log=Array.isArray(data?.log)?data.log:[],count=Number.isFinite(Number(data?.contactCount))?Number(data.contactCount):log.length,id=orderId(card);
     const button=card.querySelector('[data-cs-action="contact"]'),counter=card.querySelector('[data-cs-contact-count]'),noAnswer=card.querySelector('[data-cs-state] option[value="no_answer"]');
     if(button)button.textContent=`تواصل (${count})`;if(counter)counter.textContent=String(count);if(noAnswer)noAnswer.textContent=`العميل لا يرد — ${count} محاولة تواصل`;window.KunCustomerServiceV31?.updateContactCount?.(id,count);
+    return count;
   }
   async function saveNote(card,button){
     const id=orderId(card),input=card.querySelector('[data-cs-note]'),note=String(input?.value||'').trim();
@@ -48,7 +49,8 @@
   async function saveContact(card,isCall=false){
     const id=orderId(card),cid=await clientId();if(!cid)throw new Error('تعذر تحديد حساب المتجر');
     clearError(card);const data=await api(route(id,'contact',cid),{method:'POST',keepalive:isCall,body:JSON.stringify({clientId:cid,channel:'phone',intent:isCall?'call':'contact'})});
-    updateContactCount(card,data);
+    const count=updateContactCount(card,data);
+    window.dispatchEvent(new CustomEvent('kun:customer-service-contact-saved',{detail:{orderId:id,count,intent:isCall?'call':'contact',savedAt:Date.now()}}));
     notify(isCall?'تم تسجيل المكالمة في سجل الأوردر':'تم تسجيل محاولة التواصل في سجل الأوردر');
     return data;
   }
@@ -79,6 +81,6 @@
 
   document.addEventListener('click',handle,true);
   document.addEventListener('change',handleConfirm,true);
-  window.KunCustomerServiceInteractionsV75={version:'75.2',pending,saveNote,saveContact,confirmState:handleConfirm};
+  window.KunCustomerServiceInteractionsV75={version:'75.3',pending,saveNote,saveContact,confirmState:handleConfirm};
   document.documentElement.dataset.customerServiceInteractions='v75-ready';
 })();
