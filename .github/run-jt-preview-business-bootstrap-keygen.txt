@@ -1,3 +1,4 @@
 One-time Preview-only J&T Business Info encrypted bootstrap key generation.
 No J&T password or Customer Password is stored in this file.
-Requested: 2026-09-13T17:07:00+03:00
+Requested: 2026-09-13T17:34:00+03:00
+Nonce: keygen-2
