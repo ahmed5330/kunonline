@@ -1,6 +1,6 @@
 /* Kun Online v71 — reliable Breakdown controls: delegated events, busy state, cancellation and stale-response protection. */
 (function(){
-  const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[c]));
   const clean=v=>String(v??'').trim();
   let sequence=0,activeController=null,activeKey='',observerQueued=false;
 
@@ -76,5 +76,5 @@
   function scheduleObserverEnhance(){if(observerQueued)return;observerQueued=true;queueMicrotask(()=>{observerQueued=false;ensureButtons();decorateError();decorateEmpty();});}
   const observer=new MutationObserver(scheduleObserverEnhance);observer.observe(document.documentElement,{childList:true,subtree:true});
   window.addEventListener('kun:section-reloaded',()=>{cancel('section-reloaded');enhanceSoon();});
-  window.KunBreakdownControlsV71={loadSelected,cancel,changeSelection,currentRequestKey,decorateCatalog,version:'71.3'};document.documentElement.dataset.breakdownControls='v71-ready';style();ensureButtons();enhanceSoon();
+  window.KunBreakdownControlsV71={loadSelected,cancel,changeSelection,currentRequestKey,decorateCatalog,version:'71.2'};document.documentElement.dataset.breakdownControls='v71-ready';style();ensureButtons();enhanceSoon();
 })();
