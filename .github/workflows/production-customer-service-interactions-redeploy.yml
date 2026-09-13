@@ -44,7 +44,7 @@ jobs:
           test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
           node --check src/customer-service.js
           node --check public/v2/modules-v75-customer-service-interactions.js
-          grep -Fq "intent=isCall?'call':'contact'" public/v2/modules-v75-customer-service-interactions.js
+          grep -Fq "intent:isCall?'call':'contact'" public/v2/modules-v75-customer-service-interactions.js
           grep -Fq "تم تسجيل المكالمة في سجل الأوردر" public/v2/modules-v75-customer-service-interactions.js
           grep -Fq 'contact_${channel}' src/customer-service.js
           grep -Fq "إجراء مكالمة — تم الضغط على زر الاتصال" src/customer-service.js
