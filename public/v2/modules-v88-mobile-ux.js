@@ -1,4 +1,4 @@
-/* Kun Online v88.2 — phone shell hardening + Customer Service resume safety after native phone actions. */
+/* Kun Online v88.2.1 — phone shell hardening + Customer Service resume safety after native phone actions. */
 (function(){
   if(window.KunMobileUXV88)return;
   const mobile=()=>window.matchMedia?.('(max-width: 820px)').matches??window.innerWidth<=820;
@@ -69,6 +69,10 @@
     });
     bodyObserver.observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['class']});
     document.addEventListener('pointerdown',event=>{const call=event.target.closest?.('a[data-cs-action="call"]');if(call)rememberResumePoint(call.closest?.('[data-cs-order]')?.dataset?.csOrder||'');},true);
+    window.addEventListener('click',event=>{
+      const call=event.target.closest?.('a[data-cs-action="call"]');
+      if(call&&!event.isTrusted)event.preventDefault();
+    },true);
     document.addEventListener('click',event=>{
       if(event.target.closest?.('#mobileMenuBtn,#mobileNavBack,.side .nav button'))syncNavLock();
     });
