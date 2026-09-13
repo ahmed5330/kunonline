@@ -37,6 +37,7 @@ must(ui.includes('returnedFromDeferredToday')&&ui.includes('رجع من التأ
 must(backend.includes("action==='contact'")&&backend.includes('saveInteraction')&&backend.includes('INSERT INTO order_events'),'Contact attempts must persist the order history and canonical event together');
 must(ui.includes('/contact')&&ui.includes('تواصل (')&&ui.includes('data-cs-contact-count')&&ui.includes('مكالمة + تواصل'),'Customer Service cards must expose one unified contact-attempt count for Call + Contact');
 must(interactionsUi.includes('data-cs-contact-count')&&interactionsUi.includes('updateContactCount?.(id,count)'),'Reliable interaction layer must update both the visible unified count and the board data model');
+must(interactionsUi.includes('kun:customer-service-contact-saved'),'Successful Call/Contact must publish the confirmed count for mobile resume continuity');
 must(ui.includes('href="tel:')&&ui.includes('مكالمة'),'Customer Service cards must provide native phone calling');
 must(ui.includes('https://wa.me/')&&ui.includes('/whatsapp-log')&&ui.includes('templatesFor'),'WhatsApp templates must open WhatsApp and record the event');
 for(const template of ['رسالة تأكيد الطلب','رسالة التجهيز والتغليف','رسالة جاري الشحن','رسالة طلب تقييم','متابعة الطلب المؤجل','متابعة عميل لا يرد'])must(ui.includes(template),`WhatsApp state template missing: ${template}`);
@@ -71,7 +72,7 @@ for(const marker of ['تأكيد من المخزون','/api/catalog/products','/
 must(confirmUi.includes('productId')&&confirmUi.includes('variantId')&&confirmUi.includes('unitPrice'),'Confirmation must persist exact product/variant and editable price');
 must(index.includes('/v2/modules-v55-customer-search-fifo.js?v=55.3'),'v55.3 name/phone shipping/search/date module must be loaded by v2');
 must(index.includes('/v2/modules-v58-confirm-inventory.js?v=58.1'),'v58.1 no-reload inventory confirmation module must be loaded by v2');
-must(index.includes('/v2/modules-v75-customer-service-interactions.js?v=75.2'),'v75.2 unified interaction counter must be loaded by v2');
+must(index.includes('/v2/modules-v75-customer-service-interactions.js?v=75.3'),'v75.3 unified interaction counter must be loaded by v2');
 must(index.includes('/v2/modules-v42-customer-service-rich-cards.js?v=42.3')&&index.includes('/v2/modules-v44-customer-service-order-edit.js?v=44.1'),'In-place Customer Service detail/edit assets must be cache-busted');
 must(index.indexOf('modules-v55-customer-search-fifo.js')<index.indexOf('modules-v39-stock-batches.js'),'State-only shipping capture must load before the legacy stock chooser interceptor');
 must(index.indexOf('modules-v58-confirm-inventory.js')>index.indexOf('modules-v57-section-reload.js'),'Confirmation module must load after the operational UI modules');
