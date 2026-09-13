@@ -1,7 +1,7 @@
 /* Kun Online v75.3 — reliable Customer Service note/contact/call/confirm interactions with unified attempt counters. */
 (function(){
   if(window.KunCustomerServiceInteractionsV75)return;
-  const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[char]));
+  const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
   const notify=message=>window.showToast?.(message)||console.log(message);
   const pending=new Set();
 
