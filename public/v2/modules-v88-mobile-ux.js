@@ -1,4 +1,4 @@
-/* Kun Online v88.2.1 — phone shell hardening + Customer Service resume safety after native phone actions. */
+/* Kun Online v88.4 — phone shell hardening + Customer Service resume safety after native phone actions. */
 (function(){
   if(window.KunMobileUXV88)return;
   const mobile=()=>window.matchMedia?.('(max-width: 820px)').matches??window.innerWidth<=820;
@@ -6,6 +6,7 @@
   const activeView=()=>document.querySelector('.nav button.active[data-view]')?.dataset.view||'';
   const customerServiceSelected=()=>activeView()==='customer-service';
   const activeCustomerService=()=>customerServiceSelected()&&Boolean(root()?.querySelector('.cs-page'));
+  const recentContacts=new Map();
   let resumeSnapshot=null,restoring=false;
 
   function visibleOrderIds(){return [...(root()?.querySelectorAll('.cs-order[data-cs-order]')||[])].map(card=>String(card.dataset.csOrder||'')).filter(Boolean);}
@@ -18,9 +19,31 @@
     if(window.KunCustomerServiceNoReloadV77?.restoreScroll){window.KunCustomerServiceNoReloadV77.restoreScroll(snapshot);return;}
     requestAnimationFrame(()=>window.scrollTo({top:Number(snapshot?.windowY)||0,left:Number(snapshot?.windowX)||0,behavior:'auto'}));
   }
+  function contactCount(card){
+    const raw=card?.querySelector?.('[data-cs-contact-count]')?.textContent||card?.querySelector?.('[data-cs-action="contact"]')?.textContent||'';
+    const match=String(raw).match(/\d+/);return match?Number(match[0]):0;
+  }
+  function rememberRecentContact(orderId,count,savedAt=Date.now()){
+    const id=String(orderId||'').trim(),n=Number(count);if(!id||!Number.isFinite(n)||n<0)return;
+    const previous=recentContacts.get(id);recentContacts.set(id,{count:Math.max(n,Number(previous?.count)||0),at:Number(savedAt)||Date.now()});
+  }
+  function pruneRecentContacts(){const cutoff=Date.now()-5*60*1000;for(const [id,row] of recentContacts)if(Number(row?.at||0)<cutoff)recentContacts.delete(id);}
+  function applyRecentContacts(){
+    pruneRecentContacts();
+    for(const [id,row] of recentContacts){
+      const card=root()?.querySelector(`.cs-order[data-cs-order="${CSS.escape(id)}"]`);if(!card)continue;
+      const current=contactCount(card);if(current>=row.count)continue;
+      if(window.KunCustomerServiceV31?.updateContactCount)window.KunCustomerServiceV31.updateContactCount(id,row.count);
+      else{
+        const button=card.querySelector('[data-cs-action="contact"]'),counter=card.querySelector('[data-cs-contact-count]');
+        if(button)button.textContent=`تواصل (${row.count})`;if(counter)counter.textContent=String(row.count);
+      }
+    }
+  }
   function rememberResumePoint(explicitOrderId=''){
     if(!mobile()||!activeCustomerService())return false;
     const ids=visibleOrderIds(),requested=String(explicitOrderId||'').trim();
+    for(const id of ids){const card=root()?.querySelector(`.cs-order[data-cs-order="${CSS.escape(id)}"]`),count=contactCount(card);if(count>0)rememberRecentContact(id,count);}
     resumeSnapshot={ids,focusedOrderId:requested||focusedOrderId()||ids[0]||'',scroll:captureScroll(),at:Date.now()};
     return true;
   }
@@ -44,7 +67,7 @@
         await Promise.resolve(window.KunCustomerServiceV31?.render?.()).catch(()=>{});
         for(let i=0;i<30&&!root()?.querySelector('.cs-page');i++)await new Promise(resolve=>setTimeout(resolve,100));
       }
-      callLinks(root()||document);
+      callLinks(root()||document);applyRecentContacts();
       restoreScroll(snapshot.scroll);
       const card=snapshot.focusedOrderId?root()?.querySelector(selector(snapshot.focusedOrderId)):null;
       if(card){highlight(card);requestAnimationFrame(()=>card.scrollIntoView({block:'nearest',inline:'nearest',behavior:'auto'}));}
@@ -65,9 +88,10 @@
         if(mutation.type==='attributes'&&mutation.target?.classList?.contains('side'))nav=true;
         if(mutation.type==='childList'&&mutation.addedNodes.length)calls=true;
       }
-      if(calls)callLinks();if(nav)syncNavLock();
+      if(calls){callLinks();applyRecentContacts();}if(nav)syncNavLock();
     });
     bodyObserver.observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['class']});
+    window.addEventListener('kun:customer-service-contact-saved',event=>{const d=event.detail||{};rememberRecentContact(d.orderId,d.count,d.savedAt);});
     document.addEventListener('pointerdown',event=>{const call=event.target.closest?.('a[data-cs-action="call"]');if(call)rememberResumePoint(call.closest?.('[data-cs-order]')?.dataset?.csOrder||'');},true);
     window.addEventListener('click',event=>{
       const call=event.target.closest?.('a[data-cs-action="call"]');
@@ -82,8 +106,8 @@
     window.addEventListener('pageshow',()=>void restoreCustomerService(),{passive:true});
     window.addEventListener('resize',()=>{syncNavLock();callLinks();},{passive:true});
     window.addEventListener('orientationchange',()=>setTimeout(()=>{syncNavLock();callLinks();},80),{passive:true});
-    document.documentElement.dataset.mobileUx='v88.2-ready';
+    document.documentElement.dataset.mobileUx='v88.4-ready';
   }
-  window.KunMobileUXV88={version:'88.2',rememberResumePoint,restoreCustomerService,decorateCallLinks:callLinks,syncNavLock};
+  window.KunMobileUXV88={version:'88.4',rememberResumePoint,restoreCustomerService,decorateCallLinks:callLinks,syncNavLock,applyRecentContacts};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();
 })();
