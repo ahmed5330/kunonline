@@ -13,25 +13,29 @@ jobs:
       name: preview
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
+      - uses: actions/checkout@v5
       - name: Generate one-time encrypted transport key
         shell: bash
         run: |
           node - <<'NODE'
-          const crypto=require('crypto');
+          const fs=require('fs'),crypto=require('crypto');
           const {webcrypto,randomBytes,createHash}=crypto;
-          const token=process.env.CLOUDFLARE_API_TOKEN;
-          if(!token)throw new Error('Preview transport secret is unavailable');
+          const token=process.env.CLOUDFLARE_API_TOKEN,account=process.env.CLOUDFLARE_ACCOUNT_ID;
+          if(!token||!account)throw new Error('Preview transport credentials are unavailable');
+          const cfg=fs.readFileSync('wrangler.preview.toml','utf8'),db=cfg.match(/database_id\s*=\s*"([^"]+)"/)?.[1];if(!db)throw new Error('Preview database unavailable');
           const b64=b=>Buffer.from(b).toString('base64url');
+          async function q(sql,params=[]){const r=await fetch(`https://api.cloudflare.com/client/v4/accounts/${account}/d1/database/${db}/query`,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({sql,params})});const p=await r.json().catch(()=>({}));if(!r.ok||p.success===false||p.result?.[0]?.success===false)throw new Error('Preview D1 bootstrap query failed');return p.result?.[0]?.results||[];}
           (async()=>{
+            const cons=await q("SELECT id,client_id FROM store_connections WHERE provider='jt' ORDER BY updated_at DESC");if(cons.length!==1)throw new Error(`Expected exactly one Preview J&T connection; got ${cons.length}`);
             const pair=await webcrypto.subtle.generateKey({name:'RSA-OAEP',modulusLength:2048,publicExponent:new Uint8Array([1,0,1]),hash:'SHA-256'},true,['encrypt','decrypt']);
-            const publicSpki=await webcrypto.subtle.exportKey('spki',pair.publicKey);
-            const privatePkcs8=await webcrypto.subtle.exportKey('pkcs8',pair.privateKey);
-            const wrapRaw=createHash('sha256').update(`kun-jt-preview-bootstrap-v1:${token}`).digest();
-            const wrapKey=await webcrypto.subtle.importKey('raw',wrapRaw,{name:'AES-GCM'},false,['encrypt']);
-            const iv=randomBytes(12);
-            const wrapped=await webcrypto.subtle.encrypt({name:'AES-GCM',iv},wrapKey,privatePkcs8);
-            const bundle={v:1,keyId:randomBytes(12).toString('hex'),issuedAt:new Date().toISOString(),publicSpkiB64:b64(publicSpki),wrappedPrivateB64:b64(wrapped),wrapIvB64:b64(iv)};
-            console.log('JT_BOOTSTRAP_KEY_BUNDLE='+Buffer.from(JSON.stringify(bundle)).toString('base64url'));
-          })().catch(()=>{console.error('J&T bootstrap key generation failed');process.exit(1)});
+            const publicSpki=await webcrypto.subtle.exportKey('spki',pair.publicKey),privatePkcs8=await webcrypto.subtle.exportKey('pkcs8',pair.privateKey);
+            const wrapRaw=createHash('sha256').update(`kun-jt-preview-bootstrap-v2:${token}`).digest(),wrapKey=await webcrypto.subtle.importKey('raw',wrapRaw,{name:'AES-GCM'},false,['encrypt']),iv=randomBytes(12),wrapped=await webcrypto.subtle.encrypt({name:'AES-GCM',iv},wrapKey,privatePkcs8);
+            const keyId=randomBytes(12).toString('hex'),secretName=`__jt_bootstrap_transport_${keyId}`,ts=new Date().toISOString();
+            await q("DELETE FROM integration_secrets WHERE client_id=? AND connection_id=? AND secret_name LIKE '__jt_bootstrap_transport_%'",[cons[0].client_id,cons[0].id]);
+            await q('INSERT INTO integration_secrets (id,client_id,connection_id,secret_name,ciphertext_b64,iv_b64,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)',[`JTB-${keyId}`,cons[0].client_id,cons[0].id,secretName,b64(wrapped),b64(iv),ts,ts]);
+            const publicBundle={v:2,keyId,publicSpkiB64:b64(publicSpki)};
+            console.log('JT_BOOTSTRAP_PUBLIC='+Buffer.from(JSON.stringify(publicBundle)).toString('base64url'));
+          })().catch(e=>{console.error(e.message);process.exit(1)});
           NODE
