@@ -1,6 +1,6 @@
 // Full Preview desktop/runtime plus exhaustive phone QA. The combined suite is retried once only for transient timing failures.
 const target=new URL('./browser-preview-qa-once.mjs',import.meta.url);
-const mobileTarget=new URL('./browser-preview-mobile-qa.mjs',import.meta.url);
+const mobileTarget=new URL('./browser-preview-mobile-qa-runner.mjs',import.meta.url);
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const message=error=>String(error?.stack||error?.message||error||'unknown error');
 async function runAttempt(attempt){
