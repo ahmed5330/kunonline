@@ -17,7 +17,7 @@ jobs:
       PREVIEW_BASE: https://kunonline-preview.mr-a-mnaa.workers.dev
     steps:
       - uses: actions/checkout@v5
-      - name: Run safe authenticated J&T Create Order credential diagnostic
+      - name: Run safe authenticated J&T validation and persist Preview status
         run: |
           node - <<'NODE'
           const fs=require('fs'),crypto=require('crypto');
@@ -33,14 +33,15 @@ jobs:
             const clientId=String(cons[0].client_id||'').trim();if(!clientId)throw new Error('Preview J&T client id missing');
             const nonce=randomBytes(6).toString('hex'),id=`QA-JT-${nonce}`,email=`qa-jt-${nonce}@example.test`,password=`JtDiag!${randomBytes(12).toString('hex')}Aa1`,hash=await hashPassword(password),ts=new Date().toISOString();
             try{
-              await q('INSERT INTO users (id,email,name,password,role,client_id,status,created_at,last_login) VALUES (?,?,?,?,?,NULL,?,?,NULL)',[id,email,'CI J&T Diagnostic Admin',hash,'admin','active',ts]);
+              await q('INSERT INTO users (id,email,name,password,role,client_id,status,created_at,last_login) VALUES (?,?,?,?,?,NULL,?,?,NULL)',[id,email,'CI J&T Validation Admin',hash,'admin','active',ts]);
               const login=await fetch(`${base}/api/login`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password})});
               if(!login.ok)throw new Error(`Preview admin login failed ${login.status}`);
               const cookie=(login.headers.get('set-cookie')||'').split(';')[0];if(!cookie)throw new Error('Preview login cookie missing');
-              const r=await fetch(`${base}/api/jt/diagnostic`,{method:'POST',headers:{Cookie:cookie,'Content-Type':'application/json'},body:JSON.stringify({clientId,mode:'create-auth'})});
-              const p=await r.json().catch(()=>({}));if(!r.ok)throw new Error(`J&T diagnostic HTTP ${r.status}: ${String(p.error||p.code||'unknown').slice(0,250)}`);
-              const safe={mode:p.mode,connectionStatus:p.connectionStatus,has:p.has,shapes:p.shapes||{},secretShapes:p.secretShapes||[],configShapes:p.configShapes||[],attempts:(p.attempts||[]).map(a=>({label:a.label,httpStatus:a.httpStatus,code:a.code,message:a.message,success:a.success,credentialLikelyAccepted:a.credentialLikelyAccepted}))};
+              const r=await fetch(`${base}/api/jt/validate-auth`,{method:'POST',headers:{Cookie:cookie,'Content-Type':'application/json'},body:JSON.stringify({clientId})});
+              const p=await r.json().catch(()=>({}));
+              const safe={ok:Boolean(p.ok),status:p.status||null,externalConnectivityChecked:Boolean(p.externalConnectivityChecked),code:p.code||null,jtCode:p.jtCode||null,message:p.message||p.error||null};
               console.log(JSON.stringify(safe,null,2));
+              if(!r.ok||!p.ok)throw new Error(`J&T validation failed: ${String(p.message||p.error||p.code||`HTTP ${r.status}`).slice(0,300)}`);
             } finally {
               await q('DELETE FROM login_attempts WHERE email=?',[email]).catch(()=>{});
               await q('DELETE FROM users WHERE email=?',[email]).catch(()=>{});
