@@ -1,0 +1,190 @@
+name: Production J&T final deploy
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/production-jt-final-deploy.yml
+permissions:
+  contents: read
+concurrency:
+  group: kunonline-production-jt-final-20260910
+  cancel-in-progress: false
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      RELEASE_SHA: c8a46050f98f88b31339245fc0847d9e69c151c5
+      RELEASE_BUILD: production-commerce-v38-free-tier-safe-2026-09-10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: npm install --ignore-scripts
+      - name: Validate exact J&T release
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+          node scripts/jt-live-shipping-test.mjs
+          npm run check:production-config
+          node --check src/index-commerce-v38.js
+          node --check src/index-production-sync.js
+          node --check public/v2/modules-v75-customer-service-interactions.js
+          node --check public/v2/modules-v88-mobile-ux.js
+          grep -F "import app from './index-commerce-v38.js';" src/index-production-sync.js
+          grep -F "const BUILD='$RELEASE_BUILD';" src/index-production-sync.js
+          grep -F '/v2/modules-v81-jt-live-setup.js?v=81.2' public/v2/index.html
+          grep -F '/v2/modules-v84-jt-create-setup.js?v=84.2' public/v2/index.html
+          grep -F "intent:isCall?'call':'contact'" public/v2/modules-v75-customer-service-interactions.js
+          grep -F '/v2/modules-v88-mobile-ux.js?v=88.4' public/v2/modules-v75-customer-service-interactions.js
+          grep -F 'data-cs-action="call"' public/v2/modules-v88-mobile-ux.js
+          ! grep -F 'JT_BUSINESS_CREDENTIALS_MISSING' src/index-commerce-v38.js
+          ! grep -F 'requireCreateBusinessCredentials' src/index-commerce-v38.js
+  deploy:
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    environment:
+      name: production
+      url: https://app.kun-online.com
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      RELEASE_SHA: c8a46050f98f88b31339245fc0847d9e69c151c5
+      RELEASE_BUILD: production-commerce-v38-free-tier-safe-2026-09-10
+      BASE_URL: https://app.kun-online.com
+      WORKER_URL: https://kunonline.mr-a-mnaa.workers.dev
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: npm install --ignore-scripts
+      - name: Capture exact current Production Worker version
+        id: previous
+        run: |
+          set -euo pipefail
+          status="$(npx wrangler deployments status --config wrangler.production.toml --json)"
+          version="$(printf '%s' "$status" | node -e '
+            let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{
+              const root=JSON.parse(raw),hits=[];
+              const walk=x=>{if(Array.isArray(x)){for(const v of x)walk(v);return;}if(!x||typeof x!=="object")return;
+                const id=x.version_id||x.versionId,pct=x.percentage??x.traffic_percentage??x.trafficPercentage;
+                if(id)hits.push({id:String(id),pct:pct==null?null:Number(pct)});for(const v of Object.values(x))walk(v);};
+              walk(root);const unique=[...new Map(hits.map(x=>[x.id,x])).values()];
+              const full=unique.find(x=>x.pct===100||x.pct===1)||(unique.length===1?unique[0]:null);
+              if(!full)process.exit(2);process.stdout.write(full.id);
+            });')"
+          test -n "$version"
+          echo "version_id=$version" >> "$GITHUB_OUTPUT"
+          echo "Captured pre-release Production Worker version: $version"
+      - name: Revalidate release immediately before deploy
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+          node scripts/jt-live-shipping-test.mjs
+          npm run check:production-config
+      - name: Deploy validated Production Worker and assets only
+        id: deploy_worker
+        run: |
+          set -euo pipefail
+          output="$(npx wrangler deploy --config wrangler.production.toml --message "Validated J&T + customer-service call/contact release $RELEASE_SHA" 2>&1)"
+          printf '%s\n' "$output"
+          version="$(printf '%s\n' "$output" | sed -nE 's/.*Current Version ID: ([0-9a-f-]{36}).*/\1/p' | tail -1)"
+          test -n "$version"
+          echo "version_id=$version" >> "$GITHUB_OUTPUT"
+          echo "Wrangler release version reference: $version"
+      - name: Verify Production runtime is the validated release
+        run: |
+          set -euo pipefail
+          ready=0
+          for attempt in $(seq 1 40); do
+            code="$(curl --silent --show-error -o /tmp/worker-health.json -w '%{http_code}' "$WORKER_URL/health/easyorders-sync" || true)"
+            if [ "$code" = "200" ] && RELEASE_BUILD="$RELEASE_BUILD" node -e "const fs=require('fs');const x=JSON.parse(fs.readFileSync('/tmp/worker-health.json','utf8'));process.exit(x.ok&&x.build===process.env.RELEASE_BUILD?0:1)"; then
+              ready=1
+              echo "Validated release runtime reached workers.dev on attempt $attempt/40."
+              break
+            fi
+            echo "Waiting for validated Worker runtime: HTTP $code attempt=$attempt/40"
+            sleep 2
+          done
+          test "$ready" -eq 1
+          status="$(npx wrangler deployments status --config wrangler.production.toml --json)"
+          printf '%s' "$status" | node -e 'let r="";process.stdin.on("data",d=>r+=d).on("end",()=>console.log("Cloudflare deployment status captured for audit."));'
+      - name: Production post-deploy J&T and app acceptance
+        id: acceptance
+        run: |
+          set -euo pipefail
+          ready=0
+          for attempt in $(seq 1 50); do
+            health_code="$(curl --silent --show-error -o /tmp/easy-health.json -w '%{http_code}' "$BASE_URL/health/easyorders-sync" || true)"
+            v2_code="$(curl --silent --show-error -o /tmp/v2.html -w '%{http_code}' "$BASE_URL/v2/" || true)"
+            call_asset_code="$(curl --silent --show-error -o /tmp/call-v75.js -w '%{http_code}' "$BASE_URL/v2/modules-v75-customer-service-interactions.js?v=75.3" || true)"
+            mobile_asset_code="$(curl --silent --show-error -o /tmp/mobile-v88.js -w '%{http_code}' "$BASE_URL/v2/modules-v88-mobile-ux.js?v=88.4" || true)"
+            build_ok=0
+            if [ "$health_code" = "200" ] && RELEASE_BUILD="$RELEASE_BUILD" node -e "const fs=require('fs');const x=JSON.parse(fs.readFileSync('/tmp/easy-health.json','utf8'));process.exit(x.ok&&x.build===process.env.RELEASE_BUILD?0:1)"; then build_ok=1; fi
+            if [ "$build_ok" = "1" ] && [ "$v2_code" = "200" ] && [ "$call_asset_code" = "200" ] && [ "$mobile_asset_code" = "200" ] && \
+               grep -Fq '/v2/modules-v81-jt-live-setup.js?v=81.2' /tmp/v2.html && \
+               grep -Fq '/v2/modules-v84-jt-create-setup.js?v=84.2' /tmp/v2.html && \
+               grep -Fq "intent:isCall?'call':'contact'" /tmp/call-v75.js && \
+               grep -Fq '/v2/modules-v88-mobile-ux.js?v=88.4' /tmp/call-v75.js && \
+               grep -Fq 'data-cs-action="call"' /tmp/mobile-v88.js; then
+              ready=1
+              echo "Custom domain reached validated Commerce v38 + J&T + call/contact release on attempt $attempt/50."
+              break
+            fi
+            echo "Waiting for Production propagation: easy=$health_code build=$build_ok v2=$v2_code call=$call_asset_code mobile=$mobile_asset_code attempt=$attempt/50"
+            sleep 2
+          done
+          test "$ready" -eq 1
+
+          assets_ready=0
+          for attempt in $(seq 1 25); do
+            a81="$(curl --silent --show-error -o /tmp/jt81.js -w '%{http_code}' "$BASE_URL/v2/modules-v81-jt-live-setup.js?v=81.2" || true)"
+            a84="$(curl --silent --show-error -o /tmp/jt84.js -w '%{http_code}' "$BASE_URL/v2/modules-v84-jt-create-setup.js?v=84.2" || true)"
+            if [ "$a81" = "200" ] && [ "$a84" = "200" ] && \
+               grep -Fq 'اختياري — فقط لو J&T طلبته لحسابك' /tmp/jt81.js && \
+               grep -Fq 'markBusinessOptional' /tmp/jt84.js; then
+              assets_ready=1
+              break
+            fi
+            echo "Waiting for J&T assets: v81=$a81 v84=$a84 attempt=$attempt/25"
+            sleep 2
+          done
+          test "$assets_ready" -eq 1
+
+          api_ready=0
+          for attempt in $(seq 1 25); do
+            api_status="$(curl --silent --show-error -o /tmp/jt-protected.json -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{}' "$BASE_URL/api/jt/shipments/KUN-PROD-AUTH-PROBE" || true)"
+            if [ "$api_status" = "401" ]; then api_ready=1; break; fi
+            echo "Waiting for protected J&T API boundary: HTTP $api_status attempt=$attempt/25"
+            sleep 2
+          done
+          test "$api_ready" -eq 1
+          ! grep -F 'JT_BUSINESS_CREDENTIALS_MISSING' /tmp/jt-protected.json
+
+          node -e "const x=JSON.parse(require('fs').readFileSync('/tmp/easy-health.json','utf8')); if(!x.ok||x.build!==process.env.RELEASE_BUILD) process.exit(2); console.log('Easy Orders + Commerce v38 Production wrapper healthy:', x.build)"
+          node scripts/verify-cloudflare-crons.mjs kunonline '*/5 * * * *' '0 */2 * * *'
+          echo 'Production acceptance passed: validated Commerce v38 runtime, customer-service call/contact persistence + mobile resume safety, J&T optional Enterprise credentials, protected API boundary, Easy Orders wrapper and Cron ownership are healthy.'
+      - name: Roll back exact prior Worker version if Production acceptance fails
+        if: failure() && steps.deploy_worker.outputs.version_id != '' && steps.previous.outputs.version_id != ''
+        run: |
+          set -euo pipefail
+          echo "Acceptance failed. Restoring prior Production Worker version ${{ steps.previous.outputs.version_id }}"
+          npx wrangler versions deploy "${{ steps.previous.outputs.version_id }}@100%" --yes --config wrangler.production.toml --message "Automatic rollback after failed J&T + customer-service Production acceptance"
+          restored=0
+          for attempt in $(seq 1 30); do
+            code="$(curl --silent --show-error -o /tmp/rollback-health -w '%{http_code}' "$BASE_URL/healthz" || true)"
+            if [ "$code" = "200" ]; then restored=1; break; fi
+            echo "Waiting for rollback propagation: HTTP $code attempt=$attempt/30"
+            sleep 2
+          done
+          test "$restored" -eq 1
+          echo 'Prior Production Worker version restored and health-checked.'
