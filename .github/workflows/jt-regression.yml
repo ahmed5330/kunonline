@@ -4,6 +4,7 @@ on:
     branches: [develop/ux-system-upgrade]
     paths:
       - 'src/jt-express-eg-api.js'
+      - 'src/jt-express-eg-cancel.js'
       - 'src/jt-express-eg-validation.js'
       - 'src/index-commerce-v37.js'
       - 'src/index-commerce-v38.js'
@@ -12,10 +13,13 @@ on:
       - 'public/v2/modules-v84-jt-create-setup.js'
       - 'public/v2/index.html'
       - 'scripts/jt-live-shipping-test.mjs'
+      - 'scripts/jt-cancel-qa-test.mjs'
+      - 'scripts/live-preview-jt-create-order-qa-once.mjs'
       - '.github/workflows/jt-regression.yml'
   pull_request:
     paths:
       - 'src/jt-express-eg-api.js'
+      - 'src/jt-express-eg-cancel.js'
       - 'src/jt-express-eg-validation.js'
       - 'src/index-commerce-v37.js'
       - 'src/index-commerce-v38.js'
@@ -24,6 +28,8 @@ on:
       - 'public/v2/modules-v84-jt-create-setup.js'
       - 'public/v2/index.html'
       - 'scripts/jt-live-shipping-test.mjs'
+      - 'scripts/jt-cancel-qa-test.mjs'
+      - 'scripts/live-preview-jt-create-order-qa-once.mjs'
 permissions:
   contents: read
 jobs:
@@ -35,5 +41,7 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
-      - name: Validate J&T Create Order contract
-        run: node scripts/jt-live-shipping-test.mjs
+      - name: Validate J&T Create Order and cancellation contracts
+        run: |
+          node scripts/jt-live-shipping-test.mjs
+          node scripts/jt-cancel-qa-test.mjs
