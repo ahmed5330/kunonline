@@ -13,7 +13,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-apk:
@@ -40,3 +40,20 @@ jobs:
           path: android-app/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
+      - name: Prepare stable APK download
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/develop/ux-system-upgrade'
+        run: cp android-app/app/build/outputs/apk/debug/app-debug.apk Kun-Online-Mobile.apk
+      - name: Publish stable Android download
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/develop/ux-system-upgrade'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if ! gh release view android-latest >/dev/null 2>&1; then
+            gh release create android-latest \
+              --target "$GITHUB_SHA" \
+              --title "Kun Online Android" \
+              --notes "Latest development Android APK for direct installation. Debug-signed beta build." \
+              --prerelease
+          fi
+          gh release upload android-latest Kun-Online-Mobile.apk --clobber
