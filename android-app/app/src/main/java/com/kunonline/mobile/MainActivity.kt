@@ -18,6 +18,7 @@ class MainActivity : Activity() {
     private var pendingPhone: String? = null
     private val callPermissionRequest = 2001
     private val callerIdRoleRequest = 2002
+    private val contactsPermissionRequest = 2003
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -63,8 +64,11 @@ class MainActivity : Activity() {
 
     private fun requestCallerIdRoleIfNeeded() {
         val roleManager = getSystemService(RoleManager::class.java)
-        if (!roleManager.isRoleAvailable(RoleManager.ROLE_CALL_SCREENING) ||
-            roleManager.isRoleHeld(RoleManager.ROLE_CALL_SCREENING)) return
+        if (!roleManager.isRoleAvailable(RoleManager.ROLE_CALL_SCREENING)) return
+        if (roleManager.isRoleHeld(RoleManager.ROLE_CALL_SCREENING)) {
+            requestContactsCoverageIfNeeded()
+            return
+        }
 
         AlertDialog.Builder(this)
             .setTitle("تفعيل معرفة العميل المتصل")
@@ -76,6 +80,21 @@ class MainActivity : Activity() {
                 )
             }
             .setNegativeButton("لاحقًا", null)
+            .show()
+    }
+
+    private fun requestContactsCoverageIfNeeded() {
+        if (checkSelfPermission(Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED) return
+        val prefs = getSharedPreferences("kun_mobile", MODE_PRIVATE)
+        if (prefs.getBoolean("contactsCoverageAsked", false)) return
+        prefs.edit().putBoolean("contactsCoverageAsked", true).apply()
+        AlertDialog.Builder(this)
+            .setTitle("إظهار Kun Online لكل المكالمات")
+            .setMessage("Android يحتاج إذن جهات الاتصال فقط لكي يرسل لتطبيق Caller ID المكالمات من أرقام محفوظة عندك. Kun Online لا يقرأ أو يرفع دفتر جهات الاتصال؛ المطابقة تتم مع عملاء المتجر داخل النظام.")
+            .setPositiveButton("السماح") { _, _ ->
+                requestPermissions(arrayOf(Manifest.permission.READ_CONTACTS), contactsPermissionRequest)
+            }
+            .setNegativeButton("تخطي", null)
             .show()
     }
 
@@ -92,12 +111,21 @@ class MainActivity : Activity() {
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == contactsPermissionRequest) return
         if (requestCode != callPermissionRequest) return
         val phone = pendingPhone.also { pendingPhone = null } ?: return
         if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
             startActivity(Intent(Intent.ACTION_CALL, Uri.parse("tel:${Uri.encode(phone)}")))
         } else {
             startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:${Uri.encode(phone)}")))
+        }
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == callerIdRoleRequest && resultCode == RESULT_OK) {
+            requestContactsCoverageIfNeeded()
         }
     }
 
