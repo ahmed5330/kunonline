@@ -1,2 +1,1 @@
-Run the safe authenticated J&T Create Order business-signature diagnostic against Preview. The probe deliberately sends an incomplete receiver so J&T cannot create a shipment or AWB; it is only to distinguish signature rejection from downstream shipment-field validation. Production remains untouched.
-Authorized by the user on 2026-09-14 after J&T returned 1450030131 Business parameter signature verification failed with saved integration data. Do not print secret values.
+Run the definitive safe J&T business-signature diagnostic against Preview. The existing diagnostic mode now routes to Print Order with a fake AWB, so it cannot create or modify a shipment. Production remains untouched. Do not print secret values.
