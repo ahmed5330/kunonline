@@ -30,7 +30,7 @@ await assert.rejects(()=>cancelJtShipment({txlogisticId:'QA-ORDER-FAIL',secrets,
 
 const worker=await readFile(new URL('../src/index-commerce-v37.js',import.meta.url),'utf8');
 const qa=await readFile(new URL('./live-preview-jt-create-order-qa-once.mjs',import.meta.url),'utf8');
-for(const marker of ["env.APP_ENV!=='preview'","me.role!=='admin'","row.source,80)!=='qa_jt_live'",'jt_shipment_cancelled','/api/jt/qa/shipments/'])assert.ok(worker.includes(marker),`Preview cancellation route missing ${marker}`);
+for(const marker of ["env.APP_ENV!=='preview'","me.role!=='admin'","row.source,80)!=='qa_jt_live'",'jt_shipment_cancelled','cancelQaShipmentRoute','qaCancel=path.match'])assert.ok(worker.includes(marker),`Preview cancellation route missing ${marker}`);
 for(const marker of ['AWB_CREATED_AND_CANCELLED','/api/jt/qa/shipments/','carrier cancellation failed',"cancelled.state!=='cancelled'","event_type='jt_shipment_cancelled'"])assert.ok(qa.includes(marker),`One-shot J&T QA missing safe cleanup guard ${marker}`);
 assert.ok(qa.includes("base!=='https://kunonline-preview.mr-a-mnaa.workers.dev'"),'One-shot J&T QA must be hard-restricted to Preview');
 console.log('J&T cancellation QA checks passed: cancelOrder uses Business Signature, fails closed, and one-shot live QA cannot succeed until its synthetic AWB is cancelled at J&T and audited locally.');
