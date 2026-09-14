@@ -5,6 +5,7 @@ const base=(process.argv[2]||'https://kunonline-preview.mr-a-mnaa.workers.dev').
 const accountId=process.env.CLOUDFLARE_ACCOUNT_ID;
 const token=process.env.CLOUDFLARE_API_TOKEN;
 if(!accountId||!token)throw new Error('Cloudflare Preview credentials are required');
+if(base!=='https://kunonline-preview.mr-a-mnaa.workers.dev')throw new Error('J&T Create Order QA is restricted to Kun Online Preview');
 
 const config=await readFile(new URL('../wrangler.preview.toml',import.meta.url),'utf8');
 const databaseId=config.match(/database_id\s*=\s*"([^"]+)"/)?.[1];
@@ -99,7 +100,7 @@ try{
     status=response.status;text=await response.text();
   }catch(error){timedOut=error?.name==='TimeoutError'||error?.name==='AbortError';text=`${error?.name||'Error'}: ${error?.message||error}`;}
 
-  if(timedOut){await sleep(5000);}
+  if(timedOut)await sleep(5000);
   const orderRows=await d1('SELECT id,state,awb,checkpoint FROM orders WHERE id=? AND client_id=?',[orderId,connection.client_id]);
   const current=orderRows[0]||{};
   const errorRows=await safeD1('SELECT last_error FROM store_connections WHERE id=? AND client_id=?',[connection.id,connection.client_id]);
@@ -115,9 +116,28 @@ try{
   console.log('JT_CREATE_QA_LAST_ERROR',lastError.slice(0,2000));
   console.log('JT_CREATE_QA_RESULT',hasAwb?'AWB_CREATED':timedOut?'TIMEOUT_UNCERTAIN':status>=200&&status<300?'HTTP_SUCCESS_NO_AWB':'JNT_REJECTED_OR_APP_ERROR');
 
-  if(hasAwb){
-    await d1('UPDATE orders SET checkpoint=?,note=? WHERE id=? AND client_id=?',['QA J&T shipment created — cancel/test only','ONE-TIME PREVIEW J&T QA — TEST SHIPMENT; DO NOT FULFILL',orderId,connection.client_id]).catch(()=>{});
+  if(!hasAwb){
+    if(timedOut)throw new Error('J&T Create Order timed out and AWB is still unknown; preserving QA order for manual reconciliation');
+    throw new Error(`J&T Create Order QA did not produce an AWB. HTTP ${status||'NO_RESPONSE'}: ${text.slice(0,900)}`);
   }
+
+  await d1('UPDATE orders SET checkpoint=?,note=? WHERE id=? AND client_id=?',['QA J&T shipment created — carrier cancellation pending','ONE-TIME PREVIEW J&T QA — TEST SHIPMENT; DO NOT FULFILL',orderId,connection.client_id]).catch(()=>{});
+
+  const cancelBody={clientId:connection.client_id,reason:'Kun Online one-shot Preview QA completed — cancel test shipment immediately'};
+  const cancelResponse=await fetch(`${base}/api/jt/qa/shipments/${encodeURIComponent(orderId)}/cancel`,{method:'POST',headers:{'Content-Type':'application/json',Cookie:cookie},body:JSON.stringify(cancelBody),signal:AbortSignal.timeout(60000)});
+  const cancelText=await cancelResponse.text();
+  console.log('JT_CANCEL_QA_HTTP',cancelResponse.status);
+  console.log('JT_CANCEL_QA_RESPONSE',cancelText.slice(0,4000));
+  if(!cancelResponse.ok)throw new Error(`J&T QA shipment was created but carrier cancellation failed ${cancelResponse.status}: ${cancelText.slice(0,900)}`);
+
+  const cancelledRows=await d1('SELECT state,awb,checkpoint FROM orders WHERE id=? AND client_id=?',[orderId,connection.client_id]);
+  const cancelled=cancelledRows[0]||{};
+  const cancelEvents=await safeD1("SELECT COUNT(*) count FROM order_events WHERE order_id=? AND client_id=? AND event_type='jt_shipment_cancelled'",[orderId,connection.client_id]);
+  const cancelEventCount=Number(cancelEvents?.[0]?.count||0);
+  console.log('JT_CANCEL_QA_STATE',cancelled.state||'');
+  console.log('JT_CANCEL_QA_EVENT_COUNT',cancelEventCount);
+  if(cancelled.state!=='cancelled'||cancelEventCount!==1)throw new Error(`Carrier cancellation returned success but Kun Online audit state is incomplete: state=${cancelled.state||''}, events=${cancelEventCount}`);
+  console.log('JT_CREATE_CANCEL_QA_RESULT','AWB_CREATED_AND_CANCELLED');
 }finally{
   if(logged||email){await d1('DELETE FROM login_attempts WHERE email=?',[email]).catch(()=>{});await d1('DELETE FROM users WHERE email=?',[email]).catch(()=>{});}
   if(!keepOrder)await d1('DELETE FROM orders WHERE id=? AND client_id=?',[orderId,connection.client_id]).catch(()=>{});
