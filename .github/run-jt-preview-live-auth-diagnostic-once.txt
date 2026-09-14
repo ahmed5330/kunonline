@@ -1,2 +1,2 @@
-Run the safe authenticated J&T business-signature diagnostic against the currently deployed Preview after adding live Save & Test validation. Read-only carrier calls only; do not create a shipment or AWB. Production remains untouched.
-Authorized by the user on 2026-09-14 after J&T returned 1450030131 Business parameter signature verification failed despite saved integration data. Verify the saved Developer Info and Business Info against J&T without printing secret values.
+Run the safe authenticated J&T Create Order business-signature diagnostic against Preview. The probe deliberately sends an incomplete receiver so J&T cannot create a shipment or AWB; it is only to distinguish signature rejection from downstream shipment-field validation. Production remains untouched.
+Authorized by the user on 2026-09-14 after J&T returned 1450030131 Business parameter signature verification failed with saved integration data. Do not print secret values.
