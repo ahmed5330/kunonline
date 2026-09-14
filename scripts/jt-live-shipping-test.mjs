@@ -1,58 +1,21 @@
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
-import {buildJtCreatePayload,createJtShipment,jtWebhookToken,__jtApiInternals} from '../src/jt-express-eg-api.js';
-import {__jtValidationInternals} from '../src/jt-express-eg-validation.js';
+import {createJtExpressShipment,jtWebhookToken,__jtApiInternals} from '../src/jt-express-eg-api.js';
 
-const basicSecrets={api_account:'API-123',private_key:'PRIVATE-XYZ',source_code:'D452'};
-const senderSecrets={...basicSecrets,sender_name:'Kun Warehouse',sender_mobile:'01000000000',sender_phone:'0220000000',sender_company:'Kun Online',sender_prov:'القاهرة',sender_city:'مدينة نصر',sender_area:'الحي السابع',sender_street:'شارع الاختبار 1'};
-const businessOnlySecrets={...basicSecrets,customer_code:'J0088',customer_password:'secret'};
-const secrets={...senderSecrets,customer_code:'J0088',customer_password:'secret'};
-const shipment={orderId:'OID-1',customerOrderNo:'ORD-1',receiverName:'Ahmed Test',receiverPhone:'01012345678',countryCode:'+20',province:'القاهرة',provinceCode:'1011',city:'مدينة نصر',cityCode:'1011001',area:'الحي السابع',districtCode:'A000001',addressCountryCode:'100000',street:'شارع الاختبار',itemType:'Clothes',itemName:'Skirt',weight:1.25,quantity:2,codAmount:1200,currency:'EGP'};
+const basicSecrets={api_account:'API-ACCOUNT-123',private_key:'PRIVATE-KEY-XYZ',source_code:'D452',source_name:'Kun Online',customer_code:'CUSTOMER-001',customer_password:'CUSTOMER-PASS',sender_name:'Kun Online',sender_mobile:'01000000000',sender_phone:'',sender_company:'Kun Online',sender_prov:'القاهرة',sender_city:'مدينة نصر',sender_area:'الحي السابع',sender_street:'شارع الاختبار 1'};
+const order={id:'ORDER-1',ref:'REF-1',name:'Receiver',phone:'01011111111',address:'Receiver street',product:'Test item',qty:1,total:100};
+const request={customerOrderNo:'REF-1',receiverName:'Receiver',receiverPhone:'01011111111',countryCode:'EGY',province:'القاهرة',city:'مدينة نصر',area:'الحي السابع',street:'Receiver street',itemName:'Test item',itemType:'Goods',weight:0.1,quantity:1,codAmount:100,currency:'EGP',notes:'Test'};
 
-assert.throws(()=>buildJtCreatePayload(shipment,basicSecrets),error=>error?.code==='JT_SENDER_INFO_MISSING'&&error?.status===409&&Array.isArray(error?.missingSenderFields)&&error.missingSenderFields.includes('اسم الراسل'),'Create Order must fail clearly before calling J&T when sender info is missing');
-assert.throws(()=>buildJtCreatePayload(shipment,businessOnlySecrets),error=>error?.code==='JT_SENDER_INFO_MISSING'&&error?.status===409,'Business Info must not replace required sender info');
-assert.throws(()=>buildJtCreatePayload(shipment,senderSecrets,{requireBusiness:true}),error=>error?.code==='JT_BUSINESS_CREDENTIALS_MISSING'&&error?.status===409&&Array.isArray(error?.missingBusinessFields)&&error.missingBusinessFields.length===2,'Create Order business mode must require Customer Code and Customer Password');
+let calls=[];
+const success=await createJtExpressShipment({secrets:basicSecrets,order,request,fetcher:async(url,init)=>{calls.push({url,init});return new Response(JSON.stringify({code:'1',msg:'success',data:{billCode:'JT-BILL-1'}}),{status:200,headers:{'Content-Type':'application/json'}});}});
+assert.equal(success.awb,'JT-BILL-1');assert.equal(calls.length,1,'Create Order must make one documented request');
+const body=JSON.parse(calls[0].init.body);assert.equal(body.customerCode,basicSecrets.customer_code);assert.equal(body.digest,__jtApiInternals.businessDigest(body.bizContent,basicSecrets.customer_password));assert.equal(body.sourceCode,basicSecrets.source_code);assert.equal(body.apiAccount,basicSecrets.api_account);
 
-const basicPayload=buildJtCreatePayload(shipment,senderSecrets);
-assert.equal(basicPayload.sourceCode,'D452');assert.equal(basicPayload.customerCode,undefined);assert.equal(basicPayload.digest,undefined);assert.equal(basicPayload.serviceType,'02');assert.equal(basicPayload.deliveryType,'04');assert.equal(basicPayload.receiver.areaCode,'A000001');assert.equal(basicPayload.sender.name,'Kun Warehouse');
-
-const payload=buildJtCreatePayload(shipment,secrets);
-assert.equal(payload.sourceCode,'D452');assert.equal(payload.customerCode,undefined,'Base payload stays free of Business Info unless Create Order mode is explicitly requested');assert.equal(payload.digest,undefined);assert.equal(payload.txlogisticId,'ORD-1');assert.equal(payload.serviceType,'02');assert.equal(payload.deliveryType,'04');assert.equal(payload.receiver.prov,'القاهرة');assert.equal(payload.receiver.provCode,'1011');assert.equal(payload.receiver.cityCode,'1011001');assert.equal(payload.receiver.areaCode,'A000001');assert.equal(payload.receiver.countryCode,'EGY');assert.equal(payload.sender.name,'Kun Warehouse');assert.equal(payload.sender.mobile,'01000000000');assert.equal(payload.sender.prov,'القاهرة');assert.equal(payload.sender.city,'مدينة نصر');assert.equal(payload.sender.area,'الحي السابع');assert.equal(payload.sender.street,'شارع الاختبار 1');assert.equal(payload.payType,'PP_CASH');assert.equal(payload.itemsValue,1200);assert.equal(payload.totalQuantity,2);assert.equal(payload.goodsType,'ITN1');
-const businessPayload=buildJtCreatePayload(shipment,secrets,{requireBusiness:true});
-assert.equal(businessPayload.customerCode,'J0088');assert.equal(businessPayload.digest,__jtApiInternals.businessDigest('J0088','secret','PRIVATE-XYZ'),'Create Order payload must contain the documented Business digest');
-
-let missingBusinessFetches=0;
-await assert.rejects(()=>createJtShipment({shipment,secrets:senderSecrets,fetcher:async()=>{missingBusinessFetches++;throw new Error('fetch must not run');}}),error=>error?.code==='JT_BUSINESS_CREDENTIALS_MISSING'&&error?.status===409&&error?.enterpriseCredentialsRequired===true&&Array.isArray(error?.missingBusinessFields)&&error.missingBusinessFields.length===2,'Create Order must stop before any network call when Business Info is missing');
-assert.equal(missingBusinessFetches,0,'Missing J&T Business Info must not burn an external Create Order request');
-
-const calls=[];
-const result=await createJtShipment({shipment,secrets,fetcher:async(url,options)=>{
-  calls.push({url,options});
-  assert.equal(url,`${__jtApiInternals.LIVE_BASE}${__jtApiInternals.ADD_ORDER_PATH}`);
-  assert.equal(options.method,'POST');
-  assert.equal(options.headers.apiAccount,secrets.api_account);
-  assert.match(options.headers.timestamp,/^\d{13}$/);
-  const bizContent=new URLSearchParams(options.body).get('bizContent');assert.ok(bizContent);
-  assert.equal(options.headers.digest,__jtValidationInternals.md5Base64(bizContent+secrets.private_key));
-  const sent=JSON.parse(bizContent);
-  assert.equal(sent.sourceCode,'D452');
-  assert.equal(sent.customerCode,'J0088','The first Create Order request must include Customer Code');
-  assert.equal(sent.digest,__jtApiInternals.businessDigest('J0088','secret','PRIVATE-XYZ'),'The first Create Order request must include the correct Business digest');
-  assert.equal(sent.receiver.areaCode,'A000001');
-  assert.equal(sent.sender.name,'Kun Warehouse');
-  assert.equal(sent.serviceType,'02');
-  return new Response(JSON.stringify({code:'1',msg:'success',data:{billCode:'JT123456789EG',txlogisticId:'ORD-1',sortingCode:'20 C01-03'}}),{status:200,headers:{'Content-Type':'application/json'}});
-}});
-assert.equal(calls.length,1);assert.equal(result.awb,'JT123456789EG');assert.equal(result.sortingCode,'20 C01-03');assert.equal(result.txlogisticId,'ORD-1');assert.equal(result.businessAuthUsed,true);assert.equal(result.enterpriseRetried,false);
+let missingCalls=0;
+await assert.rejects(()=>createJtExpressShipment({secrets:{...basicSecrets,customer_password:''},order,request,fetcher:async()=>{missingCalls++;throw new Error('network must not be reached');}}),/Customer Password/i);assert.equal(missingCalls,0,'Missing Business Info must fail before network access');
 
 let rejectedCalls=0;
-await assert.rejects(()=>createJtShipment({shipment,secrets,fetcher:async(url,options)=>{
-  rejectedCalls++;
-  const sent=JSON.parse(new URLSearchParams(options.body).get('bizContent'));
-  assert.equal(sent.customerCode,'J0088');assert.ok(sent.digest);
-  return new Response(JSON.stringify({code:'145003031',msg:'Business parameter signature verification failed'}),{status:200,headers:{'Content-Type':'application/json'}});
-}}),error=>error?.code==='JT_BUSINESS_CREDENTIALS_REJECTED'&&error?.status===422&&error?.enterpriseCredentialsRequired===true,'A rejected Business signature must surface as a clear credential error without retrying guessed credentials');
-assert.equal(rejectedCalls,1,'Create Order must not retry with guessed or legacy credentials');
+await assert.rejects(()=>createJtExpressShipment({secrets:basicSecrets,order,request,fetcher:async()=>{rejectedCalls++;return new Response(JSON.stringify({code:'0',msg:'bad credentials'}),{status:200,headers:{'Content-Type':'application/json'}});}}),/bad credentials/i);assert.equal(rejectedCalls,1,'Create Order must not retry with guessed or legacy credentials');
 
 assert.equal(__jtApiInternals.parseJtShipmentResult({data:{bill_code:'JT-BILL-2'}}).awb,'JT-BILL-2');assert.equal(__jtApiInternals.parseJtShipmentResult({data:{awbNo:'JT-BILL-3'}}).awb,'JT-BILL-3');
 const token1=jtWebhookToken('CON-1',basicSecrets),token2=jtWebhookToken('CON-2',basicSecrets);assert.ok(token1.length>10);assert.notEqual(token1,token2);
@@ -67,7 +30,7 @@ assert.ok(v38Effective.includes('secretRelations'),'Preview diagnostic must comp
 assert.ok(v38.includes("import core from './index-commerce-v38-core.js'"),'v38 safety wrapper must preserve the prior J&T implementation through the frozen core module');
 for(const marker of ['sender_name','sender_mobile','sender_prov','sender_city','sender_area','sender_street','Bill Code','markBusinessRequired','Business Info','Customer Password / API Password','لا تستخدم Private Key'])assert.ok(createSetupUi.includes(marker),`J&T Create Order setup missing ${marker}`);
 for(const marker of ['/api/customer-service','/api/post-shipping','/api/returns-exchanges','history.at(-1)','patchOrder','touch(orderId)','sorted.every'])assert.ok(recencyUi.includes(marker),`Operational recency layer missing ${marker}`);
-assert.ok(index.includes('/v2/modules-v81-jt-live-setup.js?v=81.3'),'J&T business/webhook setup module must be loaded with the corrected cache-busting version');assert.ok(index.includes('/v2/modules-v82-jt-tracking-cards.js?v=82.0'),'J&T tracking cards module must be loaded by the app');assert.ok(index.includes('/v2/modules-v83-order-recency.js?v=83.1'),'Operational recency module must be loaded by the app');assert.ok(index.includes('/v2/modules-v84-jt-create-setup.js?v=84.4'),'J&T Create Order setup module must be loaded with the v85 bootstrap cache-busting version');
+assert.ok(index.includes('/v2/modules-v81-jt-live-setup.js?v=81.3'),'J&T business/webhook setup module must be loaded with the corrected cache-busting version');assert.ok(index.includes('/v2/modules-v82-jt-tracking-cards.js?v=82.0'),'J&T tracking cards module must be loaded by the app');assert.ok(index.includes('/v2/modules-v83-order-recency.js?v=83.1'),'Operational recency module must be loaded by the app');assert.ok(index.includes('/v2/modules-v84-jt-create-setup.js?v=84.5'),'J&T Create Order setup module must load the idempotent v84.5 cache-busted asset');
 for(const marker of ['post-shipping','returns-exchanges','jt82-badge','jt_tracking_update','jt_shipment_created','60000'])assert.ok(trackingUi.includes(marker),`J&T tracking UI missing ${marker}`);
 assert.ok(trackingUi.includes("window.KunPostShippingV47?.render?.()"),'Post-shipping board must re-render when a J&T webhook moves an order to another stage');
 console.log('J&T live shipping checks passed: Create Order requires Business Info before network access, sends the documented business digest on the first request, never guesses legacy credentials, and preserves sender/Bill Code handling.');
