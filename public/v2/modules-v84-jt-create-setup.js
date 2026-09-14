@@ -1,7 +1,15 @@
-/* Kun Online v84.4 — complete J&T Egypt Create Order setup + global v85 safety bootstrap. */
+/* Kun Online v84.5 — complete J&T Egypt Create Order setup + global v85 safety bootstrap, with idempotent DOM enhancement. */
 (function(){
   function field(label,secret,{required=true,type='text',placeholder='اتركه فارغًا للاحتفاظ بالقيمة الحالية'}={}){const req=required?' <span class="meta">مطلوب لإنشاء الشحنة</span>':' <span class="meta">اختياري</span>';return `<label>${label}${req}<input class="input intSecret" type="${type}" autocomplete="new-password" data-secret="${secret}" aria-label="${label}" placeholder="${placeholder}"></label>`;}
-  function markBusinessRequired(input,label){if(!input)return;input.dataset.jtCreateRequired='1';const meta=input.closest('label')?.querySelector('.meta');if(meta)meta.textContent='مطلوب لإنشاء البوليصة';input.placeholder=label==='Customer Code'?'Customer Code / Merchant Code الذي أصدرته J&T':'Customer Password / API Password من J&T — ليست Private Key';}
+  function markBusinessRequired(input,label){
+    if(!input)return;
+    const requiredText='مطلوب لإنشاء البوليصة';
+    const placeholder=label==='Customer Code'?'Customer Code / Merchant Code الذي أصدرته J&T':'Customer Password / API Password من J&T — ليست Private Key';
+    if(input.dataset.jtCreateRequired!=='1')input.dataset.jtCreateRequired='1';
+    const meta=input.closest('label')?.querySelector('.meta');
+    if(meta&&meta.textContent!==requiredText)meta.textContent=requiredText;
+    if(input.placeholder!==placeholder)input.placeholder=placeholder;
+  }
   function enhance(panel){if(!panel||!panel.textContent.includes('J&T Express Egypt'))return;const grid=panel.querySelector('.form-grid');if(!grid)return;
     markBusinessRequired(grid.querySelector('[data-secret="customer_code"]'),'Customer Code');markBusinessRequired(grid.querySelector('[data-secret="customer_password"]'),'Customer Password');
     if(grid.querySelector('[data-jt84-sender]'))return;
@@ -12,5 +20,5 @@
   function loadSystemSafety(){if(!window.KunSafety85&&!document.querySelector('script[data-kun-v85-bootstrap]')){const script=document.createElement('script');script.src='/v2/modules-v85-system-safety.js?v=85.0';script.async=false;script.dataset.kunV85Bootstrap='1';document.body.appendChild(script);}loadDashboardInputs();}
   function boot(){new MutationObserver(()=>queueMicrotask(scan)).observe(document.body,{childList:true,subtree:true});scan();loadSystemSafety();}
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
-  window.KunJtCreateSetupV84={scan,loadSystemSafety,loadDashboardInputs,version:'84.4'};
+  window.KunJtCreateSetupV84={scan,loadSystemSafety,loadDashboardInputs,version:'84.5'};
 })();
