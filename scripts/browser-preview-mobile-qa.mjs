@@ -65,9 +65,14 @@ try{
     }
   }
 
-  await setViewport(390,844);
+  // The exhaustive section sweep intentionally starts many asynchronous view loaders. Re-enter the app
+  // before the targeted J&T setup regression so a late loader from another section cannot overwrite
+  // the integrations DOM and create a false freeze/availability failure.
+  await setViewport(390,844);await navigate(`${base}/v2/`);
+  await waitFor(`document.documentElement.dataset.mobileUx==='v88.2-ready'&&window.KunMobileUXV88?.version==='88.2'&&window.KunIntegrationsV16?.version==='16.5'&&document.getElementById('root')`,'fresh mobile integrations runtime',20000);await sleep(500);
   await evalJs(`document.querySelector('.nav button[data-view="integrations"]').click()`);
-  await waitFor(`[...document.querySelectorAll('#intGroups tbody tr')].some(tr=>(tr.querySelector('.meta')?.textContent||'').trim()==='jt'||(tr.innerText||'').includes('J&T Express Egypt'))`,'J&T integration row',15000);
+  await waitFor(`(document.getElementById('root')?.innerText||'').includes('مركز التكاملات')&&document.getElementById('intGroups')`,'integrations view rendered',8000);
+  await waitFor(`[...document.querySelectorAll('#intGroups tbody tr')].some(tr=>(tr.querySelector('.meta')?.textContent||'').trim()==='jt'||(tr.innerText||'').includes('J&T Express Egypt'))`,'J&T integration row',20000);
   const jtOpened=await evalJs(`(()=>{const tr=[...document.querySelectorAll('#intGroups tbody tr')].find(row=>(row.querySelector('.meta')?.textContent||'').trim()==='jt'||(row.innerText||'').includes('J&T Express Egypt')),button=tr?.querySelector('.intSetup');if(!button)return false;window.__kunJtSetupTimer=0;setTimeout(()=>{window.__kunJtSetupTimer=performance.now();},80);button.click();return true;})()`);if(!jtOpened)throw new Error('J&T Continue setup button was not available');
   await waitFor(`!!document.querySelector('#intSetupPanel .form-grid')&&document.getElementById('intSaveSetup')`,'J&T Continue setup form',6000);
   await waitFor(`window.__kunJtSetupTimer>0`,'J&T setup event loop remains responsive',2500);
@@ -101,6 +106,6 @@ try{
   const restored=await evalJs(`(()=>{const card=document.querySelector(${JSON.stringify(selector)}),r=card.getBoundingClientRect();return {visible:getComputedStyle(card).display!=='none'&&r.width>0&&r.height>0,contact:card.querySelector('[data-cs-action="contact"]')?.textContent||'',highlight:card.classList.contains('kun-mobile-call-restore')};})()`);
   if(!restored.visible||!restored.contact.includes('(1)'))throw new Error(`Customer Service order disappeared after mobile call resume: ${JSON.stringify(restored)}`);
   if(exceptions.length)throw new Error(`Mobile QA uncaught browser errors: ${exceptions.slice(0,5).join(' | ')}`);if(serverErrors.length)throw new Error(`Mobile QA server errors: ${serverErrors.slice(0,5).join(' | ')}`);
-  console.log(`Mobile Preview QA passed: ${views.length} visible sections at 390px and 360px (${tested.length} section/viewport checks), J&T Continue setup stays event-loop responsive/idempotent on v84.5, safe drawer/top controls, no global horizontal overflow, and trusted browser input persists exactly one call while the pending order restores after simulated phone resume.`);
+  console.log(`Mobile Preview QA passed: ${views.length} visible sections at 390px and 360px (${tested.length} section/viewport checks), isolated J&T Continue setup stays event-loop responsive/idempotent on v84.5, safe drawer/top controls, no global horizontal overflow, and trusted browser input persists exactly one call while the pending order restores after simulated phone resume.`);
 }catch(e){failure=e;}finally{try{cdp?.close();}catch{}try{if(chrome&&!chrome.killed)chrome.kill('SIGTERM');}catch{}try{if(userDir)await rm(userDir,{recursive:true,force:true});}catch{}try{await cleanup();}catch(cleanupError){failure=new Error(`${failure?.message||''}; mobile QA cleanup failed: ${cleanupError.message}`);}}
 if(failure)throw failure;
