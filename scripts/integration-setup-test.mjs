@@ -1,6 +1,7 @@
 import {readFile} from 'node:fs/promises';
 const worker=await readFile(new URL('../src/index-commerce-v18.js',import.meta.url),'utf8');
 const ui=await readFile(new URL('../public/v2/modules-v16.js',import.meta.url),'utf8');
+const jtUi=await readFile(new URL('../public/v2/modules-v84-jt-create-setup.js',import.meta.url),'utf8');
 const must=(ok,msg)=>{if(!ok)throw new Error(msg)};
 for(const marker of ['/api/integrations/connections','providerById','integration.connection.create','integration.connection.delete'])must(worker.includes(marker),`Integration setup missing ${marker}`);
 must(worker.includes("requirePermission(m,'integrations'"),'Integration setup must require permissions');
@@ -11,5 +12,7 @@ must(ui.includes('/api/integrations/connections'),'UI must create governed conne
 must(/function remove\(row,load,root\)\{[\s\S]*?panel\.scrollIntoView\(\{behavior:'smooth',block:'start'\}\)/.test(ui),'Removal confirmation must be brought into view');
 must(ui.includes("btn.textContent='جاري الإزالة...'")&&ui.includes("method:'DELETE'"),'Removal action must expose progress and call the delete route');
 must(!ui.includes('localStorage.setItem')&&!ui.includes('sessionStorage.setItem'),'Integration UI must not persist credentials in browser storage');
-console.log('Integration setup checks passed: governed connections, encrypted credential handoff, visible confirmation and safe deletion.');
+must(jtUi.includes("if(meta&&meta.textContent!==requiredText)meta.textContent=requiredText"),'J&T setup observer must not rewrite identical textContent and trigger itself forever');
+must(jtUi.includes("if(input.placeholder!==placeholder)input.placeholder=placeholder"),'J&T setup enhancement must keep repeated scans idempotent');
+console.log('Integration setup checks passed: governed connections, encrypted credential handoff, visible confirmation, safe deletion and idempotent J&T DOM enhancement.');
 await import('./jt-live-shipping-test.mjs');
