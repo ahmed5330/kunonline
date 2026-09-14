@@ -19,7 +19,7 @@ const [index,bootstrap,main,customer,dashboard,dashboardInputs,shippingUi,reset,
   read('migrations/0024_shipping_finance.sql')
 ]);
 const backend=`${backendWrapper}\n${backendSafety}`;
-assert.ok(index.includes('/v2/modules-v84-jt-create-setup.js?v=84.4'),'global page must cache-bust and load the v84.4 bootstrap host');
+assert.ok(index.includes('/v2/modules-v84-jt-create-setup.js?v=84.5'),'global page must cache-bust and load the idempotent v84.5 bootstrap host');
 assert.ok(index.includes('/v2/modules-v86-dashboard-input-details.js?v=86.0'),'global page must directly load the v86 dashboard input drilldown module');
 assert.ok(index.includes('/v2/modules-v87-shipping-finance.js?v=87.0'),'global page must directly load the v87 shipping finance module');
 assert.ok(bootstrap.includes('/v2/modules-v85-system-safety.js?v=85.0'),'v84 bootstrap host must load v85 safety globally');
