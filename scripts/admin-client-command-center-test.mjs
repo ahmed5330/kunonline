@@ -2,8 +2,8 @@ import {readFile} from 'node:fs/promises';
 import {resolveAdminBriefRange} from '../src/admin-client-command-center.js';
 
 const read=p=>readFile(new URL(`../${p}`,import.meta.url),'utf8');
-const [backend,entry,ui,loader,mobileGuard]=await Promise.all([
-  read('src/admin-client-command-center.js'),read('src/index-commerce-v36.js'),read('public/v2/modules-v74-admin-client-command-center.js'),read('public/v2/modules-v23-admin.js'),read('public/v2/modules-v89-stale-async-guard.js')
+const [backend,entry,ui,loader,indexHtml]=await Promise.all([
+  read('src/admin-client-command-center.js'),read('src/index-commerce-v36.js'),read('public/v2/modules-v74-admin-client-command-center.js'),read('public/v2/modules-v23-admin.js'),read('public/v2/index.html')
 ]);
 const assert=(ok,msg)=>{if(!ok)throw new Error(`Admin Client Command Center contract failed: ${msg}`)};
 const has=(text,needle,msg=needle)=>assert(text.includes(needle),msg);
@@ -47,15 +47,18 @@ has(ui,'المالية والمخزون','finance/inventory brief');
 has(ui,'ما يحتاج انتباهك','recommendations');
 has(ui,'ملخص الحملات في الفترة','campaign summary');
 has(loader,'modules-v74-admin-client-command-center.js?v=74.0','v74 loader');
-has(loader,'id="v23ResetOwner"','client-owner password reset action remains available');
-has(mobileGuard,"#v23ResetOwner",'mobile guard targets the owner-password reset button');
-has(mobileGuard,"PASSWORD_RESET_TIMEOUT_MS=15000",'mobile reset has a bounded wait');
-has(mobileGuard,"btn.dataset.busy='1'",'duplicate password-reset taps are blocked');
-has(mobileGuard,"btn.disabled=true",'password-reset button exposes an in-flight state');
-has(mobileGuard,"btn.textContent='جاري تغيير كلمة المرور...'",'password-reset button gives mobile progress feedback');
-has(mobileGuard,'Promise.race([Promise.resolve(original.call(btn,event)),timeout])','mobile guard preserves the original client-scoped reset handler while bounding the UI wait');
-has(mobileGuard,"finally{",'password reset always restores the button');
-has(mobileGuard,"btn.disabled=false",'password-reset button is released after success/error/timeout');
-has(mobileGuard,"input.blur()",'mobile keyboard is dismissed before the request');
-new Function(ui);new Function(loader);new Function(mobileGuard);
-console.log('Admin Client Command Center contract passed: all subscribed clients get compact period KPIs, searchable cards, fail-closed anonymous routes, explicit non-Admin 403 responses and an Admin-only full brief with today/yesterday/7d/30d/MTD/custom ranges plus previous-period comparison; mobile owner-password reset preserves the original scoped action, blocks duplicate taps, shows progress and always releases after success/error/timeout.');
+has(loader,'id="v23ResetOwner" type="button"','client-owner password reset action is an explicit non-submit button');
+has(loader,'autocomplete="new-password" autocapitalize="none" spellcheck="false"','mobile password input avoids keyboard transformations');
+has(loader,"if(resetBtn.dataset.busy==='1')return",'duplicate password-reset taps are blocked');
+has(loader,"resetBtn.disabled=true",'password-reset button exposes an in-flight state');
+has(loader,"resetBtn.textContent='جاري تغيير كلمة المرور...'",'password-reset button gives progress feedback');
+has(loader,"controller=new AbortController()",'password reset owns an abortable request lifecycle');
+has(loader,"setTimeout(()=>controller.abort(),15000)",'password reset request is aborted after a bounded wait');
+has(loader,'signal:controller.signal','abort signal reaches the password reset API request');
+has(loader,"finally{clearTimeout(timer)",'password reset always clears timeout and restores UI');
+has(loader,"resetBtn.disabled=false",'password-reset button is released after success/error/timeout');
+has(loader,"resetInput.blur()",'mobile keyboard is dismissed before the request');
+has(loader,"resetInput.value=''",'successful reset clears the sensitive password field');
+has(indexHtml,'modules-v23-admin.js?v=23.4','admin client cache is busted so phones load the fixed handler');
+new Function(ui);new Function(loader);
+console.log('Admin Client Command Center contract passed: all subscribed clients get compact period KPIs, searchable cards, fail-closed anonymous routes, explicit non-Admin 403 responses and an Admin-only full brief with today/yesterday/7d/30d/MTD/custom ranges plus previous-period comparison; owner-password reset now directly blocks duplicate taps, aborts stalled requests, restores the button and cache-busts the mobile client.');
