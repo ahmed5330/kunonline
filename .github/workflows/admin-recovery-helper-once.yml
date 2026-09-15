@@ -1,0 +1,51 @@
+name: One-time admin recovery helper
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/admin-recovery-helper-once.yml
+permissions:
+  contents: read
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    environment:
+      name: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      HELPER_SHA: 76b8422ecedd2ccc5df40ee9fb24a770f40e5b18
+      HELPER_URL: https://kunonline-admin-recovery-20260915.mr-a-mnaa.workers.dev
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.HELPER_SHA }}
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: npm install --ignore-scripts
+      - name: Validate isolated helper
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$HELPER_SHA"
+          node --check ops/admin-recovery-worker.js
+          grep -F 'kunonline-admin-recovery-20260915' wrangler.admin-recovery.toml
+          grep -F 'c426601d-182f-486e-a5c1-bb1bca0ecb0b' wrangler.admin-recovery.toml
+          ! grep -F '12345678910' ops/admin-recovery-worker.js
+      - name: Deploy isolated recovery helper
+        run: npx wrangler deploy --config wrangler.admin-recovery.toml --message "One-time admin recovery helper"
+      - name: Verify helper is live
+        run: |
+          set -euo pipefail
+          ready=0
+          for attempt in $(seq 1 30); do
+            code="$(curl --silent --show-error -o /tmp/helper.html -w '%{http_code}' "$HELPER_URL/" || true)"
+            if [ "$code" = "200" ] && grep -Fq 'استرجاع حساب مدير Kun Online' /tmp/helper.html; then
+              ready=1
+              break
+            fi
+            sleep 2
+          done
+          test "$ready" -eq 1
