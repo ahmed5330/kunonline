@@ -19,9 +19,9 @@ jobs:
           set -euo pipefail
           echo '=== reset-owner-password occurrences ==='
           grep -R -n --exclude-dir=node_modules --exclude='*.map' 'reset-owner-password' src public || true
-          echo '=== resetClientOwnerPassword occurrences ==='
-          grep -R -n --exclude-dir=node_modules --exclude='*.map' 'resetClientOwnerPassword' src public || true
-          echo '=== password_reset audit occurrences ==='
-          grep -R -n --exclude-dir=node_modules --exclude='*.map' 'platform.client.password_reset' src public || true
+          echo '=== K.api definitions ==='
+          grep -R -n --exclude-dir=node_modules --exclude='*.map' -E 'K\.api\s*=|api\s*:\s*async|async function api|const api\s*=' public/v2 | head -80 || true
+          echo '=== fetch wrappers / monkey patches ==='
+          grep -R -n --exclude-dir=node_modules --exclude='*.map' -E 'window\.fetch|globalThis\.fetch|fetch\s*=\s*async|originalFetch|nativeFetch' public/v2 android-app src | head -140 || true
           echo '=== v23 reset UI occurrence ==='
           grep -n -C 4 'v23ResetOwner\|reset-owner-password' public/v2/modules-v23-admin.js || true
