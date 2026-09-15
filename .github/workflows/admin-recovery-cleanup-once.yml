@@ -1,0 +1,41 @@
+name: Admin recovery cleanup once
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/admin-recovery-cleanup-once.yml
+permissions:
+  contents: read
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: 21e440deb6351c6850fa51314ce2d62d3d219e86
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: npm install --ignore-scripts
+      - name: Delete temporary recovery Workers
+        run: |
+          set -euo pipefail
+          npx wrangler delete --name kunonline-admin-recovery-20260915 --force
+          npx wrangler delete --name kunonline-admin-readonly-inspect-20260915 --force
+      - name: Verify temporary endpoints are gone
+        run: |
+          set -euo pipefail
+          for url in \
+            https://kunonline-admin-recovery-20260915.mr-a-mnaa.workers.dev/health \
+            https://kunonline-admin-readonly-inspect-20260915.mr-a-mnaa.workers.dev/status; do
+            code="$(curl --silent --show-error -o /dev/null -w '%{http_code}' "$url" || true)"
+            echo "$url -> $code"
+            test "$code" != "200"
+          done
