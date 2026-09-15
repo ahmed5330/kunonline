@@ -24,9 +24,11 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         buildUi()
-        SyncJobService.schedule(this)
         updateStatus()
-        if (KunApi.hasSession(this)) syncNow()
+        if (KunApi.hasSession(this)) {
+            SyncJobService.schedule(this)
+            syncNow()
+        }
     }
 
     private fun buildUi() {
@@ -124,7 +126,10 @@ class MainActivity : Activity() {
         thread(name = "kun-login-sync") {
             val result = KunApi.loginAndSync(this, mail, pass)
             runOnUiThread {
-                if (result.ok) password.setText("")
+                if (result.ok) {
+                    password.setText("")
+                    SyncJobService.schedule(this)
+                }
                 updateStatus(result.message + if (result.ok) " — ${result.customerCount} عميل" else "")
             }
         }
