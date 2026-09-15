@@ -39,15 +39,17 @@ object SecureStore {
         return "$iv.$encrypted"
     }
 
-    fun decrypt(value: String?): String? = runCatching {
+    fun decrypt(value: String?): String? {
         if (value.isNullOrBlank()) return null
         val parts = value.split('.', limit = 2)
         if (parts.size != 2) return null
-        val cipher = Cipher.getInstance(TRANSFORMATION)
-        val iv = Base64.decode(parts[0], Base64.NO_WRAP)
-        cipher.init(Cipher.DECRYPT_MODE, secretKey(), GCMParameterSpec(128, iv))
-        String(cipher.doFinal(Base64.decode(parts[1], Base64.NO_WRAP)), Charsets.UTF_8)
-    }.getOrNull()
+        return runCatching {
+            val cipher = Cipher.getInstance(TRANSFORMATION)
+            val iv = Base64.decode(parts[0], Base64.NO_WRAP)
+            cipher.init(Cipher.DECRYPT_MODE, secretKey(), GCMParameterSpec(128, iv))
+            String(cipher.doFinal(Base64.decode(parts[1], Base64.NO_WRAP)), Charsets.UTF_8)
+        }.getOrNull()
+    }
 
     fun put(context: Context, prefsName: String, key: String, value: String?) {
         val prefs = context.getSharedPreferences(prefsName, Context.MODE_PRIVATE)
