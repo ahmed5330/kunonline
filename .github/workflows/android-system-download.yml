@@ -1,0 +1,99 @@
+name: Publish Android APK to system
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/android-system-download.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: kunonline-android-system-download
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Build latest Android APK
+        working-directory: android
+        run: gradle test assembleDebug
+
+      - name: Replace stable Android release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload android-latest android/app/build/outputs/apk/debug/app-debug.apk#Kun-Online-Mobile.apk --clobber
+          gh release edit android-latest --target "$GITHUB_SHA" --title "Kun Online Android v1.1.0" --notes "Latest Kun Online Android Caller ID build. Download from the Kun Online system or this stable release asset."
+
+      - name: Point system download button to latest APK
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('public/index.html')
+          s = p.read_text(encoding='utf-8')
+          old = """function setupInstallButton(){
+            const btn = document.getElementById('installAppBtn');
+            if(!btn) return;
+            const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;"""
+          new = """function setupInstallButton(){
+            const btn = document.getElementById('installAppBtn');
+            if(!btn) return;
+            const isAndroid = /android/i.test(navigator.userAgent);
+            if(isAndroid){
+              btn.classList.remove('hidden');
+              btn.title = 'تحميل أحدث إصدار Android';
+              btn.innerHTML = '⬇ <span class=\"btn-label\">تحديث التطبيق</span>';
+              btn.onclick = ()=>{ window.location.href = 'https://github.com/ahmed5330/kunonline/releases/download/android-latest/Kun-Online-Mobile.apk'; };
+              return;
+            }
+            const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;"""
+          if old not in s:
+              raise SystemExit('install button anchor not found')
+          p.write_text(s.replace(old, new, 1), encoding='utf-8')
+          PY
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          package-manager-cache: false
+
+      - run: npm install --ignore-scripts
+
+      - name: Validate Production deploy
+        run: |
+          node --check src/index-production-sync.js
+          node tests.mjs
+          npx wrangler deploy --dry-run --config wrangler.production.toml
+
+      - name: Deploy updated system UI
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler deploy --config wrangler.production.toml
+
+      - name: Persist system download button update
+        run: |
+          if git diff --quiet -- public/index.html; then
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add public/index.html
+          git commit -m 'Point Android system download to latest APK'
+          git push origin HEAD:main
