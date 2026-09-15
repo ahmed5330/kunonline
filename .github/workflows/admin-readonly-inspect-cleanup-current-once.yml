@@ -1,0 +1,41 @@
+name: Cleanup current admin read-only inspector
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/admin-readonly-inspect-cleanup-current-once.yml
+permissions:
+  contents: read
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      WORKER_NAME: kunonline-admin-readonly-inspect-20260915
+      INSPECT_URL: https://kunonline-admin-readonly-inspect-20260915.mr-a-mnaa.workers.dev/status
+    steps:
+      - name: Delete temporary read-only inspector
+        run: |
+          set -euo pipefail
+          code="$(curl --silent --show-error -X DELETE \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            -H 'Content-Type: application/json' \
+            -o /tmp/delete.json -w '%{http_code}' \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$WORKER_NAME")"
+          cat /tmp/delete.json
+          test "$code" = "200"
+          grep -Fq '"success":true' /tmp/delete.json
+      - name: Verify inspector endpoint is gone
+        run: |
+          set -euo pipefail
+          gone=0
+          for attempt in $(seq 1 20); do
+            code="$(curl --silent --show-error -o /dev/null -w '%{http_code}' "$INSPECT_URL?ts=$(date +%s%N)" || true)"
+            if [ "$code" != "200" ]; then gone=1; break; fi
+            sleep 2
+          done
+          test "$gone" -eq 1
