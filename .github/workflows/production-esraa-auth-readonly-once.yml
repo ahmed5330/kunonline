@@ -69,3 +69,4 @@ jobs:
             console.log(JSON.stringify({matches:safe.length,accounts:safe},null,2));
           })().catch(e=>{console.error(e.message);process.exit(1)});
           NODE
+      # Triggered intentionally after workflow registration; SELECT-only diagnostic.
