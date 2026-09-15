@@ -23,7 +23,7 @@ jobs:
         with:
           node-version: 22
           package-manager-cache: false
-      - name: Inspect Esraa authentication state without secrets or writes
+      - name: Inspect failed authentication state without secrets or writes
         run: |
           set -euo pipefail
           node - <<'NODE'
@@ -43,19 +43,22 @@ jobs:
           }
           (async()=>{
             const rows=await q(`
-              SELECT u.name,u.email,u.role,u.status,u.client_id,u.last_login,
+              SELECT la.email,la.fails,la.locked_until,
+                     u.name,u.role,u.status,u.client_id,u.last_login,
+                     CASE WHEN u.email IS NULL THEN 0 ELSE 1 END AS user_exists,
                      CASE WHEN u.email=lower(trim(u.email)) THEN 1 ELSE 0 END AS email_normalized,
-                     CASE WHEN u.password LIKE 'pbkdf2$%' THEN 1 ELSE 0 END AS password_format_ok,
-                     COALESCE(la.fails,0) AS fails,la.locked_until
-              FROM users u
-              LEFT JOIN login_attempts la ON la.email=lower(trim(u.email))
-              WHERE lower(u.name) LIKE '%esraa%' OR u.name LIKE '%اسراء%' OR u.name LIKE '%إسراء%'
-              ORDER BY u.name,u.email
+                     CASE WHEN u.password LIKE 'pbkdf2$%' THEN 1 ELSE 0 END AS password_format_ok
+              FROM login_attempts la
+              LEFT JOIN users u ON lower(trim(u.email))=lower(trim(la.email))
+              WHERE COALESCE(la.fails,0)>0
+              ORDER BY COALESCE(la.fails,0) DESC, la.locked_until DESC
+              LIMIT 20
             `);
             const now=Date.now();
             const safe=rows.map(r=>({
-              name:r.name||'',
               maskedEmail:maskEmail(r.email),
+              userExists:Boolean(r.user_exists),
+              name:r.name||'',
               role:r.role||'',
               status:r.status||'',
               hasClient:Boolean(r.client_id),
@@ -66,7 +69,7 @@ jobs:
               lockRemainingMinutes:r.locked_until&&Date.parse(r.locked_until)>now?Math.ceil((Date.parse(r.locked_until)-now)/60000):0,
               hasLoggedInBefore:Boolean(r.last_login)
             }));
-            console.log(JSON.stringify({matches:safe.length,accounts:safe},null,2));
+            console.log(JSON.stringify({failedAccounts:safe.length,accounts:safe},null,2));
           })().catch(e=>{console.error(e.message);process.exit(1)});
           NODE
-      # Triggered intentionally after workflow registration; SELECT-only diagnostic.
+      # SELECT-only Production diagnostic. No password or hash is printed.
