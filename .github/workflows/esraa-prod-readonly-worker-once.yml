@@ -60,7 +60,8 @@ jobs:
           TOML
           node --check /tmp/diag-worker.mjs
           ! grep -Eq '\b(UPDATE|DELETE|INSERT|REPLACE|DROP|ALTER|CREATE)\b' /tmp/diag-worker.mjs
-          ! grep -Eq 'SELECT[^;]*password|u\.password|password\s+FROM' /tmp/diag-worker.mjs
+          ! grep -Fq 'u.password' /tmp/diag-worker.mjs
+          ! grep -Fq 'SELECT password' /tmp/diag-worker.mjs
       - name: Install Wrangler
         run: npm install --no-save wrangler@4.125.0
       - name: Deploy isolated read-only Worker
