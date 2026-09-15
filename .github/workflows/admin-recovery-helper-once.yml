@@ -41,30 +41,38 @@ jobs:
           const fs=require('fs');
           const p='ops/admin-recovery-worker.js';
           let s=fs.readFileSync(p,'utf8');
-          const before='const targets = await activeAdmins(env);';
-          if(!s.includes(before)) throw new Error('Expected recovery selector not found');
-          s=s.replace(before,'const targets = (await activeAdmins(env)).slice(0,1);');
+          const selector='const targets = await activeAdmins(env);';
+          if(!s.includes(selector)) throw new Error('Expected recovery selector not found');
+          s=s.replace(selector,'const targets = (await activeAdmins(env)).slice(0,1);');
+          if(!s.includes("helper: 'admin-recovery-v2'")) throw new Error('Expected health marker not found');
+          s=s.replace("helper: 'admin-recovery-v2'","helper: 'admin-recovery-pinned-oldest-v1'");
           fs.writeFileSync(p,s);
           NODE
           grep -F 'slice(0,1)' ops/admin-recovery-worker.js
+          grep -F 'admin-recovery-pinned-oldest-v1' ops/admin-recovery-worker.js
           node --check ops/admin-recovery-worker.js
       - name: Deploy isolated recovery helper
-        run: npx wrangler deploy --config wrangler.admin-recovery.toml --message "One-time admin recovery helper pinned to verified oldest admin"
-      - name: Wait for helper status endpoint
+        run: npx wrangler deploy --config wrangler.admin-recovery.toml --message "One-time admin recovery helper pinned to verified oldest admin v1"
+      - name: Wait for exact pinned Worker version
         run: |
           set -euo pipefail
           ready=0
-          for attempt in $(seq 1 30); do
-            code="$(curl --silent --show-error -o /tmp/status.json -w '%{http_code}' "$HELPER_URL/status" || true)"
-            if [ "$code" = "200" ] && grep -Fq '"activeAdminCount":2' /tmp/status.json; then ready=1; break; fi
+          for attempt in $(seq 1 45); do
+            code="$(curl --silent --show-error -o /tmp/health.json -w '%{http_code}' "$HELPER_URL/health?attempt=$attempt&ts=$(date +%s%N)" || true)"
+            if [ "$code" = "200" ] && grep -Fq 'admin-recovery-pinned-oldest-v1' /tmp/health.json; then ready=1; break; fi
             sleep 2
           done
-          cat /tmp/status.json || true
+          cat /tmp/health.json || true
           test "$ready" -eq 1
+      - name: Confirm two admins before targeted recovery
+        run: |
+          set -euo pipefail
+          curl --silent --show-error "$HELPER_URL/status?ts=$(date +%s%N)" | tee /tmp/status.json
+          grep -Fq '"activeAdminCount":2' /tmp/status.json
       - name: Apply recovery once
         run: |
           set -euo pipefail
-          code="$(curl --silent --show-error -X POST -o /tmp/apply.json -w '%{http_code}' "$HELPER_URL/apply")"
+          code="$(curl --silent --show-error -X POST -o /tmp/apply.json -w '%{http_code}' "$HELPER_URL/apply?ts=$(date +%s%N)")"
           cat /tmp/apply.json
           if [ "$code" = "200" ]; then
             grep -Fq '"ok":true' /tmp/apply.json
@@ -79,7 +87,7 @@ jobs:
           set -euo pipefail
           ok=0
           for attempt in $(seq 1 20); do
-            curl --silent --show-error "$HELPER_URL/status" > /tmp/status-after.json || true
+            curl --silent --show-error "$HELPER_URL/status?verify=$attempt&ts=$(date +%s%N)" > /tmp/status-after.json || true
             if node -e "const s=require('/tmp/status-after.json'); if(!(s.activeAdminCount===2&&s.recoveryApplied===true&&s.candidates?.[0]?.presetHashMatches===true&&s.candidates?.[0]?.failedAttempts===0&&!s.candidates?.[0]?.locked&&s.candidates?.[1]?.presetHashMatches===false)) process.exit(1)"; then ok=1; break; fi
             sleep 2
           done
