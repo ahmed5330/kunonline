@@ -41,7 +41,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release upload android-latest android/app/build/outputs/apk/debug/app-debug.apk#Kun-Online-Mobile.apk --clobber
+          cp android/app/build/outputs/apk/debug/app-debug.apk /tmp/Kun-Online-Mobile.apk
+          gh release upload android-latest /tmp/Kun-Online-Mobile.apk --clobber
+          gh release delete-asset android-latest app-debug.apk -y || true
           gh release edit android-latest --target "$GITHUB_SHA" --title "Kun Online Android v1.1.0" --notes "Latest Kun Online Android Caller ID build. Download from the Kun Online system or this stable release asset."
 
       - name: Point system download button to latest APK
@@ -66,9 +68,12 @@ jobs:
               return;
             }
             const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;"""
-          if old not in s:
+          if old in s:
+              p.write_text(s.replace(old, new, 1), encoding='utf-8')
+          elif 'releases/download/android-latest/Kun-Online-Mobile.apk' in s and 'const isAndroid = /android/i.test(navigator.userAgent);' in s:
+              print('Android system download button is already patched')
+          else:
               raise SystemExit('install button anchor not found')
-          p.write_text(s.replace(old, new, 1), encoding='utf-8')
           PY
 
       - uses: actions/setup-node@v5
