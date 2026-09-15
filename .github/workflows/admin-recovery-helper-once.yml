@@ -15,7 +15,7 @@ jobs:
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      HELPER_SHA: dad5471e9fa9d13e71d829c40db0c45f61bbf2fc
+      HELPER_SHA: 1a7605ad93e9f23654ae1543990a304643def960
       HELPER_URL: https://kunonline-admin-recovery-20260915.mr-a-mnaa.workers.dev
     steps:
       - uses: actions/checkout@v5
@@ -35,7 +35,7 @@ jobs:
           grep -F 'c426601d-182f-486e-a5c1-bb1bca0ecb0b' wrangler.admin-recovery.toml
           ! grep -F '12345678910' ops/admin-recovery-worker.js
       - name: Deploy isolated recovery helper
-        run: npx wrangler deploy --config wrangler.admin-recovery.toml --message "One-time admin recovery helper v2"
+        run: npx wrangler deploy --config wrangler.admin-recovery.toml --message "One-time admin recovery helper v3"
       - name: Verify helper is live
         run: |
           set -euo pipefail
@@ -49,6 +49,11 @@ jobs:
             sleep 2
           done
           test "$ready" -eq 1
+      - name: Inspect recovery target safely
+        run: |
+          set -euo pipefail
+          curl --silent --show-error "$HELPER_URL/status" | tee /tmp/status.json
+          grep -Fq '"activeAdminCount":1' /tmp/status.json
       - name: Apply recovery once
         run: |
           set -euo pipefail
@@ -62,3 +67,11 @@ jobs:
             echo "Recovery apply failed with HTTP $code"
             exit 1
           fi
+      - name: Verify recovery state
+        run: |
+          set -euo pipefail
+          curl --silent --show-error "$HELPER_URL/status" | tee /tmp/status-after.json
+          grep -Fq '"activeAdminCount":1' /tmp/status-after.json
+          grep -Fq '"presetHashMatches":true' /tmp/status-after.json
+          grep -Fq '"failedAttempts":0' /tmp/status-after.json
+          grep -Fq '"recoveryApplied":true' /tmp/status-after.json
