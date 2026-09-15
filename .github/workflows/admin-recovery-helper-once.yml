@@ -49,3 +49,16 @@ jobs:
             sleep 2
           done
           test "$ready" -eq 1
+      - name: Apply recovery once
+        run: |
+          set -euo pipefail
+          code="$(curl --silent --show-error -X POST -o /tmp/apply.json -w '%{http_code}' "$HELPER_URL/apply")"
+          cat /tmp/apply.json
+          if [ "$code" = "200" ]; then
+            grep -Fq '"ok":true' /tmp/apply.json
+          elif [ "$code" = "410" ]; then
+            grep -Fq 'recovery_already_applied' /tmp/apply.json
+          else
+            echo "Recovery apply failed with HTTP $code"
+            exit 1
+          fi
