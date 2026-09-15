@@ -20,11 +20,17 @@ class CallerCardActivity : Activity() {
             setPadding(40, 24, 40, 24)
             setBackgroundColor(Color.WHITE)
         }
-        box.addView(TextView(this).apply { text = customer.name; textSize = 20f; setTextColor(Color.BLACK) })
-        box.addView(TextView(this).apply { text = customer.phone; textSize = 16f; setTextColor(Color.DKGRAY) })
-        customer.orderRef?.takeIf { it.isNotBlank() }?.let { ref ->
-            box.addView(TextView(this).apply { text = "Order: $ref  ${customer.status.orEmpty()}"; textSize = 14f; setTextColor(Color.DKGRAY) })
+        fun addLine(textValue: String, size: Float = 14f, color: Int = Color.DKGRAY) {
+            if (textValue.isBlank()) return
+            box.addView(TextView(this).apply { text = textValue; textSize = size; setTextColor(color) })
         }
+        addLine(customer.name.ifBlank { "عميل كن أونلاين" }, 20f, Color.BLACK)
+        addLine(customer.phone, 16f)
+        addLine(listOfNotNull(customer.orderRef?.let { "طلب $it" }, customer.status).joinToString(" • "))
+        addLine(listOfNotNull(customer.product, customer.total?.let { "${it.toInt()} جنيه" }).joinToString(" • "))
+        addLine(listOfNotNull(customer.gov, customer.address).joinToString(" — "), 13f, Color.GRAY)
+        customer.note?.let { addLine("ملاحظة: $it", 13f, Color.GRAY) }
+        if (customer.previousOrders > 0) addLine("له ${customer.previousOrders} طلب سابق", 13f, Color.GRAY)
         setContentView(box)
     }
 }
