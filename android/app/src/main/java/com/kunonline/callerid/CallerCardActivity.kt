@@ -1,6 +1,8 @@
 package com.kunonline.callerid
 
 import android.app.Activity
+import android.app.KeyguardManager
+import android.content.Context
 import android.graphics.Color
 import android.os.Bundle
 import android.view.Gravity
@@ -27,6 +29,7 @@ class CallerCardActivity : Activity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED)
         val phone = intent.getStringExtra("phone").orEmpty()
         val customer = CustomerCache.lookup(this, phone) ?: run { finish(); return }
+        val locked = (getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager).isKeyguardLocked
         val box = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_VERTICAL
@@ -39,11 +42,13 @@ class CallerCardActivity : Activity() {
         }
         addLine(customer.name.ifBlank { "عميل كن أونلاين" }, 20f, Color.BLACK)
         addLine(customer.phone, 16f)
-        addLine(listOfNotNull(customer.orderRef?.let { "طلب $it" }, stateText(customer.status).takeIf { it.isNotBlank() }).joinToString(" • "))
-        addLine(listOfNotNull(customer.product, customer.total?.let { "الإجمالي ${it.toInt()}" }).joinToString(" • "))
-        addLine(listOfNotNull(customer.gov, customer.address).joinToString(" — "), 13f, Color.GRAY)
-        customer.note?.let { addLine("ملاحظة: $it", 13f, Color.GRAY) }
-        if (customer.previousOrders > 0) addLine("له ${customer.previousOrders} طلب سابق", 13f, Color.GRAY)
+        addLine(listOfNotNull(customer.orderRef?.takeUnless { locked }?.let { "طلب $it" }, stateText(customer.status).takeIf { it.isNotBlank() }).joinToString(" • "))
+        if (!locked) {
+            addLine(listOfNotNull(customer.product, customer.total?.let { "الإجمالي ${it.toInt()}" }).joinToString(" • "))
+            addLine(listOfNotNull(customer.gov, customer.address).joinToString(" — "), 13f, Color.GRAY)
+            customer.note?.let { addLine("ملاحظة: $it", 13f, Color.GRAY) }
+            if (customer.previousOrders > 0) addLine("له ${customer.previousOrders} طلب سابق", 13f, Color.GRAY)
+        }
         setContentView(box)
     }
 }
