@@ -32,5 +32,9 @@ class SyncJobService : JobService() {
                 .build()
             scheduler.schedule(job)
         }
+
+        fun cancel(context: Context) {
+            context.getSystemService(JobScheduler::class.java).cancel(JOB_ID)
+        }
     }
 }
