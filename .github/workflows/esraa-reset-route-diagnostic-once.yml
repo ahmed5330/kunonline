@@ -1,0 +1,27 @@
+name: Esraa reset route diagnostic once
+on:
+  push:
+    branches: [develop/ux-system-upgrade]
+    paths:
+      - .github/workflows/esraa-reset-route-diagnostic-once.yml
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: 18b44bc3c4a3db6769babd7342f2bebc88c51117
+      - name: Locate reset route and frontend caller
+        run: |
+          set -euo pipefail
+          echo '=== reset-owner-password occurrences ==='
+          grep -R -n --exclude-dir=node_modules --exclude='*.map' 'reset-owner-password' src public || true
+          echo '=== resetClientOwnerPassword occurrences ==='
+          grep -R -n --exclude-dir=node_modules --exclude='*.map' 'resetClientOwnerPassword' src public || true
+          echo '=== password_reset audit occurrences ==='
+          grep -R -n --exclude-dir=node_modules --exclude='*.map' 'platform.client.password_reset' src public || true
+          echo '=== v23 reset UI occurrence ==='
+          grep -n -C 4 'v23ResetOwner\|reset-owner-password' public/v2/modules-v23-admin.js || true
