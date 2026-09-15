@@ -1,0 +1,31 @@
+name: Esraa Production reset verify read-only once
+on:
+  push:
+    branches: [develop/ux-system-upgrade]
+    paths:
+      - .github/workflows/esraa-prod-reset-verify-readonly-once.yml
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    environment:
+      name: preview
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: 18b44bc3c4a3db6769babd7342f2bebc88c51117
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: npm install --ignore-scripts
+      - name: Verify masked reset audit and lock state from Production D1 read-only
+        run: |
+          set -euo pipefail
+          SQL="SELECT substr(u.email,1,2)||'***@'||substr(u.email,instr(u.email,'@')+1) AS email_mask,u.status AS user_status,COALESCE(l.fails,0) AS failed_attempts,COALESCE(l.locked_until,'') AS locked_until,COUNT(a.id) AS reset_count,COALESCE(MAX(a.created_at),'') AS latest_reset_at FROM users u LEFT JOIN login_attempts l ON lower(l.email)=lower(u.email) LEFT JOIN audit_log a ON a.entity_id=u.id AND a.action='platform.client.password_reset' WHERE u.role='client' GROUP BY u.id,u.email,u.status,l.fails,l.locked_until ORDER BY latest_reset_at DESC,u.created_at DESC;"
+          npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "$SQL"
