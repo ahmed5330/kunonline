@@ -25,7 +25,7 @@ jobs:
       - name: Create read-only diagnostic Worker
         run: |
           set -euo pipefail
-          cat > /tmp/diag-worker.js <<'JS'
+          cat > /tmp/diag-worker.mjs <<'JS'
           const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}});
           const mask=email=>{const [l='',d='']=String(email||'').toLowerCase().split('@');return `${l.slice(0,2)}***@${d}`};
           export default {async fetch(request,env){
@@ -50,7 +50,7 @@ jobs:
           JS
           cat > /tmp/wrangler-diag.toml <<'TOML'
           name = "kunonline-client-login-readonly-20260915"
-          main = "/tmp/diag-worker.js"
+          main = "/tmp/diag-worker.mjs"
           compatibility_date = "2026-08-23"
           workers_dev = true
           [[d1_databases]]
@@ -58,9 +58,9 @@ jobs:
           database_name = "kunonline"
           database_id = "c426601d-182f-486e-a5c1-bb1bca0ecb0b"
           TOML
-          node --check /tmp/diag-worker.js
-          ! grep -Eq '\b(UPDATE|DELETE|INSERT|REPLACE|DROP|ALTER|CREATE)\b' /tmp/diag-worker.js
-          ! grep -Eq 'SELECT[^;]*password|u\.password|password\s+FROM' /tmp/diag-worker.js
+          node --check /tmp/diag-worker.mjs
+          ! grep -Eq '\b(UPDATE|DELETE|INSERT|REPLACE|DROP|ALTER|CREATE)\b' /tmp/diag-worker.mjs
+          ! grep -Eq 'SELECT[^;]*password|u\.password|password\s+FROM' /tmp/diag-worker.mjs
       - name: Install Wrangler
         run: npm install --no-save wrangler@4.125.0
       - name: Deploy isolated read-only Worker
