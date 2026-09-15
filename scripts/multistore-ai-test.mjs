@@ -1,0 +1,17 @@
+import {readFile} from 'node:fs/promises';
+const migration=await readFile(new URL('../migrations/0011_multistore_ai.sql',import.meta.url),'utf8');
+const worker=await readFile(new URL('../src/index-commerce-v15.js',import.meta.url),'utf8');
+const ui=await readFile(new URL('../public/v2/modules-v17.js',import.meta.url),'utf8');
+const must=(ok,msg)=>{if(!ok)throw new Error(msg)};
+for(const t of ['stores','user_store_access','ai_insight_snapshots'])must(migration.includes(`CREATE TABLE IF NOT EXISTS ${t}`),`Missing ${t}`);
+for(const e of ['/api/stores','/api/ai/insights','/api/ai/insights/generate'])must(worker.includes(e),`Missing ${e}`);
+must(worker.includes("code:'TENANT_ISOLATION'"),'Store/AI endpoints must preserve tenant isolation');
+must(worker.includes("requirePermission(me,'settings','write')"),'Store writes need settings.write');
+must(worker.includes("requirePermission(me,'ai','write')"),'AI generation/dismiss needs ai.write');
+must(worker.includes('cod_reconciliations'),'AI engine must inspect COD reconciliation safely');
+must(worker.includes("state='returned'"),'AI engine must inspect return rate');
+must(worker.includes('stock<=low_stock_threshold'),'AI engine must inspect low stock');
+must(ui.includes('/api/stores'),'Store manager UI missing');
+must(ui.includes('/api/ai/insights/generate'),'AI insight generation UI missing');
+must(ui.includes('/api/ai-actions'),'AI action governance history missing');
+console.log('Multi-store + AI insight contract checks passed.');

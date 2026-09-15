@@ -1,0 +1,100 @@
+name: Production D1 read-only diagnostic v2
+on:
+  push:
+    branches: [develop/ux-system-upgrade]
+    paths: [.github/workflows/production-d1-readonly-diagnostic-v2.yml]
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    environment:
+      name: preview
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: release/commerce-v38-production-20260910
+          fetch-depth: 1
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: npm install --ignore-scripts
+      - name: Compare Preview J&T metadata with Production without secret values
+        run: |
+          set -euo pipefail
+          node - <<'NODE'
+          const fs=require('fs');
+          const account=process.env.CLOUDFLARE_ACCOUNT_ID, token=process.env.CLOUDFLARE_API_TOKEN;
+          const prod=fs.readFileSync('wrangler.production.toml','utf8').match(/database_id\s*=\s*"([^"]+)"/)?.[1];
+          const prev=fs.readFileSync('wrangler.preview.toml','utf8').match(/database_id\s*=\s*"([^"]+)"/)?.[1];
+          if(!account||!token||!prod||!prev)throw new Error('Cloudflare/D1 config missing');
+          async function q(db,sql,params=[]){
+            for(let i=1;i<=5;i++){
+              const r=await fetch(`https://api.cloudflare.com/client/v4/accounts/${account}/d1/database/${db}/query`,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({sql,params})});
+              const p=await r.json().catch(()=>({}));
+              if(r.ok&&p.success!==false&&p.result?.[0]?.success!==false)return p.result?.[0]?.results||[];
+              if(i===5)throw new Error('D1 query failed after retries');
+              await new Promise(res=>setTimeout(res,i*1500));
+            }
+          }
+          (async()=>{
+            const con=await q(prev,"SELECT id,client_id,status,store_name,external_store_id FROM store_connections WHERE provider='jt' ORDER BY updated_at DESC");
+            const safe=[];
+            for(const c of con){
+              const names=(await q(prev,'SELECT secret_name FROM integration_secrets WHERE client_id=? AND connection_id=? ORDER BY secret_name',[c.client_id,c.id])).map(x=>x.secret_name);
+              const prodClient=await q(prod,'SELECT COUNT(*) AS n FROM clients WHERE id=?',[c.client_id]).catch(async()=>q(prod,'SELECT COUNT(*) AS n FROM stores WHERE client_id=?',[c.client_id]));
+              safe.push({status:c.status,hasMatchingProductionClient:Number(prodClient[0]?.n||0)>0,secretNames:names,hasAllCreateOrderSecrets:['api_account','private_key','source_code','customer_code','customer_password','sender_name','sender_mobile','sender_prov','sender_city','sender_area','sender_street'].every(k=>names.includes(k))});
+            }
+            console.log(JSON.stringify({previewJtConnections:safe.length,connections:safe},null,2));
+          })().catch(e=>{console.error(e.message);process.exit(1)});
+          NODE
+      - name: Inspect failed client auth reset-owner selection without secrets
+        run: |
+          set -euo pipefail
+          node - <<'NODE'
+          const fs=require('fs');
+          const account=process.env.CLOUDFLARE_ACCOUNT_ID, token=process.env.CLOUDFLARE_API_TOKEN;
+          const prod=fs.readFileSync('wrangler.production.toml','utf8').match(/database_id\s*=\s*"([^"]+)"/)?.[1];
+          if(!account||!token||!prod)throw new Error('Cloudflare/D1 config missing');
+          async function q(sql,params=[]){
+            const r=await fetch(`https://api.cloudflare.com/client/v4/accounts/${account}/d1/database/${prod}/query`,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({sql,params})});
+            const p=await r.json().catch(()=>({}));
+            if(!r.ok||p.success===false||p.result?.[0]?.success===false)throw new Error('D1 read-only query failed');
+            return p.result?.[0]?.results||[];
+          }
+          function maskEmail(email=''){
+            const [local='',domain='']=String(email).split('@');
+            return `${local.slice(0,2)}***@${domain}`;
+          }
+          (async()=>{
+            const rows=await q(`
+              SELECT la.email,la.fails,la.locked_until,
+                     u.id,u.client_id,u.role,u.status,u.created_at,u.last_login,
+                     (SELECT COUNT(*) FROM users x WHERE x.client_id=u.client_id AND x.role='client') AS client_role_accounts,
+                     (SELECT x.id FROM users x WHERE x.client_id=u.client_id AND x.role='client' ORDER BY x.created_at LIMIT 1) AS reset_target_id,
+                     (SELECT COUNT(*) FROM audit_log a WHERE a.action='platform.client.password_reset' AND a.entity_id=u.id) AS reset_count,
+                     (SELECT MAX(a.created_at) FROM audit_log a WHERE a.action='platform.client.password_reset' AND a.entity_id=u.id) AS latest_reset_at
+              FROM login_attempts la
+              JOIN users u ON lower(trim(u.email))=lower(trim(la.email))
+              WHERE u.role='client'
+              ORDER BY u.client_id,u.created_at
+            `);
+            const safe=rows.map(r=>({
+              maskedEmail:maskEmail(r.email),
+              status:r.status,
+              failedAttempts:Number(r.fails||0),
+              locked:Boolean(r.locked_until),
+              clientRoleAccounts:Number(r.client_role_accounts||0),
+              isCurrentResetTarget:String(r.id)===String(r.reset_target_id),
+              resetCount:Number(r.reset_count||0),
+              latestResetAt:r.latest_reset_at||null,
+              lastLoginAt:r.last_login||null
+            }));
+            console.log(JSON.stringify({failedClientAccounts:safe.length,accounts:safe},null,2));
+          })().catch(e=>{console.error(e.message);process.exit(1)});
+          NODE

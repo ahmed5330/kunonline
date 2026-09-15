@@ -1,0 +1,45 @@
+name: Production Worker version bindings read-only
+on:
+  push:
+    branches: [develop/ux-system-upgrade]
+    paths: [.github/run-production-version-bindings-readonly-20260910.txt]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    environment:
+      name: preview
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: release/commerce-v38-production-20260910
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: npm install --ignore-scripts
+      - name: Compare old active and failed v38 version bindings safely
+        run: |
+          set -euo pipefail
+          npx wrangler versions view ac3ab83d-fe06-45c6-b640-1c6347cb6fb0 --name kunonline --json >/tmp/old.json
+          npx wrangler versions view 0f474980-baea-49ab-b7fd-f01427162a3d --name kunonline --json >/tmp/new.json
+          node - <<'NODE'
+          const fs=require('fs');
+          function summarize(path,label){
+            const p=JSON.parse(fs.readFileSync(path,'utf8')),found=[];
+            const walk=x=>{if(Array.isArray(x)){x.forEach(walk);return}if(!x||typeof x!=='object')return;
+              if(typeof x.name==='string'&&typeof x.type==='string') found.push({name:x.name,type:x.type});
+              Object.values(x).forEach(walk);
+            };walk(p);
+            const unique=[...new Map(found.map(x=>[`${x.type}:${x.name}`,x])).values()].sort((a,b)=>(a.type+a.name).localeCompare(b.type+b.name));
+            console.log(`${label}_BINDINGS=${JSON.stringify(unique)}`);
+          }
+          summarize('/tmp/old.json','OLD');
+          summarize('/tmp/new.json','V38');
+          NODE
+          rm -f /tmp/old.json /tmp/new.json

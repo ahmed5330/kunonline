@@ -1,0 +1,1 @@
+Approved by user in chat on 2026-09-10. Retry exact Production release 1d5653238151197c1d3952aab077cc891d0c1353 after safely backfilling legacy-transition orders to each client's default store. J&T optional-Enterprise + AUTH_REQUIRED fixes; exact Worker rollback on runtime failure.

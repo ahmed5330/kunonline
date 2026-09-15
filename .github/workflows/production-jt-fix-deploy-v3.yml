@@ -1,0 +1,107 @@
+name: Production J&T fix deploy v3
+on:
+  push:
+    branches: [develop/ux-system-upgrade]
+    paths: [.github/workflows/production-jt-fix-deploy-v3.yml]
+concurrency:
+  group: kunonline-production-20260910
+  cancel-in-progress: false
+permissions:
+  contents: read
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: preview
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      RELEASE_REF: release/commerce-v38-production-20260910
+      EXPECTED_RELEASE_SHA: 8ae18ece625eaaacb90e62b519cfeff3d63ba2d8
+      PROD_CUSTOM: https://app.kun-online.com
+      PROD_WORKERS: https://kunonline.mr-a-mnaa.workers.dev
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.RELEASE_REF }}
+          fetch-depth: 1
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: npm install --ignore-scripts
+      - name: Validate exact release and Production readiness with transient retry
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_RELEASE_SHA"
+          node scripts/jt-live-shipping-test.mjs
+          grep -q "import app from './index-commerce-v38.js';" src/index-production-sync.js
+          grep -q "JT_BUSINESS_CREDENTIALS_MISSING" src/index-commerce-v38.js
+          npm run check:production-config
+          d1q(){
+            sql="$1"; out='';
+            for i in 1 2 3 4 5; do
+              if out="$(npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "$sql" --json 2>/tmp/d1err)"; then printf '%s' "$out"; rm -f /tmp/d1err; return 0; fi
+              echo "Read-only D1 attempt $i failed; retrying..." >&2
+              cat /tmp/d1err >&2 || true
+              sleep $((i*2))
+            done
+            return 1
+          }
+          migration_json="$(d1q "SELECT COUNT(*) AS migration_count FROM d1_migrations;")"
+          migration_count="$(printf '%s' "$migration_json" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const p=JSON.parse(s),x=Array.isArray(p)?p[0]:p;process.stdout.write(String(x?.results?.[0]?.migration_count??""))})')"
+          last_json="$(d1q "SELECT name AS last_migration FROM d1_migrations ORDER BY id DESC LIMIT 1;")"
+          last_migration="$(printf '%s' "$last_json" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const p=JSON.parse(s),x=Array.isArray(p)?p[0]:p;process.stdout.write(String(x?.results?.[0]?.last_migration??""))})')"
+          unmapped_json="$(d1q "SELECT COUNT(*) AS unmapped_orders FROM orders WHERE client_id IS NOT NULL AND trim(client_id)<>'' AND store_id IS NULL;")"
+          unmapped_orders="$(printf '%s' "$unmapped_json" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const p=JSON.parse(s),x=Array.isArray(p)?p[0]:p;process.stdout.write(String(x?.results?.[0]?.unmapped_orders??""))})')"
+          echo "Production D1 readiness: migrations=$migration_count last=$last_migration unmapped_orders=$unmapped_orders"
+          test "$migration_count" = "23"
+          test "$last_migration" = "0022_order_duplicate_links.sql"
+          test "$unmapped_orders" = "0"
+      - name: Capture current Production Worker version
+        id: before
+        run: |
+          set -euo pipefail
+          status="$(npx wrangler deployments status --config wrangler.production.toml --json)"
+          version="$(printf '%s' "$status" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const p=JSON.parse(s),a=[];const w=x=>{if(Array.isArray(x)){x.forEach(w);return}if(!x||typeof x!=="object")return;const id=x.version_id||x.versionId,q=x.percentage??x.traffic_percentage??x.trafficPercentage;if(id)a.push({id:String(id),q:q==null?null:Number(q)});Object.values(x).forEach(w)};w(p);const u=[...new Map(a.map(x=>[x.id,x])).values()],f=u.find(x=>x.q===100||x.q===1)||(u.length===1?u[0]:null);if(!f)process.exit(2);process.stdout.write(f.id)})')"
+          test -n "$version"
+          echo "version_id=$version" >> "$GITHUB_OUTPUT"
+          echo "Captured pre-deploy Worker: $version"
+      - name: Dry-run Production bundle
+        run: npx wrangler deploy --dry-run --config wrangler.production.toml >/dev/null
+      - name: Deploy fixed v38 Worker
+        id: deploy
+        run: |
+          echo "attempted=true" >> "$GITHUB_OUTPUT"
+          npx wrangler deploy --config wrangler.production.toml
+      - name: Validate Production runtime
+        run: |
+          set -euo pipefail
+          for base in "$PROD_WORKERS" "$PROD_CUSTOM"; do
+            ok=0
+            for i in $(seq 1 24); do
+              h="$(curl -sS -o /tmp/h -w '%{http_code}' "$base/health" || true)"
+              e="$(curl -sS -o /tmp/e -w '%{http_code}' "$base/health/easyorders-sync" || true)"
+              build="$(node -e 'try{const p=JSON.parse(require("fs").readFileSync("/tmp/e","utf8"));process.stdout.write(String(p.build||""))}catch{}' 2>/dev/null || true)"
+              if [ "$h" = 200 ] && [ "$e" = 200 ] && [ "$build" = "production-commerce-v38-free-tier-safe-2026-09-10" ]; then ok=1; break; fi
+              sleep 4
+            done
+            test "$ok" = 1
+            jc="$(curl -sS -o /tmp/j -w '%{http_code}' -X POST -H 'Content-Type: application/json' "$base/api/jt/shipments/KUN-SMOKE-NO-ORDER" --data '{}' || true)"
+            jcode="$(node -e 'try{const p=JSON.parse(require("fs").readFileSync("/tmp/j","utf8"));process.stdout.write(String(p.code||""))}catch{}' 2>/dev/null || true)"
+            test "$jc" = 401
+            test "$jcode" = AUTH_REQUIRED
+            vc="$(curl -sS -o /tmp/v -w '%{http_code}' "$base/v2/" || true)"
+            test "$vc" = 200
+            grep -Eqi '<html|<!doctype' /tmp/v
+          done
+          schedules="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/kunonline/schedules")"
+          printf '%s' "$schedules" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const p=JSON.parse(s),crons=[];const w=x=>{if(Array.isArray(x)){x.forEach(w);return}if(!x||typeof x!=="object")return;if(typeof x.cron==="string")crons.push(x.cron);Object.values(x).forEach(w)};w(p);const got=[...new Set(crons)].sort(),want=["*/5 * * * *","0 */2 * * *"].sort();if(p.success===false||JSON.stringify(got)!==JSON.stringify(want))throw new Error(`Cron mismatch ${JSON.stringify(got)}`);console.log("Production API, J&T auth gate, v2 and Cron validation passed")})'
+          rm -f /tmp/h /tmp/e /tmp/j /tmp/v
+      - name: Roll back exact prior Worker on failure
+        if: failure() && steps.deploy.outputs.attempted == 'true'
+        run: |
+          npx wrangler rollback "${{ steps.before.outputs.version_id }}" --config wrangler.production.toml --message "Automatic rollback after Production J&T validation failure"
+          curl -fsS "$PROD_CUSTOM/health" >/dev/null
+          echo 'Rolled back to exact pre-deploy Worker.'

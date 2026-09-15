@@ -1,0 +1,25 @@
+name: Esraa reset route diagnostic once
+on:
+  push:
+    branches: [develop/ux-system-upgrade]
+    paths:
+      - .github/workflows/esraa-reset-route-diagnostic-once.yml
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: 18b44bc3c4a3db6769babd7342f2bebc88c51117
+      - name: Inspect all admin client route interception points
+        run: |
+          set -euo pipefail
+          echo '=== all /api/admin/clients occurrences in src ==='
+          grep -R -n --exclude-dir=node_modules --exclude='*.map' '/api/admin/clients' src || true
+          echo '=== generic admin path tests ==='
+          grep -R -n --exclude-dir=node_modules --exclude='*.map' -E "startsWith\('/api/admin|path\.startsWith\('/api/admin|ADMIN.*PATH|api\\/admin\\/clients" src || true
+          echo '=== fetch delegation chain imports v27-v38 ==='
+          for f in src/index-commerce-v{27..38}.js; do echo "--- $f"; grep -n -E '^import commerce|\.fetch\(request|routeV|fetchV' "$f" | head -40 || true; done

@@ -1,0 +1,2 @@
+User-approved Production v38 release continuation.
+D1 already fully migrated through 0022. This run deploys Worker only with propagation-aware validation, J&T safe auth-gate test, v2 static test, exact Cron verification, scheduled Easy Orders recovery confirmation, and exact Worker rollback safeguard.

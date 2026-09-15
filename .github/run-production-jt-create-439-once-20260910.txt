@@ -1,0 +1,1 @@
+User-approved live J&T shipment creation for the confirmed 439 EGP order that previously failed with Customer Code is illegal. Guard requires exactly one matching unshipped order and complete shipping data; existing AWB/idempotency prevents duplicates.

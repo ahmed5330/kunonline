@@ -1,0 +1,61 @@
+name: Android APK
+
+on:
+  push:
+    branches: [develop/ux-system-upgrade]
+    paths:
+      - 'android-app/**'
+      - '.github/workflows/android-apk.yml'
+  pull_request:
+    paths:
+      - 'android-app/**'
+      - '.github/workflows/android-apk.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+      - name: Install Android SDK
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Build debug APK
+        run: gradle -p android-app :app:assembleDebug --stacktrace
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: kun-online-android-debug
+          path: android-app/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+      - name: Prepare stable APK download
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/develop/ux-system-upgrade'
+        run: cp android-app/app/build/outputs/apk/debug/app-debug.apk Kun-Online-Mobile.apk
+      - name: Publish stable Android download
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/develop/ux-system-upgrade'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if ! gh release view android-latest >/dev/null 2>&1; then
+            gh release create android-latest \
+              --target "$GITHUB_SHA" \
+              --title "Kun Online Android" \
+              --notes "Latest development Android APK for direct installation. Debug-signed beta build." \
+              --prerelease
+          fi
+          gh release upload android-latest Kun-Online-Mobile.apk --clobber

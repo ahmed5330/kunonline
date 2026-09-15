@@ -1,0 +1,70 @@
+name: Production v38 isolated canary diagnostic
+on:
+  push:
+    branches: [develop/ux-system-upgrade]
+    paths: [.github/run-production-v38-canary-20260910.txt]
+permissions:
+  contents: read
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: preview
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CANARY_NAME: kunonline-prod-canary-20260910
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: release/commerce-v38-production-20260910
+          fetch-depth: 1
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: npm install --ignore-scripts
+      - name: Create default-routing canary config
+        run: |
+          cat >wrangler.canary.tmp.toml <<'TOML'
+          name = "kunonline-prod-canary-20260910"
+          main = "src/index-production-sync.js"
+          compatibility_date = "2026-08-23"
+          [assets]
+          directory = "./public"
+          binding = "ASSETS"
+          [[d1_databases]]
+          binding = "DB"
+          database_name = "kunonline"
+          database_id = "c426601d-182f-486e-a5c1-bb1bca0ecb0b"
+          [vars]
+          APP_ENV = "production"
+          TRACKING_PROVIDER = "track123"
+          TOML
+      - name: Deploy isolated canary
+        run: npx wrangler deploy --config wrangler.canary.tmp.toml
+      - name: Probe default routing with propagation retry
+        run: |
+          set -euo pipefail
+          base="https://${CANARY_NAME}.mr-a-mnaa.workers.dev"
+          passed=0
+          for i in $(seq 1 15); do
+            h="$(curl -sS -o /tmp/h -w '%{http_code}' "$base/health" || true)"
+            j="$(curl -sS -o /tmp/j -w '%{http_code}' -X POST -H 'Content-Type: application/json' "$base/api/jt/shipments/KUN-SMOKE-NO-ORDER" --data '{}' || true)"
+            e="$(curl -sS -o /tmp/e -w '%{http_code}' "$base/health/easyorders-sync" || true)"
+            jt_route="$(node -e 'const fs=require("fs");try{const p=JSON.parse(fs.readFileSync("/tmp/j","utf8"));process.stdout.write(p.code==="AUTH_REQUIRED"?"yes":"no")}catch{process.stdout.write("no")}' || true)"
+            echo "CANARY_ATTEMPT=$i HEALTH=$h JT=$j JT_ROUTE=$jt_route EASY=$e"
+            if [ "$h" = "200" ] && [ "$jt_route" = "yes" ] && [ "$e" = "200" ]; then passed=1; break; fi
+            sleep 4
+          done
+          node - <<'NODE'
+          const fs=require('fs');
+          for(const [n,p] of [['HEALTH','/tmp/h'],['JT','/tmp/j'],['EASY','/tmp/e']]){let x={};try{x=JSON.parse(fs.readFileSync(p,'utf8'))}catch{};const y={};for(const k of ['ok','code','error','service','build','status','message'])if(x[k]!=null)y[k]=x[k];console.log(`CANARY_${n}_SAFE=${JSON.stringify(y)}`)}
+          NODE
+          test "$passed" = "1"
+      - name: Delete isolated canary
+        if: always()
+        run: |
+          npx wrangler delete --config wrangler.canary.tmp.toml --force >/dev/null 2>&1 || true
+          rm -f /tmp/h /tmp/j /tmp/e wrangler.canary.tmp.toml

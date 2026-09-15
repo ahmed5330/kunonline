@@ -1,0 +1,2 @@
+const base=(process.argv[2]||'').replace(/\/$/,'');if(!base)throw new Error('Usage: node scripts/preview-health-check.mjs <base-url>');
+let last;for(let i=0;i<12;i++){try{const r=await fetch(`${base}/healthz`);const d=await r.json();if(r.ok&&d.ok===true&&d.environment==='preview'&&d.database==='reachable'){console.log('Restored Preview health check passed.');process.exit(0)}last=new Error(`healthz ${r.status}: ${JSON.stringify(d)}`)}catch(e){last=e}await new Promise(r=>setTimeout(r,5000));}throw last||new Error('Preview health check failed');

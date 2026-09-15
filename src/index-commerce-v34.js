@@ -1,0 +1,143 @@
+import {WorkerEntrypoint} from 'cloudflare:workers';
+import commerceV33 from './index-commerce-v33.js';
+import {permissionSnapshot,requirePermission,resolveTenant} from './access-control.js';
+import {resolveStoreScope} from './store-scope.js';
+import {syncMetaAdsForClient} from './meta-ads-sync.js';
+import {syncMetaAdsGranular} from './meta-ads-granular.js';
+import {metaAdsExpertAnalysisV2} from './meta-ads-expert.js';
+import {easyOrdersRecoveryStatus,reconcileEasyOrdersOrders} from './easyorders-order-reconciliation.js';
+import {reconcileManagementFeeForOrder} from './accounting.js';
+import {clearProductInventory,clearStaleBatchStockIfProductZero} from './inventory-clear.js';
+import {prepareIncomingEasyOrdersDedupe,prepareEasyOrdersSheetRows,persistEasyOrdersLineItems,restoreNativeSourceForMatchedSheetOrders} from './order-deduplication.js';
+
+const BUILD='preview-v34-2026-08-31-minute-meta-exact-dedupe';
+const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Kun-Build':BUILD,'X-Content-Type-Options':'nosniff','X-Frame-Options':'DENY'}});
+const text=v=>String(v??'').trim();
+const positiveInt=value=>{const n=Math.floor(Number(value));return Number.isFinite(n)&&n>0?n:0;};
+function parseConfig(row){try{return JSON.parse(row?.config_json||'{}')}catch{return {};}}
+function webhookOrderPayload(input){const root=input&&typeof input==='object'&&!Array.isArray(input)?input:{};return [root.data?.order,root.order,root.payload?.order,root.payload,root.data,root].find(x=>x&&typeof x==='object'&&!Array.isArray(x))||{};}
+
+async function currentUser(request,env,ctx){
+  const url=new URL(request.url);url.pathname='/api/me';url.search='';
+  const response=await commerceV33.fetch(new Request(url,{method:'GET',headers:request.headers}),env,ctx),me=await response.json().catch(()=>({}));
+  if(!response.ok||!me?.role)throw Object.assign(new Error(me?.error||'محتاج تسجّل دخول'),{status:response.ok?401:(response.status||401),code:'AUTH_REQUIRED'});return me;
+}
+function cleanDate(value){return /^\d{4}-\d{2}-\d{2}$/.test(String(value||''))?String(value):null;}
+function requestedRange(input={}){const to=cleanDate(input.to)||new Date().toISOString().slice(0,10),rawFrom=String(input.from||''),from=rawFrom==='beginning'?null:cleanDate(rawFrom);let days=30;if(from){days=Math.max(1,Math.min(90,Math.floor((new Date(`${to}T00:00:00Z`)-new Date(`${from}T00:00:00Z`))/86400000)+1));}else if(rawFrom==='beginning')days=90;return {from:from||undefined,to,days};}
+async function reconcileRecoveredFees(env,result){for(const id of result?.recoveredOrderIds||[])await reconcileManagementFeeForOrder(env,id).catch(()=>{});return result;}
+async function rememberEasyOrdersShortId(env,connectionId,rawPayload){
+  const order=webhookOrderPayload(rawPayload),shortId=positiveInt(order.short_id||order.shortId||rawPayload?.short_id||rawPayload?.shortId);if(!shortId||!connectionId)return;
+  const row=await env.DB.prepare("SELECT id,client_id,config_json FROM store_connections WHERE id=? AND provider='easyorders' AND status='connected'").bind(connectionId).first();if(!row)return;
+  const fresh=await env.DB.prepare('SELECT config_json FROM store_connections WHERE id=? AND client_id=?').bind(row.id,row.client_id).first(),config=parseConfig(fresh||row),oldHigh=positiveInt(config.easyOrdersRecoveryHighestShortId),oldCursor=positiveInt(config.easyOrdersRecoveryCursor);
+  config.webhookLastShortId=shortId;
+  config.easyOrdersRecoveryHighestShortId=Math.max(oldHigh,shortId);
+  if(!oldCursor)config.easyOrdersRecoveryCursor=Math.max(1,shortId-80);
+  if(!config.easyOrdersRecoverySeededAt)config.easyOrdersRecoverySeededAt=new Date().toISOString();
+  config.easyOrdersRecoveryLastError=null;
+  await env.DB.prepare('UPDATE store_connections SET config_json=?,updated_at=? WHERE id=? AND client_id=?').bind(JSON.stringify(config),new Date().toISOString(),row.id,row.client_id).run();
+}
+
+async function connectedMetaClients(env,{limit=50}={}){
+  const {results=[]}=await env.DB.prepare("SELECT client_id,config_json FROM store_connections WHERE provider='meta_ads' AND status='connected' ORDER BY updated_at DESC LIMIT ?").bind(Math.max(1,Math.min(200,Number(limit)||50))).all(),seen=new Set(),out=[];
+  for(const row of results){const clientId=text(row.client_id);if(!clientId||seen.has(clientId))continue;seen.add(clientId);const config=parseConfig(row),accountId=text(config.adAccountId||config.ad_account_id).replace(/^act_/i,'');out.push({clientId,ready:config.adAccountConfirmed===true&&Boolean(accountId)});}return out;
+}
+async function syncAllMetaAdsGranularScheduled(env,{days=30,limit=50}={}){
+  const clients=await connectedMetaClients(env,{limit}),outcomes=[];
+  for(const row of clients){if(!row.ready){outcomes.push({clientId:row.clientId,ok:false,code:'META_AD_ACCOUNT_CONFIRMATION_REQUIRED',skipped:true});continue;}try{outcomes.push({clientId:row.clientId,...await syncMetaAdsGranular(env,{clientId:row.clientId,days})});}catch(error){outcomes.push({clientId:row.clientId,ok:false,code:error?.code||'META_GRANULAR_SYNC_FAILED',error:error?.message||String(error)});}}
+  return outcomes;
+}
+async function syncAllMetaAdsNearLiveScheduled(env,{days=2,limit=50}={}){
+  const clients=await connectedMetaClients(env,{limit}),outcomes=[];
+  for(const row of clients){if(!row.ready){outcomes.push({clientId:row.clientId,ok:false,code:'META_AD_ACCOUNT_CONFIRMATION_REQUIRED',skipped:true});continue;}try{const campaign=await syncMetaAdsForClient(env,{clientId:row.clientId,days}),granular=await syncMetaAdsGranular(env,{clientId:row.clientId,days});outcomes.push({clientId:row.clientId,ok:true,campaign,granular});}catch(error){outcomes.push({clientId:row.clientId,ok:false,code:error?.code||'META_NEAR_LIVE_SYNC_FAILED',error:error?.message||String(error)});}}
+  return outcomes;
+}
+
+function requestWithJsonBody(request,body){const headers=new Headers(request.headers);headers.set('Content-Type','application/json');headers.delete('content-length');return new Request(request.url,{method:request.method,headers,body:JSON.stringify(body)});}
+
+async function fetchV34(request,env,ctx){
+  const url=new URL(request.url),path=url.pathname,method=request.method.toUpperCase();
+  try{
+    if(path==='/api/preview/version'&&method==='GET')return json({ok:true,build:BUILD,environment:env.APP_ENV||'unknown',entrypoint:'index-commerce-v34.js'});
+    if(path==='/api/navigation-access'&&method==='GET'){
+      const me=await currentUser(request,env,ctx);
+      return json({ok:true,...permissionSnapshot(me)});
+    }
+    if(path==='/api/admin/clients'&&method==='POST'){
+      const body=await request.clone().json().catch(()=>({})),response=await commerceV33.fetch(request,env,ctx);if(!response.ok)return response;const data=await response.clone().json().catch(()=>({})),fee=Number(body.baseOrderFee);
+      if(data.clientId&&Number.isFinite(fee)&&fee>=0){await env.DB.prepare('UPDATE wallet_accounts SET base_order_fee=?,min_order_fee=0,max_order_fee=0,updated_at=? WHERE client_id=?').bind(fee,new Date().toISOString(),data.clientId).run();data.baseOrderFee=fee;data.feeCap=null;}
+      return json(data,response.status);
+    }
+    if(path==='/api/orders/sheet-import'&&method==='POST'){
+      const body=await request.clone().json().catch(()=>({}));if(String(body.source||'').toLowerCase()!=='easyorders')return commerceV33.fetch(request,env,ctx);
+      const me=await currentUser(request,env,ctx);requirePermission(me,'orders','write');const clientId=resolveTenant(me,body.clientId||body.client_id||url.searchParams.get('clientId')),scope=await resolveStoreScope(env,me,clientId,body.storeId||body.store_id||url.searchParams.get('storeId')||null,{write:true});if(!scope.storeId)return json({error:'حدد المتجر قبل استيراد الشيت',code:'ORDER_IMPORT_STORE_REQUIRED'},400);
+      const prepared=await prepareEasyOrdersSheetRows(env,{clientId,storeId:scope.storeId,rows:body.rows||[]}),delegated=await commerceV33.fetch(requestWithJsonBody(request,{...body,clientId,storeId:scope.storeId,rows:prepared.rows}),env,ctx);if(!delegated.ok)return delegated;
+      await restoreNativeSourceForMatchedSheetOrders(env,{clientId,storeId:scope.storeId,orderIds:prepared.matchedOrderIds});const data=await delegated.clone().json().catch(()=>({}));return json({...data,deduplicatedExact:Number(data.deduplicatedExact||0)+prepared.deduplicated,dedupeMode:'strict-full-order'},delegated.status);
+    }
+    const stockClear=path.match(/^\/api\/inventory\/products\/([^/]+)\/clear$/);
+    if(stockClear&&method==='POST'){
+      const me=await currentUser(request,env,ctx),body=await request.clone().json().catch(()=>({})),productId=decodeURIComponent(stockClear[1]),clientId=resolveTenant(me,body.clientId||body.client_id||url.searchParams.get('clientId'));requirePermission(me,'inventory','write');
+      const product=await env.DB.prepare('SELECT id,client_id,store_id FROM products WHERE id=? AND client_id=?').bind(productId,clientId).first();if(!product)return json({error:'المنتج غير موجود في المتجر الحالي',code:'PRODUCT_NOT_FOUND'},404);
+      const requested=text(body.storeId||body.store_id||url.searchParams.get('storeId')||product.store_id)||null,scope=await resolveStoreScope(env,me,clientId,requested,{write:true});if(scope.storeId&&String(product.store_id||'')!==String(scope.storeId))return json({error:'المنتج غير موجود في هذا الفرع',code:'PRODUCT_NOT_FOUND'},404);
+      return json(await clearProductInventory(env,{clientId,storeId:product.store_id||scope.storeId||null,productId,actor:me,reason:'تصفير كامل للمخزون من شاشة المخزون'}));
+    }
+    const productDelete=path.match(/^\/api\/products\/([^/]+)$/);
+    if(productDelete&&method==='DELETE'){
+      const me=await currentUser(request,env,ctx),productId=decodeURIComponent(productDelete[1]),clientId=resolveTenant(me,url.searchParams.get('clientId')||me.clientId);requirePermission(me,'products','write');
+      const product=await env.DB.prepare('SELECT id,client_id,store_id FROM products WHERE id=? AND client_id=?').bind(productId,clientId).first();if(!product)return json({error:'المنتج مش موجود'},404);
+      const requested=text(url.searchParams.get('storeId')||product.store_id)||null,scope=await resolveStoreScope(env,me,clientId,requested,{write:true});if(scope.storeId&&String(product.store_id||'')!==String(scope.storeId))return json({error:'المنتج غير موجود في هذا الفرع'},404);
+      await clearStaleBatchStockIfProductZero(env,{clientId,storeId:product.store_id||scope.storeId||null,productId,actor:me});
+      return commerceV33.fetch(request,env,ctx);
+    }
+    const easyWebhook=path.match(/^\/webhooks\/easyorders\/([^/]+)\/[^/]+\/?$/);
+    if(easyWebhook&&method==='POST'){
+      const connectionId=decodeURIComponent(easyWebhook[1]),payload=await request.clone().json().catch(()=>({})),prepared=await prepareIncomingEasyOrdersDedupe(env,{connectionId,payload}).catch(()=>({matched:false,payload})),response=await commerceV33.fetch(request,env,ctx);
+      if(response.ok){await rememberEasyOrdersShortId(env,connectionId,payload).catch(()=>{});const data=await response.clone().json().catch(()=>({})),orderId=data.id||prepared.orderId||null,clientId=prepared.clientId||null,storeId=prepared.storeId||null;if(orderId&&clientId)await persistEasyOrdersLineItems(env,{clientId,storeId,orderId,payload,skip:prepared.matched}).catch(()=>{});if(prepared.matched)return json({...data,id:orderId,deduplicatedExact:true,dedupeMode:'strict-full-order'},response.status);}
+      return response;
+    }
+    if(path==='/api/commerce/order-sync/recovery-status'&&method==='GET'){
+      const me=await currentUser(request,env,ctx);requirePermission(me,'orders','read');const clientId=resolveTenant(me,url.searchParams.get('clientId')),scope=await resolveStoreScope(env,me,clientId,url.searchParams.get('storeId')||null,{write:false});
+      return json(await easyOrdersRecoveryStatus(env,{clientId,storeId:scope.storeId||null,connectionId:url.searchParams.get('connectionId')||null}));
+    }
+    if(path==='/api/commerce/order-sync/reconcile'&&method==='POST'){
+      const me=await currentUser(request,env,ctx);requirePermission(me,'orders','write');const body=await request.clone().json().catch(()=>({})),clientId=resolveTenant(me,body.clientId||body.client_id||url.searchParams.get('clientId')),scope=await resolveStoreScope(env,me,clientId,body.storeId||body.store_id||url.searchParams.get('storeId')||null,{write:true});
+      const result=await reconcileEasyOrdersOrders(env,{clientId,storeId:scope.storeId||null,connectionId:body.connectionId||body.connection_id||null,maxRequests:body.maxRequests||30,lookback:body.lookback||80});
+      return json(await reconcileRecoveredFees(env,result));
+    }
+    if(path==='/api/integrations/meta-ads/expert-analysis'&&method==='GET'){
+      const me=await currentUser(request,env,ctx);requirePermission(me,'analytics','read');const clientId=resolveTenant(me,url.searchParams.get('clientId')),scope=await resolveStoreScope(env,me,clientId,url.searchParams.get('storeId')||null,{write:false});
+      return json(await metaAdsExpertAnalysisV2(env,{clientId,storeId:scope.storeId||null,from:url.searchParams.get('from'),to:url.searchParams.get('to')}));
+    }
+    if(path==='/api/integrations/meta-ads/expert-sync'&&method==='POST'){
+      const me=await currentUser(request,env,ctx);requirePermission(me,'analytics','read');const body=await request.clone().json().catch(()=>({})),clientId=resolveTenant(me,body.clientId||body.client_id||url.searchParams.get('clientId')),scope=await resolveStoreScope(env,me,clientId,body.storeId||body.store_id||url.searchParams.get('storeId')||null,{write:false}),range=requestedRange(body);
+      const campaignSync=await syncMetaAdsForClient(env,{clientId,storeId:scope.storeId||null,...range});
+      const granularSync=await syncMetaAdsGranular(env,{clientId,storeId:scope.storeId||null,...range});
+      const analysis=await metaAdsExpertAnalysisV2(env,{clientId,storeId:scope.storeId||null,from:campaignSync.from||range.from,to:campaignSync.to||range.to});
+      return json({ok:true,campaignSync,granularSync,analysis});
+    }
+    return commerceV33.fetch(request,env,ctx);
+  }catch(error){return json({error:error?.message||'حدث خطأ',code:error?.code||'COMMERCE_V34_ERROR',path,method},error?.status||500);}
+}
+
+async function runScheduledWithEasyOrdersRecovery(controller,env,ctx){
+  const pending=[],nestedCtx=Object.create(ctx||null);nestedCtx.waitUntil=promise=>{if(promise)pending.push(Promise.resolve(promise));};
+  let delegated;try{delegated=commerceV33.scheduled?.(controller,env,nestedCtx);}catch(error){pending.push(Promise.reject(error));}
+  if(delegated&&typeof delegated.then==='function')pending.push(Promise.resolve(delegated));
+  await Promise.allSettled(pending);
+  const cron=String(controller?.cron||'');
+  if(cron==='* * * * *')return {ok:true,easyOrdersRecovery:'skipped',metaNearLive:await syncAllMetaAdsNearLiveScheduled(env,{days:2})};
+  if(cron==='0 */2 * * *')return {ok:true,easyOrdersRecovery:'skipped',metaGranular:await syncAllMetaAdsGranularScheduled(env,{days:30})};
+  if(cron!=='*/5 * * * *')return {ok:true,easyOrdersRecovery:'skipped'};
+  const result=await reconcileEasyOrdersOrders(env,{maxRequests:30,lookback:80});
+  await reconcileRecoveredFees(env,result);
+  return result;
+}
+
+export class SyncEntrypoint extends WorkerEntrypoint{
+  async health(){return {ok:true,build:BUILD,service:'kunonline-sync-rpc',environment:this.env.APP_ENV||'unknown'};}
+  async runCron(cron){return runScheduledWithEasyOrdersRecovery({cron:String(cron||'')},this.env,this.ctx);}
+}
+
+export default {
+  fetch:fetchV34,
+  scheduled(controller,env,ctx){const task=runScheduledWithEasyOrdersRecovery(controller,env,ctx);ctx?.waitUntil?.(task);return task;}
+};

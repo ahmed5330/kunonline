@@ -1,0 +1,77 @@
+name: Sync Preview CI/CD
+on:
+  push:
+    branches: [develop/ux-system-upgrade]
+    paths:
+      - 'src/sync-scheduler-preview.js'
+      - 'wrangler.sync.preview.toml'
+      - 'scripts/verify-sync-preview-config.mjs'
+      - 'scripts/verify-cloudflare-crons.mjs'
+      - 'scripts/smoke-sync-preview.mjs'
+      - '.github/workflows/sync-preview.yml'
+  workflow_dispatch:
+concurrency:
+  group: kunonline-sync-preview
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  test-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: preview
+      url: https://kunonline-sync-preview.mr-a-mnaa.workers.dev/healthz
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: npm install --ignore-scripts
+      - name: Validate isolated sync scheduler
+        run: npm run test:sync-scheduler
+      - name: Dry-run dedicated sync Worker
+        run: npm run check:sync-deploy
+      - name: Verify Production remains untouched
+        run: npm run check:production-config
+      - name: Capture current sync Worker version if present
+        id: rollback_base
+        shell: bash
+        run: |
+          set +e
+          status="$(npx wrangler deployments status --config wrangler.sync.preview.toml --json 2>/dev/null)"
+          code=$?
+          set -e
+          if [ "$code" -ne 0 ] || [ -z "$status" ]; then
+            echo "version_id=" >> "$GITHUB_OUTPUT"
+            echo "No existing sync Worker version found; this may be the first deployment."
+            exit 0
+          fi
+          version="$(printf '%s' "$status" | node -e '
+            let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{
+              try{const root=JSON.parse(raw),hits=[];const walk=x=>{if(Array.isArray(x)){for(const v of x)walk(v);return;}if(!x||typeof x!=="object")return;const id=x.version_id||x.versionId;const pct=x.percentage??x.traffic_percentage??x.trafficPercentage;if(id)hits.push({id:String(id),pct:pct==null?null:Number(pct)});for(const v of Object.values(x))walk(v);};walk(root);const unique=[...new Map(hits.map(x=>[x.id,x])).values()];const full=unique.find(x=>x.pct===100||x.pct===1)||(unique.length===1?unique[0]:null);if(full)process.stdout.write(full.id);}catch{}});')"
+          echo "version_id=$version" >> "$GITHUB_OUTPUT"
+          echo "Captured current sync Worker version: ${version:-none}"
+      - name: Deploy dedicated sync Worker
+        id: deploy
+        run: npm run deploy:sync-preview
+      - name: Verify sync Worker Cron + RPC health
+        id: smoke
+        continue-on-error: true
+        env:
+          SYNC_SMOKE_ATTEMPTS: '36'
+          SYNC_SMOKE_INTERVAL_MS: '5000'
+        run: npm run smoke:sync-preview
+      - name: Restore previous sync Worker after failed smoke
+        if: always() && steps.smoke.outcome == 'failure' && steps.rollback_base.outputs.version_id != ''
+        run: |
+          npx wrangler versions deploy "${{ steps.rollback_base.outputs.version_id }}@100%" --yes --config wrangler.sync.preview.toml --message "Automatic sync Preview restore after failed validation"
+      - name: Mark failed sync deployment
+        if: always() && steps.smoke.outcome == 'failure'
+        run: |
+          echo "Dedicated sync Worker failed validation after the RPC stabilization window. The previous scheduler version was restored when available; the app Worker intentionally owns zero Cron Triggers."
+          exit 1

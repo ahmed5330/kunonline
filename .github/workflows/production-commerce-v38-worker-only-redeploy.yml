@@ -1,0 +1,180 @@
+name: Production Commerce v38 worker-only redeploy
+on:
+  push:
+    branches: [develop/ux-system-upgrade]
+    paths: [.github/run-production-v38-worker-only-redeploy-20260910.txt]
+concurrency:
+  group: kunonline-production-20260910
+  cancel-in-progress: false
+permissions:
+  contents: read
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    environment:
+      name: preview
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      RELEASE_REF: release/commerce-v38-production-20260910
+      EXPECTED_RELEASE_SHA: 964286d3eddb8c7302b038f002024e883acaf946
+      PROD_CUSTOM: https://app.kun-online.com
+      PROD_WORKERS: https://kunonline.mr-a-mnaa.workers.dev
+    steps:
+      - name: Checkout exact approved release
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ env.RELEASE_REF }}
+          fetch-depth: 1
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: npm install --ignore-scripts
+
+      - name: Verify exact release and Production database readiness
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_RELEASE_SHA"
+          grep -q "import app from './index-commerce-v38.js';" src/index-production-sync.js
+          node --check src/index-production-sync.js
+          npm run check:production-config
+          result="$(npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "SELECT COUNT(*) AS migration_count FROM d1_migrations; SELECT name AS last_migration FROM d1_migrations ORDER BY id DESC LIMIT 1; SELECT COUNT(*) AS unmapped_orders FROM orders WHERE client_id IS NOT NULL AND trim(client_id)<>'' AND store_id IS NULL; SELECT COUNT(*) AS unmapped_customers FROM customers WHERE client_id IS NOT NULL AND trim(client_id)<>'' AND store_id IS NULL; SELECT COUNT(*) AS unmapped_products FROM products WHERE client_id IS NOT NULL AND trim(client_id)<>'' AND store_id IS NULL;" --json)"
+          printf '%s' "$result" | node -e '
+            let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{const p=JSON.parse(raw),rows=[];const walk=x=>{if(Array.isArray(x))return x.forEach(walk);if(x&&typeof x==="object"){if(Array.isArray(x.results))rows.push(...x.results);Object.values(x).forEach(walk)}};walk(p);const get=k=>rows.find(x=>x[k]!=null)?.[k];if(Number(get("migration_count"))!==23)throw new Error(`migration_count=${get("migration_count")}`);if(get("last_migration")!=="0022_order_duplicate_links.sql")throw new Error(`last_migration=${get("last_migration")}`);for(const k of ["unmapped_orders","unmapped_customers","unmapped_products"])if(Number(get(k))!==0)throw new Error(`${k}=${get(k)}`);console.log("Production D1 readiness passed: 23 migrations through 0022 and core store mappings complete.");});'
+
+      - name: Verify required Production Worker secrets by name only
+        run: |
+          set -euo pipefail
+          npx wrangler secret list --config wrangler.production.toml >/tmp/prod-secrets.json
+          node - <<'NODE'
+          const fs=require('fs');
+          const p=JSON.parse(fs.readFileSync('/tmp/prod-secrets.json','utf8'));
+          const a=Array.isArray(p)?p:(p.result||[]);
+          const names=new Set(a.map(x=>x.name||x.key));
+          for(const k of ['SESSION_SECRET','TOKEN_ENC_KEY','INTEGRATION_ENCRYPTION_KEY']) if(!names.has(k)) throw new Error(`Missing Production Worker secret: ${k}`);
+          console.log('Required Production Worker secret names are present.');
+          NODE
+          rm -f /tmp/prod-secrets.json
+
+      - name: Capture exact current Production Worker version
+        id: before
+        run: |
+          set -euo pipefail
+          status="$(npx wrangler deployments status --config wrangler.production.toml --json)"
+          version="$(printf '%s' "$status" | node -e '
+            let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{const root=JSON.parse(raw),hits=[];const walk=x=>{if(Array.isArray(x)){x.forEach(walk);return}if(!x||typeof x!=="object")return;const id=x.version_id||x.versionId,p=x.percentage??x.traffic_percentage??x.trafficPercentage;if(id)hits.push({id:String(id),p:p==null?null:Number(p)});Object.values(x).forEach(walk)};walk(root);const u=[...new Map(hits.map(x=>[x.id,x])).values()];const full=u.find(x=>x.p===100||x.p===1)||(u.length===1?u[0]:null);if(!full)process.exit(2);process.stdout.write(full.id)});')"
+          test -n "$version"
+          echo "version_id=$version" >> "$GITHUB_OUTPUT"
+          echo "Pre-deploy Production Worker version: $version"
+
+      - name: Dry-run exact Production bundle
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --dry-run --config wrangler.production.toml >/tmp/prod-dry-run.log 2>&1
+          rm -f /tmp/prod-dry-run.log
+          echo 'Production bundle dry-run passed.'
+
+      - name: Deploy approved Commerce v38 Worker only
+        id: deploy
+        run: |
+          set -euo pipefail
+          echo "attempted=true" >> "$GITHUB_OUTPUT"
+          echo "deploy_epoch=$(date -u +%s)" >> "$GITHUB_OUTPUT"
+          npx wrangler deploy --config wrangler.production.toml
+
+      - name: Wait for Cloudflare propagation on both Production hosts
+        run: |
+          set -euo pipefail
+          for base in "$PROD_WORKERS" "$PROD_CUSTOM"; do
+            ok=0
+            for i in $(seq 1 20); do
+              h="$(curl -sS -o /tmp/health -w '%{http_code}' "$base/health" || true)"
+              e="$(curl -sS -o /tmp/easy -w '%{http_code}' "$base/health/easyorders-sync" || true)"
+              if [ "$h" = "200" ] && [ "$e" = "200" ]; then
+                if node -e 'const fs=require("fs");const p=JSON.parse(fs.readFileSync("/tmp/easy","utf8"));if(p.ok!==true||p.service!=="easyorders-production-sync"||p.build!=="production-commerce-v38-free-tier-safe-2026-09-10")process.exit(1)' >/dev/null 2>&1; then
+                  echo "Propagation ready on $base at attempt $i."
+                  ok=1
+                  break
+                fi
+              fi
+              sleep 4
+            done
+            test "$ok" = "1"
+          done
+          rm -f /tmp/health /tmp/easy
+
+      - name: Verify v38 J&T route safely without creating a shipment
+        run: |
+          set -euo pipefail
+          for base in "$PROD_WORKERS" "$PROD_CUSTOM"; do
+            ok=0
+            for i in $(seq 1 12); do
+              code="$(curl -sS -o /tmp/jt -w '%{http_code}' -X POST -H 'Content-Type: application/json' "$base/api/jt/shipments/KUN-SMOKE-NO-ORDER" --data '{}' || true)"
+              route="$(node -e 'const fs=require("fs");try{const p=JSON.parse(fs.readFileSync("/tmp/jt","utf8"));process.stdout.write(p.code==="AUTH_REQUIRED"?"yes":"no")}catch{process.stdout.write("no")}' || true)"
+              if [ "$code" = "401" ] && [ "$route" = "yes" ]; then
+                echo "J&T auth gate passed on $base at attempt $i (HTTP 401 / AUTH_REQUIRED)."
+                ok=1
+                break
+              fi
+              sleep 3
+            done
+            if [ "$ok" != "1" ]; then
+              echo "J&T route failed safe validation on $base; last HTTP=$code route=$route"
+              exit 1
+            fi
+          done
+          rm -f /tmp/jt
+
+      - name: Verify Production v2 static application is live
+        run: |
+          set -euo pipefail
+          for base in "$PROD_WORKERS" "$PROD_CUSTOM"; do
+            code="$(curl -sS -o /tmp/v2 -w '%{http_code}' "$base/v2/" || true)"
+            test "$code" = "200"
+            grep -q '<html' /tmp/v2 || grep -q '<!DOCTYPE html' /tmp/v2
+            echo "v2 static app live on $base."
+          done
+          rm -f /tmp/v2
+
+      - name: Verify exact Production Cron ownership
+        run: |
+          set -euo pipefail
+          schedules="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/kunonline/schedules")"
+          printf '%s' "$schedules" | node -e '
+            let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{const p=JSON.parse(raw);if(p.success===false)throw new Error(JSON.stringify(p.errors));const got=(p.result||[]).map(x=>x.cron).sort();const want=["*/5 * * * *","0 */2 * * *"].sort();if(JSON.stringify(got)!==JSON.stringify(want))throw new Error(`Cron mismatch: ${JSON.stringify(got)}`);console.log(`Production Cron integrity passed: ${got.join(" | ")}`);});'
+
+      - name: Confirm a real post-deploy Easy Orders scheduled recovery
+        run: |
+          set -euo pipefail
+          deploy_epoch="${{ steps.deploy.outputs.deploy_epoch }}"
+          for i in $(seq 1 72); do
+            payload="$(curl -fsS "$PROD_CUSTOM/health/easyorders-sync" || true)"
+            if [ -n "$payload" ]; then
+              ok="$(printf '%s' "$payload" | node -e '
+                let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{try{const p=JSON.parse(raw),t=Date.parse(p.lastRunAt||"");const deploy=Number(process.argv[1])*1000;if(Number.isFinite(t)&&t>=deploy&&!["error","not_run"].includes(p.status)){console.log("yes");console.error(`Easy Orders recovery confirmed: status=${p.status} clients=${p.connectedClients} checked=${p.checkedClients} requests=${p.requests} recovered=${p.recovered} updated=${p.updated} lastRunAt=${p.lastRunAt}`)}}catch{}});' "$deploy_epoch")"
+              if [ "$ok" = "yes" ]; then exit 0; fi
+            fi
+            sleep 5
+          done
+          echo 'No healthy post-deploy Easy Orders scheduled recovery was observed within 6 minutes.'
+          exit 1
+
+      - name: Final Production database invariant check
+        run: |
+          set -euo pipefail
+          result="$(npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "SELECT COUNT(*) AS migration_count FROM d1_migrations; SELECT COUNT(*) AS unmapped_orders FROM orders WHERE client_id IS NOT NULL AND trim(client_id)<>'' AND store_id IS NULL;" --json)"
+          printf '%s' "$result" | node -e '
+            let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{const p=JSON.parse(raw),rows=[];const walk=x=>{if(Array.isArray(x))return x.forEach(walk);if(x&&typeof x==="object"){if(Array.isArray(x.results))rows.push(...x.results);Object.values(x).forEach(walk)}};walk(p);const mc=rows.find(x=>x.migration_count!=null),uo=rows.find(x=>x.unmapped_orders!=null);if(Number(mc?.migration_count)!==23||Number(uo?.unmapped_orders)!==0)throw new Error(JSON.stringify({mc,uo}));console.log('Final Production DB invariant passed.');});'
+
+      - name: Roll back exact prior Worker on true runtime validation failure
+        if: failure() && steps.deploy.outputs.attempted == 'true'
+        run: |
+          set -euo pipefail
+          npx wrangler rollback "${{ steps.before.outputs.version_id }}" --config wrangler.production.toml --message "Automatic rollback: Production v38 worker-only runtime validation failed"
+          echo 'Production Worker rolled back to exact pre-deploy version. Production D1 remains on approved additive migration 0022.'
+
+      - name: Clean temporary files
+        if: always()
+        run: rm -f /tmp/prod-secrets.json /tmp/prod-dry-run.log /tmp/health /tmp/easy /tmp/jt /tmp/v2

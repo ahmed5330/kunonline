@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Kun Online</string>
+    <string name="caller_unknown">رقم غير مسجل في العملاء</string>
+    <string name="caller_loading">جاري التعرف على العميل…</string>
+</resources>

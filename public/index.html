@@ -503,12 +503,13 @@ const STATE_TEXT = {
   shipped:'تم الشحن', signed:'تم التسليم — تحصيل منتظر', collected:'تم التحصيل',
   returned:'مرتجع', cancelled:'تم إلغاء الطلب'
 };
-const ROLE_LABELS = { admin:'مدير', ops:'تشغيل وشحن', support:'خدمة عملاء', accountant:'محاسب', client:'عميل' };
+const ROLE_LABELS = { admin:'مدير', ops:'تشغيل وشحن', support:'خدمة عملاء', accountant:'محاسب', viewer:'مشاهدة فقط', client:'عميل' };
 const ROLE_DESC = {
   admin:'كل الصلاحيات — بيانات العملاء والحسابات والفريق',
   ops:'الأوردرات وحالات الشحن + الإدخال اليومي. مش بيوصل للحسابات',
   support:'الأوردرات وحالاتها بس',
-  accountant:'المصاريف والتحصيلات + مشاهدة الأوردرات من غير تعديل'
+  accountant:'المصاريف والتحصيلات + مشاهدة الأوردرات من غير تعديل',
+  viewer:'مشاهدة البيانات فقط بدون أي تعديل'
 };
 const EXPENSE_CATS = ['رواتب وأجور','إعلانات ممولة','إيجار','اشتراكات وأدوات','شحن ومرتجعات','عمولات','مصاريف بنكية','ضرائب','تسويق ومحتوى','مصاريف إدارية','أخرى'];
 const INCOME_CATS  = ['اشتراك شهري','عمولة لكل أوردر','رسوم تأسيس متجر','إدارة إعلانات','استشارات','مشروع خاص','أخرى'];
@@ -3755,7 +3756,7 @@ function adminUsers(){
       <div class="field"><label>الاسم</label><input id="u_name" value="${esc(u.name||'')}" placeholder="اسم عضو الفريق"></div>
       <div class="field"><label>البريد الإلكتروني</label><input id="u_email" type="email" value="${esc(u.email||'')}" placeholder="name@kun-online.com"></div>
       <div class="field"><label>الصلاحية</label><select id="u_role">
-        ${['admin','ops','support','accountant','client'].map(r=>
+        ${['admin','ops','support','accountant','viewer','client'].map(r=>
           `<option value="${r}" ${u.role===r?'selected':''}>${ROLE_LABELS[r]}</option>`).join('')}</select></div>
       <div class="field"><label>مربوط بأي متجر</label><select id="u_client"><option value="">—</option>${clientOpts}</select></div>
       <div class="field"><label>الحالة</label><select id="u_status">
@@ -3766,7 +3767,7 @@ function adminUsers(){
           placeholder="${editingUser?'سيبها فاضية لو مش عايز تغيّرها':'٨ حروف على الأقل'}"></div>
     </div>
     <ul class="cost-list" style="margin-top:6px">
-      ${['admin','ops','support','accountant'].map(r=>`<li>
+      ${['admin','ops','support','accountant','viewer'].map(r=>`<li>
         <span class="sw" style="background:${r==='admin'?'var(--brick)':r==='accountant'?'var(--gold)':'var(--pine)'}"></span>
         <span class="g"><b>${ROLE_LABELS[r]}</b> — ${ROLE_DESC[r]}</span></li>`).join('')}
     </ul>
@@ -4996,7 +4997,7 @@ function bindAdmin(){
       if(pass && pass.length<8){ toast('كلمة المرور لازم تكون ٨ حروف على الأقل'); return; }
       const role = $('u_role').value;
       const body = { email, name:$('u_name').value.trim(), role,
-        clientId: role==='client' ? ($('u_client').value || null) : null,
+        clientId:$('u_client').value || null,
         status:$('u_status').value };
       if(editingUser) body.id = editingUser.id;
       if(pass) body.password = pass;

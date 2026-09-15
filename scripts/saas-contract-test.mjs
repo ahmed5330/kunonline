@@ -1,0 +1,12 @@
+import {readFile} from 'node:fs/promises';
+const migration=await readFile(new URL('../migrations/0005_saas_control_plane.sql',import.meta.url),'utf8');
+const worker=await readFile(new URL('../src/index-commerce-v7.js',import.meta.url),'utf8');
+const access=await readFile(new URL('../src/access-control.js',import.meta.url),'utf8');
+const must=(ok,msg)=>{if(!ok)throw new Error(msg)};
+for(const table of ['tenant_settings','subscriptions','usage_daily','support_tickets','store_connections']) must(migration.includes(`CREATE TABLE IF NOT EXISTS ${table}`),`Missing ${table}`);
+for(const endpoint of ['/api/tenant/overview','/api/store-connections','/api/integrations/health','/api/support-tickets','/api/usage','/api/billing']) must(worker.includes(endpoint),`Missing ${endpoint}`);
+must(access.includes("'integrations.*'"),'Integrations permission missing');
+must(access.includes("'support.*'"),'Support permission missing');
+must(access.includes("'billing.read'"),'Billing read permission missing');
+must(access.includes("'usage.read'"),'Usage read permission missing');
+console.log('SaaS contract checks passed: tenant, billing, usage, support and store connections.');

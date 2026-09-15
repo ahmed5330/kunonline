@@ -1,0 +1,13 @@
+import {readFile} from 'node:fs/promises';
+const migration=await readFile(new URL('../migrations/0004_execution_ops.sql',import.meta.url),'utf8');
+const worker=await readFile(new URL('../src/index-commerce-v6.js',import.meta.url),'utf8');
+const must=(ok,msg)=>{if(!ok)throw new Error(msg)};
+for(const table of ['execution_jobs','notifications','integration_health']) must(migration.includes(`CREATE TABLE IF NOT EXISTS ${table}`),`Missing ${table}`);
+must(migration.includes('UNIQUE INDEX IF NOT EXISTS idx_execution_jobs_idempotency'),'Execution idempotency index missing');
+must(worker.includes("approval.status!=='approved'"),'Execution must require approved request');
+must(worker.includes('idempotency_key'),'Execution queue must be idempotent');
+must(worker.includes("['failed','dead_letter']"),'Retry must be restricted to failed/dead-letter jobs');
+must(worker.includes('/api/system-status'),'System status endpoint missing');
+must(worker.includes('/api/notifications'),'Notification center API missing');
+must(worker.includes('/api/execution-jobs'),'Execution jobs API missing');
+console.log('Operations contract checks passed: approvals -> idempotent queue, retries, notifications, status.');

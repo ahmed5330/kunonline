@@ -1,0 +1,153 @@
+import commerceV34,{SyncEntrypoint as SyncEntrypointV34} from './index-commerce-v34.js';
+import commerceV33 from './index-commerce-v33.js';
+import {requirePermission,resolveTenant} from './access-control.js';
+import {resolveStoreScope} from './store-scope.js';
+import {computeDashboardSnapshot} from './dashboard-intelligence.js';
+import {campaignPerformance} from './marketing-performance.js';
+import {decorateDashboardWithManagementFees} from './accounting.js';
+import {reconcileEasyOrdersDuplicates,duplicateIdsForOrders} from './order-deduplication-v2.js';
+import {returnsExchangesBoard,saveOutcomeReason} from './returns-exchanges.js';
+import {syncEasyOrdersPrices} from './easyorders-price-sync.js';
+import {syncMetaAdsForClient} from './meta-ads-sync.js';
+import {syncMetaAdsGranular} from './meta-ads-granular.js';
+
+const BUILD='preview-v35-2026-09-06-free-tier-safe-sync';
+const json=(data,status=200,extra={})=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Kun-Build':BUILD,'X-Content-Type-Options':'nosniff','X-Frame-Options':'DENY',...extra}});
+const text=v=>String(v??'').trim();
+const num=v=>Number(v)||0;
+const parseArr=v=>{try{const x=JSON.parse(v||'[]');return Array.isArray(x)?x:[];}catch{return [];}};
+const isoDate=/^\d{4}-\d{2}-\d{2}$/;
+function cairoToday(){const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Cairo',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date()),g=t=>parts.find(x=>x.type===t)?.value||'';return `${g('year')}-${g('month')}-${g('day')}`;}
+function parseDate(value,fallback){const v=text(value);return isoDate.test(v)?v:fallback;}
+function hasAuth(request){return Boolean(text(request.headers.get('cookie'))||text(request.headers.get('authorization')));}
+function authRequired(){return json({error:'محتاج تسجّل دخول',code:'AUTH_REQUIRED'},401);}
+
+async function currentUser(request,env,ctx){
+  const url=new URL(request.url);url.pathname='/api/me';url.search='';
+  const response=await commerceV34.fetch(new Request(url,{method:'GET',headers:request.headers}),env,ctx),me=await response.json().catch(()=>({}));
+  if(!response.ok||!me?.role)throw Object.assign(new Error(me?.error||'محتاج تسجّل دخول'),{status:response.ok?401:(response.status||401),code:'AUTH_REQUIRED'});
+  return me;
+}
+function jsonRequest(request,body){const headers=new Headers(request.headers);headers.set('Content-Type','application/json');headers.delete('content-length');return new Request(request.url,{method:request.method,headers,body:JSON.stringify(body)});}
+async function duplicateFilteredResponse(response,env){if(!response.ok)return response;const data=await response.clone().json().catch(()=>null);if(!data||!Array.isArray(data.orders))return response;const duplicateIds=await duplicateIdsForOrders(env,data.orders);if(!duplicateIds.size)return response;data.orders=data.orders.filter(order=>!duplicateIds.has(text(order.id)));data.duplicateOrdersHidden=duplicateIds.size;return json(data,response.status);}
+async function persistOutcomeReason(env,{clientId,orderId,state,returnType,reason,sourceSection,me}){
+  const row=await env.DB.prepare('SELECT history,return_type FROM orders WHERE id=? AND client_id=?').bind(orderId,clientId).first();if(!row)return;
+  const history=parseArr(row.history),resolvedReturnType=state==='returned'?(text(returnType)||text(row.return_type)||'full'):null,classification=state==='cancelled'?'cancelled':resolvedReturnType==='exchange'?'exchange':'returned',at=new Date().toISOString(),entry={type:'outcome_reason',state,outcomeState:state,classification,returnType:resolvedReturnType,reason,outcomeReason:reason,sourceSection:text(sourceSection)||'customer-service',note:`${classification==='exchange'?'سبب الاستبدال':classification==='returned'?'سبب المرتجع':'سبب الإلغاء'}: ${reason}`,at,by:me?.email||me?.name||me?.role||'user',byName:me?.name||me?.email||me?.role||'user',byUserId:me?.uid||me?.id||null};
+  history.push(entry);await env.DB.prepare('UPDATE orders SET history=? WHERE id=? AND client_id=?').bind(JSON.stringify(history),orderId,clientId).run();
+}
+async function outcomeStateTransition(request,env,ctx,match){
+  const body=await request.clone().json().catch(()=>({})),state=text(body.state);if(!['returned','cancelled'].includes(state))return commerceV34.fetch(request,env,ctx);
+  const reason=text(body.reason||body.outcomeReason);if(reason.length<2)return json({error:'اكتب سبب واضح للمرتجع أو الاستبدال أو الإلغاء قبل تحويل الأوردر',code:'ORDER_OUTCOME_REASON_REQUIRED'},400);if(reason.length>1000)return json({error:'سبب الحالة طويل جدًا',code:'ORDER_OUTCOME_REASON_TOO_LONG'},400);
+  const returnType=state==='returned'?(text(body.returnType||body.return_type)||'full'):null;if(returnType&&!['full','partial','exchange'].includes(returnType))return json({error:'نوع المرتجع غير صحيح',code:'RETURN_TYPE_INVALID'},400);
+  const me=await currentUser(request,env,ctx);requirePermission(me,'orders','update');const clientId=resolveTenant(me,body.clientId||new URL(request.url).searchParams.get('clientId')),orderId=decodeURIComponent(match[1]),forward={...body,state,...(state==='returned'?{returnType}:{}),reason,outcomeReason:reason};
+  const response=await commerceV34.fetch(jsonRequest(request,forward),env,ctx);if(!response.ok)return response;
+  if(state==='returned'&&returnType)await env.DB.prepare('UPDATE orders SET return_type=? WHERE id=? AND client_id=?').bind(returnType,orderId,clientId).run();
+  await persistOutcomeReason(env,{clientId,orderId,state,returnType,reason,sourceSection:body.sourceSection,me});
+  const data=await response.clone().json().catch(()=>({ok:true}));return json({...data,outcomeReason:reason,returnType:state==='returned'?returnType:null,classification:state==='cancelled'?'cancelled':returnType==='exchange'?'exchange':'returned'},response.status);
+}
+
+async function canonicalOrderCounts(env,{clientId,storeId=null}){
+  const storeSql=storeId?' AND o.store_id=?':'',binds=storeId?[clientId,storeId]:[clientId],today=cairoToday(),canonical=" AND NOT EXISTS (SELECT 1 FROM order_duplicate_links d WHERE d.duplicate_order_id=o.id)";
+  const [summary,todayRow,states]=await Promise.all([
+    env.DB.prepare(`SELECT COUNT(*) total,SUM(CASE WHEN o.state IN ('pending','confirmed','preparing','shipped','deferred') THEN 1 ELSE 0 END) customer_service_active FROM orders o WHERE o.client_id=?${storeSql}${canonical}`).bind(...binds).first(),
+    env.DB.prepare(`SELECT COUNT(*) total FROM orders o WHERE o.client_id=?${storeSql}${canonical} AND date(COALESCE(o.date,o.created_at))=date(?)`).bind(...binds,today).first(),
+    env.DB.prepare(`SELECT COALESCE(o.state,'pending') state,COUNT(*) total FROM orders o WHERE o.client_id=?${storeSql}${canonical} GROUP BY COALESCE(o.state,'pending') ORDER BY total DESC`).bind(...binds).all()
+  ]);
+  return {allOrders:num(summary?.total),todayOrders:num(todayRow?.total),customerServiceActive:num(summary?.customer_service_active),byState:(states?.results||[]).map(row=>({label:text(row.state)||'pending',value:num(row.total)}))};
+}
+async function canonicalBeginning(env,clientId,storeId=null){const binds=storeId?[clientId,storeId]:[clientId],storeSql=storeId?' AND o.store_id=?':'';const row=await env.DB.prepare(`SELECT MIN(date(COALESCE(o.date,o.created_at))) d FROM orders o WHERE o.client_id=?${storeSql} AND NOT EXISTS (SELECT 1 FROM order_duplicate_links x WHERE x.duplicate_order_id=o.id)`).bind(...binds).first();return row?.d||cairoToday();}
+async function canonicalDashboardData(env,{clientId,storeId=null,from=null,to=null}){
+  const today=cairoToday(),resolvedTo=parseDate(to,today),resolvedFrom=parseDate(from,resolvedTo);if(resolvedFrom>resolvedTo)throw Object.assign(new Error('بداية الفترة يجب أن تكون قبل نهايتها'),{status:400,code:'DATE_RANGE_INVALID'});
+  const orderStore=storeId?' AND o.store_id=?':'',plainStore=storeId?' AND store_id=?':'',rangeBinds=storeId?[clientId,storeId,resolvedFrom,resolvedTo]:[clientId,resolvedFrom,resolvedTo],scopeBinds=storeId?[clientId,storeId]:[clientId],historyBinds=storeId?[clientId,storeId,today,today]:[clientId,today,today],canonical=' AND NOT EXISTS (SELECT 1 FROM order_duplicate_links d WHERE d.duplicate_order_id=o.id)';
+  const [orderResult,historyResult,transactionResult,billingResult,productResult,adsResult,aiResult,storeRow]=await Promise.all([
+    env.DB.prepare(`SELECT o.id,o.client_id,o.store_id,o.date,o.created_at,o.state,o.total,o.product_cost,o.shipping_cost,o.other_cost,o.gov,o.source,o.customer_id,o.product_id,o.qty FROM orders o WHERE o.client_id=?${orderStore}${canonical} AND date(COALESCE(o.date,o.created_at)) BETWEEN date(?) AND date(?) ORDER BY COALESCE(o.date,o.created_at),o.created_at`).bind(...rangeBinds).all(),
+    env.DB.prepare(`SELECT o.id,o.date,o.created_at,o.state,o.total FROM orders o WHERE o.client_id=?${orderStore}${canonical} AND date(COALESCE(o.date,o.created_at))>=date(?,'-29 day') AND date(COALESCE(o.date,o.created_at))<=date(?)`).bind(...historyBinds).all(),
+    env.DB.prepare(`SELECT id,date,created_at,category,amount,note FROM transactions WHERE client_id=?${plainStore} AND type='expense' AND date(COALESCE(date,created_at)) BETWEEN date(?) AND date(?) ORDER BY COALESCE(date,created_at)`).bind(...rangeBinds).all(),
+    env.DB.prepare(`SELECT b.order_id,b.fee,b.status FROM order_billing b JOIN orders o ON o.id=b.order_id AND o.client_id=b.client_id WHERE b.client_id=?${storeId?' AND o.store_id=?':''}${canonical} AND date(COALESCE(o.date,o.created_at)) BETWEEN date(?) AND date(?)`).bind(...rangeBinds).all(),
+    env.DB.prepare(`SELECT id,cost FROM products WHERE client_id=?${plainStore}`).bind(...scopeBinds).all(),
+    env.DB.prepare(`SELECT metric_date,COALESCE(SUM(spend),0) spend FROM campaign_daily_metrics WHERE client_id=?${plainStore} AND date(metric_date) BETWEEN date(?) AND date(?) GROUP BY metric_date ORDER BY metric_date`).bind(...rangeBinds).all(),
+    env.DB.prepare(`SELECT id,insight_type,severity,title,rationale,metric_json,suggested_payload_json,generated_at FROM ai_insight_snapshots WHERE client_id=?${storeId?' AND (store_id=? OR store_id IS NULL)':''} AND status='active' ORDER BY generated_at DESC LIMIT 30`).bind(...scopeBinds).all(),
+    storeId?env.DB.prepare('SELECT currency FROM stores WHERE id=? AND client_id=?').bind(storeId,clientId).first():Promise.resolve({currency:'EGP'})
+  ]);
+  const marketing=await campaignPerformance(env,{clientId,storeId,from:resolvedFrom,to:resolvedTo});
+  return computeDashboardSnapshot({orders:orderResult.results||[],historyOrders:historyResult.results||[],transactions:transactionResult.results||[],billingRows:billingResult.results||[],products:productResult.results||[],dailyAds:adsResult.results||[],marketing,aiSnapshots:aiResult.results||[],from:resolvedFrom,to:resolvedTo,today,currency:storeRow?.currency||'EGP'});
+}
+async function dashboard(request,env,ctx){
+  const url=new URL(request.url),me=await currentUser(request,env,ctx);requirePermission(me,'analytics','read');const clientId=resolveTenant(me,url.searchParams.get('clientId')),scope=await resolveStoreScope(env,me,clientId,text(url.searchParams.get('storeId'))||null,{write:false}),storeId=scope.storeId||null;
+  const rawFrom=text(url.searchParams.get('from')),rawTo=text(url.searchParams.get('to'));
+  if(rawFrom!=='beginning'&&isoDate.test(rawFrom)&&isoDate.test(rawTo)&&rawFrom>rawTo)throw Object.assign(new Error('بداية الفترة يجب أن تكون قبل نهايتها'),{status:400,code:'DATE_RANGE_INVALID'});
+  let from=url.searchParams.get('from');if(from==='beginning')from=await canonicalBeginning(env,clientId,storeId);
+  let data=await canonicalDashboardData(env,{clientId,storeId,from,to:url.searchParams.get('to')}),counts=await canonicalOrderCounts(env,{clientId,storeId});
+  data=await decorateDashboardWithManagementFees(env,data,{clientId,storeId});
+  data.overview.periodOrders=num(data.overview.totalOrders);data.overview.todayOrders=counts.todayOrders;data.overview.allOrders=counts.allOrders;data.overview.customerServiceActive=counts.customerServiceActive;
+  data.overview.details=data.overview.details||{};data.overview.details.orders=[{label:data.from===data.today&&data.to===data.today?'أوردرات اليوم الفعلية':'أوردرات الفترة المختارة',value:num(data.overview.totalOrders)},{label:'إجمالي الأوردرات بدون المكرر',value:counts.allOrders},{label:'طلبات خدمة العملاء النشطة',value:counts.customerServiceActive},{label:'الحالات الحالية بدون المكرر',items:counts.byState}];
+  data.orderCountSemantics={canonical:true,totalOrders:'actual-orders-inside-selected-date-range-after-dedupe',todayOrders:'actual-cairo-day-orders-after-dedupe',allOrders:'all-canonical-orders-in-selected-scope',duplicates:'linked-sheet-duplicates-are-excluded'};
+  return json(data);
+}
+async function reconcileRoute(request,env,ctx){const me=await currentUser(request,env,ctx);requirePermission(me,'orders','update');const body=await request.clone().json().catch(()=>({})),url=new URL(request.url),clientId=resolveTenant(me,body.clientId||url.searchParams.get('clientId')),scope=await resolveStoreScope(env,me,clientId,text(body.storeId||url.searchParams.get('storeId'))||null,{write:true});return json(await reconcileEasyOrdersDuplicates(env,{clientId,storeId:scope.storeId||null,limit:Math.min(10000,Math.max(100,Number(body.limit)||2000))}));}
+const lower=v=>text(v).toLowerCase();
+async function sheetImport(request,env,ctx){const body=await request.clone().json().catch(()=>({}));if(lower(body.source)!=='easyorders')return commerceV34.fetch(request,env,ctx);return commerceV34.fetch(request,env,ctx);}
+async function easyOrdersWebhook(request,env,ctx){return commerceV34.fetch(request,env,ctx);}
+
+async function connectedMetaClients(env,{limit=20}={}){
+  const {results=[]}=await env.DB.prepare("SELECT client_id FROM store_connections WHERE provider='meta_ads' AND status='connected' ORDER BY updated_at DESC LIMIT ?").bind(Math.max(1,Math.min(50,Number(limit)||20))).all(),seen=new Set(),out=[];
+  for(const row of results){const clientId=text(row.client_id);if(clientId&&!seen.has(clientId)){seen.add(clientId);out.push(clientId);}}
+  return out;
+}
+async function syncMetaCampaignScheduled(env,{days=2,limit=20}={}){
+  const clients=await connectedMetaClients(env,{limit}),results=[];
+  for(const clientId of clients){try{results.push(await syncMetaAdsForClient(env,{clientId,days}));}catch(error){results.push({ok:false,clientId,code:error?.code||'META_SYNC_FAILED',error:error?.message||String(error)});}}
+  return {ok:results.every(x=>x.ok!==false),clients:clients.length,days,results};
+}
+async function syncMetaGranularScheduled(env,{days=2,limit=20}={}){
+  const clients=await connectedMetaClients(env,{limit}),results=[];
+  for(const clientId of clients){try{results.push(await syncMetaAdsGranular(env,{clientId,days}));}catch(error){results.push({ok:false,clientId,code:error?.code||'META_GRANULAR_SYNC_FAILED',error:error?.message||String(error)});}}
+  return {ok:results.every(x=>x.ok!==false),clients:clients.length,days,results};
+}
+
+async function fetchV35(request,env,ctx){
+  const url=new URL(request.url),path=url.pathname,method=request.method.toUpperCase();
+  try{
+    if(path==='/api/preview/version'&&method==='GET')return json({ok:true,build:BUILD,environment:env.APP_ENV||'unknown',entrypoint:'index-commerce-v35.js'});
+    if(path==='/api/dashboard'&&method==='GET'){
+      if(!hasAuth(request))return authRequired();
+      const rawFrom=text(url.searchParams.get('from')),rawTo=text(url.searchParams.get('to'));
+      if(rawFrom!=='beginning'&&isoDate.test(rawFrom)&&isoDate.test(rawTo)&&rawFrom>rawTo)return json({error:'بداية الفترة يجب أن تكون قبل نهايتها',code:'DATE_RANGE_INVALID',path,method},400);
+      return await dashboard(request,env,ctx);
+    }
+    if(path==='/api/returns-exchanges'&&method==='GET'){
+      if(!hasAuth(request))return authRequired();const me=await currentUser(request,env,ctx);requirePermission(me,'orders','read');const clientId=resolveTenant(me,url.searchParams.get('clientId'));return json(await returnsExchangesBoard(env,{clientId,me,selectedStoreId:url.searchParams.get('storeId')||''}));
+    }
+    const reasonMatch=path.match(/^\/api\/returns-exchanges\/orders\/([^/]+)\/reason$/);if(reasonMatch&&method==='PATCH'){
+      if(!hasAuth(request))return authRequired();const me=await currentUser(request,env,ctx);requirePermission(me,'orders','update');const body=await request.clone().json().catch(()=>({})),clientId=resolveTenant(me,body.clientId||url.searchParams.get('clientId'));return json(await saveOutcomeReason(env,{clientId,orderId:decodeURIComponent(reasonMatch[1]),reason:body.reason,me}));
+    }
+    const outcomeMatch=path.match(/^\/api\/customer-service\/orders\/([^/]+)\/state$/);if(outcomeMatch&&method==='PATCH')return await outcomeStateTransition(request,env,ctx,outcomeMatch);
+    if(path==='/api/orders/dedupe/reconcile'&&method==='POST'){if(!hasAuth(request))return authRequired();return await reconcileRoute(request,env,ctx);}
+    if(path==='/api/orders/sheet-import'&&method==='POST'){if(!hasAuth(request))return authRequired();return await sheetImport(request,env,ctx);}
+    const webhook=path.match(/^\/webhooks\/easyorders\/([^/]+)\/[^/]+\/?$/);if(webhook&&method==='POST')return await easyOrdersWebhook(request,env,ctx);
+    if(path==='/api/state'&&method==='GET')return await duplicateFilteredResponse(await commerceV34.fetch(request,env,ctx),env);
+    if(path==='/api/customer-service'&&method==='GET'){if(!hasAuth(request))return authRequired();return await duplicateFilteredResponse(await commerceV34.fetch(request,env,ctx),env);}
+    return await commerceV34.fetch(request,env,ctx);
+  }catch(error){return json({error:error?.message||'حدث خطأ',code:error?.code||'COMMERCE_V35_ERROR',path,method},error?.status||500);}
+}
+
+export class SyncEntrypoint extends SyncEntrypointV34{
+  async health(){const base=await super.health();return {...base,build:BUILD,dedupe:'targeted-on-webhook-and-import;full-manual-only',easyOrdersPriceSync:'four-hour',metaCampaignSync:'15-minute-gated',metaGranularSync:'two-hour'};}
+  async runCron(cron){
+    const key=String(cron||''),now=new Date(),hour=now.getUTCHours(),minute=now.getUTCMinutes();
+    if(key==='* * * * *')return {ok:true,metaCampaign:await syncMetaCampaignScheduled(this.env,{days:2,limit:20}),policy:'scheduler forwards only every 15 minutes'};
+    if(key==='*/5 * * * *'){
+      const result=await super.runCron(key);let easyOrdersPriceSync={ok:true,skipped:true,reason:'four-hour cadence'};
+      if(minute<5&&hour%4===0)easyOrdersPriceSync=await syncEasyOrdersPrices(this.env,{limitConnections:20});
+      return {...(result&&typeof result==='object'?result:{result}),orderDedupe:{ok:true,skipped:true,mode:'manual-or-targeted-only'},easyOrdersPriceSync};
+    }
+    if(key==='0 */2 * * *'){
+      let legacy=null;try{legacy=await Promise.resolve(commerceV33.scheduled?.({cron:key,scheduledTime:Date.now()},this.env,this.ctx));}catch(error){legacy={ok:false,error:error?.message||String(error)};}
+      const days=hour===2?7:2,metaGranular=await syncMetaGranularScheduled(this.env,{days,limit:20});
+      return {ok:metaGranular.ok!==false,legacy,metaGranular,policy:hour===2?'daily-seven-day-reconciliation':'two-day-incremental'};
+    }
+    return super.runCron(key);
+  }
+}
+
+export default {fetch:fetchV35,scheduled(controller,env,ctx){return commerceV34.scheduled?.(controller,env,ctx);}};
