@@ -5,6 +5,9 @@ on:
       - 'android/**'
       - '.github/workflows/android-caller-id.yml'
   workflow_dispatch:
+concurrency:
+  group: android-caller-id-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 jobs:
   build:
     runs-on: ubuntu-latest
