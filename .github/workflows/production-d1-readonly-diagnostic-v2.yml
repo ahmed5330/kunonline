@@ -74,9 +74,11 @@ jobs:
           (async()=>{
             const rows=await q(`
               SELECT la.email,la.fails,la.locked_until,
-                     u.id,u.client_id,u.role,u.status,u.created_at,
+                     u.id,u.client_id,u.role,u.status,u.created_at,u.last_login,
                      (SELECT COUNT(*) FROM users x WHERE x.client_id=u.client_id AND x.role='client') AS client_role_accounts,
-                     (SELECT x.id FROM users x WHERE x.client_id=u.client_id AND x.role='client' ORDER BY x.created_at LIMIT 1) AS reset_target_id
+                     (SELECT x.id FROM users x WHERE x.client_id=u.client_id AND x.role='client' ORDER BY x.created_at LIMIT 1) AS reset_target_id,
+                     (SELECT COUNT(*) FROM audit_log a WHERE a.action='platform.client.password_reset' AND a.entity_id=u.id) AS reset_count,
+                     (SELECT MAX(a.created_at) FROM audit_log a WHERE a.action='platform.client.password_reset' AND a.entity_id=u.id) AS latest_reset_at
               FROM login_attempts la
               JOIN users u ON lower(trim(u.email))=lower(trim(la.email))
               WHERE u.role='client'
@@ -88,7 +90,10 @@ jobs:
               failedAttempts:Number(r.fails||0),
               locked:Boolean(r.locked_until),
               clientRoleAccounts:Number(r.client_role_accounts||0),
-              isCurrentResetTarget:String(r.id)===String(r.reset_target_id)
+              isCurrentResetTarget:String(r.id)===String(r.reset_target_id),
+              resetCount:Number(r.reset_count||0),
+              latestResetAt:r.latest_reset_at||null,
+              lastLoginAt:r.last_login||null
             }));
             console.log(JSON.stringify({failedClientAccounts:safe.length,accounts:safe},null,2));
           })().catch(e=>{console.error(e.message);process.exit(1)});
