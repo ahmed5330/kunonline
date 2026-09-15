@@ -9,6 +9,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
 import android.webkit.CookieManager
+import android.webkit.JavascriptInterface
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -19,10 +20,23 @@ class MainActivity : Activity() {
     private val callPermissionRequest = 2001
     private val callerIdRoleRequest = 2002
     private val contactsPermissionRequest = 2003
+    private val kunBaseUri by lazy { Uri.parse(BuildConfig.KUN_BASE_URL) }
+
+    private inner class LoginCookieBridge {
+        @JavascriptInterface
+        fun onLoginResponse() {
+            runOnUiThread {
+                CookieManager.getInstance().flush()
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        CookieManager.getInstance().setAcceptCookie(true)
+        CookieManager.getInstance().apply {
+            setAcceptCookie(true)
+            flush()
+        }
 
         webView = WebView(this).apply {
             settings.javaScriptEnabled = true
@@ -31,6 +45,7 @@ class MainActivity : Activity() {
             settings.allowFileAccess = false
             settings.allowContentAccess = false
             CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+            addJavascriptInterface(LoginCookieBridge(), "KunNative")
             webViewClient = object : WebViewClient() {
                 override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                     val uri = request?.url ?: return false
@@ -38,7 +53,17 @@ class MainActivity : Activity() {
                         placeCall(uri.schemeSpecificPart ?: "")
                         return true
                     }
+                    if ((uri.scheme.equals("http", true) || uri.scheme.equals("https", true)) && !isKunOrigin(uri)) {
+                        runCatching { startActivity(Intent(Intent.ACTION_VIEW, uri)) }
+                        return true
+                    }
                     return false
+                }
+
+                override fun onPageFinished(view: WebView?, url: String?) {
+                    super.onPageFinished(view, url)
+                    if (view == null || !isKunUrl(url)) return
+                    installLoginCookieGuard(view)
                 }
             }
         }
@@ -54,12 +79,49 @@ class MainActivity : Activity() {
         requestCallerIdRoleIfNeeded()
     }
 
+    private fun installLoginCookieGuard(view: WebView) {
+        val script = """
+            (function(){
+              if(window.__kunNativeLoginCookieGuard)return;
+              window.__kunNativeLoginCookieGuard=true;
+              var upstream=window.fetch.bind(window);
+              window.fetch=async function(input,init){
+                var response=await upstream(input,init);
+                try{
+                  var raw=typeof input==='string'?input:(input&&input.url)||'';
+                  var target=new URL(raw,location.href);
+                  if(target.origin===location.origin&&target.pathname==='/api/login'&&response.ok){
+                    if(window.KunNative&&typeof window.KunNative.onLoginResponse==='function')window.KunNative.onLoginResponse();
+                    await new Promise(function(resolve){setTimeout(resolve,550);});
+                  }
+                }catch(e){}
+                return response;
+              };
+            })();
+        """.trimIndent()
+        view.evaluateJavascript(script, null)
+    }
+
+    private fun isKunUrl(url: String?): Boolean {
+        val uri = runCatching { Uri.parse(url ?: "") }.getOrNull() ?: return false
+        return isKunOrigin(uri)
+    }
+
+    private fun isKunOrigin(uri: Uri): Boolean {
+        return uri.scheme.equals(kunBaseUri.scheme, true) && uri.host.equals(kunBaseUri.host, true)
+    }
+
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
         setIntent(intent)
         if (intent?.getBooleanExtra(EXTRA_FROM_CALLER_ID, false) == true) {
             webView.loadUrl("${BuildConfig.KUN_BASE_URL}/v2/?view=customers")
         }
+    }
+
+    override fun onPause() {
+        CookieManager.getInstance().flush()
+        super.onPause()
     }
 
     private fun requestCallerIdRoleIfNeeded() {
