@@ -10,6 +10,10 @@ object PhoneNormalizer {
             d.startsWith("966") && d.length == 12 -> "0" + d.drop(3)
             else -> d
         }
-        return d
+        return when {
+            Regex("^01[0-9]{9}$").matches(d) -> d
+            Regex("^05[0-9]{8}$").matches(d) -> d
+            else -> ""
+        }
     }
 }
