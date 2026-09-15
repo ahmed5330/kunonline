@@ -28,8 +28,9 @@ jobs:
       - name: Verify hotfix scope
         run: |
           set -euo pipefail
-          git fetch origin release/commerce-v38-production-20260910 --depth=1
-          files="$(git diff --name-only origin/release/commerce-v38-production-20260910...HEAD | grep -v '^.github/workflows/production-esraa-reset-hotfix-once.yml$' || true)"
+          base=ad9a49d1a8805d5c402bb512838e0e62db5f4c72
+          git fetch origin "$base" --depth=1
+          files="$(git diff --name-only "$base" HEAD | grep -v '^.github/workflows/production-esraa-reset-hotfix-once.yml$' || true)"
           expected=$'public/v2/index.html\npublic/v2/modules-v23-admin.js'
           test "$files" = "$expected"
           grep -q 'modules-v23-admin.js?v=23.4' public/v2/index.html
