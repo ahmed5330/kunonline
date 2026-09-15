@@ -14,14 +14,12 @@ jobs:
       - uses: actions/checkout@v5
         with:
           ref: 18b44bc3c4a3db6769babd7342f2bebc88c51117
-      - name: Locate reset route and frontend caller
+      - name: Inspect all admin client route interception points
         run: |
           set -euo pipefail
-          echo '=== reset-owner-password occurrences ==='
-          grep -R -n --exclude-dir=node_modules --exclude='*.map' 'reset-owner-password' src public || true
-          echo '=== K.api definitions ==='
-          grep -R -n --exclude-dir=node_modules --exclude='*.map' -E 'K\.api\s*=|api\s*:\s*async|async function api|const api\s*=' public/v2 | head -80 || true
-          echo '=== fetch wrappers / monkey patches ==='
-          grep -R -n --exclude-dir=node_modules --exclude='*.map' -E 'window\.fetch|globalThis\.fetch|fetch\s*=\s*async|originalFetch|nativeFetch' public/v2 android-app src | head -140 || true
-          echo '=== v23 reset UI occurrence ==='
-          grep -n -C 4 'v23ResetOwner\|reset-owner-password' public/v2/modules-v23-admin.js || true
+          echo '=== all /api/admin/clients occurrences in src ==='
+          grep -R -n --exclude-dir=node_modules --exclude='*.map' '/api/admin/clients' src || true
+          echo '=== generic admin path tests ==='
+          grep -R -n --exclude-dir=node_modules --exclude='*.map' -E "startsWith\('/api/admin|path\.startsWith\('/api/admin|ADMIN.*PATH|api\\/admin\\/clients" src || true
+          echo '=== fetch delegation chain imports v27-v38 ==='
+          for f in src/index-commerce-v{27..38}.js; do echo "--- $f"; grep -n -E '^import commerce|\.fetch\(request|routeV|fetchV' "$f" | head -40 || true; done
