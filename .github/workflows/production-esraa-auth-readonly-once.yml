@@ -1,0 +1,71 @@
+name: Production Esraa auth read-only diagnostic
+on:
+  push:
+    branches: [develop/ux-system-upgrade]
+    paths: [.github/workflows/production-esraa-auth-readonly-once.yml]
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    environment:
+      name: preview
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: release/commerce-v38-production-20260910
+          fetch-depth: 1
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - name: Inspect Esraa authentication state without secrets or writes
+        run: |
+          set -euo pipefail
+          node - <<'NODE'
+          const fs=require('fs');
+          const account=process.env.CLOUDFLARE_ACCOUNT_ID, token=process.env.CLOUDFLARE_API_TOKEN;
+          const prod=fs.readFileSync('wrangler.production.toml','utf8').match(/database_id\s*=\s*"([^"]+)"/)?.[1];
+          if(!account||!token||!prod)throw new Error('Cloudflare/D1 config missing');
+          async function q(sql,params=[]){
+            const r=await fetch(`https://api.cloudflare.com/client/v4/accounts/${account}/d1/database/${prod}/query`,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({sql,params})});
+            const p=await r.json().catch(()=>({}));
+            if(!r.ok||p.success===false||p.result?.[0]?.success===false)throw new Error('D1 read-only query failed');
+            return p.result?.[0]?.results||[];
+          }
+          function maskEmail(email=''){
+            const [local='',domain='']=String(email).split('@');
+            return `${local.slice(0,2)}***@${domain}`;
+          }
+          (async()=>{
+            const rows=await q(`
+              SELECT u.name,u.email,u.role,u.status,u.client_id,u.last_login,
+                     CASE WHEN u.email=lower(trim(u.email)) THEN 1 ELSE 0 END AS email_normalized,
+                     CASE WHEN u.password LIKE 'pbkdf2$%' THEN 1 ELSE 0 END AS password_format_ok,
+                     COALESCE(la.fails,0) AS fails,la.locked_until
+              FROM users u
+              LEFT JOIN login_attempts la ON la.email=lower(trim(u.email))
+              WHERE lower(u.name) LIKE '%esraa%' OR u.name LIKE '%اسراء%' OR u.name LIKE '%إسراء%'
+              ORDER BY u.name,u.email
+            `);
+            const now=Date.now();
+            const safe=rows.map(r=>({
+              name:r.name||'',
+              maskedEmail:maskEmail(r.email),
+              role:r.role||'',
+              status:r.status||'',
+              hasClient:Boolean(r.client_id),
+              emailNormalized:Boolean(r.email_normalized),
+              passwordFormatOk:Boolean(r.password_format_ok),
+              failedAttempts:Number(r.fails||0),
+              lockedNow:Boolean(r.locked_until&&Date.parse(r.locked_until)>now),
+              lockRemainingMinutes:r.locked_until&&Date.parse(r.locked_until)>now?Math.ceil((Date.parse(r.locked_until)-now)/60000):0,
+              hasLoggedInBefore:Boolean(r.last_login)
+            }));
+            console.log(JSON.stringify({matches:safe.length,accounts:safe},null,2));
+          })().catch(e=>{console.error(e.message);process.exit(1)});
+          NODE
