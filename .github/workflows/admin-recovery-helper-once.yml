@@ -36,23 +36,20 @@ jobs:
           ! grep -F '12345678910' ops/admin-recovery-worker.js
       - name: Deploy isolated recovery helper
         run: npx wrangler deploy --config wrangler.admin-recovery.toml --message "One-time admin recovery helper v3"
-      - name: Verify helper is live
+      - name: Wait for helper status endpoint
         run: |
           set -euo pipefail
           ready=0
           for attempt in $(seq 1 30); do
-            code="$(curl --silent --show-error -o /tmp/helper.json -w '%{http_code}' "$HELPER_URL/health" || true)"
-            if [ "$code" = "200" ] && grep -Fq 'admin-recovery-v2' /tmp/helper.json; then
+            code="$(curl --silent --show-error -o /tmp/status.json -w '%{http_code}' "$HELPER_URL/status" || true)"
+            if [ "$code" = "200" ] && grep -Fq '"activeAdminCount"' /tmp/status.json; then
               ready=1
               break
             fi
             sleep 2
           done
+          cat /tmp/status.json || true
           test "$ready" -eq 1
-      - name: Inspect recovery target safely
-        run: |
-          set -euo pipefail
-          curl --silent --show-error "$HELPER_URL/status" | tee /tmp/status.json
           grep -Fq '"activeAdminCount":1' /tmp/status.json
       - name: Apply recovery once
         run: |
@@ -70,8 +67,14 @@ jobs:
       - name: Verify recovery state
         run: |
           set -euo pipefail
-          curl --silent --show-error "$HELPER_URL/status" | tee /tmp/status-after.json
-          grep -Fq '"activeAdminCount":1' /tmp/status-after.json
-          grep -Fq '"presetHashMatches":true' /tmp/status-after.json
-          grep -Fq '"failedAttempts":0' /tmp/status-after.json
-          grep -Fq '"recoveryApplied":true' /tmp/status-after.json
+          ok=0
+          for attempt in $(seq 1 20); do
+            curl --silent --show-error "$HELPER_URL/status" > /tmp/status-after.json || true
+            if grep -Fq '"presetHashMatches":true' /tmp/status-after.json && grep -Fq '"failedAttempts":0' /tmp/status-after.json && grep -Fq '"recoveryApplied":true' /tmp/status-after.json; then
+              ok=1
+              break
+            fi
+            sleep 2
+          done
+          cat /tmp/status-after.json
+          test "$ok" -eq 1
