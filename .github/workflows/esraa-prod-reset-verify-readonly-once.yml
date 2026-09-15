@@ -24,8 +24,15 @@ jobs:
           node-version: 22
           package-manager-cache: false
       - run: npm install --ignore-scripts
-      - name: Verify masked reset audit and lock state from Production D1 read-only
+      - name: Verify Production reset schema compatibility read-only
         run: |
           set -euo pipefail
+          echo '=== audit_log schema ==='
+          npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "PRAGMA table_info(audit_log);"
+          echo '=== login_attempts schema ==='
+          npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "PRAGMA table_info(login_attempts);"
+          echo '=== users relevant columns ==='
+          npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "SELECT name,type,notnull,pk FROM pragma_table_info('users') WHERE name IN ('id','email','password','role','client_id','status','created_at');"
+          echo '=== current masked reset state ==='
           SQL="SELECT substr(u.email,1,2)||'***@'||substr(u.email,instr(u.email,'@')+1) AS email_mask,u.status AS user_status,COALESCE(l.fails,0) AS failed_attempts,COALESCE(l.locked_until,'') AS locked_until,COUNT(a.id) AS reset_count,COALESCE(MAX(a.created_at),'') AS latest_reset_at FROM users u LEFT JOIN login_attempts l ON lower(l.email)=lower(u.email) LEFT JOIN audit_log a ON a.entity_id=u.id AND a.action='platform.client.password_reset' WHERE u.role='client' GROUP BY u.id,u.email,u.status,l.fails,l.locked_until ORDER BY latest_reset_at DESC,u.created_at DESC;"
           npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "$SQL"
