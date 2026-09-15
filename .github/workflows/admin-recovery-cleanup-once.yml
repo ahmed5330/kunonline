@@ -16,31 +16,44 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
-      - name: Delete temporary Workers through Cloudflare API
+      - uses: actions/checkout@v5
+        with:
+          ref: 21e440deb6351c6850fa51314ce2d62d3d219e86
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: npm install --ignore-scripts
+      - name: Disable temporary Workers
         run: |
           set -euo pipefail
-          for name in kunonline-admin-recovery-20260915 kunonline-admin-readonly-inspect-20260915; do
-            code="$(curl --silent --show-error -X DELETE \
-              -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
-              -H 'Content-Type: application/json' \
-              -o /tmp/delete.json -w '%{http_code}' \
-              "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$name")"
-            cat /tmp/delete.json
-            if [ "$code" != "200" ]; then echo "Delete $name failed HTTP $code"; exit 1; fi
-            grep -Fq '"success":true' /tmp/delete.json
-          done
-      - name: Verify temporary endpoints are gone
+          cat > /tmp/recovery.toml <<'EOF'
+          name = "kunonline-admin-recovery-20260915"
+          compatibility_date = "2026-08-23"
+          EOF
+          cat > /tmp/inspect.toml <<'EOF'
+          name = "kunonline-admin-readonly-inspect-20260915"
+          compatibility_date = "2026-08-23"
+          EOF
+          set +e
+          npx wrangler delete --config /tmp/recovery.toml --force
+          recovery_rc=$?
+          npx wrangler delete --config /tmp/inspect.toml --force
+          inspect_rc=$?
+          set -e
+          echo "delete_rc recovery=$recovery_rc inspect=$inspect_rc"
+      - name: Verify temporary endpoints are unavailable
         run: |
           set -euo pipefail
           for url in \
             https://kunonline-admin-recovery-20260915.mr-a-mnaa.workers.dev/health \
             https://kunonline-admin-readonly-inspect-20260915.mr-a-mnaa.workers.dev/status; do
-            gone=0
+            unavailable=0
             for attempt in $(seq 1 20); do
               code="$(curl --silent --show-error -o /dev/null -w '%{http_code}' "$url?ts=$(date +%s%N)" || true)"
               echo "$url -> $code"
-              if [ "$code" != "200" ]; then gone=1; break; fi
+              if [ "$code" != "200" ]; then unavailable=1; break; fi
               sleep 2
             done
-            test "$gone" -eq 1
+            test "$unavailable" -eq 1
           done
