@@ -2599,6 +2599,14 @@ let deferredInstallPrompt = null;
 function setupInstallButton(){
   const btn = document.getElementById('installAppBtn');
   if(!btn) return;
+  const isAndroid = /android/i.test(navigator.userAgent);
+  if(isAndroid){
+    btn.classList.remove('hidden');
+    btn.title = 'تحميل أحدث إصدار Android';
+    btn.innerHTML = '⬇ <span class="btn-label">تحديث التطبيق</span>';
+    btn.onclick = ()=>{ window.location.href = 'https://github.com/ahmed5330/kunonline/releases/download/android-latest/Kun-Online-Mobile.apk'; };
+    return;
+  }
   const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
   if(isStandalone) return; /* متثبت بالفعل */
   const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
