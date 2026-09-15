@@ -1,5 +1,6 @@
 package com.kunonline.callerid
 
+import android.app.KeyguardManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
@@ -47,6 +48,7 @@ object CallerOverlay {
                 return@post
             }
             dismiss()
+            val locked = (app.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager).isKeyguardLocked
             val wm = app.getSystemService(Context.WINDOW_SERVICE) as WindowManager
             val box = LinearLayout(app).apply {
                 orientation = LinearLayout.VERTICAL
@@ -65,7 +67,7 @@ object CallerOverlay {
                 setTextColor(Color.DKGRAY)
             })
             val orderBits = listOfNotNull(
-                customer.orderRef?.let { "طلب $it" },
+                customer.orderRef?.takeUnless { locked }?.let { "طلب $it" },
                 stateText(customer.status).takeIf { it.isNotBlank() }
             ).joinToString(" • ")
             if (orderBits.isNotBlank()) box.addView(TextView(app).apply {
@@ -73,44 +75,48 @@ object CallerOverlay {
                 textSize = 14f
                 setTextColor(Color.DKGRAY)
             })
-            val productBits = listOfNotNull(
-                customer.product,
-                customer.total?.let { "الإجمالي ${it.toInt()}" }
-            ).joinToString(" • ")
-            if (productBits.isNotBlank()) box.addView(TextView(app).apply {
-                text = productBits
-                textSize = 14f
-                setTextColor(Color.DKGRAY)
-            })
-            val address = listOfNotNull(customer.gov, customer.address).filter { it.isNotBlank() }.joinToString(" — ")
-            if (address.isNotBlank()) box.addView(TextView(app).apply {
-                text = address
-                textSize = 13f
-                setTextColor(Color.GRAY)
-            })
-            customer.note?.takeIf { it.isNotBlank() }?.let { note ->
-                box.addView(TextView(app).apply {
-                    text = "ملاحظة: $note"
+            if (!locked) {
+                val productBits = listOfNotNull(
+                    customer.product,
+                    customer.total?.let { "الإجمالي ${it.toInt()}" }
+                ).joinToString(" • ")
+                if (productBits.isNotBlank()) box.addView(TextView(app).apply {
+                    text = productBits
+                    textSize = 14f
+                    setTextColor(Color.DKGRAY)
+                })
+                val address = listOfNotNull(customer.gov, customer.address).filter { it.isNotBlank() }.joinToString(" — ")
+                if (address.isNotBlank()) box.addView(TextView(app).apply {
+                    text = address
+                    textSize = 13f
+                    setTextColor(Color.GRAY)
+                })
+                customer.note?.takeIf { it.isNotBlank() }?.let { note ->
+                    box.addView(TextView(app).apply {
+                        text = "ملاحظة: $note"
+                        textSize = 13f
+                        setTextColor(Color.GRAY)
+                    })
+                }
+                if (customer.previousOrders > 0) box.addView(TextView(app).apply {
+                    text = "له ${customer.previousOrders} طلب سابق"
                     textSize = 13f
                     setTextColor(Color.GRAY)
                 })
             }
-            if (customer.previousOrders > 0) box.addView(TextView(app).apply {
-                text = "له ${customer.previousOrders} طلب سابق"
-                textSize = 13f
-                setTextColor(Color.GRAY)
-            })
 
             val actions = LinearLayout(app).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.END }
-            actions.addView(Button(app).apply {
-                text = "فتح كن أونلاين"
-                setOnClickListener {
-                    runCatching {
-                        app.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://app.kun-online.com")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            if (!locked) {
+                actions.addView(Button(app).apply {
+                    text = "فتح كن أونلاين"
+                    setOnClickListener {
+                        runCatching {
+                            app.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://app.kun-online.com")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                        }
+                        dismiss()
                     }
-                    dismiss()
-                }
-            })
+                })
+            }
             actions.addView(Button(app).apply { text = "إغلاق"; setOnClickListener { dismiss() } })
             box.addView(actions)
 
