@@ -1,4 +1,4 @@
-/* Kun Online v89.2 — isolate stale async writes and keep rapid Campaign Hub mode switches deterministic. */
+/* Kun Online v89.3 — isolate stale async writes, protect specialized views from late base renders and keep rapid Campaign Hub mode switches deterministic. */
 (function(){
   if(window.KunStaleAsyncGuardV89)return;
   const guarded=new Set([
@@ -43,14 +43,31 @@
     };
     Object.defineProperty(wrapped,'__kunMetaReadDedupe',{value:true});window.fetch=wrapped;return true;
   }
+  function activeView(){return document.querySelector('.nav button.active[data-view]')?.dataset.view||'';}
+  function specializedViewReady(view){
+    const root=document.getElementById('root');if(!root)return false;
+    if(view==='integrations')return Boolean(window.KunIntegrationsV16&&root.querySelector('#intGroups,#intSetupPanel .form-grid'));
+    return false;
+  }
+  function installBaseRenderGuard(){
+    const upstream=window.render;if(typeof upstream!=='function'||upstream.__kunBaseRenderGuard)return false;
+    const wrapped=function(...args){
+      const view=activeView();
+      if(specializedViewReady(view))return;
+      return upstream.apply(this,args);
+    };
+    Object.defineProperty(wrapped,'__kunBaseRenderGuard',{value:true});
+    Object.defineProperty(wrapped,'__kunBaseRenderUpstream',{value:upstream});
+    window.render=wrapped;return true;
+  }
   function releaseCampaignModeLoading(event){
     const button=event.target.closest?.('.campaign66 [data-section-mode]');if(!button)return;
     const hub=window.KunCampaignHubV66,state=hub?.state,section=state?.sections?.[state?.level],next=String(button.dataset.sectionMode||'');
     if(!section||!next||section.mode===next)return;
     section.loading=false;
   }
-  installMetaReadDedupe();
+  installMetaReadDedupe();installBaseRenderGuard();
   document.addEventListener('click',releaseCampaignModeLoading,true);
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',install,{once:true});else install();
-  window.KunStaleAsyncGuardV89={version:'89.2',install,installMetaReadDedupe,guarded:[...guarded],metaReadInflight,releaseCampaignModeLoading};
+  window.KunStaleAsyncGuardV89={version:'89.3',install,installMetaReadDedupe,installBaseRenderGuard,specializedViewReady,guarded:[...guarded],metaReadInflight,releaseCampaignModeLoading};
 })();
