@@ -1,0 +1,138 @@
+name: Production Esraa reset hotfix main once
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/production-esraa-reset-hotfix-main-once.yml
+permissions:
+  contents: read
+concurrency:
+  group: kunonline-production-esraa-reset-20260915
+  cancel-in-progress: false
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      RELEASE_SHA: 18b44bc3c4a3db6769babd7342f2bebc88c51117
+      BASE_SHA: ad9a49d1a8805d5c402bb512838e0e62db5f4c72
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+          fetch-depth: 1
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: npm install --ignore-scripts
+      - name: Validate exact isolated hotfix
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+          git fetch origin "$BASE_SHA" --depth=1
+          files="$(git diff --name-only "$BASE_SHA" "$RELEASE_SHA")"
+          expected=$'public/v2/index.html\npublic/v2/modules-v23-admin.js'
+          test "$files" = "$expected"
+          grep -Fq '/v2/modules-v23-admin.js?v=23.4' public/v2/index.html
+          grep -Fq "resetBtn.dataset.busy==='1'" public/v2/modules-v23-admin.js
+          grep -Fq "event?.preventDefault?.()" public/v2/modules-v23-admin.js
+          grep -Fq 'id="v23ResetOwner" type="button"' public/v2/modules-v23-admin.js
+          node --check public/v2/modules-v23-admin.js
+          npm run check:production-config
+      - name: Authentication regression tests
+        run: npm test
+
+  deploy:
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: production
+      url: https://app.kun-online.com
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      RELEASE_SHA: 18b44bc3c4a3db6769babd7342f2bebc88c51117
+      BASE_URL: https://app.kun-online.com
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+          fetch-depth: 1
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: npm install --ignore-scripts
+      - name: Capture current Production Worker version
+        id: previous
+        run: |
+          set -euo pipefail
+          status="$(npx wrangler deployments status --config wrangler.production.toml --json)"
+          version="$(printf '%s' "$status" | node -e '
+            let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{
+              const root=JSON.parse(raw),hits=[];
+              const walk=x=>{if(Array.isArray(x)){for(const v of x)walk(v);return;}if(!x||typeof x!=="object")return;
+                const id=x.version_id||x.versionId,pct=x.percentage??x.traffic_percentage??x.trafficPercentage;
+                if(id)hits.push({id:String(id),pct:pct==null?null:Number(pct)});for(const v of Object.values(x))walk(v);};
+              walk(root);const unique=[...new Map(hits.map(x=>[x.id,x])).values()];
+              const full=unique.find(x=>x.pct===100||x.pct===1)||(unique.length===1?unique[0]:null);
+              if(!full)process.exit(2);process.stdout.write(full.id);
+            });')"
+          test -n "$version"
+          echo "version_id=$version" >> "$GITHUB_OUTPUT"
+          echo "Captured pre-hotfix Production Worker version: $version"
+      - name: Revalidate release before deploy
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+          npm run check:production-config
+          grep -Fq '/v2/modules-v23-admin.js?v=23.4' public/v2/index.html
+          grep -Fq "resetBtn.dataset.busy==='1'" public/v2/modules-v23-admin.js
+      - name: Deploy Production Worker and assets only
+        id: deploy_worker
+        run: |
+          set -euo pipefail
+          output="$(npx wrangler deploy --config wrangler.production.toml --message "Esraa password-reset mobile hotfix $RELEASE_SHA" 2>&1)"
+          printf '%s\n' "$output"
+          version="$(printf '%s\n' "$output" | sed -nE 's/.*Current Version ID: ([0-9a-f-]{36}).*/\1/p' | tail -1)"
+          test -n "$version"
+          echo "version_id=$version" >> "$GITHUB_OUTPUT"
+      - name: Verify Production hotfix on custom domain
+        id: acceptance
+        run: |
+          set -euo pipefail
+          ready=0
+          for attempt in $(seq 1 40); do
+            v2_code="$(curl --silent --show-error -o /tmp/v2.html -w '%{http_code}' "$BASE_URL/v2/" || true)"
+            admin_code="$(curl --silent --show-error -o /tmp/admin23.js -w '%{http_code}' "$BASE_URL/v2/modules-v23-admin.js?v=23.4" || true)"
+            health_code="$(curl --silent --show-error -o /tmp/health -w '%{http_code}' "$BASE_URL/health" || true)"
+            if [ "$v2_code" = "200" ] && [ "$admin_code" = "200" ] && [ "$health_code" = "200" ] && \
+               grep -Fq '/v2/modules-v23-admin.js?v=23.4' /tmp/v2.html && \
+               grep -Fq "resetBtn.dataset.busy==='1'" /tmp/admin23.js && \
+               grep -Fq "event?.preventDefault?.()" /tmp/admin23.js && \
+               grep -Fq 'id="v23ResetOwner" type="button"' /tmp/admin23.js; then
+              ready=1
+              echo "Production password-reset hotfix verified on attempt $attempt/40."
+              break
+            fi
+            echo "Waiting for Production propagation: v2=$v2_code admin=$admin_code health=$health_code attempt=$attempt/40"
+            sleep 2
+          done
+          test "$ready" -eq 1
+          protected="$(curl --silent --show-error -o /tmp/protected.json -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{"password":"not-a-real-reset"}' "$BASE_URL/api/admin/clients/invalid/reset-owner-password" || true)"
+          case "$protected" in 401|403|404) ;; *) echo "Unexpected anonymous reset endpoint status: $protected"; exit 1;; esac
+          echo "Production hotfix acceptance passed. Anonymous reset remains protected."
+      - name: Roll back prior Worker version if acceptance fails
+        if: failure() && steps.deploy_worker.outputs.version_id != '' && steps.previous.outputs.version_id != ''
+        run: |
+          set -euo pipefail
+          echo "Acceptance failed. Restoring prior Production Worker version ${{ steps.previous.outputs.version_id }}"
+          npx wrangler versions deploy "${{ steps.previous.outputs.version_id }}@100%" --yes --config wrangler.production.toml --message "Automatic rollback after Esraa password-reset hotfix acceptance failure"
+          for attempt in $(seq 1 30); do
+            code="$(curl --silent --show-error -o /tmp/rollback-health -w '%{http_code}' "$BASE_URL/health" || true)"
+            if [ "$code" = "200" ]; then echo 'Prior Production Worker restored.'; exit 0; fi
+            sleep 2
+          done
+          exit 1
