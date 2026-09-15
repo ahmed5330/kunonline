@@ -1,0 +1,36 @@
+name: Production Worker version read-only once
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/prod-worker-version-readonly-once.yml
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: npm install --no-save wrangler@4.125.0
+      - name: List current Production Worker versions only
+        run: |
+          set -euo pipefail
+          npx wrangler versions list --name kunonline | tee /tmp/versions.txt
+      - name: Read current Production Worker deployment metadata
+        run: |
+          set -euo pipefail
+          curl --silent --show-error \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            -H 'Content-Type: application/json' \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/kunonline/deployments" \
+            | tee /tmp/deployments.json
+          node -e "const fs=require('fs');const x=JSON.parse(fs.readFileSync('/tmp/deployments.json','utf8'));if(x.success!==true)process.exit(1);console.log(JSON.stringify(x.result,null,2))"
