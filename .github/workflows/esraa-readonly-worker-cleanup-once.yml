@@ -1,0 +1,41 @@
+name: Cleanup Esraa read-only diagnostic Worker
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/esraa-readonly-worker-cleanup-once.yml
+permissions:
+  contents: read
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      WORKER_NAME: kunonline-client-login-readonly-20260915
+      WORKER_URL: https://kunonline-client-login-readonly-20260915.mr-a-mnaa.workers.dev/status
+    steps:
+      - name: Delete only temporary read-only Worker
+        run: |
+          set -euo pipefail
+          code="$(curl --silent --show-error -X DELETE \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            -H 'Content-Type: application/json' \
+            -o /tmp/delete.json -w '%{http_code}' \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$WORKER_NAME")"
+          cat /tmp/delete.json
+          test "$code" = "200"
+          node -e "const fs=require('fs');const x=JSON.parse(fs.readFileSync('/tmp/delete.json','utf8'));if(x.success!==true)process.exit(1)"
+      - name: Verify temporary endpoint is gone
+        run: |
+          set -euo pipefail
+          gone=0
+          for attempt in $(seq 1 20); do
+            code="$(curl --silent --show-error -o /dev/null -w '%{http_code}' "$WORKER_URL?ts=$(date +%s%N)" || true)"
+            if [ "$code" != "200" ]; then gone=1; break; fi
+            sleep 2
+          done
+          test "$gone" -eq 1
