@@ -1,8 +1,10 @@
 package com.kunonline.callerid
 
+import android.Manifest
 import android.app.Activity
 import android.app.role.RoleManager
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
@@ -11,6 +13,7 @@ import android.view.Gravity
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import java.text.DateFormat
 import java.util.Date
@@ -34,7 +37,7 @@ class MainActivity : Activity() {
     private fun buildUi() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(36, 48, 36, 36)
+            setPadding(36, 48, 36, 48)
             gravity = Gravity.CENTER_HORIZONTAL
         }
         root.addView(TextView(this).apply {
@@ -42,7 +45,7 @@ class MainActivity : Activity() {
             textSize = 24f
         })
         root.addView(TextView(this).apply {
-            text = "اعرض بيانات عميل كن أونلاين تلقائيًا عند المكالمات الواردة والصادرة."
+            text = "يعرض بيانات عميل كن أونلاين تلقائيًا عند المكالمات الواردة والصادرة."
             textSize = 15f
         })
 
@@ -50,12 +53,20 @@ class MainActivity : Activity() {
         root.addView(status)
 
         root.addView(Button(this).apply {
-            text = "1) تفعيل Caller ID"
+            text = "1) تفعيل Kun Online كـ Caller ID"
             setOnClickListener { requestCallerRole() }
         })
         root.addView(Button(this).apply {
             text = "2) السماح بالظهور فوق التطبيقات"
             setOnClickListener { requestOverlayPermission() }
+        })
+        root.addView(Button(this).apply {
+            text = "3) السماح بقراءة جهات الاتصال"
+            setOnClickListener { requestContactsPermission() }
+        })
+        root.addView(TextView(this).apply {
+            text = "صلاحية جهات الاتصال لازمة فقط عشان يظهر العميل حتى لو رقمه محفوظ عندك. التطبيق لا يرفع دفتر جهات الاتصال."
+            textSize = 12f
         })
 
         email = EditText(this).apply {
@@ -87,11 +98,12 @@ class MainActivity : Activity() {
             text = "تسجيل الخروج ومسح بيانات العملاء"
             setOnClickListener {
                 KunApi.logout(this@MainActivity)
+                SyncJobService.cancel(this@MainActivity)
                 password.setText("")
                 updateStatus("تم تسجيل الخروج ومسح الكاش المحلي")
             }
         })
-        setContentView(root)
+        setContentView(ScrollView(this).apply { addView(root) })
     }
 
     private fun requestCallerRole() {
@@ -113,6 +125,14 @@ class MainActivity : Activity() {
             return
         }
         startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+    }
+
+    private fun requestContactsPermission() {
+        if (checkSelfPermission(Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED) {
+            updateStatus("صلاحية جهات الاتصال مفعّلة بالفعل")
+            return
+        }
+        requestPermissions(arrayOf(Manifest.permission.READ_CONTACTS), 101)
     }
 
     private fun loginAndSync() {
@@ -147,6 +167,7 @@ class MainActivity : Activity() {
         val roleManager = getSystemService(RoleManager::class.java)
         val callerEnabled = roleManager.isRoleAvailable(RoleManager.ROLE_CALL_SCREENING) && roleManager.isRoleHeld(RoleManager.ROLE_CALL_SCREENING)
         val overlayEnabled = Settings.canDrawOverlays(this)
+        val contactsEnabled = checkSelfPermission(Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
         val count = CustomerCache.count(this)
         val syncAt = CustomerCache.lastSyncedAt(this)
         val syncedText = if (syncAt > 0) DateFormat.getDateTimeInstance().format(Date(syncAt)) else "لم تتم مزامنة بعد"
@@ -154,6 +175,7 @@ class MainActivity : Activity() {
             message,
             "Caller ID: ${if (callerEnabled) "مفعّل" else "غير مفعّل"}",
             "الظهور فوق التطبيقات: ${if (overlayEnabled) "مفعّل" else "غير مفعّل"}",
+            "جهات الاتصال: ${if (contactsEnabled) "مفعّلة" else "غير مفعّلة"}",
             "الكاش: $count عميل",
             "آخر مزامنة: $syncedText"
         ).joinToString("\n")
