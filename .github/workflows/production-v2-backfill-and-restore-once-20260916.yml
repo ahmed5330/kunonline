@@ -1,4 +1,4 @@
-name: Backfill Production order store scope and restore v2 once
+name: Backfill Production store scope and restore v2 once
 
 on:
   push:
@@ -53,20 +53,20 @@ jobs:
           npx wrangler deploy --dry-run --config wrangler.production.toml >/tmp/prod-dry-run.log 2>&1
           rm -f /tmp/prod-dry-run.log
 
-      - name: Preflight Production order mapping read-only
+      - name: Preflight Production store mapping read-only
         id: preflight
         shell: bash
         run: |
           set -euo pipefail
-          result="$(npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "SELECT COUNT(*) AS total_orders FROM orders; SELECT COUNT(*) AS unmapped_orders FROM orders WHERE client_id IS NOT NULL AND trim(client_id)<>'' AND store_id IS NULL; SELECT COUNT(*) AS no_target FROM orders o WHERE o.client_id IS NOT NULL AND trim(o.client_id)<>'' AND o.store_id IS NULL AND NOT EXISTS (SELECT 1 FROM stores s WHERE s.client_id=o.client_id AND s.status='active'); SELECT COUNT(*) AS unmapped_customers FROM customers WHERE client_id IS NOT NULL AND trim(client_id)<>'' AND store_id IS NULL; SELECT COUNT(*) AS unmapped_products FROM products WHERE client_id IS NOT NULL AND trim(client_id)<>'' AND store_id IS NULL;" --json)"
+          result="$(npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "SELECT COUNT(*) AS total_orders FROM orders; SELECT COUNT(*) AS total_customers FROM customers; SELECT COUNT(*) AS total_products FROM products; SELECT COUNT(*) AS unmapped_orders FROM orders WHERE client_id IS NOT NULL AND trim(client_id)<>'' AND store_id IS NULL; SELECT COUNT(*) AS unmapped_customers FROM customers WHERE client_id IS NOT NULL AND trim(client_id)<>'' AND store_id IS NULL; SELECT COUNT(*) AS unmapped_products FROM products WHERE client_id IS NOT NULL AND trim(client_id)<>'' AND store_id IS NULL; SELECT COUNT(*) AS no_target_orders FROM orders o WHERE o.client_id IS NOT NULL AND trim(o.client_id)<>'' AND o.store_id IS NULL AND NOT EXISTS (SELECT 1 FROM stores s WHERE s.client_id=o.client_id AND s.status='active'); SELECT COUNT(*) AS no_target_customers FROM customers c WHERE c.client_id IS NOT NULL AND trim(c.client_id)<>'' AND c.store_id IS NULL AND NOT EXISTS (SELECT 1 FROM stores s WHERE s.client_id=c.client_id AND s.status='active'); SELECT COUNT(*) AS no_target_products FROM products p WHERE p.client_id IS NOT NULL AND trim(p.client_id)<>'' AND p.store_id IS NULL AND NOT EXISTS (SELECT 1 FROM stores s WHERE s.client_id=p.client_id AND s.status='active'); SELECT COUNT(*) AS null_customer_duplicate_groups FROM (SELECT client_id,phone,COUNT(*) AS n FROM customers WHERE client_id IS NOT NULL AND trim(client_id)<>'' AND store_id IS NULL GROUP BY client_id,phone HAVING COUNT(*)>1); SELECT COUNT(*) AS customer_existing_collisions FROM customers c WHERE c.client_id IS NOT NULL AND trim(c.client_id)<>'' AND c.store_id IS NULL AND EXISTS (SELECT 1 FROM customers c2 WHERE c2.id<>c.id AND c2.client_id=c.client_id AND c2.phone=c.phone AND c2.store_id=(SELECT id FROM stores s WHERE s.client_id=c.client_id AND s.status='active' ORDER BY s.is_default DESC,s.created_at,id LIMIT 1));" --json)"
           printf '%s' "$result" | node -e '
-            let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{const p=JSON.parse(raw),rows=[];const walk=x=>{if(Array.isArray(x))return x.forEach(walk);if(x&&typeof x==="object"){if(Array.isArray(x.results))rows.push(...x.results);Object.values(x).forEach(walk)}};walk(p);const get=k=>Number(rows.find(x=>x[k]!=null)?.[k]);const total=get("total_orders"),unmapped=get("unmapped_orders"),noTarget=get("no_target"),customers=get("unmapped_customers"),products=get("unmapped_products");if(!Number.isFinite(total)||total<1)throw new Error(`Invalid total_orders=${total}`);if(!Number.isFinite(unmapped)||unmapped<1)throw new Error(`Expected at least one unmapped order, got ${unmapped}`);if(noTarget!==0)throw new Error(`Refusing backfill: no_target=${noTarget}`);if(customers!==0||products!==0)throw new Error(`Refusing scoped repair: unmapped_customers=${customers}, unmapped_products=${products}`);console.log(`Preflight passed: total_orders=${total}, unmapped_orders=${unmapped}, every target store is resolvable.`);process.stdout.write(`TOTAL=${total}\nUNMAPPED=${unmapped}\n`);});' >/tmp/preflight.txt
+            let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{const p=JSON.parse(raw),rows=[];const walk=x=>{if(Array.isArray(x))return x.forEach(walk);if(x&&typeof x==="object"){if(Array.isArray(x.results))rows.push(...x.results);Object.values(x).forEach(walk)}};walk(p);const get=k=>Number(rows.find(x=>x[k]!=null)?.[k]);const totals={orders:get("total_orders"),customers:get("total_customers"),products:get("total_products")};const gaps={orders:get("unmapped_orders"),customers:get("unmapped_customers"),products:get("unmapped_products")};const noTargets=[get("no_target_orders"),get("no_target_customers"),get("no_target_products")];const dup=get("null_customer_duplicate_groups"),collisions=get("customer_existing_collisions");for(const [k,v] of Object.entries(totals))if(!Number.isFinite(v)||v<0)throw new Error(`Invalid total ${k}=${v}`);if(Object.values(gaps).every(v=>v===0))throw new Error("No store-scope gap remains; refusing unnecessary write");if(noTargets.some(v=>v!==0))throw new Error(`Missing active target store: orders=${noTargets[0]} customers=${noTargets[1]} products=${noTargets[2]}`);if(dup!==0||collisions!==0)throw new Error(`Customer uniqueness risk: null_duplicate_groups=${dup} existing_collisions=${collisions}`);console.log(`Preflight passed: gaps orders=${gaps.orders}, customers=${gaps.customers}, products=${gaps.products}; every target is resolvable.`);for(const [k,v] of Object.entries(totals))console.log(`TOTAL_${k.toUpperCase()}=${v}`);});' >/tmp/preflight.txt
           cat /tmp/preflight.txt
-          total="$(sed -nE 's/^TOTAL=([0-9]+)$/\1/p' /tmp/preflight.txt | tail -1)"
-          unmapped="$(sed -nE 's/^UNMAPPED=([0-9]+)$/\1/p' /tmp/preflight.txt | tail -1)"
-          test -n "$total" && test -n "$unmapped"
-          echo "total_orders=$total" >> "$GITHUB_OUTPUT"
-          echo "unmapped_orders=$unmapped" >> "$GITHUB_OUTPUT"
+          for key in ORDERS CUSTOMERS PRODUCTS; do
+            value="$(sed -nE "s/^TOTAL_${key}=([0-9]+)$/\1/p" /tmp/preflight.txt | tail -1)"
+            test -n "$value"
+            echo "total_${key,,}=$value" >> "$GITHUB_OUTPUT"
+          done
           rm -f /tmp/preflight.txt
 
       - name: Capture exact current Production Worker version
@@ -80,21 +80,21 @@ jobs:
           echo "version_id=$version" >> "$GITHUB_OUTPUT"
           echo 'Captured pre-repair Production Worker version.'
 
-      - name: Backfill only missing order store_id values
+      - name: Backfill only missing store_id values in core scoped tables
         id: backfill
         shell: bash
         run: |
           set -euo pipefail
           echo "attempted=true" >> "$GITHUB_OUTPUT"
-          npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "UPDATE orders SET store_id=(SELECT id FROM stores s WHERE s.client_id=orders.client_id AND s.status='active' ORDER BY s.is_default DESC,s.created_at,id LIMIT 1) WHERE store_id IS NULL AND client_id IS NOT NULL AND trim(client_id)<>'';" >/tmp/backfill.log 2>&1
+          npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "UPDATE orders SET store_id=(SELECT id FROM stores s WHERE s.client_id=orders.client_id AND s.status='active' ORDER BY s.is_default DESC,s.created_at,id LIMIT 1) WHERE store_id IS NULL AND client_id IS NOT NULL AND trim(client_id)<>''; UPDATE customers SET store_id=(SELECT id FROM stores s WHERE s.client_id=customers.client_id AND s.status='active' ORDER BY s.is_default DESC,s.created_at,id LIMIT 1) WHERE store_id IS NULL AND client_id IS NOT NULL AND trim(client_id)<>''; UPDATE products SET store_id=(SELECT id FROM stores s WHERE s.client_id=products.client_id AND s.status='active' ORDER BY s.is_default DESC,s.created_at,id LIMIT 1) WHERE store_id IS NULL AND client_id IS NOT NULL AND trim(client_id)<>'';" >/tmp/backfill.log 2>&1
           rm -f /tmp/backfill.log
 
-      - name: Verify backfill preserved all orders and closed mapping gap
+      - name: Verify backfill preserved rows and closed all core mapping gaps
         run: |
           set -euo pipefail
-          result="$(npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "SELECT COUNT(*) AS total_orders FROM orders; SELECT COUNT(*) AS unmapped_orders FROM orders WHERE client_id IS NOT NULL AND trim(client_id)<>'' AND store_id IS NULL;" --json)"
-          BEFORE_TOTAL='${{ steps.preflight.outputs.total_orders }}' node -e '
-            let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{const p=JSON.parse(raw),rows=[];const walk=x=>{if(Array.isArray(x))return x.forEach(walk);if(x&&typeof x==="object"){if(Array.isArray(x.results))rows.push(...x.results);Object.values(x).forEach(walk)}};walk(p);const total=Number(rows.find(x=>x.total_orders!=null)?.total_orders),unmapped=Number(rows.find(x=>x.unmapped_orders!=null)?.unmapped_orders),before=Number(process.env.BEFORE_TOTAL);if(total!==before)throw new Error(`Order row count changed: before=${before} after=${total}`);if(unmapped!==0)throw new Error(`Unmapped orders remain=${unmapped}`);console.log(`Backfill verified: order rows preserved=${total}, unmapped_orders=0.`);});' <<<"$result"
+          result="$(npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "SELECT COUNT(*) AS total_orders FROM orders; SELECT COUNT(*) AS total_customers FROM customers; SELECT COUNT(*) AS total_products FROM products; SELECT COUNT(*) AS unmapped_orders FROM orders WHERE client_id IS NOT NULL AND trim(client_id)<>'' AND store_id IS NULL; SELECT COUNT(*) AS unmapped_customers FROM customers WHERE client_id IS NOT NULL AND trim(client_id)<>'' AND store_id IS NULL; SELECT COUNT(*) AS unmapped_products FROM products WHERE client_id IS NOT NULL AND trim(client_id)<>'' AND store_id IS NULL;" --json)"
+          BEFORE_ORDERS='${{ steps.preflight.outputs.total_orders }}' BEFORE_CUSTOMERS='${{ steps.preflight.outputs.total_customers }}' BEFORE_PRODUCTS='${{ steps.preflight.outputs.total_products }}' node -e '
+            let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{const p=JSON.parse(raw),rows=[];const walk=x=>{if(Array.isArray(x))return x.forEach(walk);if(x&&typeof x==="object"){if(Array.isArray(x.results))rows.push(...x.results);Object.values(x).forEach(walk)}};walk(p);const get=k=>Number(rows.find(x=>x[k]!=null)?.[k]);for(const k of ["orders","customers","products"]){const now=get(`total_${k}`),before=Number(process.env[`BEFORE_${k.toUpperCase()}`]),gap=get(`unmapped_${k}`);if(now!==before)throw new Error(`${k} row count changed: before=${before} after=${now}`);if(gap!==0)throw new Error(`${k} unmapped remain=${gap}`);}console.log("Backfill verified: all row counts preserved and core mapping gaps are zero.");});' <<<"$result"
 
       - name: Deploy approved Commerce v38 Worker and v2 assets only
         id: deploy
@@ -132,18 +132,18 @@ jobs:
             node -e 'const fs=require("fs");const p=JSON.parse(fs.readFileSync("/tmp/jt","utf8"));if(p.code!=="AUTH_REQUIRED")process.exit(2);'
           done
 
-      - name: Final Production order mapping invariant
+      - name: Final Production core store-scope invariant
         run: |
           set -euo pipefail
-          result="$(npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "SELECT COUNT(*) AS unmapped_orders FROM orders WHERE client_id IS NOT NULL AND trim(client_id)<>'' AND store_id IS NULL;" --json)"
-          printf '%s' "$result" | node -e 'let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{const p=JSON.parse(raw),rows=[];const walk=x=>{if(Array.isArray(x))return x.forEach(walk);if(x&&typeof x==="object"){if(Array.isArray(x.results))rows.push(...x.results);Object.values(x).forEach(walk)}};walk(p);const n=Number(rows.find(x=>x.unmapped_orders!=null)?.unmapped_orders);if(n!==0)throw new Error(`unmapped_orders=${n}`);console.log("Final mapping invariant passed.");});'
+          result="$(npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "SELECT COUNT(*) AS unmapped_orders FROM orders WHERE client_id IS NOT NULL AND trim(client_id)<>'' AND store_id IS NULL; SELECT COUNT(*) AS unmapped_customers FROM customers WHERE client_id IS NOT NULL AND trim(client_id)<>'' AND store_id IS NULL; SELECT COUNT(*) AS unmapped_products FROM products WHERE client_id IS NOT NULL AND trim(client_id)<>'' AND store_id IS NULL;" --json)"
+          printf '%s' "$result" | node -e 'let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{const p=JSON.parse(raw),rows=[];const walk=x=>{if(Array.isArray(x))return x.forEach(walk);if(x&&typeof x==="object"){if(Array.isArray(x.results))rows.push(...x.results);Object.values(x).forEach(walk)}};walk(p);for(const k of ["unmapped_orders","unmapped_customers","unmapped_products"]){const n=Number(rows.find(x=>x[k]!=null)?.[k]);if(n!==0)throw new Error(`${k}=${n}`);}console.log("Final core store-scope invariant passed.");});'
 
       - name: Roll back exact prior Worker if runtime validation fails
         if: failure() && steps.deploy.outputs.attempted == 'true' && steps.before.outputs.version_id != ''
         run: |
           set -euo pipefail
           npx wrangler versions deploy "${{ steps.before.outputs.version_id }}@100%" --yes --config wrangler.production.toml --message "Automatic rollback after failed Production v2 restore"
-          echo 'Previous Production Worker restored. The safe store_id backfill remains applied.'
+          echo 'Previous Production Worker restored. The safe core store_id backfill remains applied.'
 
       - name: Clean temporary files
         if: always()
