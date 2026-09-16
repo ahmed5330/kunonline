@@ -63,7 +63,12 @@ object CustomerCache {
     fun lookup(context: Context, phone: String): CallerCustomer? {
         val normalized = PhoneNormalizer.normalize(phone)
         if (normalized.isBlank()) return null
-        val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(keyFor(normalized), null)
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val cacheKey = keyFor(normalized)
+        val raw = runCatching { prefs.getString(cacheKey, null) }.getOrElse {
+            prefs.edit().remove(cacheKey).apply()
+            null
+        }
         val json = SecureStore.decrypt(raw)?.let { runCatching { JSONObject(it) }.getOrNull() } ?: return null
         return CallerCustomer(
             name = json.optString("name"),
@@ -79,7 +84,23 @@ object CustomerCache {
         )
     }
 
-    fun count(context: Context): Int = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getInt(META_COUNT, 0)
-    fun lastSyncedAt(context: Context): Long = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getLong(META_SYNCED, 0L)
-    fun clear(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear().apply()
+    fun count(context: Context): Int {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        return runCatching { prefs.getInt(META_COUNT, 0) }.getOrElse {
+            prefs.edit().remove(META_COUNT).apply()
+            0
+        }
+    }
+
+    fun lastSyncedAt(context: Context): Long {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        return runCatching { prefs.getLong(META_SYNCED, 0L) }.getOrElse {
+            prefs.edit().remove(META_SYNCED).apply()
+            0L
+        }
+    }
+
+    fun clear(context: Context) = runCatching {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear().apply()
+    }.getOrNull()
 }
