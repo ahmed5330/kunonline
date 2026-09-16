@@ -1,0 +1,29 @@
+name: Validate Customer Service web fix once
+
+on:
+  push:
+    branches: [fix/web-customer-service-navigation-20260916]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: npm install --ignore-scripts
+      - name: Check Customer Service navigation module
+        run: |
+          node --check public/v2/modules-v77-customer-service-no-reload.js
+          grep -Fq "customerServiceNavV77" public/v2/modules-v77-customer-service-no-reload.js
+          grep -Fq "version:'77.2'" public/v2/modules-v77-customer-service-no-reload.js
+      - name: Run test suite
+        run: npm test
+      - name: Verify Production config remains migration-free
+        run: npm run check:production-config
