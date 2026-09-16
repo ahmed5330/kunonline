@@ -12,8 +12,8 @@ android {
         applicationId = "com.kunonline.callerid.stable"
         minSdk = 29
         targetSdk = 35
-        versionCode = 106
-        versionName = "2.3.1"
+        versionCode = 107
+        versionName = "2.4.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
