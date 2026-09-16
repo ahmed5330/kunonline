@@ -1,0 +1,35 @@
+name: Diagnose Android WebView v2 HTTP
+
+on:
+  push:
+    branches: [diag/webview-v2-http-20260916]
+    paths: ['.github/workflows/diag-webview-v2-http.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Probe current Kun Online routes
+        shell: bash
+        run: |
+          set -euo pipefail
+          UA='Mozilla/5.0 (Linux; Android 14; SM-A135F Build/UP1A.231005.007; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/140.0.0.0 Mobile Safari/537.36'
+          for url in \
+            'https://app.kun-online.com/' \
+            'https://app.kun-online.com/v2' \
+            'https://app.kun-online.com/v2/'; do
+            echo "=== $url default ==="
+            curl -sS -L -o /tmp/body -D /tmp/headers -w 'status=%{http_code} final=%{url_effective} type=%{content_type}\n' "$url" || true
+            sed -n '1,20p' /tmp/headers
+            echo "body_head=$(head -c 120 /tmp/body | tr '\n' ' ')"
+            echo
+            echo "=== $url android-webview ==="
+            curl -sS -L -A "$UA" -o /tmp/body -D /tmp/headers -w 'status=%{http_code} final=%{url_effective} type=%{content_type}\n' "$url" || true
+            sed -n '1,20p' /tmp/headers
+            echo "body_head=$(head -c 120 /tmp/body | tr '\n' ' ')"
+            echo
+          done
