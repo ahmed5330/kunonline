@@ -6,7 +6,7 @@
 
     <application
         android:theme="@style/AppTheme"
-        android:label="Kun Online Caller ID"
+        android:label="Kun Online"
         android:allowBackup="false"
         android:usesCleartextTraffic="false">
         <activity
