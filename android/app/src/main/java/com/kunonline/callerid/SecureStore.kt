@@ -53,12 +53,24 @@ object SecureStore {
 
     fun put(context: Context, prefsName: String, key: String, value: String?) {
         val prefs = context.getSharedPreferences(prefsName, Context.MODE_PRIVATE)
-        if (value == null) prefs.edit().remove(key).apply()
-        else prefs.edit().putString(key, encrypt(value)).apply()
+        if (value == null) {
+            prefs.edit().remove(key).apply()
+            return
+        }
+        runCatching { encrypt(value) }
+            .onSuccess { prefs.edit().putString(key, it).apply() }
+            .onFailure { prefs.edit().remove(key).apply() }
     }
 
     fun get(context: Context, prefsName: String, key: String): String? {
-        val raw = context.getSharedPreferences(prefsName, Context.MODE_PRIVATE).getString(key, null)
-        return decrypt(raw)
+        val prefs = context.getSharedPreferences(prefsName, Context.MODE_PRIVATE)
+        val raw = runCatching { prefs.getString(key, null) }.getOrElse {
+            prefs.edit().remove(key).apply()
+            null
+        }
+        if (raw == null) return null
+        val decrypted = decrypt(raw)
+        if (decrypted == null) prefs.edit().remove(key).apply()
+        return decrypted
     }
 }
