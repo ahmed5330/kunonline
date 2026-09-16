@@ -26,7 +26,7 @@ object KunApi {
             readTimeout = 15000
             setRequestProperty("Accept", "application/json")
             setRequestProperty("Content-Type", "application/json; charset=utf-8")
-            setRequestProperty("X-Kun-Mobile", "native-android/2.0")
+            setRequestProperty("X-Kun-Mobile", "native-android/2.1")
             if (!cookie.isNullOrBlank()) setRequestProperty("Cookie", cookie)
             if (body != null) doOutput = true
         }
@@ -54,6 +54,53 @@ object KunApi {
         }.getOrElse { SyncResult(false, "تعذر الاتصال بكن أونلاين") }
     }
 
+    fun repairPasswordWithStoredAdminSession(context: Context, email: String, newPassword: String): SyncResult {
+        if (email.isBlank()) return SyncResult(false, "اكتب إيميل الحساب")
+        if (newPassword.length < 8) return SyncResult(false, "كلمة المرور الجديدة لازم تكون 8 حروف على الأقل")
+        val cookie = session(context)
+            ?: return SyncResult(false, "لا توجد جلسة حالية صالحة للإصلاح")
+        return runCatching {
+            val usersResponse = request("GET", "/api/users", cookie = cookie)
+            if (usersResponse.code == 401) return SyncResult(false, "الجلسة الحالية انتهت — لا تسجل خروج قبل إعادة الدخول من الإدارة")
+            if (usersResponse.code == 403) return SyncResult(false, "الجلسة الحالية ليست بصلاحية مدير، لذلك لا يمكن إصلاح الباسورد منها")
+            if (usersResponse.code !in 200..299) {
+                return SyncResult(false, errorMessage(usersResponse).ifBlank { "تعذر قراءة حسابات النظام" })
+            }
+
+            val users = JSONArray(usersResponse.body)
+            val wanted = email.trim().lowercase()
+            var target: JSONObject? = null
+            for (i in 0 until users.length()) {
+                val item = users.optJSONObject(i) ?: continue
+                if (item.optString("email").trim().lowercase() == wanted) {
+                    target = item
+                    break
+                }
+            }
+            val user = target ?: return SyncResult(false, "الحساب غير موجود ضمن حسابات الإدارة الحالية")
+            val payload = JSONObject()
+                .put("id", user.optString("id"))
+                .put("email", user.optString("email"))
+                .put("name", user.optString("name"))
+                .put("role", user.optString("role"))
+                .put("status", user.optString("status").ifBlank { "active" })
+                .put("password", newPassword)
+            val clientId = user.optString("clientId")
+            if (clientId.isNotBlank()) payload.put("clientId", clientId)
+
+            val reset = request("POST", "/api/users", payload.toString(), cookie)
+            if (reset.code !in 200..299) {
+                return SyncResult(false, errorMessage(reset).ifBlank { "تعذر إعادة تعيين كلمة المرور" })
+            }
+
+            val verified = loginAndSync(context, email, newPassword)
+            if (!verified.ok) {
+                return SyncResult(false, "تم تغيير كلمة المرور لكن تعذر تأكيد تسجيل الدخول: ${verified.message}")
+            }
+            SyncResult(true, "تم إصلاح كلمة المرور وتأكيد تسجيل الدخول", verified.customerCount)
+        }.getOrElse { SyncResult(false, "تعذر إصلاح كلمة المرور من الجلسة الحالية") }
+    }
+
     fun syncWithStoredSession(context: Context): SyncResult {
         val cookie = session(context) ?: return SyncResult(false, "سجّل الدخول أولاً")
         return syncWithCookie(context, cookie)
@@ -64,9 +111,14 @@ object KunApi {
         return fetchStateWithCookie(context, cookie)
     }
 
-    fun createOrder(context: Context, values: JSONObject): ActionResult = scopedWrite(context, "/api/orders", values, "تم تسجيل الأوردر")
-    fun createCustomer(context: Context, values: JSONObject): ActionResult = scopedWrite(context, "/api/customers", values, "تمت إضافة العميل")
-    fun createProduct(context: Context, values: JSONObject): ActionResult = scopedWrite(context, "/api/products", values, "تمت إضافة المنتج")
+    fun createOrder(context: Context, values: JSONObject): ActionResult =
+        scopedWrite(context, "/api/orders", values, "تم تسجيل الأوردر")
+
+    fun createCustomer(context: Context, values: JSONObject): ActionResult =
+        scopedWrite(context, "/api/customers", values, "تمت إضافة العميل")
+
+    fun createProduct(context: Context, values: JSONObject): ActionResult =
+        scopedWrite(context, "/api/products", values, "تمت إضافة المنتج")
 
     fun adjustStock(context: Context, productId: String, delta: Double, note: String): ActionResult {
         val cookie = session(context) ?: return ActionResult(false, "سجّل الدخول أولاً")
@@ -78,12 +130,16 @@ object KunApi {
                 clearSession(context)
                 return ActionResult(false, "انتهت الجلسة — سجّل الدخول مرة أخرى")
             }
-            if (response.code !in 200..299) return ActionResult(false, errorMessage(response).ifBlank { "تعذر تحديث المخزون" })
+            if (response.code !in 200..299) {
+                return ActionResult(false, errorMessage(response).ifBlank { "تعذر تحديث المخزون" })
+            }
             ActionResult(true, "تم تحديث المخزون")
         }.getOrElse { ActionResult(false, "تعذر الاتصال بكن أونلاين") }
     }
 
     fun hasSession(context: Context): Boolean = session(context) != null
+
+    fun sessionCookie(context: Context): String? = session(context)
 
     fun logout(context: Context) {
         clearSession(context)
@@ -101,7 +157,9 @@ object KunApi {
                 clearSession(context)
                 return ActionResult(false, "انتهت الجلسة — سجّل الدخول مرة أخرى")
             }
-            if (response.code !in 200..299) return ActionResult(false, errorMessage(response).ifBlank { "تعذر تنفيذ العملية" })
+            if (response.code !in 200..299) {
+                return ActionResult(false, errorMessage(response).ifBlank { "تعذر تنفيذ العملية" })
+            }
             ActionResult(true, success)
         }.getOrElse { ActionResult(false, "تعذر الاتصال بكن أونلاين") }
     }
@@ -128,7 +186,9 @@ object KunApi {
                 clearSession(context)
                 return StateResult(false, "انتهت الجلسة — سجّل الدخول مرة أخرى")
             }
-            if (response.code !in 200..299) return StateResult(false, errorMessage(response).ifBlank { "تعذر تحميل بيانات النظام" })
+            if (response.code !in 200..299) {
+                return StateResult(false, errorMessage(response).ifBlank { "تعذر تحميل بيانات النظام" })
+            }
             val root = JSONObject(response.body)
             val orders = root.optJSONArray("orders") ?: JSONArray()
             CustomerCache.replaceAll(context, orders)
@@ -143,7 +203,8 @@ object KunApi {
         val me = request("GET", "/api/me", cookie = cookie)
         if (me.code in 200..299) {
             val data = runCatching { JSONObject(me.body) }.getOrNull()
-            clientId = data?.optString("clientId").orEmpty().ifBlank { data?.optString("client_id").orEmpty() }
+            clientId = data?.optString("clientId").orEmpty()
+                .ifBlank { data?.optString("client_id").orEmpty() }
         }
 
         if (clientId.isBlank()) {
@@ -159,10 +220,13 @@ object KunApi {
             if (state.code in 200..299) {
                 val root = runCatching { JSONObject(state.body) }.getOrNull()
                 clientId = root?.optJSONArray("clients")?.optJSONObject(0)?.optString("id").orEmpty()
-                    .ifBlank { root?.optJSONArray("businessClients")?.optJSONObject(0)?.optString("id").orEmpty() }
+                    .ifBlank {
+                        root?.optJSONArray("businessClients")?.optJSONObject(0)?.optString("id").orEmpty()
+                    }
                     .ifBlank {
                         val order = root?.optJSONArray("orders")?.optJSONObject(0)
-                        order?.optString("clientId").orEmpty().ifBlank { order?.optString("client_id").orEmpty() }
+                        order?.optString("clientId").orEmpty()
+                            .ifBlank { order?.optString("client_id").orEmpty() }
                     }
             }
         }
@@ -172,7 +236,9 @@ object KunApi {
             if (stores.code in 200..299) {
                 val root = runCatching { JSONObject(stores.body) }.getOrNull()
                 val allStores = root?.optBoolean("allStores", true) ?: true
-                if (!allStores) storeId = root?.optJSONArray("stores")?.optJSONObject(0)?.optString("id").orEmpty()
+                if (!allStores) {
+                    storeId = root?.optJSONArray("stores")?.optJSONObject(0)?.optString("id").orEmpty()
+                }
             }
         }
         return ScopeInfo(clientId, storeId)
