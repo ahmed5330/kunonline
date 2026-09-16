@@ -102,11 +102,16 @@ class MainActivity : Activity() {
             setOnClickListener { syncNow() }
         })
         root.addView(Button(this).apply {
-            text = "فتح كن أونلاين"
+            text = "فتح نظام كن أونلاين"
             setOnClickListener {
-                runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://app.kun-online.com"))) }
-                    .onFailure { updateStatus("تعذر فتح رابط كن أونلاين") }
+                runCatching {
+                    startActivity(Intent(this@MainActivity, KunOnlineWebActivity::class.java))
+                }.onFailure { updateStatus("تعذر فتح نظام كن أونلاين داخل التطبيق") }
             }
+        })
+        root.addView(TextView(this).apply {
+            text = "يفتح الإصدار الحالي من النظام داخل التطبيق مباشرة بدل فتح النسخة القديمة في المتصفح."
+            textSize = 12f
         })
         root.addView(Button(this).apply {
             text = "تسجيل الخروج ومسح بيانات العملاء"
