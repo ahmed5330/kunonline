@@ -64,7 +64,6 @@ enum class AppSection(
 
 val bottomSections = listOf(
     AppSection.DASHBOARD,
-    AppSection.ORDERS,
     AppSection.CUSTOMER_SERVICE,
     AppSection.PRODUCTS
 )
