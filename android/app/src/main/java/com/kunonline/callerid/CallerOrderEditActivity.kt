@@ -174,7 +174,7 @@ private fun CallerOrderEditScreen(orderId: String, onClose: () -> Unit) {
                                 saving = false
                                 Toast.makeText(context, result.message, if (result.ok) Toast.LENGTH_SHORT else Toast.LENGTH_LONG).show()
                                 if (result.ok) {
-                                    KunApi.syncWithStoredSession(context)
+                                    withContext(Dispatchers.IO) { KunApi.syncWithStoredSession(context) }
                                     onClose()
                                 }
                             }
