@@ -9,11 +9,11 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.kunonline.callerid"
+        applicationId = "com.kunonline.callerid.stable"
         minSdk = 29
         targetSdk = 35
-        versionCode = 3
-        versionName = "2.0.0"
+        versionCode = 102
+        versionName = "2.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
