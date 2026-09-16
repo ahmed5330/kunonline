@@ -1,11 +1,11 @@
-/* Kun Online v77.1 — authoritative Customer Service no-reload guard + post-shipping click isolation. */
+/* Kun Online v77.2 — authoritative Customer Service navigation/no-reload guard + post-shipping click isolation. */
 (function(){
   if(window.KunCustomerServiceNoReloadV77)return;
   const cs=()=>window.KunCustomerServiceV31;
   const root=()=>document.getElementById('root');
   const activeView=()=>document.querySelector('.nav button.active[data-view]')?.dataset.view||'';
   const activeCustomerService=()=>activeView()==='customer-service'&&Boolean(root()?.querySelector('.cs-page'));
-  let workflowSuppression=null,classification=null;
+  let workflowSuppression=null,classification=null,navOpening=false;
 
   function scrollNodes(){
     const out=[],seen=new Set(),add=node=>{if(!node||seen.has(node))return;seen.add(node);out.push(node);};
@@ -41,6 +41,43 @@
     guarded.__kunV77Wrapped=true;guarded.__kunV77Original=original;api.render=guarded;
   }
 
+  function permissionAllowsCustomerService(){
+    const permission=window.KunPermissionNavigationV51;
+    if(!permission)return true;
+    const allowed=permission.allowed;
+    return !Array.isArray(allowed)||allowed.length===0||allowed.includes('customer-service');
+  }
+  function setCustomerServiceActive(nav){
+    document.querySelectorAll('.nav button[data-view]').forEach(button=>button.classList.toggle('active',button===nav));
+  }
+  async function openCustomerService(nav){
+    if(navOpening)return;
+    navOpening=true;
+    try{
+      wrapCustomerServiceRender();
+      const api=cs();
+      if(!api?.render)throw new Error('مكوّن خدمة العملاء لم يكتمل تحميله');
+      setCustomerServiceActive(nav);
+      await api.render();
+    }catch(error){
+      const message=error?.message||'تعذر فتح خدمة العملاء';
+      const target=root();
+      if(target&&!target.querySelector('.cs-page'))target.innerHTML=`<div class="card empty"><h3>تعذر فتح خدمة العملاء</h3><p>${String(message).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}</p><button class="btn soft" id="csNavRetry">إعادة المحاولة</button></div>`;
+      document.getElementById('csNavRetry')?.addEventListener('click',()=>openCustomerService(nav),{once:true});
+      window.showToast?.(message);
+    }finally{navOpening=false;}
+  }
+  function installAuthoritativeNavigation(){
+    if(document.documentElement.dataset.customerServiceNavV77==='ready')return;
+    document.documentElement.dataset.customerServiceNavV77='ready';
+    document.addEventListener('click',event=>{
+      const nav=event.target.closest?.('.nav button[data-view="customer-service"]');
+      if(!nav||nav.hidden||nav.style.display==='none'||!permissionAllowsCustomerService())return;
+      event.preventDefault();event.stopPropagation();event.stopImmediatePropagation();
+      openCustomerService(nav);
+    },true);
+  }
+
   window.addEventListener('kun:order-workflow-updated',event=>{
     if(!activeCustomerService())return;
     const detail=event.detail||{},orderId=String(detail.orderId||''),state=normalizeState(detail.state);if(!orderId||!state)return;
@@ -68,7 +105,7 @@
     const original=button.onclick;button.dataset.kunV77Isolated='1';button.onclick=function(event){let result;try{result=original.call(this,event);}finally{event?.stopPropagation?.();event?.stopImmediatePropagation?.();}return result;};
   }
   const observer=new MutationObserver(()=>{wrapCustomerServiceRender();isolateDeliveredButton();});observer.observe(document.body,{childList:true,subtree:true});
-  wrapCustomerServiceRender();isolateDeliveredButton();
-  window.KunCustomerServiceNoReloadV77={wrap:wrapCustomerServiceRender,captureScroll,restoreScroll,version:'77.1'};
-  document.documentElement.dataset.customerServiceNoReload='v77.1-ready';
+  installAuthoritativeNavigation();wrapCustomerServiceRender();isolateDeliveredButton();
+  window.KunCustomerServiceNoReloadV77={wrap:wrapCustomerServiceRender,open:()=>{const nav=document.querySelector('.nav button[data-view="customer-service"]');if(nav)return openCustomerService(nav);},captureScroll,restoreScroll,version:'77.2'};
+  document.documentElement.dataset.customerServiceNoReload='v77.2-ready';
 })();
