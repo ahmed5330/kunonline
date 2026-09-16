@@ -26,11 +26,16 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        buildUi()
-        updateStatus()
-        if (KunApi.hasSession(this)) {
-            SyncJobService.schedule(this)
-            syncNow()
+        try {
+            buildUi()
+            updateStatus()
+            val hasSession = runCatching { KunApi.hasSession(this) }.getOrDefault(false)
+            if (hasSession) {
+                runCatching { SyncJobService.schedule(this) }
+                syncNow()
+            }
+        } catch (t: Throwable) {
+            showStartupRecovery(t)
         }
     }
 
@@ -91,14 +96,15 @@ class MainActivity : Activity() {
         root.addView(Button(this).apply {
             text = "فتح كن أونلاين"
             setOnClickListener {
-                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://app.kun-online.com")))
+                runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://app.kun-online.com"))) }
+                    .onFailure { updateStatus("تعذر فتح رابط كن أونلاين") }
             }
         })
         root.addView(Button(this).apply {
             text = "تسجيل الخروج ومسح بيانات العملاء"
             setOnClickListener {
-                KunApi.logout(this@MainActivity)
-                SyncJobService.cancel(this@MainActivity)
+                runCatching { KunApi.logout(this@MainActivity) }
+                runCatching { SyncJobService.cancel(this@MainActivity) }
                 password.setText("")
                 updateStatus("تم تسجيل الخروج ومسح الكاش المحلي")
             }
@@ -106,33 +112,46 @@ class MainActivity : Activity() {
         setContentView(ScrollView(this).apply { addView(root) })
     }
 
+    private fun roleManager(): RoleManager? = runCatching {
+        getSystemService(RoleManager::class.java)
+    }.getOrNull()
+
     private fun requestCallerRole() {
-        val roleManager = getSystemService(RoleManager::class.java)
-        if (!roleManager.isRoleAvailable(RoleManager.ROLE_CALL_SCREENING)) {
-            updateStatus("الجهاز لا يدعم دور Call Screening")
+        val manager = roleManager()
+        if (manager == null || !runCatching { manager.isRoleAvailable(RoleManager.ROLE_CALL_SCREENING) }.getOrDefault(false)) {
+            updateStatus("الجهاز لا يدعم دور Call Screening أو تعذر الوصول إليه")
             return
         }
-        if (roleManager.isRoleHeld(RoleManager.ROLE_CALL_SCREENING)) {
+        if (runCatching { manager.isRoleHeld(RoleManager.ROLE_CALL_SCREENING) }.getOrDefault(false)) {
             updateStatus("Caller ID مفعّل بالفعل")
             return
         }
-        startActivityForResult(roleManager.createRequestRoleIntent(RoleManager.ROLE_CALL_SCREENING), 100)
+        runCatching {
+            startActivityForResult(manager.createRequestRoleIntent(RoleManager.ROLE_CALL_SCREENING), 100)
+        }.onFailure { updateStatus("تعذر فتح إعداد Caller ID على هذا الجهاز") }
     }
 
     private fun requestOverlayPermission() {
-        if (Settings.canDrawOverlays(this)) {
+        val enabled = runCatching { Settings.canDrawOverlays(this) }.getOrDefault(false)
+        if (enabled) {
             updateStatus("صلاحية الظهور فوق التطبيقات مفعّلة بالفعل")
             return
         }
-        startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+        runCatching {
+            startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+        }.onFailure { updateStatus("تعذر فتح إعداد الظهور فوق التطبيقات") }
     }
 
     private fun requestContactsPermission() {
-        if (checkSelfPermission(Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED) {
+        val granted = runCatching {
+            checkSelfPermission(Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
+        }.getOrDefault(false)
+        if (granted) {
             updateStatus("صلاحية جهات الاتصال مفعّلة بالفعل")
             return
         }
-        requestPermissions(arrayOf(Manifest.permission.READ_CONTACTS), 101)
+        runCatching { requestPermissions(arrayOf(Manifest.permission.READ_CONTACTS), 101) }
+            .onFailure { updateStatus("تعذر طلب صلاحية جهات الاتصال") }
     }
 
     private fun loginAndSync() {
@@ -144,11 +163,12 @@ class MainActivity : Activity() {
         }
         updateStatus("جاري تسجيل الدخول والمزامنة…")
         thread(name = "kun-login-sync") {
-            val result = KunApi.loginAndSync(this, mail, pass)
+            val result = runCatching { KunApi.loginAndSync(this, mail, pass) }
+                .getOrElse { SyncResult(false, "تعذر تسجيل الدخول") }
             runOnUiThread {
                 if (result.ok) {
                     password.setText("")
-                    SyncJobService.schedule(this)
+                    runCatching { SyncJobService.schedule(this) }
                 }
                 updateStatus(result.message + if (result.ok) " — ${result.customerCount} عميل" else "")
             }
@@ -158,19 +178,27 @@ class MainActivity : Activity() {
     private fun syncNow() {
         updateStatus("جاري مزامنة بيانات العملاء…")
         thread(name = "kun-manual-sync") {
-            val result = KunApi.syncWithStoredSession(this)
+            val result = runCatching { KunApi.syncWithStoredSession(this) }
+                .getOrElse { SyncResult(false, "تعذر المزامنة") }
             runOnUiThread { updateStatus(result.message + if (result.ok) " — ${result.customerCount} عميل" else "") }
         }
     }
 
     private fun updateStatus(message: String? = null) {
-        val roleManager = getSystemService(RoleManager::class.java)
-        val callerEnabled = roleManager.isRoleAvailable(RoleManager.ROLE_CALL_SCREENING) && roleManager.isRoleHeld(RoleManager.ROLE_CALL_SCREENING)
-        val overlayEnabled = Settings.canDrawOverlays(this)
-        val contactsEnabled = checkSelfPermission(Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
-        val count = CustomerCache.count(this)
-        val syncAt = CustomerCache.lastSyncedAt(this)
-        val syncedText = if (syncAt > 0) DateFormat.getDateTimeInstance().format(Date(syncAt)) else "لم تتم مزامنة بعد"
+        if (!::status.isInitialized) return
+        val manager = roleManager()
+        val callerEnabled = manager != null &&
+            runCatching { manager.isRoleAvailable(RoleManager.ROLE_CALL_SCREENING) }.getOrDefault(false) &&
+            runCatching { manager.isRoleHeld(RoleManager.ROLE_CALL_SCREENING) }.getOrDefault(false)
+        val overlayEnabled = runCatching { Settings.canDrawOverlays(this) }.getOrDefault(false)
+        val contactsEnabled = runCatching {
+            checkSelfPermission(Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
+        }.getOrDefault(false)
+        val count = runCatching { CustomerCache.count(this) }.getOrDefault(0)
+        val syncAt = runCatching { CustomerCache.lastSyncedAt(this) }.getOrDefault(0L)
+        val syncedText = if (syncAt > 0) {
+            runCatching { DateFormat.getDateTimeInstance().format(Date(syncAt)) }.getOrDefault("تمت مزامنة سابقة")
+        } else "لم تتم مزامنة بعد"
         status.text = listOfNotNull(
             message,
             "Caller ID: ${if (callerEnabled) "مفعّل" else "غير مفعّل"}",
@@ -181,8 +209,33 @@ class MainActivity : Activity() {
         ).joinToString("\n")
     }
 
+    private fun showStartupRecovery(t: Throwable) {
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(36, 48, 36, 48)
+        }
+        root.addView(TextView(this).apply {
+            text = "Kun Online Caller ID"
+            textSize = 24f
+        })
+        root.addView(TextView(this).apply {
+            text = "تم منع إغلاق التطبيق أثناء بدء التشغيل.\nرمز التشخيص: ${t.javaClass.simpleName}"
+            textSize = 15f
+            setPadding(0, 24, 0, 24)
+        })
+        root.addView(Button(this).apply {
+            text = "تنظيف بيانات التطبيق المحلية وإعادة المحاولة"
+            setOnClickListener {
+                runCatching { getSharedPreferences("kun_auth", MODE_PRIVATE).edit().clear().apply() }
+                runCatching { CustomerCache.clear(this@MainActivity) }
+                recreate()
+            }
+        })
+        setContentView(ScrollView(this).apply { addView(root) })
+    }
+
     override fun onResume() {
         super.onResume()
-        if (::status.isInitialized) updateStatus()
+        if (::status.isInitialized) runCatching { updateStatus() }
     }
 }
