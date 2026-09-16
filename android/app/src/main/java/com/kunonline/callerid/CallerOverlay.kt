@@ -19,13 +19,13 @@ object CallerOverlay {
     private var currentView: View? = null
     private var currentManager: WindowManager? = null
     private val handler = Handler(Looper.getMainLooper())
-    private val autoDismiss = Runnable { dismiss() }
 
     private fun stateText(state: String?): String = when (state) {
         "pending" -> "جاري التأكيد"
+        "no_answer" -> "العميل لا يرد"
         "confirmed" -> "تم تأكيد الطلب"
-        "preparing" -> "جاري الشحن"
-        "shipped" -> "تم الشحن"
+        "preparing" -> "التجهيز والتغليف"
+        "shipped" -> "جاري الشحن"
         "signed" -> "تم التسليم — تحصيل منتظر"
         "collected" -> "تم التحصيل"
         "returned" -> "مرتجع"
@@ -34,14 +34,15 @@ object CallerOverlay {
         else -> state.orEmpty()
     }
 
-    fun show(context: Context, customer: CallerCustomer) {
+    fun show(context: Context, customer: CallerCustomer, incoming: Boolean) {
         val app = context.applicationContext
         handler.post {
             if (!Settings.canDrawOverlays(app)) {
                 runCatching {
                     app.startActivity(Intent(app, CallerCardActivity::class.java).apply {
                         putExtra("phone", customer.phone)
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_HISTORY)
+                        putExtra("incoming", incoming)
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     })
                 }
                 return@post
@@ -55,6 +56,11 @@ object CallerOverlay {
                 setBackgroundColor(Color.argb(247, 255, 255, 255))
                 elevation = 18f
             }
+            box.addView(TextView(app).apply {
+                text = if (incoming) "مكالمة واردة — Kun Online" else "مكالمة صادرة — Kun Online"
+                textSize = 13f
+                setTextColor(Color.rgb(36, 99, 235))
+            })
             box.addView(TextView(app).apply {
                 text = customer.name.ifBlank { "عميل كن أونلاين" }
                 textSize = 20f
@@ -104,6 +110,11 @@ object CallerOverlay {
                     textSize = 13f
                     setTextColor(Color.GRAY)
                 })
+                box.addView(TextView(app).apply {
+                    text = "النافذة ستظل مفتوحة حتى تضغط إغلاق"
+                    textSize = 11f
+                    setTextColor(Color.GRAY)
+                })
             }
 
             val actions = LinearLayout(app).apply {
@@ -111,17 +122,31 @@ object CallerOverlay {
                 gravity = Gravity.END
             }
             if (!locked) {
+                customer.orderId?.takeIf { it.isNotBlank() }?.let { orderId ->
+                    actions.addView(Button(app).apply {
+                        text = "تعديل الطلب"
+                        setOnClickListener {
+                            runCatching {
+                                app.startActivity(
+                                    Intent(app, CallerOrderEditActivity::class.java).apply {
+                                        putExtra(CallerOrderEditActivity.EXTRA_ORDER_ID, orderId)
+                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                                    }
+                                )
+                            }
+                        }
+                    })
+                }
                 actions.addView(Button(app).apply {
-                    text = "فتح في التطبيق"
+                    text = "فتح التطبيق"
                     setOnClickListener {
                         runCatching {
                             app.startActivity(
                                 Intent(app, MainActivity::class.java).apply {
-                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
                                 }
                             )
                         }
-                        dismiss()
                     }
                 })
             }
@@ -147,14 +172,11 @@ object CallerOverlay {
                 wm.addView(box, params)
                 currentView = box
                 currentManager = wm
-                handler.removeCallbacks(autoDismiss)
-                handler.postDelayed(autoDismiss, 12000)
             }
         }
     }
 
     fun dismiss() {
-        handler.removeCallbacks(autoDismiss)
         val view = currentView ?: return
         runCatching { currentManager?.removeView(view) }
         currentView = null
