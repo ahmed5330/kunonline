@@ -8,6 +8,7 @@ import java.security.MessageDigest
 data class CallerCustomer(
     val name: String,
     val phone: String,
+    val orderId: String?,
     val orderRef: String?,
     val status: String?,
     val product: String?,
@@ -41,10 +42,13 @@ object CustomerCache {
         val editor = prefs.edit().clear()
         grouped.forEach { (phone, list) ->
             val latest = list.first()
+            val orderId = latest.optString("id")
+            val orderRef = latest.optString("ref").ifBlank { orderId }
             val payload = JSONObject()
                 .put("name", latest.optString("name"))
                 .put("phone", phone)
-                .put("orderRef", latest.optString("id").ifBlank { latest.optString("ref") })
+                .put("orderId", orderId)
+                .put("orderRef", orderRef)
                 .put("status", latest.optString("state"))
                 .put("product", latest.optString("product"))
                 .put("total", latest.optDouble("total", 0.0))
@@ -70,10 +74,12 @@ object CustomerCache {
             null
         }
         val json = SecureStore.decrypt(raw)?.let { runCatching { JSONObject(it) }.getOrNull() } ?: return null
+        val cachedRef = json.optString("orderRef").takeIf { it.isNotBlank() }
         return CallerCustomer(
             name = json.optString("name"),
             phone = normalized,
-            orderRef = json.optString("orderRef").takeIf { it.isNotBlank() },
+            orderId = json.optString("orderId").takeIf { it.isNotBlank() } ?: cachedRef,
+            orderRef = cachedRef,
             status = json.optString("status").takeIf { it.isNotBlank() },
             product = json.optString("product").takeIf { it.isNotBlank() },
             total = json.optDouble("total", 0.0).takeIf { it > 0 },
