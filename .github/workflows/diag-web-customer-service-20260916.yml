@@ -1,0 +1,82 @@
+name: Diagnose web customer service once
+
+on:
+  push:
+    branches: [diag/web-customer-service-20260916]
+    paths: ['.github/workflows/diag-web-customer-service-20260916.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: preview
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      PROD: https://app.kun-online.com
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: npm install --ignore-scripts
+
+      - name: Check customer service JavaScript syntax
+        run: |
+          set -euo pipefail
+          for file in \
+            public/v2/modules-v31-customer-service.js \
+            public/v2/modules-v42-customer-service-rich-cards.js \
+            public/v2/modules-v44-customer-service-order-edit.js \
+            public/v2/modules-v51-permission-navigation.js \
+            public/v2/modules-v75-customer-service-interactions.js \
+            public/v2/modules-v76-customer-service-flow.js \
+            public/v2/modules-v77-customer-service-no-reload.js; do
+            test -s "$file"
+            node --check "$file"
+          done
+
+      - name: Check Production static customer service assets and unauthenticated API boundary
+        run: |
+          set -euo pipefail
+          for path in \
+            /v2/ \
+            /v2/modules-v31-customer-service.js?v=31.2.1 \
+            /v2/modules-v75-customer-service-interactions.js?v=75.2 \
+            /v2/modules-v76-customer-service-flow.js?v=76.1 \
+            /v2/modules-v77-customer-service-no-reload.js?v=77.1; do
+            code="$(curl -sS -L -o /tmp/body -w '%{http_code}' "$PROD$path")"
+            echo "$path -> $code"
+            test "$code" = "200"
+            test -s /tmp/body
+          done
+          code="$(curl -sS -o /tmp/api -w '%{http_code}' "$PROD/api/customer-service")"
+          echo "/api/customer-service unauthenticated -> $code"
+          test "$code" = "401"
+          node -e 'const fs=require("fs"); const x=JSON.parse(fs.readFileSync("/tmp/api","utf8")); if(x.code!=="AUTH_REQUIRED") process.exit(2)'
+
+      - name: Check Production D1 customer service schema read-only
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('orders','stores','order_stock_allocations','inventory_batches','order_notes','order_events') ORDER BY name; SELECT COUNT(*) AS orders_total FROM orders; SELECT COUNT(*) AS cs_orders FROM orders WHERE state IN ('pending','no_answer','confirmed','preparing','shipped','deferred'); SELECT COUNT(*) AS missing_store_cs FROM orders WHERE state IN ('pending','no_answer','confirmed','preparing','shipped','deferred') AND store_id IS NULL; SELECT COUNT(*) AS join_rows FROM orders o LEFT JOIN stores s ON s.id=o.store_id AND s.client_id=o.client_id LEFT JOIN order_stock_allocations osa ON osa.order_id=o.id AND osa.client_id=o.client_id LEFT JOIN inventory_batches ib ON ib.id=osa.batch_id AND ib.client_id=o.client_id LEFT JOIN order_notes ln ON ln.id=(SELECT n.id FROM order_notes n WHERE n.order_id=o.id AND n.client_id=o.client_id ORDER BY n.created_at DESC,n.id DESC LIMIT 1) WHERE o.state IN ('pending','no_answer','confirmed','preparing','shipped','deferred');" --json > /tmp/d1.json
+          cat /tmp/d1.json
+          node - <<'NODE'
+          const fs=require('fs');
+          const raw=JSON.parse(fs.readFileSync('/tmp/d1.json','utf8'));
+          const rows=[];
+          const walk=x=>{if(Array.isArray(x))return x.forEach(walk); if(x&&typeof x==='object'){if(Array.isArray(x.results)) rows.push(...x.results); Object.values(x).forEach(walk)}};
+          walk(raw);
+          const tables=new Set(rows.filter(x=>x.name).map(x=>x.name));
+          for(const name of ['orders','stores','order_stock_allocations','inventory_batches','order_notes','order_events']) if(!tables.has(name)) throw new Error(`missing table ${name}`);
+          const get=k=>rows.find(x=>x[k]!==undefined)?.[k];
+          console.log(`orders_total=${get('orders_total')} cs_orders=${get('cs_orders')} missing_store_cs=${get('missing_store_cs')} join_rows=${get('join_rows')}`);
+          if(Number(get('missing_store_cs'))!==0) throw new Error(`customer service has ${get('missing_store_cs')} orders without store_id`);
+          NODE
+
+      - name: Check exact Production bundle can dry-run
+        run: npx wrangler deploy --dry-run --config wrangler.production.toml
