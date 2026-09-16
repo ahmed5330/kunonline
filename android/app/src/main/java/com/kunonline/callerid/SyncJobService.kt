@@ -11,7 +11,7 @@ import kotlin.concurrent.thread
 class SyncJobService : JobService() {
     override fun onStartJob(params: JobParameters): Boolean {
         thread(name = "kun-caller-sync") {
-            KunApi.syncWithStoredSession(this)
+            runCatching { KunApi.syncWithStoredSession(this) }
             jobFinished(params, false)
         }
         return true
@@ -23,18 +23,18 @@ class SyncJobService : JobService() {
         private const val JOB_ID = 24091
         private const val PERIOD_MS = 60L * 60L * 1000L
 
-        fun schedule(context: Context) {
-            val scheduler = context.getSystemService(JobScheduler::class.java)
+        fun schedule(context: Context): Boolean = runCatching {
+            val scheduler = context.getSystemService(JobScheduler::class.java) ?: return@runCatching false
             val job = JobInfo.Builder(JOB_ID, ComponentName(context, SyncJobService::class.java))
                 .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
                 .setPersisted(true)
                 .setPeriodic(PERIOD_MS)
                 .build()
-            scheduler.schedule(job)
-        }
+            scheduler.schedule(job) == JobScheduler.RESULT_SUCCESS
+        }.getOrDefault(false)
 
         fun cancel(context: Context) {
-            context.getSystemService(JobScheduler::class.java).cancel(JOB_ID)
+            runCatching { context.getSystemService(JobScheduler::class.java)?.cancel(JOB_ID) }
         }
     }
 }
