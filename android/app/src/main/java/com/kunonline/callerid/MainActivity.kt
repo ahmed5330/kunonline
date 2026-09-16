@@ -63,7 +63,7 @@ class MainActivity : ComponentActivity() {
         requestPermissions(arrayOf(Manifest.permission.READ_CONTACTS), REQUEST_CONTACTS)
     }
 
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == REQUEST_CONTACTS_FOR_CALLER_ID && grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
             requestCallerRole()
