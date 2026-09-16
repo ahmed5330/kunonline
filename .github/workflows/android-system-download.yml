@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
     paths:
+      - 'android/**'
       - '.github/workflows/android-system-download.yml'
   workflow_dispatch:
 
@@ -12,7 +13,7 @@ permissions:
 
 concurrency:
   group: kunonline-android-system-download
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   publish:
@@ -44,7 +45,7 @@ jobs:
           cp android/app/build/outputs/apk/debug/app-debug.apk /tmp/Kun-Online-Mobile.apk
           gh release upload android-latest /tmp/Kun-Online-Mobile.apk --clobber
           gh release delete-asset android-latest app-debug.apk -y || true
-          gh release edit android-latest --target "$GITHUB_SHA" --title "Kun Online Android v1.1.0" --notes "Latest Kun Online Android Caller ID build. Download from the Kun Online system or this stable release asset."
+          gh release edit android-latest --target "$GITHUB_SHA" --title "Kun Online Android v1.1.1" --notes "Startup-crash hardened Kun Online Android Caller ID build. Download from the Kun Online system or this stable release asset."
 
       - name: Point system download button to latest APK
         run: |
