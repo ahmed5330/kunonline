@@ -1,0 +1,153 @@
+name: Android native stable-signed test
+
+on:
+  push:
+    branches: [feature/android-native-mobile-ui]
+    paths:
+      - 'android/**'
+      - '.github/workflows/android-native-stable-signed-test.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kunonline-native-stable-signed-test
+  cancel-in-progress: true
+
+jobs:
+  signed-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment:
+      name: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      ANDROID_SIGNING_MASTER: ${{ secrets.ANDROID_SIGNING_MASTER }}
+      SIGNING_REF: 6369cab462b0e6bd843bc533e7bbc7ffb1744e2f
+      EXPECTED_CERT_SHA256: ed4be3cfc9d0c2ca4fad68303b74adf2fb09dfbb21399cc915e6cdc3131c614f
+      EXPECTED_PACKAGE: com.kunonline.callerid.stable
+      EXPECTED_VERSION_CODE: '102'
+      EXPECTED_VERSION_NAME: '2.1.0'
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Verify native package version and build release
+        working-directory: android
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq 'applicationId = "com.kunonline.callerid.stable"' app/build.gradle.kts
+          grep -Fq 'versionCode = 102' app/build.gradle.kts
+          grep -Fq 'versionName = "2.1.0"' app/build.gradle.kts
+          gradle test assembleRelease
+
+      - name: Recover encrypted signing material from established stable release
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin "$SIGNING_REF" --depth=1
+          mkdir -p /tmp/kun-signing-source
+          for f in \
+            android/signing/transport-private.pem.enc \
+            android/signing/signing-bundle-key.enc.b64 \
+            android/signing/signing-bundle.enc.b64; do
+            git cat-file -e "$SIGNING_REF:$f"
+            git show "$SIGNING_REF:$f" > "/tmp/kun-signing-source/$(basename "$f")"
+          done
+
+          SOURCE="${ANDROID_SIGNING_MASTER:-}"
+          if [ -z "$SOURCE" ]; then SOURCE="$CLOUDFLARE_API_TOKEN"; fi
+          test -n "$SOURCE"
+          MASTER="$(printf '%s|kun-online-android-signing-v1' "$SOURCE" | sha256sum | awk '{print $1}')"
+          export MASTER
+
+          openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 \
+            -in /tmp/kun-signing-source/transport-private.pem.enc \
+            -out /tmp/kun-transport-private.pem \
+            -pass env:MASTER
+          chmod 600 /tmp/kun-transport-private.pem
+
+          base64 -d /tmp/kun-signing-source/signing-bundle-key.enc.b64 > /tmp/kun-bundle-key.enc
+          openssl pkeyutl -decrypt \
+            -inkey /tmp/kun-transport-private.pem \
+            -in /tmp/kun-bundle-key.enc \
+            -out /tmp/kun-bundle-pass.txt \
+            -pkeyopt rsa_padding_mode:oaep \
+            -pkeyopt rsa_oaep_md:sha256
+
+          base64 -d /tmp/kun-signing-source/signing-bundle.enc.b64 > /tmp/kun-signing-bundle.enc
+          BUNDLE_PASS="$(cat /tmp/kun-bundle-pass.txt)"
+          export BUNDLE_PASS
+          openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 \
+            -in /tmp/kun-signing-bundle.enc \
+            -out /tmp/kun-signing-bundle.tar.gz \
+            -pass env:BUNDLE_PASS
+
+          mkdir -p /tmp/kun-signing
+          tar -xzf /tmp/kun-signing-bundle.tar.gz -C /tmp/kun-signing
+          test -s /tmp/kun-signing/kunonline-release.p12
+          test -s /tmp/kun-signing/signing.properties
+          chmod 600 /tmp/kun-signing/kunonline-release.p12 /tmp/kun-signing/signing.properties
+
+      - name: Sign and verify upgrade-compatible APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +x
+          KS_ALIAS="$(sed -nE 's/^KS_ALIAS=(.*)$/\1/p' /tmp/kun-signing/signing.properties | head -1)"
+          KS_PASSWORD="$(sed -nE 's/^KS_PASSWORD=(.*)$/\1/p' /tmp/kun-signing/signing.properties | head -1)"
+          test -n "$KS_ALIAS"
+          test -n "$KS_PASSWORD"
+          export KS_PASSWORD
+
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
+          AAPT="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -1)"
+          test -n "$APKSIGNER"
+          test -n "$AAPT"
+          UNSIGNED="android/app/build/outputs/apk/release/app-release-unsigned.apk"
+          test -s "$UNSIGNED"
+
+          "$APKSIGNER" sign \
+            --ks /tmp/kun-signing/kunonline-release.p12 \
+            --ks-type PKCS12 \
+            --ks-key-alias "$KS_ALIAS" \
+            --ks-pass env:KS_PASSWORD \
+            --key-pass env:KS_PASSWORD \
+            --out /tmp/Kun-Online-Native-v2.1.0.apk \
+            "$UNSIGNED"
+
+          "$APKSIGNER" verify --verbose --print-certs /tmp/Kun-Online-Native-v2.1.0.apk > /tmp/apk-verify.txt
+          grep -Fq 'Verified using v3 scheme (APK Signature Scheme v3): true' /tmp/apk-verify.txt
+          ACTUAL="$(sed -nE 's/^.*certificate SHA-256 digest: ([0-9a-fA-F]+)$/\1/p' /tmp/apk-verify.txt | tr 'A-F' 'a-f' | head -1)"
+          test "$ACTUAL" = "$EXPECTED_CERT_SHA256"
+
+          "$AAPT" dump badging /tmp/Kun-Online-Native-v2.1.0.apk > /tmp/apk-badging.txt
+          grep -Fq "package: name='$EXPECTED_PACKAGE' versionCode='$EXPECTED_VERSION_CODE' versionName='$EXPECTED_VERSION_NAME'" /tmp/apk-badging.txt
+          sha256sum /tmp/Kun-Online-Native-v2.1.0.apk
+          echo 'Stable signature, package ID, versionCode and versionName verified.'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kun-online-native-stable-signed-v2.1.0
+          path: /tmp/Kun-Online-Native-v2.1.0.apk
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Remove decrypted signing material
+        if: always()
+        shell: bash
+        run: |
+          rm -rf /tmp/kun-signing-source /tmp/kun-signing /tmp/kun-transport-private.pem \
+            /tmp/kun-bundle-key.enc /tmp/kun-bundle-pass.txt /tmp/kun-signing-bundle.enc \
+            /tmp/kun-signing-bundle.tar.gz /tmp/apk-verify.txt /tmp/apk-badging.txt
