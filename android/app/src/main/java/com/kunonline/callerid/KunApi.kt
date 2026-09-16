@@ -113,6 +113,8 @@ object KunApi {
 
     fun hasSession(context: Context): Boolean = SecureStore.get(context, AUTH_PREFS, SESSION_KEY) != null
 
+    fun sessionCookie(context: Context): String? = SecureStore.get(context, AUTH_PREFS, SESSION_KEY)
+
     fun logout(context: Context) {
         SecureStore.put(context, AUTH_PREFS, SESSION_KEY, null)
         CustomerCache.clear(context)
