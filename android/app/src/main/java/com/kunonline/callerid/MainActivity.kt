@@ -90,6 +90,14 @@ class MainActivity : Activity() {
             setOnClickListener { loginAndSync() }
         })
         root.addView(Button(this).apply {
+            text = "إصلاح كلمة مرور الحساب من الجلسة الحالية"
+            setOnClickListener { repairPasswordFromSession() }
+        })
+        root.addView(TextView(this).apply {
+            text = "استخدم الزر ده فقط لو التطبيق عنده جلسة شغالة لكن السيرفر بيرفض كلمة المرور الجديدة. اكتب الإيميل والباسورد المطلوب أولاً."
+            textSize = 12f
+        })
+        root.addView(Button(this).apply {
             text = "مزامنة الآن"
             setOnClickListener { syncNow() }
         })
@@ -165,6 +173,27 @@ class MainActivity : Activity() {
         thread(name = "kun-login-sync") {
             val result = runCatching { KunApi.loginAndSync(this, mail, pass) }
                 .getOrElse { SyncResult(false, "تعذر تسجيل الدخول") }
+            runOnUiThread {
+                if (result.ok) {
+                    password.setText("")
+                    runCatching { SyncJobService.schedule(this) }
+                }
+                updateStatus(result.message + if (result.ok) " — ${result.customerCount} عميل" else "")
+            }
+        }
+    }
+
+    private fun repairPasswordFromSession() {
+        val mail = email.text.toString().trim()
+        val pass = password.text.toString()
+        if (mail.isBlank() || pass.isBlank()) {
+            updateStatus("اكتب الإيميل وكلمة المرور الجديدة المطلوبة أولاً")
+            return
+        }
+        updateStatus("جاري إصلاح كلمة المرور باستخدام الجلسة الحالية…")
+        thread(name = "kun-password-repair") {
+            val result = runCatching { KunApi.repairPasswordWithStoredAdminSession(this, mail, pass) }
+                .getOrElse { SyncResult(false, "تعذر إصلاح كلمة المرور") }
             runOnUiThread {
                 if (result.ok) {
                     password.setText("")
