@@ -17,7 +17,7 @@ class MainActivity : ComponentActivity() {
             SyncJobService.schedule(this)
         }
         setContent {
-            KunNativeApp(this)
+            KunNativeAppV22(this)
         }
     }
 
