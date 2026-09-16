@@ -1,0 +1,150 @@
+name: Backfill Production order store scope and restore v2 once
+
+on:
+  push:
+    branches: [develop/ux-system-upgrade]
+    paths: ['.github/workflows/production-v2-backfill-and-restore-once-20260916.yml']
+
+concurrency:
+  group: kunonline-production-v2-backfill-restore-20260916
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    environment:
+      name: preview
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      RELEASE_REF: release/commerce-v38-production-20260910
+      EXPECTED_RELEASE_SHA: 21e440deb6351c6850fa51314ce2d62d3d219e86
+      EXPECTED_BUILD: production-commerce-v38-free-tier-safe-2026-09-10
+      PROD_CUSTOM: https://app.kun-online.com
+      PROD_WORKERS: https://kunonline.mr-a-mnaa.workers.dev
+    steps:
+      - name: Checkout exact approved release
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ env.RELEASE_REF }}
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - run: npm install --ignore-scripts
+
+      - name: Validate approved release locally
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_RELEASE_SHA"
+          grep -Fq "import app from './index-commerce-v38.js';" src/index-production-sync.js
+          grep -Fq "const BUILD='$EXPECTED_BUILD';" src/index-production-sync.js
+          test -s public/v2/index.html
+          node --check src/index-production-sync.js
+          node --check src/index-commerce-v38.js
+          npm run check:production-config
+          npx wrangler deploy --dry-run --config wrangler.production.toml >/tmp/prod-dry-run.log 2>&1
+          rm -f /tmp/prod-dry-run.log
+
+      - name: Preflight Production order mapping read-only
+        id: preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          result="$(npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "SELECT COUNT(*) AS total_orders FROM orders; SELECT COUNT(*) AS unmapped_orders FROM orders WHERE client_id IS NOT NULL AND trim(client_id)<>'' AND store_id IS NULL; SELECT COUNT(*) AS no_target FROM orders o WHERE o.client_id IS NOT NULL AND trim(o.client_id)<>'' AND o.store_id IS NULL AND NOT EXISTS (SELECT 1 FROM stores s WHERE s.client_id=o.client_id AND s.status='active'); SELECT COUNT(*) AS unmapped_customers FROM customers WHERE client_id IS NOT NULL AND trim(client_id)<>'' AND store_id IS NULL; SELECT COUNT(*) AS unmapped_products FROM products WHERE client_id IS NOT NULL AND trim(client_id)<>'' AND store_id IS NULL;" --json)"
+          printf '%s' "$result" | node -e '
+            let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{const p=JSON.parse(raw),rows=[];const walk=x=>{if(Array.isArray(x))return x.forEach(walk);if(x&&typeof x==="object"){if(Array.isArray(x.results))rows.push(...x.results);Object.values(x).forEach(walk)}};walk(p);const get=k=>Number(rows.find(x=>x[k]!=null)?.[k]);const total=get("total_orders"),unmapped=get("unmapped_orders"),noTarget=get("no_target"),customers=get("unmapped_customers"),products=get("unmapped_products");if(!Number.isFinite(total)||total<1)throw new Error(`Invalid total_orders=${total}`);if(!Number.isFinite(unmapped)||unmapped<1)throw new Error(`Expected at least one unmapped order, got ${unmapped}`);if(noTarget!==0)throw new Error(`Refusing backfill: no_target=${noTarget}`);if(customers!==0||products!==0)throw new Error(`Refusing scoped repair: unmapped_customers=${customers}, unmapped_products=${products}`);console.log(`Preflight passed: total_orders=${total}, unmapped_orders=${unmapped}, every target store is resolvable.`);process.stdout.write(`TOTAL=${total}\nUNMAPPED=${unmapped}\n`);});' >/tmp/preflight.txt
+          cat /tmp/preflight.txt
+          total="$(sed -nE 's/^TOTAL=([0-9]+)$/\1/p' /tmp/preflight.txt | tail -1)"
+          unmapped="$(sed -nE 's/^UNMAPPED=([0-9]+)$/\1/p' /tmp/preflight.txt | tail -1)"
+          test -n "$total" && test -n "$unmapped"
+          echo "total_orders=$total" >> "$GITHUB_OUTPUT"
+          echo "unmapped_orders=$unmapped" >> "$GITHUB_OUTPUT"
+          rm -f /tmp/preflight.txt
+
+      - name: Capture exact current Production Worker version
+        id: before
+        run: |
+          set -euo pipefail
+          status="$(npx wrangler deployments status --config wrangler.production.toml --json)"
+          version="$(printf '%s' "$status" | node -e '
+            let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{const root=JSON.parse(raw),hits=[];const walk=x=>{if(Array.isArray(x)){x.forEach(walk);return}if(!x||typeof x!=="object")return;const id=x.version_id||x.versionId,p=x.percentage??x.traffic_percentage??x.trafficPercentage;if(id)hits.push({id:String(id),p:p==null?null:Number(p)});Object.values(x).forEach(walk)};walk(root);const u=[...new Map(hits.map(x=>[x.id,x])).values()];const full=u.find(x=>x.p===100||x.p===1)||(u.length===1?u[0]:null);if(!full)process.exit(2);process.stdout.write(full.id)});')"
+          test -n "$version"
+          echo "version_id=$version" >> "$GITHUB_OUTPUT"
+          echo 'Captured pre-repair Production Worker version.'
+
+      - name: Backfill only missing order store_id values
+        id: backfill
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "attempted=true" >> "$GITHUB_OUTPUT"
+          npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "UPDATE orders SET store_id=(SELECT id FROM stores s WHERE s.client_id=orders.client_id AND s.status='active' ORDER BY s.is_default DESC,s.created_at,id LIMIT 1) WHERE store_id IS NULL AND client_id IS NOT NULL AND trim(client_id)<>'';" >/tmp/backfill.log 2>&1
+          rm -f /tmp/backfill.log
+
+      - name: Verify backfill preserved all orders and closed mapping gap
+        run: |
+          set -euo pipefail
+          result="$(npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "SELECT COUNT(*) AS total_orders FROM orders; SELECT COUNT(*) AS unmapped_orders FROM orders WHERE client_id IS NOT NULL AND trim(client_id)<>'' AND store_id IS NULL;" --json)"
+          BEFORE_TOTAL='${{ steps.preflight.outputs.total_orders }}' node -e '
+            let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{const p=JSON.parse(raw),rows=[];const walk=x=>{if(Array.isArray(x))return x.forEach(walk);if(x&&typeof x==="object"){if(Array.isArray(x.results))rows.push(...x.results);Object.values(x).forEach(walk)}};walk(p);const total=Number(rows.find(x=>x.total_orders!=null)?.total_orders),unmapped=Number(rows.find(x=>x.unmapped_orders!=null)?.unmapped_orders),before=Number(process.env.BEFORE_TOTAL);if(total!==before)throw new Error(`Order row count changed: before=${before} after=${total}`);if(unmapped!==0)throw new Error(`Unmapped orders remain=${unmapped}`);console.log(`Backfill verified: order rows preserved=${total}, unmapped_orders=0.`);});' <<<"$result"
+
+      - name: Deploy approved Commerce v38 Worker and v2 assets only
+        id: deploy
+        run: |
+          set -euo pipefail
+          echo "attempted=true" >> "$GITHUB_OUTPUT"
+          npx wrangler deploy --config wrangler.production.toml
+
+      - name: Validate Production v2 and build on both hosts
+        run: |
+          set -euo pipefail
+          for base in "$PROD_WORKERS" "$PROD_CUSTOM"; do
+            ready=0
+            for i in $(seq 1 35); do
+              health="$(curl -sS -o /tmp/health -w '%{http_code}' "$base/health/easyorders-sync" || true)"
+              v2="$(curl -sS -o /tmp/v2 -w '%{http_code}' "$base/v2/" || true)"
+              build_ok=0
+              if [ "$health" = "200" ] && EXPECTED_BUILD="$EXPECTED_BUILD" node -e 'const fs=require("fs");const p=JSON.parse(fs.readFileSync("/tmp/health","utf8"));process.exit(p.ok===true&&p.build===process.env.EXPECTED_BUILD?0:1)' >/dev/null 2>&1; then build_ok=1; fi
+              if [ "$build_ok" = "1" ] && [ "$v2" = "200" ] && grep -Eqi '<!DOCTYPE html|<html' /tmp/v2; then
+                ready=1
+                echo "Production v2 ready on $base at attempt $i."
+                break
+              fi
+              sleep 2
+            done
+            test "$ready" = "1"
+          done
+
+      - name: Validate protected J&T route without creating shipment
+        run: |
+          set -euo pipefail
+          for base in "$PROD_WORKERS" "$PROD_CUSTOM"; do
+            code="$(curl -sS -o /tmp/jt -w '%{http_code}' -X POST -H 'Content-Type: application/json' "$base/api/jt/shipments/KUN-SMOKE-NO-ORDER" --data '{}' || true)"
+            test "$code" = "401"
+            node -e 'const fs=require("fs");const p=JSON.parse(fs.readFileSync("/tmp/jt","utf8"));if(p.code!=="AUTH_REQUIRED")process.exit(2);'
+          done
+
+      - name: Final Production order mapping invariant
+        run: |
+          set -euo pipefail
+          result="$(npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "SELECT COUNT(*) AS unmapped_orders FROM orders WHERE client_id IS NOT NULL AND trim(client_id)<>'' AND store_id IS NULL;" --json)"
+          printf '%s' "$result" | node -e 'let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{const p=JSON.parse(raw),rows=[];const walk=x=>{if(Array.isArray(x))return x.forEach(walk);if(x&&typeof x==="object"){if(Array.isArray(x.results))rows.push(...x.results);Object.values(x).forEach(walk)}};walk(p);const n=Number(rows.find(x=>x.unmapped_orders!=null)?.unmapped_orders);if(n!==0)throw new Error(`unmapped_orders=${n}`);console.log("Final mapping invariant passed.");});'
+
+      - name: Roll back exact prior Worker if runtime validation fails
+        if: failure() && steps.deploy.outputs.attempted == 'true' && steps.before.outputs.version_id != ''
+        run: |
+          set -euo pipefail
+          npx wrangler versions deploy "${{ steps.before.outputs.version_id }}@100%" --yes --config wrangler.production.toml --message "Automatic rollback after failed Production v2 restore"
+          echo 'Previous Production Worker restored. The safe store_id backfill remains applied.'
+
+      - name: Clean temporary files
+        if: always()
+        run: rm -f /tmp/prod-dry-run.log /tmp/health /tmp/v2 /tmp/jt /tmp/backfill.log /tmp/preflight.txt
