@@ -12,6 +12,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -26,6 +27,7 @@ import org.json.JSONObject
 class CallerOrderEditActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        CallerOverlay.dismiss()
         val orderId = intent.getStringExtra(EXTRA_ORDER_ID).orEmpty()
         if (orderId.isBlank()) {
             finish()
@@ -33,7 +35,7 @@ class CallerOrderEditActivity : ComponentActivity() {
         }
         setContent {
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
-                MaterialTheme {
+                KunTheme {
                     CallerOrderEditScreen(orderId = orderId, onClose = { finish() })
                 }
             }
@@ -59,9 +61,7 @@ private data class CallerEditItem(
 @Composable
 private fun CallerOrderEditScreen(orderId: String, onClose: () -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    val scope = rememberCoroutineScope()
     var loading by remember { mutableStateOf(true) }
-    var saving by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
     var data by remember { mutableStateOf<CustomerServiceEditorData?>(null) }
 
@@ -71,121 +71,188 @@ private fun CallerOrderEditScreen(orderId: String, onClose: () -> Unit) {
         if (result.ok) data = result else error = result.message
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("تعديل طلب العميل") },
-                navigationIcon = { TextButton(onClick = onClose) { Text("إغلاق") } }
-            )
+    when {
+        loading -> Scaffold(
+            containerColor = KunColors.Ground,
+            topBar = { CallerEditorTopBar(onClose) }
+        ) { padding ->
+            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    CircularProgressIndicator(color = KunColors.Pine)
+                    Text("جاري تحميل بيانات الطلب...", color = KunColors.Ink2)
+                }
+            }
         }
-    ) { padding ->
-        when {
-            loading -> Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-            data == null -> Column(Modifier.fillMaxSize().padding(padding).padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(error.ifBlank { "تعذر تحميل بيانات الطلب" }, color = MaterialTheme.colorScheme.error)
+        data == null -> Scaffold(
+            containerColor = KunColors.Ground,
+            topBar = { CallerEditorTopBar(onClose) }
+        ) { padding ->
+            Column(Modifier.fillMaxSize().padding(padding).padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Surface(color = KunColors.BrickSoft, shape = KunRadius, modifier = Modifier.fillMaxWidth()) {
+                    Text(error.ifBlank { "تعذر تحميل بيانات الطلب" }, color = KunColors.Brick, modifier = Modifier.padding(14.dp))
+                }
                 Button(onClick = onClose, modifier = Modifier.fillMaxWidth()) { Text("إغلاق") }
             }
-            else -> {
-                val editor = data!!
-                val details = editor.details
-                val order = remember(editor) { details.optJSONObject("order") ?: JSONObject() }
-                val customer = remember(editor) { details.optJSONObject("customer") ?: JSONObject() }
-                val address = remember(editor) { details.optJSONObject("address") ?: JSONObject() }
-                val catalog = remember(editor) { callerParseCatalog(editor.catalog) }
-                val items = remember(editor) { mutableStateListOf<CallerEditItem>().apply { addAll(callerInitialItems(details)) } }
-                var name by remember(editor) { mutableStateOf(customer.optString("name")) }
-                var phone by remember(editor) { mutableStateOf(customer.optString("phone")) }
-                var gov by remember(editor) { mutableStateOf(address.optString("government").ifBlank { customer.optString("government") }) }
-                var deliveryAddress by remember(editor) { mutableStateOf(address.optString("address").ifBlank { customer.optString("address") }) }
-                var couponCode by remember(editor) { mutableStateOf(order.optString("couponCode")) }
-                var customerNote by remember(editor) { mutableStateOf(order.optString("customerNote")) }
-                var totalText by remember(editor) { mutableStateOf((details.optJSONObject("summary")?.optDouble("total", 0.0) ?: 0.0).toString()) }
+        }
+        else -> CallerOrderEditorContent(orderId, data!!, onClose)
+    }
+}
 
-                fun recalc() {
-                    totalText = items.sumOf { it.qty.coerceAtLeast(1) * it.unitPrice.coerceAtLeast(0.0) }.toString()
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CallerEditorTopBar(onClose: () -> Unit) {
+    TopAppBar(
+        colors = TopAppBarDefaults.topAppBarColors(
+            containerColor = KunColors.Chrome,
+            titleContentColor = Color.White,
+            navigationIconContentColor = Color.White
+        ),
+        title = {
+            Column {
+                Text("تعديل طلب العميل", fontWeight = FontWeight.Bold)
+                Text("كن أونلاين", style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = .72f))
+            }
+        },
+        navigationIcon = { TextButton(onClick = onClose) { Text("إغلاق", color = Color.White) } }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CallerOrderEditorContent(orderId: String, data: CustomerServiceEditorData, onClose: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val scope = rememberCoroutineScope()
+    val details = data.details
+    val order = remember(data) { details.optJSONObject("order") ?: JSONObject() }
+    val customer = remember(data) { details.optJSONObject("customer") ?: JSONObject() }
+    val address = remember(data) { details.optJSONObject("address") ?: JSONObject() }
+    val catalog = remember(data) { callerParseCatalog(data.catalog) }
+    val items = remember(data) { mutableStateListOf<CallerEditItem>().apply { addAll(callerInitialItems(details)) } }
+
+    var name by remember(data) { mutableStateOf(customer.optString("name")) }
+    var phone by remember(data) { mutableStateOf(customer.optString("phone")) }
+    var gov by remember(data) { mutableStateOf(address.optString("government").ifBlank { customer.optString("government") }) }
+    var deliveryAddress by remember(data) { mutableStateOf(address.optString("address").ifBlank { customer.optString("address") }) }
+    var couponCode by remember(data) { mutableStateOf(order.optString("couponCode")) }
+    var customerNote by remember(data) { mutableStateOf(order.optString("customerNote")) }
+    var totalText by remember(data) { mutableStateOf((details.optJSONObject("summary")?.optDouble("total", 0.0) ?: 0.0).toString()) }
+    var saving by remember { mutableStateOf(false) }
+
+    fun recalc() {
+        totalText = items.sumOf { it.qty.coerceAtLeast(1) * it.unitPrice.coerceAtLeast(0.0) }.toString()
+    }
+
+    fun save() {
+        if (saving) return
+        if (name.isBlank() || phone.isBlank() || items.any { it.productName.isBlank() }) {
+            Toast.makeText(context, "الاسم والهاتف واسم كل منتج مطلوبة", Toast.LENGTH_LONG).show()
+            return
+        }
+        val payload = JSONObject()
+            .put("name", name.trim())
+            .put("phone", phone.trim())
+            .put("gov", gov.trim())
+            .put("address", deliveryAddress.trim())
+            .put("couponCode", couponCode.trim())
+            .put("customerNote", customerNote.trim())
+            .put("total", totalText.toDoubleOrNull()?.coerceAtLeast(0.0) ?: 0.0)
+            .put("items", JSONArray().apply {
+                items.forEach { item ->
+                    put(JSONObject()
+                        .put("productId", item.productId)
+                        .put("variantId", item.variantId)
+                        .put("productName", item.productName.trim())
+                        .put("variantLabel", item.variantLabel.trim())
+                        .put("sku", item.sku)
+                        .put("qty", item.qty.coerceAtLeast(1))
+                        .put("unitPrice", item.unitPrice.coerceAtLeast(0.0)))
                 }
+            })
+        saving = true
+        scope.launch {
+            val result = withContext(Dispatchers.IO) { KunCustomerServiceApi.editOrder(context, orderId, payload) }
+            saving = false
+            Toast.makeText(context, result.message, if (result.ok) Toast.LENGTH_SHORT else Toast.LENGTH_LONG).show()
+            if (result.ok) {
+                withContext(Dispatchers.IO) { KunApi.syncWithStoredSession(context) }
+                onClose()
+            }
+        }
+    }
 
-                Column(
-                    modifier = Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+    Scaffold(
+        containerColor = KunColors.Ground,
+        topBar = { CallerEditorTopBar(onClose) },
+        bottomBar = {
+            Surface(color = KunColors.Surface, shadowElevation = 10.dp) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Text("بيانات العميل والتوصيل", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    CallerEditField(name, { name = it }, "اسم العميل")
-                    CallerEditField(phone, { phone = it }, "رقم الهاتف", KeyboardType.Phone)
-                    CallerEditField(gov, { gov = it }, "المحافظة")
-                    CallerEditField(deliveryAddress, { deliveryAddress = it }, "العنوان")
-
-                    HorizontalDivider()
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text("منتجات الطلب", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                        TextButton(onClick = { items.add(CallerEditItem("", "", "", "", "", 1, 0.0)) }) { Text("+ إضافة منتج") }
+                    OutlinedButton(onClick = onClose, enabled = !saving, modifier = Modifier.weight(1f).heightIn(min = 52.dp)) {
+                        Text("إلغاء")
                     }
-                    items.forEachIndexed { index, item ->
-                        CallerEditItemCard(
-                            item = item,
-                            catalog = catalog,
-                            canRemove = items.size > 1,
-                            onChange = { updated -> items[index] = updated; recalc() },
-                            onRemove = { if (items.size > 1) { items.removeAt(index); recalc() } }
-                        )
+                    Button(onClick = { save() }, enabled = !saving, modifier = Modifier.weight(2f).heightIn(min = 52.dp)) {
+                        if (saving) {
+                            CircularProgressIndicator(Modifier.size(19.dp), color = Color.White, strokeWidth = 2.dp)
+                            Spacer(Modifier.width(8.dp))
+                        }
+                        Text(if (saving) "جاري الحفظ..." else "حفظ التعديلات", fontWeight = FontWeight.Bold)
                     }
-
-                    HorizontalDivider()
-                    CallerEditField(couponCode, { couponCode = it }, "كود الخصم")
-                    CallerEditField(totalText, { totalText = it }, "إجمالي الطلب", KeyboardType.Decimal)
-                    OutlinedTextField(
-                        value = customerNote,
-                        onValueChange = { customerNote = it },
-                        label = { Text("ملاحظة العميل على الطلب") },
-                        modifier = Modifier.fillMaxWidth(),
-                        minLines = 2
-                    )
-                    Text("الحفظ يستخدم نفس API وسجل التعديلات الخاص بخدمة العملاء في السيستم.", style = MaterialTheme.typography.bodySmall)
-                    Button(
-                        onClick = {
-                            if (saving) return@Button
-                            if (name.isBlank() || phone.isBlank() || items.any { it.productName.isBlank() }) {
-                                Toast.makeText(context, "الاسم والهاتف واسم كل منتج مطلوبة", Toast.LENGTH_LONG).show()
-                                return@Button
-                            }
-                            val payload = JSONObject()
-                                .put("name", name.trim())
-                                .put("phone", phone.trim())
-                                .put("gov", gov.trim())
-                                .put("address", deliveryAddress.trim())
-                                .put("couponCode", couponCode.trim())
-                                .put("customerNote", customerNote.trim())
-                                .put("total", totalText.toDoubleOrNull()?.coerceAtLeast(0.0) ?: 0.0)
-                                .put("items", JSONArray().apply {
-                                    items.forEach { item ->
-                                        put(JSONObject()
-                                            .put("productId", item.productId)
-                                            .put("variantId", item.variantId)
-                                            .put("productName", item.productName.trim())
-                                            .put("variantLabel", item.variantLabel.trim())
-                                            .put("sku", item.sku)
-                                            .put("qty", item.qty.coerceAtLeast(1))
-                                            .put("unitPrice", item.unitPrice.coerceAtLeast(0.0)))
-                                    }
-                                })
-                            saving = true
-                            scope.launch {
-                                val result = withContext(Dispatchers.IO) { KunCustomerServiceApi.editOrder(context, orderId, payload) }
-                                saving = false
-                                Toast.makeText(context, result.message, if (result.ok) Toast.LENGTH_SHORT else Toast.LENGTH_LONG).show()
-                                if (result.ok) {
-                                    withContext(Dispatchers.IO) { KunApi.syncWithStoredSession(context) }
-                                    onClose()
-                                }
-                            }
-                        },
-                        enabled = !saving,
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp)
-                    ) { Text(if (saving) "جارٍ حفظ التعديلات..." else "حفظ التعديلات") }
-                    OutlinedButton(onClick = onClose, enabled = !saving, modifier = Modifier.fillMaxWidth()) { Text("إلغاء") }
-                    Spacer(Modifier.height(24.dp))
                 }
             }
+        }
+    ) { padding ->
+        Column(
+            modifier = Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Surface(color = KunColors.ChromeSoft, shape = KunRadius, modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(14.dp)) {
+                    Text("الطلب #${order.optString("ref").ifBlank { orderId }}", fontWeight = FontWeight.Bold, color = KunColors.Chrome)
+                    Text("عدّل البيانات ثم احفظ من الشريط الثابت أسفل الشاشة", style = MaterialTheme.typography.bodySmall, color = KunColors.Ink2)
+                }
+            }
+
+            KunSectionCard(Modifier.fillMaxWidth()) {
+                Text("بيانات العميل والتوصيل", style = MaterialTheme.typography.titleMedium)
+                CallerEditField(name, { name = it }, "اسم العميل")
+                CallerEditField(phone, { phone = it }, "رقم الهاتف", KeyboardType.Phone)
+                CallerEditField(gov, { gov = it }, "المحافظة")
+                CallerEditField(deliveryAddress, { deliveryAddress = it }, "العنوان")
+            }
+
+            KunSectionCard(Modifier.fillMaxWidth()) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("منتجات الطلب", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { items.add(CallerEditItem("", "", "", "", "", 1, 0.0)) }) { Text("+ إضافة منتج") }
+                }
+                items.forEachIndexed { index, item ->
+                    CallerEditItemCard(
+                        item = item,
+                        catalog = catalog,
+                        canRemove = items.size > 1,
+                        onChange = { updated -> items[index] = updated; recalc() },
+                        onRemove = { if (items.size > 1) { items.removeAt(index); recalc() } }
+                    )
+                }
+            }
+
+            KunSectionCard(Modifier.fillMaxWidth()) {
+                Text("الخصم والإجمالي والملاحظات", style = MaterialTheme.typography.titleMedium)
+                CallerEditField(couponCode, { couponCode = it }, "كود الخصم")
+                CallerEditField(totalText, { totalText = it }, "إجمالي الطلب", KeyboardType.Decimal)
+                OutlinedTextField(
+                    value = customerNote,
+                    onValueChange = { customerNote = it },
+                    label = { Text("ملاحظة العميل على الطلب") },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 3,
+                    shape = KunRadius
+                )
+                Text("كل تعديل يُسجل في سجل الأوردر بنفس آلية خدمة العملاء في السيستم.", style = MaterialTheme.typography.bodySmall, color = KunColors.Ink2)
+            }
+            Spacer(Modifier.height(8.dp))
         }
     }
 }
@@ -201,7 +268,11 @@ private fun CallerEditItemCard(
     var productMenu by remember { mutableStateOf(false) }
     var variantMenu by remember { mutableStateOf(false) }
     val selectedProduct = catalog.find { it.id == item.productId }
-    Card(Modifier.fillMaxWidth()) {
+    Card(
+        Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = KunColors.Surface2),
+        shape = KunRadius
+    ) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Box {
                 OutlinedButton(onClick = { productMenu = true }, modifier = Modifier.fillMaxWidth()) {
@@ -247,17 +318,17 @@ private fun CallerEditItemCard(
                     onValueChange = { onChange(item.copy(qty = it.toIntOrNull()?.coerceAtLeast(1) ?: 1)) },
                     label = { Text("الكمية") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.weight(1f), singleLine = true
+                    modifier = Modifier.weight(1f), singleLine = true, shape = KunRadius
                 )
                 OutlinedTextField(
                     value = item.unitPrice.toString(),
                     onValueChange = { onChange(item.copy(unitPrice = it.toDoubleOrNull()?.coerceAtLeast(0.0) ?: 0.0)) },
                     label = { Text("سعر الوحدة") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    modifier = Modifier.weight(1f), singleLine = true
+                    modifier = Modifier.weight(1f), singleLine = true, shape = KunRadius
                 )
             }
-            if (canRemove) TextButton(onClick = onRemove, modifier = Modifier.align(Alignment.End)) { Text("حذف البند") }
+            if (canRemove) TextButton(onClick = onRemove, modifier = Modifier.align(Alignment.End)) { Text("حذف البند", color = KunColors.Brick) }
         }
     }
 }
@@ -270,7 +341,8 @@ private fun CallerEditField(value: String, onValue: (String) -> Unit, label: Str
         label = { Text(label) },
         modifier = Modifier.fillMaxWidth(),
         keyboardOptions = KeyboardOptions(keyboardType = keyboard),
-        singleLine = true
+        singleLine = true,
+        shape = KunRadius
     )
 }
 
