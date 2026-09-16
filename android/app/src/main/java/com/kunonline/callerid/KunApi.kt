@@ -1,11 +1,16 @@
 package com.kunonline.callerid
 
 import android.content.Context
+import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
 
 data class SyncResult(val ok: Boolean, val message: String, val customerCount: Int = 0)
+data class StateResult(val ok: Boolean, val message: String, val snapshot: CommerceSnapshot? = null)
+data class ActionResult(val ok: Boolean, val message: String)
+data class ScopeInfo(val clientId: String = "", val storeId: String = "")
 
 object KunApi {
     private const val BASE_URL = "https://app.kun-online.com"
@@ -21,6 +26,7 @@ object KunApi {
             readTimeout = 15000
             setRequestProperty("Accept", "application/json")
             setRequestProperty("Content-Type", "application/json; charset=utf-8")
+            setRequestProperty("X-Kun-Mobile", "native-android/2.0")
             if (!cookie.isNullOrBlank()) setRequestProperty("Cookie", cookie)
             if (body != null) doOutput = true
         }
@@ -38,7 +44,7 @@ object KunApi {
             val payload = JSONObject().put("email", email.trim()).put("password", password).toString()
             val login = request("POST", "/api/login", payload)
             if (login.code !in 200..299) {
-                val message = runCatching { JSONObject(login.body).optString("error") }.getOrNull().orEmpty()
+                val message = errorMessage(login)
                 return SyncResult(false, message.ifBlank { "تعذر تسجيل الدخول" })
             }
             val cookie = login.setCookie
@@ -49,30 +55,137 @@ object KunApi {
     }
 
     fun syncWithStoredSession(context: Context): SyncResult {
-        val cookie = SecureStore.get(context, AUTH_PREFS, SESSION_KEY)
-            ?: return SyncResult(false, "سجّل الدخول أولاً")
+        val cookie = session(context) ?: return SyncResult(false, "سجّل الدخول أولاً")
         return syncWithCookie(context, cookie)
     }
 
-    private fun syncWithCookie(context: Context, cookie: String): SyncResult {
-        return runCatching {
-            val response = request("GET", "/api/state", cookie = cookie)
-            if (response.code == 401) {
-                SecureStore.put(context, AUTH_PREFS, SESSION_KEY, null)
-                return SyncResult(false, "انتهت الجلسة — سجّل الدخول مرة أخرى")
-            }
-            if (response.code !in 200..299) return SyncResult(false, "تعذر مزامنة بيانات العملاء")
-            val root = JSONObject(response.body)
-            val orders = root.optJSONArray("orders") ?: org.json.JSONArray()
-            val count = CustomerCache.replaceAll(context, orders)
-            SyncResult(true, "تمت المزامنة", count)
-        }.getOrElse { SyncResult(false, "تعذر قراءة بيانات العملاء") }
+    fun fetchState(context: Context): StateResult {
+        val cookie = session(context) ?: return StateResult(false, "سجّل الدخول أولاً")
+        return fetchStateWithCookie(context, cookie)
     }
 
-    fun hasSession(context: Context): Boolean = SecureStore.get(context, AUTH_PREFS, SESSION_KEY) != null
+    fun createOrder(context: Context, values: JSONObject): ActionResult = scopedWrite(context, "/api/orders", values, "تم تسجيل الأوردر")
+    fun createCustomer(context: Context, values: JSONObject): ActionResult = scopedWrite(context, "/api/customers", values, "تمت إضافة العميل")
+    fun createProduct(context: Context, values: JSONObject): ActionResult = scopedWrite(context, "/api/products", values, "تمت إضافة المنتج")
+
+    fun adjustStock(context: Context, productId: String, delta: Double, note: String): ActionResult {
+        val cookie = session(context) ?: return ActionResult(false, "سجّل الدخول أولاً")
+        if (productId.isBlank() || delta == 0.0) return ActionResult(false, "اختر المنتج واكتب كمية غير صفرية")
+        return runCatching {
+            val payload = JSONObject().put("delta", delta).put("note", note).toString()
+            val response = request("POST", "/api/products/${enc(productId)}/stock/add", payload, cookie)
+            if (response.code == 401) {
+                clearSession(context)
+                return ActionResult(false, "انتهت الجلسة — سجّل الدخول مرة أخرى")
+            }
+            if (response.code !in 200..299) return ActionResult(false, errorMessage(response).ifBlank { "تعذر تحديث المخزون" })
+            ActionResult(true, "تم تحديث المخزون")
+        }.getOrElse { ActionResult(false, "تعذر الاتصال بكن أونلاين") }
+    }
+
+    fun hasSession(context: Context): Boolean = session(context) != null
 
     fun logout(context: Context) {
-        SecureStore.put(context, AUTH_PREFS, SESSION_KEY, null)
+        clearSession(context)
         CustomerCache.clear(context)
+    }
+
+    private fun scopedWrite(context: Context, path: String, values: JSONObject, success: String): ActionResult {
+        val cookie = session(context) ?: return ActionResult(false, "سجّل الدخول أولاً")
+        return runCatching {
+            val scope = resolveScope(cookie)
+            if (scope.clientId.isNotBlank() && !values.has("clientId")) values.put("clientId", scope.clientId)
+            if (scope.storeId.isNotBlank() && !values.has("storeId")) values.put("storeId", scope.storeId)
+            val response = request("POST", path, values.toString(), cookie)
+            if (response.code == 401) {
+                clearSession(context)
+                return ActionResult(false, "انتهت الجلسة — سجّل الدخول مرة أخرى")
+            }
+            if (response.code !in 200..299) return ActionResult(false, errorMessage(response).ifBlank { "تعذر تنفيذ العملية" })
+            ActionResult(true, success)
+        }.getOrElse { ActionResult(false, "تعذر الاتصال بكن أونلاين") }
+    }
+
+    private fun syncWithCookie(context: Context, cookie: String): SyncResult {
+        val result = fetchStateWithCookie(context, cookie)
+        return if (result.ok) {
+            SyncResult(true, "تمت المزامنة", result.snapshot?.customers?.size ?: CustomerCache.count(context))
+        } else {
+            SyncResult(false, result.message)
+        }
+    }
+
+    private fun fetchStateWithCookie(context: Context, cookie: String): StateResult {
+        return runCatching {
+            val scope = resolveScope(cookie)
+            val query = buildList {
+                if (scope.clientId.isNotBlank()) add("clientId=${enc(scope.clientId)}")
+                if (scope.storeId.isNotBlank()) add("storeId=${enc(scope.storeId)}")
+            }.joinToString("&")
+            val path = if (query.isBlank()) "/api/state" else "/api/state?$query"
+            val response = request("GET", path, cookie = cookie)
+            if (response.code == 401) {
+                clearSession(context)
+                return StateResult(false, "انتهت الجلسة — سجّل الدخول مرة أخرى")
+            }
+            if (response.code !in 200..299) return StateResult(false, errorMessage(response).ifBlank { "تعذر تحميل بيانات النظام" })
+            val root = JSONObject(response.body)
+            val orders = root.optJSONArray("orders") ?: JSONArray()
+            CustomerCache.replaceAll(context, orders)
+            StateResult(true, "تم تحديث البيانات", CommerceParser.parse(root))
+        }.getOrElse { StateResult(false, "تعذر قراءة بيانات النظام") }
+    }
+
+    private fun resolveScope(cookie: String): ScopeInfo {
+        var clientId = ""
+        var storeId = ""
+
+        val me = request("GET", "/api/me", cookie = cookie)
+        if (me.code in 200..299) {
+            val data = runCatching { JSONObject(me.body) }.getOrNull()
+            clientId = data?.optString("clientId").orEmpty().ifBlank { data?.optString("client_id").orEmpty() }
+        }
+
+        if (clientId.isBlank()) {
+            val context = request("GET", "/api/my-client-context", cookie = cookie)
+            if (context.code in 200..299) {
+                val clients = runCatching { JSONObject(context.body).optJSONArray("clients") }.getOrNull()
+                clientId = clients?.optJSONObject(0)?.optString("id").orEmpty()
+            }
+        }
+
+        if (clientId.isBlank()) {
+            val state = request("GET", "/api/state", cookie = cookie)
+            if (state.code in 200..299) {
+                val root = runCatching { JSONObject(state.body) }.getOrNull()
+                clientId = root?.optJSONArray("clients")?.optJSONObject(0)?.optString("id").orEmpty()
+                    .ifBlank { root?.optJSONArray("businessClients")?.optJSONObject(0)?.optString("id").orEmpty() }
+                    .ifBlank {
+                        val order = root?.optJSONArray("orders")?.optJSONObject(0)
+                        order?.optString("clientId").orEmpty().ifBlank { order?.optString("client_id").orEmpty() }
+                    }
+            }
+        }
+
+        if (clientId.isNotBlank()) {
+            val stores = request("GET", "/api/my-store-context?clientId=${enc(clientId)}", cookie = cookie)
+            if (stores.code in 200..299) {
+                val root = runCatching { JSONObject(stores.body) }.getOrNull()
+                val allStores = root?.optBoolean("allStores", true) ?: true
+                if (!allStores) storeId = root?.optJSONArray("stores")?.optJSONObject(0)?.optString("id").orEmpty()
+            }
+        }
+        return ScopeInfo(clientId, storeId)
+    }
+
+    private fun session(context: Context): String? = SecureStore.get(context, AUTH_PREFS, SESSION_KEY)
+    private fun clearSession(context: Context) = SecureStore.put(context, AUTH_PREFS, SESSION_KEY, null)
+    private fun enc(value: String): String = URLEncoder.encode(value, Charsets.UTF_8.name())
+
+    private fun errorMessage(result: HttpResult): String {
+        return runCatching {
+            val root = JSONObject(result.body)
+            root.optString("error").ifBlank { root.optString("message") }
+        }.getOrDefault("")
     }
 }
