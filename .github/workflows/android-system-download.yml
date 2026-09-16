@@ -19,9 +19,6 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    environment:
-      name: production
-      url: https://app.kun-online.com
     steps:
       - uses: actions/checkout@v5
 
@@ -34,75 +31,37 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Build latest Android APK
+      - name: Build and test latest Android APK
         working-directory: android
         run: gradle test assembleDebug
+
+      - name: Read Android version
+        id: app_version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(sed -nE 's/.*versionName = "([^"]+)".*/\1/p' android/app/build.gradle.kts | head -1)"
+          test -n "$version"
+          echo "name=$version" >> "$GITHUB_OUTPUT"
+          echo "Publishing Kun Online Android v$version"
 
       - name: Replace stable Android release asset
         env:
           GH_TOKEN: ${{ github.token }}
+          APP_VERSION: ${{ steps.app_version.outputs.name }}
         run: |
+          set -euo pipefail
           cp android/app/build/outputs/apk/debug/app-debug.apk /tmp/Kun-Online-Mobile.apk
           gh release upload android-latest /tmp/Kun-Online-Mobile.apk --clobber
           gh release delete-asset android-latest app-debug.apk -y || true
-          gh release edit android-latest --target "$GITHUB_SHA" --title "Kun Online Android v1.1.1" --notes "Startup-crash hardened Kun Online Android Caller ID build. Download from the Kun Online system or this stable release asset."
+          gh release edit android-latest \
+            --target "$GITHUB_SHA" \
+            --title "Kun Online Android v$APP_VERSION" \
+            --notes "Latest Kun Online Android Caller ID v$APP_VERSION. The stable system download URL always points to this APK."
 
-      - name: Point system download button to latest APK
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path('public/index.html')
-          s = p.read_text(encoding='utf-8')
-          old = """function setupInstallButton(){
-            const btn = document.getElementById('installAppBtn');
-            if(!btn) return;
-            const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;"""
-          new = """function setupInstallButton(){
-            const btn = document.getElementById('installAppBtn');
-            if(!btn) return;
-            const isAndroid = /android/i.test(navigator.userAgent);
-            if(isAndroid){
-              btn.classList.remove('hidden');
-              btn.title = 'تحميل أحدث إصدار Android';
-              btn.innerHTML = '⬇ <span class=\"btn-label\">تحديث التطبيق</span>';
-              btn.onclick = ()=>{ window.location.href = 'https://github.com/ahmed5330/kunonline/releases/download/android-latest/Kun-Online-Mobile.apk'; };
-              return;
-            }
-            const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;"""
-          if old in s:
-              p.write_text(s.replace(old, new, 1), encoding='utf-8')
-          elif 'releases/download/android-latest/Kun-Online-Mobile.apk' in s and 'const isAndroid = /android/i.test(navigator.userAgent);' in s:
-              print('Android system download button is already patched')
-          else:
-              raise SystemExit('install button anchor not found')
-          PY
-
-      - uses: actions/setup-node@v5
-        with:
-          node-version: '22'
-          package-manager-cache: false
-
-      - run: npm install --ignore-scripts
-
-      - name: Validate Production deploy
-        run: |
-          node --check src/index-production-sync.js
-          node tests.mjs
-          npx wrangler deploy --dry-run --config wrangler.production.toml
-
-      - name: Deploy updated system UI
+      - name: Verify stable APK asset
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: npx wrangler deploy --config wrangler.production.toml
-
-      - name: Persist system download button update
+          GH_TOKEN: ${{ github.token }}
         run: |
-          if git diff --quiet -- public/index.html; then
-            exit 0
-          fi
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add public/index.html
-          git commit -m 'Point Android system download to latest APK'
-          git push origin HEAD:main
+          set -euo pipefail
+          gh release view android-latest --json assets --jq '.assets[].name' | grep -Fxq 'Kun-Online-Mobile.apk'
