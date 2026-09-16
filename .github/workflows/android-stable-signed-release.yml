@@ -112,7 +112,8 @@ jobs:
 
           "$APKSIGNER" verify --verbose --print-certs /tmp/Kun-Online-Mobile.apk > /tmp/apk-verify.txt
           grep -Fq 'Verified using v3 scheme (APK Signature Scheme v3): true' /tmp/apk-verify.txt
-          ACTUAL="$(sed -nE 's/^Signer #1 certificate SHA-256 digest: ([0-9a-fA-F]+)$/\1/p' /tmp/apk-verify.txt | tr 'A-F' 'a-f' | head -1)"
+          ACTUAL="$(sed -nE 's/^.*certificate SHA-256 digest: ([0-9a-fA-F]+)$/\1/p' /tmp/apk-verify.txt | tr 'A-F' 'a-f' | head -1)"
+          test -n "$ACTUAL"
           test "$ACTUAL" = "$EXPECTED_CERT_SHA256"
 
           VERSION="$(sed -nE 's/.*versionName = "([^"]+)".*/\1/p' android/app/build.gradle.kts | head -1)"
