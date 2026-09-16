@@ -5,7 +5,6 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.PixelFormat
-import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
@@ -85,7 +84,9 @@ object CallerOverlay {
                     textSize = 14f
                     setTextColor(Color.DKGRAY)
                 })
-                val address = listOfNotNull(customer.gov, customer.address).filter { it.isNotBlank() }.joinToString(" — ")
+                val address = listOfNotNull(customer.gov, customer.address)
+                    .filter { it.isNotBlank() }
+                    .joinToString(" — ")
                 if (address.isNotBlank()) box.addView(TextView(app).apply {
                     text = address
                     textSize = 13f
@@ -105,19 +106,29 @@ object CallerOverlay {
                 })
             }
 
-            val actions = LinearLayout(app).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.END }
+            val actions = LinearLayout(app).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.END
+            }
             if (!locked) {
                 actions.addView(Button(app).apply {
-                    text = "فتح كن أونلاين"
+                    text = "فتح في التطبيق"
                     setOnClickListener {
                         runCatching {
-                            app.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://app.kun-online.com")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                            app.startActivity(
+                                Intent(app, MainActivity::class.java).apply {
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                            )
                         }
                         dismiss()
                     }
                 })
             }
-            actions.addView(Button(app).apply { text = "إغلاق"; setOnClickListener { dismiss() } })
+            actions.addView(Button(app).apply {
+                text = "إغلاق"
+                setOnClickListener { dismiss() }
+            })
             box.addView(actions)
 
             val params = WindowManager.LayoutParams(
