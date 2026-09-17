@@ -1,0 +1,74 @@
+name: Diagnose Production login once
+
+on:
+  push:
+    branches: [develop/ux-system-upgrade]
+    paths: ['.github/workflows/diag-production-login-once-20260917.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: preview
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CUSTOM: https://app.kun-online.com
+      WORKER: https://kunonline.mr-a-mnaa.workers.dev
+    steps:
+      - name: Checkout current Production release
+        uses: actions/checkout@v5
+        with:
+          ref: release/commerce-v38-production-20260910
+          fetch-depth: 1
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: npm install --ignore-scripts
+
+      - name: Probe login endpoint without real credentials
+        run: |
+          set -euo pipefail
+          for base in "$CUSTOM" "$WORKER"; do
+            echo "=== $base ==="
+            code="$(curl -sS -o /tmp/health -w '%{http_code}' "$base/healthz" || true)"
+            echo "healthz=$code"
+            cat /tmp/health || true
+            echo
+
+            code="$(curl -sS -o /tmp/login-empty -w '%{http_code}' -X POST -H 'Content-Type: application/json' "$base/api/login" --data '{}' || true)"
+            echo "login_empty=$code"
+            cat /tmp/login-empty || true
+            echo
+
+            code="$(curl -sS -o /tmp/login-bogus -w '%{http_code}' -X POST -H 'Content-Type: application/json' "$base/api/login" --data '{"email":"diagnostic-user-does-not-exist@invalid.example","password":"not-a-real-password"}' || true)"
+            echo "login_bogus=$code"
+            cat /tmp/login-bogus || true
+            echo
+          done
+
+      - name: Inspect auth route implementation location
+        run: |
+          set -euo pipefail
+          echo 'Files containing /api/login:'
+          grep -RIl --exclude-dir=node_modules --exclude='*.map' '/api/login' src | sort || true
+          echo 'Login-related route snippets:'
+          grep -RIn --exclude-dir=node_modules --exclude='*.map' -E "api/login|login\(" src | head -n 80 || true
+
+      - name: Inspect Production auth schema read-only
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('users','sessions','clients','stores') ORDER BY name; PRAGMA table_info(users); SELECT COUNT(*) AS users_total FROM users; SELECT COUNT(*) AS clients_total FROM clients; SELECT COUNT(*) AS stores_total FROM stores;" --json > /tmp/auth-schema.json
+          cat /tmp/auth-schema.json
+
+      - name: Dry-run exact Production bundle
+        run: npx wrangler deploy --dry-run --config wrangler.production.toml
+
+      - name: Clean temporary files
+        if: always()
+        run: rm -f /tmp/health /tmp/login-empty /tmp/login-bogus /tmp/auth-schema.json
