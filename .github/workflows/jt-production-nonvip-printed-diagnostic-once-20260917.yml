@@ -1,0 +1,54 @@
+name: Diagnose Production J&T Non-VIP printed once
+
+on:
+  push:
+    branches: [develop/ux-system-upgrade]
+    paths: ['.github/workflows/jt-production-nonvip-printed-diagnostic-once-20260917.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment:
+      name: preview
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: npm install --ignore-scripts
+      - name: Read-only Production J&T metadata
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "
+            SELECT provider,COUNT(*) AS connections FROM store_connections GROUP BY provider ORDER BY provider;
+            SELECT COUNT(*) AS jt_connections FROM store_connections WHERE provider='jt';
+            SELECT secret_name,COUNT(*) AS saved_count FROM integration_secrets WHERE secret_name IN ('api_account','private_key','source_code','customer_code','customer_password','customer_pwd') GROUP BY secret_name ORDER BY secret_name;
+            SELECT event_type,created_at,substr(order_id,1,14) AS order_prefix,substr(COALESCE(json_extract(metadata_json,'$.awb'),''),-6) AS awb_tail,COALESCE(json_extract(metadata_json,'$.recovered'),0) AS recovered FROM order_events WHERE event_type LIKE 'jt_%' ORDER BY created_at DESC LIMIT 12;
+            SELECT COUNT(*) AS orders_with_awb FROM orders WHERE awb IS NOT NULL AND trim(awb)<>'';
+            SELECT id,state,substr(awb,-6) AS awb_tail,created_at FROM orders WHERE awb IS NOT NULL AND trim(awb)<>'' ORDER BY COALESCE(created_at,date) DESC LIMIT 8;
+          " --json > /tmp/jt-meta.json
+          cat /tmp/jt-meta.json
+      - name: Confirm shipping code never calls J&T printOrder during create
+        run: |
+          set -euo pipefail
+          git fetch origin release/commerce-v38-production-20260910 --depth=1
+          git checkout FETCH_HEAD
+          node --check src/jt-express-eg-api.js
+          node --check src/index-commerce-v37.js
+          node - <<'NODE'
+          const fs=require('fs');
+          const api=fs.readFileSync('src/jt-express-eg-api.js','utf8');
+          const route=fs.readFileSync('src/index-commerce-v37.js','utf8');
+          if(!api.includes("/webopenplatformapi/api/order/addOrder")) throw new Error('addOrder endpoint missing');
+          if(api.includes('/webopenplatformapi/api/order/printOrder')) throw new Error('create adapter unexpectedly contains printOrder endpoint');
+          if(route.includes('/printOrder')) throw new Error('shipping route unexpectedly calls printOrder');
+          console.log('Confirmed: Production create path calls addOrder and contains no printOrder call.');
+          NODE
