@@ -1,0 +1,113 @@
+name: Deploy Production Un Printed printing flow once
+
+on:
+  push:
+    branches: [develop/ux-system-upgrade]
+    paths: ['.github/workflows/production-printing-unprinted-flow-once-20260917.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kunonline-production-printing-unprinted-20260917
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: preview
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      RELEASE_REF: release/commerce-v38-production-20260910
+      EXPECTED_RELEASE_SHA: 0d343af58d59fbf2c3cdb10b14ae5d571f52af56
+      PROD_CUSTOM: https://app.kun-online.com
+      PROD_WORKERS: https://kunonline.mr-a-mnaa.workers.dev
+      EXPECTED_BUILD: production-commerce-v38-free-tier-safe-2026-09-10
+    steps:
+      - name: Checkout exact validated Production release
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ env.RELEASE_REF }}
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - run: npm install --ignore-scripts
+
+      - name: Validate exact release and printing workflow locally
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_RELEASE_SHA"
+          node --check src/index-commerce-v38.js
+          node --check public/v2/modules-v79-printing.js
+          grep -Fq "jt_label_printed" src/index-commerce-v38.js
+          grep -Fq "version:'79.3'" public/v2/modules-v79-printing.js
+          grep -Fq "Un Printed" public/v2/modules-v79-printing.js
+          grep -Fq "printRequestedAt" public/v2/modules-v79-printing.js
+          grep -Fq "const BUILD='$EXPECTED_BUILD';" src/index-production-sync.js
+          npm run check:production-config
+
+      - name: Verify Production D1 readiness read-only
+        run: |
+          set -euo pipefail
+          result="$(npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "SELECT COUNT(*) AS order_events_table FROM sqlite_master WHERE type='table' AND name='order_events'; SELECT COUNT(*) AS shipped_orders FROM orders WHERE state='shipped'; SELECT COUNT(*) AS shipped_with_awb FROM orders WHERE state='shipped' AND awb IS NOT NULL AND trim(awb)<>'';" --json)"
+          printf '%s' "$result" | node -e 'let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{const p=JSON.parse(raw),rows=[];const walk=x=>{if(Array.isArray(x))return x.forEach(walk);if(x&&typeof x==="object"){if(Array.isArray(x.results))rows.push(...x.results);Object.values(x).forEach(walk)}};walk(p);const get=k=>Number(rows.find(x=>x[k]!=null)?.[k]);if(get("order_events_table")!==1)throw new Error("order_events table missing");console.log(`D1 read-only check passed: shipped=${get("shipped_orders")}, with_awb=${get("shipped_with_awb")}`);});'
+
+      - name: Capture current Production Worker version
+        id: before
+        run: |
+          set -euo pipefail
+          status="$(npx wrangler deployments status --config wrangler.production.toml --json)"
+          version="$(printf '%s' "$status" | node -e '
+            let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{const root=JSON.parse(raw),hits=[];const walk=x=>{if(Array.isArray(x)){x.forEach(walk);return}if(!x||typeof x!=="object")return;const id=x.version_id||x.versionId,p=x.percentage??x.traffic_percentage??x.trafficPercentage;if(id)hits.push({id:String(id),p:p==null?null:Number(p)});Object.values(x).forEach(walk)};walk(root);const u=[...new Map(hits.map(x=>[x.id,x])).values()];const full=u.find(x=>x.p===100||x.p===1)||(u.length===1?u[0]:null);if(!full)process.exit(2);process.stdout.write(full.id)});')"
+          test -n "$version"
+          echo "version_id=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Dry-run exact Production bundle
+        run: npx wrangler deploy --dry-run --config wrangler.production.toml
+
+      - name: Deploy Worker and assets only
+        id: deploy
+        run: |
+          set -euo pipefail
+          echo "attempted=true" >> "$GITHUB_OUTPUT"
+          npx wrangler deploy --config wrangler.production.toml
+
+      - name: Validate Production printing workflow on both hosts
+        run: |
+          set -euo pipefail
+          for base in "$PROD_WORKERS" "$PROD_CUSTOM"; do
+            ready=0
+            for i in $(seq 1 30); do
+              health="$(curl -sS -o /tmp/health -w '%{http_code}' "$base/health/easyorders-sync" || true)"
+              v2="$(curl -sS -o /tmp/v2 -w '%{http_code}' "$base/v2/" || true)"
+              printing="$(curl -sS -o /tmp/printing -w '%{http_code}' "$base/v2/modules-v79-printing.js?v=79.3&deploy=$GITHUB_RUN_ID" || true)"
+              protected="$(curl -sS -o /tmp/protected -w '%{http_code}' -X POST -H 'Content-Type: application/json' "$base/api/jt/shipments/KUN-NO-ORDER/printed" --data '{}' || true)"
+              build_ok=0
+              if [ "$health" = "200" ] && EXPECTED_BUILD="$EXPECTED_BUILD" node -e 'const fs=require("fs");const p=JSON.parse(fs.readFileSync("/tmp/health","utf8"));process.exit(p.ok===true&&p.build===process.env.EXPECTED_BUILD?0:1)' >/dev/null 2>&1; then build_ok=1; fi
+              if [ "$build_ok" = "1" ] && [ "$v2" = "200" ] && [ "$printing" = "200" ] && [ "$protected" = "401" ] && grep -Fq "version:'79.3'" /tmp/printing && grep -Fq "Un Printed" /tmp/printing && grep -Fq "jt_label_printed" /tmp/printing && node -e 'const fs=require("fs");const p=JSON.parse(fs.readFileSync("/tmp/protected","utf8"));process.exit(p.code==="AUTH_REQUIRED"?0:1)' >/dev/null 2>&1; then
+                ready=1
+                echo "Printing flow verified on $base at attempt $i."
+                break
+              fi
+              sleep 2
+            done
+            test "$ready" = "1"
+          done
+
+      - name: Roll back exact prior Worker if validation fails
+        if: failure() && steps.deploy.outputs.attempted == 'true' && steps.before.outputs.version_id != ''
+        run: |
+          set -euo pipefail
+          npx wrangler versions deploy "${{ steps.before.outputs.version_id }}@100%" --yes --config wrangler.production.toml --message "Automatic rollback after failed Un Printed printing deployment"
+          echo 'Previous Production Worker restored.'
+
+      - name: Clean temporary files
+        if: always()
+        run: rm -f /tmp/health /tmp/v2 /tmp/printing /tmp/protected
