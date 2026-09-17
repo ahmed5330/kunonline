@@ -1,0 +1,39 @@
+name: Validate shipping label printing workflow once
+
+on:
+  push:
+    branches: [fix/printing-unprinted-confirmation-20260917]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: npm install --ignore-scripts
+      - name: Syntax and workflow invariants
+        run: |
+          set -euo pipefail
+          node --check src/index-commerce-v38.js
+          node --check public/v2/modules-v79-printing.js
+          grep -Fq "jt_label_printed" src/index-commerce-v38.js
+          grep -Fq "/printed" public/v2/modules-v79-printing.js
+          grep -Fq "Un Printed" public/v2/modules-v79-printing.js
+          grep -Fq "printRequestedAt" public/v2/modules-v79-printing.js
+          if grep -Eq "printLabel\([^)]*\).*jt_label_printed" public/v2/modules-v79-printing.js; then
+            echo 'Print action must not auto-confirm printed status' >&2
+            exit 1
+          fi
+      - name: Run full system tests
+        run: npm test
+      - name: Validate Production configuration
+        run: npm run check:production-config
+      - name: Production dry-run
+        run: npx wrangler deploy --dry-run --config wrangler.production.toml
