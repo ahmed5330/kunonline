@@ -65,7 +65,8 @@ assert.ok(queueBlock.includes("'jt_print_queued'"),'Queue handler must persist s
 assert.ok(queueBlock.includes('buildJtCreatePayload(shipment,secrets,{requireBusiness:true})'),'Queue handler must validate the future create payload without network mutation');
 assert.ok(!queueBlock.includes('createJtShipment('),'Queue handler must never call addOrder');
 assert.ok(!queueBlock.includes('signedPost(PRINT_ORDER_PATH'),'Queue handler must never call printOrder');
-assert.ok(queueBlock.includes("state:'shipped'"),'Queued order must enter the internal awaiting-print stage');
+assert.ok(queueBlock.includes('delegateState(request,env,ctx,delegate'),'Queued order must delegate the internal state transition');
+assert.ok(workflow.includes("state:'shipped'"),'Internal awaiting-print state must be shipped');
 
 const printStart=workflow.indexOf('async function createAndPrint'),printEnd=workflow.indexOf('export async function handleJtPrintWorkflowV2'),printBlock=workflow.slice(printStart,printEnd);
 assert.ok(printStart>=0&&printEnd>printStart,'Create-and-print handler must exist');
@@ -77,7 +78,7 @@ assert.ok(printBlock.includes("if(!awb){"),'Existing AWB must skip shipment crea
 assert.ok(ui.includes('/api/jt/shipments/'),'Customer Service must call the governed J&T queue endpoint');
 assert.ok(ui.includes('إرسال إلى طابور الطباعة')&&ui.includes('لا ترسل Create Order إلى J&T'),'Customer Service must clearly stage locally before J&T creation');
 assert.ok(ui.includes("version:'78.4'"),'Customer Service J&T runtime must be v78.4');
-assert.ok(!ui.includes('printOrder')&&!ui.includes('window.print'),'Queue UI must never print');
+assert.ok(!ui.includes('/print?clientId=')&&!ui.includes('window.print')&&!ui.includes("method:'POST',body:JSON.stringify({clientId:cid,...(d.storeId?{storeId:d.storeId}:{}),print"),'Queue UI must never invoke a print action');
 assert.ok(ui.includes("moveState?.(orderId,'shipped')"),'Successful local queueing must move only the order card to awaiting-print');
 
 assert.ok(index.includes('/v2/modules-v78-jt-shipping-order.js?v=78.4'),'J&T queue UI must load v78.4');
