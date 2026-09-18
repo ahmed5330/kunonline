@@ -1,7 +1,7 @@
 name: Production deploy (no database migrations)
 on:
   push:
-    branches: [main, release/commerce-v38-production-20260910]
+    branches: [main]
   workflow_dispatch:
 concurrency:
   group: kunonline-production
