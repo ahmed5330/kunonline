@@ -19,7 +19,7 @@ jobs:
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      RELEASE_SHA: da63b19e417aa5c3b82150b09af5c50e058b6f26
+      RELEASE_SHA: 10db76bdbf491b92e5de6ac809034caa895c6652
       BASE_URL: https://kunonline-preview.mr-a-mnaa.workers.dev
     steps:
       - uses: actions/checkout@v5
@@ -30,14 +30,18 @@ jobs:
           node-version: 22
           package-manager-cache: false
       - run: npm install --ignore-scripts
-      - name: Validate diagnostic wrapper is read-only
+      - name: Validate diagnostic wrapper cannot create or print a valid shipment
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
           node --check src/index-preview-jt-getorders-diagnostic.js
           grep -F 'createdNoOrders:true' src/index-preview-jt-getorders-diagnostic.js
           grep -F 'printedNoLabels:true' src/index-preview-jt-getorders-diagnostic.js
-          ! grep -nE 'UPDATE orders|INSERT INTO orders|DELETE FROM orders|printOrder|ADD_ORDER_PATH|CREATE_ORDER_PATH' src/index-preview-jt-getorders-diagnostic.js
+          grep -F 'invalidProbeCannotCreate:true' src/index-preview-jt-getorders-diagnostic.js
+          grep -F "txlogisticId:''" src/index-preview-jt-getorders-diagnostic.js
+          grep -F "orderType:'INVALID'" src/index-preview-jt-getorders-diagnostic.js
+          grep -F 'operateType:999' src/index-preview-jt-getorders-diagnostic.js
+          ! grep -nE 'UPDATE orders|INSERT INTO orders|DELETE FROM orders|printOrder|buildJtCreatePayload|createJtShipment' src/index-preview-jt-getorders-diagnostic.js
       - name: Capture exact current Preview Worker version
         id: previous
         run: |
@@ -63,20 +67,20 @@ jobs:
           echo "::add-mask::$token"
           echo "JT_DIAG_TOKEN=$token" >> "$GITHUB_ENV"
           printf '%s' "$token" | npx wrangler secret put JT_DIAGNOSTIC_TOKEN --name kunonline-preview
-      - name: Deploy read-only getOrders wrapper
-        run: npx wrangler deploy --config wrangler.preview-jt-getorders-diagnostic.toml --message "Temporary read-only J&T getOrders diagnostic"
-      - name: Read live J&T getOrders responses for existing shipments only
+      - name: Deploy diagnostic wrapper
+        run: npx wrangler deploy --config wrangler.preview-jt-getorders-diagnostic.toml --message "Temporary J&T endpoint diagnostic"
+      - name: Read J&T evidence and invalid endpoint probes
         run: |
           set -euo pipefail
           ready=0
           for attempt in $(seq 1 20); do
             code="$(curl --silent --show-error -o /tmp/getorders.json -w '%{http_code}' -X POST -H "X-Kun-Diagnostic-Token: $JT_DIAG_TOKEN" "$BASE_URL/__internal/jt/getorders-diagnostic" || true)"
-            if [ "$code" = "200" ] && node -e "const x=JSON.parse(require('fs').readFileSync('/tmp/getorders.json','utf8'));process.exit(x.ok&&x.readOnly&&x.createdNoOrders&&x.printedNoLabels?0:1)"; then ready=1; break; fi
+            if [ "$code" = "200" ] && node -e "const x=JSON.parse(require('fs').readFileSync('/tmp/getorders.json','utf8'));process.exit(x.ok&&x.readOnly&&x.createdNoOrders&&x.printedNoLabels&&x.invalidProbeCannotCreate?0:1)"; then ready=1; break; fi
             echo "Waiting for diagnostic wrapper: HTTP $code attempt=$attempt/20"
             sleep 2
           done
           test "$ready" -eq 1
-          echo '----- SANITIZED LIVE J&T getOrders EVIDENCE -----'
+          echo '----- SANITIZED LIVE J&T EVIDENCE -----'
           cat /tmp/getorders.json
           echo
           echo '----- END EVIDENCE -----'
@@ -86,7 +90,7 @@ jobs:
           set -euo pipefail
           prev='${{ steps.previous.outputs.version_id }}'
           test -n "$prev"
-          npx wrangler versions deploy "$prev@100%" --yes --config wrangler.preview.toml --message "Restore exact Preview after read-only J&T diagnostic"
+          npx wrangler versions deploy "$prev@100%" --yes --config wrangler.preview.toml --message "Restore exact Preview after J&T diagnostic"
           secrets="$(npx wrangler secret list --name kunonline-preview 2>&1 || true)"
           if printf '%s' "$secrets" | grep -Fq 'JT_DIAGNOSTIC_TOKEN'; then
             printf 'y\n' | npx wrangler secret delete JT_DIAGNOSTIC_TOKEN --name kunonline-preview || true
