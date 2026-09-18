@@ -1,0 +1,105 @@
+name: J&T Preview getOrders read-only diagnostic
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/jt-preview-getorders-readonly.yml
+permissions:
+  contents: read
+concurrency:
+  group: kunonline-jt-preview-getorders-readonly
+  cancel-in-progress: false
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    environment:
+      name: preview
+      url: https://kunonline-preview.mr-a-mnaa.workers.dev/v2/
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      RELEASE_SHA: da63b19e417aa5c3b82150b09af5c50e058b6f26
+      BASE_URL: https://kunonline-preview.mr-a-mnaa.workers.dev
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: npm install --ignore-scripts
+      - name: Validate diagnostic wrapper is read-only
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+          node --check src/index-preview-jt-getorders-diagnostic.js
+          grep -F 'createdNoOrders:true' src/index-preview-jt-getorders-diagnostic.js
+          grep -F 'printedNoLabels:true' src/index-preview-jt-getorders-diagnostic.js
+          ! grep -nE 'UPDATE orders|INSERT INTO orders|DELETE FROM orders|printOrder|ADD_ORDER_PATH|CREATE_ORDER_PATH' src/index-preview-jt-getorders-diagnostic.js
+      - name: Capture exact current Preview Worker version
+        id: previous
+        run: |
+          set -euo pipefail
+          status="$(npx wrangler deployments status --config wrangler.preview.toml --json)"
+          version="$(printf '%s' "$status" | node -e '
+            let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{
+              const root=JSON.parse(raw),hits=[];
+              const walk=x=>{if(Array.isArray(x)){for(const v of x)walk(v);return;}if(!x||typeof x!=="object")return;
+                const id=x.version_id||x.versionId,pct=x.percentage??x.traffic_percentage??x.trafficPercentage;
+                if(id)hits.push({id:String(id),pct:pct==null?null:Number(pct)});for(const v of Object.values(x))walk(v);};
+              walk(root);const unique=[...new Map(hits.map(x=>[x.id,x])).values()];
+              const full=unique.find(x=>x.pct===100||x.pct===1)||(unique.length===1?unique[0]:null);
+              if(!full)process.exit(2);process.stdout.write(full.id);
+            });')"
+          test -n "$version"
+          echo "version_id=$version" >> "$GITHUB_OUTPUT"
+          echo "Captured Preview version: $version"
+      - name: Install ephemeral diagnostic secret
+        run: |
+          set -euo pipefail
+          token="$(openssl rand -hex 32)"
+          echo "::add-mask::$token"
+          echo "JT_DIAG_TOKEN=$token" >> "$GITHUB_ENV"
+          printf '%s' "$token" | npx wrangler secret put JT_DIAGNOSTIC_TOKEN --name kunonline-preview
+      - name: Deploy read-only getOrders wrapper
+        run: npx wrangler deploy --config wrangler.preview-jt-getorders-diagnostic.toml --message "Temporary read-only J&T getOrders diagnostic"
+      - name: Read live J&T getOrders responses for existing shipments only
+        run: |
+          set -euo pipefail
+          ready=0
+          for attempt in $(seq 1 20); do
+            code="$(curl --silent --show-error -o /tmp/getorders.json -w '%{http_code}' -X POST -H "X-Kun-Diagnostic-Token: $JT_DIAG_TOKEN" "$BASE_URL/__internal/jt/getorders-diagnostic" || true)"
+            if [ "$code" = "200" ] && node -e "const x=JSON.parse(require('fs').readFileSync('/tmp/getorders.json','utf8'));process.exit(x.ok&&x.readOnly&&x.createdNoOrders&&x.printedNoLabels?0:1)"; then ready=1; break; fi
+            echo "Waiting for diagnostic wrapper: HTTP $code attempt=$attempt/20"
+            sleep 2
+          done
+          test "$ready" -eq 1
+          echo '----- SANITIZED LIVE J&T getOrders EVIDENCE -----'
+          cat /tmp/getorders.json
+          echo
+          echo '----- END EVIDENCE -----'
+      - name: Restore exact prior Preview Worker version
+        if: always()
+        run: |
+          set -euo pipefail
+          prev='${{ steps.previous.outputs.version_id }}'
+          test -n "$prev"
+          npx wrangler versions deploy "$prev@100%" --yes --config wrangler.preview.toml --message "Restore exact Preview after read-only J&T diagnostic"
+          secrets="$(npx wrangler secret list --name kunonline-preview 2>&1 || true)"
+          if printf '%s' "$secrets" | grep -Fq 'JT_DIAGNOSTIC_TOKEN'; then
+            printf 'y\n' | npx wrangler secret delete JT_DIAGNOSTIC_TOKEN --name kunonline-preview || true
+            npx wrangler versions deploy "$prev@100%" --yes --config wrangler.preview.toml --message "Reassert exact Preview after diagnostic secret cleanup"
+          fi
+      - name: Verify Preview restored and diagnostic closed
+        if: always()
+        run: |
+          set -euo pipefail
+          health="$(curl --silent --show-error -o /tmp/health -w '%{http_code}' "$BASE_URL/healthz" || true)"
+          closed="$(curl --silent --show-error -o /tmp/closed -w '%{http_code}' -X POST "$BASE_URL/__internal/jt/getorders-diagnostic" || true)"
+          secrets="$(npx wrangler secret list --name kunonline-preview 2>&1 || true)"
+          test "$health" = "200"
+          test "$closed" = "404"
+          ! printf '%s' "$secrets" | grep -Fq 'JT_DIAGNOSTIC_TOKEN'
+          echo "Preview restored and diagnostic closed: health=$health diagnostic=$closed"
