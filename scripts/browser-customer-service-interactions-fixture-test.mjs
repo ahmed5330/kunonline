@@ -36,7 +36,7 @@ try{
     return true;
   })()`);
   await evalJs(`eval(${JSON.stringify(uiSrc)})`);
-  await waitFor(`document.documentElement.dataset.customerServiceInteractions==='v75-ready'&&window.KunCustomerServiceInteractionsV75?.version==='75.2'`,'v75.2 ready');
+  await waitFor(`document.documentElement.dataset.customerServiceInteractions==='v75-ready'&&window.KunCustomerServiceInteractionsV75?.version==='75.3'`,'v75.3 ready');
 
   await evalJs(`document.querySelector('[data-cs-action="note"]').click()`);
   await waitFor(`window.__requests.filter(x=>x.url.includes('/notes')).length===1`,'note request');
@@ -59,5 +59,5 @@ try{
   const confirm=await evalJs(`(()=>{const select=document.querySelector('[data-cs-state]');return {calls:window.__confirmCalls.slice(),value:select.value,current:select.dataset.current,old:window.__oldChangeCalls,error:document.querySelector('.cs-v75-error')?.textContent||''};})()`);
   if(confirm.calls.length!==1||confirm.calls[0]!=='ORD-QA'||confirm.value!=='confirmed'||confirm.current!=='confirmed'||confirm.old!==0||confirm.error)throw new Error(`Customer Service confirmation selection failed or fell through to the old handler: ${JSON.stringify(confirm)}`);
 
-  console.log('Browser Customer Service v75 fixture QA passed: note, unified Contact + Call count and confirmation are handled exactly once; visible count updates immediately, call keeps native tel, and old handlers cannot duplicate the action.');
+  console.log('Browser Customer Service v75.3 fixture QA passed: note, unified Contact + Call count and confirmation are handled exactly once; visible count updates immediately, call keeps native tel, and old handlers cannot duplicate the action.');
 }finally{try{cdp?.close();}catch{}try{if(chrome&&!chrome.killed)chrome.kill('SIGTERM');}catch{}try{if(userDir)await rm(userDir,{recursive:true,force:true});}catch{}}
