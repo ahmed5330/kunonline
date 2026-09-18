@@ -60,15 +60,17 @@ jobs:
           test -n "$version"
           echo "version_id=$version" >> "$GITHUB_OUTPUT"
           echo "Captured Preview version: $version"
-      - name: Install ephemeral diagnostic secret
+      - name: Build ephemeral diagnostic config with masked runtime token
         run: |
           set -euo pipefail
           token="$(openssl rand -hex 32)"
           echo "::add-mask::$token"
           echo "JT_DIAG_TOKEN=$token" >> "$GITHUB_ENV"
-          printf '%s' "$token" | npx wrangler secret put JT_DIAGNOSTIC_TOKEN --name kunonline-preview
+          cp wrangler.preview-jt-getorders-diagnostic.toml wrangler.preview-jt-getorders-diagnostic.runtime.toml
+          TOKEN="$token" node -e "const fs=require('fs');const p='wrangler.preview-jt-getorders-diagnostic.runtime.toml';let s=fs.readFileSync(p,'utf8');s=s.replace(/\n\[observability\]/, '\nJT_DIAGNOSTIC_TOKEN = '+JSON.stringify(process.env.TOKEN)+'\n\n[observability]');fs.writeFileSync(p,s);"
+          grep -F 'JT_DIAGNOSTIC_TOKEN = ' wrangler.preview-jt-getorders-diagnostic.runtime.toml >/dev/null
       - name: Deploy diagnostic wrapper
-        run: npx wrangler deploy --config wrangler.preview-jt-getorders-diagnostic.toml --message "Temporary J&T endpoint diagnostic"
+        run: npx wrangler deploy --config wrangler.preview-jt-getorders-diagnostic.runtime.toml --message "Temporary J&T endpoint diagnostic"
       - name: Read J&T evidence and invalid endpoint probes
         run: |
           set -euo pipefail
@@ -91,19 +93,17 @@ jobs:
           prev='${{ steps.previous.outputs.version_id }}'
           test -n "$prev"
           npx wrangler versions deploy "$prev@100%" --yes --config wrangler.preview.toml --message "Restore exact Preview after J&T diagnostic"
-          secrets="$(npx wrangler secret list --name kunonline-preview 2>&1 || true)"
-          if printf '%s' "$secrets" | grep -Fq 'JT_DIAGNOSTIC_TOKEN'; then
-            printf 'y\n' | npx wrangler secret delete JT_DIAGNOSTIC_TOKEN --name kunonline-preview || true
-            npx wrangler versions deploy "$prev@100%" --yes --config wrangler.preview.toml --message "Reassert exact Preview after diagnostic secret cleanup"
-          fi
       - name: Verify Preview restored and diagnostic closed
         if: always()
         run: |
           set -euo pipefail
           health="$(curl --silent --show-error -o /tmp/health -w '%{http_code}' "$BASE_URL/healthz" || true)"
           closed="$(curl --silent --show-error -o /tmp/closed -w '%{http_code}' -X POST "$BASE_URL/__internal/jt/getorders-diagnostic" || true)"
-          secrets="$(npx wrangler secret list --name kunonline-preview 2>&1 || true)"
+          status="$(npx wrangler deployments status --config wrangler.preview.toml --json)"
+          current="$(printf '%s' "$status" | node -e '
+            let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{
+              const root=JSON.parse(raw),hits=[];const walk=x=>{if(Array.isArray(x)){for(const v of x)walk(v);return;}if(!x||typeof x!=="object")return;const id=x.version_id||x.versionId,pct=x.percentage??x.traffic_percentage??x.trafficPercentage;if(id)hits.push({id:String(id),pct:pct==null?null:Number(pct)});for(const v of Object.values(x))walk(v);};walk(root);const unique=[...new Map(hits.map(x=>[x.id,x])).values()];const full=unique.find(x=>x.pct===100||x.pct===1)||(unique.length===1?unique[0]:null);if(!full)process.exit(2);process.stdout.write(full.id);});')"
           test "$health" = "200"
           test "$closed" = "404"
-          ! printf '%s' "$secrets" | grep -Fq 'JT_DIAGNOSTIC_TOKEN'
-          echo "Preview restored and diagnostic closed: health=$health diagnostic=$closed"
+          test "$current" = '${{ steps.previous.outputs.version_id }}'
+          echo "Preview restored exactly and diagnostic closed: version=$current health=$health diagnostic=$closed"
