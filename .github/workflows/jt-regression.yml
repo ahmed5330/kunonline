@@ -6,6 +6,7 @@ on:
       - 'src/jt-express-eg-api.js'
       - 'src/jt-express-eg-cancel.js'
       - 'src/jt-express-eg-validation.js'
+      - 'src/jt-print-workflow-v2.js'
       - 'src/index-commerce-v37.js'
       - 'src/index-commerce-v38.js'
       - 'src/index-commerce-v38-core.js'
@@ -15,6 +16,7 @@ on:
       - 'public/v2/modules-v84-jt-create-setup.js'
       - 'public/v2/index.html'
       - 'scripts/jt-live-shipping-test.mjs'
+      - 'scripts/integration-setup-test.mjs'
       - 'scripts/jt-eg-create-endpoint-contract-test.mjs'
       - 'scripts/jt-cancel-qa-test.mjs'
       - 'scripts/live-preview-jt-create-order-qa-once.mjs'
@@ -24,6 +26,7 @@ on:
       - 'src/jt-express-eg-api.js'
       - 'src/jt-express-eg-cancel.js'
       - 'src/jt-express-eg-validation.js'
+      - 'src/jt-print-workflow-v2.js'
       - 'src/index-commerce-v37.js'
       - 'src/index-commerce-v38.js'
       - 'src/index-commerce-v38-core.js'
@@ -33,6 +36,7 @@ on:
       - 'public/v2/modules-v84-jt-create-setup.js'
       - 'public/v2/index.html'
       - 'scripts/jt-live-shipping-test.mjs'
+      - 'scripts/integration-setup-test.mjs'
       - 'scripts/jt-eg-create-endpoint-contract-test.mjs'
       - 'scripts/jt-cancel-qa-test.mjs'
       - 'scripts/live-preview-jt-create-order-qa-once.mjs'
@@ -47,8 +51,9 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
-      - name: Validate J&T Create Order, print isolation and cancellation contracts
+      - name: Validate J&T queue, Create Order, print isolation and cancellation contracts
         run: |
           node scripts/jt-live-shipping-test.mjs
+          node scripts/integration-setup-test.mjs
           node scripts/jt-eg-create-endpoint-contract-test.mjs
           node scripts/jt-cancel-qa-test.mjs
