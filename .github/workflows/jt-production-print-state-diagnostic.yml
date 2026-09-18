@@ -19,7 +19,7 @@ jobs:
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      RELEASE_SHA: f50ec04265c31481a187deee0976fb8a9d6f1ee4
+      RELEASE_SHA: 4db50a4b91f044c8d88d24ffd28328d2a9ae6e3f
       BASE_URL: https://app.kun-online.com
     steps:
       - uses: actions/checkout@v5
@@ -94,7 +94,8 @@ jobs:
             echo "Official redeploy failed; restoring captured Production version ${{ steps.previous.outputs.version_id }}"
             if [ -n "${{ steps.previous.outputs.version_id }}" ] && npx wrangler versions deploy "${{ steps.previous.outputs.version_id }}@100%" --yes --config wrangler.production.toml --message "Fallback restore after J&T diagnostic"; then restored=1; fi
           fi
-          npx wrangler secret delete JT_DIAGNOSTIC_TOKEN --name kunonline --yes || true
+          current="$(npx wrangler secret list --name kunonline 2>&1 || true)"
+          if printf '%s' "$current" | grep -Fq 'JT_DIAGNOSTIC_TOKEN'; then printf 'y\n' | npx wrangler secret delete JT_DIAGNOSTIC_TOKEN --name kunonline || true; fi
           test "$restored" -eq 1
       - name: Verify diagnostic route is closed and Production is healthy
         if: always()
@@ -102,6 +103,8 @@ jobs:
           set -euo pipefail
           health="$(curl --silent --show-error -o /tmp/health.json -w '%{http_code}' "$BASE_URL/health/easyorders-sync" || true)"
           closed="$(curl --silent --show-error -o /tmp/closed.json -w '%{http_code}' -X POST "$BASE_URL/__internal/jt/print-state-diagnostic" || true)"
+          secrets="$(npx wrangler secret list --name kunonline 2>&1 || true)"
           test "$health" = "200"
           test "$closed" = "404"
-          echo "Production restored and diagnostic route closed: health=$health diagnostic=$closed"
+          ! printf '%s' "$secrets" | grep -Fq 'JT_DIAGNOSTIC_TOKEN'
+          echo "Production restored, diagnostic route closed and temporary secret absent: health=$health diagnostic=$closed"
