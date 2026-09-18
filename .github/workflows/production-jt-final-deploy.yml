@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
-      RELEASE_SHA: c8a46050f98f88b31339245fc0847d9e69c151c5
+      RELEASE_SHA: 16d7e1afb6ed74cd9da8d5930257d5b5769e7c30
       RELEASE_BUILD: production-commerce-v38-free-tier-safe-2026-09-10
     steps:
       - uses: actions/checkout@v5
@@ -34,15 +34,29 @@ jobs:
           node --check src/index-commerce-v38.js
           node --check src/index-production-sync.js
           node --check public/v2/modules-v75-customer-service-interactions.js
+          node --check public/v2/modules-v79-printing.js
           node --check public/v2/modules-v88-mobile-ux.js
           grep -F "import app from './index-commerce-v38.js';" src/index-production-sync.js
           grep -F "const BUILD='$RELEASE_BUILD';" src/index-production-sync.js
+          grep -F '/v2/modules-v79-printing.js?v=79.6' public/v2/index.html
           grep -F '/v2/modules-v81-jt-live-setup.js?v=81.2' public/v2/index.html
           grep -F '/v2/modules-v84-jt-create-setup.js?v=84.2' public/v2/index.html
+          grep -F "orderType:'1',serviceType:'01'" src/jt-express-eg-api.js
+          grep -F "PRINT_ORDER_PATH='/webopenplatformapi/api/order/printOrder'" src/index-commerce-v38.js
+          grep -F "printSize:'2',printCode:1" src/index-commerce-v38.js
+          grep -F 'JT_OFFICIAL_PRINT_REQUIRED' src/index-commerce-v38.js
+          grep -F 'طباعة ونقل إلى تمت الطباعة' public/v2/modules-v79-printing.js
           grep -F "intent:isCall?'call':'contact'" public/v2/modules-v75-customer-service-interactions.js
           grep -F '/v2/modules-v88-mobile-ux.js?v=88.4' public/v2/modules-v75-customer-service-interactions.js
           grep -F 'data-cs-action="call"' public/v2/modules-v88-mobile-ux.js
-          ! grep -F 'JT_BUSINESS_CREDENTIALS_MISSING' src/index-commerce-v38.js
+          if grep -F 'window.print' public/v2/modules-v79-printing.js; then
+            echo 'Local browser print command detected; J&T printing must remain carrier-authoritative.'
+            exit 1
+          fi
+          if grep -F 'data-print79-confirm' public/v2/modules-v79-printing.js; then
+            echo 'Manual Printed confirmation detected; official printOrder must own the transition.'
+            exit 1
+          fi
           ! grep -F 'requireCreateBusinessCredentials' src/index-commerce-v38.js
   deploy:
     needs: validate
@@ -54,7 +68,7 @@ jobs:
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      RELEASE_SHA: c8a46050f98f88b31339245fc0847d9e69c151c5
+      RELEASE_SHA: 16d7e1afb6ed74cd9da8d5930257d5b5769e7c30
       RELEASE_BUILD: production-commerce-v38-free-tier-safe-2026-09-10
       BASE_URL: https://app.kun-online.com
       WORKER_URL: https://kunonline.mr-a-mnaa.workers.dev
@@ -95,7 +109,7 @@ jobs:
         id: deploy_worker
         run: |
           set -euo pipefail
-          output="$(npx wrangler deploy --config wrangler.production.toml --message "Validated J&T + customer-service call/contact release $RELEASE_SHA" 2>&1)"
+          output="$(npx wrangler deploy --config wrangler.production.toml --message "Validated carrier-authoritative J&T print release $RELEASE_SHA" 2>&1)"
           printf '%s\n' "$output"
           version="$(printf '%s\n' "$output" | sed -nE 's/.*Current Version ID: ([0-9a-f-]{36}).*/\1/p' | tail -1)"
           test -n "$version"
@@ -126,21 +140,26 @@ jobs:
           for attempt in $(seq 1 50); do
             health_code="$(curl --silent --show-error -o /tmp/easy-health.json -w '%{http_code}' "$BASE_URL/health/easyorders-sync" || true)"
             v2_code="$(curl --silent --show-error -o /tmp/v2.html -w '%{http_code}' "$BASE_URL/v2/" || true)"
+            print_asset_code="$(curl --silent --show-error -o /tmp/print-v79.js -w '%{http_code}' "$BASE_URL/v2/modules-v79-printing.js?v=79.6" || true)"
             call_asset_code="$(curl --silent --show-error -o /tmp/call-v75.js -w '%{http_code}' "$BASE_URL/v2/modules-v75-customer-service-interactions.js?v=75.3" || true)"
             mobile_asset_code="$(curl --silent --show-error -o /tmp/mobile-v88.js -w '%{http_code}' "$BASE_URL/v2/modules-v88-mobile-ux.js?v=88.4" || true)"
             build_ok=0
             if [ "$health_code" = "200" ] && RELEASE_BUILD="$RELEASE_BUILD" node -e "const fs=require('fs');const x=JSON.parse(fs.readFileSync('/tmp/easy-health.json','utf8'));process.exit(x.ok&&x.build===process.env.RELEASE_BUILD?0:1)"; then build_ok=1; fi
-            if [ "$build_ok" = "1" ] && [ "$v2_code" = "200" ] && [ "$call_asset_code" = "200" ] && [ "$mobile_asset_code" = "200" ] && \
+            if [ "$build_ok" = "1" ] && [ "$v2_code" = "200" ] && [ "$print_asset_code" = "200" ] && [ "$call_asset_code" = "200" ] && [ "$mobile_asset_code" = "200" ] && \
+               grep -Fq '/v2/modules-v79-printing.js?v=79.6' /tmp/v2.html && \
                grep -Fq '/v2/modules-v81-jt-live-setup.js?v=81.2' /tmp/v2.html && \
                grep -Fq '/v2/modules-v84-jt-create-setup.js?v=84.2' /tmp/v2.html && \
+               grep -Fq 'طباعة ونقل إلى تمت الطباعة' /tmp/print-v79.js && \
+               ! grep -Fq 'window.print' /tmp/print-v79.js && \
+               ! grep -Fq 'data-print79-confirm' /tmp/print-v79.js && \
                grep -Fq "intent:isCall?'call':'contact'" /tmp/call-v75.js && \
                grep -Fq '/v2/modules-v88-mobile-ux.js?v=88.4' /tmp/call-v75.js && \
                grep -Fq 'data-cs-action="call"' /tmp/mobile-v88.js; then
               ready=1
-              echo "Custom domain reached validated Commerce v38 + J&T + call/contact release on attempt $attempt/50."
+              echo "Custom domain reached validated Commerce v38 + carrier-authoritative J&T printing + call/contact release on attempt $attempt/50."
               break
             fi
-            echo "Waiting for Production propagation: easy=$health_code build=$build_ok v2=$v2_code call=$call_asset_code mobile=$mobile_asset_code attempt=$attempt/50"
+            echo "Waiting for Production propagation: easy=$health_code build=$build_ok v2=$v2_code print=$print_asset_code call=$call_asset_code mobile=$mobile_asset_code attempt=$attempt/50"
             sleep 2
           done
           test "$ready" -eq 1
@@ -161,24 +180,29 @@ jobs:
           test "$assets_ready" -eq 1
 
           api_ready=0
+          print_api_ready=0
           for attempt in $(seq 1 25); do
             api_status="$(curl --silent --show-error -o /tmp/jt-protected.json -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{}' "$BASE_URL/api/jt/shipments/KUN-PROD-AUTH-PROBE" || true)"
-            if [ "$api_status" = "401" ]; then api_ready=1; break; fi
-            echo "Waiting for protected J&T API boundary: HTTP $api_status attempt=$attempt/25"
+            print_api_status="$(curl --silent --show-error -o /tmp/jt-print-protected.json -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{}' "$BASE_URL/api/jt/shipments/KUN-PROD-AUTH-PROBE/print" || true)"
+            if [ "$api_status" = "401" ]; then api_ready=1; fi
+            if [ "$print_api_status" = "401" ]; then print_api_ready=1; fi
+            if [ "$api_ready" = "1" ] && [ "$print_api_ready" = "1" ]; then break; fi
+            echo "Waiting for protected J&T API boundaries: create=$api_status print=$print_api_status attempt=$attempt/25"
             sleep 2
           done
           test "$api_ready" -eq 1
+          test "$print_api_ready" -eq 1
           ! grep -F 'JT_BUSINESS_CREDENTIALS_MISSING' /tmp/jt-protected.json
 
           node -e "const x=JSON.parse(require('fs').readFileSync('/tmp/easy-health.json','utf8')); if(!x.ok||x.build!==process.env.RELEASE_BUILD) process.exit(2); console.log('Easy Orders + Commerce v38 Production wrapper healthy:', x.build)"
           node scripts/verify-cloudflare-crons.mjs kunonline '*/5 * * * *' '0 */2 * * *'
-          echo 'Production acceptance passed: validated Commerce v38 runtime, customer-service call/contact persistence + mobile resume safety, J&T optional Enterprise credentials, protected API boundary, Easy Orders wrapper and Cron ownership are healthy.'
+          echo 'Production acceptance passed: validated Commerce v38 runtime, official J&T printOrder transition, v79.6 no-local-print UI, customer-service mobile resume safety, protected API boundaries, Easy Orders wrapper and Cron ownership are healthy.'
       - name: Roll back exact prior Worker version if Production acceptance fails
         if: failure() && steps.deploy_worker.outputs.version_id != '' && steps.previous.outputs.version_id != ''
         run: |
           set -euo pipefail
           echo "Acceptance failed. Restoring prior Production Worker version ${{ steps.previous.outputs.version_id }}"
-          npx wrangler versions deploy "${{ steps.previous.outputs.version_id }}@100%" --yes --config wrangler.production.toml --message "Automatic rollback after failed J&T + customer-service Production acceptance"
+          npx wrangler versions deploy "${{ steps.previous.outputs.version_id }}@100%" --yes --config wrangler.production.toml --message "Automatic rollback after failed carrier-authoritative J&T Production acceptance"
           restored=0
           for attempt in $(seq 1 30); do
             code="$(curl --silent --show-error -o /tmp/rollback-health -w '%{http_code}' "$BASE_URL/healthz" || true)"
