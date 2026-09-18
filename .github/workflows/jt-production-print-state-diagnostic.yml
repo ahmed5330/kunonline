@@ -1,0 +1,107 @@
+name: J&T Production print-state diagnostic
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/jt-production-print-state-diagnostic.yml
+permissions:
+  contents: read
+concurrency:
+  group: kunonline-jt-production-print-state-diagnostic
+  cancel-in-progress: false
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: production
+      url: https://app.kun-online.com
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      RELEASE_SHA: f50ec04265c31481a187deee0976fb8a9d6f1ee4
+      BASE_URL: https://app.kun-online.com
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: npm install --ignore-scripts
+      - name: Validate diagnostic wrapper is read-only and syntactically safe
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+          node --check src/index-production-jt-diagnostic.js
+          npm run check:production-config
+          grep -F 'createdNoOrders:true' src/index-production-jt-diagnostic.js
+          grep -F 'printedNoLabels:true' src/index-production-jt-diagnostic.js
+          ! grep -E 'UPDATE orders|INSERT INTO orders|DELETE FROM orders|wrangler d1' src/index-production-jt-diagnostic.js
+      - name: Capture current Production Worker version
+        id: previous
+        run: |
+          set -euo pipefail
+          status="$(npx wrangler deployments status --config wrangler.production.toml --json)"
+          version="$(printf '%s' "$status" | node -e '
+            let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{
+              const root=JSON.parse(raw),hits=[];
+              const walk=x=>{if(Array.isArray(x)){for(const v of x)walk(v);return;}if(!x||typeof x!=="object")return;
+                const id=x.version_id||x.versionId,pct=x.percentage??x.traffic_percentage??x.trafficPercentage;
+                if(id)hits.push({id:String(id),pct:pct==null?null:Number(pct)});for(const v of Object.values(x))walk(v);};
+              walk(root);const unique=[...new Map(hits.map(x=>[x.id,x])).values()];
+              const full=unique.find(x=>x.pct===100||x.pct===1)||(unique.length===1?unique[0]:null);
+              if(!full)process.exit(2);process.stdout.write(full.id);
+            });')"
+          test -n "$version"
+          echo "version_id=$version" >> "$GITHUB_OUTPUT"
+          echo "Captured Production Worker version: $version"
+      - name: Install ephemeral diagnostic secret
+        run: |
+          set -euo pipefail
+          token="$(openssl rand -hex 32)"
+          echo "::add-mask::$token"
+          echo "JT_DIAG_TOKEN=$token" >> "$GITHUB_ENV"
+          printf '%s' "$token" | npx wrangler secret put JT_DIAGNOSTIC_TOKEN --name kunonline
+      - name: Deploy delegating diagnostic wrapper
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --config wrangler.production-jt-diagnostic.toml --message "Temporary read-only J&T print-state diagnostic $RELEASE_SHA"
+      - name: Read live J&T print-state evidence without creating or printing orders
+        run: |
+          set -euo pipefail
+          ready=0
+          for attempt in $(seq 1 20); do
+            code="$(curl --silent --show-error -o /tmp/jt-diag.json -w '%{http_code}' -X POST -H "X-Kun-Diagnostic-Token: $JT_DIAG_TOKEN" "$BASE_URL/__internal/jt/print-state-diagnostic" || true)"
+            if [ "$code" = "200" ] && node -e "const x=JSON.parse(require('fs').readFileSync('/tmp/jt-diag.json','utf8'));process.exit(x.ok&&x.readOnly&&x.createdNoOrders&&x.printedNoLabels?0:1)"; then ready=1; break; fi
+            echo "Waiting for diagnostic wrapper: HTTP $code attempt=$attempt/20"
+            sleep 2
+          done
+          test "$ready" -eq 1
+          echo '----- SANITIZED J&T PRINT-STATE DIAGNOSTIC -----'
+          cat /tmp/jt-diag.json
+          echo
+          echo '----- END DIAGNOSTIC -----'
+      - name: Restore official Production code and remove diagnostic secret
+        if: always()
+        run: |
+          set -u
+          restored=0
+          if npx wrangler deploy --config wrangler.production.toml --message "Restore official Production after read-only J&T diagnostic"; then
+            restored=1
+          else
+            echo "Official redeploy failed; restoring captured Production version ${{ steps.previous.outputs.version_id }}"
+            if [ -n "${{ steps.previous.outputs.version_id }}" ] && npx wrangler versions deploy "${{ steps.previous.outputs.version_id }}@100%" --yes --config wrangler.production.toml --message "Fallback restore after J&T diagnostic"; then restored=1; fi
+          fi
+          npx wrangler secret delete JT_DIAGNOSTIC_TOKEN --name kunonline --yes || true
+          test "$restored" -eq 1
+      - name: Verify diagnostic route is closed and Production is healthy
+        if: always()
+        run: |
+          set -euo pipefail
+          health="$(curl --silent --show-error -o /tmp/health.json -w '%{http_code}' "$BASE_URL/health/easyorders-sync" || true)"
+          closed="$(curl --silent --show-error -o /tmp/closed.json -w '%{http_code}' -X POST "$BASE_URL/__internal/jt/print-state-diagnostic" || true)"
+          test "$health" = "200"
+          test "$closed" = "404"
+          echo "Production restored and diagnostic route closed: health=$health diagnostic=$closed"
