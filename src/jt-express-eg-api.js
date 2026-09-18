@@ -99,7 +99,7 @@ export function buildJtCreatePayload(shipment={},secrets={},options={}){
   const weight=Math.max(.01,number(shipment.weight)||1),quantity=integer(shipment.quantity),codAmount=Math.max(0,number(shipment.codAmount)),itemName=clean(shipment.itemName,500)||'Goods',currency=clean(shipment.currency,12)||'EGP',goodsType=mapGoodsType(shipment.itemType);
   const receiver=compact({name:receiverName,company:receiverName,mobile,phone:phone2,countryCode:egyptCountry(shipment.countryCode),prov:province,city,area,street,provCode:clean(shipment.provinceCode,80)||undefined,cityCode:clean(shipment.cityCode,80)||undefined,areaCode:clean(shipment.districtCode||shipment.areaCode,100)||undefined,countryAreaCode:clean(shipment.addressCountryCode,80)||undefined});
   const item={itemType:goodsType,itemName,chineseName:itemName,englishName:itemName,number:quantity,itemValue:codAmount,priceCurrency:currency,desc:itemName,itemUrl:''};
-  let payload=compact({sourceCode:fields.sourceCode,txlogisticId,orderType:'1',serviceType:'02',deliveryType:'04',payType:codAmount>0?'PP_CASH':'PP_PM',expressType:'EZ',goodsType,invoceNumber:txlogisticId,weight,totalQuantity:quantity,itemsValue:codAmount,priceCurrency:currency,operateType:1,remark:clean(shipment.notes||shipment.pickupInfo,500),receiver,sender:senderFrom(fields),items:[item]});
+  let payload=compact({sourceCode:fields.sourceCode,txlogisticId,orderType:'1',serviceType:'01',deliveryType:'04',payType:codAmount>0?'PP_CASH':'PP_PM',expressType:'EZ',goodsType,invoceNumber:txlogisticId,weight,totalQuantity:quantity,itemsValue:codAmount,priceCurrency:currency,operateType:1,remark:clean(shipment.notes||shipment.pickupInfo,500),receiver,sender:senderFrom(fields),items:[item]});
   if(options?.includeEnterprise===true&&enterpriseReady)payload=withEnterprise(payload,fields);
   return payload;
 }
@@ -129,7 +129,7 @@ function dataCandidates(data){
 }
 
 function firstValue(data,keys){
-  for(const row of dataCandidates(data))for(const key of keys){const value=row?.[key];if(value!==undefined&&value!==null&&clean(value))return clean(value,300);}
+  for(const row of dataCandidates(data))for(const key of keys){const value=row?.[key];if(value!==undefined&&value!==null&&typeof value!=='object'&&clean(value))return clean(value,300);}
   return '';
 }
 
