@@ -8,6 +8,7 @@ const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:
 const clean=(value,max=1000)=>String(value??'').trim().slice(0,max);
 const parseArray=value=>{try{const parsed=JSON.parse(value||'[]');return Array.isArray(parsed)?parsed:[];}catch{return [];}};
 const PRINT_ROLES=new Set(['admin','client','ops','support']);
+const PRINT_ORDER_PATH='/webopenplatformapi/api/order/printOrder';
 
 async function currentUser(request,env,ctx){const url=new URL(request.url);url.pathname='/api/me';url.search='';const response=await commerceV37.fetch(new Request(url,{method:'GET',headers:request.headers}),env,ctx),data=await response.json().catch(()=>({}));if(!response.ok||!data?.role){const status=!response.ok&&response.status>=400?response.status:401;throw Object.assign(new Error(data?.error||'محتاج تسجّل دخول'),{status,code:'AUTH_REQUIRED'});}return data;}
 function clientIdFor(me,request,body={}){const url=new URL(request.url),requested=clean(body.clientId||body.client_id||url.searchParams.get('clientId')||me?.clientId,160);if(me.role==='client'){if(requested&&String(requested)!==String(me.clientId))throw Object.assign(new Error('مش مسموح الوصول لبيانات متجر آخر'),{status:403});return clean(me.clientId,160);}if(!requested)throw Object.assign(new Error('محتاج clientId'),{status:400});return requested;}
@@ -15,7 +16,7 @@ async function connectionFor(env,clientId){const row=await env.DB.prepare("SELEC
 function authFailure(text=''){return /(auth|credential|customer\s*code|customer\s*password|customer\s*pwd|digest|signature|sign|account|password|unauthor|forbidden|permission|权限|密钥|签名|密码|客户)/i.test(text);}
 async function attemptPath(path,label,payload,secrets){try{const result=await __jtApiInternals.signedPost(path,payload,secrets,{fetcher:fetch}),text=`${result.code} ${result.message}`;return {label,httpStatus:result.response.status,code:result.code||null,message:result.message||null,success:__jtApiInternals.success(result),credentialLikelyAccepted:__jtApiInternals.success(result)||(result.response.ok&&!authFailure(text))};}catch(error){return {label,httpStatus:error?.status||0,code:error?.code||null,message:clean(error?.message,600),success:false,credentialLikelyAccepted:false};}}
 async function diagnose(request,env,ctx){if(env.APP_ENV!=='preview')return json({error:'Not found'},404);const me=await currentUser(request,env,ctx);requirePermission(me,'integrations','read');const body=await request.clone().json().catch(()=>({})),clientId=clientIdFor(me,request,body),{row,secrets}=await connectionFor(env,clientId),{fields}=jtCredentials(secrets),serial=`KUN-AUTH-PROBE-${Date.now()}`,legacy=clean(secrets.api_key,500),createMode=body.mode==='create-auth';
-  const base=createMode?{sourceCode:fields.sourceCode,orderType:'2',operateType:1}:{sourceCode:fields.sourceCode,command:1,serialNumber:[serial]};
+  const base=createMode?{sourceCode:fields.sourceCode,orderType:'1',serviceType:'01',operateType:1}:{sourceCode:fields.sourceCode,command:1,serialNumber:[serial]};
   const variants=[{label:'developer-info-only',payload:base}];
   if(fields.customerCode&&fields.customerPassword)variants.push({label:'saved-business-info',payload:{...base,customerCode:fields.customerCode,digest:__jtApiInternals.businessDigest(fields.customerCode,fields.customerPassword,fields.privateKey)}});
   if(legacy){variants.push({label:'legacy-api-key-as-business-digest',payload:{...base,customerCode:fields.sourceCode,digest:legacy}});variants.push({label:'source-code-plus-legacy-api-key-password',payload:{...base,customerCode:fields.sourceCode,digest:__jtApiInternals.businessDigest(fields.sourceCode,legacy,fields.privateKey)}});variants.push({label:'api-account-plus-legacy-api-key-password',payload:{...base,customerCode:fields.apiAccount,digest:__jtApiInternals.businessDigest(fields.apiAccount,legacy,fields.privateKey)}});}
@@ -46,18 +47,33 @@ async function labelPrintStatusRoute(request,env,me,orderId){
   const clientId=clientIdFor(me,request),storeId=clean(new URL(request.url).searchParams.get('storeId'),160),row=await printOrderForAccess(env,me,clientId,orderId,{write:false,storeId});
   return json({ok:true,orderId:row.id,...labelPrintStatus(row)});
 }
-async function markLabelPrintedRoute(request,env,me,orderId){
-  const body=await request.clone().json().catch(()=>({})),clientId=clientIdFor(me,request,body),storeId=clean(body.storeId||body.store_id||new URL(request.url).searchParams.get('storeId'),160),row=await printOrderForAccess(env,me,clientId,orderId,{write:true,storeId}),awb=clean(row.awb,160);
-  if(!awb)throw Object.assign(new Error('لا يمكن تأكيد الطباعة قبل وجود رقم بوليصة AWB'),{status:409,code:'PRINT_AWB_REQUIRED'});
-  const requestedAwb=clean(body.awb,160);if(requestedAwb&&requestedAwb!==awb)throw Object.assign(new Error('رقم البوليصة تغيّر. حدّث قسم الطباعة واطبع البوليصة الجديدة أولًا.'),{status:409,code:'PRINT_AWB_CHANGED'});
-  const current=labelPrintStatus(row);if(current.printed)return json({ok:true,idempotent:true,orderId:row.id,...current,message:'البوليصة مسجلة كمطبوعة بالفعل.'});
-  const at=new Date().toISOString(),by=me?.email||me?.name||me?.role||'user',byName=me?.name||me?.email||me?.role||'user',byUserId=me?.uid||me?.id||null,entry={type:'jt_label_printed',at,provider:'jt',awb,by,byName,byUserId,confirmed:true,note:'تم تأكيد خروج البوليصة فعليًا من الطابعة'},eventId=`OEV-${crypto.randomUUID()}`;
-  const array=`CASE WHEN json_valid(history) AND json_type(history)='array' THEN history ELSE '[]' END`;
+function walkObjects(value,maxDepth=6){const out=[],seen=new Set();function visit(node,depth){if(depth>maxDepth||!node||typeof node!=='object'||seen.has(node))return;seen.add(node);if(Array.isArray(node)){for(const item of node.slice(0,50))visit(item,depth+1);return;}out.push(node);for(const child of Object.values(node))if(child&&typeof child==='object')visit(child,depth+1);}visit(value,0);return out;}
+function findPrintUrl(payload){for(const object of walkObjects(payload))for(const key of ['url','pdfUrl','printUrl','fileUrl','downloadUrl']){const value=clean(object?.[key],2000);if(/^https?:\/\//i.test(value))return value;}return '';}
+async function recordOfficialPrint(env,row,clientId,me,awb){
+  const at=new Date().toISOString(),by=me?.email||me?.name||me?.role||'user',byName=me?.name||me?.email||me?.role||'user',byUserId=me?.uid||me?.id||null,entry={type:'jt_label_printed',at,provider:'jt',awb,by,byName,byUserId,confirmed:true,official:true,note:'تم إصدار أمر الطباعة الرسمي من J&T بنجاح'},eventId=`OEV-${crypto.randomUUID()}`,array=`CASE WHEN json_valid(history) AND json_type(history)='array' THEN history ELSE '[]' END`;
   await env.DB.batch([
     env.DB.prepare(`UPDATE orders SET history=json_insert(${array},'$[#]',json(?)) WHERE id=? AND client_id=?`).bind(JSON.stringify(entry),row.id,clientId),
-    env.DB.prepare('INSERT INTO order_events (id,client_id,store_id,order_id,event_type,actor_user_id,actor_email,source,metadata_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)').bind(eventId,clientId,row.store_id||null,row.id,'jt_label_printed',byUserId,by,'printing',JSON.stringify({awb,confirmed:true,note:entry.note}),at)
+    env.DB.prepare('INSERT INTO order_events (id,client_id,store_id,order_id,event_type,actor_user_id,actor_email,source,metadata_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)').bind(eventId,clientId,row.store_id||null,row.id,'jt_label_printed',byUserId,by,'printing',JSON.stringify({awb,confirmed:true,official:true,note:entry.note}),at)
   ]);
-  return json({ok:true,orderId:row.id,status:'printed',printed:true,awb,printedAt:at,printedBy:byName,message:'تم تسجيل البوليصة كمطبوعة ونقل الأوردر إلى Printed.'});
+  return {printedAt:at,printedBy:byName};
+}
+async function printOfficialLabelRoute(request,env,me,orderId){
+  const body=await request.clone().json().catch(()=>({})),clientId=clientIdFor(me,request,body),storeId=clean(body.storeId||body.store_id||new URL(request.url).searchParams.get('storeId'),160),row=await printOrderForAccess(env,me,clientId,orderId,{write:true,storeId}),awb=clean(row.awb,160);
+  if(row.state!=='shipped')throw Object.assign(new Error('لا يمكن إصدار أمر الطباعة إلا لأوردر موجود في «في انتظار الطباعة»'),{status:409,code:'JT_PRINT_STATE_REQUIRED'});
+  if(!awb)throw Object.assign(new Error('الأوردر لا يملك رقم بوليصة J&T للطباعة'),{status:409,code:'JT_AWB_REQUIRED'});
+  if(labelPrintStatus(row).printed)throw Object.assign(new Error('تمت طباعة هذه البوليصة بالفعل. لا يمكن تكرار أمر الطباعة من المسار العادي.'),{status:409,code:'JT_LABEL_ALREADY_PRINTED'});
+  const {secrets}=await connectionFor(env,clientId),cred=jtCredentials(secrets);
+  if(!cred.enterpriseReady)throw Object.assign(new Error('طباعة البوليصة الرسمية تحتاج Customer Code وCustomer Password الخاصة بحساب J&T'),{status:409,code:'JT_BUSINESS_CREDENTIALS_MISSING',enterpriseCredentialsRequired:true,missingBusinessFields:['Customer Code','Customer Password']});
+  const payload=__jtApiInternals.withEnterprise({billCode:awb,printSize:'2',printCode:1},cred.fields),result=await __jtApiInternals.signedPost(PRINT_ORDER_PATH,payload,secrets,{fetcher:fetch});
+  if(!__jtApiInternals.success(result))throw Object.assign(new Error(`J&T لم تجهز البوليصة الرسمية للطباعة${result.code?` (${result.code})`:''}: ${result.message||`HTTP ${result.response.status}`}`),{status:result.response.status>=500?502:422,code:'JT_PRINT_REJECTED',jtCode:result.code});
+  const url=findPrintUrl(result.data);if(!url)throw Object.assign(new Error('J&T قبلت طلب الطباعة لكن لم ترجع رابط البوليصة، لذلك لم يتم نقل الأوردر إلى «تمت الطباعة»'),{status:502,code:'JT_PRINT_URL_MISSING'});
+  const audit=await recordOfficialPrint(env,row,clientId,me,awb);
+  return json({ok:true,official:true,provider:'jt',orderId:row.id,awb,printSize:'100x150mm',status:'printed',printed:true,...audit,url});
+}
+async function markLabelPrintedRoute(request,env,me,orderId){
+  const body=await request.clone().json().catch(()=>({})),clientId=clientIdFor(me,request,body),storeId=clean(body.storeId||body.store_id||new URL(request.url).searchParams.get('storeId'),160);
+  await printOrderForAccess(env,me,clientId,orderId,{write:true,storeId});
+  throw Object.assign(new Error('تم إيقاف التأكيد اليدوي للطباعة. استخدم «طباعة ونقل إلى تمت الطباعة» حتى يصدر أمر printOrder رسمي إلى J&T أولًا.'),{status:409,code:'JT_OFFICIAL_PRINT_REQUIRED'});
 }
 
 function jtErrorResponse(error){const raw=Number(error?.status),status=Number.isInteger(raw)&&raw>=400&&raw<=599?raw:500;return json({error:error?.message||'حدث خطأ في تكامل J&T',code:error?.code||'JT_ERROR',jtCode:error?.jtCode||null,enterpriseCredentialsRequired:Boolean(error?.enterpriseCredentialsRequired),missingSenderFields:Array.isArray(error?.missingSenderFields)?error.missingSenderFields:undefined,missingBusinessFields:Array.isArray(error?.missingBusinessFields)?error.missingBusinessFields:undefined},status);}
@@ -69,6 +85,8 @@ async function fetchV38(request,env,ctx){
     const printed=url.pathname.match(/^\/api\/jt\/shipments\/([^/]+)\/printed$/);
     if(printed&&request.method==='GET')return await labelPrintStatusRoute(request,env,me,decodeURIComponent(printed[1]));
     if(printed&&request.method==='POST')return await markLabelPrintedRoute(request,env,me,decodeURIComponent(printed[1]));
+    const print=url.pathname.match(/^\/api\/jt\/shipments\/([^/]+)\/print$/);
+    if(print&&request.method==='POST')return await printOfficialLabelRoute(request,env,me,decodeURIComponent(print[1]));
     const response=await commerceV37.fetch(request,env,ctx);
     if(isJt&&response.status===200){const data=await response.clone().json().catch(()=>null);if(data?.code==='AUTH_REQUIRED')return json(data,401);}
     return response;
