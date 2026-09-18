@@ -1,0 +1,33 @@
+name: J&T Production AWB inventory
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/jt-production-awb-inventory.yml
+permissions:
+  contents: read
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment:
+      name: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      RELEASE_SHA: 0875c8fc9f45e876d57375211cd3d807081757bf
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - name: Validate read-only inventory script
+        run: |
+          set -euo pipefail
+          node --check scripts/live-production-jt-order-inventory.mjs
+          ! grep -nE '(^|[^A-Za-z])(UPDATE|INSERT|DELETE|DROP|ALTER|CREATE)[[:space:]]' scripts/live-production-jt-order-inventory.mjs
+      - name: Inventory Production AWBs and J&T connections read-only
+        run: node scripts/live-production-jt-order-inventory.mjs
