@@ -14,10 +14,10 @@ assert.throws(()=>buildJtCreatePayload(shipment,businessOnlySecrets),error=>erro
 assert.throws(()=>buildJtCreatePayload(shipment,senderSecrets,{requireBusiness:true}),error=>error?.code==='JT_BUSINESS_CREDENTIALS_MISSING'&&error?.status===409&&Array.isArray(error?.missingBusinessFields)&&error.missingBusinessFields.length===2,'Create Order business mode must require Customer Code and Customer Password');
 
 const basicPayload=buildJtCreatePayload(shipment,senderSecrets);
-assert.equal(basicPayload.sourceCode,'D452');assert.equal(basicPayload.customerCode,undefined);assert.equal(basicPayload.digest,undefined);assert.equal(basicPayload.serviceType,'02');assert.equal(basicPayload.deliveryType,'04');assert.equal(basicPayload.receiver.areaCode,'A000001');assert.equal(basicPayload.sender.name,'Kun Warehouse');
+assert.equal(basicPayload.sourceCode,'D452');assert.equal(basicPayload.customerCode,undefined);assert.equal(basicPayload.digest,undefined);assert.equal(basicPayload.orderType,'1');assert.equal(basicPayload.serviceType,'01');assert.equal(basicPayload.deliveryType,'04');assert.equal(basicPayload.receiver.areaCode,'A000001');assert.equal(basicPayload.sender.name,'Kun Warehouse');
 
 const payload=buildJtCreatePayload(shipment,secrets);
-assert.equal(payload.sourceCode,'D452');assert.equal(payload.customerCode,undefined,'Base payload stays free of Business Info unless Create Order mode is explicitly requested');assert.equal(payload.digest,undefined);assert.equal(payload.txlogisticId,'ORD-1');assert.equal(payload.serviceType,'02');assert.equal(payload.deliveryType,'04');assert.equal(payload.receiver.prov,'القاهرة');assert.equal(payload.receiver.provCode,'1011');assert.equal(payload.receiver.cityCode,'1011001');assert.equal(payload.receiver.areaCode,'A000001');assert.equal(payload.receiver.countryCode,'EGY');assert.equal(payload.sender.name,'Kun Warehouse');assert.equal(payload.sender.mobile,'01000000000');assert.equal(payload.sender.prov,'القاهرة');assert.equal(payload.sender.city,'مدينة نصر');assert.equal(payload.sender.area,'الحي السابع');assert.equal(payload.sender.street,'شارع الاختبار 1');assert.equal(payload.payType,'PP_CASH');assert.equal(payload.itemsValue,1200);assert.equal(payload.totalQuantity,2);assert.equal(payload.goodsType,'ITN1');
+assert.equal(payload.sourceCode,'D452');assert.equal(payload.customerCode,undefined,'Base payload stays free of Business Info unless Create Order mode is explicitly requested');assert.equal(payload.digest,undefined);assert.equal(payload.txlogisticId,'ORD-1');assert.equal(payload.orderType,'1');assert.equal(payload.serviceType,'01');assert.equal(payload.deliveryType,'04');assert.equal(payload.receiver.prov,'القاهرة');assert.equal(payload.receiver.provCode,'1011');assert.equal(payload.receiver.cityCode,'1011001');assert.equal(payload.receiver.areaCode,'A000001');assert.equal(payload.receiver.countryCode,'EGY');assert.equal(payload.sender.name,'Kun Warehouse');assert.equal(payload.sender.mobile,'01000000000');assert.equal(payload.sender.prov,'القاهرة');assert.equal(payload.sender.city,'مدينة نصر');assert.equal(payload.sender.area,'الحي السابع');assert.equal(payload.sender.street,'شارع الاختبار 1');assert.equal(payload.payType,'PP_CASH');assert.equal(payload.itemsValue,1200);assert.equal(payload.totalQuantity,2);assert.equal(payload.goodsType,'ITN1');
 const businessPayload=buildJtCreatePayload(shipment,secrets,{requireBusiness:true});
 assert.equal(businessPayload.customerCode,'J0088');assert.equal(businessPayload.digest,__jtApiInternals.businessDigest('J0088','secret','PRIVATE-XYZ'),'Create Order payload must contain the documented Business digest');
 
@@ -40,7 +40,8 @@ const result=await createJtShipment({shipment,secrets,fetcher:async(url,options)
   assert.equal(sent.digest,__jtApiInternals.businessDigest('J0088','secret','PRIVATE-XYZ'),'The first Create Order request must include the correct Business digest');
   assert.equal(sent.receiver.areaCode,'A000001');
   assert.equal(sent.sender.name,'Kun Warehouse');
-  assert.equal(sent.serviceType,'02');
+  assert.equal(sent.orderType,'1');
+  assert.equal(sent.serviceType,'01');
   return new Response(JSON.stringify({code:'1',msg:'success',data:{billCode:'JT123456789EG',txlogisticId:'ORD-1',sortingCode:'20 C01-03'}}),{status:200,headers:{'Content-Type':'application/json'}});
 }});
 assert.equal(calls.length,1);assert.equal(result.awb,'JT123456789EG');assert.equal(result.sortingCode,'20 C01-03');assert.equal(result.txlogisticId,'ORD-1');assert.equal(result.businessAuthUsed,true);assert.equal(result.enterpriseRetried,false);
@@ -77,4 +78,4 @@ for(const marker of ['/api/jt/shipments/${encodeURIComponent(id)}/print','طبا
 for(const marker of ['في انتظار الطباعة','تمت الطباعة','jt_label_printed','JT_PRINT_STATE_REQUIRED'])assert.ok(`${printingUi}\n${worker}`.includes(marker),`J&T explicit print transition missing ${marker}`);
 assert.ok(!ui.includes('printOrder')&&!ui.includes('window.print'),'Creating a J&T shipment must never issue a print command');
 assert.ok(!printingUi.includes('fallbackPrint')&&!printingUi.includes('window.print'),'Failed official printing must keep the order waiting without auto-print fallback');
-console.log('J&T live shipping checks passed: official carrier labels, webhook-first lifecycle sync, guarded tracking fallback, safe settlement mapping, sender retention and Create Order business authentication are protected.');
+console.log('J&T live shipping checks passed: standard create-order classification, official carrier labels, webhook-first lifecycle sync, guarded tracking fallback, safe settlement mapping, sender retention and Create Order business authentication are protected.');
