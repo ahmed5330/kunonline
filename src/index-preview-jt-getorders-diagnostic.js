@@ -23,6 +23,12 @@ async function lookup(serialNumber,secrets,cred){
   if(cred.enterpriseReady){const r=await signed(__jtApiInternals.GET_ORDERS_PATH,__jtApiInternals.withEnterprise(base,cred.fields),secrets);attempts.push({auth:'enterprise',httpStatus:r.httpStatus,code:r.code,message:r.message,success:r.success,shape:shape(r.data),signals:signals(r.data)});if(r.success)return attempts;}
   const r=await signed(__jtApiInternals.GET_ORDERS_PATH,base,secrets);attempts.push({auth:'developer',httpStatus:r.httpStatus,code:r.code,message:r.message,success:r.success,shape:shape(r.data),signals:signals(r.data)});return attempts;
 }
+async function invalidEndpointProbe(path,secrets,cred){
+  const base={sourceCode:cred.fields.sourceCode,txlogisticId:'',orderType:'INVALID',serviceType:'INVALID',operateType:999,receiver:{},sender:{},items:[]};
+  const payload=cred.enterpriseReady?__jtApiInternals.withEnterprise(base,cred.fields):base;
+  const r=await signed(path,payload,secrets);
+  return {path,httpStatus:r.httpStatus,code:r.code,message:r.message,success:r.success,shape:shape(r.data),signals:signals(r.data),deliberatelyInvalid:true,canCreateOrder:false};
+}
 async function diagnostic(request,env){
   if(env.APP_ENV!=='preview')return json({error:'Not found'},404);
   if(!env.JT_DIAGNOSTIC_TOKEN||!safeEq(request.headers.get('x-kun-diagnostic-token'),env.JT_DIAGNOSTIC_TOKEN))return json({error:'Not found'},404);
@@ -35,6 +41,7 @@ async function diagnostic(request,env){
     const history=parseArray(row.history),created=[...history].reverse().find(x=>x?.type==='jt_shipment_created'),txlogisticId=clean(created?.txlogisticId||row.id,180),awb=clean(row.awb||created?.awb,180);
     orders.push({orderId:row.id,awb,txlogisticId,createdAt:created?.at||row.created_at||null,hasInternalPrintedEvent:history.some(x=>x?.type==='jt_label_printed'&&(!x.awb||String(x.awb)===awb)),getOrders:await lookup(txlogisticId,secrets,cred)});
   }
-  return json({ok:true,readOnly:true,createdNoOrders:true,printedNoLabels:true,connection:{id:connection.id,clientId:connection.client_id,status:connection.status,externalStoreId:connection.external_store_id||null,enterpriseReady:cred.enterpriseReady,sourceCodePresent:Boolean(cred.fields.sourceCode)},orders});
+  const endpointProbes={addOrder:await invalidEndpointProbe(__jtApiInternals.ADD_ORDER_PATH,secrets,cred),createOrder:await invalidEndpointProbe(__jtApiInternals.CREATE_ORDER_PATH,secrets,cred)};
+  return json({ok:true,readOnly:true,createdNoOrders:true,printedNoLabels:true,invalidProbeCannotCreate:true,connection:{id:connection.id,clientId:connection.client_id,status:connection.status,externalStoreId:connection.external_store_id||null,enterpriseReady:cred.enterpriseReady,sourceCodePresent:Boolean(cred.fields.sourceCode)},orders,endpointProbes});
 }
 export default {fetch(request,env,ctx){const u=new URL(request.url);if(u.pathname==='/__internal/jt/getorders-diagnostic'&&request.method==='POST')return diagnostic(request,env);return app.fetch(request,env,ctx);},scheduled(controller,env,ctx){return app.scheduled?.(controller,env,ctx);}};
