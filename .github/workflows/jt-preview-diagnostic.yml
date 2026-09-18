@@ -25,3 +25,4 @@ jobs:
           package-manager-cache: false
       - name: Read actual Preview J&T diagnostic state
         run: node scripts/live-preview-jt-diagnose.mjs
+      # One-time read-only diagnostic trigger. No Preview data mutation.
