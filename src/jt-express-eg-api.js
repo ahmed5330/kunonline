@@ -129,7 +129,7 @@ function dataCandidates(data){
 }
 
 function firstValue(data,keys){
-  for(const row of dataCandidates(data))for(const key of keys){const value=row?.[key];if(value!==undefined&&value!==null&&typeof value!=='object'&&clean(value))return clean(value,300);}
+  for(const row of dataCandidates(data))for(const key of keys){const value=row?.[key];if(value!==undefined&&value!==null&&clean(value))return clean(value,300);}
   return '';
 }
 
