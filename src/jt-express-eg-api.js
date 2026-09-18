@@ -2,7 +2,6 @@ import {__jtValidationInternals} from './jt-express-eg-validation.js';
 
 const {md5Hex,md5Base64,LIVE_BASE}=__jtValidationInternals;
 const ADD_ORDER_PATH='/webopenplatformapi/api/order/addOrder';
-const CREATE_ORDER_PATH='/webopenplatformapi/api/order/createOrder';
 const GET_ORDERS_PATH='/webopenplatformapi/api/order/getOrders';
 const TRACE_PATH='/webopenplatformapi/api/logistics/trace';
 const PASSWORD_SALT='jadada236t2';
@@ -191,9 +190,7 @@ async function recoverExisting(txlogisticId,secrets,options={}){
 }
 
 async function postCreate(payload,secrets,{fetcher=fetch}={}){
-  let result=await signedPost(ADD_ORDER_PATH,payload,secrets,{fetcher});
-  if(result.response.status===404||result.response.status===405)result=await signedPost(CREATE_ORDER_PATH,payload,secrets,{fetcher});
-  return result;
+  return signedPost(ADD_ORDER_PATH,payload,secrets,{fetcher});
 }
 
 export async function createJtShipment({shipment,secrets,fetcher=fetch}){
@@ -236,4 +233,4 @@ export async function trackJtShipment({awb,secrets,fetcher=fetch}){
   return {ok:true,awb:code,data:result.data};
 }
 
-export const __jtApiInternals={ADD_ORDER_PATH,CREATE_ORDER_PATH,GET_ORDERS_PATH,TRACE_PATH,LIVE_BASE,businessDigest,signedPost,success,parseJtShipmentResult,senderFrom,missingSenderFields,missingBusinessFields,requireCreateBusinessCredentials,enterpriseCredentialHint,withEnterprise};
+export const __jtApiInternals={ADD_ORDER_PATH,GET_ORDERS_PATH,TRACE_PATH,LIVE_BASE,businessDigest,signedPost,success,parseJtShipmentResult,senderFrom,missingSenderFields,missingBusinessFields,requireCreateBusinessCredentials,enterpriseCredentialHint,withEnterprise};
