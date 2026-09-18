@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/jt-preview-diagnostic.yml'
       - 'scripts/live-preview-jt-diagnose.mjs'
+      - 'scripts/live-preview-jt-orders-diagnose.mjs'
 permissions:
   contents: read
 jobs:
@@ -23,6 +24,8 @@ jobs:
         with:
           node-version: 22
           package-manager-cache: false
-      - name: Read actual Preview J&T diagnostic state
+      - name: Read actual Preview J&T connection state
         run: node scripts/live-preview-jt-diagnose.mjs
+      - name: Read actual Preview J&T order/AWB state
+        run: node scripts/live-preview-jt-orders-diagnose.mjs
       # One-time read-only diagnostic trigger. No Preview data mutation.
