@@ -1,0 +1,25 @@
+# Temporary read-only J&T getOrders diagnostic wrapper for Preview.
+name = "kunonline-preview"
+main = "src/index-preview-jt-getorders-diagnostic.js"
+compatibility_date = "2026-08-23"
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "kunonline-preview"
+database_id = "31cd5cdf-fc01-42d7-ba1e-571f3dd58495"
+migrations_dir = "migrations"
+
+[triggers]
+crons = []
+
+[vars]
+APP_ENV = "preview"
+TRACKING_PROVIDER = "track123"
+META_GRAPH_API_VERSION = "v25.0"
+
+[observability]
+enabled = true
