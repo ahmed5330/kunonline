@@ -1,6 +1,6 @@
 /* kun online v17 — multi-store + AI insights */
 (function(){
-  const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[c]));
   async function api(path,options={}){const r=await fetch(path,{credentials:'include',headers:{'Content-Type':'application/json',...(options.headers||{})},...options});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||`HTTP ${r.status}`);return d;}
   const sev=s=>`<span class="badge ${s==='danger'?'b-cancelled':s==='warn'?'b-pending':'b-delivered'}">${esc(s||'info')}</span>`;
   async function renderStores(root){root.innerHTML=`<div class="page-head"><div><div class="title">المتاجر والفروع</div><div class="sub">إدارة أكثر من متجر أو فرع داخل نفس حساب Kun Online.</div></div><div class="spacer"></div><input class="input" id="storeName" placeholder="اسم المتجر أو الفرع" aria-label="اسم المتجر أو الفرع"><button class="btn primary" id="storeAdd">حفظ المتجر</button></div><div class="card"><div id="storesBody" class="empty">جارٍ التحميل...</div></div>`;const load=async()=>{const box=root.querySelector('#storesBody');try{const rows=await api('/api/stores');if(!box?.isConnected)return;box.className=rows.length?'table-wrap':'empty';box.innerHTML=rows.length?`<table class="table compact"><thead><tr><th>المتجر</th><th>الكود</th><th>العملة</th><th>المنطقة الزمنية</th><th>الحالة</th><th>افتراضي</th></tr></thead><tbody>${rows.map(x=>`<tr><td><strong>${esc(x.name)}</strong></td><td>${esc(x.code||'—')}</td><td>${esc(x.currency||'EGP')}</td><td>${esc(x.timezone||'—')}</td><td>${esc(x.status)}</td><td>${x.is_default?'نعم':'—'}</td></tr>`).join('')}</tbody></table>`:'لم يتم إنشاء متاجر فرعية بعد.';}catch(e){if(!box?.isConnected)return;box.className='empty';box.textContent=e.message;}};root.querySelector('#storeAdd').onclick=async()=>{const input=root.querySelector('#storeName'),name=input.value.trim();if(!name){input.focus();return window.showToast?showToast('اسم المتجر أو الفرع مطلوب'):null;}try{await api('/api/stores',{method:'POST',body:JSON.stringify({name})});input.value='';load();}catch(e){window.showToast?showToast(e.message):alert(e.message)}};load();}
@@ -20,5 +20,14 @@
   const script=document.createElement('script');
   script.src='/v2/modules-v90-sidebar-groups.js?v=90.0';
   script.dataset.kunSidebarGroups='v90';
+  document.head.appendChild(script);
+})();
+
+/* v91 J&T history reconciliation loader. */
+(function(){
+  if(document.querySelector('script[data-kun-jt-history="v91"]'))return;
+  const script=document.createElement('script');
+  script.src='/v2/modules-v91-jt-history-reconcile.js?v=91.0';
+  script.dataset.kunJtHistory='v91';
   document.head.appendChild(script);
 })();
