@@ -1,4 +1,4 @@
-/* Kun Online v106 — compact system undo in section header + near-live Dashboard Meta refresh. */
+/* Kun Online v106.1 — compact system undo in section header + near-live Dashboard Meta refresh. */
 (function(){
   'use strict';
   if(window.KunUndoDashboardLiveV106)return;
@@ -6,7 +6,7 @@
   const FRESH_MS=90*1000;
   const AUTO_MS=120*1000;
   const lastFresh=new Map();
-  let metaInflight=null,scheduled=false;
+  let metaInflight=null,scheduled=false,sourceRefreshPending=false;
 
   const activeView=()=>document.querySelector('.nav button.active[data-view]')?.dataset.view||'';
   const dashboardActive=()=>activeView()==='dashboard';
@@ -18,13 +18,13 @@
     const style=document.createElement('style');
     style.id='kunUndoDashboardLiveV106Style';
     style.textContent=`
-      #kunUndo85.kun106-undo-top{position:static!important;inset:auto!important;z-index:auto!important;display:inline-flex!important;align-items:center!important;justify-content:flex-start!important;gap:5px!important;width:auto!important;max-width:max-content!important;margin:0!important;margin-inline-start:20px!important;padding:0!important;padding-inline-start:16px!important;border:0!important;border-inline-start:1px solid rgba(148,163,184,.35)!important;border-radius:0!important;background:transparent!important;box-shadow:none!important;flex:none!important}
-      #kunUndo85.kun106-undo-top[hidden]{display:none!important}
-      #kunUndo85.kun106-undo-top>span:not(.kun85-undo-count){display:none!important}
-      #kunUndo85.kun106-undo-top .kun85-undo-count{min-width:22px!important;width:22px!important;height:22px!important;font-size:10px!important;flex:none!important}
-      #kunUndo85.kun106-undo-top .btn{width:auto!important;min-width:0!important;max-width:none!important;min-height:29px!important;height:29px!important;padding:3px 9px!important;margin:0!important;border-radius:8px!important;font-size:11.5px!important;line-height:1!important;white-space:nowrap!important;flex:none!important}
-      #kunUndo85.kun106-undo-top .btn.primary{box-shadow:none!important}
-      @media(max-width:640px){#kunUndo85.kun106-undo-top{margin-inline-start:15px!important;padding-inline-start:12px!important;gap:4px!important}#kunUndo85.kun106-undo-top .btn{height:27px!important;min-height:27px!important;padding:2px 7px!important;font-size:11px!important}#kunUndo85.kun106-undo-top .kun85-undo-count{width:20px!important;min-width:20px!important;height:20px!important;font-size:9px!important}}
+      #kunUndo85.kun106-undo-source{display:none!important}
+      #kunUndo106Top{position:static!important;display:inline-flex!important;align-items:center!important;justify-content:flex-start!important;gap:5px!important;width:auto!important;max-width:max-content!important;margin:0!important;margin-inline-start:20px!important;padding:0!important;padding-inline-start:16px!important;border:0!important;border-inline-start:1px solid rgba(148,163,184,.35)!important;border-radius:0!important;background:transparent!important;box-shadow:none!important;flex:none!important}
+      #kunUndo106Top[hidden]{display:none!important}
+      #kunUndo106Top .kun106-undo-count{min-width:22px!important;width:22px!important;height:22px!important;border-radius:999px!important;display:inline-grid!important;place-items:center!important;background:#eef4ff!important;font-size:10px!important;font-weight:800!important;flex:none!important}
+      #kunUndo106Top .btn{width:auto!important;min-width:0!important;max-width:none!important;min-height:29px!important;height:29px!important;padding:3px 9px!important;margin:0!important;border-radius:8px!important;font-size:11.5px!important;line-height:1!important;white-space:nowrap!important;flex:none!important}
+      #kunUndo106Top .btn.primary{box-shadow:none!important}
+      @media(max-width:640px){#kunUndo106Top{margin-inline-start:15px!important;padding-inline-start:12px!important;gap:4px!important}#kunUndo106Top .btn{height:27px!important;min-height:27px!important;padding:2px 7px!important;font-size:11px!important}#kunUndo106Top .kun106-undo-count{width:20px!important;min-width:20px!important;height:20px!important;font-size:9px!important}}
     `;
     document.head.appendChild(style);
   }
@@ -42,16 +42,57 @@
     return [...head.querySelectorAll('button')].find(button=>button.matches?.('[data-kun-section-reload],.kun-section-reload')||/reload|refresh/i.test(String(button.id||''))||['تحديث','إعادة تحميل','إعادة المحاولة'].includes(String(button.textContent||'').trim()))||null;
   }
 
+  function ensureSource(){
+    const source=document.getElementById('kunUndo85');
+    if(source)return source;
+    if(!sourceRefreshPending&&window.KunSafety85?.refreshUndo){
+      sourceRefreshPending=true;
+      Promise.resolve(window.KunSafety85.refreshUndo()).catch(()=>{}).finally(()=>{sourceRefreshPending=false;scheduleMount();});
+    }
+    return null;
+  }
+
+  function proxyButton(original){
+    const button=document.createElement('button');
+    button.type='button';
+    button.className=`btn ${original.classList.contains('primary')?'primary':'soft'}`;
+    button.textContent=String(original.textContent||'').trim();
+    button.title=original.title||button.textContent;
+    button.setAttribute('aria-label',button.title||button.textContent);
+    button.disabled=original.disabled;
+    button.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();if(original.isConnected&&!original.disabled)original.click();});
+    return button;
+  }
+
+  function renderUndoProxy(source,head){
+    let proxy=document.getElementById('kunUndo106Top');
+    const originals=[...source.querySelectorAll('[data-kun85-undo]')];
+    const visible=!source.hidden&&originals.length>0;
+    if(!visible){proxy?.remove();return null;}
+    if(!proxy){proxy=document.createElement('div');proxy.id='kunUndo106Top';proxy.setAttribute('aria-label','الرجوع عن آخر التعديلات');}
+    const count=source.querySelector('.kun85-undo-count')?.textContent?.trim()||String(originals.length);
+    const signature=`${count}|${originals.map(x=>`${x.dataset.kun85Undo}:${x.textContent}:${x.disabled?'1':'0'}`).join('|')}`;
+    if(proxy.dataset.signature!==signature){
+      proxy.dataset.signature=signature;
+      const badge=document.createElement('span');badge.className='kun106-undo-count';badge.textContent=count;
+      proxy.replaceChildren(badge,...originals.map(proxyButton));
+    }
+    const reload=reloadButton(head);
+    if(reload){if(proxy.previousElementSibling!==reload)reload.after(proxy);}
+    else{
+      const spacer=[...head.children].find(node=>node.classList?.contains('spacer'));
+      if(spacer){if(proxy.previousElementSibling!==spacer)spacer.after(proxy);}else if(proxy.parentElement!==head)head.appendChild(proxy);
+    }
+    return proxy;
+  }
+
   function mountUndo(){
     ensureStyle();
-    const host=document.getElementById('kunUndo85');if(!host)return;
+    const source=ensureSource();if(!source)return;
+    source.classList.add('kun106-undo-source');
     window.KunSectionReloadV57?.ensure?.();
-    const head=pageHead();if(!head)return;
-    host.classList.add('kun106-undo-top');
-    const reload=reloadButton(head);
-    if(reload){if(host.previousElementSibling!==reload)reload.after(host);return;}
-    const spacer=[...head.children].find(node=>node.classList?.contains('spacer'));
-    if(spacer){if(host.previousElementSibling!==spacer)spacer.after(host);}else if(host.parentElement!==head)head.appendChild(host);
+    const head=pageHead();if(!head){document.getElementById('kunUndo106Top')?.remove();return;}
+    renderUndoProxy(source,head);
   }
 
   function scheduleMount(){if(scheduled)return;scheduled=true;setTimeout(()=>{scheduled=false;mountUndo();},0);}
@@ -111,14 +152,13 @@
   }
 
   function boot(){
-    ensureStyle();
-    scheduleMount();
+    ensureStyle();scheduleMount();
     let attempts=0;const patchTimer=setInterval(()=>{attempts++;if(patchDashboardReload()||attempts>50)clearInterval(patchTimer);},100);
     setTimeout(()=>refreshDashboardFromMeta({force:false,quiet:true}),350);
     setInterval(()=>{if(document.visibilityState==='visible'&&dashboardActive())refreshDashboardFromMeta({force:false,quiet:true});},AUTO_MS);
 
     const observer=new MutationObserver(scheduleMount);
-    observer.observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['hidden','class']});
+    observer.observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['hidden','class','disabled']});
 
     document.addEventListener('click',event=>{
       const nav=event.target.closest?.('.nav button[data-view="dashboard"]');
@@ -139,9 +179,9 @@
     document.getElementById('storeBtn')?.addEventListener('change',()=>{lastFresh.clear();setTimeout(()=>refreshDashboardFromMeta({force:true,quiet:true}),250);});
     window.addEventListener('kun:system-undo',scheduleMount);
     window.addEventListener('kun:section-reloaded',scheduleMount);
-    document.documentElement.dataset.undoDashboardLive='v106-ready';
+    document.documentElement.dataset.undoDashboardLive='v106.1-ready';
   }
 
-  window.KunUndoDashboardLiveV106={version:'106.0',mountUndo,freshMeta,refreshDashboardFromMeta,lastFresh};
+  window.KunUndoDashboardLiveV106={version:'106.1',mountUndo,freshMeta,refreshDashboardFromMeta,lastFresh};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();
 })();
