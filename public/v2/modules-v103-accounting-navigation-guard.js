@@ -1,28 +1,46 @@
-/* Kun Online v103 — deterministic accounting route activation + stuck-loading recovery. */
+/* Kun Online v103.1 — deterministic accounting route activation + stuck-loading recovery. */
 (function(){
   'use strict';
   if(window.KunAccountingNavigationGuardV103)return;
 
   const VIEW='accounting';
-  let routeTimer=0,watchTimer=0,diagnosing=false,lastAttempt=0;
+  let routeTimer=0,watchTimer=0,diagnosing=false,lastAttempt=0,routeGeneration=0;
   const root=()=>document.getElementById('root');
   const active=()=>document.querySelector('.nav button.active[data-view]')?.dataset.view===VIEW;
   const month=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Cairo',year:'numeric',month:'2-digit'}).format(new Date());
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const loadingText=()=>String(root()?.innerText||'');
   const isLoading=()=>/جارٍ تحميل الحسابات الشهرية|جارٍ تجميع حساب الشهر/.test(loadingText());
+  const accountingVisible=()=>Boolean(root()?.querySelector?.('.acc100')||isLoading());
 
-  function allowed(){
+  function permissionState(){
     const nav=window.KunPermissionNavigationV51;
-    if(!nav)return true;
+    if(!nav)return 'allowed';
+    const snapshot=nav.snapshot;
+    if(!snapshot?.role)return 'pending';
+    if(typeof nav.allowedView==='function')return nav.allowedView(VIEW,snapshot)?'allowed':'denied';
     const list=Array.isArray(nav.allowed)?nav.allowed:[];
-    return list.includes(VIEW);
+    return list.includes(VIEW)?'allowed':'denied';
+  }
+  const allowed=()=>permissionState()==='allowed';
+
+  function syncActive(){
+    document.querySelectorAll('.nav button[data-view]').forEach(button=>button.classList.toggle('active',String(button.dataset.view||'')===VIEW));
   }
 
   function activate(){
     if(active())return true;
     if(!allowed())return false;
-    try{if(typeof window.setView==='function')window.setView(VIEW);}catch(error){console.warn('Accounting route activation',error);}
+    try{
+      if(typeof window.setView==='function')window.setView(VIEW);
+      else if(typeof setView==='function')setView(VIEW);
+    }catch(error){console.warn('Accounting route activation',error);}
+    if(!active()){
+      try{view=VIEW;}catch(_){}
+      syncActive();
+      try{if(typeof render==='function')render();}catch(error){console.warn('Accounting base render fallback',error);}
+    }
+    window.KunViewPersistenceV97?.save?.(VIEW);
     return active();
   }
 
@@ -32,6 +50,29 @@
       if(window.KunAccountingV100?.render){window.KunAccountingV100.render();return true;}
     }catch(error){console.warn('Accounting render',error);}
     return false;
+  }
+
+  function stabilize(generation){
+    for(const delay of [35,140,420])setTimeout(()=>{
+      if(generation!==routeGeneration||permissionState()!=='allowed')return;
+      if(!active())activate();
+      if(active()&&!accountingVisible())render();
+    },delay);
+  }
+
+  function routeAccounting(generation=routeGeneration,attempt=0){
+    if(generation!==routeGeneration)return false;
+    const permission=permissionState();
+    if(permission==='pending'){
+      if(attempt<30)setTimeout(()=>routeAccounting(generation,attempt+1),50);
+      return false;
+    }
+    if(permission==='denied'){
+      window.showToast?.('القسم غير متاح ضمن صلاحيات حسابك');
+      return false;
+    }
+    const ok=activate();if(!ok)return false;
+    render();scheduleWatch();stabilize(generation);return true;
   }
 
   function xhrJson(path,timeout=7000){
@@ -53,7 +94,6 @@
       for(const [label,path] of checks){try{await xhrJson(path);}catch(error){failures.push(`${label}: ${error.message}`);}}
       if(!active()||!isLoading())return;
       if(!failures.length){
-        // Backend is healthy: the problem was a stale/incorrect UI route. Re-activate once and render from scratch.
         const now=Date.now();if(now-lastAttempt>2500){lastAttempt=now;activate();window.KunAccountingV100?.render?.();scheduleWatch(5000);}
         return;
       }
@@ -64,19 +104,20 @@
 
   function scheduleWatch(delay=6500){clearTimeout(watchTimer);watchTimer=setTimeout(()=>{if(active()&&isLoading())diagnose();},delay);}
   function scheduleRoute(delay=0){
-    clearTimeout(routeTimer);routeTimer=setTimeout(()=>{
-      if(!allowed())return;
-      const ok=activate();if(!ok)return;
-      // Let the base router finish its own render first, then make accounting the final renderer.
-      setTimeout(()=>{if(active()){render();scheduleWatch();}},20);
-    },delay);
+    const generation=++routeGeneration;
+    clearTimeout(routeTimer);routeTimer=setTimeout(()=>routeAccounting(generation),delay);
   }
 
   function boot(){
     document.addEventListener('click',event=>{
-      const target=event.target.closest?.('[data-view="accounting"],[data-go="accounting"]');if(!target)return;
-      // Do not stop propagation: permission navigation must remain authoritative.
-      scheduleRoute(0);
+      const route=event.target.closest?.('.nav button[data-view],[data-go]');if(!route)return;
+      const next=String(route.dataset.view||route.dataset.go||'');
+      const generation=++routeGeneration;
+      if(next!==VIEW)return;
+      // Permission navigation is registered earlier and remains authoritative for denied routes.
+      // Once the route is allowed, stop competing legacy handlers and make accounting the sole final renderer.
+      event.preventDefault();event.stopImmediatePropagation();
+      clearTimeout(routeTimer);routeAccounting(generation);
     },true);
     window.addEventListener('pageshow',()=>{if(active())scheduleRoute(40);});
     document.addEventListener('kun:section-reloaded',event=>{if(event.detail?.view===VIEW||active())scheduleRoute(20);});
@@ -84,5 +125,5 @@
   }
 
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();
-  window.KunAccountingNavigationGuardV103={version:'103.0',activate,render,retry:()=>scheduleRoute(0),diagnose};
+  window.KunAccountingNavigationGuardV103={version:'103.1',activate,render,navigate:()=>scheduleRoute(0),retry:()=>scheduleRoute(0),diagnose,permissionState};
 })();
