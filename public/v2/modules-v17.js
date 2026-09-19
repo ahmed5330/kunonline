@@ -31,3 +31,21 @@
   script.dataset.kunJtHistory='v91';
   document.head.appendChild(script);
 })();
+
+/* v101 unified accounting -> Finance Command Center sync loader. */
+(function(){
+  if(document.querySelector('script[data-kun-finance-accounting-sync="v101"]'))return;
+  const script=document.createElement('script');
+  script.src='/v2/modules-v101-finance-accounting-sync.js?v=101.0';
+  script.dataset.kunFinanceAccountingSync='v101';
+  document.head.appendChild(script);
+})();
+
+/* v102 mobile containment for post-shipping board. */
+(function(){
+  if(document.querySelector('script[data-kun-mobile-post-shipping="v102"]'))return;
+  const script=document.createElement('script');
+  script.src='/v2/modules-v102-mobile-post-shipping-fix.js?v=102.0';
+  script.dataset.kunMobilePostShipping='v102';
+  document.head.appendChild(script);
+})();
