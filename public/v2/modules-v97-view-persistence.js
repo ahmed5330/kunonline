@@ -107,3 +107,13 @@
     get current(){try{return String(view||'');}catch(_){return '';}}
   };
 })();
+
+/* v105 loader — section Back/Previous controls stay globally available without coupling to any workspace renderer. */
+(function(){
+  if(document.getElementById('kunSectionNavActionsV105Loader'))return;
+  const script=document.createElement('script');
+  script.id='kunSectionNavActionsV105Loader';
+  script.src='/v2/modules-v105-section-nav-actions.js?v=105.0';
+  script.async=false;
+  document.head.appendChild(script);
+})();
