@@ -1,4 +1,4 @@
-/* Kun Online v97.3 — keep the exact active workspace on real browser reload. */
+/* Kun Online v97.4 — keep the exact active workspace on real browser reload. */
 (function(){
   'use strict';
   if(window.KunViewPersistenceV97)return;
@@ -95,7 +95,7 @@
   }
 
   window.KunViewPersistenceV97={
-    version:'97.3',
+    version:'97.4',
     key:VIEW_KEY,
     statusKey:STATUS_KEY,
     navigationType,
@@ -114,6 +114,16 @@
   const script=document.createElement('script');
   script.id='kunSectionNavActionsV105Loader';
   script.src='/v2/modules-v105-section-nav-actions.js?v=105.0';
+  script.async=false;
+  document.head.appendChild(script);
+})();
+
+/* v106 loader — move the real safety undo bar into the section header and keep Dashboard Meta KPIs near-live. */
+(function(){
+  if(document.getElementById('kunUndoDashboardLiveV106Loader'))return;
+  const script=document.createElement('script');
+  script.id='kunUndoDashboardLiveV106Loader';
+  script.src='/v2/modules-v106-undo-dashboard-live.js?v=106.0';
   script.async=false;
   document.head.appendChild(script);
 })();
