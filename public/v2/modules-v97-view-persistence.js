@@ -1,4 +1,4 @@
-/* Kun Online v97.2 — keep the exact active workspace after browser reload. */
+/* Kun Online v97.3 — keep the exact active workspace on real browser reload. */
 (function(){
   'use strict';
   if(window.KunViewPersistenceV97)return;
@@ -6,6 +6,8 @@
   const VIEW_KEY='kun:v2:last-view';
   const STATUS_KEY='kun:v2:last-status';
   const safe=v=>{const value=String(v||'').trim();return /^[a-z0-9][a-z0-9_-]{0,79}$/i.test(value)?value:'';};
+  const navigationType=()=>{try{return String(performance.getEntriesByType?.('navigation')?.[0]?.type||'');}catch(_){return '';}};
+  const shouldRestore=()=>['reload','back_forward'].includes(navigationType());
   const navButton=v=>{
     const value=safe(v);if(!value)return null;
     return [...document.querySelectorAll('.nav button[data-view]')].find(b=>String(b.dataset.view||'')===value)||null;
@@ -27,6 +29,7 @@
   }
 
   function restore(){
+    if(!shouldRestore())return false;
     const saved=read();
     if(saved){
       try{view=saved;}catch(_){}
@@ -65,6 +68,7 @@
 
   let activated=false;
   function activateSaved(){
+    if(!shouldRestore())return false;
     const saved=read();if(!saved)return false;
     if(!allowed(saved)){
       try{sessionStorage.removeItem(VIEW_KEY);}catch(_){}
@@ -72,29 +76,30 @@
     }
     const target=navButton(saved);
     if(!visible(target))return false;
-    let current='';try{current=safe(view);}catch(_){}
-    if(current!==saved||!target.classList.contains('active'))target.click();
-    else target.click();
+    target.click();
     activated=true;return true;
   }
 
   function retryRestore(){
+    if(!shouldRestore())return;
     const delays=[0,80,220,500,900,1500,2500];
     delays.forEach(delay=>setTimeout(()=>{if(!activated)activateSaved();},delay));
   }
 
   window.addEventListener('load',retryRestore,{once:true});
   const nav=document.querySelector('.nav');
-  if(nav&&typeof MutationObserver==='function'){
+  if(nav&&typeof MutationObserver==='function'&&shouldRestore()){
     const observer=new MutationObserver(()=>{if(!activated)activateSaved();});
     observer.observe(nav,{childList:true,subtree:true,attributes:true,attributeFilter:['hidden','style','aria-hidden','class']});
     setTimeout(()=>observer.disconnect(),4000);
   }
 
   window.KunViewPersistenceV97={
-    version:'97.2',
+    version:'97.3',
     key:VIEW_KEY,
     statusKey:STATUS_KEY,
+    navigationType,
+    shouldRestore,
     restore,
     save,
     saveStatus,
