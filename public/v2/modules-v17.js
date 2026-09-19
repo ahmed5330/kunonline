@@ -18,7 +18,7 @@
   css.dataset.kunSidebarGroups='v99';
   document.head.appendChild(css);
   const script=document.createElement('script');
-  script.src='/v2/modules-v90-sidebar-groups.js?v=99.0';
+  script.src='/v2/modules-v90-sidebar-groups.js?v=99.1';
   script.dataset.kunSidebarGroups='v99';
   document.head.appendChild(script);
 })();
