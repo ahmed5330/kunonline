@@ -1,4 +1,4 @@
-/* Kun Online v84.5 — complete J&T Egypt Create Order setup + global v85 safety bootstrap, with deterministic idempotent DOM enhancement. */
+/* Kun Online v84.6 — complete J&T Egypt Create Order setup + global system UI bootstrap, with deterministic idempotent DOM enhancement. */
 (function(){
   function field(label,secret,{required=true,type='text',placeholder='اتركه فارغًا للاحتفاظ بالقيمة الحالية'}={}){const req=required?' <span class="meta">مطلوب لإنشاء الشحنة</span>':' <span class="meta">اختياري</span>';return `<label>${label}${req}<input class="input intSecret" type="${type}" autocomplete="new-password" data-secret="${secret}" aria-label="${label}" placeholder="${placeholder}"></label>`;}
   function markBusinessRequired(input,label){
@@ -27,7 +27,8 @@
   }
   function scan(){enhance(document.getElementById('intSetupPanel'));}
   function loadDashboardInputs(){if(window.KunDashboardInputDetailsV86||document.querySelector('script[data-kun-v86-dashboard-inputs]'))return;const script=document.createElement('script');script.src='/v2/modules-v86-dashboard-input-details.js?v=86.0';script.async=false;script.dataset.kunV86DashboardInputs='1';document.body.appendChild(script);}
-  function loadSystemSafety(){if(!window.KunSafety85&&!document.querySelector('script[data-kun-v85-bootstrap]')){const script=document.createElement('script');script.src='/v2/modules-v85-system-safety.js?v=85.0';script.async=false;script.dataset.kunV85Bootstrap='1';document.body.appendChild(script);}loadDashboardInputs();}
+  function loadShortcutBoard(){if(window.KunShortcutBoardV92||document.querySelector('script[data-kun-v92-shortcuts]'))return;const script=document.createElement('script');script.src='/v2/modules-v92-shortcut-board.js?v=92.0';script.async=false;script.dataset.kunV92Shortcuts='1';document.body.appendChild(script);}
+  function loadSystemSafety(){if(!window.KunSafety85&&!document.querySelector('script[data-kun-v85-bootstrap]')){const script=document.createElement('script');script.src='/v2/modules-v85-system-safety.js?v=85.0';script.async=false;script.dataset.kunV85Bootstrap='1';document.body.appendChild(script);}loadDashboardInputs();loadShortcutBoard();}
   function boot(){
     let queued=false;
     const scheduleScan=()=>{if(queued)return;queued=true;queueMicrotask(()=>{queued=false;scan();});};
@@ -41,5 +42,5 @@
     scan();loadSystemSafety();
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
-  window.KunJtCreateSetupV84={scan,loadSystemSafety,loadDashboardInputs,version:'84.5'};
+  window.KunJtCreateSetupV84={scan,loadSystemSafety,loadDashboardInputs,loadShortcutBoard,version:'84.6'};
 })();
