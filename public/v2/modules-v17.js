@@ -9,17 +9,17 @@
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',hook);else hook();
 })();
 
-/* v90 sidebar loader — kept here so existing v2 entrypoint can adopt the grouped navigation without touching route boot order. */
+/* v99 sidebar loader — grouped hierarchy, icons, color accents and micro-interactions. */
 (function(){
-  if(document.querySelector('link[data-kun-sidebar-groups="v90"]'))return;
+  if(document.querySelector('link[data-kun-sidebar-groups="v99"]'))return;
   const css=document.createElement('link');
   css.rel='stylesheet';
-  css.href='/v2/kun-v17.css?v=90.0';
-  css.dataset.kunSidebarGroups='v90';
+  css.href='/v2/kun-v17.css?v=99.0';
+  css.dataset.kunSidebarGroups='v99';
   document.head.appendChild(css);
   const script=document.createElement('script');
-  script.src='/v2/modules-v90-sidebar-groups.js?v=90.0';
-  script.dataset.kunSidebarGroups='v90';
+  script.src='/v2/modules-v90-sidebar-groups.js?v=99.0';
+  script.dataset.kunSidebarGroups='v99';
   document.head.appendChild(script);
 })();
 
