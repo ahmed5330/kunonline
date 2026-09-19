@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 
 const read=path=>readFile(new URL(`../${path}`,import.meta.url),'utf8');
-const [index,perf,post,ai,rich,ads,recovery,permissions,search,v35,sectionReload,confirmInventory,ecommerceCalculator]=await Promise.all([
+const [index,perf,post,ai,rich,ads,recovery,permissions,search,v35,sectionReload,confirmInventory,ecommerceCalculator,financeCommandCenter]=await Promise.all([
   read('public/v2/index.html'),
   read('public/v2/performance-core-v52.js'),
   read('public/v2/modules-v47-post-shipping.js'),
@@ -15,7 +15,8 @@ const [index,perf,post,ai,rich,ads,recovery,permissions,search,v35,sectionReload
   read('src/index-commerce-v35.js'),
   read('public/v2/modules-v57-section-reload.js'),
   read('public/v2/modules-v58-confirm-inventory.js'),
-  read('public/v2/modules-v94-ecommerce-calculator.js')
+  read('public/v2/modules-v94-ecommerce-calculator.js'),
+  read('public/v2/modules-v96-finance-command-center.js')
 ]);
 
 assert.ok(index.includes('/v2/performance-core-v52.js'), 'shared performance core must be loaded');
@@ -61,6 +62,14 @@ assert.ok(ecommerceCalculator.includes('returnRate=1-delivery'),'return rate mus
 assert.ok(ecommerceCalculator.includes("fields(auto?'adsAuto':'adsManual')"),'calculator must show only the active ad-cost input method');
 assert.ok(ecommerceCalculator.includes("delete model.returnRate"),'legacy duplicate return-rate input must be discarded during migration');
 assert.ok(permissions.includes('/v2/modules-v94-ecommerce-calculator.js?v=94.1'),'calculator bundle must be cache-busted after deduplication');
+
+assert.doesNotThrow(()=>new Function(financeCommandCenter),'finance command center browser module must parse');
+for(const endpoint of ['/api/dashboard','/api/accounting/overview','/api/accounting/entries','/api/accounting/collected-profit','/api/cod-reconciliation/candidates','/api/cod-reconciliation'])assert.ok(financeCommandCenter.includes(endpoint),`finance command center missing real source ${endpoint}`);
+assert.equal(financeCommandCenter.includes("v4Api('/api/finance"),false,'finance command center must not use legacy placeholder finance endpoint');
+assert.ok(financeCommandCenter.includes('المحصل فعليًا لا يُستخدم بدل إيراد المبيعات'),'finance must keep collection cash separate from P&L revenue');
+assert.ok(financeCommandCenter.includes('سلامة واكتمال الأرقام'),'finance must expose data-completeness health instead of silently treating missing costs as correct zeros');
+assert.ok(permissions.includes('/v2/modules-v96-finance-command-center.js?v=96.0'),'permission bootstrap must load the finance command center');
+assert.ok(permissions.includes("accounting:['finance.read']"),'accounting child route must follow finance read permission');
 
 const dashboardStart=v35.indexOf('async function dashboard');
 const reconcileStart=v35.indexOf('async function reconcileRoute');
