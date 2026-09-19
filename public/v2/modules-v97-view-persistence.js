@@ -123,7 +123,7 @@
   if(document.getElementById('kunUndoDashboardLiveV106Loader'))return;
   const script=document.createElement('script');
   script.id='kunUndoDashboardLiveV106Loader';
-  script.src='/v2/modules-v106-undo-dashboard-live.js?v=106.1';
+  script.src='/v2/modules-v106-undo-dashboard-live.js?v=106.2';
   script.async=false;
   document.head.appendChild(script);
 })();
