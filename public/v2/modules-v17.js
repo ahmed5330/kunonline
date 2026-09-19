@@ -22,3 +22,12 @@
   script.dataset.kunSidebarGroups='v90';
   document.head.appendChild(script);
 })();
+
+/* v91 J&T history reconciliation loader. */
+(function(){
+  if(document.querySelector('script[data-kun-jt-history="v91"]'))return;
+  const script=document.createElement('script');
+  script.src='/v2/modules-v91-jt-history-reconcile.js?v=91.0';
+  script.dataset.kunJtHistory='v91';
+  document.head.appendChild(script);
+})();
