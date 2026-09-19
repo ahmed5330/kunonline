@@ -40,9 +40,10 @@ for(const marker of ['الحسابات والحركات','تسجيل حركة','
 assert.ok(ui.includes('/api/accounting/monthly?month='),'Accounting UI must load the unified monthly summary');
 assert.ok(ui.includes("api('/api/accounting/entries',{method:'POST'"),'Accounting UI must create manual entries');
 assert.ok(ui.includes("method:'DELETE'"),'Accounting UI must support deleting manual entries');
-assert.ok(index.includes('modules-v36-accounting.js?v=100.0'),'Accounting v100 module is not cache-busted in v2');
+assert.ok(index.includes('data-view="accounting">الحسابات والحركات</button>'),'Accounting navigation must be present before the base router binds click handlers');
+assert.ok(index.includes('modules-v36-accounting.js?v=100.1'),'Accounting v100.1 module is not cache-busted in v2');
 for(const marker of ['/api/accounting/monthly','/api/accounting/overview','صافي الربح المحاسبي / الخسارة','إيرادات أخرى مسجلة يدويًا','kun:accounting-changed','operatingNet+otherIncome'])assert.ok(financeSync.includes(marker),`Finance accounting sync missing ${marker}`);
 assert.ok(loader.includes('/v2/modules-v101-finance-accounting-sync.js?v=101.0'),'Finance accounting sync asset is not runtime-loaded');
 assert.ok(loader.includes('data-kun-finance-accounting-sync="v101"'),'Finance accounting sync loader guard is missing');
 assert.ok(!service.includes('UPDATE order_management_fees SET rate_pct'),'Existing order fee rate must not be repriced when store rate changes');
-console.log('Accounting + management fee contract passed: unified monthly P&L, store-aware manual movements, cash/revenue separation, management-fee reconciliation, immutable historical rates, v100 accounting UI and runtime Finance v101 synchronization.');
+console.log('Accounting + management fee contract passed: unified monthly P&L, store-aware manual movements, cash/revenue separation, management-fee reconciliation, immutable historical rates, static accounting navigation binding, v100 accounting UI and runtime Finance v101 synchronization.');
