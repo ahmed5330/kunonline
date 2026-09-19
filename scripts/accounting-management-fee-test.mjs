@@ -47,7 +47,7 @@ assert.ok(ui.includes("api('/api/accounting/entries',{method:'POST'"),'Accountin
 assert.ok(ui.includes("method:'DELETE'"),'Accounting UI must support deleting manual entries');
 assert.ok(index.includes('data-view="accounting">الحسابات والحركات</button>'),'Accounting navigation must be present before the base router binds click handlers');
 assert.ok(index.includes('modules-v36-accounting.js?v=100.1'),'Accounting v100.1 module is not cache-busted in v2');
-assert.ok(index.includes('modules-v97-view-persistence.js?v=97.3'),'View persistence v97.3 must be cache-busted so stale navigation state cannot win');
+assert.ok(index.includes('modules-v97-view-persistence.js?v=97.4'),'View persistence v97.4 must be cache-busted so stale navigation state cannot win');
 assert.ok(index.includes('modules-v51-permission-navigation.js?v=51.10'),'Permission navigation must be cache-busted for the accounting guard loader');
 assert.ok(index.includes('modules-v103-accounting-navigation-guard.js?v=103.1'),'Accounting deterministic navigation guard must be directly loaded by v2');
 for(const marker of ['/api/accounting/monthly','/api/accounting/overview','صافي الربح المحاسبي / الخسارة','إيرادات أخرى مسجلة يدويًا','kun:accounting-changed','operatingNet+otherIncome'])assert.ok(financeSync.includes(marker),`Finance accounting sync missing ${marker}`);
