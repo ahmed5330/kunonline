@@ -1,4 +1,4 @@
-/* Kun Online v97 — keep the active workspace after browser reload. */
+/* Kun Online v97.1 — keep the active workspace after browser reload. */
 (function(){
   'use strict';
   if(window.KunViewPersistenceV97)return;
@@ -44,8 +44,22 @@
     try{save(view);}catch(_){}
   });
 
+  /* Re-enter the restored workspace once all feature bundles are loaded.
+     This matters for workspaces whose renderer is installed by a later bundle. */
+  window.addEventListener('load',()=>{
+    setTimeout(()=>{
+      let current='';
+      try{current=String(view||'').trim();}catch(_){}
+      const saved=read();
+      const target=navButton(current||saved);
+      if(!target||target.hidden||target.style.display==='none')return;
+      if(saved&&current&&saved!==current)return;
+      target.click();
+    },0);
+  },{once:true});
+
   window.KunViewPersistenceV97={
-    version:'97.0',
+    version:'97.1',
     key:KEY,
     restore,
     save,
