@@ -32,7 +32,7 @@ assert.ok(!scheduler.includes('o.updated_at'),'Scheduled reconciliation must onl
 for(const marker of ['/api/accounting/monthly','requirePermission(me,\'finance\',\'read\')','accountingOverview','categoryBreakdown','accountingNetProfit','manualExpenses','collectedRevenue','finalDashboard'])assert.ok(monthly.includes(marker),`Monthly accounting service missing ${marker}`);
 for(const marker of ['handleAccountingMonthly','if(monthly)return monthly','handleJtHistoryReconcile'])assert.ok(entry.includes(marker),`v38 monthly accounting routing missing ${marker}`);
 for(const marker of ['الحسابات والحركات','تسجيل حركة','الحساب الشهري P&amp;L','إيراد المبيعات','المحصل فعليًا','صافي الربح المحاسبي للشهر','المتجر / الفرع','رقم المستند','الجهة / الطرف المقابل','الضريبة','رسوم الإدارة الآلية','المصروف اليدوي يدخل أصلًا ضمن مصروفات التشغيل','kun:accounting-changed'])assert.ok(ui.includes(marker),`Accounting UI missing ${marker}`);
-assert.ok(ui.includes("api('/api/accounting/monthly?month="),'Accounting UI must load the unified monthly summary');
+assert.ok(ui.includes('/api/accounting/monthly?month='),'Accounting UI must load the unified monthly summary');
 assert.ok(ui.includes("api('/api/accounting/entries',{method:'POST'"),'Accounting UI must create manual entries');
 assert.ok(ui.includes("method:'DELETE'"),'Accounting UI must support deleting manual entries');
 assert.ok(index.includes('modules-v36-accounting.js?v=100.0'),'Accounting v100 module is not cache-busted in v2');
