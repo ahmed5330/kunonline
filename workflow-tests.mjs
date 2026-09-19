@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs';
 import { classifyAction, validateWorkflowDefinition, evaluateConditions, planWorkflowRun } from './src/workflow-engine.js';
 
 const workflowApiSource = readFileSync(new URL('./src/index-commerce.js', import.meta.url), 'utf8');
+const workflowUiSource = readFileSync(new URL('./public/v2/modules-v104-automation.js', import.meta.url), 'utf8');
+const v2IndexSource = readFileSync(new URL('./public/v2/index.html', import.meta.url), 'utf8');
 
 let passed = 0;
 function test(name, fn) {
@@ -89,6 +91,20 @@ test('settings permission is an admin override for sensitive planning', () => {
 test('workflow API resolves Admin tenant from body and prevents duplicate names', () => {
   assert.match(workflowApiSource, /b\.clientId\|\|b\.client_id\|\|url\.searchParams\.get\('clientId'\)/);
   assert.match(workflowApiSource, /DUPLICATE_WORKFLOW/);
+});
+
+test('Automation v104 replaces the placeholder with the real workflow API', () => {
+  assert.match(workflowUiSource, /apiUrl\('\/api\/workflows'\)/);
+  assert.match(workflowUiSource, /api\('\/api\/workflows',\{method:'POST'/);
+  assert.match(workflowUiSource, /Workflow جديد/);
+  assert.match(workflowUiSource, /event\.stopImmediatePropagation\(\)/);
+  assert.match(workflowUiSource, /KunAutomationV104/);
+  assert.doesNotMatch(workflowUiSource, /Workflow Builder هو المرحلة التالية للأتمتة/);
+});
+
+test('Automation v104 is cache-busted and loaded after legacy modules', () => {
+  assert.match(v2IndexSource, /modules-v104-automation\.js\?v=104\.0/);
+  assert.ok(v2IndexSource.lastIndexOf('modules-v104-automation.js?v=104.0') > v2IndexSource.lastIndexOf('modules-v4.js?v=4.1'));
 });
 
 console.log(`Workflow engine tests passed: ${passed}`);
