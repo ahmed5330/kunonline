@@ -1,4 +1,4 @@
-/* Kun Online v51.4 — permission-aware navigation and Finance calculator bootstrap. */
+/* Kun Online v51.5 — permission-aware navigation and Finance calculator bootstrap. */
 (function(){
   const OWNER_ROLES=new Set(['admin','client']);
   const VIEW_RULES=Object.freeze({
@@ -107,12 +107,16 @@
   },true);
   const originalSetView=typeof window.setView==='function'?window.setView:null;
   if(originalSetView)window.setView=function(view){if(!ready||allowed.has(String(view)))return originalSetView(view);notify();goFirstAllowed();};
-  function appendScript(src,marker,onload){if(document.querySelector(`script[${marker}]`))return;const script=document.createElement('script');script.src=src;script.async=false;script.setAttribute(marker,'1');if(onload)script.onload=onload;document.body.appendChild(script);}
+  function appendScript(src,marker,onload){
+    if(typeof document==='undefined'||typeof document.createElement!=='function'||!document.body?.appendChild)return false;
+    if(document.querySelector?.(`script[${marker}]`))return false;
+    const script=document.createElement('script');script.src=src;script.async=false;script.setAttribute(marker,'1');if(onload)script.onload=onload;document.body.appendChild(script);return true;
+  }
   function loadEcommerceCalculator(){
     if(!window.KunEcommerceCalculatorV93)appendScript('/v2/modules-v93-ecommerce-calculator.js?v=93.0','data-kun-v93-ecommerce-calculator',()=>{if(ready)apply();});
     if(!window.KunEcommerceCalculatorShortcutV93)appendScript('/v2/modules-v93-ecommerce-calculator-shortcut.js?v=93.0','data-kun-v93-ecommerce-shortcut',()=>window.KunEcommerceCalculatorShortcutV93?.sync?.());
   }
   loadEcommerceCalculator();
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',loadAccess,{once:true});else loadAccess();
-  window.KunPermissionNavigationV51={load:()=>loadAccess(true),apply,allowedView,match,loadEcommerceCalculator,get snapshot(){return snapshot;},get allowed(){return [...allowed];},rules:VIEW_RULES,version:'51.4'};
+  window.KunPermissionNavigationV51={load:()=>loadAccess(true),apply,allowedView,match,loadEcommerceCalculator,get snapshot(){return snapshot;},get allowed(){return [...allowed];},rules:VIEW_RULES,version:'51.5'};
 })();
