@@ -8,3 +8,17 @@
   function hook(){document.addEventListener('click',e=>{const b=e.target.closest('.nav button');if(!b)return;const root=document.getElementById('root');if(b.dataset.view==='stores')setTimeout(()=>renderStores(root),0);if(b.dataset.view==='ai')setTimeout(()=>renderAi(root),0);});}
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',hook);else hook();
 })();
+
+/* v90 sidebar loader — kept here so existing v2 entrypoint can adopt the grouped navigation without touching route boot order. */
+(function(){
+  if(document.querySelector('link[data-kun-sidebar-groups="v90"]'))return;
+  const css=document.createElement('link');
+  css.rel='stylesheet';
+  css.href='/v2/kun-v17.css?v=90.0';
+  css.dataset.kunSidebarGroups='v90';
+  document.head.appendChild(css);
+  const script=document.createElement('script');
+  script.src='/v2/modules-v90-sidebar-groups.js?v=90.0';
+  script.dataset.kunSidebarGroups='v90';
+  document.head.appendChild(script);
+})();
