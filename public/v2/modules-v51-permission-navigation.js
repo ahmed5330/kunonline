@@ -1,4 +1,4 @@
-/* Kun Online v51.7 — permission-aware navigation and Finance calculator bootstrap. */
+/* Kun Online v51.8 — permission-aware navigation + Finance tools bootstrap. */
 (function(){
   const OWNER_ROLES=new Set(['admin','client']);
   const VIEW_RULES=Object.freeze({
@@ -24,9 +24,10 @@
     campaigns:['campaigns.read'],
     marketing:['ads.read'],
     'ad-studio':['ads.write'],
-    finance:['finance.read'],
+    finance:['finance.read','profit.read'],
+    accounting:['finance.read'],
     'ecommerce-calculator':['finance.read'],
-    profit:['profit.read'],
+    profit:['finance.read','profit.read'],
     analytics:['analytics.read'],
     automation:['automation.read'],
     ai:['ai.read'],
@@ -63,14 +64,8 @@
   function firstAllowedButton(){return visibleButtons()[0]||null;}
   function currentView(){return document.querySelector('.nav button.active[data-view]')?.dataset.view||'';}
   function notify(){window.showToast?.('القسم غير متاح ضمن صلاحيات حسابك');}
-  function showNoAccess(){
-    const root=document.getElementById('root');if(root)root.innerHTML='<div class="card empty"><h2>لا توجد أقسام متاحة لهذا الحساب</h2><p>راجع صلاحيات عضو الفريق من حساب المالك.</p></div>';
-  }
-  function goFirstAllowed(){
-    if(redirecting)return;const current=currentView();if(current&&allowed.has(current))return;
-    const first=firstAllowedButton();if(!first){showNoAccess();return;}
-    redirecting=true;setTimeout(()=>{try{first.click();}finally{redirecting=false;}},0);
-  }
+  function showNoAccess(){const root=document.getElementById('root');if(root)root.innerHTML='<div class="card empty"><h2>لا توجد أقسام متاحة لهذا الحساب</h2><p>راجع صلاحيات عضو الفريق من حساب المالك.</p></div>';}
+  function goFirstAllowed(){if(redirecting)return;const current=currentView();if(current&&allowed.has(current))return;const first=firstAllowedButton();if(!first){showNoAccess();return;}redirecting=true;setTimeout(()=>{try{first.click();}finally{redirecting=false;}},0);}
   function apply(){
     if(!snapshot?.role)return;
     allowed=new Set();
@@ -86,17 +81,16 @@
     }
     document.documentElement.dataset.permissionNavigation='ready';
     window.KunEcommerceCalculatorShortcutV93?.sync?.();
+    window.KunFinanceCommandCenterV96?.mergeNavigation?.();
     goFirstAllowed();
   }
   async function loadAccess(force=false){
     try{
       if(force)window.KunPerformanceCore?.invalidate?.('/api/navigation-access');
       const response=await fetch('/api/navigation-access',{credentials:'include'}),data=await response.json().catch(()=>({}));
-      if(!response.ok||!data?.role)throw new Error(data?.error||`HTTP ${response.status}`);
+      if(!response.ok||!data?.role)throw new Error(data.error||`HTTP ${response.status}`);
       snapshot=data;ready=true;apply();return data;
-    }catch(error){
-      console.warn('Permission navigation unavailable',error);return null;
-    }
+    }catch(error){console.warn('Permission navigation unavailable',error);return null;}
   }
   function targetView(element){return text(element?.dataset?.view||element?.dataset?.go);}
   document.addEventListener('click',event=>{
@@ -112,11 +106,12 @@
     if(document.querySelector?.(`script[${marker}]`))return false;
     const script=document.createElement('script');script.src=src;script.async=false;script.setAttribute(marker,'1');if(onload)script.onload=onload;document.body.appendChild(script);return true;
   }
-  function loadEcommerceCalculator(){
+  function loadFinanceTools(){
     if(!window.KunEcommerceCalculatorV94)appendScript('/v2/modules-v94-ecommerce-calculator.js?v=94.1','data-kun-v94-ecommerce-calculator',()=>{if(ready)apply();});
     if(!window.KunEcommerceCalculatorShortcutV93)appendScript('/v2/modules-v93-ecommerce-calculator-shortcut.js?v=93.0','data-kun-v93-ecommerce-shortcut',()=>window.KunEcommerceCalculatorShortcutV93?.sync?.());
+    if(!window.KunFinanceCommandCenterV96)appendScript('/v2/modules-v96-finance-command-center.js?v=96.0','data-kun-v96-finance',()=>{window.KunFinanceCommandCenterV96?.mergeNavigation?.();if(ready)apply();});
   }
-  loadEcommerceCalculator();
+  loadFinanceTools();
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',loadAccess,{once:true});else loadAccess();
-  window.KunPermissionNavigationV51={load:()=>loadAccess(true),apply,allowedView,match,loadEcommerceCalculator,get snapshot(){return snapshot;},get allowed(){return [...allowed];},rules:VIEW_RULES,version:'51.7'};
+  window.KunPermissionNavigationV51={load:()=>loadAccess(true),apply,allowedView,match,loadFinanceTools,loadEcommerceCalculator:loadFinanceTools,get snapshot(){return snapshot;},get allowed(){return [...allowed];},rules:VIEW_RULES,version:'51.8'};
 })();
