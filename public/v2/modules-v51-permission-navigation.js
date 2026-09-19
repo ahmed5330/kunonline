@@ -1,4 +1,4 @@
-/* Kun Online v51 — permission-aware navigation and route guard. */
+/* Kun Online v51.3 — permission-aware navigation and route guard + Finance calculator bootstrap. */
 (function(){
   const OWNER_ROLES=new Set(['admin','client']);
   const VIEW_RULES=Object.freeze({
@@ -25,6 +25,7 @@
     marketing:['ads.read'],
     'ad-studio':['ads.write'],
     finance:['finance.read'],
+    'ecommerce-calculator':['finance.read'],
     profit:['profit.read'],
     analytics:['analytics.read'],
     automation:['automation.read'],
@@ -105,6 +106,11 @@
   },true);
   const originalSetView=typeof window.setView==='function'?window.setView:null;
   if(originalSetView)window.setView=function(view){if(!ready||allowed.has(String(view)))return originalSetView(view);notify();goFirstAllowed();};
+  function loadEcommerceCalculator(){
+    if(window.KunEcommerceCalculatorV93||document.querySelector('script[data-kun-v93-ecommerce-calculator]'))return;
+    const script=document.createElement('script');script.src='/v2/modules-v93-ecommerce-calculator.js?v=93.0';script.async=false;script.dataset.kunV93EcommerceCalculator='1';script.onload=()=>{if(ready)apply();};document.body.appendChild(script);
+  }
+  loadEcommerceCalculator();
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',loadAccess,{once:true});else loadAccess();
-  window.KunPermissionNavigationV51={load:()=>loadAccess(true),apply,allowedView,match,get snapshot(){return snapshot;},get allowed(){return [...allowed];},rules:VIEW_RULES,version:'51.2'};
+  window.KunPermissionNavigationV51={load:()=>loadAccess(true),apply,allowedView,match,loadEcommerceCalculator,get snapshot(){return snapshot;},get allowed(){return [...allowed];},rules:VIEW_RULES,version:'51.3'};
 })();
