@@ -1,12 +1,13 @@
-/* Kun Online v106.1 — compact system undo in section header + near-live Dashboard Meta refresh. */
+/* Kun Online v106.2 — compact system undo in section header + readiness-gated near-live Dashboard Meta refresh. */
 (function(){
   'use strict';
   if(window.KunUndoDashboardLiveV106)return;
 
   const FRESH_MS=90*1000;
   const AUTO_MS=120*1000;
+  const READINESS_MS=60*1000;
   const lastFresh=new Map();
-  let metaInflight=null,scheduled=false,sourceRefreshPending=false;
+  let metaInflight=null,readinessInflight=null,readinessAt=0,readinessReady=false,scheduled=false,sourceRefreshPending=false;
 
   const activeView=()=>document.querySelector('.nav button.active[data-view]')?.dataset.view||'';
   const dashboardActive=()=>activeView()==='dashboard';
@@ -111,11 +112,37 @@
     return `${client}:${store||'all'}`;
   }
 
+  function readinessRows(data){
+    if(Array.isArray(data))return data;
+    if(Array.isArray(data?.providers))return data.providers;
+    if(Array.isArray(data?.integrations))return data.integrations;
+    if(Array.isArray(data?.items))return data.items;
+    return [];
+  }
+
+  async function metaSyncReady({force=false}={}){
+    if(!force&&Date.now()-readinessAt<READINESS_MS)return readinessReady;
+    if(readinessInflight)return readinessInflight;
+    readinessInflight=(async()=>{
+      try{
+        const response=await fetch('/api/integrations/readiness',{credentials:'include',headers:{Accept:'application/json'}});
+        if(!response.ok){readinessReady=false;return false;}
+        const rows=readinessRows(await response.json().catch(()=>[]));
+        const meta=rows.find(row=>String(row?.id||row?.provider||row?.providerId||'').toLowerCase()==='meta_ads');
+        readinessReady=Boolean(meta&&String(meta.readiness||'').toLowerCase()==='connected');
+        return readinessReady;
+      }catch(_){readinessReady=false;return false;}
+      finally{readinessAt=Date.now();readinessInflight=null;}
+    })();
+    return readinessInflight;
+  }
+
   async function freshMeta({force=false,quiet=true}={}){
     if(!dashboardActive()||!window.KunMetaAdsLive?.sync)return {synced:false,reason:'unavailable'};
     const key=await contextKey();if(!key||key===':all')return {synced:false,reason:'no-context'};
     const elapsed=Date.now()-(lastFresh.get(key)||0);
     if(!force&&elapsed<FRESH_MS)return {synced:false,reason:'fresh'};
+    if(!(await metaSyncReady({force:false}))){lastFresh.set(key,Date.now());return {synced:false,reason:'meta-not-ready'};}
     if(metaInflight)return metaInflight;
     metaInflight=(async()=>{
       try{
@@ -124,7 +151,8 @@
         document.documentElement.dataset.dashboardMetaLastSync=new Date().toISOString();
         return {synced:true,result};
       }catch(error){
-        const expected=['META_ADS_NOT_CONNECTED','META_TOKEN_MISSING','META_AD_ACCOUNT_MISSING'];
+        const expected=['META_ADS_NOT_CONNECTED','META_TOKEN_MISSING','META_AD_ACCOUNT_MISSING','META_AD_ACCOUNT_CONFIRMATION_REQUIRED'];
+        if(expected.includes(String(error?.code||''))){readinessReady=false;readinessAt=Date.now();}
         if(!quiet&&!expected.includes(String(error?.code||'')))notify(`تعذر تحديث Meta: ${error?.message||'خطأ غير معروف'}`);
         return {synced:false,error};
       }finally{metaInflight=null;}
@@ -176,12 +204,12 @@
       }
     },true);
 
-    document.getElementById('storeBtn')?.addEventListener('change',()=>{lastFresh.clear();setTimeout(()=>refreshDashboardFromMeta({force:true,quiet:true}),250);});
+    document.getElementById('storeBtn')?.addEventListener('change',()=>{lastFresh.clear();readinessAt=0;setTimeout(()=>refreshDashboardFromMeta({force:true,quiet:true}),250);});
     window.addEventListener('kun:system-undo',scheduleMount);
     window.addEventListener('kun:section-reloaded',scheduleMount);
-    document.documentElement.dataset.undoDashboardLive='v106.1-ready';
+    document.documentElement.dataset.undoDashboardLive='v106.2-ready';
   }
 
-  window.KunUndoDashboardLiveV106={version:'106.1',mountUndo,freshMeta,refreshDashboardFromMeta,lastFresh};
+  window.KunUndoDashboardLiveV106={version:'106.2',mountUndo,freshMeta,refreshDashboardFromMeta,metaSyncReady,lastFresh};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();
 })();
