@@ -16,7 +16,7 @@ const [config, deployWorkflow, rollbackWorkflow, productionSync, productionIndex
 
 const requiredConfig = [
   ['Worker name', /^name\s*=\s*"kunonline"\s*$/m],
-  ['Production sync-safe entry point', /^main\s*=\s*"src\/index-production-sync\.js"\s*$/m],
+  ['Production sync-safe J&T history entry point', /^main\s*=\s*"src\/index-production-jt-history\.js"\s*$/m],
   ['Production environment marker', /^APP_ENV\s*=\s*"production"\s*$/m],
   ['D1 binding', /^binding\s*=\s*"DB"\s*$/m],
   ['Production D1 name', /^database_name\s*=\s*"kunonline"\s*$/m],
