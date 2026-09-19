@@ -4,7 +4,7 @@ import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {accountingCatalog} from '../src/accounting.js';
 
-const [service,monthly,worker,scheduler,entry,ui,index,migration]=await Promise.all([
+const [service,monthly,worker,scheduler,entry,ui,index,migration,financeSync,loader]=await Promise.all([
   readFile(new URL('../src/accounting.js',import.meta.url),'utf8'),
   readFile(new URL('../src/accounting-monthly.js',import.meta.url),'utf8'),
   readFile(new URL('../src/index-commerce-v31.js',import.meta.url),'utf8'),
@@ -12,11 +12,16 @@ const [service,monthly,worker,scheduler,entry,ui,index,migration]=await Promise.
   readFile(new URL('../src/index-commerce-v38.js',import.meta.url),'utf8'),
   readFile(new URL('../public/v2/modules-v36-accounting.js',import.meta.url),'utf8'),
   readFile(new URL('../public/v2/index.html',import.meta.url),'utf8'),
-  readFile(new URL('../migrations/0015_accounting_management_fee.sql',import.meta.url),'utf8')
+  readFile(new URL('../migrations/0015_accounting_management_fee.sql',import.meta.url),'utf8'),
+  readFile(new URL('../public/v2/modules-v101-finance-accounting-sync.js',import.meta.url),'utf8'),
+  readFile(new URL('../public/v2/modules-v17.js',import.meta.url),'utf8')
 ]);
 new Function(ui);
+new Function(financeSync);
 const monthlySyntax=spawnSync(process.execPath,['--check',fileURLToPath(new URL('../src/accounting-monthly.js',import.meta.url))],{encoding:'utf8'});
 assert.equal(monthlySyntax.status,0,`Monthly Accounting syntax invalid: ${monthlySyntax.stderr||monthlySyntax.stdout}`);
+const financeSyncSyntax=spawnSync(process.execPath,['--check',fileURLToPath(new URL('../public/v2/modules-v101-finance-accounting-sync.js',import.meta.url))],{encoding:'utf8'});
+assert.equal(financeSyncSyntax.status,0,`Finance accounting sync syntax invalid: ${financeSyncSyntax.stderr||financeSyncSyntax.stdout}`);
 const liveAccountingPath=fileURLToPath(new URL('./live-preview-accounting-test.mjs',import.meta.url));
 const syntax=spawnSync(process.execPath,['--check',liveAccountingPath],{encoding:'utf8'});
 assert.equal(syntax.status,0,`Live Accounting QA syntax invalid: ${syntax.stderr||syntax.stdout}`);
@@ -36,5 +41,8 @@ assert.ok(ui.includes('/api/accounting/monthly?month='),'Accounting UI must load
 assert.ok(ui.includes("api('/api/accounting/entries',{method:'POST'"),'Accounting UI must create manual entries');
 assert.ok(ui.includes("method:'DELETE'"),'Accounting UI must support deleting manual entries');
 assert.ok(index.includes('modules-v36-accounting.js?v=100.0'),'Accounting v100 module is not cache-busted in v2');
+for(const marker of ['/api/accounting/monthly','/api/accounting/overview','صافي الربح المحاسبي / الخسارة','إيرادات أخرى مسجلة يدويًا','kun:accounting-changed','operatingNet+otherIncome'])assert.ok(financeSync.includes(marker),`Finance accounting sync missing ${marker}`);
+assert.ok(loader.includes('/v2/modules-v101-finance-accounting-sync.js?v=101.0'),'Finance accounting sync asset is not runtime-loaded');
+assert.ok(loader.includes('data-kun-finance-accounting-sync="v101"'),'Finance accounting sync loader guard is missing');
 assert.ok(!service.includes('UPDATE order_management_fees SET rate_pct'),'Existing order fee rate must not be repriced when store rate changes');
-console.log('Accounting + management fee contract passed: unified monthly P&L, store-aware manual movements, cash/revenue separation, management-fee reconciliation, immutable historical rates and v100 accounting UI.');
+console.log('Accounting + management fee contract passed: unified monthly P&L, store-aware manual movements, cash/revenue separation, management-fee reconciliation, immutable historical rates, v100 accounting UI and runtime Finance v101 synchronization.');
