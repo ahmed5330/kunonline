@@ -25,6 +25,13 @@ async function currentUser(request,env,ctx,delegate){
   if(!response.ok||!data?.role)throw Object.assign(new Error(data?.error||'محتاج تسجّل دخول'),{status:response.ok?401:(response.status||401),code:'AUTH_REQUIRED'});
   return data;
 }
+async function finalDashboard(request,env,ctx,delegate,{clientId,storeId,from,to}){
+  const url=new URL(request.url);url.pathname='/api/dashboard';url.search='';url.searchParams.set('clientId',clientId);if(storeId)url.searchParams.set('storeId',storeId);url.searchParams.set('from',from);url.searchParams.set('to',to);
+  const response=await delegate.fetch(new Request(url,{method:'GET',headers:request.headers}),env,ctx),data=await response.json().catch(()=>({}));
+  if(response.ok&&data?.ok)return data;
+  const raw=await dashboardData(env,{clientId,storeId:storeId||null,from,to});
+  return decorateDashboardWithManagementFees(env,raw,{clientId,storeId:storeId||null});
+}
 async function categoryBreakdown(env,{clientId,storeId,from,to}){
   const binds=[clientId];let where='client_id=?';
   if(storeId){where+=' AND store_id=?';binds.push(storeId);}
@@ -46,13 +53,12 @@ export async function handleAccountingMonthly({request,env,ctx,delegate}){
     const requestedStore=text(url.searchParams.get('storeId'))||null;
     const scope=await resolveStoreScope(env,me,clientId,requestedStore,{write:false});
     const period=monthRange(url.searchParams.get('month'));
-    const [dashboardRaw,overview,categories,store]=await Promise.all([
-      dashboardData(env,{clientId,storeId:scope.storeId||null,from:period.from,to:period.to}),
+    const [dashboard,overview,categories,store]=await Promise.all([
+      finalDashboard(request,env,ctx,delegate,{clientId,storeId:scope.storeId||null,from:period.from,to:period.to}),
       accountingOverview(env,{clientId,storeId:scope.storeId||null,from:period.from,to:period.to}),
       categoryBreakdown(env,{clientId,storeId:scope.storeId||null,from:period.from,to:period.to}),
       storeName(env,clientId,scope.storeId||null)
     ]);
-    const dashboard=await decorateDashboardWithManagementFees(env,dashboardRaw,{clientId,storeId:scope.storeId||null});
     const finance=dashboard.finance||{},expenseBreakdown=finance.expenseBreakdown||{},salesRevenue=r2(finance.revenue??dashboard.overview?.expectedRevenue),operatingNetProfit=r2(finance.netProfit),otherIncome=r2(overview.manualIncome),accountingNetProfit=r2(operatingNetProfit+otherIncome);
     const manualExpenses=r2(overview.manualExpenses),managementFees=r2(overview.managementFees);
     return json({
