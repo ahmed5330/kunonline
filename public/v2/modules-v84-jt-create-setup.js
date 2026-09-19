@@ -1,0 +1,45 @@
+/* Kun Online v84.5 — complete J&T Egypt Create Order setup + global v85 safety bootstrap, with deterministic idempotent DOM enhancement. */
+(function(){
+  function field(label,secret,{required=true,type='text',placeholder='اتركه فارغًا للاحتفاظ بالقيمة الحالية'}={}){const req=required?' <span class="meta">مطلوب لإنشاء الشحنة</span>':' <span class="meta">اختياري</span>';return `<label>${label}${req}<input class="input intSecret" type="${type}" autocomplete="new-password" data-secret="${secret}" aria-label="${label}" placeholder="${placeholder}"></label>`;}
+  function markBusinessRequired(input,label){
+    if(!input)return;
+    const requiredText='مطلوب لإنشاء البوليصة';
+    const placeholder=label==='Customer Code'?'Customer Code / Merchant Code الذي أصدرته J&T':'Customer Password / API Password من J&T — ليست Private Key';
+    if(input.dataset.jtCreateRequired!=='1')input.dataset.jtCreateRequired='1';
+    const meta=input.closest('label')?.querySelector('.meta');
+    if(meta&&meta.textContent!==requiredText)meta.textContent=requiredText;
+    if(input.placeholder!==placeholder)input.placeholder=placeholder;
+  }
+  function isJtSetup(panel,grid){
+    if(!panel||!grid)return false;
+    if(panel.textContent.includes('J&T Express Egypt'))return true;
+    const secrets=['api_account','private_key','source_code','customer_code','customer_password'];
+    return secrets.every(secret=>grid.querySelector(`[data-secret="${secret}"]`));
+  }
+  function enhance(panel){
+    if(!panel)return;
+    const grid=panel.querySelector('.form-grid');
+    if(!isJtSetup(panel,grid))return;
+    markBusinessRequired(grid.querySelector('[data-secret="customer_code"]'),'Customer Code');
+    markBusinessRequired(grid.querySelector('[data-secret="customer_password"]'),'Customer Password');
+    if(grid.querySelector('[data-jt84-sender]'))return;
+    const box=document.createElement('div');box.dataset.jt84Sender='1';box.style.display='contents';box.innerHTML=`<div class="insight info v5-wide"><b>بيانات J&T المطلوبة لإنشاء البوليصة</b><div>Developer Info: API Account + Private Key + Source Code. Create Order يحتاج فوقهم Business Info: Customer Code / Merchant Code + Customer Password / API Password، بالإضافة إلى بيانات الراسل التالية. لا تستخدم Private Key بدل Customer Password.</div></div>${field('اسم الراسل','sender_name')}${field('رقم موبايل الراسل','sender_mobile')}${field('هاتف إضافي للراسل','sender_phone',{required:false})}${field('شركة / اسم تجاري','sender_company',{required:false})}${field('محافظة الراسل','sender_prov')}${field('مدينة / حي الراسل','sender_city')}${field('منطقة الراسل','sender_area')}${field('عنوان / شارع الراسل','sender_street')}<div class="insight info v5-wide"><b>رقم البوليصة</b><div>J&T تسميه في الـAPI <b>Bill Code</b>. داخل Kun Online بنعرضه أيضًا باسم «رقم البوليصة / AWB» لأنه هو رقم التتبع الذي يرجع بعد نجاح Create Order.</div></div>`;grid.appendChild(box);
+  }
+  function scan(){enhance(document.getElementById('intSetupPanel'));}
+  function loadDashboardInputs(){if(window.KunDashboardInputDetailsV86||document.querySelector('script[data-kun-v86-dashboard-inputs]'))return;const script=document.createElement('script');script.src='/v2/modules-v86-dashboard-input-details.js?v=86.0';script.async=false;script.dataset.kunV86DashboardInputs='1';document.body.appendChild(script);}
+  function loadSystemSafety(){if(!window.KunSafety85&&!document.querySelector('script[data-kun-v85-bootstrap]')){const script=document.createElement('script');script.src='/v2/modules-v85-system-safety.js?v=85.0';script.async=false;script.dataset.kunV85Bootstrap='1';document.body.appendChild(script);}loadDashboardInputs();}
+  function boot(){
+    let queued=false;
+    const scheduleScan=()=>{if(queued)return;queued=true;queueMicrotask(()=>{queued=false;scan();});};
+    new MutationObserver(scheduleScan).observe(document.body,{childList:true,subtree:true});
+    document.addEventListener('click',event=>{
+      if(!event.target.closest?.('.intSetup,.intValidate'))return;
+      scheduleScan();
+      setTimeout(scan,0);
+      requestAnimationFrame(scan);
+    });
+    scan();loadSystemSafety();
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
+  window.KunJtCreateSetupV84={scan,loadSystemSafety,loadDashboardInputs,version:'84.5'};
+})();

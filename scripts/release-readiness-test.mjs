@@ -1,0 +1,44 @@
+import {readFile,readdir,access} from 'node:fs/promises';
+const wrangler=await readFile(new URL('../wrangler.preview.toml',import.meta.url),'utf8');
+const index=await readFile(new URL('../public/v2/index.html',import.meta.url),'utf8');
+const clientContext=await readFile(new URL('../public/v2/client-context-v24-fast.js',import.meta.url),'utf8');
+const security=await readFile(new URL('../src/index-commerce-v21.js',import.meta.url),'utf8');
+const customerApi=await readFile(new URL('../src/index-commerce-v22.js',import.meta.url),'utf8');
+const recovery=await readFile(new URL('../src/index-commerce-v23.js',import.meta.url),'utf8');
+const recoveryPage=await readFile(new URL('../public/preview-admin-recovery.html',import.meta.url),'utf8');
+const actions=await readFile(new URL('../public/v2/modules-v20.js',import.meta.url),'utf8');
+const migrations=(await readdir(new URL('../migrations/',import.meta.url))).filter(x=>x.endsWith('.sql')).sort();
+const must=(ok,msg)=>{if(!ok)throw new Error(msg)};
+const entry=wrangler.match(/^\s*main\s*=\s*"([^"]+)"/m)?.[1];
+must(Boolean(entry),'Preview entrypoint is missing from wrangler.preview.toml');
+must(/^src\/index-commerce-v\d+\.js$/.test(entry),`Unexpected Preview entrypoint: ${entry}`);
+const currentUrl=new URL(`../${entry}`,import.meta.url);await access(currentUrl);
+async function previewVersionOwner(url,seen=new Set()){
+  if(seen.has(url.href))return null;seen.add(url.href);
+  const source=await readFile(url,'utf8');
+  if(/\/api\/preview\/version/.test(source))return url;
+  const imports=[...source.matchAll(/import\s+([A-Za-z_$][\w$]*)\s*(?:,\s*\{[^}]*\})?\s+from\s+['"](\.\/index-commerce-v\d+(?:-[A-Za-z0-9-]+)?\.js)['"]/g)];
+  for(const [,symbol,relative] of imports){
+    if(!source.includes(`${symbol}.fetch`))continue;
+    const owner=await previewVersionOwner(new URL(relative,url),seen);if(owner)return owner;
+  }
+  return null;
+}
+const previewVersionSource=await previewVersionOwner(currentUrl);
+must(Boolean(previewVersionSource),'Current Preview entry delegation chain must expose /api/preview/version for deployed-build verification');
+must(/name\s*=\s*"kunonline-preview"/.test(wrangler),'Preview Worker name mismatch');
+must(/database_name\s*=\s*"kunonline-preview"/.test(wrangler),'Preview D1 mismatch');
+for(const expected of ['0000_preview_baseline.sql','0001_preview_schema.sql','0002_profit_cod.sql','0003_approvals_ai_gateway.sql','0004_execution_ops.sql','0005_saas_control_plane.sql','0006_channels_campaigns.sql','0007_pos.sql','0008_integration_secrets.sql','0009_pos_stock_guards.sql','0010_procurement_finance.sql','0011_multistore_ai.sql','0012_pos_inventory_consistency.sql','0013_store_data_scope.sql','0014_platform_control_wallet_marketing.sql'])must(migrations.includes(expected),`Missing migration ${expected}`);
+for(const asset of ['client-context-v24-fast.js','modules-v10.js','modules-v11.js','modules-v12.js','modules-v13.js','modules-v14.js','modules-v15.js','modules-v16.js','modules-v17.js','modules-v18.js','modules-v19.js','modules-v20.js','modules-v21.js','modules-v22.js','modules-v23-core.js','modules-v23-admin.js','modules-v23-create.js','modules-v23-data.js','modules-v24-team.js','kun-v8.css','kun-v9.css'])must(index.includes(asset),`Release UI asset missing: ${asset}`);
+must(clientContext.includes("window.KunClientContextV24={version:'24.0'")&&clientContext.includes('async function resolve(){if(cached)return cached;'),'Release client context must be v24 with page-lifetime resolved-client caching');
+for(const view of ['dashboard','onboarding','stores','store-access','pos','orders','customers','inbox','inventory','procurement','supplier-finance','shipping','cod','campaigns','finance','profit','analytics','automation','ai','integrations','access','approvals','ops','audit','wallet','admin-clients','ad-studio','control','readiness','settings'])must(index.includes(`data-view="${view}"`),`Release navigation view missing: ${view}`);
+for(const header of ['Content-Security-Policy','X-Content-Type-Options','X-Frame-Options','Referrer-Policy','Permissions-Policy','Cross-Origin-Opener-Policy'])must(security.includes(header),`Security header missing: ${header}`);
+must(security.includes("Cache-Control','no-store"),'API no-store cache policy missing');
+must(security.includes("legacy-state:${env.INTEGRATION_ENCRYPTION_KEY}"),'Legacy integration secrets must derive encryption from the integration key when TOKEN_ENC_KEY is absent');
+must(customerApi.includes("u.pathname!=='/api/customers'")&&customerApi.includes("method.toUpperCase()!=='POST'"),'Customer create API missing');
+for(const marker of ["'/api/orders'","'/api/products'","'/api/suppliers'","/stock/add","data-v20-theme"])must(actions.includes(marker),`Core action wiring missing: ${marker}`);
+must(recovery.includes("env.APP_ENV!=='preview'"),'Admin recovery must be Preview-only');
+must(recovery.includes("__preview_admin_recovery_used__"),'Admin recovery must be one-time');
+must(recovery.includes("UPDATE users SET status='disabled' WHERE role='admin'"),'Admin recovery must disable stale Preview admins');
+must(recoveryPage.includes('/api/preview-admin-recovery'),'Preview recovery page is not wired');
+console.log(`Release readiness checks passed with ${migrations.length} migrations, current entry ${entry}, preview-version owner ${previewVersionSource.pathname.split('/').pop()}, Preview recovery, real core/team actions and current v2 assets.`);

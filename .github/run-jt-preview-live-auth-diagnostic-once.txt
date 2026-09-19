@@ -1,0 +1,1 @@
+Run the final J&T Preview validation now and persist the verified connection status. The validator must use the self-checking non-mutating Print Order probe with a fake AWB and an intentionally invalid digest control, create or modify no shipment, expose no secret values, and leave Production untouched.
