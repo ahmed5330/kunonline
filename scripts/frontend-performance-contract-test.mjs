@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 
 const read=path=>readFile(new URL(`../${path}`,import.meta.url),'utf8');
-const [index,perf,post,ai,rich,ads,recovery,permissions,search,v35,sectionReload,confirmInventory]=await Promise.all([
+const [index,perf,post,ai,rich,ads,recovery,permissions,search,v35,sectionReload,confirmInventory,ecommerceCalculator]=await Promise.all([
   read('public/v2/index.html'),
   read('public/v2/performance-core-v52.js'),
   read('public/v2/modules-v47-post-shipping.js'),
@@ -14,7 +14,8 @@ const [index,perf,post,ai,rich,ads,recovery,permissions,search,v35,sectionReload
   read('public/v2/modules-v55-customer-search-fifo.js'),
   read('src/index-commerce-v35.js'),
   read('public/v2/modules-v57-section-reload.js'),
-  read('public/v2/modules-v58-confirm-inventory.js')
+  read('public/v2/modules-v58-confirm-inventory.js'),
+  read('public/v2/modules-v94-ecommerce-calculator.js')
 ]);
 
 assert.ok(index.includes('/v2/performance-core-v52.js'), 'shared performance core must be loaded');
@@ -53,6 +54,13 @@ assert.ok(confirmInventory.includes('validateAvailability')&&confirmInventory.in
 assert.ok(confirmInventory.includes('KunCustomerServiceV31?.moveState?.')&&!confirmInventory.includes('KunCustomerServiceV31?.render?.'),'confirmation must update Customer Service in place instead of rebuilding the board');
 assert.ok(confirmInventory.includes("observe(root,{childList:true,subtree:false})"),'confirmation observer must watch root children only');
 assert.doesNotThrow(()=>new Function(confirmInventory),'inventory confirmation browser module must parse');
+
+assert.doesNotThrow(()=>new Function(ecommerceCalculator),'e-commerce calculator browser module must parse');
+assert.equal(ecommerceCalculator.includes("['returnRate'"),false,'delivery and return must not be duplicate user inputs');
+assert.ok(ecommerceCalculator.includes('returnRate=1-delivery'),'return rate must be derived from delivery rate');
+assert.ok(ecommerceCalculator.includes("fields(auto?'adsAuto':'adsManual')"),'calculator must show only the active ad-cost input method');
+assert.ok(ecommerceCalculator.includes("delete model.returnRate"),'legacy duplicate return-rate input must be discarded during migration');
+assert.ok(permissions.includes('/v2/modules-v94-ecommerce-calculator.js?v=94.1'),'calculator bundle must be cache-busted after deduplication');
 
 const dashboardStart=v35.indexOf('async function dashboard');
 const reconcileStart=v35.indexOf('async function reconcileRoute');
