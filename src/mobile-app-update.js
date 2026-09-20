@@ -2,15 +2,16 @@ const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:
 
 const RELEASE_APK='https://github.com/ahmed5330/kunonline/releases/download/android-latest/Kun-Online-Mobile.apk';
 const UPDATE={
-  versionCode:4,
-  versionName:'0.1.3',
-  minSupportedVersionCode:3,
+  versionCode:107,
+  versionName:'2.4.0',
+  minSupportedVersionCode:106,
   required:false,
   apkUrl:'https://app.kun-online.com/api/mobile/app-update/apk',
   notes:[
-    'مزامنة بيانات العميل مع كل المتاجر المسموح بها.',
+    'مزامنة بيانات العميل مع السيستم تلقائيًا.',
     'إظهار بيانات العميل في المكالمات الواردة والصادرة.',
-    'إضافة تنزيل تحديثات التطبيق من داخل كن أونلاين.'
+    'تنزيل تحديثات التطبيق مباشرة من داخل نظام كن أونلاين.',
+    'تحسين واجهة التطبيق وتجربة خدمة العملاء.'
   ]
 };
 
@@ -18,8 +19,6 @@ export function handleMobileAppUpdate(request){
   const url=new URL(request.url);
   if(request.method!=='GET')return null;
   if(url.pathname==='/api/mobile/app-update')return json({ok:true,...UPDATE});
-  if(url.pathname==='/api/mobile/app-update/apk'){
-    return Response.redirect(RELEASE_APK,302);
-  }
+  if(url.pathname==='/api/mobile/app-update/apk')return Response.redirect(RELEASE_APK,302);
   return null;
 }
