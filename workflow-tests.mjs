@@ -116,8 +116,8 @@ test('guarded v38 entrypoint owns Automation CRUD without changing Preview confi
 
 test('Automation v104 replaces the placeholder with the real workflow API and management actions', () => {
   assert.match(workflowUiSource, /apiUrl\('\/api\/workflows'\)/);
-  assert.match(workflowUiSource, /method:'POST'/);
-  assert.match(workflowUiSource, /method:'PATCH'/);
+  assert.match(workflowUiSource, /method=editingId\?'PATCH':'POST'/);
+  assert.match(workflowUiSource, /await api\(path,\{method,body:JSON\.stringify\(body\)\}\)/);
   assert.match(workflowUiSource, /method:'DELETE'/);
   assert.match(workflowUiSource, /data-auto-action="edit"/);
   assert.match(workflowUiSource, /data-auto-action="toggle"/);
