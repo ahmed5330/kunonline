@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/production-login-diagnostic.yml'
+      - 'src/index-production-login-diagnostic.js'
+      - 'wrangler.production-login-diagnostic.toml'
 
 permissions:
   contents: read
@@ -16,13 +18,14 @@ concurrency:
 jobs:
   diagnose:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     environment:
       name: production
       url: https://app.kun-online.com
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      BASE_URL: https://app.kun-online.com
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -30,22 +33,66 @@ jobs:
           node-version: 22
           package-manager-cache: false
       - run: npm install --ignore-scripts
-      - name: Inspect Production login schema read-only
+      - name: Validate diagnostic wrapper is read-only
         run: |
           set -euo pipefail
-          npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('users','login_attempts') ORDER BY name;"
-          npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "SELECT name,type,notnull FROM pragma_table_info('users') WHERE name IN ('id','email','password','role','client_id','status','last_login') ORDER BY name;"
-          npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "SELECT name,type,notnull FROM pragma_table_info('login_attempts') WHERE name IN ('email','fails','locked_until') ORDER BY name;"
-          npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "SELECT (SELECT COUNT(*) FROM users) AS users_count, (SELECT COUNT(*) FROM login_attempts) AS login_attempts_count;"
-      - name: Verify unauthenticated login API path without DB mutation
+          node --check src/index-production-login-diagnostic.js
+          ! grep -E 'UPDATE |INSERT |DELETE |DROP |ALTER |CREATE TABLE|wrangler d1' src/index-production-login-diagnostic.js
+      - name: Capture current Production Worker version
+        id: previous
         run: |
           set -euo pipefail
-          code="$(curl -sS -o /tmp/login-empty.json -w '%{http_code}' -X POST -H 'Content-Type: application/json' --data '{}' https://app.kun-online.com/api/login)"
-          cat /tmp/login-empty.json
+          status="$(npx wrangler deployments status --config wrangler.production.toml --json)"
+          version="$(printf '%s' "$status" | node -e '
+            let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{
+              const root=JSON.parse(raw),hits=[];
+              const walk=x=>{if(Array.isArray(x)){for(const v of x)walk(v);return;}if(!x||typeof x!=="object")return;
+                const id=x.version_id||x.versionId,pct=x.percentage??x.traffic_percentage??x.trafficPercentage;
+                if(id)hits.push({id:String(id),pct:pct==null?null:Number(pct)});for(const v of Object.values(x))walk(v);};
+              walk(root);const unique=[...new Map(hits.map(x=>[x.id,x])).values()];
+              const full=unique.find(x=>x.pct===100||x.pct===1)||(unique.length===1?unique[0]:null);
+              if(!full)process.exit(2);process.stdout.write(full.id);
+            });')"
+          test -n "$version"
+          echo "version_id=$version" >> "$GITHUB_OUTPUT"
+      - name: Install ephemeral diagnostic secret
+        run: |
+          set -euo pipefail
+          token="$(openssl rand -hex 32)"
+          echo "::add-mask::$token"
+          echo "LOGIN_DIAG_TOKEN=$token" >> "$GITHUB_ENV"
+          printf '%s' "$token" | npx wrangler secret put LOGIN_DIAGNOSTIC_TOKEN --name kunonline
+      - name: Deploy delegating read-only login diagnostic
+        run: npx wrangler deploy --config wrangler.production-login-diagnostic.toml --message "Temporary read-only login schema diagnostic"
+      - name: Read sanitized login schema evidence
+        run: |
+          set -euo pipefail
+          ready=0
+          for attempt in $(seq 1 20); do
+            code="$(curl --silent --show-error -o /tmp/login-diag.json -w '%{http_code}' -H "X-Kun-Diagnostic-Token: $LOGIN_DIAG_TOKEN" "$BASE_URL/__internal/login-schema-diagnostic" || true)"
+            if [ "$code" = "200" ]; then ready=1; break; fi
+            sleep 2
+          done
+          test "$ready" -eq 1
+          cat /tmp/login-diag.json
           echo
-          test "$code" = "400"
-          grep -Fq 'اكتب الإيميل وكلمة المرور' /tmp/login-empty.json
-          state_code="$(curl -sS -o /tmp/state-anon.json -w '%{http_code}' https://app.kun-online.com/api/state)"
-          cat /tmp/state-anon.json
-          echo
-          test "$state_code" = "401"
+          node -e "const x=JSON.parse(require('fs').readFileSync('/tmp/login-diag.json','utf8')); if(!x.ok||!x.readOnly) process.exit(1);"
+      - name: Restore official Production and remove diagnostic secret
+        if: always()
+        run: |
+          set -u
+          restored=0
+          if npx wrangler deploy --config wrangler.production.toml --message "Restore official Production after login diagnostic"; then
+            restored=1
+          elif [ -n "${{ steps.previous.outputs.version_id }}" ] && npx wrangler versions deploy "${{ steps.previous.outputs.version_id }}@100%" --yes --config wrangler.production.toml --message "Fallback restore after login diagnostic"; then
+            restored=1
+          fi
+          current="$(npx wrangler secret list --name kunonline 2>&1 || true)"
+          if printf '%s' "$current" | grep -Fq 'LOGIN_DIAGNOSTIC_TOKEN'; then printf 'y\n' | npx wrangler secret delete LOGIN_DIAGNOSTIC_TOKEN --name kunonline || true; fi
+          test "$restored" -eq 1
+      - name: Verify diagnostic route closed
+        if: always()
+        run: |
+          set -euo pipefail
+          code="$(curl --silent --show-error -o /tmp/closed.json -w '%{http_code}' "$BASE_URL/__internal/login-schema-diagnostic" || true)"
+          test "$code" = "404"
