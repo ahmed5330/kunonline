@@ -24,17 +24,17 @@ jobs:
       - name: Read Production migration ledger and operational column presence only
         run: |
           set -euo pipefail
-          result="$(npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "SELECT COUNT(*) AS migration_count FROM d1_migrations; SELECT name AS last_migration FROM d1_migrations ORDER BY id DESC LIMIT 1; SELECT name FROM pragma_table_info('orders') WHERE name IN ('contact_claim_user_id','contact_claim_name','contact_claimed_at','jnt_province','jnt_city','jnt_area','jnt_street','jnt_province_code','jnt_city_code','jnt_district_code','jnt_country_code') ORDER BY name;" --json)"
-          printf '%s' "$result" | node - <<'NODE'
-          let raw='';process.stdin.on('data',d=>raw+=d).on('end',()=>{
-            const p=JSON.parse(raw),rows=[];
-            const walk=x=>{if(Array.isArray(x)){x.forEach(walk);return;}if(x&&typeof x==='object'){if(Array.isArray(x.results))rows.push(...x.results);Object.values(x).forEach(walk);}};walk(p);
-            const migrationCount=Number(rows.find(x=>x.migration_count!=null)?.migration_count||0);
-            const lastMigration=String(rows.find(x=>x.last_migration!=null)?.last_migration||'');
-            const expected=['contact_claim_user_id','contact_claim_name','contact_claimed_at','jnt_province','jnt_city','jnt_area','jnt_street','jnt_province_code','jnt_city_code','jnt_district_code','jnt_country_code'].sort();
-            const present=[...new Set(rows.filter(x=>x.name&&expected.includes(String(x.name))).map(x=>String(x.name)))].sort();
-            const missing=expected.filter(x=>!present.includes(x));
-            console.log(JSON.stringify({migrationCount,lastMigration,operationalColumnsPresent:present.length,operationalColumnsExpected:expected.length,missingColumns:missing},null,2));
-            if(missing.length)process.exitCode=2;
-          });
+          npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "SELECT COUNT(*) AS migration_count FROM d1_migrations; SELECT name AS last_migration FROM d1_migrations ORDER BY id DESC LIMIT 1; SELECT name FROM pragma_table_info('orders') WHERE name IN ('contact_claim_user_id','contact_claim_name','contact_claimed_at','jnt_province','jnt_city','jnt_area','jnt_street','jnt_province_code','jnt_city_code','jnt_district_code','jnt_country_code') ORDER BY name;" --json > /tmp/prod-operational-schema.json
+          node - <<'NODE'
+          const fs=require('fs');
+          const p=JSON.parse(fs.readFileSync('/tmp/prod-operational-schema.json','utf8')),rows=[];
+          const walk=x=>{if(Array.isArray(x)){x.forEach(walk);return;}if(x&&typeof x==='object'){if(Array.isArray(x.results))rows.push(...x.results);Object.values(x).forEach(walk);}};walk(p);
+          const migrationCount=Number(rows.find(x=>x.migration_count!=null)?.migration_count||0);
+          const lastMigration=String(rows.find(x=>x.last_migration!=null)?.last_migration||'');
+          const expected=['contact_claim_user_id','contact_claim_name','contact_claimed_at','jnt_province','jnt_city','jnt_area','jnt_street','jnt_province_code','jnt_city_code','jnt_district_code','jnt_country_code'].sort();
+          const present=[...new Set(rows.filter(x=>x.name&&expected.includes(String(x.name))).map(x=>String(x.name)))].sort();
+          const missing=expected.filter(x=>!present.includes(x));
+          console.log(JSON.stringify({migrationCount,lastMigration,operationalColumnsPresent:present.length,operationalColumnsExpected:expected.length,missingColumns:missing},null,2));
+          if(missing.length)process.exitCode=2;
           NODE
+          rm -f /tmp/prod-operational-schema.json
