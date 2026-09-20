@@ -13,8 +13,7 @@ const expectIncludes=(body,needle,label)=>{
   if(!body.includes(needle))fail(`${label}: missing ${needle}`);
 };
 const expectGuardedRoute=(status,label)=>{
-  const is2xx=status>=200&&status<300;
-  if(is2xx||status===404||status===405||status>=500){
+  if(status<300||status===404||status===405||status>=500){
     fail(`${label}: route must exist and reject an unauthenticated/invalid request safely; got HTTP ${status}`);
   }
 };
@@ -32,10 +31,19 @@ console.log(`Operational Preview smoke against ${base}`);
 {
   const {response,body}=await text(`/v2/?operationalSmoke=${Date.now()}`);
   expectStatus(response.status,[200],'v2 shell');
-  for(const asset of ['modules-v105-customer-service-claim.js','modules-v106-manual-jnt-order.js','modules-v75-customer-service-interactions-v753.js']){
+  for(const asset of ['modules-v97-view-persistence.js','modules-v75-customer-service-interactions-v753.js']){
     expectIncludes(body,asset,'v2 shell');
   }
-  console.log('✓ v2 shell loads Customer Service claim + interaction + manual J&T modules');
+  console.log('✓ v2 static shell loads the operational bootstrap + Customer Service interaction layer');
+}
+
+{
+  const {response,body}=await text(`/v2/modules-v97-view-persistence.js?operationalSmoke=${Date.now()}`);
+  expectStatus(response.status,[200],'v97 operational bootstrap');
+  for(const asset of ['modules-v105-customer-service-claim.js','modules-v106-manual-jnt-order.js','modules-v107-mobile-app-update.js','kunOperationalAssets']){
+    expectIncludes(body,asset,'v97 operational bootstrap');
+  }
+  console.log('✓ Asset-first bootstrap wires Customer Service claim + manual J&T + Android update modules');
 }
 
 {
