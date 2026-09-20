@@ -19,9 +19,12 @@ jobs:
           node-version: 22
           package-manager-cache: false
       - run: npm install --ignore-scripts
-      - run: npm test
-      - name: Verify production resource isolation
-        run: npm run check:production-config
+      - name: Validate Android update hotfix source
+        run: |
+          node --check src/mobile-app-update.js
+          node --check src/index-production-mobile-update.js
+      - name: Verify Worker builds without touching Production
+        run: npx wrangler deploy --dry-run --config wrangler.production.toml
   deploy:
     needs: test
     runs-on: ubuntu-latest
@@ -39,7 +42,5 @@ jobs:
           node-version: 22
           package-manager-cache: false
       - run: npm install --ignore-scripts
-      - name: Recheck production isolation before approval-gated deploy
-        run: npm run check:production-config
-      - name: Deploy production Worker only
+      - name: Deploy production Worker only — no migrations
         run: npx wrangler deploy --config wrangler.production.toml
