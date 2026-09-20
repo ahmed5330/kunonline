@@ -1,6 +1,6 @@
 # Production resources. No database migration command is part of this release.
 name = "kunonline"
-main = "src/index-production-sync.js"
+main = "src/index-production-mobile-update.js"
 compatibility_date = "2026-08-23"
 
 [assets]
