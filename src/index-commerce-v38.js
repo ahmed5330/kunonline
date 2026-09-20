@@ -4,14 +4,15 @@ import core from './index-commerce-v38-core.js';
 import {handleJtHistoryReconcile} from './jt-history-reconcile.js';
 import {handleAccountingMonthly} from './accounting-monthly.js';
 import {handleAutomationWorkflowsV104} from './automation-workflows-v104.js';
-import {handleOperationalWorkflowV105} from './operational-workflow-v105.js';
+import {handleOperationalWorkflowV110} from './operational-workflow-v110.js';
 import {handleMobileAppUpdate} from './mobile-app-update.js';
 
 const V2_UI_SCRIPTS=[
   '<script src="/v2/modules-v105-customer-service-claim.js?v=105.2" data-kun-customer-service-claim="1"></script>',
   '<script src="/v2/modules-v105-section-nav-actions.js?v=105.1" data-kun-section-nav-actions="1"></script>',
   '<script src="/v2/modules-v106-manual-jnt-order.js?v=106.0" data-kun-manual-jnt-order="1"></script>',
-  '<script src="/v2/modules-v107-mobile-app-update.js?v=107.0" data-kun-mobile-app-update="1"></script>'
+  '<script src="/v2/modules-v107-mobile-app-update.js?v=107.0" data-kun-mobile-app-update="1"></script>',
+  '<script src="/v2/modules-v109-operational-date-contact.js?v=109.0" data-kun-operational-date-contact="1"></script>'
 ].join('');
 
 async function injectV2Ui(request,response){
@@ -67,7 +68,7 @@ export default {
   async fetch(request,env,ctx){
     const mobileUpdate=handleMobileAppUpdate(request);
     if(mobileUpdate)return mobileUpdate;
-    const operational=await handleOperationalWorkflowV105({request,env,ctx,delegate:app});
+    const operational=await handleOperationalWorkflowV110({request,env,ctx,delegate:app});
     if(operational)return operational;
     const automation=await handleAutomationWorkflowsV104({request,env,ctx,delegate:app});
     if(automation)return automation;
