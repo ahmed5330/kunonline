@@ -1,4 +1,4 @@
-/* Kun Online v97.4 — keep the exact active workspace on real browser reload. */
+/* Kun Online v97.5 — keep the exact active workspace on real browser reload + bootstrap asset-first operational modules. */
 (function(){
   'use strict';
   if(window.KunViewPersistenceV97)return;
@@ -95,7 +95,7 @@
   }
 
   window.KunViewPersistenceV97={
-    version:'97.4',
+    version:'97.5',
     key:VIEW_KEY,
     statusKey:STATUS_KEY,
     navigationType,
@@ -108,22 +108,23 @@
   };
 })();
 
-/* v105 loader — section Back/Previous controls stay globally available without coupling to any workspace renderer. */
-(function(){
-  if(document.getElementById('kunSectionNavActionsV105Loader'))return;
+function kunLoadV2Module(id,src){
+  if(document.getElementById(id))return;
   const script=document.createElement('script');
-  script.id='kunSectionNavActionsV105Loader';
-  script.src='/v2/modules-v105-section-nav-actions.js?v=105.0';
-  script.async=false;
+  script.id=id;script.src=src;script.async=false;
+  script.addEventListener('error',()=>console.error('Kun Online module load failed',src),{once:true});
   document.head.appendChild(script);
-})();
+}
+
+/* v105 loader — section Back/Previous controls stay globally available without coupling to any workspace renderer. */
+kunLoadV2Module('kunSectionNavActionsV105Loader','/v2/modules-v105-section-nav-actions.js?v=105.1');
 
 /* v106 loader — move the real safety undo bar into the section header and keep Dashboard Meta KPIs near-live. */
-(function(){
-  if(document.getElementById('kunUndoDashboardLiveV106Loader'))return;
-  const script=document.createElement('script');
-  script.id='kunUndoDashboardLiveV106Loader';
-  script.src='/v2/modules-v106-undo-dashboard-live.js?v=106.2';
-  script.async=false;
-  document.head.appendChild(script);
-})();
+kunLoadV2Module('kunUndoDashboardLiveV106Loader','/v2/modules-v106-undo-dashboard-live.js?v=106.2');
+
+/* Operational UI loaders — required because Cloudflare static assets are served before Worker code by default. */
+kunLoadV2Module('kunCustomerServiceClaimV105Loader','/v2/modules-v105-customer-service-claim.js?v=105.2');
+kunLoadV2Module('kunManualJntOrderV106Loader','/v2/modules-v106-manual-jnt-order.js?v=106.0');
+kunLoadV2Module('kunMobileAppUpdateV107Loader','/v2/modules-v107-mobile-app-update.js?v=107.0');
+
+document.documentElement.dataset.kunOperationalAssets='v97.5-ready';
