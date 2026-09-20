@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: kunonline-production-login-diagnostic
+  group: kunonline-production
   cancel-in-progress: false
 
 jobs:
@@ -71,6 +71,7 @@ jobs:
           for attempt in $(seq 1 20); do
             code="$(curl --silent --show-error -o /tmp/login-diag.json -w '%{http_code}' -H "X-Kun-Diagnostic-Token: $LOGIN_DIAG_TOKEN" "$BASE_URL/__internal/login-schema-diagnostic" || true)"
             if [ "$code" = "200" ]; then ready=1; break; fi
+            echo "Waiting for login diagnostic route: HTTP $code attempt=$attempt/20"
             sleep 2
           done
           test "$ready" -eq 1
