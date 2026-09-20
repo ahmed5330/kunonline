@@ -8,6 +8,7 @@ import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.telecom.Call
 import android.view.Gravity
 import android.view.ViewGroup
 import android.view.WindowManager
@@ -18,12 +19,14 @@ import java.text.NumberFormat
 import java.util.Locale
 
 class CallerIdActivity : Activity() {
+    private lateinit var kickerView: TextView
     private lateinit var nameView: TextView
     private lateinit var phoneView: TextView
     private lateinit var metaView: TextView
     private lateinit var addressView: TextView
     private lateinit var openButton: Button
     private var phone: String = ""
+    private var direction: Int = Call.Details.DIRECTION_INCOMING
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -33,10 +36,12 @@ class CallerIdActivity : Activity() {
         window.setGravity(Gravity.TOP)
 
         phone = intent.getStringExtra(EXTRA_PHONE).orEmpty()
+        direction = intent.getIntExtra(EXTRA_DIRECTION, Call.Details.DIRECTION_INCOMING)
         setContentView(buildCard())
         window.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
 
         phoneView.text = phone
+        updateDirectionLabel()
         lookup()
         Handler(Looper.getMainLooper()).postDelayed({ if (!isFinishing) finish() }, 25000)
     }
@@ -45,8 +50,19 @@ class CallerIdActivity : Activity() {
         super.onNewIntent(intent)
         setIntent(intent)
         phone = intent?.getStringExtra(EXTRA_PHONE).orEmpty()
+        direction = intent?.getIntExtra(EXTRA_DIRECTION, Call.Details.DIRECTION_INCOMING) ?: Call.Details.DIRECTION_INCOMING
         phoneView.text = phone
+        updateDirectionLabel()
         lookup()
+    }
+
+    private fun updateDirectionLabel() {
+        if (!::kickerView.isInitialized) return
+        kickerView.text = if (direction == Call.Details.DIRECTION_OUTGOING) {
+            "Kun Online · أنت تتصل بالعميل"
+        } else {
+            "Kun Online · عميل بيتصل بك"
+        }
     }
 
     private fun buildCard(): LinearLayout {
@@ -64,8 +80,7 @@ class CallerIdActivity : Activity() {
             }
             elevation = dp(12).toFloat()
         }
-        val kicker = TextView(this).apply {
-            text = "Kun Online · عميل بيتصل بك"
+        kickerView = TextView(this).apply {
             setTextColor(Color.rgb(75, 85, 99))
             textSize = 12f
         }
@@ -113,7 +128,7 @@ class CallerIdActivity : Activity() {
         }
         actions.addView(close)
         actions.addView(openButton)
-        card.addView(kicker)
+        card.addView(kickerView)
         card.addView(nameView)
         card.addView(phoneView)
         card.addView(metaView)
@@ -159,5 +174,6 @@ class CallerIdActivity : Activity() {
 
     companion object {
         const val EXTRA_PHONE = "callerPhone"
+        const val EXTRA_DIRECTION = "callerDirection"
     }
 }
