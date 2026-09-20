@@ -31,29 +31,29 @@ console.log(`Operational Preview smoke against ${base}`);
 {
   const {response,body}=await text(`/v2/?operationalSmoke=${Date.now()}`);
   expectStatus(response.status,[200],'v2 shell');
-  for(const asset of ['modules-v97-view-persistence.js','modules-v75-customer-service-interactions-v753.js','modules-v80-jnt-address-cascade.js']){
+  for(const asset of ['modules-v97-view-persistence-v976.js','modules-v75-customer-service-interactions-v753.js','modules-v80-jnt-address-cascade-v804.js']){
     expectIncludes(body,asset,'v2 shell');
   }
-  console.log('✓ v2 static shell loads persistence/bootstrap, Customer Service interactions and J&T address cascade');
+  console.log('✓ v2 static shell loads versioned persistence/bootstrap, Customer Service interactions and J&T address cascade');
 }
 
 {
-  const {response,body}=await text(`/v2/modules-v97-view-persistence.js?operationalSmoke=${Date.now()}`);
-  expectStatus(response.status,[200],'v97 safe bootstrap');
+  const {response,body}=await text(`/v2/modules-v97-view-persistence-v976.js?operationalSmoke=${Date.now()}`);
+  expectStatus(response.status,[200],'v97.6 safe bootstrap');
   for(const asset of ['modules-v107-mobile-app-update.js','kunOperationalAssets','modules-v105-section-nav-actions.js','modules-v106-undo-dashboard-live.js']){
-    expectIncludes(body,asset,'v97 safe bootstrap');
+    expectIncludes(body,asset,'v97.6 safe bootstrap');
   }
-  if(body.includes('kunCustomerServiceClaimV105Loader')||body.includes('kunManualJntOrderV106Loader'))fail('v97 must not eagerly load dependency-sensitive Customer Service/J&T modules');
-  console.log('✓ v97 keeps only dependency-safe asset-first loaders');
+  if(body.includes('kunCustomerServiceClaimV105Loader')||body.includes('kunManualJntOrderV106Loader'))fail('v97.6 must not eagerly load dependency-sensitive Customer Service/J&T modules');
+  console.log('✓ v97.6 keeps only dependency-safe asset-first loaders');
 }
 
 {
-  const {response,body}=await text(`/v2/modules-v80-jnt-address-cascade.js?operationalSmoke=${Date.now()}`);
-  expectStatus(response.status,[200],'v80 dependency-aware bootstrap');
+  const {response,body}=await text(`/v2/modules-v80-jnt-address-cascade-v804.js?operationalSmoke=${Date.now()}`);
+  expectStatus(response.status,[200],'v80.4 dependency-aware bootstrap');
   for(const asset of ['modules-v105-customer-service-claim.js?v=105.2','modules-v106-manual-jnt-order.js?v=106.0','KunJntAddressesV80','DOMContentLoaded']){
-    expectIncludes(body,asset,'v80 dependency-aware bootstrap');
+    expectIncludes(body,asset,'v80.4 dependency-aware bootstrap');
   }
-  console.log('✓ J&T v80 loads Customer Service claim + manual J&T only after legacy dependencies are ready');
+  console.log('✓ J&T v80.4 loads Customer Service claim + manual J&T only after legacy dependencies are ready');
 }
 
 {
