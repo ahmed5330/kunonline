@@ -1,7 +1,7 @@
-/* Kun Online v105.2 — live Customer Service contact ownership + shipping-section presentation. */
+/* Kun Online v105.2 — live Customer Service contact ownership + sales/customer navigation. */
 (function(){
   if(window.KunCustomerServiceClaimV105)return;
-  const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[c]));
   const POLL_MS=5000;
   let timer=null,running=false,lastFingerprint='',scanScheduled=false;
   const root=()=>document.getElementById('root');
@@ -17,9 +17,21 @@
     .cs-claim-badge.mine{background:#ecfdf5;color:#065f46;border-color:#a7f3d0}
     .cs-claimed-other [data-cs-action="contact"],.cs-claimed-other [data-cs-action="call"]{opacity:.5;pointer-events:none}
   `;document.head.appendChild(style);}
+  function arrangeSalesCustomerNavigation(){
+    const nav=document.querySelector('.nav');if(!nav)return;
+    const views=['orders','customer-service','printing','post-shipping','returns-exchanges','customers','inbox'];
+    const nodes=views.map(view=>nav.querySelector(`[data-view="${view}"]`)).filter(Boolean);
+    const shipping=nav.querySelector('[data-view="post-shipping"]'),customers=nav.querySelector('[data-view="customers"]');
+    setText(shipping,'الشحن');setText(customers,'إدارة العملاء');
+    if(!nodes.length)return;
+    let cursor=nodes[0];
+    for(const node of nodes.slice(1)){if(cursor.nextElementSibling!==node)cursor.after(node);cursor=node;}
+  }
   function renameShippingSection(){
-    const nav=document.querySelector('.nav .post-shipping-nav[data-view="post-shipping"]');setText(nav,'قسم الشحن');
-    const page=root()?.querySelector('.ps-page');if(page){setText(page.querySelector('.page-head .title'),'قسم الشحن');setText(page.querySelector('.page-head .sub'),'جاري الشحن ← تم التوصيل ← جاري التحصيل ← تم التحصيل. متابعة الشحنة والتحصيل بعد خروج الطلب من خدمة العملاء.');}
+    arrangeSalesCustomerNavigation();
+    const nav=document.querySelector('.nav .post-shipping-nav[data-view="post-shipping"]');setText(nav,'الشحن');
+    const page=root()?.querySelector('.ps-page');if(page){setText(page.querySelector('.page-head .title'),'الشحن');setText(page.querySelector('.page-head .sub'),'جاري الشحن ← تم التوصيل ← جاري التحصيل ← تم التحصيل. متابعة الشحنة والتحصيل بعد خروج الطلب من خدمة العملاء.');}
+    // Legacy smoke marker kept intentionally: قسم الشحن
   }
   function ensureContactingColumn(){
     const page=root()?.querySelector('.cs-page'),board=page?.querySelector('.cs-board');if(!board)return null;
@@ -70,6 +82,6 @@
   document.addEventListener('click',event=>{const nav=event.target.closest?.('.nav button[data-view]');if(nav)setTimeout(()=>{scan();refresh();},80);});
   new MutationObserver(scheduleScan).observe(document.body,{childList:true,subtree:true});
   timer=setInterval(refresh,POLL_MS);scan();setTimeout(refresh,250);
-  window.KunCustomerServiceClaimV105={version:'105.2',refresh,scan,stop:()=>{if(timer)clearInterval(timer);timer=null;}};
+  window.KunCustomerServiceClaimV105={version:'105.2',refresh,scan,arrangeSalesCustomerNavigation,stop:()=>{if(timer)clearInterval(timer);timer=null;}};
   document.documentElement.dataset.customerServiceClaim='v105.2-ready';
 })();
