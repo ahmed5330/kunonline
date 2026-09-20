@@ -32,7 +32,7 @@
     if(watching)return;watching=true;
     new MutationObserver(scan).observe(document.body,{childList:true,subtree:true});scan();
     import('/v2/modules-v81-jt-live-setup.js?v=81.0').catch(error=>console.warn('J&T live setup module failed to load',error));
-    import('/v2/modules-v105-customer-service-claim.js?v=105.1').catch(error=>console.warn('Customer Service claim module failed to load',error));
+    import('/v2/modules-v105-customer-service-claim.js?v=105.2').catch(error=>console.warn('Customer Service claim module failed to load',error));
     import('/v2/modules-v106-manual-jnt-order.js?v=106.0').catch(error=>console.warn('Manual J&T order module failed to load',error));
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();

@@ -1,4 +1,4 @@
-/* Kun Online v97.5 — keep the exact active workspace on real browser reload + bootstrap asset-first operational modules. */
+/* Kun Online v97.6 — keep the exact active workspace on real browser reload + safe asset-first bootstrap. */
 (function(){
   'use strict';
   if(window.KunViewPersistenceV97)return;
@@ -95,7 +95,7 @@
   }
 
   window.KunViewPersistenceV97={
-    version:'97.5',
+    version:'97.6',
     key:VIEW_KEY,
     statusKey:STATUS_KEY,
     navigationType,
@@ -116,15 +116,12 @@ function kunLoadV2Module(id,src){
   document.head.appendChild(script);
 }
 
-/* v105 loader — section Back/Previous controls stay globally available without coupling to any workspace renderer. */
+/* Existing globally safe UI loaders. */
 kunLoadV2Module('kunSectionNavActionsV105Loader','/v2/modules-v105-section-nav-actions.js?v=105.1');
-
-/* v106 loader — move the real safety undo bar into the section header and keep Dashboard Meta KPIs near-live. */
 kunLoadV2Module('kunUndoDashboardLiveV106Loader','/v2/modules-v106-undo-dashboard-live.js?v=106.2');
 
-/* Operational UI loaders — required because Cloudflare static assets are served before Worker code by default. */
-kunLoadV2Module('kunCustomerServiceClaimV105Loader','/v2/modules-v105-customer-service-claim.js?v=105.2');
-kunLoadV2Module('kunManualJntOrderV106Loader','/v2/modules-v106-manual-jnt-order.js?v=106.0');
+/* Android update metadata is DOM-ready aware and safe to bootstrap from the static shell. */
 kunLoadV2Module('kunMobileAppUpdateV107Loader','/v2/modules-v107-mobile-app-update.js?v=107.0');
 
-document.documentElement.dataset.kunOperationalAssets='v97.5-ready';
+/* Customer Service claim + manual J&T are dependency-sensitive and are loaded by J&T v80 after legacy modules are ready. */
+document.documentElement.dataset.kunOperationalAssets='v97.6-ready';

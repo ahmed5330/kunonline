@@ -1,4 +1,4 @@
-/* Kun Online v75.4 — reliable Customer Service interactions with atomic contact ownership before contact/call. */
+/* Kun Online v75.4 implementation — v75.3 browser compatibility contract, with atomic contact ownership before contact/call. */
 (function(){
   if(window.KunCustomerServiceInteractionsV75)return;
   const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
@@ -85,6 +85,6 @@
 
   document.addEventListener('click',handle,true);
   document.addEventListener('change',handleConfirm,true);
-  window.KunCustomerServiceInteractionsV75={version:'75.4',pending,saveNote,saveContact,confirmState:handleConfirm};
+  window.KunCustomerServiceInteractionsV75={version:'75.3',revision:'75.4',pending,saveNote,saveContact,confirmState:handleConfirm};
   document.documentElement.dataset.customerServiceInteractions='v75.4-ready';
 })();
