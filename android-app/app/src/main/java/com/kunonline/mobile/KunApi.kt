@@ -5,6 +5,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
 
 object KunApi {
     data class CallerInfo(
@@ -32,34 +33,92 @@ object KunApi {
         }
 
         val clientId = me.optString("clientId").takeIf { it.isNotBlank() && it != "null" }
-        val path = buildString {
-            append("/api/customers")
-            if (clientId != null) append("?clientId=").append(java.net.URLEncoder.encode(clientId, "UTF-8"))
-        }
-        val customersResponse = getJson(path) ?: return CallerInfo(found = false, phone = phone)
-        if (customersResponse.code == 401) return CallerInfo(found = false, needsLogin = true, phone = phone)
-        if (customersResponse.code !in 200..299) return CallerInfo(found = false, phone = phone)
+            ?: return CallerInfo(found = false, phone = phone)
 
-        val array = parseArray(customersResponse.body)
-        var match: JSONObject? = null
-        for (i in 0 until array.length()) {
-            val item = array.optJSONObject(i) ?: continue
-            if (normalizePhone(item.optString("phone")) == phone) {
-                match = item
-                break
-            }
+        // New optimized lookup. It understands the logged-in employee's assigned stores.
+        val optimizedPath = "/api/mobile/caller-lookup?clientId=${enc(clientId)}&phone=${enc(phone)}"
+        val optimized = getJson(optimizedPath)
+        if (optimized?.code == 401) return CallerInfo(found = false, needsLogin = true, phone = phone)
+        if (optimized != null && optimized.code in 200..299) {
+            val payload = runCatching { JSONObject(optimized.body) }.getOrNull()
+            if (payload != null) return parseCallerObject(payload, phone)
         }
-        val c = match ?: return CallerInfo(found = false, phone = phone)
+
+        // Production-compatible fallback: discover every store this employee can access,
+        // then query Customer 360 store-by-store instead of silently failing when a
+        // multi-store user has no active store in the native caller process.
+        return lookupAcrossAccessibleStores(clientId, phone)
+    }
+
+    private fun lookupAcrossAccessibleStores(clientId: String, phone: String): CallerInfo {
+        val contextPath = "/api/my-store-context?clientId=${enc(clientId)}"
+        val contextResponse = getJson(contextPath)
+        if (contextResponse?.code == 401) return CallerInfo(found = false, needsLogin = true, phone = phone)
+
+        val context = contextResponse?.takeIf { it.code in 200..299 }
+            ?.let { runCatching { JSONObject(it.body) }.getOrNull() }
+        val stores = context?.optJSONArray("stores") ?: JSONArray()
+        val matches = mutableListOf<JSONObject>()
+
+        if (stores.length() > 0) {
+            for (i in 0 until stores.length()) {
+                val store = stores.optJSONObject(i) ?: continue
+                val storeId = store.optString("id").takeIf { it.isNotBlank() } ?: continue
+                val response = getJson("/api/customers?clientId=${enc(clientId)}&storeId=${enc(storeId)}") ?: continue
+                if (response.code == 401) return CallerInfo(found = false, needsLogin = true, phone = phone)
+                if (response.code !in 200..299) continue
+                collectMatches(parseArray(response.body), phone, matches)
+            }
+        } else {
+            // Old/single-store servers may not expose my-store-context yet.
+            val response = getJson("/api/customers?clientId=${enc(clientId)}")
+                ?: return CallerInfo(found = false, phone = phone)
+            if (response.code == 401) return CallerInfo(found = false, needsLogin = true, phone = phone)
+            if (response.code !in 200..299) return CallerInfo(found = false, phone = phone)
+            collectMatches(parseArray(response.body), phone, matches)
+        }
+
+        if (matches.isEmpty()) return CallerInfo(found = false, phone = phone)
+        val newest = matches.maxWithOrNull(
+            compareBy<JSONObject> { it.optString("lastOrderDate") }
+                .thenBy { it.optInt("totalOrders", 0) }
+        ) ?: matches.first()
+        val totalOrders = matches.sumOf { it.optInt("totalOrders", 0) }
+        val totalSpent = matches.sumOf { it.optDouble("totalSpent", 0.0) }
+        val lastOrderDate = matches.map { it.optString("lastOrderDate") }.filter { it.isNotBlank() }.maxOrNull().orEmpty()
+
         return CallerInfo(
             found = true,
-            name = c.optString("name"),
-            phone = c.optString("phone", phone),
-            gov = c.optString("gov"),
-            address = c.optString("address"),
-            totalOrders = c.optInt("totalOrders", 0),
-            totalSpent = c.optDouble("totalSpent", 0.0),
-            lastOrderDate = c.optString("lastOrderDate"),
-            customerId = c.optString("id")
+            name = newest.optString("name"),
+            phone = newest.optString("phone", phone),
+            gov = newest.optString("gov"),
+            address = newest.optString("address"),
+            totalOrders = totalOrders,
+            totalSpent = totalSpent,
+            lastOrderDate = lastOrderDate,
+            customerId = newest.optString("id")
+        )
+    }
+
+    private fun collectMatches(array: JSONArray, phone: String, out: MutableList<JSONObject>) {
+        for (i in 0 until array.length()) {
+            val item = array.optJSONObject(i) ?: continue
+            if (normalizePhone(item.optString("phone")) == phone) out.add(item)
+        }
+    }
+
+    private fun parseCallerObject(obj: JSONObject, fallbackPhone: String): CallerInfo {
+        if (!obj.optBoolean("found", false)) return CallerInfo(found = false, phone = fallbackPhone)
+        return CallerInfo(
+            found = true,
+            name = obj.optString("name"),
+            phone = obj.optString("phone", fallbackPhone),
+            gov = obj.optString("gov"),
+            address = obj.optString("address"),
+            totalOrders = obj.optInt("totalOrders", 0),
+            totalSpent = obj.optDouble("totalSpent", 0.0),
+            lastOrderDate = obj.optString("lastOrderDate"),
+            customerId = obj.optString("customerId")
         )
     }
 
@@ -69,9 +128,10 @@ object KunApi {
         val base = BuildConfig.KUN_BASE_URL.trimEnd('/')
         val connection = (URL(base + path).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
-            connectTimeout = 2500
-            readTimeout = 2500
+            connectTimeout = 6000
+            readTimeout = 6000
             setRequestProperty("Accept", "application/json")
+            setRequestProperty("Cache-Control", "no-cache")
             CookieManager.getInstance().getCookie(base)?.let { setRequestProperty("Cookie", it) }
         }
         val code = connection.responseCode
@@ -87,6 +147,8 @@ object KunApi {
         val obj = runCatching { JSONObject(trimmed) }.getOrNull() ?: return JSONArray()
         return obj.optJSONArray("customers") ?: obj.optJSONArray("results") ?: obj.optJSONArray("items") ?: JSONArray()
     }
+
+    private fun enc(value: String): String = URLEncoder.encode(value, "UTF-8")
 
     fun normalizePhone(raw: String): String {
         var d = raw.filter { it.isDigit() }
