@@ -3,16 +3,16 @@ const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:
 
 const RELEASE_APK='https://github.com/ahmed5330/kunonline/releases/download/android-latest/Kun-Online-Mobile.apk';
 const UPDATE={
-  versionCode:107,
-  versionName:'2.4.0',
+  versionCode:108,
+  versionName:'2.4.1',
   minSupportedVersionCode:106,
   required:false,
   apkUrl:'https://app.kun-online.com/api/mobile/app-update/apk',
   notes:[
-    'مزامنة بيانات العميل مع السيستم تلقائيًا.',
-    'إظهار بيانات العميل في المكالمات الواردة والصادرة.',
-    'تنزيل تحديثات التطبيق مباشرة من داخل نظام كن أونلاين.',
-    'تحسين واجهة التطبيق وتجربة خدمة العملاء.'
+    'فحص تلقائي للإصدارات الجديدة عند فتح التطبيق.',
+    'تنزيل أحدث APK دائمًا من رابط كن أونلاين داخل السيستم.',
+    'استكمال التحديث تلقائيًا بعد السماح بتثبيت التطبيقات من كن أونلاين.',
+    'الحفاظ على مزامنة بيانات العميل وخواص تعريف المتصل.'
   ]
 };
 
