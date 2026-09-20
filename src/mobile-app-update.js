@@ -16,10 +16,29 @@ const UPDATE={
   ]
 };
 
+async function directApkDownload(request){
+  try{
+    const upstream=await fetch(RELEASE_APK,{redirect:'follow',headers:{'User-Agent':'Kun-Online-Android-Updater/1.0'}});
+    if(!upstream.ok)return json({ok:false,error:'تعذر تحميل ملف التطبيق من مصدر الإصدار.'},502);
+
+    const headers=new Headers(upstream.headers);
+    headers.set('Content-Type','application/vnd.android.package-archive');
+    headers.set('Content-Disposition','attachment; filename="Kun-Online-Mobile.apk"');
+    headers.set('Cache-Control','public, max-age=300, must-revalidate');
+    headers.set('X-Kun-Online-Android-Version',String(UPDATE.versionCode));
+    headers.delete('Content-Security-Policy');
+    headers.delete('Content-Encoding');
+
+    return new Response(upstream.body,{status:200,headers});
+  }catch(error){
+    return json({ok:false,error:'تعذر تجهيز تحميل التطبيق حاليًا.'},502);
+  }
+}
+
 export function handleMobileAppUpdate(request){
   const url=new URL(request.url);
   if(request.method!=='GET')return null;
   if(url.pathname==='/api/mobile/app-update')return json({ok:true,...UPDATE});
-  if(url.pathname==='/api/mobile/app-update/apk')return Response.redirect(RELEASE_APK,302);
+  if(url.pathname==='/api/mobile/app-update/apk'||url.pathname==='/download/android')return directApkDownload(request);
   return null;
 }
