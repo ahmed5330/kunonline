@@ -5,6 +5,7 @@ import {handleJtHistoryReconcile} from './jt-history-reconcile.js';
 import {handleAccountingMonthly} from './accounting-monthly.js';
 import {handleAutomationWorkflowsV104} from './automation-workflows-v104.js';
 import {handleOperationalWorkflowV105} from './operational-workflow-v105.js';
+import {handleMobileAppUpdate} from './mobile-app-update.js';
 
 /*
  * Compatibility contract note:
@@ -44,6 +45,8 @@ void safety;
 void core;
 export default {
   async fetch(request,env,ctx){
+    const mobileUpdate=handleMobileAppUpdate(request);
+    if(mobileUpdate)return mobileUpdate;
     const operational=await handleOperationalWorkflowV105({request,env,ctx,delegate:app});
     if(operational)return operational;
     const automation=await handleAutomationWorkflowsV104({request,env,ctx,delegate:app});
