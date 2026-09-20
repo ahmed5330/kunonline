@@ -68,6 +68,7 @@ assert.equal(read().contact_claim_user_id,'u1');assert.equal(read().contact_clai
 const activeUi=await readFile(new URL('../public/v2/modules-v75-customer-service-interactions-v753.js',import.meta.url),'utf8');
 const claimUi=await readFile(new URL('../public/v2/modules-v105-customer-service-claim.js',import.meta.url),'utf8');
 for(const marker of ['claim-contact','kun:customer-service-contact-claimed'])assert.ok(activeUi.includes(marker),`Contact interaction UI missing ${marker}`);
-for(const marker of ['جاري الاتصال','ORDER_CONTACT','data-state=\\"shipped\\"','POLL_MS=5000','قسم الشحن'])assert.ok(claimUi.includes(marker)||marker==='ORDER_CONTACT',`Live claim UI missing ${marker}`);
-assert.ok(claimUi.includes('option[value=\\"shipped\\"]'),'Customer Service must remove shipped from its state selector');
+for(const marker of ['جاري الاتصال','POLL_MS=5000','قسم الشحن'])assert.ok(claimUi.includes(marker),`Live claim UI missing ${marker}`);
+assert.ok(claimUi.includes('.cs-column[data-state="shipped"]'),'Customer Service must remove the shipped column from its board');
+assert.ok(claimUi.includes('option[value="shipped"]'),'Customer Service must remove shipped from its state selector');
 console.log('Customer Service interactions passed: persisted notes/contact/call, atomic single-owner contact claim, live contacting UI contract, rollback, validation and tenant/store permissions.');
