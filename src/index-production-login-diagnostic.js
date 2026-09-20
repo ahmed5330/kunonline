@@ -1,6 +1,7 @@
 import app from './index-production-mobile-update.js';
 
 const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}});
+const cleanError=error=>String(error?.message||error||'unknown').replace(/[^\w\s.:()'"\-]/g,' ').slice(0,240);
 
 async function loginDiagnostic(request,env){
   const url=new URL(request.url);
@@ -9,37 +10,42 @@ async function loginDiagnostic(request,env){
   const expected=String(env.LOGIN_DIAGNOSTIC_TOKEN||'');
   if(!expected||supplied!==expected)return json({ok:false,error:'not_found'},404);
 
-  const tableRows=(await env.DB.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('users','login_attempts') ORDER BY name").all()).results||[];
-  const tables=tableRows.map(row=>String(row.name||''));
-  const has=name=>tables.includes(name);
-  const columnNames=async table=>{
-    if(!has(table))return [];
-    const rows=(await env.DB.prepare(`SELECT name FROM pragma_table_info('${table}') ORDER BY cid`).all()).results||[];
-    return rows.map(row=>String(row.name||''));
-  };
-
-  const usersColumns=await columnNames('users');
-  const attemptsColumns=await columnNames('login_attempts');
-  const counts={};
-  if(has('users'))counts.users=Number((await env.DB.prepare('SELECT COUNT(*) AS n FROM users').first())?.n||0);
-  if(has('login_attempts'))counts.loginAttempts=Number((await env.DB.prepare('SELECT COUNT(*) AS n FROM login_attempts').first())?.n||0);
-
-  const requiredUsers=['id','email','password','role','client_id','status','last_login'];
-  const requiredAttempts=['email','fails','locked_until'];
-  const missingUsers=requiredUsers.filter(name=>!usersColumns.includes(name));
-  const missingAttempts=requiredAttempts.filter(name=>!attemptsColumns.includes(name));
-
-  return json({
+  const base={
     ok:true,
     readOnly:true,
-    tables,
-    usersColumns,
-    attemptsColumns,
-    counts,
-    missingUsers,
-    missingAttempts,
-    loginSchemaReady:has('users')&&has('login_attempts')&&missingUsers.length===0&&missingAttempts.length===0
-  });
+    dbBindingPresent:!!env.DB,
+    sessionSecretSet:!!env.SESSION_SECRET,
+    appEnv:String(env.APP_ENV||'')
+  };
+
+  if(!env.DB)return json({...base,dbReady:false,stage:'binding',dbError:'DB binding missing'});
+
+  try{
+    const rows=(await env.DB.prepare("SELECT name, sql FROM sqlite_master WHERE type='table' AND name IN ('users','login_attempts') ORDER BY name").all()).results||[];
+    const tables=rows.map(row=>String(row.name||''));
+    const sqlByTable=Object.fromEntries(rows.map(row=>[String(row.name||''),String(row.sql||'')]));
+    const requiredUsers=['id','email','password','role','client_id','status','last_login'];
+    const requiredAttempts=['email','fails','locked_until'];
+    const usersSql=sqlByTable.users||'';
+    const attemptsSql=sqlByTable.login_attempts||'';
+    const missingUsers=requiredUsers.filter(name=>!new RegExp(`\\b${name}\\b`,'i').test(usersSql));
+    const missingAttempts=requiredAttempts.filter(name=>!new RegExp(`\\b${name}\\b`,'i').test(attemptsSql));
+    const counts={};
+    if(tables.includes('users'))counts.users=Number((await env.DB.prepare('SELECT COUNT(*) AS n FROM users').first())?.n||0);
+    if(tables.includes('login_attempts'))counts.loginAttempts=Number((await env.DB.prepare('SELECT COUNT(*) AS n FROM login_attempts').first())?.n||0);
+    return json({
+      ...base,
+      dbReady:true,
+      stage:'complete',
+      tables,
+      counts,
+      missingUsers,
+      missingAttempts,
+      loginSchemaReady:tables.includes('users')&&tables.includes('login_attempts')&&missingUsers.length===0&&missingAttempts.length===0
+    });
+  }catch(error){
+    return json({...base,dbReady:false,stage:'query',dbError:cleanError(error)});
+  }
 }
 
 export default {
