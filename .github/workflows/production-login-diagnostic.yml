@@ -1,0 +1,51 @@
+name: Production login read-only diagnostic
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/production-login-diagnostic.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kunonline-production-login-diagnostic
+  cancel-in-progress: false
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: production
+      url: https://app.kun-online.com
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: npm install --ignore-scripts
+      - name: Inspect Production login schema read-only
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('users','login_attempts') ORDER BY name;"
+          npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "SELECT name,type,notnull FROM pragma_table_info('users') WHERE name IN ('id','email','password','role','client_id','status','last_login') ORDER BY name;"
+          npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "SELECT name,type,notnull FROM pragma_table_info('login_attempts') WHERE name IN ('email','fails','locked_until') ORDER BY name;"
+          npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "SELECT (SELECT COUNT(*) FROM users) AS users_count, (SELECT COUNT(*) FROM login_attempts) AS login_attempts_count;"
+      - name: Verify unauthenticated login API path without DB mutation
+        run: |
+          set -euo pipefail
+          code="$(curl -sS -o /tmp/login-empty.json -w '%{http_code}' -X POST -H 'Content-Type: application/json' --data '{}' https://app.kun-online.com/api/login)"
+          cat /tmp/login-empty.json
+          echo
+          test "$code" = "400"
+          grep -Fq 'اكتب الإيميل وكلمة المرور' /tmp/login-empty.json
+          state_code="$(curl -sS -o /tmp/state-anon.json -w '%{http_code}' https://app.kun-online.com/api/state)"
+          cat /tmp/state-anon.json
+          echo
+          test "$state_code" = "401"
