@@ -80,8 +80,8 @@ console.log(`Operational Preview smoke against ${base}`);
     expectStatus(response.status,[200],path);
     for(const needle of needles)expectIncludes(body,needle,path);
   }
-  console.log('✓ Unified date periods are served for Customer Service, printing, shipping and returns');
-  console.log('✓ Temporary contact ownership shows the staff name and releases back to the original order state');
+  console.log('✓ Unified date periods are served for orders, Customer Service, printing, shipping and returns');
+  console.log('✓ Temporary contact ownership shows the staff name and is wired to release back to انتظار التأكيد');
 }
 
 {
