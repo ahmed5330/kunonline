@@ -37,13 +37,15 @@ object AppUpdateManager {
     fun checkForUpdate(activity: Activity) {
         Thread {
             runCatching {
+                val currentCode = installedVersionCode(activity)
+                val currentName = installedVersionName(activity)
                 val connection = (URL(UPDATE_FEED).openConnection() as HttpURLConnection).apply {
                     requestMethod = "GET"
                     connectTimeout = 8000
                     readTimeout = 12000
                     setRequestProperty("Accept", "application/json")
                     setRequestProperty("Cache-Control", "no-cache")
-                    setRequestProperty("X-Kun-Mobile", "native-android/${BuildConfig.VERSION_NAME}")
+                    setRequestProperty("X-Kun-Mobile", "native-android/$currentName")
                 }
                 val code = connection.responseCode
                 val body = (if (code in 200..299) connection.inputStream else connection.errorStream)
@@ -52,8 +54,8 @@ object AppUpdateManager {
                 if (code !in 200..299) return@runCatching
 
                 val root = JSONObject(body)
-                val latestCode = root.optInt("versionCode", BuildConfig.VERSION_CODE)
-                if (latestCode <= BuildConfig.VERSION_CODE) return@runCatching
+                val latestCode = root.optLong("versionCode", currentCode)
+                if (latestCode <= currentCode) return@runCatching
 
                 val latestName = root.optString("versionName").ifBlank { latestCode.toString() }
                 val apkUrl = root.optString("apkUrl").ifBlank { FALLBACK_APK }
@@ -116,6 +118,20 @@ object AppUpdateManager {
 
     private fun canInstallPackages(context: Context): Boolean =
         Build.VERSION.SDK_INT < Build.VERSION_CODES.O || context.packageManager.canRequestPackageInstalls()
+
+    private fun installedVersionCode(context: Context): Long {
+        val info = context.packageManager.getPackageInfo(context.packageName, 0)
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) info.longVersionCode
+        else {
+            @Suppress("DEPRECATION")
+            info.versionCode.toLong()
+        }
+    }
+
+    private fun installedVersionName(context: Context): String {
+        val info = context.packageManager.getPackageInfo(context.packageName, 0)
+        return info.versionName.orEmpty().ifBlank { installedVersionCode(context).toString() }
+    }
 
     private fun startDownload(activity: Activity, apkUrl: String) {
         val downloads = activity.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
