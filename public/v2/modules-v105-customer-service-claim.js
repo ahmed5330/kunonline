@@ -1,4 +1,4 @@
-/* Kun Online v105.0 — live Customer Service contact ownership + shipping-section presentation. */
+/* Kun Online v105.1 — live Customer Service contact ownership + shipping-section presentation. */
 (function(){
   if(window.KunCustomerServiceClaimV105)return;
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -25,20 +25,23 @@
     board.querySelector('.cs-column[data-state="shipped"]')?.remove();
     page.querySelectorAll('select[data-cs-state] option[value="shipped"]').forEach(option=>option.remove());
     let column=board.querySelector('.cs-column[data-state="contacting"]');
-    if(!column){column=document.createElement('section');column.className='cs-column';column.dataset.state='contacting';column.innerHTML='<div class="cs-column-head"><span>جاري الاتصال</span><span class="cs-count">0</span></div><div class="cs-list"><div class="cs-empty">لا يوجد أوردرات جاري التواصل عليها</div></div>';const pending=board.querySelector('.cs-column[data-state="pending"]');pending?.after(column)||board.prepend(column);}
+    if(!column){
+      column=document.createElement('section');column.className='cs-column';column.dataset.state='contacting';column.innerHTML='<div class="cs-column-head"><span>جاري الاتصال</span><span class="cs-count">0</span></div><div class="cs-list"><div class="cs-empty">لا يوجد أوردرات جاري التواصل عليها</div></div>';
+      const pending=board.querySelector('.cs-column[data-state="pending"]');if(pending)pending.after(column);else board.prepend(column);
+    }
     return column;
   }
-  function targetList(state){if(state==='deferred')return root()?.querySelector('.cs-deferred-grid');return root()?.querySelector(`.cs-column[data-state="${CSS.escape(String(state||''))}"] .cs-list`);}
+  function targetList(state){if(state==='deferred')return root()?.querySelector('.cs-deferred-grid');return root()?.querySelector(`.cs-column[data-state="${String(state||'').replace(/[^a-z_]/gi,'')}"] .cs-list`);}
   function updateClaimBadge(card,claim){
     let badge=card.querySelector('.cs-claim-badge');
     if(!claim){badge?.remove();card.classList.remove('cs-claimed-other');for(const control of card.querySelectorAll('[data-cs-action="contact"],[data-cs-action="call"]')){control.removeAttribute('aria-disabled');control.style.pointerEvents='';control.style.opacity='';}return;}
-    if(!badge){badge=document.createElement('div');badge.className='cs-claim-badge';const anchor=card.querySelector('.cs-contact-attempts,.cs-note-field');anchor?.before(badge)||card.prepend(badge);}
+    if(!badge){badge=document.createElement('div');badge.className='cs-claim-badge';const anchor=card.querySelector('.cs-contact-attempts,.cs-note-field');if(anchor)anchor.before(badge);else card.prepend(badge);}
     badge.classList.toggle('mine',Boolean(claim.mine));badge.innerHTML=claim.mine?`أنت تتواصل مع هذا العميل الآن${claim.claimedAt?` · منذ ${esc(new Date(claim.claimedAt).toLocaleTimeString('ar-EG',{hour:'2-digit',minute:'2-digit'}))}`:''}`:`جاري الاتصال بواسطة: <b>${esc(claim.name||'عضو آخر من الفريق')}</b>`;
     card.classList.toggle('cs-claimed-other',!claim.mine);
     for(const control of card.querySelectorAll('[data-cs-action="contact"],[data-cs-action="call"]')){if(!claim.mine){control.setAttribute('aria-disabled','true');control.style.pointerEvents='none';control.style.opacity='.5';}else{control.removeAttribute('aria-disabled');control.style.pointerEvents='';control.style.opacity='';}}
   }
   function ensureEmpty(list,text='لا توجد أوردرات هنا دلوقتي'){
-    if(!list)return;const cards=list.querySelectorAll(':scope > .cs-order');const empty=list.querySelector(':scope > .cs-empty');if(cards.length){empty?.remove();}else if(!empty){const node=document.createElement('div');node.className='cs-empty';node.textContent=text;list.appendChild(node);}
+    if(!list)return;const cards=list.querySelectorAll(':scope > .cs-order'),empty=list.querySelector(':scope > .cs-empty');if(cards.length){empty?.remove();}else if(!empty){const node=document.createElement('div');node.className='cs-empty';node.textContent=text;list.appendChild(node);}
   }
   function refreshCounts(){
     root()?.querySelectorAll('.cs-column').forEach(column=>{const list=column.querySelector('.cs-list'),count=list?.querySelectorAll(':scope > .cs-order').length||0,chip=column.querySelector('.cs-count');if(chip)chip.textContent=String(count);ensureEmpty(list,column.dataset.state==='contacting'?'لا يوجد أوردرات جاري التواصل عليها':'لا توجد أوردرات هنا دلوقتي');});
@@ -60,11 +63,11 @@
     catch(error){console.warn('Customer Service claim sync failed',error);}finally{running=false;}
   }
   function scan(){ensureStyle();renameShippingSection();if(activeCustomerService()){ensureContactingColumn();refreshCounts();}}
-  window.addEventListener('kun:customer-service-contact-saved',()=>{lastFingerprint='';setTimeout(refresh,60);});
+  for(const eventName of ['kun:customer-service-contact-claimed','kun:customer-service-contact-saved'])window.addEventListener(eventName,()=>{lastFingerprint='';setTimeout(refresh,60);});
   window.addEventListener('kun:order-workflow-updated',()=>{lastFingerprint='';setTimeout(refresh,120);});
   document.addEventListener('click',event=>{const nav=event.target.closest?.('.nav button[data-view]');if(nav)setTimeout(()=>{scan();refresh();},80);});
   new MutationObserver(scan).observe(document.body,{childList:true,subtree:true});
   timer=setInterval(refresh,POLL_MS);scan();setTimeout(refresh,250);
-  window.KunCustomerServiceClaimV105={version:'105.0',refresh,scan,stop:()=>{if(timer)clearInterval(timer);timer=null;}};
-  document.documentElement.dataset.customerServiceClaim='v105-ready';
+  window.KunCustomerServiceClaimV105={version:'105.1',refresh,scan,stop:()=>{if(timer)clearInterval(timer);timer=null;}};
+  document.documentElement.dataset.customerServiceClaim='v105.1-ready';
 })();
