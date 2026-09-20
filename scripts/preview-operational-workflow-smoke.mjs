@@ -31,9 +31,21 @@ console.log(`Operational Preview smoke against ${base}`);
 {
   const {response,body}=await text(`/v2/?operationalSmoke=${Date.now()}`);
   expectStatus(response.status,[200],'v2 shell');
-  for(const asset of ['modules-v97-view-persistence-v976.js','modules-v75-customer-service-interactions-v753.js','modules-v80-jnt-address-cascade-v804.js']){
+  for(const asset of ['modules-v97-view-persistence-v976.js','modules-v75-customer-service-interactions-v753.js','modules-v80-jnt-address-cascade-v805.js']){
     expectIncludes(body,asset,'v2 shell');
   }
+  const navNeedles=[
+    'data-view="orders">الطلبات',
+    'data-view="customer-service">خدمة العملاء',
+    'data-view="printing">الطباعة',
+    'data-view="post-shipping">الشحن',
+    'data-view="returns-exchanges">المرتجعات والاستبدالات',
+    'data-view="customers">إدارة العملاء',
+    'data-view="inbox">صندوق الرسائل'
+  ];
+  const positions=navNeedles.map(needle=>{expectIncludes(body,needle,'sales/customer shell navigation');return body.indexOf(needle);});
+  for(let i=1;i<positions.length;i++)if(positions[i]<=positions[i-1])fail(`sales/customer shell navigation order is wrong at ${navNeedles[i]}`);
+  console.log('✓ v2 shell has the requested sales/customer navigation order and labels');
   console.log('✓ v2 static shell loads versioned persistence/bootstrap, Customer Service interactions and J&T address cascade');
 }
 
@@ -48,17 +60,17 @@ console.log(`Operational Preview smoke against ${base}`);
 }
 
 {
-  const {response,body}=await text(`/v2/modules-v80-jnt-address-cascade-v804.js?operationalSmoke=${Date.now()}`);
-  expectStatus(response.status,[200],'v80.4 dependency-aware bootstrap');
-  for(const asset of ['modules-v105-customer-service-claim.js?v=105.2','modules-v106-manual-jnt-order.js?v=106.0','KunJntAddressesV80','DOMContentLoaded']){
-    expectIncludes(body,asset,'v80.4 dependency-aware bootstrap');
+  const {response,body}=await text(`/v2/modules-v80-jnt-address-cascade-v805.js?operationalSmoke=${Date.now()}`);
+  expectStatus(response.status,[200],'v80.5 dependency-aware bootstrap');
+  for(const asset of ['modules-v105-customer-service-claim-v1053.js?v=105.3','modules-v106-manual-jnt-order.js?v=106.0','KunJntAddressesV80','DOMContentLoaded']){
+    expectIncludes(body,asset,'v80.5 dependency-aware bootstrap');
   }
-  console.log('✓ J&T v80.4 loads Customer Service claim + manual J&T only after legacy dependencies are ready');
+  console.log('✓ J&T v80.5 loads Customer Service claim v105.3 + manual J&T only after legacy dependencies are ready');
 }
 
 {
   const checks=[
-    ['/v2/modules-v105-customer-service-claim.js?v=105.2',['/api/customer-service/claims','جاري الاتصال','arrangeSalesCustomerNavigation',"['orders','customer-service','printing','post-shipping','returns-exchanges','customers','inbox']","setText(shipping,'الشحن')","setText(customers,'إدارة العملاء')",'data-state="contacting"','data-state="shipped"']],
+    ['/v2/modules-v105-customer-service-claim-v1053.js?v=105.3',['/api/customer-service/claims','جاري الاتصال','arrangeSalesCustomerNavigation',"['orders','customer-service','printing','post-shipping','returns-exchanges','customers','inbox']","setText(shipping,'الشحن')","setText(customers,'إدارة العملاء')",'data-state="contacting"','data-state="shipped"']],
     ['/v2/modules-v75-customer-service-interactions-v753.js',['claim-contact','kun:customer-service-contact-claimed','تم حجز الأوردر باسمك ونقله إلى «جاري الاتصال»','revision:\'75.4\'']],
     ['/v2/modules-v106-manual-jnt-order.js?v=106.0',['/api/orders/manual-jnt','name="province"','name="city"','name="area"','name="street"','KunJntAddressesV80']]
   ];
