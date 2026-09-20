@@ -1,4 +1,4 @@
-/* Kun Online v75.3 — reliable Customer Service note/contact/call/confirm interactions with unified attempt counters. */
+/* Kun Online v75.4 — reliable Customer Service interactions with atomic contact ownership before contact/call. */
 (function(){
   if(window.KunCustomerServiceInteractionsV75)return;
   const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
@@ -48,23 +48,27 @@
   }
   async function saveContact(card,isCall=false){
     const id=orderId(card),cid=await clientId();if(!cid)throw new Error('تعذر تحديد حساب المتجر');
-    clearError(card);const data=await api(route(id,'contact',cid),{method:'POST',keepalive:isCall,body:JSON.stringify({clientId:cid,channel:'phone',intent:isCall?'call':'contact'})});
+    clearError(card);
+    const ownership=await api(route(id,'claim-contact',cid),{method:'POST',body:JSON.stringify({clientId:cid})});
+    window.dispatchEvent(new CustomEvent('kun:customer-service-contact-claimed',{detail:{orderId:id,claim:ownership.claim||null,savedAt:Date.now()}}));
+    const data=await api(route(id,'contact',cid),{method:'POST',keepalive:isCall,body:JSON.stringify({clientId:cid,channel:'phone',intent:isCall?'call':'contact'})});
     const count=updateContactCount(card,data);
-    window.dispatchEvent(new CustomEvent('kun:customer-service-contact-saved',{detail:{orderId:id,count,intent:isCall?'call':'contact',savedAt:Date.now()}}));
-    notify(isCall?'تم تسجيل المكالمة في سجل الأوردر':'تم تسجيل محاولة التواصل في سجل الأوردر');
-    return data;
+    window.dispatchEvent(new CustomEvent('kun:customer-service-contact-saved',{detail:{orderId:id,count,claim:ownership.claim||null,intent:isCall?'call':'contact',savedAt:Date.now()}}));
+    notify(isCall?'تم حجز الأوردر باسمك وتسجيل المكالمة':'تم حجز الأوردر باسمك ونقله إلى «جاري الاتصال»');
+    return {...data,claim:ownership.claim||null};
   }
   function handle(event){
     if(!active())return;
     const button=event.target.closest?.('[data-cs-action]'),card=button?.closest?.('#root [data-cs-order]');if(!card)return;
     const action=String(button.dataset.csAction||'');if(!['note','contact','call'].includes(action))return;
     const id=orderId(card);if(!id)return;
-    if(action!=='call')event.preventDefault();
+    event.preventDefault();
     event.stopPropagation();event.stopImmediatePropagation();
     const key=`${id}:${action}`;if(pending.has(key))return;
     pending.add(key);setBusy(button,true);
+    const callHref=action==='call'?String(button.getAttribute('href')||''):'';
     const work=action==='note'?saveNote(card,button):saveContact(card,action==='call');
-    Promise.resolve(work).catch(error=>showError(card,action==='call'?`تم فتح الاتصال، لكن تعذر تسجيل المكالمة: ${error.message}`:error.message)).finally(()=>{pending.delete(key);setBusy(button,false);});
+    Promise.resolve(work).then(()=>{if(action==='call'&&callHref)window.location.href=callHref;}).catch(error=>showError(card,error.message)).finally(()=>{pending.delete(key);setBusy(button,false);});
   }
   function handleConfirm(event){
     if(!active())return;
@@ -81,6 +85,6 @@
 
   document.addEventListener('click',handle,true);
   document.addEventListener('change',handleConfirm,true);
-  window.KunCustomerServiceInteractionsV75={version:'75.3',pending,saveNote,saveContact,confirmState:handleConfirm};
-  document.documentElement.dataset.customerServiceInteractions='v75-ready';
+  window.KunCustomerServiceInteractionsV75={version:'75.4',pending,saveNote,saveContact,confirmState:handleConfirm};
+  document.documentElement.dataset.customerServiceInteractions='v75.4-ready';
 })();
