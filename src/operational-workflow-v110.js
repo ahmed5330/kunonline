@@ -31,10 +31,14 @@ async function releaseContact({request,env,ctx,delegate,orderId,url}){
   const owner=clean(row.contact_claim_user_id,200);
   if(!owner)return json({ok:true,orderId,state:row.state,released:false,alreadyReleased:true});
   if(owner!==mine)throw Object.assign(new Error(`الأوردر جاري التواصل عليه بواسطة ${row.contact_claim_name||'عضو آخر من الفريق'}`),{status:409,code:'ORDER_CONTACT_RELEASE_FORBIDDEN',claim:{userId:owner,name:row.contact_claim_name||'',claimedAt:row.contact_claimed_at||null}});
-  const result=await env.DB.prepare('UPDATE orders SET contact_claim_user_id=NULL,contact_claim_name=NULL,contact_claimed_at=NULL WHERE id=? AND client_id=? AND contact_claim_user_id=?').bind(orderId,clientId,mine).run();
+  const result=await env.DB.prepare("UPDATE orders SET state='pending',contact_claim_user_id=NULL,contact_claim_name=NULL,contact_claimed_at=NULL WHERE id=? AND client_id=? AND contact_claim_user_id=?").bind(orderId,clientId,mine).run();
   const released=Number(result?.meta?.changes||0)>0,at=new Date().toISOString();
-  if(released){try{await env.DB.prepare('INSERT INTO audit_log (id,client_id,store_id,actor_user_id,actor_email,action,entity_type,entity_id,metadata_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)').bind(rid('AUD'),clientId,row.store_id||null,me?.uid||me?.id||null,me?.email||me?.role||null,'order.contact_release','order',orderId,JSON.stringify({returnState:row.state||'pending'}),at).run();}catch{}}
-  return json({ok:true,orderId,state:row.state,released,returnedToOriginalState:true});
+  if(released){
+    const metadata=JSON.stringify({previousState:row.state||'pending',returnState:'pending',contactedBy:row.contact_claim_name||''});
+    try{await env.DB.prepare('INSERT INTO audit_log (id,client_id,store_id,actor_user_id,actor_email,action,entity_type,entity_id,metadata_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)').bind(rid('AUD'),clientId,row.store_id||null,me?.uid||me?.id||null,me?.email||me?.role||null,'order.contact_release','order',orderId,metadata,at).run();}catch{}
+    try{await env.DB.prepare('INSERT INTO order_events (id,client_id,store_id,order_id,event_type,actor_user_id,actor_email,source,metadata_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)').bind(rid('OEV'),clientId,row.store_id||null,orderId,'contact_released',me?.uid||me?.id||null,me?.email||me?.role||null,'customer-service',metadata,at).run();}catch{}
+  }
+  return json({ok:true,orderId,state:'pending',previousState:row.state||'pending',released,returnedToPending:true});
 }
 
 export async function handleOperationalWorkflowV110(args){
