@@ -57,3 +57,21 @@ jobs:
           done
           echo "Production update feed did not return the expected v2.4.0 metadata."
           exit 1
+      - name: Verify website downloads the APK through Kun Online
+        run: |
+          set -euo pipefail
+          page="$(curl -fsS https://app.kun-online.com/)"
+          printf '%s' "$page" | grep -Fq "/api/mobile/app-update/apk"
+          if printf '%s' "$page" | grep -Fq "https://github.com/ahmed5330/kunonline/releases/download/android-latest/Kun-Online-Mobile.apk"; then
+            echo "Website still exposes the legacy direct GitHub APK URL."
+            exit 1
+          fi
+
+          headers="$(mktemp)"
+          apk="$(mktemp --suffix=.apk)"
+          curl -fsS -D "$headers" -o "$apk" https://app.kun-online.com/api/mobile/app-update/apk
+          grep -Eiq '^content-type: application/vnd\.android\.package-archive' "$headers"
+          grep -Eiq '^content-disposition: attachment; filename="Kun-Online-Mobile\.apk"' "$headers"
+          test "$(wc -c < "$apk")" -gt 1000000
+          unzip -l "$apk" | grep -Fq 'AndroidManifest.xml'
+          echo "Website Android download verified through Kun Online: $(wc -c < "$apk") bytes"
