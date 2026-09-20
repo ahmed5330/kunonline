@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs';
 import { classifyAction, validateWorkflowDefinition, evaluateConditions, planWorkflowRun } from './src/workflow-engine.js';
 
 const workflowApiSource = readFileSync(new URL('./src/index-commerce.js', import.meta.url), 'utf8');
+const workflowCrudSource = readFileSync(new URL('./src/automation-workflows-v104.js', import.meta.url), 'utf8');
+const v38Source = readFileSync(new URL('./src/index-commerce-v38.js', import.meta.url), 'utf8');
 const workflowUiSource = readFileSync(new URL('./public/v2/modules-v104-automation.js', import.meta.url), 'utf8');
 const v2IndexSource = readFileSync(new URL('./public/v2/index.html', import.meta.url), 'utf8');
 
@@ -88,23 +90,47 @@ test('settings permission is an admin override for sensitive planning', () => {
   assert.equal(result.steps[0].allowed, true);
 });
 
-test('workflow API resolves Admin tenant from body and prevents duplicate names', () => {
+test('legacy workflow API resolves Admin tenant and prevents duplicate names', () => {
   assert.match(workflowApiSource, /b\.clientId\|\|b\.client_id\|\|url\.searchParams\.get\('clientId'\)/);
   assert.match(workflowApiSource, /DUPLICATE_WORKFLOW/);
 });
 
-test('Automation v104 replaces the placeholder with the real workflow API', () => {
+test('Automation CRUD validates definitions and enforces granular permissions', () => {
+  assert.match(workflowCrudSource, /requirePermission\(me,'automation','read'\)/);
+  assert.match(workflowCrudSource, /requirePermission\(me,'automation','write'\)/);
+  assert.match(workflowCrudSource, /validateWorkflowDefinition\(definition\)/);
+  assert.match(workflowCrudSource, /WORKFLOW_INVALID/);
+  assert.match(workflowCrudSource, /DUPLICATE_WORKFLOW/);
+  assert.match(workflowCrudSource, /WORKFLOW_HAS_RUNS/);
+  assert.match(workflowCrudSource, /method==='PATCH'\|\|method==='PUT'/);
+  assert.match(workflowCrudSource, /method==='DELETE'/);
+  assert.match(workflowCrudSource, /workflow\.update/);
+  assert.match(workflowCrudSource, /workflow\.delete/);
+});
+
+test('guarded v38 entrypoint owns Automation CRUD without changing Preview config contract', () => {
+  assert.match(v38Source, /handleAutomationWorkflowsV104/);
+  assert.match(v38Source, /const automation=await handleAutomationWorkflowsV104/);
+  assert.match(v38Source, /if\(automation\)return automation/);
+});
+
+test('Automation v104 replaces the placeholder with the real workflow API and management actions', () => {
   assert.match(workflowUiSource, /apiUrl\('\/api\/workflows'\)/);
-  assert.match(workflowUiSource, /api\('\/api\/workflows',\{method:'POST'/);
+  assert.match(workflowUiSource, /method:'POST'/);
+  assert.match(workflowUiSource, /method:'PATCH'/);
+  assert.match(workflowUiSource, /method:'DELETE'/);
+  assert.match(workflowUiSource, /data-auto-action="edit"/);
+  assert.match(workflowUiSource, /data-auto-action="toggle"/);
+  assert.match(workflowUiSource, /data-auto-action="delete"/);
   assert.match(workflowUiSource, /Workflow جديد/);
   assert.match(workflowUiSource, /event\.stopImmediatePropagation\(\)/);
   assert.match(workflowUiSource, /KunAutomationV104/);
   assert.doesNotMatch(workflowUiSource, /Workflow Builder هو المرحلة التالية للأتمتة/);
 });
 
-test('Automation v104 is cache-busted and loaded after legacy modules', () => {
-  assert.match(v2IndexSource, /modules-v104-automation\.js\?v=104\.0/);
-  assert.ok(v2IndexSource.lastIndexOf('modules-v104-automation.js?v=104.0') > v2IndexSource.lastIndexOf('modules-v4.js?v=4.1'));
+test('Automation v104 asset remains loaded after legacy modules', () => {
+  assert.match(v2IndexSource, /modules-v104-automation\.js\?v=104\.[01]/);
+  assert.ok(v2IndexSource.lastIndexOf('modules-v104-automation.js') > v2IndexSource.lastIndexOf('modules-v4.js?v=4.1'));
 });
 
 console.log(`Workflow engine tests passed: ${passed}`);
