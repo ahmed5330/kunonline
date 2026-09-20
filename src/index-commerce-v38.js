@@ -3,6 +3,7 @@ import safety from './index-commerce-v38-safety.js';
 import core from './index-commerce-v38-core.js';
 import {handleJtHistoryReconcile} from './jt-history-reconcile.js';
 import {handleAccountingMonthly} from './accounting-monthly.js';
+import {handleAutomationWorkflowsV104} from './automation-workflows-v104.js';
 
 /*
  * Compatibility contract note:
@@ -42,6 +43,8 @@ void safety;
 void core;
 export default {
   async fetch(request,env,ctx){
+    const automation=await handleAutomationWorkflowsV104({request,env,ctx,delegate:app});
+    if(automation)return automation;
     const monthly=await handleAccountingMonthly({request,env,ctx,delegate:app});
     if(monthly)return monthly;
     const handled=await handleJtHistoryReconcile({request,env,ctx,delegate:app});
