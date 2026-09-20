@@ -1,4 +1,4 @@
-/* Kun Online v80.2 — authoritative J&T Egypt province/city/area cascade reusable by shipping and manual-order forms. */
+/* Kun Online v80.3 — authoritative J&T Egypt province/city/area cascade reusable by shipping and manual-order forms. */
 (function(){
   let manifest=null,watching=false;
   const clean=v=>String(v??'').trim(),esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -28,7 +28,13 @@
     }catch(e){province.innerHTML=`<option value="">${esc(e.message)}</option>`;}
   }
   function scan(){const forms=[document.getElementById('jt78Form'),...document.querySelectorAll('form[data-jnt-address-form="1"]')].filter(Boolean);for(const form of new Set(forms))enhance(form);}
-  function boot(){if(watching)return;watching=true;new MutationObserver(scan).observe(document.body,{childList:true,subtree:true});scan();import('/v2/modules-v81-jt-live-setup.js?v=81.0').catch(error=>console.warn('J&T live setup module failed to load',error));}
+  function boot(){
+    if(watching)return;watching=true;
+    new MutationObserver(scan).observe(document.body,{childList:true,subtree:true});scan();
+    import('/v2/modules-v81-jt-live-setup.js?v=81.0').catch(error=>console.warn('J&T live setup module failed to load',error));
+    import('/v2/modules-v105-customer-service-claim.js?v=105.1').catch(error=>console.warn('Customer Service claim module failed to load',error));
+    import('/v2/modules-v106-manual-jnt-order.js?v=106.0').catch(error=>console.warn('Manual J&T order module failed to load',error));
+  }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
-  window.KunJntAddressesV80={scan,index,provinceData,enhance,version:'80.2'};
+  window.KunJntAddressesV80={scan,index,provinceData,enhance,version:'80.3'};
 })();
