@@ -197,9 +197,10 @@ try{
   await waitFor(`${cardExpr}?.querySelector('.cs-internal-latest')?.textContent.includes(${JSON.stringify(noteText)})`,'note persisted after full reload');
   await waitFor(`${cardExpr}?.querySelector('[data-cs-action=contact]')?.textContent==='تواصل (2)'`,'contact and call persisted after full reload');
   const savedEvents=await d1('SELECT event_type,actor_user_id,created_at,metadata_json FROM order_events WHERE order_id=? AND client_id=?',[interactionOrderId,interactionClientId]);
-  if(savedEvents.length!==3||savedEvents.filter(e=>e.event_type==='contact_phone').length!==2||savedEvents.some(e=>e.actor_user_id!==userId||!e.created_at))throw new Error('Browser interaction events missing, duplicated or missing actor/time');
+  const typeCount=type=>savedEvents.filter(event=>event.event_type===type).length;
+  if(savedEvents.length!==4||typeCount('contact_claimed')!==1||typeCount('contact_phone')!==2||typeCount('note_added')!==1||savedEvents.some(event=>event.actor_user_id!==userId||!event.created_at))throw new Error(`Browser interaction audit mismatch: ${JSON.stringify(savedEvents.map(event=>event.event_type))}`);
   if((await d1('SELECT body FROM order_notes WHERE order_id=? AND client_id=?',[interactionOrderId,interactionClientId]))[0]?.body!==noteText)throw new Error('Browser note missing from canonical order notes');
-  console.log('Customer Service browser interactions passed: note button, contact button, native call link + automatic event, immediate UI, history actor and persistence after full reload.');
+  console.log('Customer Service browser interactions passed: one contact claim + note + contact + native call, immediate UI, history actor and persistence after full reload.');
   await evaluate("document.querySelector('[data-view=access]').click()");
   await waitFor("!!document.getElementById('v28AddMember')",'return to responsive QA workspace');
 
