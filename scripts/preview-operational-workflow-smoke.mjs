@@ -34,16 +34,16 @@ console.log(`Operational Preview smoke against ${base}`);
 
 {
   const checks=[
-    ['/v2/modules-v105-customer-service-claim.js',['/api/customer-service/claims','claim-contact','جاري الاتصال']],
-    ['/v2/modules-v105-section-nav-actions.js',['قسم الشحن']],
-    ['/v2/modules-v106-manual-jnt-order.js',['/api/orders/manual-jnt','province','city','area','street']]
+    ['/v2/modules-v105-customer-service-claim.js',['/api/customer-service/claims','claim-contact','جاري الاتصال','قسم الشحن','data-state="contacting"','data-state="shipped"']],
+    ['/v2/modules-v105-section-nav-actions.js',['KunSectionNavActionsV105','kun-section-nav-actions']],
+    ['/v2/modules-v106-manual-jnt-order.js',['/api/orders/manual-jnt','province','city','area','street','KunJntAddressesV80']]
   ];
   for(const [path,needles] of checks){
     const {response,body}=await text(path);
     expectStatus(response.status,[200],path);
     for(const needle of needles)expectIncludes(body,needle,path);
   }
-  console.log('✓ Customer Service + Shipping + manual J&T frontend modules are served');
+  console.log('✓ Customer Service claim, Shipping presentation, navigation and manual J&T modules are served');
 }
 
 {
