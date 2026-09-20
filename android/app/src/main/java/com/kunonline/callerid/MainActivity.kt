@@ -20,6 +20,12 @@ class MainActivity : ComponentActivity() {
             KunNativeAppV23(this)
         }
         maybeRequestContactsForIncomingCallerId()
+        AppUpdateManager.checkForUpdate(this)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        AppUpdateManager.resumePending(this)
     }
 
     fun requestCallerRole() {
