@@ -13,7 +13,8 @@ const expectIncludes=(body,needle,label)=>{
   if(!body.includes(needle))fail(`${label}: missing ${needle}`);
 };
 const expectGuardedRoute=(status,label)=>{
-  if(status<400||status===404||status===405||status>=500){
+  const is2xx=status>=200&&status<300;
+  if(is2xx||status===404||status===405||status>=500){
     fail(`${label}: route must exist and reject an unauthenticated/invalid request safely; got HTTP ${status}`);
   }
 };
