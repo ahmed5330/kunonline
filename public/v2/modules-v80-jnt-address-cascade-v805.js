@@ -34,6 +34,7 @@
     import('/v2/modules-v81-jt-live-setup.js?v=81.0').catch(error=>console.warn('J&T live setup module failed to load',error));
     import('/v2/modules-v105-customer-service-claim-v1053.js?v=105.3').catch(error=>console.warn('Customer Service claim module failed to load',error));
     import('/v2/modules-v106-manual-jnt-order.js?v=106.0').catch(error=>console.warn('Manual J&T order module failed to load',error));
+    import('/v2/modules-v109-operational-date-contact.js?v=109.0').catch(error=>console.warn('Operational date/contact module failed to load',error));
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
   window.KunJntAddressesV80={scan,index,provinceData,enhance,version:'80.5'};
