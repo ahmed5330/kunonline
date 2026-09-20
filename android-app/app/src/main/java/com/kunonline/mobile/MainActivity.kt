@@ -8,6 +8,8 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
 import android.webkit.WebResourceRequest
@@ -29,6 +31,14 @@ class MainActivity : Activity() {
                 CookieManager.getInstance().flush()
             }
         }
+
+        @JavascriptInterface
+        fun requestAppUpdate() {
+            runOnUiThread { AppUpdateManager.check(this@MainActivity, userInitiated = true) }
+        }
+
+        @JavascriptInterface
+        fun appVersionCode(): Int = BuildConfig.VERSION_CODE
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -77,6 +87,14 @@ class MainActivity : Activity() {
         }
         webView.loadUrl(target)
         requestCallerIdRoleIfNeeded()
+        Handler(Looper.getMainLooper()).postDelayed({
+            if (!isFinishing) AppUpdateManager.check(this, userInitiated = false)
+        }, 2500)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        AppUpdateManager.resumePendingInstall(this)
     }
 
     private fun installLoginCookieGuard(view: WebView) {
