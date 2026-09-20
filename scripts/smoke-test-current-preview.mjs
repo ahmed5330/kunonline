@@ -1,16 +1,41 @@
 import {readFile} from 'node:fs/promises';
+import path from 'node:path';
+import {fileURLToPath} from 'node:url';
 
 const base=(process.argv[2]||'').replace(/\/$/,'');
 if(!base)throw new Error('Usage: node scripts/smoke-test-current-preview.mjs <base-url>');
 
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+const repoRoot=fileURLToPath(new URL('../',import.meta.url));
 const config=await readFile(new URL('../wrangler.preview.toml',import.meta.url),'utf8');
 const entrypoint=config.match(/^\s*main\s*=\s*"([^"]+)"/m)?.[1];
 if(!entrypoint)throw new Error('Could not resolve Preview entrypoint from wrangler.preview.toml');
-const entrySource=await readFile(new URL(`../${entrypoint}`,import.meta.url),'utf8');
-const expectedBuild=entrySource.match(/const BUILD=['"]([^'"]+)['"]/i)?.[1]||'';
-if(!expectedBuild)throw new Error(`Could not resolve BUILD from ${entrypoint}`);
-const expectedEntrypoint=entrypoint.split('/').pop();
+
+const importSpecs=source=>[...source.matchAll(/\b(?:import|export)\s+(?:[^'";]*?\s+from\s+)?['"](\.\.?\/[^'"]+)['"]/g)].map(match=>match[1]);
+async function resolveVersionOwner(start){
+  const queue=[path.resolve(repoRoot,start)],seen=new Set();
+  while(queue.length){
+    const filename=queue.shift();
+    if(seen.has(filename))continue;seen.add(filename);
+    let source='';try{source=await readFile(filename,'utf8');}catch{continue;}
+    const build=source.match(/const\s+BUILD\s*=\s*['"]([^'"]+)['"]/i)?.[1]||'';
+    if(source.includes('/api/preview/version')&&build){
+      return {filename,build,entrypoint:path.basename(filename)};
+    }
+    for(const spec of importSpecs(source)){
+      let child=path.resolve(path.dirname(filename),spec);
+      if(!path.extname(child))child+='.js';
+      if(child.startsWith(repoRoot))queue.push(child);
+    }
+  }
+  return null;
+}
+
+const owner=await resolveVersionOwner(entrypoint);
+if(!owner)throw new Error(`Could not resolve /api/preview/version owner and BUILD from dependency graph rooted at ${entrypoint}`);
+const expectedBuild=owner.build;
+const expectedEntrypoint=owner.entrypoint;
+console.log(`Resolved Preview version owner: ${expectedEntrypoint} / ${expectedBuild} (root ${entrypoint})`);
 
 let last='not requested';
 for(let attempt=1;attempt<=48;attempt++){
@@ -35,4 +60,4 @@ for(let attempt=1;attempt<=48;attempt++){
   }catch(error){last=error?.message||String(error)}
   if(attempt<48)await sleep(500);
 }
-throw new Error(`Current Preview candidate did not propagate. Expected entrypoint=${expectedEntrypoint}, build=${expectedBuild}; last=${last}`);
+throw new Error(`Current Preview candidate did not propagate. Expected root=${entrypoint}, versionOwner=${expectedEntrypoint}, build=${expectedBuild}; last=${last}`);
