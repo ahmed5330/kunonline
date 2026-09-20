@@ -7,6 +7,26 @@ import {handleAutomationWorkflowsV104} from './automation-workflows-v104.js';
 import {handleOperationalWorkflowV105} from './operational-workflow-v105.js';
 import {handleMobileAppUpdate} from './mobile-app-update.js';
 
+const V2_UI_SCRIPTS=[
+  '<script src="/v2/modules-v105-customer-service-claim.js?v=105.2" data-kun-customer-service-claim="1"></script>',
+  '<script src="/v2/modules-v105-section-nav-actions.js?v=105.1" data-kun-section-nav-actions="1"></script>',
+  '<script src="/v2/modules-v106-manual-jnt-order.js?v=106.0" data-kun-manual-jnt-order="1"></script>',
+  '<script src="/v2/modules-v107-mobile-app-update.js?v=107.0" data-kun-mobile-app-update="1"></script>'
+].join('');
+
+async function injectV2Ui(request,response){
+  if(request.method!=='GET'||!response?.ok)return response;
+  const path=new URL(request.url).pathname;
+  if(path!=='/v2'&&path!=='/v2/'&&path!=='/v2/index.html')return response;
+  const type=response.headers.get('content-type')||'';
+  if(!type.includes('text/html'))return response;
+  const html=await response.text();
+  if(html.includes('data-kun-customer-service-claim="1"'))return new Response(html,{status:response.status,statusText:response.statusText,headers:response.headers});
+  const body=html.includes('</body>')?html.replace('</body>',`${V2_UI_SCRIPTS}</body>`):html+V2_UI_SCRIPTS;
+  const headers=new Headers(response.headers);headers.delete('content-length');headers.set('Cache-Control','no-store');
+  return new Response(body,{status:response.status,statusText:response.statusText,headers});
+}
+
 /*
  * Compatibility contract note:
  * The established v38 implementation now lives unchanged in index-commerce-v38-base.js.
@@ -55,7 +75,7 @@ export default {
     if(monthly)return monthly;
     const handled=await handleJtHistoryReconcile({request,env,ctx,delegate:app});
     if(handled)return handled;
-    return app.fetch(request,env,ctx);
+    return injectV2Ui(request,await app.fetch(request,env,ctx));
   },
   scheduled(event,env,ctx){return app.scheduled?.(event,env,ctx);}
 };
