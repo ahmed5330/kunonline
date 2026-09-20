@@ -44,3 +44,16 @@ jobs:
       - run: npm install --ignore-scripts
       - name: Deploy production Worker only — no migrations
         run: npx wrangler deploy --config wrangler.production.toml
+      - name: Verify live Android update feed
+        run: |
+          set -euo pipefail
+          for i in {1..10}; do
+            meta="$(curl -fsS https://app.kun-online.com/api/mobile/app-update 2>/dev/null || true)"
+            if printf '%s' "$meta" | grep -q '"versionCode":107' && printf '%s' "$meta" | grep -q '"versionName":"2.4.0"'; then
+              echo "Live Android update feed verified: $meta"
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "Production update feed did not return the expected v2.4.0 metadata."
+          exit 1
