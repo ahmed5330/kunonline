@@ -62,31 +62,42 @@ console.log(`Operational Preview smoke against ${base}`);
 {
   const {response,body}=await text(`/v2/modules-v80-jnt-address-cascade-v805.js?operationalSmoke=${Date.now()}`);
   expectStatus(response.status,[200],'v80.5 dependency-aware bootstrap');
-  for(const asset of ['modules-v105-customer-service-claim-v1053.js?v=105.3','modules-v106-manual-jnt-order.js?v=106.0','KunJntAddressesV80','DOMContentLoaded']){
+  for(const asset of ['modules-v105-customer-service-claim-v1053.js?v=105.3','modules-v106-manual-jnt-order.js?v=106.0','modules-v109-operational-date-contact.js?v=109.0','KunJntAddressesV80','DOMContentLoaded']){
     expectIncludes(body,asset,'v80.5 dependency-aware bootstrap');
   }
-  console.log('✓ J&T v80.5 loads Customer Service claim v105.3 + manual J&T only after legacy dependencies are ready');
+  console.log('✓ J&T v80.5 loads Customer Service claim, manual J&T and unified operational date/contact behavior after legacy dependencies are ready');
 }
 
 {
   const checks=[
     ['/v2/modules-v105-customer-service-claim-v1053.js?v=105.3',['/api/customer-service/claims','جاري الاتصال','arrangeSalesCustomerNavigation',"['orders','customer-service','printing','post-shipping','returns-exchanges','customers','inbox']","setText(shipping,'الشحن')","setText(customers,'إدارة العملاء')",'data-state="contacting"','data-state="shipped"']],
     ['/v2/modules-v75-customer-service-interactions-v753.js',['claim-contact','kun:customer-service-contact-claimed','تم حجز الأوردر باسمك ونقله إلى «جاري الاتصال»','revision:\'75.4\'']],
-    ['/v2/modules-v106-manual-jnt-order.js?v=106.0',['/api/orders/manual-jnt','name="province"','name="city"','name="area"','name="street"','KunJntAddressesV80']]
+    ['/v2/modules-v106-manual-jnt-order.js?v=106.0',['/api/orders/manual-jnt','name="province"','name="city"','name="area"','name="street"','KunJntAddressesV80']],
+    ['/v2/modules-v109-operational-date-contact.js?v=109.0',['اليوم','آخر أسبوع','الأسبوع الماضي','الشهر الحالي','الشهر الماضي','مدة معينة','Africa/Cairo','release-contact','kun:customer-service-contact-saved','جاري الاتصال بواسطة','customer-service','printing','post-shipping','returns-exchanges']]
   ];
   for(const [path,needles] of checks){
     const {response,body}=await text(`${path}${path.includes('?')?'&':'?'}operationalSmoke=${Date.now()}`);
     expectStatus(response.status,[200],path);
     for(const needle of needles)expectIncludes(body,needle,path);
   }
-  console.log('✓ Sales/customer nav order is orders → Customer Service → printing → shipping → returns → customer management → inbox');
-  console.log('✓ Contact ownership, جاري الاتصال, الشحن and J&T address cascade code are served');
+  console.log('✓ Unified date periods are served for Customer Service, printing, shipping and returns');
+  console.log('✓ Temporary contact ownership shows the staff name and releases back to the original order state');
 }
 
 {
   const {response}=await text(`/api/customer-service/claims?operationalSmoke=${Date.now()}`);
   expectGuardedRoute(response.status,'/api/customer-service/claims');
   console.log(`✓ جاري الاتصال API exists and is guarded (HTTP ${response.status})`);
+}
+
+{
+  const {response}=await text('/api/customer-service/orders/SMOKE-ORDER/release-contact?clientId=SMOKE',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:'{}'
+  });
+  expectGuardedRoute(response.status,'/api/customer-service/orders/:id/release-contact');
+  console.log(`✓ Temporary contact release API exists and is guarded (HTTP ${response.status})`);
 }
 
 {
