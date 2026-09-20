@@ -44,13 +44,13 @@ await propagatedAsset('/v2/modules-v64-shipping-smart-sync.js?v=64.1','Smart Shi
 await propagatedAsset('/v2/','v2 Smart Shipping shell',['modules-v64-shipping-smart-sync.js?v=64.1']);
 console.log('Smoke v36 precheck passed: post-shipping carrier importer + Smart Shipping v64.1 UI are deployed.');
 
-await propagatedAsset('/v2/modules-v80-jnt-address-cascade.js?v=80.1','J&T address cascade v80.1',['KunJntAddressesV80','/v2/data/jnt-addresses/','modules-v81-jt-live-setup.js?v=81.0',"version:'80.1'"]);
-await propagatedAsset('/v2/','v2 J&T address cascade shell',['modules-v80-jnt-address-cascade.js?v=80.1']);
-console.log('Smoke v36 precheck passed: J&T address cascade v80.1 asset path is valid and deployed.');
+await propagatedAsset('/v2/modules-v80-jnt-address-cascade.js?v=80.3','J&T address cascade v80.3',['KunJntAddressesV80','/v2/data/jnt-addresses/','modules-v81-jt-live-setup.js?v=81.0','modules-v105-customer-service-claim.js?v=105.1','modules-v106-manual-jnt-order.js?v=106.0',"version:'80.3'"]);
+await propagatedAsset('/v2/','v2 J&T address cascade shell',['modules-v80-jnt-address-cascade.js?v=80.3']);
+console.log('Smoke v36 precheck passed: reusable J&T address cascade v80.3 + Customer Service claim/manual-order loaders are deployed.');
 
-await propagatedAsset('/v2/modules-v75-customer-service-interactions-v753.js','Customer Service reliable interactions v75.3',['KunCustomerServiceInteractionsV75','saveNote','saveContact','keepalive:isCall','data-cs-contact-count','updateContactCount?.(id,count)','kun:customer-service-contact-saved','تم تسجيل المكالمة في سجل الأوردر',"version:'75.3'"]);
+await propagatedAsset('/v2/modules-v75-customer-service-interactions-v753.js','Customer Service reliable interactions v75.4',['KunCustomerServiceInteractionsV75','saveNote','saveContact','claim-contact','kun:customer-service-contact-claimed','kun:customer-service-contact-saved',"version:'75.4'"]);
 await propagatedAsset('/v2/','v2 Customer Service interaction shell',['modules-v75-customer-service-interactions-v753.js']);
-console.log('Smoke v36 precheck passed: Customer Service v75.3 unified note/contact/call continuity layer is deployed.');
+console.log('Smoke v36 precheck passed: Customer Service v75.4 contact ownership + note/contact/call continuity layer is deployed.');
 
 await propagatedAsset('/v2/modules-v74-admin-client-command-center.js?v=74.0','Admin Client Command Center',['Client Command Center','فتح بريف العميل','الطلبات والتحصيل','التسويق والإعلانات','المالية والمخزون','ما يحتاج انتباهك','ملخص الحملات في الفترة','مقابل الفترة السابقة','فترة معينة']);
 await propagatedAsset('/v2/modules-v23-admin.js?v=23.3','Admin Client Command Center loader',['modules-v74-admin-client-command-center.js?v=74.0','kunAdminClientCommandV74Loader']);
