@@ -8,6 +8,58 @@ const arr=v=>{try{const x=JSON.parse(v||'[]');return Array.isArray(x)?x:[]}catch
 const now=()=>new Date().toISOString();
 const n=v=>Number(v)||0;
 const isRoute=path=>path==='/api/customer-service'||path==='/api/my-client-context'||path==='/api/catalog/products'||/^\/api\/orders\/[^/]+\/details$/.test(path)||/^\/api\/customer-service\/orders\/[^/]+\/(history|state|contact|notes|awb|whatsapp-log|delete|edit)$/.test(path);
+
+function cairoToday(){
+  const parts=new Intl.DateTimeFormat('en-US',{timeZone:'Africa/Cairo',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());
+  const values=Object.fromEntries(parts.filter(x=>x.type!=='literal').map(x=>[x.type,x.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+function validYmd(value){
+  const s=clean(value);
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(s))return '';
+  const d=new Date(`${s}T00:00:00Z`);
+  return Number.isNaN(d.getTime())||d.toISOString().slice(0,10)!==s?'':s;
+}
+function shiftYmd(value,days){
+  const d=new Date(`${value}T00:00:00Z`);d.setUTCDate(d.getUTCDate()+days);return d.toISOString().slice(0,10);
+}
+function firstOfMonth(value){return value.slice(0,7)+'-01';}
+function previousMonthRange(today){
+  const d=new Date(`${firstOfMonth(today)}T00:00:00Z`);d.setUTCMonth(d.getUTCMonth()-1);
+  const from=d.toISOString().slice(0,10);d.setUTCMonth(d.getUTCMonth()+1);d.setUTCDate(0);
+  return {from,to:d.toISOString().slice(0,10)};
+}
+function previousWeekRange(today){
+  const d=new Date(`${today}T00:00:00Z`),day=d.getUTCDay(),daysSinceMonday=(day+6)%7;
+  const thisMonday=shiftYmd(today,-daysSinceMonday),to=shiftYmd(thisMonday,-1),from=shiftYmd(to,-6);
+  return {from,to};
+}
+function normalizePeriod(value){
+  return clean(value).replace(/([a-z])([A-Z])/g,'$1_$2').replace(/[\s-]+/g,'_').toLowerCase();
+}
+function boardDateRange(url){
+  const first=(...names)=>{for(const name of names){const v=clean(url.searchParams.get(name));if(v)return v;}return '';};
+  const rawFrom=first('periodFrom','from','dateFrom','startDate','start');
+  const rawTo=first('periodTo','to','dateTo','endDate','end');
+  if(rawFrom||rawTo){
+    const from=validYmd(rawFrom),to=validYmd(rawTo);
+    if(!from||!to)throw Object.assign(new Error('حدد بداية ونهاية الفترة بصيغة صحيحة'),{status:400,code:'CUSTOMER_SERVICE_DATE_RANGE_INVALID'});
+    if(from>to)throw Object.assign(new Error('بداية الفترة يجب أن تكون قبل نهايتها'),{status:400,code:'CUSTOMER_SERVICE_DATE_RANGE_REVERSED'});
+    return {key:'custom',from,to};
+  }
+
+  const raw=first('period','range','dateRange');
+  if(!raw)return {key:'all',from:'',to:''};
+  const period=normalizePeriod(raw),today=cairoToday();
+  if(['today','اليوم'].includes(period))return {key:'today',from:today,to:today};
+  if(['week','last7','last_7','last_7_days','last_week','آخر_أسبوع','اخر_أسبوع','اخر_اسبوع','آخر_اسبوع'].includes(period))return {key:'last7',from:shiftYmd(today,-6),to:today};
+  if(['previous_week','prev_week','prior_week','week_previous','الأسبوع_الماضي','الاسبوع_الماضي'].includes(period))return {key:'previous_week',...previousWeekRange(today)};
+  if(['month','current_month','this_month','الشهر_الحالي'].includes(period))return {key:'current_month',from:firstOfMonth(today),to:today};
+  if(['previous_month','prev_month','last_month','الشهر_الماضي'].includes(period))return {key:'previous_month',...previousMonthRange(today)};
+  if(['custom','مدة_معينة','custom_range'].includes(period))throw Object.assign(new Error('حدد تاريخ البداية والنهاية للفترة المخصصة'),{status:400,code:'CUSTOMER_SERVICE_CUSTOM_RANGE_REQUIRED'});
+  return {key:'all',from:'',to:''};
+}
+
 async function delegatedJson(delegate,request,env,ctx,path,method='GET',body){
   const u=new URL(request.url);u.pathname=path;u.search='';
   const headers=new Headers(request.headers);headers.delete('content-length');if(body!==undefined)headers.set('Content-Type','application/json; charset=utf-8');
@@ -45,10 +97,13 @@ async function saveArrays(env,row,{history,contactLog}){
 async function appendEvent(env,row,event,{contact=false}={}){
   const history=arr(row.history);history.push(event);const contactLog=arr(row.contact_log);if(contact)contactLog.push(event);await saveArrays(env,row,{history,contactLog});return {history,contactLog};
 }
-async function board(env,me,clientId){
+async function board(env,me,clientId,dateRange={key:'all',from:'',to:''}){
+  const dateExpr="COALESCE(NULLIF(substr(date,1,10),''),substr(created_at,1,10))";
+  const where=[`client_id=?`,`state IN (${BOARD_STATES.map(()=>'?').join(',')})`];
   const binds=[clientId,...BOARD_STATES];
-  const {results=[]}=await env.DB.prepare(`SELECT ${ORDER_COLS} FROM orders WHERE client_id=? AND state IN (${BOARD_STATES.map(()=>'?').join(',')}) ORDER BY COALESCE(date,created_at) DESC, created_at DESC LIMIT 1000`).bind(...binds).all();
-  return {ok:true,clientId,role:me.role,allStores:true,stores:[],selectedStoreId:null,today:new Date().toISOString().slice(0,10),stages:BOARD_STATES.map(id=>({id,label:LABELS[id]})),stateLabels:LABELS,orders:results.map(mapOrder)};
+  if(dateRange.from&&dateRange.to){where.push(`${dateExpr} BETWEEN ? AND ?`);binds.push(dateRange.from,dateRange.to);}
+  const {results=[]}=await env.DB.prepare(`SELECT ${ORDER_COLS} FROM orders WHERE ${where.join(' AND ')} ORDER BY ${dateExpr} DESC, created_at DESC LIMIT 1000`).bind(...binds).all();
+  return {ok:true,clientId,role:me.role,allStores:true,stores:[],selectedStoreId:null,today:cairoToday(),period:dateRange.key,periodFrom:dateRange.from||null,periodTo:dateRange.to||null,stages:BOARD_STATES.map(id=>({id,label:LABELS[id]})),stateLabels:LABELS,orders:results.map(mapOrder)};
 }
 async function details(env,clientId,orderId){
   const r=await getOrder(env,clientId,orderId),o=mapOrder(r);
@@ -74,7 +129,7 @@ export async function handleProductionCustomerService({request,env,ctx,delegate}
     if(path==='/api/my-client-context'&&method==='GET')return await myClientContext(delegate,request,env,ctx,me);
     const body=['POST','PATCH','PUT'].includes(method)?await request.clone().json().catch(()=>({})):{};
     const clientId=clientIdFor(me,url,body);
-    if(path==='/api/customer-service'&&method==='GET')return json(await board(env,me,clientId));
+    if(path==='/api/customer-service'&&method==='GET')return json(await board(env,me,clientId,boardDateRange(url)));
     if(path==='/api/catalog/products'&&method==='GET')return await catalog(delegate,request,env,ctx,clientId);
     let m=path.match(/^\/api\/orders\/([^/]+)\/details$/);
     if(m&&method==='GET')return json(await details(env,clientId,decodeURIComponent(m[1])));
