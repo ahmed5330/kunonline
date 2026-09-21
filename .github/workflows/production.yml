@@ -19,9 +19,10 @@ jobs:
           node-version: 22
           package-manager-cache: false
       - run: npm install --ignore-scripts
-      - name: Validate Android update hotfix source
+      - name: Validate Android update and Customer Service sources
         run: |
           node --check src/mobile-app-update.js
+          node --check src/production-customer-service.js
           node --check src/index-production-mobile-update.js
       - name: Verify Worker builds without touching Production
         run: npx wrangler deploy --dry-run --config wrangler.production.toml
@@ -51,12 +52,39 @@ jobs:
             meta="$(curl -fsS https://app.kun-online.com/api/mobile/app-update 2>/dev/null || true)"
             if grep -q '"versionCode":108' <<< "$meta" && grep -q '"versionName":"2.4.1"' <<< "$meta"; then
               echo "Live Android update feed verified: $meta"
-              exit 0
+              break
+            fi
+            if [ "$i" = 10 ]; then
+              echo "Production update feed did not return the expected v2.4.1 metadata."
+              exit 1
             fi
             sleep 3
           done
-          echo "Production update feed did not return the expected v2.4.1 metadata."
-          exit 1
+      - name: Verify live Customer Service API routes
+        run: |
+          set -euo pipefail
+          check_guarded_route() {
+            local path="$1"
+            local body code
+            body="$(mktemp)"
+            code="$(curl -sS -o "$body" -w '%{http_code}' "https://app.kun-online.com${path}")"
+            if [ "$code" != "401" ]; then
+              echo "Expected protected Customer Service route to return 401 without a session: ${path}; got HTTP ${code}"
+              cat "$body"
+              exit 1
+            fi
+            if grep -Fq 'مسار غير معروف' "$body"; then
+              echo "Customer Service route still resolves to the legacy unknown-route handler: ${path}"
+              cat "$body"
+              exit 1
+            fi
+            echo "Customer Service route verified: ${path} -> HTTP 401"
+          }
+          check_guarded_route '/api/customer-service'
+          check_guarded_route '/api/my-client-context'
+          check_guarded_route '/api/catalog/products?clientId=probe'
+          check_guarded_route '/api/orders/TEST/details?clientId=probe'
+          check_guarded_route '/api/customer-service/orders/TEST/history?clientId=probe'
       - name: Verify website downloads the APK through Kun Online
         run: |
           set -euo pipefail
