@@ -16,6 +16,14 @@ const V2_UI_SCRIPTS=[
   '<script src="/v2/modules-v109-operational-date-contact.js?v=109.1" data-kun-operational-date-contact="1"></script>'
 ].join('');
 
+function redirectLegacyRoot(request){
+  if(request.method!=='GET'&&request.method!=='HEAD')return null;
+  const url=new URL(request.url);
+  if(url.pathname!=='/')return null;
+  url.pathname='/v2/';
+  return new Response(null,{status:302,headers:{Location:url.toString(),'Cache-Control':'no-store'}});
+}
+
 async function injectV2Ui(request,response){
   if(request.method!=='GET'||!response?.ok)return response;
   const path=new URL(request.url).pathname;
@@ -67,6 +75,8 @@ void safety;
 void core;
 export default {
   async fetch(request,env,ctx){
+    const rootRedirect=redirectLegacyRoot(request);
+    if(rootRedirect)return rootRedirect;
     const mobileUpdate=handleMobileAppUpdate(request);
     if(mobileUpdate)return mobileUpdate;
     const periodBoard=await handleCustomerServicePeriodV111({request,env,ctx,delegate:app});
