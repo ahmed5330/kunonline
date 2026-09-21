@@ -37,6 +37,24 @@ const expectedBuild=owner.build;
 const expectedEntrypoint=owner.entrypoint;
 console.log(`Resolved Preview version owner: ${expectedEntrypoint} / ${expectedBuild} (root ${entrypoint})`);
 
+async function verifyHtmlShellRouting(){
+  const nonce=Date.now();
+  const root=await fetch(`${base}/?rootLoginSmoke=${nonce}`,{redirect:'manual',headers:{'Cache-Control':'no-cache'}});
+  const location=root.headers.get('location')||'';
+  let locationPath='';try{locationPath=new URL(location,base).pathname;}catch{}
+  if(![301,302,303,307,308].includes(root.status)||locationPath!=='/v2/'){
+    throw new Error(`Preview root login must redirect to /v2/. Got HTTP ${root.status}; location=${location||'missing'}`);
+  }
+  console.log('✓ Preview root login redirects to the v2 authentication shell');
+
+  const v2=await fetch(`${base}/v2/?htmlShellSmoke=${nonce}`,{redirect:'follow',headers:{'Cache-Control':'no-cache','Accept':'text/html'}});
+  const html=await v2.text();
+  if(!v2.ok||!html.includes('data-kun-operational-date-contact="1"')){
+    throw new Error(`Preview /v2/ HTML did not pass through Worker UI injection. HTTP ${v2.status}`);
+  }
+  console.log('✓ Preview v2 HTML shell passes through Worker UI injection');
+}
+
 let last='not requested';
 for(let attempt=1;attempt<=48;attempt++){
   try{
@@ -54,6 +72,7 @@ for(let attempt=1;attempt<=48;attempt++){
         throw new Error(`Preview health invalid: HTTP ${health.status} ${JSON.stringify(healthData)}`);
       }
       console.log('✓ Preview health and D1 reachability confirmed');
+      await verifyHtmlShellRouting();
       process.exit(0);
     }
     last=`HTTP ${response.status}; build=${data?.build||'invalid'}; entrypoint=${data?.entrypoint||'invalid'}; environment=${data?.environment||'invalid'}`;
