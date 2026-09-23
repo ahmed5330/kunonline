@@ -1,4 +1,4 @@
-import app from './index-production-sync.js';
+import app from './index-production-jt-history.js';
 import {handleMobileAppUpdate} from './mobile-app-update.js';
 import {handleProductionCustomerService} from './production-customer-service.js';
 import {handleProductionMobileOrderGuard} from './production-mobile-order-guard.js';
