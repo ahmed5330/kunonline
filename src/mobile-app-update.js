@@ -1,18 +1,19 @@
 /* Production Android update feed for Kun Online. No database access or mutation. */
 const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}});
 
-const RELEASE_APK='https://github.com/ahmed5330/kunonline/releases/download/android-latest/Kun-Online-Mobile.apk';
+const RELEASE_APK='https://github.com/ahmed5330/kunonline/releases/download/android-latest/Kun-Online-Mobile-v2.5.0.apk';
 const UPDATE={
-  versionCode:108,
-  versionName:'2.4.1',
+  versionCode:109,
+  versionName:'2.5.0',
   minSupportedVersionCode:106,
   required:false,
   apkUrl:'https://app.kun-online.com/api/mobile/app-update/apk',
   notes:[
-    'فحص تلقائي للإصدارات الجديدة عند فتح التطبيق.',
-    'تنزيل أحدث APK دائمًا من رابط كن أونلاين داخل السيستم.',
-    'استكمال التحديث تلقائيًا بعد السماح بتثبيت التطبيقات من كن أونلاين.',
-    'الحفاظ على مزامنة بيانات العميل وخواص تعريف المتصل.'
+    'واجهة تطبيق أحدث وأوضح مع تنقل أسرع بين الرئيسية والطلبات وخدمة العملاء والإعدادات.',
+    'تصميم جديد لكروت الطلبات مع بيانات العميل والمنتج والعنوان والإجمالي وأزرار اتصال وواتساب مباشرة.',
+    'إضافة قسم جاري التواصل لإظهار الأوردرات المرتبطة بالمكالمات والمتابعة الحالية.',
+    'مزامنة تلقائية للطلبات أثناء فتح التطبيق، ومزامنة دورية في الخلفية، وتحديث فوري عند فحص المكالمات.',
+    'تحسين ربط أي أوردر جديد ببيانات Caller ID والمكالمات بأسرع وقت متاح.'
   ]
 };
 
@@ -23,7 +24,7 @@ async function directApkDownload(request){
 
     const headers=new Headers(upstream.headers);
     headers.set('Content-Type','application/vnd.android.package-archive');
-    headers.set('Content-Disposition','attachment; filename="Kun-Online-Mobile.apk"');
+    headers.set('Content-Disposition','attachment; filename="Kun-Online-Mobile-v2.5.0.apk"');
     headers.set('Cache-Control','public, max-age=300, must-revalidate');
     headers.set('X-Kun-Online-Android-Version',String(UPDATE.versionCode));
     headers.delete('Content-Security-Policy');
