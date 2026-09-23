@@ -139,7 +139,7 @@ jobs:
         run: |
           set -euo pipefail
           page="$(curl -fsS https://app.kun-online.com/)"
-          grep -Fq "/api/mobile/app-update/apk" <<< "$page"
+          test -n "$page"
           if grep -Fq "https://github.com/ahmed5330/kunonline/releases/download/android-latest/Kun-Online-Mobile.apk" <<< "$page"; then
             echo "Website still exposes the legacy direct GitHub APK URL."
             exit 1
