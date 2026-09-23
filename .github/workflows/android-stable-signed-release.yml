@@ -151,7 +151,6 @@ jobs:
 
           cp /tmp/Kun-Online-Mobile.apk "/tmp/$CANONICAL"
           cp /tmp/Kun-Online-Mobile.apk "/tmp/$VERSIONED"
-          cp /tmp/Kun-Online-Mobile.apk "/tmp/$STABLE"
 
           gh release upload android-latest "/tmp/$CANONICAL" --clobber
           gh release upload android-latest "/tmp/$VERSIONED" --clobber
