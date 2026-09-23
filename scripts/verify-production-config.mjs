@@ -4,20 +4,22 @@ import { execFileSync } from 'node:child_process';
 const configPath = 'wrangler.production.toml';
 const deployWorkflowPath = '.github/workflows/production.yml';
 const rollbackWorkflowPath = '.github/workflows/production-rollback.yml';
+const productionEntryPath = 'src/index-production-mobile-update.js';
 const productionSyncPath = 'src/index-production-sync.js';
 const productionIndexSqlPath = 'ops/sql/cloudflare-free-tier-indexes-production.sql';
 
-const [config, deployWorkflow, rollbackWorkflow, productionSync, productionIndexSql] = await Promise.all([
+const [config, deployWorkflow, rollbackWorkflow, productionEntry, productionSync, productionIndexSql] = await Promise.all([
   readFile(configPath, 'utf8'),
   readFile(deployWorkflowPath, 'utf8'),
   readFile(rollbackWorkflowPath, 'utf8'),
+  readFile(productionEntryPath, 'utf8'),
   readFile(productionSyncPath, 'utf8'),
   readFile(productionIndexSqlPath, 'utf8'),
 ]);
 
 const requiredConfig = [
   ['Worker name', /^name\s*=\s*"kunonline"\s*$/m],
-  ['Production sync-safe J&T history entry point', /^main\s*=\s*"src\/index-production-jt-history\.js"\s*$/m],
+  ['Production composed mobile/J&T entry point', /^main\s*=\s*"src\/index-production-mobile-update\.js"\s*$/m],
   ['Production environment marker', /^APP_ENV\s*=\s*"production"\s*$/m],
   ['D1 binding', /^binding\s*=\s*"DB"\s*$/m],
   ['Production D1 name', /^database_name\s*=\s*"kunonline"\s*$/m],
@@ -36,7 +38,25 @@ if (/migrations_dir\s*=/.test(config)) {
   throw new Error('Production safety check failed: migrations_dir must not exist in Production config.');
 }
 
-for (const path of ['src/jt-history-reconcile.js','src/index-production-jt-history.js','public/v2/modules-v91-jt-history-reconcile.js']) {
+const compositionGuards = [
+  [productionEntry.includes("import app from './index-production-jt-history.js';"), 'Production composed entry must retain the J&T history runtime.'],
+  [productionEntry.includes("import {handleMobileAppUpdate} from './mobile-app-update.js';"), 'Production composed entry must retain the Android updater.'],
+  [productionEntry.includes("import {handleProductionCustomerService} from './production-customer-service.js';"), 'Production composed entry must retain the Customer Service guard.'],
+  [productionEntry.includes("import {handleProductionMobileOrderGuard} from './production-mobile-order-guard.js';"), 'Production composed entry must retain the mobile order guard.'],
+  [productionEntry.includes('const mobileUpdate=await handleMobileAppUpdate(request);'), 'Production mobile updater must be awaited before deciding whether to short-circuit the request.'],
+  [productionEntry.includes('return app.fetch(request,env,ctx);'), 'Production composed entry must delegate unmatched requests to the J&T/history application.'],
+];
+for (const [ok, message] of compositionGuards) if (!ok) throw new Error(`Production composition safety check failed: ${message}`);
+
+for (const path of [
+  'src/mobile-app-update.js',
+  'src/production-customer-service.js',
+  'src/production-mobile-order-guard.js',
+  'src/jt-history-reconcile.js',
+  'src/index-production-jt-history.js',
+  productionEntryPath,
+  'public/v2/modules-v91-jt-history-reconcile.js',
+]) {
   try {
     execFileSync(process.execPath, ['--check', path], { stdio: 'pipe' });
   } catch (error) {
@@ -86,4 +106,4 @@ for (const marker of ['approval-only','DO NOT run from CI','idx_orders_easyorder
   if (!productionIndexSql.includes(marker)) throw new Error(`Production index maintenance SQL is missing safety marker: ${marker}`);
 }
 
-console.log('Production deploy and rollback safety checks passed. J&T history release files parse successfully, Easy Orders recovery has a 30-request global budget, index SQL is approval-only, and CI contains no Production database mutation command.');
+console.log('Production deploy and rollback safety checks passed. Composed Android + Customer Service + mobile guard + J&T history runtime parses safely, Easy Orders recovery has a 30-request global budget, index SQL is approval-only, and CI contains no Production database mutation command.');
