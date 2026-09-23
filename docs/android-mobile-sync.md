@@ -1,8 +1,9 @@
 # Android v2.6.3 mobile sync
 
 The visible home/orders screen polls every 15 seconds. Customer service has its own
-15-second poll, and the global poll pauses while customer service or settings is
-selected. `repeatOnLifecycle(RESUMED)` stops recurring work when the activity pauses
+15-second poll. The global poll pauses in settings, but stays active during
+customer service to keep the complete caller-ID cache current (the board only
+contains selected order stages). `repeatOnLifecycle(RESUMED)` stops recurring work when the activity pauses
 and refreshes immediately when it resumes. An already running blocking HTTP read
 may finish; the periodic background caller cache job remains separate.
 

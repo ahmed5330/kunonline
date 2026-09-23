@@ -113,7 +113,8 @@ fun KunNativeAppV25(activity: MainActivity) {
         if (!loggedIn) return@LaunchedEffect
         SyncJobService.schedule(context)
     }
-    ForegroundPolling(loggedIn, enabled = loggedIn && selected != MobileV25Tab.CUSTOMER_SERVICE && selected != MobileV25Tab.SETTINGS, intervalMillis = V25_FOREGROUND_SYNC_MS) {
+    // Keep the caller-ID cache current while customer service is visible too.
+    ForegroundPolling(loggedIn, enabled = loggedIn && selected != MobileV25Tab.SETTINGS, intervalMillis = V25_FOREGROUND_SYNC_MS) {
         performRefresh(false)
     }
 

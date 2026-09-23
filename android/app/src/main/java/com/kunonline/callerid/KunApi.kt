@@ -195,7 +195,7 @@ object KunApi {
             val path = if (query.isBlank()) "/api/state" else "/api/state?$query"
             val response = MobileSyncClient.fetch(cookie, path, forceFull)
             if (response.code == 401) {
-                clearSession(context)
+                if (session(context) == cookie) clearSession(context)
                 return StateResult(false, "انتهت الجلسة — سجّل الدخول مرة أخرى")
             }
             if (response.code == 403 || response.code == 400) clearScope()
