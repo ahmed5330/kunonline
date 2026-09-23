@@ -116,31 +116,7 @@ object KunCustomerServiceApi {
         return CustomerServiceJsonResult(false, errorMessage(result, fallback))
     }
 
-    private fun resolveClientId(cookie: String): String {
-        val me = request("GET", "/api/me", cookie)
-        if (me.code in 200..299) {
-            val root = json(me)
-            val value = root.optString("clientId").ifBlank { root.optString("client_id") }
-            if (value.isNotBlank()) return value
-        }
-        val context = request("GET", "/api/my-client-context", cookie)
-        if (context.code in 200..299) {
-            val value = json(context).optJSONArray("clients")?.optJSONObject(0)?.optString("id").orEmpty()
-            if (value.isNotBlank()) return value
-        }
-        val state = request("GET", "/api/state", cookie)
-        if (state.code in 200..299) {
-            val root = json(state)
-            val client = root.optJSONArray("clients")?.optJSONObject(0)?.optString("id").orEmpty()
-                .ifBlank { root.optJSONArray("businessClients")?.optJSONObject(0)?.optString("id").orEmpty() }
-                .ifBlank {
-                    val order = root.optJSONArray("orders")?.optJSONObject(0)
-                    order?.optString("clientId").orEmpty().ifBlank { order?.optString("client_id").orEmpty() }
-                }
-            if (client.isNotBlank()) return client
-        }
-        return ""
-    }
+    private fun resolveClientId(cookie: String): String = KunApi.resolveScope(cookie).clientId
 
     fun fetchBoard(context: Context, storeId: String = ""): CustomerServiceBoardResult {
         val cookie = cookie(context) ?: return CustomerServiceBoardResult(false, "سجّل الدخول أولاً")
@@ -151,7 +127,9 @@ object KunCustomerServiceApi {
                 append("/api/customer-service?clientId=${enc(clientId)}")
                 if (storeId.isNotBlank()) append("&storeId=${enc(storeId)}")
             }
-            val response = request("GET", path, cookie)
+            val synced = MobileSyncClient.fetch(cookie, path)
+            val response = HttpResult(synced.code, synced.body.toString())
+            if (KunApi.sessionCookie(context) != cookie) return CustomerServiceBoardResult(false, "تغيّرت جلسة الحساب")
             if (response.code == 401) return CustomerServiceBoardResult(false, "انتهت الجلسة — سجّل الدخول مرة أخرى")
             if (response.code !in 200..299) return CustomerServiceBoardResult(false, errorMessage(response, "تعذر تحميل خدمة العملاء"))
             val root = json(response)
