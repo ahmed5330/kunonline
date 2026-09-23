@@ -207,7 +207,8 @@ jobs:
             if curl -fsS -D "$headers" -o "$live_apk" "https://app.kun-online.com/api/mobile/app-update/apk?versionCode=${APP_CODE}&versionName=${APP_VERSION}&verify=${GITHUB_RUN_ID}-${i}"; then
               LIVE_SHA="$(sha256sum "$live_apk" | awk '{print $1}')"
               LIVE_BYTES="$(wc -c < "$live_apk")"
-              if grep -Eiq "^x-kun-online-android-version: ${APP_CODE}\r?$" "$headers" \
+              clean_headers="$(tr -d '\r' < "$headers")"
+              if grep -Eiq "^x-kun-online-android-version: ${APP_CODE}$" <<< "$clean_headers" \
                 && [ "$LIVE_SHA" = "$EXPECTED_SHA" ] \
                 && [ "$LIVE_BYTES" -gt 1000000 ] \
                 && unzip -tq "$live_apk"; then
