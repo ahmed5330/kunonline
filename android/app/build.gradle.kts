@@ -12,6 +12,7 @@ android {
         applicationId = "com.kunonline.callerid.stable"
         minSdk = 29
         targetSdk = 35
+        // v2.6.1 is the bridge release that enables the permanent automatic updater.
         versionCode = 111
         versionName = "2.6.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
