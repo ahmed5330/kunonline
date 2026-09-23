@@ -50,12 +50,12 @@ jobs:
           set -euo pipefail
           for i in {1..10}; do
             meta="$(curl -fsS https://app.kun-online.com/api/mobile/app-update 2>/dev/null || true)"
-            if grep -q '"versionCode":108' <<< "$meta" && grep -q '"versionName":"2.4.1"' <<< "$meta"; then
+            if grep -q '"versionCode":109' <<< "$meta" && grep -q '"versionName":"2.5.0"' <<< "$meta"; then
               echo "Live Android update feed verified: $meta"
               break
             fi
             if [ "$i" = 10 ]; then
-              echo "Production update feed did not return the expected v2.4.1 metadata."
+              echo "Production update feed did not return the expected v2.5.0 metadata."
               exit 1
             fi
             sleep 3
@@ -100,8 +100,8 @@ jobs:
           listing="$(mktemp)"
           curl -fsS -D "$headers" -o "$apk" https://app.kun-online.com/api/mobile/app-update/apk
           grep -Eiq '^content-type: application/vnd\.android\.package-archive' "$headers"
-          grep -Eiq '^content-disposition: attachment; filename="Kun-Online-Mobile\.apk"' "$headers"
-          grep -Eiq '^x-kun-online-android-version: 108' "$headers"
+          grep -Eiq '^content-disposition: attachment; filename="Kun-Online-Mobile-v2\.5\.0\.apk"' "$headers"
+          grep -Eiq '^x-kun-online-android-version: 109' "$headers"
           test "$(wc -c < "$apk")" -gt 1000000
           unzip -l "$apk" > "$listing"
           grep -Fq 'AndroidManifest.xml' "$listing"
