@@ -128,13 +128,21 @@ jobs:
           APP_VERSION: ${{ steps.signed.outputs.version }}
         run: |
           set -euo pipefail
-          gh release upload android-latest /tmp/Kun-Online-Mobile.apk --clobber
+          ASSET="Kun-Online-Mobile-v${APP_VERSION}.apk"
+          cp /tmp/Kun-Online-Mobile.apk "/tmp/$ASSET"
+
+          if ! gh release view android-latest --json assets --jq '.assets[].name' | grep -Fxq "$ASSET"; then
+            gh release upload android-latest "/tmp/$ASSET"
+          fi
+
           gh release delete-asset android-latest app-debug.apk -y || true
           gh release edit android-latest \
             --target "$GITHUB_SHA" \
             --title "Kun Online Android v$APP_VERSION" \
-            --notes "Stable-signed Kun Online Caller ID v$APP_VERSION. This release uses the permanent Kun Online Android signing identity and stable package line."
-          gh release view android-latest --json assets --jq '.assets[].name' | grep -Fxq 'Kun-Online-Mobile.apk'
+            --notes "Stable-signed Kun Online Android v$APP_VERSION with the redesigned mobile UI, improved order cards, active contact workflow, and automatic caller/order synchronization."
+
+          gh release view android-latest --json assets --jq '.assets[].name' | grep -Fxq "$ASSET"
+          echo "Published $ASSET"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -147,4 +155,4 @@ jobs:
         if: always()
         shell: bash
         run: |
-          rm -rf /tmp/kun-signing /tmp/kun-transport-private.pem /tmp/kun-bundle-key.enc /tmp/kun-bundle-pass.txt /tmp/kun-signing-bundle.enc /tmp/kun-signing-bundle.tar.gz /tmp/apk-verify.txt
+          rm -rf /tmp/kun-signing /tmp/kun-transport-private.pem /tmp/kun-bundle-key.enc /tmp/kun-bundle-pass.txt /tmp/kun-signing-bundle.enc /tmp/kun-signing-bundle.tar.gz /tmp/apk-verify.txt /tmp/Kun-Online-Mobile-v*.apk
