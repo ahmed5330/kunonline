@@ -24,6 +24,7 @@ jobs:
           node --check src/mobile-app-update.js
           node --check src/production-mobile-order-guard.js
           node --check src/production-customer-service.js
+          node --check src/index-production-jt-history.js
           node --check src/index-production-mobile-update.js
       - name: Verify Worker builds without touching Production
         run: npx wrangler deploy --dry-run --config wrangler.production.toml
@@ -122,27 +123,30 @@ jobs:
           check_guarded_route '/api/catalog/products?clientId=probe'
           check_guarded_route '/api/orders/TEST/details?clientId=probe'
           check_guarded_route '/api/customer-service/orders/TEST/history?clientId=probe'
-      - name: Verify website downloads a valid APK through Kun Online
+      - name: Verify v2 downloads a valid APK through Kun Online
         run: |
           set -euo pipefail
-          page="$(curl -fsS https://app.kun-online.com/)"
+          page="$(curl -fsS -H 'Cache-Control: no-cache' "https://app.kun-online.com/v2/?deploy=${GITHUB_RUN_ID}")"
           grep -Fq "/api/mobile/app-update/apk" <<< "$page"
           if grep -Fq "https://github.com/ahmed5330/kunonline/releases/download/android-latest/Kun-Online-Mobile.apk" <<< "$page"; then
-            echo "Website still exposes the legacy direct GitHub APK URL."
+            echo "v2 still exposes the legacy direct GitHub APK URL."
             exit 1
           fi
+          grep -Fq 'data-kun-mobile-app-update="1"' <<< "$page"
 
           expected_code="$(node -e "const d=require('/tmp/mobile-update.json'); process.stdout.write(String(d.versionCode))")"
           expected_version="$(node -e "const d=require('/tmp/mobile-update.json'); process.stdout.write(String(d.versionName))")"
           expected_sha="$(node -e "const d=require('/tmp/mobile-update.json'); process.stdout.write(String(d.sha256||''))")"
 
           headers="$(mktemp)"
+          clean_headers="$(mktemp)"
           apk="$(mktemp --suffix=.apk)"
           listing="$(mktemp)"
           curl -fsS -D "$headers" -o "$apk" "https://app.kun-online.com/api/mobile/app-update/apk?versionCode=${expected_code}&deploy=${GITHUB_RUN_ID}"
-          grep -Eiq '^content-type: application/vnd\.android\.package-archive' "$headers"
-          grep -Fiq "content-disposition: attachment; filename=\"Kun-Online-Mobile-v${expected_version}.apk\"" "$headers"
-          grep -Fiq "x-kun-online-android-version: ${expected_code}" "$headers"
+          tr -d '\r' < "$headers" > "$clean_headers"
+          grep -Eiq '^content-type: application/vnd\.android\.package-archive' "$clean_headers"
+          grep -Fiq "content-disposition: attachment; filename=\"Kun-Online-Mobile-v${expected_version}.apk\"" "$clean_headers"
+          grep -Eiq "^x-kun-online-android-version: ${expected_code}$" "$clean_headers"
           test "$(wc -c < "$apk")" -gt 1000000
           unzip -tq "$apk"
           unzip -l "$apk" > "$listing"
@@ -151,4 +155,4 @@ jobs:
             actual_sha="$(sha256sum "$apk" | awk '{print $1}')"
             test "$actual_sha" = "$expected_sha"
           fi
-          echo "Website Android download verified through Kun Online: $(wc -c < "$apk") bytes"
+          echo "v2 Android download verified through Kun Online: $(wc -c < "$apk") bytes"
