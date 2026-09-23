@@ -3,6 +3,7 @@ import {handleMobileSync} from './mobile-state-sync.js';
 import {handleMobileAppUpdate} from './mobile-app-update.js';
 import {handleProductionCustomerService} from './production-customer-service.js';
 import {handleProductionMobileOrderGuard} from './production-mobile-order-guard.js';
+import {handleProductionCallerJntEdit} from './production-caller-jnt-edit.js';
 
 const LEGACY_APK_URL='https://github.com/ahmed5330/kunonline/releases/download/android-latest/Kun-Online-Mobile.apk';
 const DIRECT_APK_PATH='/api/mobile/app-update/apk';
@@ -37,6 +38,9 @@ export default {
 
     const mobileOrderGuard=await handleProductionMobileOrderGuard({request,env});
     if(mobileOrderGuard)return mobileOrderGuard;
+
+    const callerJntEdit=await handleProductionCallerJntEdit({request,env,ctx,delegate:app});
+    if(callerJntEdit)return callerJntEdit;
 
     const customerService=await handleProductionCustomerService({request,env,ctx,delegate:app});
     if(customerService)return customerService;
