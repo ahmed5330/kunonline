@@ -4,10 +4,10 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.app.DownloadManager
 import android.content.ActivityNotFoundException
-import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
+import android.content.pm.PackageInfo
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -25,9 +25,11 @@ import java.util.zip.ZipFile
 /**
  * Stable in-app updater for Kun Online.
  *
- * Future releases are discovered through the permanent Kun Online endpoint. Once the
- * user has allowed installs from Kun Online, newer versions download automatically,
- * are validated, and the Android installer is opened as soon as the download finishes.
+ * The installer must only be launched once for a completed download. Android resumes
+ * MainActivity while the package installer is working/cancelled, so reopening the same
+ * installer immediately from onResume causes the repeated "Do you want to update" loop.
+ * A persisted launch guard below prevents that loop while keeping the downloaded APK
+ * available for a later retry.
  */
 object AppUpdateManager {
     private const val UPDATE_FEED = "https://app.kun-online.com/api/mobile/app-update"
@@ -37,11 +39,14 @@ object AppUpdateManager {
     private const val KEY_PENDING_CODE = "pending_version_code"
     private const val KEY_EXPECTED_SHA256 = "expected_sha256"
     private const val KEY_DOWNLOAD_ID = "download_id"
+    private const val KEY_DOWNLOAD_URL = "download_url"
     private const val KEY_TARGET_CODE = "target_version_code"
     private const val KEY_RETRY_COUNT = "retry_count"
+    private const val KEY_INSTALL_LAUNCHED_AT = "install_launched_at"
+    private const val KEY_INSTALL_LAUNCHED_CODE = "install_launched_code"
     private const val APK_NAME = "Kun-Online-Mobile-update.apk"
+    private const val INSTALL_RELAUNCH_COOLDOWN_MS = 120_000L
 
-    @Volatile private var receiverRegistered = false
     private val monitoredDownloads = ConcurrentHashMap.newKeySet<Long>()
 
     private data class UpdateInfo(
@@ -60,8 +65,8 @@ object AppUpdateManager {
                 val currentName = installedVersionName(activity)
                 val connection = (URL(UPDATE_FEED).openConnection() as HttpURLConnection).apply {
                     requestMethod = "GET"
-                    connectTimeout = 8000
-                    readTimeout = 12000
+                    connectTimeout = 8_000
+                    readTimeout = 12_000
                     setRequestProperty("Accept", "application/json")
                     setRequestProperty("Cache-Control", "no-cache")
                     setRequestProperty("X-Kun-Mobile", "native-android/$currentName")
@@ -100,8 +105,9 @@ object AppUpdateManager {
 
                 val update = UpdateInfo(latestCode, latestName, apkUrl, sha256, required, notes)
                 activity.runOnUiThread {
-                    if (activity.isFinishing || activity.isDestroyed) return@runOnUiThread
-                    startOrResumeAutomaticUpdate(activity, update)
+                    if (!activity.isFinishing && !activity.isDestroyed) {
+                        startOrResumeAutomaticUpdate(activity, update)
+                    }
                 }
             }.onFailure {
                 // Update checks must never prevent normal use of the application.
@@ -110,10 +116,13 @@ object AppUpdateManager {
     }
 
     fun resumePending(activity: Activity) {
+        val currentCode = installedVersionCode(activity)
+        clearFinishedUpdate(activity, currentCode)
+
         val prefs = activity.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val pendingUrl = prefs.getString(KEY_PENDING_URL, "").orEmpty()
         val pendingCode = prefs.getLong(KEY_PENDING_CODE, -1L)
-        if (pendingUrl.isNotBlank() && canInstallPackages(activity)) {
+        if (pendingUrl.isNotBlank() && pendingCode > currentCode && canInstallPackages(activity)) {
             prefs.edit().remove(KEY_PENDING_URL).remove(KEY_PENDING_CODE).apply()
             startDownload(activity, pendingUrl, pendingCode, isRetry = false)
             return
@@ -121,9 +130,9 @@ object AppUpdateManager {
 
         val downloadId = prefs.getLong(KEY_DOWNLOAD_ID, -1L)
         if (downloadId > 0) {
-            registerReceiver(activity)
-            installIfReady(activity, downloadId)
-            monitorDownload(activity, downloadId)
+            if (!installIfReady(activity, downloadId)) {
+                monitorDownload(activity, downloadId)
+            }
         }
     }
 
@@ -132,14 +141,19 @@ object AppUpdateManager {
         val existingId = prefs.getLong(KEY_DOWNLOAD_ID, -1L)
         val existingTarget = prefs.getLong(KEY_TARGET_CODE, -1L)
 
-        prefs.edit()
+        val editor = prefs.edit()
             .putLong(KEY_TARGET_CODE, update.versionCode)
             .putString(KEY_EXPECTED_SHA256, update.sha256)
-            .apply()
+            .putString(KEY_DOWNLOAD_URL, update.apkUrl)
+        if (existingTarget != update.versionCode) {
+            editor.remove(KEY_INSTALL_LAUNCHED_AT).remove(KEY_INSTALL_LAUNCHED_CODE)
+        }
+        editor.apply()
 
         if (existingId > 0 && existingTarget == update.versionCode) {
-            registerReceiver(activity)
-            if (!installIfReady(activity, existingId)) monitorDownload(activity, existingId)
+            if (!installIfReady(activity, existingId)) {
+                monitorDownload(activity, existingId)
+            }
             return
         }
 
@@ -221,41 +235,18 @@ object AppUpdateManager {
             .setDestinationInExternalFilesDir(activity, Environment.DIRECTORY_DOWNLOADS, APK_NAME)
 
         val id = downloads.enqueue(request)
-        prefs.edit()
+        val editor = prefs.edit()
             .putLong(KEY_DOWNLOAD_ID, id)
             .putLong(KEY_TARGET_CODE, targetCode)
+            .putString(KEY_DOWNLOAD_URL, apkUrl)
             .remove(KEY_PENDING_URL)
             .remove(KEY_PENDING_CODE)
-            .apply {
-                if (!isRetry) putInt(KEY_RETRY_COUNT, 0)
-            }
-            .apply()
+            .remove(KEY_INSTALL_LAUNCHED_AT)
+            .remove(KEY_INSTALL_LAUNCHED_CODE)
+        if (!isRetry) editor.putInt(KEY_RETRY_COUNT, 0)
+        editor.apply()
 
-        registerReceiver(activity)
         monitorDownload(activity, id)
-    }
-
-    private fun registerReceiver(activity: Activity) {
-        if (receiverRegistered) return
-        val receiver = object : BroadcastReceiver() {
-            override fun onReceive(context: Context, intent: Intent) {
-                if (intent.action != DownloadManager.ACTION_DOWNLOAD_COMPLETE) return
-                val id = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1L)
-                val expected = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                    .getLong(KEY_DOWNLOAD_ID, -1L)
-                if (id > 0 && id == expected) installIfReady(activity, id)
-            }
-        }
-        val filter = IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            // The completion broadcast is sent by the system Download Manager, so the
-            // dynamically registered receiver must accept broadcasts from outside our UID.
-            activity.registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED)
-        } else {
-            @Suppress("DEPRECATION")
-            activity.registerReceiver(receiver, filter)
-        }
-        receiverRegistered = true
     }
 
     private fun monitorDownload(activity: Activity, downloadId: Long) {
@@ -264,8 +255,8 @@ object AppUpdateManager {
             try {
                 val downloads = activity.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
                 repeat(1800) {
-                    val state = queryDownload(downloads, downloadId) ?: return@repeat
-                    when (state.first) {
+                    val state = queryDownload(downloads, downloadId)
+                    when (state?.first) {
                         DownloadManager.STATUS_SUCCESSFUL -> {
                             activity.runOnUiThread {
                                 if (!activity.isFinishing && !activity.isDestroyed) {
@@ -308,7 +299,7 @@ object AppUpdateManager {
         }
     }
 
-    /** Returns true when the APK was already complete and an install action was handled. */
+    /** Returns true when the completed download has already been handled. */
     private fun installIfReady(activity: Activity, downloadId: Long): Boolean {
         val downloads = activity.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
         val state = queryDownload(downloads, downloadId) ?: return false
@@ -318,19 +309,41 @@ object AppUpdateManager {
         }
         if (state.first != DownloadManager.STATUS_SUCCESSFUL) return false
 
+        val prefs = activity.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val targetCode = prefs.getLong(KEY_TARGET_CODE, -1L)
+        val currentCode = installedVersionCode(activity)
+        if (targetCode > 0 && currentCode >= targetCode) {
+            clearFinishedUpdate(activity, currentCode)
+            return true
+        }
+
         val dir = activity.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: return false
         val file = File(dir, APK_NAME)
-        if (!isValidApk(activity, file)) {
+        if (!isValidApk(activity, file, targetCode, currentCode)) {
             retryInvalidDownloadOnce(activity, file)
             return true
         }
 
-        val expectedSha = activity.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getString(KEY_EXPECTED_SHA256, "").orEmpty()
+        val expectedSha = prefs.getString(KEY_EXPECTED_SHA256, "").orEmpty()
         if (expectedSha.isNotBlank() && !sha256(file).equals(expectedSha, ignoreCase = true)) {
             retryInvalidDownloadOnce(activity, file)
             return true
         }
+
+        val launchedCode = prefs.getLong(KEY_INSTALL_LAUNCHED_CODE, -1L)
+        val launchedAt = prefs.getLong(KEY_INSTALL_LAUNCHED_AT, 0L)
+        val now = System.currentTimeMillis()
+        if (
+            targetCode > 0 && launchedCode == targetCode && launchedAt > 0L &&
+            now - launchedAt in 0 until INSTALL_RELAUNCH_COOLDOWN_MS
+        ) {
+            return true
+        }
+
+        prefs.edit()
+            .putLong(KEY_INSTALL_LAUNCHED_CODE, targetCode)
+            .putLong(KEY_INSTALL_LAUNCHED_AT, now)
+            .apply()
 
         val uri = FileProvider.getUriForFile(activity, "${activity.packageName}.fileprovider", file)
         val installIntent = Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
@@ -346,37 +359,75 @@ object AppUpdateManager {
                 setDataAndType(uri, "application/vnd.android.package-archive")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            activity.startActivity(fallback)
-            true
+            runCatching { activity.startActivity(fallback) }
+                .onFailure { clearInstallLaunchGuard(activity) }
+                .isSuccess
+        } catch (_: Throwable) {
+            clearInstallLaunchGuard(activity)
+            false
         }
     }
 
-    private fun isValidApk(activity: Activity, file: File): Boolean {
+    private fun isValidApk(activity: Activity, file: File, targetCode: Long, currentCode: Long): Boolean {
         if (!file.exists() || file.length() < 1_000_000L) return false
         val hasManifest = runCatching {
             ZipFile(file).use { it.getEntry("AndroidManifest.xml") != null }
         }.getOrDefault(false)
         if (!hasManifest) return false
 
-        val archiveInfo = activity.packageManager.getPackageArchiveInfo(file.absolutePath, 0) ?: return false
-        return archiveInfo.packageName == activity.packageName
+        val archiveInfo = activity.packageManager.getPackageArchiveInfo(
+            file.absolutePath,
+            PackageManager.GET_SIGNING_CERTIFICATES
+        ) ?: return false
+        if (archiveInfo.packageName != activity.packageName) return false
+
+        val archiveCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) archiveInfo.longVersionCode
+        else {
+            @Suppress("DEPRECATION")
+            archiveInfo.versionCode.toLong()
+        }
+        if (targetCode > 0 && archiveCode != targetCode) return false
+        if (archiveCode <= currentCode) return false
+
+        val installedInfo = activity.packageManager.getPackageInfo(
+            activity.packageName,
+            PackageManager.GET_SIGNING_CERTIFICATES
+        )
+        val installedSigners = signingDigests(installedInfo)
+        val archiveSigners = signingDigests(archiveInfo)
+        if (installedSigners.isNotEmpty() && archiveSigners.isNotEmpty() && installedSigners.intersect(archiveSigners).isEmpty()) {
+            return false
+        }
+        return true
+    }
+
+    private fun signingDigests(info: PackageInfo): Set<String> {
+        val signingInfo = info.signingInfo ?: return emptySet()
+        val signatures = if (signingInfo.hasMultipleSigners()) {
+            signingInfo.apkContentsSigners
+        } else {
+            signingInfo.signingCertificateHistory
+        }
+        return signatures.mapTo(linkedSetOf()) { signature -> sha256(signature.toByteArray()) }
     }
 
     private fun retryInvalidDownloadOnce(activity: Activity, file: File) {
         val prefs = activity.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val retries = prefs.getInt(KEY_RETRY_COUNT, 0)
         val targetCode = prefs.getLong(KEY_TARGET_CODE, -1L)
+        val retryUrl = prefs.getString(KEY_DOWNLOAD_URL, "").orEmpty().ifBlank { FALLBACK_APK }
         file.delete()
+        clearInstallLaunchGuard(activity)
 
         if (retries < 1) {
             prefs.edit().putInt(KEY_RETRY_COUNT, retries + 1).apply()
-            Toast.makeText(activity, "تم اكتشاف ملف تحديث غير مكتمل — جارٍ إعادة تنزيله تلقائيًا.", Toast.LENGTH_LONG).show()
-            startDownload(activity, FALLBACK_APK, targetCode, isRetry = true)
+            Toast.makeText(activity, "تم اكتشاف ملف تحديث غير صالح أو غير مكتمل — جارٍ إعادة تنزيله مرة واحدة.", Toast.LENGTH_LONG).show()
+            startDownload(activity, retryUrl, targetCode, isRetry = true)
         } else {
             clearDownloadId(activity, prefs.getLong(KEY_DOWNLOAD_ID, -1L))
             Toast.makeText(
                 activity,
-                "تعذر التحقق من ملف التحديث. لن يتم فتح ملف غير صالح، وسيُعاد التحقق لاحقًا.",
+                "تعذر التحقق من ملف التحديث. لن يُفتح ملف غير صالح، وسيُعاد التحقق عند فتح التطبيق لاحقًا.",
                 Toast.LENGTH_LONG
             ).show()
         }
@@ -395,6 +446,19 @@ object AppUpdateManager {
         return digest.digest().joinToString("") { "%02x".format(it) }
     }
 
+    private fun sha256(bytes: ByteArray): String {
+        return MessageDigest.getInstance("SHA-256")
+            .digest(bytes)
+            .joinToString("") { "%02x".format(it) }
+    }
+
+    private fun clearInstallLaunchGuard(activity: Activity) {
+        activity.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .remove(KEY_INSTALL_LAUNCHED_AT)
+            .remove(KEY_INSTALL_LAUNCHED_CODE)
+            .apply()
+    }
+
     private fun clearDownloadId(activity: Activity, downloadId: Long) {
         val prefs = activity.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         if (prefs.getLong(KEY_DOWNLOAD_ID, -1L) == downloadId) {
@@ -408,11 +472,14 @@ object AppUpdateManager {
         if (target > 0 && target <= currentCode) {
             prefs.edit()
                 .remove(KEY_DOWNLOAD_ID)
+                .remove(KEY_DOWNLOAD_URL)
                 .remove(KEY_TARGET_CODE)
                 .remove(KEY_EXPECTED_SHA256)
                 .remove(KEY_RETRY_COUNT)
                 .remove(KEY_PENDING_URL)
                 .remove(KEY_PENDING_CODE)
+                .remove(KEY_INSTALL_LAUNCHED_AT)
+                .remove(KEY_INSTALL_LAUNCHED_CODE)
                 .apply()
             activity.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)?.let {
                 File(it, APK_NAME).delete()
