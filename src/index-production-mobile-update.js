@@ -25,7 +25,7 @@ async function websiteWithDirectAndroidDownload(request,env){
 
 export default {
   async fetch(request,env,ctx){
-    const mobileUpdate=handleMobileAppUpdate(request);
+    const mobileUpdate=await handleMobileAppUpdate(request);
     if(mobileUpdate)return mobileUpdate;
 
     const mobileOrderGuard=await handleProductionMobileOrderGuard({request,env});
