@@ -188,7 +188,7 @@ jobs:
 
           headers="$(mktemp)"
           live_apk="$(mktemp --suffix=.apk)"
-          curl -fsS -D "$headers" -o "$live_apk" "https://app.kun-online.com/api/mobile/app-update/apk?verify=${GITHUB_RUN_ID}"
+          curl -fsS -D "$headers" -o "$live_apk" "https://app.kun-online.com/api/mobile/app-update/apk?versionCode=${APP_CODE}&verify=${GITHUB_RUN_ID}"
           grep -Eiq "^x-kun-online-android-version: ${APP_CODE}\r?$" "$headers"
           LIVE_SHA="$(sha256sum "$live_apk" | awk '{print $1}')"
           test "$LIVE_SHA" = "$EXPECTED_SHA"
