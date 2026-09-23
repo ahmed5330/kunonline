@@ -56,11 +56,14 @@ assert.ok(confirmInventory.includes("observe(root,{childList:true,subtree:false}
 assert.doesNotThrow(()=>new Function(confirmInventory),'inventory confirmation browser module must parse');
 
 assert.doesNotThrow(()=>new Function(ecommerceCalculator),'e-commerce calculator browser module must parse');
-assert.equal(ecommerceCalculator.includes("['returnRate'"),false,'delivery and return must not be duplicate user inputs');
-assert.ok(ecommerceCalculator.includes('returnRate=1-delivery'),'return rate must be derived from delivery rate');
-assert.ok(ecommerceCalculator.includes("fields(auto?'adsAuto':'adsManual')"),'calculator must show only the active ad-cost input method');
-assert.ok(ecommerceCalculator.includes("delete model.returnRate"),'legacy duplicate return-rate input must be discarded during migration');
-assert.ok(permissions.includes('/v2/modules-v94-ecommerce-calculator.js?v=94.1'),'calculator bundle must be cache-busted after deduplication');
+for(const marker of ['totalOrders','cancelledOrders','shippedOrders','rtoOrders','deliveredOrders','returnedOrders','realizedRevenue','contributionProfit','netProfit','netBreakEvenCPA','realizedBreakEvenROAS','impactAnalysis','Scenario Planner','Stress Test','تحميل مثال 1000 Order'])assert.ok(ecommerceCalculator.includes(marker),`profitability calculator missing ${marker}`);
+assert.equal(ecommerceCalculator.includes("['returnRate'"),false,'post-delivery return rate must be derived from actual return counts, not duplicated as a rate input');
+assert.equal(ecommerceCalculator.includes("['cpp'"),false,'CPA must be derived from Ad Spend / Total Orders instead of duplicated as a manual input');
+assert.ok(ecommerceCalculator.includes('const returnRate=safeDiv(returned,delivered)*100'),'post-delivery return rate must be derived from actual counts');
+assert.ok(ecommerceCalculator.includes('const currentCPA=safeDiv(d.adSpend,total)'),'current CPA must come from actual ad spend and total orders');
+assert.ok(ecommerceCalculator.includes('const netBreakEvenAdSpend=Math.max(0,contributionBeforeAds-fixedCosts)'),'net break-even ad spend must include fixed costs');
+assert.ok(ecommerceCalculator.includes('version:\'96.0\''),'calculator must expose v96');
+assert.ok(permissions.includes('/v2/modules-v94-ecommerce-calculator.js?v=96.0'),'calculator bundle must be cache-busted for v96');
 
 const dashboardStart=v35.indexOf('async function dashboard');
 const reconcileStart=v35.indexOf('async function reconcileRoute');
