@@ -77,7 +77,7 @@ export default {
   async fetch(request,env,ctx){
     const rootRedirect=redirectLegacyRoot(request);
     if(rootRedirect)return rootRedirect;
-    const mobileUpdate=handleMobileAppUpdate(request);
+    const mobileUpdate=await handleMobileAppUpdate(request);
     if(mobileUpdate)return mobileUpdate;
     const periodBoard=await handleCustomerServicePeriodV111({request,env,ctx,delegate:app});
     if(periodBoard)return periodBoard;
