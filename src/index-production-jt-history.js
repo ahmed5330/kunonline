@@ -3,6 +3,8 @@ import {handleJtHistoryReconcile} from './jt-history-reconcile.js';
 import {handleMobileAppUpdate} from './mobile-app-update.js';
 
 const MOBILE_UPDATE_SCRIPT='<script src="/v2/modules-v107-mobile-app-update.js?v=107.0" data-kun-mobile-app-update="1"></script>';
+const LEGACY_APK_URL='https://github.com/ahmed5330/kunonline/releases/download/android-latest/Kun-Online-Mobile.apk';
+const DIRECT_APK_PATH='/api/mobile/app-update/apk';
 
 async function injectMobileUpdateUi(request,response){
   if(request.method!=='GET'||!response?.ok)return response;
@@ -10,11 +12,15 @@ async function injectMobileUpdateUi(request,response){
   if(path!=='/v2'&&path!=='/v2/'&&path!=='/v2/index.html')return response;
   const type=response.headers.get('content-type')||'';
   if(!type.includes('text/html'))return response;
-  const html=await response.text();
-  if(html.includes('data-kun-mobile-app-update="1"'))return new Response(html,{status:response.status,statusText:response.statusText,headers:response.headers});
-  const body=html.includes('</body>')?html.replace('</body>',`${MOBILE_UPDATE_SCRIPT}</body>`):html+MOBILE_UPDATE_SCRIPT;
-  const headers=new Headers(response.headers);headers.delete('content-length');headers.set('Cache-Control','no-store');
-  return new Response(body,{status:response.status,statusText:response.statusText,headers});
+  const original=await response.text();
+  let html=original.replaceAll(LEGACY_APK_URL,DIRECT_APK_PATH);
+  if(!html.includes('data-kun-mobile-app-update="1"')){
+    html=html.includes('</body>')?html.replace('</body>',`${MOBILE_UPDATE_SCRIPT}</body>`):html+MOBILE_UPDATE_SCRIPT;
+  }
+  const headers=new Headers(response.headers);
+  headers.delete('content-length');
+  headers.set('Cache-Control','no-store');
+  return new Response(html,{status:response.status,statusText:response.statusText,headers});
 }
 
 export default {
