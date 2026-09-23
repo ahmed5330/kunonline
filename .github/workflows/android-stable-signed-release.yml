@@ -200,14 +200,31 @@ jobs:
           done
           test "$matched" = 1
 
-          headers="$(mktemp)"
-          live_apk="$(mktemp --suffix=.apk)"
-          curl -fsS -D "$headers" -o "$live_apk" "https://app.kun-online.com/api/mobile/app-update/apk?versionCode=${APP_CODE}&versionName=${APP_VERSION}&verify=${GITHUB_RUN_ID}"
-          grep -Eiq "^x-kun-online-android-version: ${APP_CODE}\r?$" "$headers"
-          LIVE_SHA="$(sha256sum "$live_apk" | awk '{print $1}')"
-          test "$LIVE_SHA" = "$EXPECTED_SHA"
-          unzip -tq "$live_apk"
-          echo "Live APK matches the signed build: $LIVE_SHA"
+          download_ok=0
+          for i in {1..20}; do
+            headers="$(mktemp)"
+            live_apk="$(mktemp --suffix=.apk)"
+            if curl -fsS -D "$headers" -o "$live_apk" "https://app.kun-online.com/api/mobile/app-update/apk?versionCode=${APP_CODE}&versionName=${APP_VERSION}&verify=${GITHUB_RUN_ID}-${i}"; then
+              LIVE_SHA="$(sha256sum "$live_apk" | awk '{print $1}')"
+              LIVE_BYTES="$(wc -c < "$live_apk")"
+              if grep -Eiq "^x-kun-online-android-version: ${APP_CODE}\r?$" "$headers" \
+                && [ "$LIVE_SHA" = "$EXPECTED_SHA" ] \
+                && [ "$LIVE_BYTES" -gt 1000000 ] \
+                && unzip -tq "$live_apk"; then
+                echo "Live APK matches the signed build: $LIVE_SHA ($LIVE_BYTES bytes)"
+                download_ok=1
+                rm -f "$headers" "$live_apk"
+                break
+              fi
+              echo "APK verification attempt $i not ready yet: actual_sha=$LIVE_SHA expected_sha=$EXPECTED_SHA bytes=$LIVE_BYTES"
+              grep -Ei '^(HTTP/|content-type:|content-disposition:|x-kun-online-android-version:)' "$headers" || true
+            else
+              echo "APK verification attempt $i could not download the live endpoint yet."
+            fi
+            rm -f "$headers" "$live_apk"
+            sleep 5
+          done
+          test "$download_ok" = 1
 
       - uses: actions/upload-artifact@v4
         with:
