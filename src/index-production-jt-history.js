@@ -19,7 +19,7 @@ async function injectMobileUpdateUi(request,response){
 
 export default {
   async fetch(request,env,ctx){
-    const mobileUpdate=handleMobileAppUpdate(request);
+    const mobileUpdate=await handleMobileAppUpdate(request);
     if(mobileUpdate)return mobileUpdate;
     const handled=await handleJtHistoryReconcile({request,env,ctx,delegate:app});
     if(handled)return handled;
