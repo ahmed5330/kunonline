@@ -12,9 +12,9 @@ android {
         applicationId = "com.kunonline.callerid.stable"
         minSdk = 29
         targetSdk = 35
-        // v2.6.4 adds J&T-structured editing directly from the caller overlay.
-        versionCode = 114
-        versionName = "2.6.4"
+        // v2.6.5 prevents the Android package installer from reopening in a loop.
+        versionCode = 115
+        versionName = "2.6.5"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
