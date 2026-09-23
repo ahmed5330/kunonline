@@ -17,7 +17,7 @@ class MainActivity : ComponentActivity() {
             SyncJobService.schedule(this)
         }
         setContent {
-            KunNativeAppV23(this)
+            KunNativeAppV25(this)
         }
         maybeRequestContactsForIncomingCallerId()
         AppUpdateManager.checkForUpdate(this)
