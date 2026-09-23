@@ -237,21 +237,28 @@ fun V23CustomerService(snapshot: CommerceSnapshot, onGlobalRefresh: () -> Unit) 
     var selectedOrder by remember { mutableStateOf<CsOrderUi?>(null) }
     var editorData by remember { mutableStateOf<CustomerServiceEditorData?>(null) }
 
-    fun refreshBoard(keepOrderId: String? = selectedOrder?.id) {
+    suspend fun performBoardRefresh(keepOrderId: String? = selectedOrder?.id, quiet: Boolean = false) {
         if (loading) return
         loading = true
-        scope.launch {
-            val result = withContext(Dispatchers.IO) { KunCustomerServiceApi.fetchBoard(context, storeFilter) }
+        val result = try {
+            withContext(Dispatchers.IO) { KunCustomerServiceApi.fetchBoard(context, storeFilter) }
+        } finally {
             loading = false
-            message = result.message
-            if (result.ok) {
-                board = result
-                selectedOrder = keepOrderId?.let { id -> result.orders.find { it.id == id } }
-            }
+        }
+        if (!quiet || !result.ok) message = result.message
+        if (result.ok) {
+            board = result
+            selectedOrder = keepOrderId?.let { id -> result.orders.find { it.id == id } }
         }
     }
 
-    LaunchedEffect(storeFilter) { refreshBoard(null) }
+    fun refreshBoard(keepOrderId: String? = selectedOrder?.id) {
+        scope.launch { performBoardRefresh(keepOrderId) }
+    }
+
+    ForegroundPolling(storeFilter, intervalMillis = 15_000L) {
+        performBoardRefresh(quiet = true)
+    }
 
     val allOrders = board?.orders.orEmpty()
     val filtered = remember(allOrders, query, stateFilter) {

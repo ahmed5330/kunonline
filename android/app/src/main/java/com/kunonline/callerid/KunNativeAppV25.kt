@@ -44,7 +44,7 @@ import java.time.Instant
 import java.util.Locale
 
 private const val V25_FOREGROUND_SYNC_MS = 15_000L
-private const val V25_CONTACT_REFRESH_MS = 8_000L
+private const val V25_CONTACT_REFRESH_MS = 15_000L
 private const val V25_CONTACT_WINDOW_MS = 5L * 60L * 1000L
 
 private enum class MobileV25Tab(val label: String) {
@@ -82,8 +82,11 @@ fun KunNativeAppV25(activity: MainActivity) {
         loading = true
         val previousIds = snapshot?.orders?.map { it.id }?.toSet().orEmpty()
         val hadSnapshot = snapshot != null
-        val result = withContext(Dispatchers.IO) { KunApi.fetchState(context) }
-        loading = false
+        val result = try {
+            withContext(Dispatchers.IO) { KunApi.fetchState(context, forceFull = manual) }
+        } finally {
+            loading = false
+        }
         if (result.ok) {
             val next = result.snapshot ?: CommerceSnapshot()
             snapshot = next
@@ -109,11 +112,10 @@ fun KunNativeAppV25(activity: MainActivity) {
     LaunchedEffect(loggedIn) {
         if (!loggedIn) return@LaunchedEffect
         SyncJobService.schedule(context)
+    }
+    // Keep the caller-ID cache current while customer service is visible too.
+    ForegroundPolling(loggedIn, enabled = loggedIn && selected != MobileV25Tab.SETTINGS, intervalMillis = V25_FOREGROUND_SYNC_MS) {
         performRefresh(false)
-        while (isActive && loggedIn) {
-            delay(V25_FOREGROUND_SYNC_MS)
-            performRefresh(false)
-        }
     }
 
     LaunchedEffect(newOrdersNotice) {
@@ -529,11 +531,8 @@ private fun V25Contacting(onGlobalRefresh: () -> Unit) {
         tick = System.currentTimeMillis()
     }
 
-    LaunchedEffect(Unit) {
-        while (isActive) {
-            loadBoard()
-            delay(V25_CONTACT_REFRESH_MS)
-        }
+    ForegroundPolling(Unit, intervalMillis = V25_CONTACT_REFRESH_MS) {
+        loadBoard()
     }
 
     val local = remember(tick) { CallActivityStore.active(context, tick).associateBy { it.orderId } }

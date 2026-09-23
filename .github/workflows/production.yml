@@ -22,6 +22,7 @@ jobs:
       - name: Validate Android update, J&T guard and Customer Service sources
         run: |
           node --check src/mobile-app-update.js
+          node scripts/mobile-state-sync-test.mjs
           node --check src/production-mobile-order-guard.js
           node --check src/production-customer-service.js
           node --check src/index-production-mobile-update.js
@@ -117,6 +118,8 @@ jobs:
             fi
             echo "Customer Service route verified: ${path} -> HTTP 401"
           }
+          check_guarded_route '/api/mobile/state-sync'
+          check_guarded_route '/api/mobile/board-sync'
           check_guarded_route '/api/customer-service'
           check_guarded_route '/api/my-client-context'
           check_guarded_route '/api/catalog/products?clientId=probe'
@@ -139,7 +142,7 @@ jobs:
           headers="$(mktemp)"
           apk="$(mktemp --suffix=.apk)"
           listing="$(mktemp)"
-          curl -fsS -D "$headers" -o "$apk" "https://app.kun-online.com/api/mobile/app-update/apk?versionCode=${expected_code}&deploy=${GITHUB_RUN_ID}"
+          curl -fsS -D "$headers" -o "$apk" "https://app.kun-online.com/api/mobile/app-update/apk?versionCode=${expected_code}&versionName=${expected_version}&deploy=${GITHUB_RUN_ID}"
           grep -Eiq '^content-type: application/vnd\.android\.package-archive' "$headers"
           grep -Fiq "content-disposition: attachment; filename=\"Kun-Online-Mobile-v${expected_version}.apk\"" "$headers"
           grep -Fiq "x-kun-online-android-version: ${expected_code}" "$headers"

@@ -1,4 +1,5 @@
 import app from './index-production-jt-history.js';
+import {handleMobileSync} from './mobile-state-sync.js';
 import {handleMobileAppUpdate} from './mobile-app-update.js';
 import {handleProductionCustomerService} from './production-customer-service.js';
 import {handleProductionMobileOrderGuard} from './production-mobile-order-guard.js';
@@ -27,6 +28,12 @@ export default {
   async fetch(request,env,ctx){
     const mobileUpdate=await handleMobileAppUpdate(request);
     if(mobileUpdate)return mobileUpdate;
+
+    const mobileSync=await handleMobileSync({request,load:async sourceRequest=>{
+      const board=await handleProductionCustomerService({request:sourceRequest,env,ctx,delegate:app});
+      return board || app.fetch(sourceRequest,env,ctx);
+    }});
+    if(mobileSync)return mobileSync;
 
     const mobileOrderGuard=await handleProductionMobileOrderGuard({request,env});
     if(mobileOrderGuard)return mobileOrderGuard;

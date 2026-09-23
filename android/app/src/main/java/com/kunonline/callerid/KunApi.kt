@@ -1,6 +1,7 @@
 package com.kunonline.callerid
 
 import android.content.Context
+import android.os.SystemClock
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
@@ -16,6 +17,16 @@ object KunApi {
     private const val BASE_URL = "https://app.kun-online.com"
     private const val AUTH_PREFS = "kun_auth"
     private const val SESSION_KEY = "session_cookie"
+    private var scopeCookie = ""
+    private var cachedScope: ScopeInfo? = null
+    private var scopeExpiresAt = 0L
+
+    @Synchronized private fun clearScope() {
+        scopeCookie = ""
+        cachedScope = null
+        scopeExpiresAt = 0L
+    }
+
 
     private data class HttpResult(val code: Int, val body: String, val setCookie: String?)
 
@@ -106,9 +117,9 @@ object KunApi {
         return syncWithCookie(context, cookie)
     }
 
-    fun fetchState(context: Context): StateResult {
+    fun fetchState(context: Context, forceFull: Boolean = false): StateResult {
         val cookie = session(context) ?: return StateResult(false, "سجّل الدخول أولاً")
-        return fetchStateWithCookie(context, cookie)
+        return fetchStateWithCookie(context, cookie, forceFull)
     }
 
     fun createOrder(context: Context, values: JSONObject): ActionResult =
@@ -173,30 +184,35 @@ object KunApi {
         }
     }
 
-    private fun fetchStateWithCookie(context: Context, cookie: String): StateResult {
+    @Synchronized private fun fetchStateWithCookie(context: Context, cookie: String, forceFull: Boolean = false): StateResult {
         return runCatching {
+            if (forceFull) clearScope()
             val scope = resolveScope(cookie)
             val query = buildList {
                 if (scope.clientId.isNotBlank()) add("clientId=${enc(scope.clientId)}")
                 if (scope.storeId.isNotBlank()) add("storeId=${enc(scope.storeId)}")
             }.joinToString("&")
             val path = if (query.isBlank()) "/api/state" else "/api/state?$query"
-            val response = request("GET", path, cookie = cookie)
+            val response = MobileSyncClient.fetch(cookie, path, forceFull)
             if (response.code == 401) {
-                clearSession(context)
+                if (session(context) == cookie) clearSession(context)
                 return StateResult(false, "انتهت الجلسة — سجّل الدخول مرة أخرى")
             }
+            if (response.code == 403 || response.code == 400) clearScope()
             if (response.code !in 200..299) {
-                return StateResult(false, errorMessage(response).ifBlank { "تعذر تحميل بيانات النظام" })
+                return StateResult(false, response.body.optString("error").ifBlank { "تعذر تحميل بيانات النظام" })
             }
-            val root = JSONObject(response.body)
+            if (session(context) != cookie) return StateResult(false, "تغيّرت جلسة الحساب")
+            val root = response.body
             val orders = root.optJSONArray("orders") ?: JSONArray()
-            CustomerCache.replaceAll(context, orders)
+            if (response.changed) CustomerCache.replaceAll(context, orders)
             StateResult(true, "تم تحديث البيانات", CommerceParser.parse(root))
         }.getOrElse { StateResult(false, "تعذر قراءة بيانات النظام") }
     }
 
-    private fun resolveScope(cookie: String): ScopeInfo {
+    @Synchronized internal fun resolveScope(cookie: String): ScopeInfo {
+        val cached = cachedScope
+        if (scopeCookie == cookie && cached != null && SystemClock.elapsedRealtime() < scopeExpiresAt) return cached
         var clientId = ""
         var storeId = ""
 
@@ -241,11 +257,21 @@ object KunApi {
                 }
             }
         }
-        return ScopeInfo(clientId, storeId)
+        val scope = ScopeInfo(clientId, storeId)
+        if (clientId.isNotBlank()) {
+            scopeCookie = cookie
+            cachedScope = scope
+            scopeExpiresAt = SystemClock.elapsedRealtime() + 300_000L
+        }
+        return scope
     }
 
     private fun session(context: Context): String? = SecureStore.get(context, AUTH_PREFS, SESSION_KEY)
-    private fun clearSession(context: Context) = SecureStore.put(context, AUTH_PREFS, SESSION_KEY, null)
+    private fun clearSession(context: Context) {
+        clearScope()
+        MobileSyncClient.clear()
+        SecureStore.put(context, AUTH_PREFS, SESSION_KEY, null)
+    }
     private fun enc(value: String): String = URLEncoder.encode(value, Charsets.UTF_8.name())
 
     private fun errorMessage(result: HttpResult): String {
