@@ -12,8 +12,9 @@ android {
         applicationId = "com.kunonline.callerid.stable"
         minSdk = 29
         targetSdk = 35
-        versionCode = 107
-        versionName = "2.4.0"
+        // v2.6.2 is the bridge release with the permanent automatic updater.
+        versionCode = 112
+        versionName = "2.6.2"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -21,7 +22,10 @@ android {
         release { isMinifyEnabled = false }
     }
 
-    buildFeatures { compose = true }
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -33,6 +37,7 @@ android {
 dependencies {
     implementation(platform("androidx.compose:compose-bom:2024.12.01"))
     implementation("androidx.activity:activity-compose:1.10.0")
+    implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.foundation:foundation")

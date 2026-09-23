@@ -6,8 +6,6 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -19,21 +17,15 @@ class MainActivity : ComponentActivity() {
             SyncJobService.schedule(this)
         }
         setContent {
-            KunNativeAppV23(this)
+            KunNativeAppV26(this)
         }
         maybeRequestContactsForIncomingCallerId()
-        Handler(Looper.getMainLooper()).postDelayed({
-            if (!isFinishing) AppUpdateManager.check(this, userInitiated = false)
-        }, 2500)
+        AppUpdateManager.checkForUpdate(this)
     }
 
     override fun onResume() {
         super.onResume()
-        AppUpdateManager.resumePendingInstall(this)
-    }
-
-    fun checkForAppUpdate() {
-        AppUpdateManager.check(this, userInitiated = true)
+        AppUpdateManager.resumePending(this)
     }
 
     fun requestCallerRole() {

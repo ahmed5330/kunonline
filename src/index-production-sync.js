@@ -1,10 +1,9 @@
 import app from './index.js';
 
-const BUILD='production-sync-hotfix-2026-08-31';
+const BUILD='production-sync-hotfix-2026-09-20-seed-cache';
 const SHORT_ORDER_BASE='https://api.easy-orders.net/api/v1/external-apps/orders/short/';
 const ORDER_BY_ID_BASE='https://api.easy-orders.net/api/v1/external-apps/orders/';
-const MAX_REQUESTS_PER_RUN=30;
-const MAX_REQUESTS_PER_CLIENT=10;
+const MAX_REQUESTS_PER_CLIENT=35;
 const IMMEDIATE_WINDOW=10;
 const FAR_WINDOW=20;
 const MAX_FAR_OFFSET=210;
@@ -46,6 +45,12 @@ async function easyGet(url,apiKey){
 async function fetchById(apiKey,id){return easyGet(`${ORDER_BY_ID_BASE}${encodeURIComponent(text(id))}`,apiKey);}
 async function fetchByShort(apiKey,id){return easyGet(`${SHORT_ORDER_BASE}${encodeURIComponent(String(id))}`,apiKey);}
 
+/*
+ * This query can be expensive on D1 when orders grows because it filters/sorts the
+ * orders table. It is therefore used only once to seed a client. The resulting
+ * Easy Orders short_id is persisted inside the single state row and reused by all
+ * subsequent five-minute recovery runs.
+ */
 async function latestEasyOrdersRows(env,clientId){
   const {results=[]}=await env.DB.prepare("SELECT id,date,created_at FROM orders WHERE client_id=? AND source='المتجر (إيزي أوردرز)' ORDER BY created_at DESC LIMIT 5").bind(clientId).all();
   return results;
@@ -73,30 +78,33 @@ function scanIds(base,farOffset){
   return [...new Set(ids)].slice(0,30);
 }
 
-async function reconcileClient(env,client,previousOffset,requestBudget=MAX_REQUESTS_PER_CLIENT){
-  const budget=Math.min(MAX_REQUESTS_PER_CLIENT,positiveInt(requestBudget));
-  const result={status:'healthy',requests:0,recovered:0,updated:0,baseShortId:0,highestFoundShortId:0,nextFarOffset:previousOffset||IMMEDIATE_WINDOW,error:null};
-  if(!budget){result.status='budget_exhausted';return result;}
+async function reconcileClient(env,client,previousOffset,previousBase){
+  const cachedBase=positiveInt(previousBase);
+  const result={status:'healthy',requests:0,recovered:0,updated:0,baseShortId:cachedBase,highestFoundShortId:0,nextBaseShortId:cachedBase,nextFarOffset:IMMEDIATE_WINDOW,seedSource:cachedBase?'cache':'orders',error:null};
   try{
     const apiKey=text(await decryptSecret(client.easyOrdersToken,env));
     if(!apiKey)throw new Error('Easy Orders API key is missing or cannot be decrypted');
     if(!text(client.storeId))throw new Error('Easy Orders Store ID is not configured');
-    const recent=await latestEasyOrdersRows(env,client.id);
-    let base=0;
-    const seedLimit=Math.min(5,budget);
-    for(const row of recent){
-      if(result.requests>=seedLimit)break;
-      const fetched=await fetchById(apiKey,row.id);result.requests++;
-      if(fetched.kind==='rate_limited'){result.status='rate_limited';return result;}
-      if(fetched.kind!=='found')continue;
-      const shortId=positiveInt(fetched.data?.short_id||fetched.data?.shortId);
-      if(shortId){base=shortId;break;}
+
+    let base=cachedBase;
+    if(!base){
+      const recent=await latestEasyOrdersRows(env,client.id);
+      for(const row of recent){
+        if(result.requests>=5)break;
+        const fetched=await fetchById(apiKey,row.id);result.requests++;
+        if(fetched.kind==='rate_limited'){result.status='rate_limited';return result;}
+        if(fetched.kind!=='found')continue;
+        const shortId=positiveInt(fetched.data?.short_id||fetched.data?.shortId);
+        if(shortId){base=shortId;break;}
+      }
     }
     if(!base){result.status='waiting_for_seed';result.nextFarOffset=IMMEDIATE_WINDOW;return result;}
+
     result.baseShortId=base;
+    result.nextBaseShortId=base;
     let foundAny=false;
     for(const shortId of scanIds(base,previousOffset)){
-      if(result.requests>=budget)break;
+      if(result.requests>=MAX_REQUESTS_PER_CLIENT)break;
       const fetched=await fetchByShort(apiKey,shortId);result.requests++;
       if(fetched.kind==='rate_limited'){result.status='rate_limited';break;}
       if(fetched.kind!=='found')continue;
@@ -107,6 +115,7 @@ async function reconcileClient(env,client,previousOffset,requestBudget=MAX_REQUE
       if(ingest?.id||ingest?.event){if(before)result.updated++;else result.recovered++;}
       const actual=positiveInt(order.short_id||order.shortId)||shortId;
       result.highestFoundShortId=Math.max(result.highestFoundShortId,actual);
+      result.nextBaseShortId=Math.max(result.nextBaseShortId,actual);
       foundAny=true;
     }
     result.nextFarOffset=nextFarOffset(previousOffset,foundAny);
@@ -120,26 +129,22 @@ async function persistHealth(env,health){
   }catch(error){console.error('easyOrders recovery health persist failed',error);}
 }
 async function runRecovery(env){
-  const state=await rawState(env),clients=(state.clients||[]).filter(c=>text(c.storeId)&&c.easyOrdersToken),previous=state.easyOrdersRecovery?.probeOffsets||{};
-  const health={build:BUILD,lastRunAt:new Date().toISOString(),status:'healthy',connectedClients:clients.length,checkedClients:0,requests:0,requestLimit:MAX_REQUESTS_PER_RUN,recovered:0,updated:0,rateLimited:false,errors:0,budgetExhausted:false,probeOffsets:{...previous},results:[]};
-  let remaining=MAX_REQUESTS_PER_RUN;
+  const state=await rawState(env),clients=(state.clients||[]).filter(c=>text(c.storeId)&&c.easyOrdersToken),previous=state.easyOrdersRecovery?.probeOffsets||{},previousBases=state.easyOrdersRecovery?.baseShortIds||{};
+  const health={build:BUILD,lastRunAt:new Date().toISOString(),status:'healthy',connectedClients:clients.length,checkedClients:0,requests:0,recovered:0,updated:0,rateLimited:false,errors:0,probeOffsets:{},baseShortIds:{},results:[]};
   for(const client of clients){
-    if(remaining<=0){health.budgetExhausted=true;break;}
-    const r=await reconcileClient(env,client,previous?.[client.id],Math.min(MAX_REQUESTS_PER_CLIENT,remaining));health.checkedClients++;health.requests+=r.requests;health.recovered+=r.recovered;health.updated+=r.updated;if(r.status==='rate_limited')health.rateLimited=true;if(r.status==='error')health.errors++;
-    remaining=Math.max(0,remaining-r.requests);
+    const r=await reconcileClient(env,client,previous?.[client.id],previousBases?.[client.id]);health.checkedClients++;health.requests+=r.requests;health.recovered+=r.recovered;health.updated+=r.updated;if(r.status==='rate_limited')health.rateLimited=true;if(r.status==='error')health.errors++;
     health.probeOffsets[client.id]=r.nextFarOffset;
-    health.results.push({status:r.status,requests:r.requests,recovered:r.recovered,updated:r.updated,baseShortId:r.baseShortId,highestFoundShortId:r.highestFoundShortId,error:r.error});
+    if(r.nextBaseShortId)health.baseShortIds[client.id]=r.nextBaseShortId;
+    health.results.push({clientId:client.id,status:r.status,requests:r.requests,recovered:r.recovered,updated:r.updated,baseShortId:r.baseShortId,nextBaseShortId:r.nextBaseShortId,highestFoundShortId:r.highestFoundShortId,seedSource:r.seedSource,error:r.error});
   }
-  if(remaining<=0&&health.checkedClients<clients.length)health.budgetExhausted=true;
-  health.remainingRequests=remaining;
   health.status=health.errors?'error':health.rateLimited?'rate_limited':clients.length?'healthy':'no_connections';
   await persistHealth(env,health);
-  console.log(`Easy Orders production recovery: clients=${health.connectedClients} checked=${health.checkedClients} requests=${health.requests}/${MAX_REQUESTS_PER_RUN} recovered=${health.recovered} updated=${health.updated} status=${health.status}`);
+  console.log(`Easy Orders production recovery: clients=${health.connectedClients} requests=${health.requests} recovered=${health.recovered} updated=${health.updated} status=${health.status}`);
   return health;
 }
 async function healthPayload(env){
   const state=await rawState(env),h=state.easyOrdersRecovery||{};
-  return {ok:true,service:'easyorders-production-sync',build:BUILD,status:h.status||'not_run',lastRunAt:h.lastRunAt||null,connectedClients:Number(h.connectedClients||0),checkedClients:Number(h.checkedClients||0),requests:Number(h.requests||0),requestLimit:Number(h.requestLimit||MAX_REQUESTS_PER_RUN),remainingRequests:Number(h.remainingRequests??MAX_REQUESTS_PER_RUN),recovered:Number(h.recovered||0),updated:Number(h.updated||0),rateLimited:!!h.rateLimited,budgetExhausted:!!h.budgetExhausted,errors:Number(h.errors||0)};
+  return {ok:true,service:'easyorders-production-sync',build:BUILD,status:h.status||'not_run',lastRunAt:h.lastRunAt||null,connectedClients:Number(h.connectedClients||0),checkedClients:Number(h.checkedClients||0),requests:Number(h.requests||0),recovered:Number(h.recovered||0),updated:Number(h.updated||0),rateLimited:!!h.rateLimited,errors:Number(h.errors||0)};
 }
 
 export default {

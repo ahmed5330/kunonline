@@ -1,11 +1,12 @@
 # Production resources. No database migration command is part of this release.
 name = "kunonline"
-main = "src/index-production-jt-history.js"
+main = "src/index-production-mobile-update.js"
 compatibility_date = "2026-08-23"
 
 [assets]
 directory = "./public"
 binding = "ASSETS"
+run_worker_first = ["/", "/index.html"]
 
 [[d1_databases]]
 binding = "DB"
