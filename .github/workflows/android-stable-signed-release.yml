@@ -138,16 +138,18 @@ jobs:
           sha256sum /tmp/Kun-Online-Mobile.apk | awk '{print "apk_sha256=" $1}' >> "$GITHUB_OUTPUT"
           echo "Stable APK verified: Kun Online Android v$VERSION (code $VERSION_CODE)"
 
-      - name: Publish canonical and compatibility Android APKs
+      - name: Publish canonical Android APKs and release manifest
         env:
           GH_TOKEN: ${{ github.token }}
           APP_VERSION: ${{ steps.signed.outputs.version }}
           APP_CODE: ${{ steps.signed.outputs.version_code }}
+          APP_SHA: ${{ steps.signed.outputs.apk_sha256 }}
         run: |
           set -euo pipefail
           CANONICAL="Kun-Online-Mobile-v${APP_VERSION}-c${APP_CODE}.apk"
           VERSIONED="Kun-Online-Mobile-v${APP_VERSION}.apk"
           STABLE="Kun-Online-Mobile.apk"
+          MANIFEST="Kun-Online-Mobile-latest.json"
 
           cp /tmp/Kun-Online-Mobile.apk "/tmp/$CANONICAL"
           cp /tmp/Kun-Online-Mobile.apk "/tmp/$VERSIONED"
@@ -155,16 +157,28 @@ jobs:
           gh release upload android-latest "/tmp/$CANONICAL" --clobber
           gh release upload android-latest "/tmp/$VERSIONED" --clobber
           gh release upload android-latest "/tmp/$STABLE" --clobber
+
+          node <<'NODE'
+          const fs=require('fs');
+          const versionCode=Number(process.env.APP_CODE);
+          const versionName=process.env.APP_VERSION;
+          const sha256=process.env.APP_SHA;
+          const downloadUrl=`https://github.com/ahmed5330/kunonline/releases/download/android-latest/Kun-Online-Mobile-v${versionName}-c${versionCode}.apk`;
+          fs.writeFileSync('/tmp/Kun-Online-Mobile-latest.json',JSON.stringify({versionCode,versionName,sha256,downloadUrl})+'\n');
+          NODE
+          gh release upload android-latest "/tmp/$MANIFEST" --clobber
+
           gh release delete-asset android-latest app-debug.apk -y || true
           gh release edit android-latest \
             --target "$GITHUB_SHA" \
             --title "Kun Online Android v$APP_VERSION" \
-            --notes "Stable-signed Kun Online Android v$APP_VERSION (code $APP_CODE). Releases use a canonical version-code asset so the production updater can discover new builds automatically."
+            --notes "Stable-signed Kun Online Android v$APP_VERSION (code $APP_CODE). The permanent release manifest lets installed apps discover future signed releases automatically."
 
           gh release view android-latest --json assets --jq '.assets[].name' | grep -Fxq "$CANONICAL"
           gh release view android-latest --json assets --jq '.assets[].name' | grep -Fxq "$VERSIONED"
           gh release view android-latest --json assets --jq '.assets[].name' | grep -Fxq "$STABLE"
-          echo "Published $CANONICAL plus compatibility aliases"
+          gh release view android-latest --json assets --jq '.assets[].name' | grep -Fxq "$MANIFEST"
+          echo "Published $CANONICAL, compatibility aliases, and $MANIFEST"
 
       - name: Verify production updater discovers this release
         env:
@@ -175,7 +189,7 @@ jobs:
         run: |
           set -euo pipefail
           matched=0
-          for i in {1..40}; do
+          for i in {1..50}; do
             meta="$(curl -fsS -H 'Cache-Control: no-cache' "https://app.kun-online.com/api/mobile/app-update?verify=${GITHUB_RUN_ID}-${i}" 2>/dev/null || true)"
             if grep -q "\"versionCode\":${APP_CODE}" <<< "$meta" && grep -q "\"versionName\":\"${APP_VERSION}\"" <<< "$meta"; then
               echo "Production feed discovered v$APP_VERSION (code $APP_CODE)."
@@ -188,7 +202,7 @@ jobs:
 
           headers="$(mktemp)"
           live_apk="$(mktemp --suffix=.apk)"
-          curl -fsS -D "$headers" -o "$live_apk" "https://app.kun-online.com/api/mobile/app-update/apk?versionCode=${APP_CODE}&verify=${GITHUB_RUN_ID}"
+          curl -fsS -D "$headers" -o "$live_apk" "https://app.kun-online.com/api/mobile/app-update/apk?versionCode=${APP_CODE}&versionName=${APP_VERSION}&verify=${GITHUB_RUN_ID}"
           grep -Eiq "^x-kun-online-android-version: ${APP_CODE}\r?$" "$headers"
           LIVE_SHA="$(sha256sum "$live_apk" | awk '{print $1}')"
           test "$LIVE_SHA" = "$EXPECTED_SHA"
@@ -206,4 +220,4 @@ jobs:
         if: always()
         shell: bash
         run: |
-          rm -rf /tmp/kun-signing /tmp/kun-transport-private.pem /tmp/kun-bundle-key.enc /tmp/kun-bundle-pass.txt /tmp/kun-signing-bundle.enc /tmp/kun-signing-bundle.tar.gz /tmp/apk-verify.txt /tmp/apk-badging.txt /tmp/Kun-Online-Mobile-aligned.apk /tmp/Kun-Online-Mobile.apk /tmp/Kun-Online-Mobile-v*.apk
+          rm -rf /tmp/kun-signing /tmp/kun-transport-private.pem /tmp/kun-bundle-key.enc /tmp/kun-bundle-pass.txt /tmp/kun-signing-bundle.enc /tmp/kun-signing-bundle.tar.gz /tmp/apk-verify.txt /tmp/apk-badging.txt /tmp/Kun-Online-Mobile-aligned.apk /tmp/Kun-Online-Mobile.apk /tmp/Kun-Online-Mobile-v*.apk /tmp/Kun-Online-Mobile-latest.json
