@@ -1,4 +1,4 @@
-/* Kun Online v51.10 — permission-aware navigation + Finance tools bootstrap. */
+/* Kun Online v51.11 — permission-aware navigation + Finance tools bootstrap. */
 (function(){
   const OWNER_ROLES=new Set(['admin','client']);
   const VIEW_RULES=Object.freeze({
@@ -107,12 +107,12 @@
     const script=document.createElement('script');script.src=src;script.async=false;script.setAttribute(marker,'1');if(onload)script.onload=onload;document.body.appendChild(script);return true;
   }
   function loadFinanceTools(){
-    if(!window.KunEcommerceCalculatorV94)appendScript('/v2/modules-v94-ecommerce-calculator.js?v=94.1','data-kun-v94-ecommerce-calculator',()=>{if(ready)apply();});
+    if(!window.KunEcommerceCalculatorV94)appendScript('/v2/modules-v94-ecommerce-calculator.js?v=96.0','data-kun-v96-ecommerce-calculator',()=>{if(ready)apply();});
     if(!window.KunEcommerceCalculatorShortcutV93)appendScript('/v2/modules-v93-ecommerce-calculator-shortcut.js?v=93.0','data-kun-v93-ecommerce-shortcut',()=>window.KunEcommerceCalculatorShortcutV93?.sync?.());
     if(!window.KunFinanceCommandCenterV96)appendScript('/v2/modules-v96-finance-command-center.js?v=96.0','data-kun-v96-finance',()=>{window.KunFinanceCommandCenterV96?.mergeNavigation?.();if(ready)apply();});
     if(!window.KunAccountingNavigationGuardV103)appendScript('/v2/modules-v103-accounting-navigation-guard.js?v=103.1','data-kun-accounting-navigation-guard',()=>{if(currentView()==='accounting')window.KunAccountingNavigationGuardV103?.retry?.();});
   }
   loadFinanceTools();
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',loadAccess,{once:true});else loadAccess();
-  window.KunPermissionNavigationV51={load:()=>loadAccess(true),apply,allowedView,match,loadFinanceTools,loadEcommerceCalculator:loadFinanceTools,get snapshot(){return snapshot;},get allowed(){return [...allowed];},rules:VIEW_RULES,version:'51.10'};
+  window.KunPermissionNavigationV51={load:()=>loadAccess(true),apply,allowedView,match,loadFinanceTools,loadEcommerceCalculator:loadFinanceTools,get snapshot(){return snapshot;},get allowed(){return [...allowed];},rules:VIEW_RULES,version:'51.11'};
 })();
