@@ -60,7 +60,10 @@ jobs:
           if(d.ok!==true)process.exit(1);
           if(!Number.isInteger(Number(d.versionCode))||Number(d.versionCode)<110)process.exit(1);
           if(!String(d.versionName||'').trim())process.exit(1);
-          if(String(d.apkUrl)!=='https://app.kun-online.com/api/mobile/app-update/apk')process.exit(1);
+          const apkUrl=new URL(String(d.apkUrl||''));
+          if(apkUrl.origin!=='https://app.kun-online.com'||apkUrl.pathname!=='/api/mobile/app-update/apk')process.exit(1);
+          const pinned=apkUrl.searchParams.get('versionCode');
+          if(pinned!==null&&Number(pinned)!==Number(d.versionCode))process.exit(1);
           const sha=String(d.sha256||'').trim();
           if(sha&&!/^[0-9a-f]{64}$/i.test(sha))process.exit(1);
           console.log(`Android feed verified: v${d.versionName} (code ${d.versionCode})`);
@@ -136,7 +139,7 @@ jobs:
           headers="$(mktemp)"
           apk="$(mktemp --suffix=.apk)"
           listing="$(mktemp)"
-          curl -fsS -D "$headers" -o "$apk" "https://app.kun-online.com/api/mobile/app-update/apk?deploy=${GITHUB_RUN_ID}"
+          curl -fsS -D "$headers" -o "$apk" "https://app.kun-online.com/api/mobile/app-update/apk?versionCode=${expected_code}&deploy=${GITHUB_RUN_ID}"
           grep -Eiq '^content-type: application/vnd\.android\.package-archive' "$headers"
           grep -Fiq "content-disposition: attachment; filename=\"Kun-Online-Mobile-v${expected_version}.apk\"" "$headers"
           grep -Fiq "x-kun-online-android-version: ${expected_code}" "$headers"
