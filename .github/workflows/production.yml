@@ -25,6 +25,7 @@ jobs:
           node scripts/mobile-state-sync-test.mjs
           node --check src/production-mobile-order-guard.js
           node --check src/production-customer-service.js
+          node --check src/production-caller-jnt-edit.js
           node --check src/index-production-mobile-update.js
       - name: Verify Worker builds without touching Production
         run: npx wrangler deploy --dry-run --config wrangler.production.toml
@@ -125,6 +126,15 @@ jobs:
           check_guarded_route '/api/catalog/products?clientId=probe'
           check_guarded_route '/api/orders/TEST/details?clientId=probe'
           check_guarded_route '/api/customer-service/orders/TEST/history?clientId=probe'
+
+          caller_body="$(mktemp)"
+          caller_code="$(curl -sS -X PATCH -H 'Content-Type: application/json' -d '{}' -o "$caller_body" -w '%{http_code}' 'https://app.kun-online.com/api/caller-jnt/orders/TEST')"
+          if [ "$caller_code" != "401" ]; then
+            echo "Expected protected caller J&T edit route to return 401 without a session; got HTTP ${caller_code}"
+            cat "$caller_body"
+            exit 1
+          fi
+          echo "Caller J&T edit route verified: /api/caller-jnt/orders/TEST -> HTTP 401"
       - name: Verify website downloads a valid APK through Kun Online
         run: |
           set -euo pipefail
@@ -143,9 +153,22 @@ jobs:
           apk="$(mktemp --suffix=.apk)"
           listing="$(mktemp)"
           curl -fsS -D "$headers" -o "$apk" "https://app.kun-online.com/api/mobile/app-update/apk?versionCode=${expected_code}&versionName=${expected_version}&deploy=${GITHUB_RUN_ID}"
-          grep -Eiq '^content-type: application/vnd\.android\.package-archive' "$headers"
-          grep -Fiq "content-disposition: attachment; filename=\"Kun-Online-Mobile-v${expected_version}.apk\"" "$headers"
-          grep -Fiq "x-kun-online-android-version: ${expected_code}" "$headers"
+          clean_headers="$(tr -d '\r' < "$headers")"
+          if ! grep -Eiq '^content-type: application/vnd\.android\.package-archive([;]|$)' <<< "$clean_headers"; then
+            echo "Unexpected APK content type"
+            printf '%s\n' "$clean_headers"
+            exit 1
+          fi
+          if ! grep -Eiq '^content-disposition: attachment' <<< "$clean_headers" || ! grep -Fiq "Kun-Online-Mobile-v${expected_version}.apk" <<< "$clean_headers"; then
+            echo "Unexpected APK content disposition"
+            printf '%s\n' "$clean_headers"
+            exit 1
+          fi
+          if ! grep -Eiq "^x-kun-online-android-version: ${expected_code}$" <<< "$clean_headers"; then
+            echo "Unexpected Android version header"
+            printf '%s\n' "$clean_headers"
+            exit 1
+          fi
           test "$(wc -c < "$apk")" -gt 1000000
           unzip -tq "$apk"
           unzip -l "$apk" > "$listing"
