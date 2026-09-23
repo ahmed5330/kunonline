@@ -84,7 +84,7 @@ jobs:
           test -s /tmp/kun-signing/signing.properties
           chmod 600 /tmp/kun-signing/kunonline-release.p12 /tmp/kun-signing/signing.properties
 
-      - name: Sign and verify stable APK
+      - name: Align, sign and fully verify stable APK
         id: signed
         shell: bash
         run: |
@@ -97,9 +97,21 @@ jobs:
           export KS_PASSWORD
 
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
+          ZIPALIGN="$(find "$ANDROID_HOME/build-tools" -type f -name zipalign | sort -V | tail -1)"
+          AAPT2="$(find "$ANDROID_HOME/build-tools" -type f -name aapt2 | sort -V | tail -1)"
           test -n "$APKSIGNER"
+          test -n "$ZIPALIGN"
+          test -n "$AAPT2"
+
           UNSIGNED="android/app/build/outputs/apk/release/app-release-unsigned.apk"
           test -s "$UNSIGNED"
+          VERSION="$(sed -nE 's/.*versionName = "([^"]+)".*/\1/p' android/app/build.gradle.kts | head -1)"
+          VERSION_CODE="$(sed -nE 's/.*versionCode = ([0-9]+).*/\1/p' android/app/build.gradle.kts | head -1)"
+          test -n "$VERSION"
+          test -n "$VERSION_CODE"
+
+          "$ZIPALIGN" -f -p 4 "$UNSIGNED" /tmp/Kun-Online-Mobile-aligned.apk
+          "$ZIPALIGN" -c -v 4 /tmp/Kun-Online-Mobile-aligned.apk
 
           "$APKSIGNER" sign \
             --ks /tmp/kun-signing/kunonline-release.p12 \
@@ -108,41 +120,81 @@ jobs:
             --ks-pass env:KS_PASSWORD \
             --key-pass env:KS_PASSWORD \
             --out /tmp/Kun-Online-Mobile.apk \
-            "$UNSIGNED"
+            /tmp/Kun-Online-Mobile-aligned.apk
 
           "$APKSIGNER" verify --verbose --print-certs /tmp/Kun-Online-Mobile.apk > /tmp/apk-verify.txt
           grep -Fq 'Verified using v3 scheme (APK Signature Scheme v3): true' /tmp/apk-verify.txt
           ACTUAL="$(sed -nE 's/^.*certificate SHA-256 digest: ([0-9a-fA-F]+)$/\1/p' /tmp/apk-verify.txt | tr 'A-F' 'a-f' | head -1)"
           test -n "$ACTUAL"
           test "$ACTUAL" = "$EXPECTED_CERT_SHA256"
+          "$ZIPALIGN" -c -v 4 /tmp/Kun-Online-Mobile.apk
+          unzip -tq /tmp/Kun-Online-Mobile.apk
 
-          VERSION="$(sed -nE 's/.*versionName = "([^"]+)".*/\1/p' android/app/build.gradle.kts | head -1)"
-          test -n "$VERSION"
+          "$AAPT2" dump badging /tmp/Kun-Online-Mobile.apk > /tmp/apk-badging.txt
+          grep -Eq "package: name='com\.kunonline\.callerid\.stable'.*versionCode='${VERSION_CODE}'.*versionName='${VERSION}'" /tmp/apk-badging.txt
+
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "version_code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
           sha256sum /tmp/Kun-Online-Mobile.apk | awk '{print "apk_sha256=" $1}' >> "$GITHUB_OUTPUT"
-          echo "Stable APK signature verified for Kun Online Android v$VERSION"
+          echo "Stable APK verified: Kun Online Android v$VERSION (code $VERSION_CODE)"
 
-      - name: Publish stable Android APK
+      - name: Publish canonical and compatibility Android APKs
         env:
           GH_TOKEN: ${{ github.token }}
           APP_VERSION: ${{ steps.signed.outputs.version }}
+          APP_CODE: ${{ steps.signed.outputs.version_code }}
         run: |
           set -euo pipefail
-          ASSET="Kun-Online-Mobile-v${APP_VERSION}.apk"
-          cp /tmp/Kun-Online-Mobile.apk "/tmp/$ASSET"
+          CANONICAL="Kun-Online-Mobile-v${APP_VERSION}-c${APP_CODE}.apk"
+          VERSIONED="Kun-Online-Mobile-v${APP_VERSION}.apk"
+          STABLE="Kun-Online-Mobile.apk"
 
-          if ! gh release view android-latest --json assets --jq '.assets[].name' | grep -Fxq "$ASSET"; then
-            gh release upload android-latest "/tmp/$ASSET"
-          fi
+          cp /tmp/Kun-Online-Mobile.apk "/tmp/$CANONICAL"
+          cp /tmp/Kun-Online-Mobile.apk "/tmp/$VERSIONED"
+          cp /tmp/Kun-Online-Mobile.apk "/tmp/$STABLE"
 
+          gh release upload android-latest "/tmp/$CANONICAL" --clobber
+          gh release upload android-latest "/tmp/$VERSIONED" --clobber
+          gh release upload android-latest "/tmp/$STABLE" --clobber
           gh release delete-asset android-latest app-debug.apk -y || true
           gh release edit android-latest \
             --target "$GITHUB_SHA" \
             --title "Kun Online Android v$APP_VERSION" \
-            --notes "Stable-signed Kun Online Android v$APP_VERSION with the redesigned mobile UI, improved order cards, active contact workflow, and automatic caller/order synchronization."
+            --notes "Stable-signed Kun Online Android v$APP_VERSION (code $APP_CODE). Releases use a canonical version-code asset so the production updater can discover new builds automatically."
 
-          gh release view android-latest --json assets --jq '.assets[].name' | grep -Fxq "$ASSET"
-          echo "Published $ASSET"
+          gh release view android-latest --json assets --jq '.assets[].name' | grep -Fxq "$CANONICAL"
+          gh release view android-latest --json assets --jq '.assets[].name' | grep -Fxq "$VERSIONED"
+          gh release view android-latest --json assets --jq '.assets[].name' | grep -Fxq "$STABLE"
+          echo "Published $CANONICAL plus compatibility aliases"
+
+      - name: Verify production updater discovers this release
+        env:
+          APP_VERSION: ${{ steps.signed.outputs.version }}
+          APP_CODE: ${{ steps.signed.outputs.version_code }}
+          EXPECTED_SHA: ${{ steps.signed.outputs.apk_sha256 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          matched=0
+          for i in {1..40}; do
+            meta="$(curl -fsS -H 'Cache-Control: no-cache' "https://app.kun-online.com/api/mobile/app-update?verify=${GITHUB_RUN_ID}-${i}" 2>/dev/null || true)"
+            if grep -q "\"versionCode\":${APP_CODE}" <<< "$meta" && grep -q "\"versionName\":\"${APP_VERSION}\"" <<< "$meta"; then
+              echo "Production feed discovered v$APP_VERSION (code $APP_CODE)."
+              matched=1
+              break
+            fi
+            sleep 6
+          done
+          test "$matched" = 1
+
+          headers="$(mktemp)"
+          live_apk="$(mktemp --suffix=.apk)"
+          curl -fsS -D "$headers" -o "$live_apk" "https://app.kun-online.com/api/mobile/app-update/apk?verify=${GITHUB_RUN_ID}"
+          grep -Eiq "^x-kun-online-android-version: ${APP_CODE}\r?$" "$headers"
+          LIVE_SHA="$(sha256sum "$live_apk" | awk '{print $1}')"
+          test "$LIVE_SHA" = "$EXPECTED_SHA"
+          unzip -tq "$live_apk"
+          echo "Live APK matches the signed build: $LIVE_SHA"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -155,4 +207,4 @@ jobs:
         if: always()
         shell: bash
         run: |
-          rm -rf /tmp/kun-signing /tmp/kun-transport-private.pem /tmp/kun-bundle-key.enc /tmp/kun-bundle-pass.txt /tmp/kun-signing-bundle.enc /tmp/kun-signing-bundle.tar.gz /tmp/apk-verify.txt /tmp/Kun-Online-Mobile-v*.apk
+          rm -rf /tmp/kun-signing /tmp/kun-transport-private.pem /tmp/kun-bundle-key.enc /tmp/kun-bundle-pass.txt /tmp/kun-signing-bundle.enc /tmp/kun-signing-bundle.tar.gz /tmp/apk-verify.txt /tmp/apk-badging.txt /tmp/Kun-Online-Mobile-aligned.apk /tmp/Kun-Online-Mobile.apk /tmp/Kun-Online-Mobile-v*.apk
