@@ -1,16 +1,17 @@
 /* Production Android update feed for Kun Online. No database access or mutation. */
 const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}});
 
-const RELEASE_API='https://api.github.com/repos/ahmed5330/kunonline/releases/tags/android-latest';
+const RELEASE_MANIFEST_URL='https://github.com/ahmed5330/kunonline/releases/download/android-latest/Kun-Online-Mobile-latest.json';
+const RELEASE_DOWNLOAD_ROOT='https://github.com/ahmed5330/kunonline/releases/download/android-latest';
 const APK_ENDPOINT='https://app.kun-online.com/api/mobile/app-update/apk';
 const FALLBACK_RELEASE={
-  versionCode:110,
-  versionName:'2.6.0',
-  downloadUrl:'https://github.com/ahmed5330/kunonline/releases/download/android-latest/Kun-Online-Mobile-v2.6.0.apk',
-  sha256:'808bd40319df70764e30ff2ded6a0202b78337473c7fbce9df97ca1a09c63fb2'
+  versionCode:111,
+  versionName:'2.6.1',
+  downloadUrl:`${RELEASE_DOWNLOAD_ROOT}/Kun-Online-Mobile-v2.6.1-c111.apk`,
+  sha256:''
 };
 const MIN_SUPPORTED_VERSION_CODE=106;
-const RELEASE_CACHE_MS=30_000;
+const RELEASE_CACHE_MS=300_000;
 let cachedRelease=null;
 let cachedReleaseUntil=0;
 
@@ -19,94 +20,69 @@ function normalizeDigest(value){
   return /^[0-9a-f]{64}$/.test(digest)?digest:'';
 }
 
-function releasesFromGithub(payload){
-  const assets=Array.isArray(payload?.assets)?payload.assets:[];
-  const candidates=[];
-  for(const asset of assets){
-    const name=String(asset?.name||'');
-    const match=name.match(/^Kun-Online-Mobile-v(.+)-c(\d+)\.apk$/i);
-    if(!match)continue;
-    const versionCode=Number(match[2]);
-    const downloadUrl=String(asset?.browser_download_url||'');
-    if(!Number.isInteger(versionCode)||versionCode<=0||!downloadUrl)continue;
-    candidates.push({
-      versionCode,
-      versionName:match[1],
-      downloadUrl,
-      sha256:normalizeDigest(asset?.digest)
-    });
-  }
-  candidates.sort((a,b)=>b.versionCode-a.versionCode);
-  return candidates;
+function safeVersionName(value){
+  const name=String(value||'').trim();
+  return /^[0-9A-Za-z._-]{1,64}$/.test(name)?name:'';
 }
 
-async function fetchReleaseCatalog(){
+function normalizeRelease(value){
+  const versionCode=Number(value?.versionCode);
+  const versionName=safeVersionName(value?.versionName);
+  const sha256=normalizeDigest(value?.sha256);
+  if(!Number.isInteger(versionCode)||versionCode<=0||!versionName)return null;
+  const canonicalUrl=`${RELEASE_DOWNLOAD_ROOT}/Kun-Online-Mobile-v${encodeURIComponent(versionName)}-c${versionCode}.apk`;
+  return {versionCode,versionName,downloadUrl:canonicalUrl,sha256};
+}
+
+async function resolveRelease(){
+  if(cachedRelease&&Date.now()<cachedReleaseUntil)return cachedRelease;
   try{
-    const response=await fetch(RELEASE_API,{
+    const response=await fetch(RELEASE_MANIFEST_URL,{
       redirect:'follow',
       headers:{
-        'Accept':'application/vnd.github+json',
-        'User-Agent':'Kun-Online-Android-Release-Resolver/1.1',
-        'X-GitHub-Api-Version':'2022-11-28'
+        'Accept':'application/json, text/plain;q=0.9, */*;q=0.8',
+        'Cache-Control':'no-cache',
+        'User-Agent':'Kun-Online-Android-Release-Resolver/2.0'
       }
     });
-    if(!response.ok)return [];
-    return releasesFromGithub(await response.json());
-  }catch(_error){
-    return [];
-  }
-}
-
-async function resolveRelease(expectedVersionCode=null){
-  const expected=Number(expectedVersionCode);
-  const hasExpected=Number.isInteger(expected)&&expected>0;
-
-  // A version-pinned APK request may only use cache when the cached release is
-  // exactly the version advertised by the feed. This prevents two Cloudflare
-  // isolates with different cache ages from ever mixing metadata and APK bytes.
-  if(hasExpected&&cachedRelease?.versionCode===expected)return cachedRelease;
-  if(!hasExpected&&cachedRelease&&Date.now()<cachedReleaseUntil)return cachedRelease;
-
-  const catalog=await fetchReleaseCatalog();
-  if(catalog.length){
-    if(hasExpected){
-      const exact=catalog.find(item=>item.versionCode===expected)||null;
-      if(exact){
-        if(exact.versionCode>=Number(cachedRelease?.versionCode||0)){
-          cachedRelease=exact;
-          cachedReleaseUntil=Date.now()+RELEASE_CACHE_MS;
-        }
-        return exact;
+    if(response.ok){
+      const release=normalizeRelease(await response.json());
+      if(release){
+        cachedRelease=release;
+        cachedReleaseUntil=Date.now()+RELEASE_CACHE_MS;
+        return release;
       }
-      return null;
     }
-
-    const latest=catalog[0];
-    cachedRelease=latest;
-    cachedReleaseUntil=Date.now()+RELEASE_CACHE_MS;
-    return latest;
+  }catch(_error){
+    // A known-good bridge release keeps the app installable if release metadata is temporarily unavailable.
   }
-
-  if(hasExpected)return expected===FALLBACK_RELEASE.versionCode?FALLBACK_RELEASE:null;
   cachedRelease=FALLBACK_RELEASE;
-  cachedReleaseUntil=Date.now()+10_000;
+  cachedReleaseUntil=Date.now()+30_000;
   return cachedRelease;
 }
 
+function pinnedRelease(versionCodeValue,versionNameValue){
+  return normalizeRelease({versionCode:versionCodeValue,versionName:versionNameValue,sha256:''});
+}
+
 function updateMetadata(release){
+  const query=new URLSearchParams({
+    versionCode:String(release.versionCode),
+    versionName:release.versionName
+  });
   return {
     versionCode:release.versionCode,
     versionName:release.versionName,
     minSupportedVersionCode:MIN_SUPPORTED_VERSION_CODE,
     required:false,
-    // Pin the file request to the exact version advertised here. Future releases
-    // can change automatically without an application or endpoint URL migration.
-    apkUrl:`${APK_ENDPOINT}?versionCode=${release.versionCode}`,
+    // The file URL is pinned to the exact advertised version. That makes the
+    // update atomic even while a newer release is being published.
+    apkUrl:`${APK_ENDPOINT}?${query.toString()}`,
     sha256:release.sha256||'',
     notes:[
       'تنزيل تحديثات كن أونلاين تلقائيًا بعد السماح بالتثبيت من التطبيق مرة واحدة.',
       'فتح شاشة تثبيت Android تلقائيًا فور اكتمال التنزيل.',
-      'التحقق من سلامة ملف APK وتوقيعه قبل تمريره إلى شاشة التثبيت.',
+      'التحقق من سلامة ملف APK قبل تمريره إلى شاشة التثبيت.',
       'ربط الإصدارات القادمة تلقائيًا بأحدث نسخة منشورة دون تغيير رابط التحديث.'
     ]
   };
@@ -119,7 +95,7 @@ async function directApkDownload(release){
       headers:{
         'Accept':'application/octet-stream',
         'Accept-Encoding':'identity',
-        'User-Agent':'Kun-Online-Android-Updater/2.1'
+        'User-Agent':'Kun-Online-Android-Updater/3.0'
       }
     });
     if(!upstream.ok)return json({ok:false,error:'تعذر تحميل ملف التطبيق من مصدر الإصدار.'},502);
@@ -148,9 +124,12 @@ export async function handleMobileAppUpdate(request){
   }
 
   const requestedCode=url.searchParams.get('versionCode');
-  const release=await resolveRelease(requestedCode);
+  const requestedName=url.searchParams.get('versionName');
+  const release=(requestedCode&&requestedName)
+    ? pinnedRelease(requestedCode,requestedName)
+    : await resolveRelease();
   if(!release){
-    return json({ok:false,error:'إصدار التطبيق المطلوب غير متاح أو لم يكتمل نشره بعد.'},409);
+    return json({ok:false,error:'إصدار التطبيق المطلوب غير صالح.'},400);
   }
   return directApkDownload(release);
 }
