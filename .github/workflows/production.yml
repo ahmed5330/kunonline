@@ -19,9 +19,10 @@ jobs:
           node-version: 22
           package-manager-cache: false
       - run: npm install --ignore-scripts
-      - name: Validate Android update and Customer Service sources
+      - name: Validate Android update, J&T guard and Customer Service sources
         run: |
           node --check src/mobile-app-update.js
+          node --check src/production-mobile-order-guard.js
           node --check src/production-customer-service.js
           node --check src/index-production-mobile-update.js
       - name: Verify Worker builds without touching Production
@@ -60,6 +61,27 @@ jobs:
             fi
             sleep 3
           done
+      - name: Verify live J&T Egypt address directory
+        run: |
+          set -euo pipefail
+          curl -fsS https://app.kun-online.com/v2/data/jnt-addresses/index.json -o /tmp/jnt-index.json
+          node <<'NODE'
+          const fs = require('fs');
+          const data = JSON.parse(fs.readFileSync('/tmp/jnt-index.json','utf8'));
+          if (String(data.countryCode) !== '100000') throw new Error('Unexpected J&T Egypt country code');
+          if (!Array.isArray(data.provinces) || data.provinces.length !== 27) throw new Error('Expected 27 J&T provinces');
+          if (Number(data.rows) !== 6474) throw new Error('Unexpected J&T source row count');
+          if (Number(data.selectableAreas) !== 6473) throw new Error('Unexpected J&T selectable area count');
+          for (const p of data.provinces) {
+            if (!p.name || !p.code || !p.file) throw new Error('Incomplete J&T province entry');
+          }
+          console.log(`J&T manifest verified: ${data.provinces.length} provinces, ${data.selectableAreas} selectable areas`);
+          NODE
+          node -e "const d=require('/tmp/jnt-index.json'); for(const p of d.provinces) console.log(p.file)" | while read -r file; do
+            curl -fsS "https://app.kun-online.com/v2/data/jnt-addresses/${file}" -o "/tmp/${file}"
+            node -e "const d=require('/tmp/${file}'); if(!d.name||!d.code||!Array.isArray(d.cities)) process.exit(1)"
+          done
+          echo "All J&T province/city/area files are live and readable."
       - name: Verify live Customer Service API routes
         run: |
           set -euo pipefail
