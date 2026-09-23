@@ -144,11 +144,11 @@ object CallerOverlay {
             }
             if (!locked) {
                 customer.orderId?.takeIf { it.isNotBlank() }?.let { orderId ->
-                    actions.addView(actionButton("تعديل الطلب", PINE, Color.WHITE) {
+                    actions.addView(actionButton("تعديل بيانات J&T", PINE, Color.WHITE) {
                         dismiss()
                         runCatching {
-                            app.startActivity(Intent(app, CallerOrderEditActivity::class.java).apply {
-                                putExtra(CallerOrderEditActivity.EXTRA_ORDER_ID, orderId)
+                            app.startActivity(Intent(app, CallerJntOrderEditActivity::class.java).apply {
+                                putExtra(CallerJntOrderEditActivity.EXTRA_ORDER_ID, orderId)
                                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
                             })
                         }
