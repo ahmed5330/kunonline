@@ -12,9 +12,9 @@ android {
         applicationId = "com.kunonline.callerid.stable"
         minSdk = 29
         targetSdk = 35
-        // v2.6.3 reduces foreground sync requests and transfers ordered deltas.
-        versionCode = 113
-        versionName = "2.6.3"
+        // v2.6.4 adds J&T-structured editing directly from the caller overlay.
+        versionCode = 114
+        versionName = "2.6.4"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
