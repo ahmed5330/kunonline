@@ -9,6 +9,7 @@ import {handleOperationalWorkflowV110} from './operational-workflow-v110.js';
 import {handleMobileAppUpdate} from './mobile-app-update.js';
 import {handleCustomerServicePeriodV111} from './customer-service-period-v111.js';
 import {handleInternalCollaborationV117} from './internal-collaboration-v117.js';
+import {handleCollaborationOrderInputV119} from './internal-collaboration-order-input-v119.js';
 
 const V2_UI_SCRIPTS=[
   '<script src="/v2/modules-v105-customer-service-claim.js?v=105.2" data-kun-customer-service-claim="1"></script>',
@@ -19,7 +20,8 @@ const V2_UI_SCRIPTS=[
   '<script src="/v2/modules-v118-customer-service-nav-ready.js?v=118.0" data-kun-customer-service-nav-ready="1"></script>',
   '<script src="/v2/modules-v117-collaboration-root.js?v=117.0" data-kun-collaboration-root="1"></script>',
   '<script src="/v2/modules-v117-collaboration.js?v=117.0" data-kun-collaboration="1"></script>',
-  '<script src="/v2/modules-v117-collaboration-sidebar.js?v=117.2" data-kun-collaboration-sidebar="1"></script>'
+  '<script src="/v2/modules-v117-collaboration-sidebar.js?v=117.3" data-kun-collaboration-sidebar="1"></script>',
+  '<script src="/v2/modules-v119-collaboration-order-link.js?v=119.0" data-kun-collaboration-order-link="1"></script>'
 ].join('');
 
 function redirectLegacyRoot(request){
@@ -97,7 +99,10 @@ export default {
     if(mobileUpdate)return mobileUpdate;
     const collaborationDenied=await collaborationPermissionGuard(request,env,ctx);
     if(collaborationDenied)return collaborationDenied;
-    const collaboration=await handleInternalCollaborationV117({request,env,ctx,delegate:app});
+    const collaborationOrderInput=await handleCollaborationOrderInputV119({request,env,ctx,delegate:app});
+    if(collaborationOrderInput?.response)return collaborationOrderInput.response;
+    const collaborationRequest=collaborationOrderInput?.request||request;
+    const collaboration=await handleInternalCollaborationV117({request:collaborationRequest,env,ctx,delegate:app});
     if(collaboration)return collaboration;
     const periodBoard=await handleCustomerServicePeriodV111({request,env,ctx,delegate:app});
     if(periodBoard)return periodBoard;
