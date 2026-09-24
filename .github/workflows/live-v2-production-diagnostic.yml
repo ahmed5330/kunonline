@@ -1,0 +1,44 @@
+name: Live v2 production diagnostic
+
+on:
+  push:
+    branches:
+      - diag/live-v2-production
+    paths:
+      - '.github/workflows/live-v2-production-diagnostic.yml'
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Inspect live v2 assets without writes
+        shell: bash
+        run: |
+          set -u
+          nonce="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          page_h=$(mktemp); page=$(mktemp)
+          printing_h=$(mktemp); printing=$(mktemp)
+          routing_h=$(mktemp); routing=$(mktemp)
+
+          page_code=$(curl -sS -D "$page_h" -o "$page" -w '%{http_code}' -H 'Cache-Control: no-cache' "https://app.kun-online.com/v2/index.html?diag=${nonce}" || true)
+          printing_code=$(curl -sS -D "$printing_h" -o "$printing" -w '%{http_code}' -H 'Cache-Control: no-cache' "https://app.kun-online.com/v2/modules-v79-printing.js?v=79.8&diag=${nonce}" || true)
+          routing_code=$(curl -sS -D "$routing_h" -o "$routing" -w '%{http_code}' -H 'Cache-Control: no-cache' "https://app.kun-online.com/v2/modules-v116-print-routing.js?v=116.0&diag=${nonce}" || true)
+
+          echo "PAGE_HTTP=${page_code} BYTES=$(wc -c < "$page")"
+          echo "PRINTING_HTTP=${printing_code} BYTES=$(wc -c < "$printing")"
+          echo "ROUTING_HTTP=${routing_code} BYTES=$(wc -c < "$routing")"
+          echo '--- PAGE HEADERS ---'
+          tr -d '\r' < "$page_h" | grep -Ei '^(HTTP/|content-type:|cache-control:|cf-cache-status:|age:|etag:|location:|server:)' || true
+          echo '--- PAGE SCRIPT REFERENCES ---'
+          grep -oE '/v2/modules-v(51-permission-navigation|78-jt-shipping-order|79-printing|116-print-routing|117-team-collaboration)[^"< ]*' "$page" || true
+          echo '--- CONDITIONS ---'
+          check(){ label="$1"; needle="$2"; file="$3"; if grep -Fq "$needle" "$file"; then echo "PASS ${label}"; else echo "FAIL ${label}"; fi; }
+          check 'page v51.11' '/v2/modules-v51-permission-navigation.js?v=51.11' "$page"
+          check 'page v78.5' '/v2/modules-v78-jt-shipping-order.js?v=78.5' "$page"
+          check 'page v79.8' '/v2/modules-v79-printing.js?v=79.8' "$page"
+          check 'page v116.0' '/v2/modules-v116-print-routing.js?v=116.0' "$page"
+          check 'page v117.0' '/v2/modules-v117-team-collaboration.js?v=117.0' "$page"
+          check 'page internal APK route' 'href="/api/mobile/app-update/apk"' "$page"
+          check 'printing action text' 'إرسال إلى J&T وطباعة البوليصة' "$printing"
+          check 'routing confirmation text' 'تم تأكيد الأوردر ونقله تلقائيًا إلى قسم الطباعة' "$routing"
+          if grep -Fq 'https://github.com/ahmed5330/kunonline/releases/download/android-latest/Kun-Online-Mobile.apk' "$page"; then echo 'FAIL legacy APK URL still present'; else echo 'PASS legacy APK URL absent'; fi
