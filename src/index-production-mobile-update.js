@@ -8,6 +8,7 @@ import {handleProductionPrintingQueue} from './production-printing-queue.js';
 
 const LEGACY_APK_URL='https://github.com/ahmed5330/kunonline/releases/download/android-latest/Kun-Online-Mobile.apk';
 const DIRECT_APK_PATH='/api/mobile/app-update/apk';
+const PRINTING_STATES=new Set(['confirmed','preparing']);
 
 async function websiteWithDirectAndroidDownload(request,env){
   const url=new URL(request.url);
@@ -26,6 +27,17 @@ async function websiteWithDirectAndroidDownload(request,env){
   return new Response(html,{status:asset.status,headers});
 }
 
+async function routeConfirmedOrdersToPrinting(request,response){
+  const url=new URL(request.url);
+  if(request.method!=='GET'||url.pathname!=='/api/customer-service'||!response?.ok)return response;
+  const data=await response.clone().json().catch(()=>null);
+  if(!data||!Array.isArray(data.orders))return response;
+  data.orders=data.orders.filter(order=>!PRINTING_STATES.has(String(order?.state||'')));
+  if(Array.isArray(data.stages))data.stages=data.stages.filter(stage=>!PRINTING_STATES.has(String(stage?.id||'')));
+  const headers=new Headers(response.headers);headers.set('Content-Type','application/json; charset=utf-8');headers.set('Cache-Control','no-store');headers.delete('Content-Length');
+  return new Response(JSON.stringify(data),{status:response.status,headers});
+}
+
 export default {
   async fetch(request,env,ctx){
     const mobileUpdate=await handleMobileAppUpdate(request);
@@ -33,7 +45,7 @@ export default {
 
     const mobileSync=await handleMobileSync({request,load:async sourceRequest=>{
       const board=await handleProductionCustomerService({request:sourceRequest,env,ctx,delegate:app});
-      return board || app.fetch(sourceRequest,env,ctx);
+      return board?routeConfirmedOrdersToPrinting(sourceRequest,board):app.fetch(sourceRequest,env,ctx);
     }});
     if(mobileSync)return mobileSync;
 
@@ -47,7 +59,7 @@ export default {
     if(printing)return printing;
 
     const customerService=await handleProductionCustomerService({request,env,ctx,delegate:app});
-    if(customerService)return customerService;
+    if(customerService)return routeConfirmedOrdersToPrinting(request,customerService);
 
     const website=await websiteWithDirectAndroidDownload(request,env);
     if(website)return website;
