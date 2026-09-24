@@ -1,4 +1,4 @@
-/* Kun Online v108.0 — prevent late Returns/Exchanges async renders from overwriting a newer active workspace. */
+/* Kun Online v108.1 — prevent stale Returns renders and guarantee collaboration assets on the static v2 shell. */
 (function(){
   if(window.KunReturnsViewRaceGuardV108)return;
   let observer=null,recovering=false,recoverTimer=0;
@@ -51,6 +51,43 @@
     return true;
   }
 
+  function appendScript(src,marker,ready){
+    if(ready?.())return Promise.resolve(true);
+    const old=document.querySelector(`script[${marker}]`);
+    if(old&&ready?.())return Promise.resolve(true);
+    if(old&&!ready?.())old.remove();
+    return new Promise((resolve,reject)=>{
+      const script=document.createElement('script');
+      script.src=src;script.async=false;script.setAttribute(marker,'1');
+      script.onload=()=>resolve(true);
+      script.onerror=()=>reject(new Error(`تعذر تحميل ${src}`));
+      document.body.appendChild(script);
+    });
+  }
+
+  async function ensureCollaborationAssets(){
+    if(window.KunCollaborationOrderLinkV119&&window.KunCollaborationSidebarV117&&window.KunCollaborationV117){
+      document.documentElement.dataset.collaborationAssetsFallback='ready';
+      return true;
+    }
+    if(document.documentElement.dataset.collaborationAssetsFallback==='loading')return false;
+    document.documentElement.dataset.collaborationAssetsFallback='loading';
+    try{
+      if(!document.querySelector('script[data-kun-collaboration-root="1"]'))await appendScript('/v2/modules-v117-collaboration-root.js?v=117.0','data-kun-collaboration-root',()=>false);
+      await appendScript('/v2/modules-v117-collaboration.js?v=117.0','data-kun-collaboration',()=>Boolean(window.KunCollaborationV117));
+      await appendScript('/v2/modules-v117-collaboration-sidebar.js?v=117.3','data-kun-collaboration-sidebar',()=>Boolean(window.KunCollaborationSidebarV117));
+      await appendScript('/v2/modules-v119-collaboration-order-link.js?v=119.0','data-kun-collaboration-order-link',()=>Boolean(window.KunCollaborationOrderLinkV119));
+      window.KunCollaborationSidebarV117?.place?.();
+      document.documentElement.dataset.collaborationAssetsFallback='ready';
+      return true;
+    }catch(error){
+      console.warn('Collaboration static-shell bootstrap failed',error);
+      document.documentElement.dataset.collaborationAssetsFallback='failed';
+      return false;
+    }
+  }
+
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',install,{once:true});else install();
-  window.KunReturnsViewRaceGuardV108={version:'108.0',install,recover,activeView};
+  if(document.readyState==='complete')ensureCollaborationAssets();else window.addEventListener('load',ensureCollaborationAssets,{once:true});
+  window.KunReturnsViewRaceGuardV108={version:'108.1',install,recover,activeView,ensureCollaborationAssets};
 })();
