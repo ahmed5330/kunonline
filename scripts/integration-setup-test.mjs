@@ -11,6 +11,7 @@ const shippingUi=await readFile(new URL('../public/v2/modules-v78-jt-shipping-or
 const printingUi=await readFile(new URL('../public/v2/modules-v79-printing.js',import.meta.url),'utf8');
 const printingRouting=await readFile(new URL('../public/v2/modules-v116-print-routing.js',import.meta.url),'utf8');
 const trackingUi=await readFile(new URL('../public/v2/modules-v82-jt-tracking-cards.js',import.meta.url),'utf8');
+const v2Index=await readFile(new URL('../public/v2/index.html',import.meta.url),'utf8');
 const androidShell=await readFile(new URL('../android/app/src/main/java/com/kunonline/callerid/KunNativeAppV26.kt',import.meta.url),'utf8');
 const androidDateFilter=await readFile(new URL('../android/app/src/main/java/com/kunonline/callerid/MobileDateFilterV267.kt',import.meta.url),'utf8');
 const androidGradle=await readFile(new URL('../android/app/build.gradle.kts',import.meta.url),'utf8');
@@ -49,6 +50,10 @@ must(printingRoute.includes("order.state!=='shipped'||order.queuedForPrint||orde
 must(production.includes('routeConfirmedOrdersToPrinting')&&production.includes("new Set(['confirmed','preparing'])"),'Confirmed orders must disappear from Customer Service and route to Printing');
 for(const marker of ['modules-v51-permission-navigation.js?v=51.11','modules-v78-jt-shipping-order.js?v=78.5','modules-v79-printing.js?v=79.8','modules-v116-print-routing.js?v=116.0'])must(production.includes(marker),`Production HTML must cache-bust/load ${marker}`);
 
+for(const marker of ['/v2/modules-v51-permission-navigation.js?v=51.11','/v2/modules-v78-jt-shipping-order.js?v=78.5','/v2/modules-v79-printing.js?v=79.8','/v2/modules-v116-print-routing.js?v=116.0','/v2/modules-v117-team-collaboration.js?v=117.0'])must(v2Index.includes(marker),`Direct v2 index must load ${marker}`);
+must(v2Index.includes('href="/api/mobile/app-update/apk"'),'Direct v2 index must use the Kun Online Android download route');
+must(!v2Index.includes('https://github.com/ahmed5330/kunonline/releases/download/android-latest/Kun-Online-Mobile.apk'),'Direct v2 index must not expose the legacy GitHub APK URL');
+
 must(shippingUi.includes('الإرسال الحقيقي وإنشاء AWB يتمان فقط')&&shippingUi.includes('قسم الطباعة'),'J&T editor must make clear that external sending happens only in Printing');
 must(shippingUi.includes("version:'78.5'"),'J&T editor runtime must identify v78.5');
 must(!shippingUi.includes("moveState?.(orderId,'shipped')"),'Editing/preparing J&T data must not move the order to shipping');
@@ -64,5 +69,5 @@ must(androidGradle.includes('versionCode = 117')&&androidGradle.includes('versio
 
 must(trackingUi.includes('PULL_INTERVAL=300000')&&trackingUi.includes('/track?clientId='),'J&T live tracking fallback must remain protected');
 must(jtWorker.includes("PRINT_ORDER_PATH='/webopenplatformapi/api/order/printOrder'"),'Legacy print route remains only for rollback compatibility behind v38 interception');
-console.log('Integration setup checks passed: confirmation routes to web Printing; Android has no Printing action and uses the shared period selector.');
+console.log('Integration setup checks passed: confirmation routes to web Printing; direct v2 stays in production parity; Android has no Printing action and uses the shared period selector.');
 await import('./jt-live-shipping-test.mjs');
