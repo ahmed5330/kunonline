@@ -148,7 +148,7 @@ jobs:
           ui_verified=0
           for i in {1..10}; do
             nonce="${GITHUB_RUN_ID}-${i}"
-            page="$(curl -fsS -H 'Cache-Control: no-cache' "https://app.kun-online.com/v2/index.html?deploy=${nonce}" 2>/dev/null || true)"
+            page="$(curl -fsSL -H 'Cache-Control: no-cache' "https://app.kun-online.com/v2/index.html?deploy=${nonce}" 2>/dev/null || true)"
             printing="$(curl -fsS -H 'Cache-Control: no-cache' "https://app.kun-online.com/v2/modules-v79-printing.js?v=79.8&deploy=${nonce}" 2>/dev/null || true)"
             routing="$(curl -fsS -H 'Cache-Control: no-cache' "https://app.kun-online.com/v2/modules-v116-print-routing.js?v=116.0&deploy=${nonce}" 2>/dev/null || true)"
             if [ -n "$page" ] \
