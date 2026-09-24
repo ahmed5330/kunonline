@@ -102,9 +102,3 @@ CREATE TABLE IF NOT EXISTS collab_order_assignments (
 );
 CREATE INDEX IF NOT EXISTS idx_collab_order_assignments_order ON collab_order_assignments(client_id,store_id,order_id,status,updated_at);
 CREATE INDEX IF NOT EXISTS idx_collab_order_assignments_user ON collab_order_assignments(client_id,store_id,assigned_to_user_id,status,updated_at);
-
-ALTER TABLE orders ADD COLUMN assigned_user_id TEXT;
-ALTER TABLE orders ADD COLUMN assigned_user_name TEXT;
-ALTER TABLE orders ADD COLUMN assigned_at TEXT;
-ALTER TABLE orders ADD COLUMN assigned_by_user_id TEXT;
-CREATE INDEX IF NOT EXISTS idx_orders_assignment ON orders(client_id,store_id,assigned_user_id,state);
