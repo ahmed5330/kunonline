@@ -1,4 +1,4 @@
-/* Kun Online v51.10 — permission-aware navigation + Finance tools bootstrap. */
+/* Kun Online v51.11 — permission-aware navigation + Finance tools bootstrap. */
 (function(){
   const OWNER_ROLES=new Set(['admin','client']);
   const VIEW_RULES=Object.freeze({
@@ -11,6 +11,7 @@
     pos:['pos.read'],
     orders:['orders.read'],
     'customer-service':['support.read'],
+    printing:['orders.read','shipping.read','support.read'],
     'post-shipping':['shipping.read'],
     customers:['customers.read'],
     inbox:['inbox.read'],
@@ -114,5 +115,5 @@
   }
   loadFinanceTools();
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',loadAccess,{once:true});else loadAccess();
-  window.KunPermissionNavigationV51={load:()=>loadAccess(true),apply,allowedView,match,loadFinanceTools,loadEcommerceCalculator:loadFinanceTools,get snapshot(){return snapshot;},get allowed(){return [...allowed];},rules:VIEW_RULES,version:'51.10'};
+  window.KunPermissionNavigationV51={load:()=>loadAccess(true),apply,allowedView,match,loadFinanceTools,loadEcommerceCalculator:loadFinanceTools,get snapshot(){return snapshot;},get allowed(){return [...allowed];},rules:VIEW_RULES,version:'51.11'};
 })();
