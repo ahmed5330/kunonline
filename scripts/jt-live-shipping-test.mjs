@@ -53,8 +53,8 @@ const createSetupUi=await readFile(new URL('../public/v2/modules-v84-jt-create-s
 const printingUi=await readFile(new URL('../public/v2/modules-v79-printing.js',import.meta.url),'utf8');
 const printingRouting=await readFile(new URL('../public/v2/modules-v116-print-routing.js',import.meta.url),'utf8');
 const index=await readFile(new URL('../public/v2/index.html',import.meta.url),'utf8');
-const androidPrinting=await readFile(new URL('../android/app/src/main/java/com/kunonline/callerid/PrintingMobileV26.kt',import.meta.url),'utf8');
 const androidShell=await readFile(new URL('../android/app/src/main/java/com/kunonline/callerid/KunNativeAppV26.kt',import.meta.url),'utf8');
+const androidDateFilter=await readFile(new URL('../android/app/src/main/java/com/kunonline/callerid/MobileDateFilterV267.kt',import.meta.url),'utf8');
 const androidGradle=await readFile(new URL('../android/app/build.gradle.kts',import.meta.url),'utf8');
 new Function(ui);new Function(setup);new Function(trackingUi);new Function(recencyUi);new Function(createSetupUi);new Function(printingUi);new Function(printingRouting);
 
@@ -98,14 +98,14 @@ assert.ok(printingUi.includes("version:'79.8'"),'Printing runtime must be v79.8'
 assert.ok(printingRouting.includes("new Set(['confirmed','preparing'])")&&printingRouting.includes('تم تأكيد الأوردر ونقله تلقائيًا إلى قسم الطباعة'),'Web Customer Service must immediately hand confirmed orders to Printing');
 assert.ok(!printingUi.includes('window.print')&&!printingUi.includes('fallbackPrint'),'Official carrier label must have no browser-generated fallback');
 
-assert.ok(androidShell.includes('PrintingMobileV26')&&androidShell.includes('Text("الطباعة")'),'Android app must expose Printing');
-assert.ok(androidPrinting.includes('/api/printing?clientId=')&&androidPrinting.includes('/api/jt/shipments/${enc(order.id)}/print'),'Android Printing must use the same governed server workflow');
-assert.ok(androidPrinting.includes('CallerJntOrderEditActivity'),'Android Printing must allow structured J&T address review/edit before sending');
-assert.ok(androidGradle.includes('versionCode = 116')&&androidGradle.includes('versionName = "2.6.6"'),'Android release must be v2.6.6 code 116');
+assert.ok(!androidShell.includes('PrintingMobileV26')&&!androidShell.includes('Text("الطباعة")'),'Android app must keep Printing in the main web system only');
+for(const label of ['اليوم','أمس','هذا الأسبوع','الأسبوع الماضي','الشهر الحالي','الشهر الماضي','مدة معينة'])assert.ok(androidDateFilter.includes(`"${label}"`),`Android period selector missing ${label}`);
+assert.ok(androidDateFilter.includes('DatePickerDialog')&&androidDateFilter.includes('selectCustom'),'Android custom period must provide a start/end date selection');
+assert.ok(androidGradle.includes('versionCode = 117')&&androidGradle.includes('versionName = "2.6.7"'),'Android release must be v2.6.7 code 117');
 
 assert.ok(index.includes('/v2/modules-v81-jt-live-setup.js?v=81.3'));assert.ok(index.includes('/v2/modules-v82-jt-tracking-cards.js?v=82.1'));assert.ok(index.includes('/v2/modules-v83-order-recency.js?v=83.1'));assert.ok(index.includes('/v2/modules-v84-jt-create-setup.js?v=84.5'));
 for(const marker of ['post-shipping','returns-exchanges','jt82-badge','jt_tracking_update','jt_shipment_created','60000','PULL_INTERVAL=300000','MAX_PULL=6','/track?clientId='])assert.ok(trackingUi.includes(marker),`J&T tracking UI missing ${marker}`);
 assert.ok(trackingUi.includes("window.KunPostShippingV47?.render?.()"));
 for(const marker of ['sender_name','sender_mobile','sender_prov','sender_city','sender_area','sender_street','Bill Code','markBusinessRequired','Business Info','Customer Password / API Password','لا تستخدم Private Key'])assert.ok(createSetupUi.includes(marker),`J&T Create Order setup missing ${marker}`);
 for(const marker of ['/api/customer-service','/api/post-shipping','/api/returns-exchanges','history.at(-1)','patchOrder','touch(orderId)','sorted.every'])assert.ok(recencyUi.includes(marker),`Operational recency layer missing ${marker}`);
-console.log('J&T live shipping checks passed: confirmation routes to Printing; J&T addOrder/printOrder run only there; successful official label moves the order to shipping on web and Android.');
+console.log('J&T live shipping checks passed: confirmation routes to web Printing; Android has no Printing action; official carrier label still moves the order to shipping in the web system.');
