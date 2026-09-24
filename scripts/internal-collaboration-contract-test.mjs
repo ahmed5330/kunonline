@@ -16,8 +16,14 @@ must(backend.includes('c.id=? AND c.client_id=? AND c.store_id=? AND m.user_id=?
 must(backend.includes('FROM orders WHERE id=? AND client_id=? AND store_id=?'),'Order references must be scoped to the selected store.');
 must(backend.includes('ASSIGNEE_NOT_IN_CONVERSATION'),'Chat-linked assignments must reject non-participants.');
 must(backend.includes('await conversationFor(env,clientId,storeId,conversationId,actorId(me))'),'Direct order assignment must validate conversation membership.');
-must(backend.includes('conversationMemberIds.includes(target)'),'Direct order assignment must validate the assignee is in the linked conversation.');
+must(backend.includes('conversationIds.has(target)'),'Direct order assignment must validate the assignee is in the linked conversation.');
 must(backend.includes('um.sender_user_id<>?'),'A user\'s own sent messages must not increase their unread counter.');
+
+// Tasks attached to private/group conversations must inherit conversation privacy.
+must(backend.includes('t.conversation_id IS NULL OR EXISTS (SELECT 1 FROM collab_members tm WHERE tm.conversation_id=t.conversation_id AND tm.user_id=?)'),'Conversation-linked tasks must only be listed to conversation members.');
+must(backend.includes('if(current.conversation_id){await conversationFor'),'Editing a conversation-linked task must require conversation membership.');
+must(backend.includes('mentions=mentions.filter(id=>conversationIds.has(id))'),'Conversation-linked task mentions must be limited to participants.');
+must(backend.includes("لا يمكن إسناد تاسك المحادثة لشخص خارجها"),'Conversation-linked task edits must reject outside assignees.');
 
 // Order assignment is collaboration metadata only; it must not rewrite the order record.
 must(backend.includes('collab_order_assignments'),'Order assignment history table must be used.');
@@ -41,5 +47,6 @@ must(frontend.includes("body.type==='direct'")||frontend.includes("type:'direct'
 must(frontend.includes('mentions'),'UI must support mentions.');
 must(frontend.includes('/api/collaboration/tasks'),'UI must support tasks.');
 must(frontend.includes('assignedToUserId'),'UI must support assigning work/orders to team members.');
+must(frontend.includes("const allowed=(c.members||[]).filter"),'Chat assignment controls must derive from active conversation members.');
 
 console.log('Internal collaboration isolation and contract checks passed.');
