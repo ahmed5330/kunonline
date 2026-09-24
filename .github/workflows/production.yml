@@ -145,18 +145,31 @@ jobs:
       - name: Verify live Printing UI and Android download
         run: |
           set -euo pipefail
-          page="$(curl -fsS https://app.kun-online.com/)"
-          test -n "$page"
+          ui_verified=0
+          for i in {1..10}; do
+            nonce="${GITHUB_RUN_ID}-${i}"
+            page="$(curl -fsS -H 'Cache-Control: no-cache' "https://app.kun-online.com/?deploy=${nonce}" 2>/dev/null || true)"
+            printing="$(curl -fsS -H 'Cache-Control: no-cache' "https://app.kun-online.com/v2/modules-v79-printing.js?v=79.8&deploy=${nonce}" 2>/dev/null || true)"
+            routing="$(curl -fsS -H 'Cache-Control: no-cache' "https://app.kun-online.com/v2/modules-v116-print-routing.js?v=116.0&deploy=${nonce}" 2>/dev/null || true)"
+            if [ -n "$page" ] \
+              && grep -Fq '/v2/modules-v51-permission-navigation.js?v=51.11' <<< "$page" \
+              && grep -Fq '/v2/modules-v78-jt-shipping-order.js?v=78.5' <<< "$page" \
+              && grep -Fq '/v2/modules-v79-printing.js?v=79.8' <<< "$page" \
+              && grep -Fq '/v2/modules-v116-print-routing.js?v=116.0' <<< "$page" \
+              && grep -Fq 'إرسال إلى J&T وطباعة البوليصة' <<< "$printing" \
+              && grep -Fq 'تم تأكيد الأوردر ونقله تلقائيًا إلى قسم الطباعة' <<< "$routing"; then
+              ui_verified=1
+              break
+            fi
+            echo "Waiting for Printing UI propagation (attempt ${i}/10)..."
+            sleep 3
+          done
+          test "$ui_verified" = 1
+
           if grep -Fq "https://github.com/ahmed5330/kunonline/releases/download/android-latest/Kun-Online-Mobile.apk" <<< "$page"; then
             echo "Website still exposes the legacy direct GitHub APK URL."
             exit 1
           fi
-          grep -Fq '/v2/modules-v51-permission-navigation.js?v=51.11' <<< "$page"
-          grep -Fq '/v2/modules-v78-jt-shipping-order.js?v=78.5' <<< "$page"
-          grep -Fq '/v2/modules-v79-printing.js?v=79.8' <<< "$page"
-          grep -Fq '/v2/modules-v116-print-routing.js?v=116.0' <<< "$page"
-          curl -fsS https://app.kun-online.com/v2/modules-v79-printing.js?v=79.8 | grep -Fq 'إرسال إلى J&T وطباعة البوليصة'
-          curl -fsS https://app.kun-online.com/v2/modules-v116-print-routing.js?v=116.0 | grep -Fq 'تم تأكيد الأوردر ونقله تلقائيًا إلى قسم الطباعة'
 
           expected_code="$(node -e "const d=require('/tmp/mobile-update.json'); process.stdout.write(String(d.versionCode))")"
           expected_version="$(node -e "const d=require('/tmp/mobile-update.json'); process.stdout.write(String(d.versionName))")"
