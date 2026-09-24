@@ -81,6 +81,7 @@
       quick.hidden=!writable;quick.style.display=writable?'':'none';
     }
     document.documentElement.dataset.permissionNavigation='ready';
+    document.documentElement.dataset.permissionNavigationVersion='51.11';
     window.KunEcommerceCalculatorShortcutV93?.sync?.();
     window.KunFinanceCommandCenterV96?.mergeNavigation?.();
     goFirstAllowed();
