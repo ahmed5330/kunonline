@@ -6,6 +6,7 @@ import {handleProductionMobileOrderGuard} from './production-mobile-order-guard.
 import {handleProductionCallerJntEdit} from './production-caller-jnt-edit.js';
 import {handleProductionPrintingQueue} from './production-printing-queue.js';
 import {handleInternalCollaboration} from './internal-collaboration.js';
+import {ensureInternalCollaborationSchema} from './internal-collaboration-schema.js';
 
 const LEGACY_APK_URL='https://github.com/ahmed5330/kunonline/releases/download/android-latest/Kun-Online-Mobile.apk';
 const DIRECT_APK_PATH='/api/mobile/app-update/apk';
@@ -51,6 +52,10 @@ async function routeConfirmedOrdersToPrinting(request,response){
   return new Response(JSON.stringify(data),{status:response.status,headers});
 }
 
+function collaborationSchemaFailure(){
+  return new Response(JSON.stringify({error:'تعذر تفعيل مخطط تواصل الفريق',code:'COLLAB_SCHEMA_BOOTSTRAP_FAILED'}),{status:503,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}});
+}
+
 export default {
   async fetch(request,env,ctx){
     const mobileUpdate=await handleMobileAppUpdate(request);
@@ -74,6 +79,9 @@ export default {
     const customerService=await handleProductionCustomerService({request,env,ctx,delegate:app});
     if(customerService)return routeConfirmedOrdersToPrinting(request,customerService);
 
+    if(new URL(request.url).pathname.startsWith('/api/collaboration')){
+      try{await ensureInternalCollaborationSchema(env);}catch{return collaborationSchemaFailure();}
+    }
     const collaboration=await handleInternalCollaboration({request,env,ctx,delegate:app});
     if(collaboration)return collaboration;
 
