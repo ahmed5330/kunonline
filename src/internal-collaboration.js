@@ -78,6 +78,18 @@ async function listConversations(env,{clientId,storeId,userId}){
   const byConversation=new Map();for(const row of membership.results||[]){if(!byConversation.has(row.conversation_id))byConversation.set(row.conversation_id,[]);byConversation.get(row.conversation_id).push({id:String(row.user_id),name:row.name||row.email||row.user_id,email:row.email||'',role:row.role||'member'});}
   return results.map(row=>({...row,unreadCount:Number(row.unread_count||0),members:byConversation.get(row.id)||[]}));
 }
+async function notificationSummary(env,{me,clientId,storeId}){
+  await scopeFor(env,me,clientId,storeId,{write:false});await requireSchema(env);const userId=actorId(me);
+  const row=await env.DB.prepare(`
+    SELECT COUNT(*) count
+    FROM collab_messages m
+    JOIN collab_members mine ON mine.conversation_id=m.conversation_id AND mine.user_id=?
+    LEFT JOIN collab_reads r ON r.conversation_id=m.conversation_id AND r.user_id=?
+    WHERE m.client_id=? AND m.store_id=? AND m.sender_user_id<>?
+      AND m.created_at>COALESCE(r.last_read_at,'1970-01-01T00:00:00.000Z')
+  `).bind(userId,userId,clientId,storeId,userId).first();
+  return {ok:true,unreadMessages:Number(row?.count||0)};
+}
 async function listTasks(env,{clientId,storeId,userId,status=''}){
   const binds=[clientId,storeId,userId];let where='t.client_id=? AND t.store_id=? AND (t.conversation_id IS NULL OR EXISTS (SELECT 1 FROM collab_members tm WHERE tm.conversation_id=t.conversation_id AND tm.user_id=?))';
   if(status&&TASK_STATUSES.has(status)){where+=' AND t.status=?';binds.push(status);}
@@ -191,6 +203,7 @@ export async function handleInternalCollaboration({request,env,ctx={},delegate})
     const me=await currentUser(request,env,ctx,delegate),body=['POST','PUT','PATCH'].includes(method)?await request.clone().json().catch(()=>({})):{};
     const clientId=requestedClient(me,url,body),storeId=requestedStore(url,body);
     if(path==='/api/collaboration/bootstrap'&&method==='GET')return json(await bootstrap(env,{me,clientId,storeId}));
+    if(path==='/api/collaboration/notifications'&&method==='GET')return json(await notificationSummary(env,{me,clientId,storeId}));
     if(path==='/api/collaboration/conversations'&&method==='GET'){await scopeFor(env,me,clientId,storeId);await requireSchema(env);return json({ok:true,conversations:await listConversations(env,{clientId,storeId,userId:actorId(me)})});}
     if(path==='/api/collaboration/conversations'&&method==='POST')return json(await createConversation(env,{me,clientId,storeId,body}),201);
     const messagesMatch=path.match(/^\/api\/collaboration\/conversations\/([^/]+)\/messages$/);
