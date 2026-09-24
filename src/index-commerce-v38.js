@@ -22,7 +22,7 @@ const V2_UI_SCRIPTS=[
   '<script src="/v2/modules-v117-collaboration.js?v=117.0" data-kun-collaboration="1"></script>',
   '<script src="/v2/modules-v117-collaboration-sidebar.js?v=117.3" data-kun-collaboration-sidebar="1"></script>',
   '<script src="/v2/modules-v119-collaboration-order-link.js?v=119.0" data-kun-collaboration-order-link="1"></script>'
-].join('');
+];
 
 function redirectLegacyRoot(request){
   if(request.method!=='GET'&&request.method!=='HEAD')return null;
@@ -42,16 +42,23 @@ async function collaborationPermissionGuard(request,env,ctx){
   catch(error){return new Response(JSON.stringify({ok:false,error:error?.message||'مش مسموح',code:error?.code||'PERMISSION_DENIED'}),{status:Number(error?.status)||403,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}});}
 }
 
+function missingV2UiScripts(html){
+  return V2_UI_SCRIPTS.filter(tag=>{
+    const marker=tag.match(/\s(data-kun-[\w-]+)="1"/)?.[1];
+    return !marker||!html.includes(`${marker}="1"`);
+  }).join('');
+}
+
 async function injectV2Ui(request,response){
   if(request.method!=='GET'||!response?.ok)return response;
   const path=new URL(request.url).pathname;
   if(path!=='/v2'&&path!=='/v2/'&&path!=='/v2/index.html')return response;
   const type=response.headers.get('content-type')||'';
   if(!type.includes('text/html'))return response;
-  const html=await response.text();
-  if(html.includes('data-kun-customer-service-claim="1"'))return new Response(html,{status:response.status,statusText:response.statusText,headers:response.headers});
-  const body=html.includes('</body>')?html.replace('</body>',`${V2_UI_SCRIPTS}</body>`):html+V2_UI_SCRIPTS;
+  const html=await response.text(),scripts=missingV2UiScripts(html);
   const headers=new Headers(response.headers);headers.delete('content-length');headers.set('Cache-Control','no-store');
+  if(!scripts)return new Response(html,{status:response.status,statusText:response.statusText,headers});
+  const body=html.includes('</body>')?html.replace('</body>',`${scripts}</body>`):html+scripts;
   return new Response(body,{status:response.status,statusText:response.statusText,headers});
 }
 
