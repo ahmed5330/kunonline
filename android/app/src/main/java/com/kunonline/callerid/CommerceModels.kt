@@ -60,7 +60,10 @@ data class CommerceSnapshot(
 
 object CommerceParser {
     fun parse(root: JSONObject): CommerceSnapshot {
-        val orders = parseOrders(root.optJSONArray("orders") ?: JSONArray())
+        // Keep the authoritative payload untouched in raw. Only the native UI list is
+        // period-filtered; KunApi stores the full order array in CustomerCache first.
+        val allOrders = parseOrders(root.optJSONArray("orders") ?: JSONArray())
+        val orders = MobileDateFilterState.filterOrders(allOrders)
         val products = parseProducts(root.optJSONArray("products") ?: JSONArray())
         val customersArray = root.optJSONArray("customers")
         val customers = if (customersArray != null && customersArray.length() > 0) {
