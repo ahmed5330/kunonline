@@ -9,6 +9,7 @@ const entry=await readFile(new URL('../src/index-commerce-v38.js',import.meta.ur
 const nav=await readFile(new URL('../public/v2/modules-v51-permission-navigation.js',import.meta.url),'utf8');
 const collabSidebar=await readFile(new URL('../public/v2/modules-v117-collaboration-sidebar.js',import.meta.url),'utf8');
 const collabOrderLink=await readFile(new URL('../public/v2/modules-v119-collaboration-order-link.js',import.meta.url),'utf8');
+const staticShellFallback=await readFile(new URL('../public/v2/modules-v108-returns-view-race-guard.js',import.meta.url),'utf8');
 const customerServiceNavReady=await readFile(new URL('../public/v2/modules-v118-customer-service-nav-ready.js',import.meta.url),'utf8');
 const mobileRunner=await readFile(new URL('./browser-preview-mobile-qa-runner.mjs',import.meta.url),'utf8');
 const must=(ok,msg)=>{if(!ok)throw new Error(msg)};
@@ -48,8 +49,11 @@ must(collabSidebar.includes("button[data-view=\"collaboration\"]")&&collabSideba
 must(collabSidebar.includes('[data-kun-shortcuts-nav]')&&collabSidebar.includes("dataset.collaborationSidebar='ready'"),'Collaboration sidebar placement must stay visible beside the primary mobile navigation and expose a readiness marker');
 must(collabSidebar.includes("dataset.collaborationStandalone=VERSION"),'Collaboration sidebar placement must mark its one-time normalization state');
 must(!collabSidebar.includes('KunSidebarGroupsV90?.sync?.()'),'Collaboration sidebar placement must not broadly re-sync grouped navigation and race unrelated views');
+must(staticShellFallback.includes('ensureCollaborationAssets')&&staticShellFallback.includes("window.addEventListener('load',ensureCollaborationAssets"),'Static /v2 asset delivery must bootstrap collaboration after the shell finishes loading');
+must(staticShellFallback.includes('/v2/modules-v117-collaboration.js?v=117.0')&&staticShellFallback.includes('/v2/modules-v117-collaboration-sidebar.js?v=117.3')&&staticShellFallback.includes('/v2/modules-v119-collaboration-order-link.js?v=119.0'),'Static shell fallback must load collaboration, sidebar and searchable order-link assets');
+must(staticShellFallback.includes("dataset.collaborationAssetsFallback='ready'"),'Static shell fallback must expose a collaboration readiness marker');
 must(customerServiceNavReady.includes('customerServiceNavReady=\'pending\'')&&customerServiceNavReady.includes('KunCustomerServiceV31.render()'),'Early Customer Service navigation must be replayed exactly through the v31 renderer once that route is ready');
 must(customerServiceNavReady.includes("button.classList.contains('is-visible')")&&customerServiceNavReady.includes('attempts<80'),'Customer Service early-click recovery must be bounded and wait for the real v31 readiness marker');
 must(mobileRunner.includes('fresh mobile shell before'),'Mobile exhaustive QA must isolate its 390px and 360px viewport sweeps');
 must(mobileRunner.includes('collaboration standalone sidebar route'),'Mobile browser QA must explicitly guard the visible collaboration sidebar route');
-console.log('Channels contract checks passed: unified inbox, campaign analytics, deterministic collaboration UI injection and store-scoped searchable order linking.');
+console.log('Channels contract checks passed: unified inbox, campaign analytics, deterministic collaboration UI bootstrap and store-scoped searchable order linking.');
