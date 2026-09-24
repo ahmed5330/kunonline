@@ -12,9 +12,9 @@ android {
         applicationId = "com.kunonline.callerid.stable"
         minSdk = 29
         targetSdk = 35
-        // v2.6.5 prevents the Android package installer from reopening in a loop.
-        versionCode = 115
-        versionName = "2.6.5"
+        // v2.6.6 routes confirmed orders to Printing and sends J&T only from there.
+        versionCode = 116
+        versionName = "2.6.6"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
