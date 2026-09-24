@@ -1,18 +1,20 @@
-/* Kun Online v117.1 — keep Team Collaboration visible as a first-class sidebar route on grouped/mobile navigation. */
+/* Kun Online v117.2 — keep Team Collaboration visible as a first-class sidebar route without broad navigation re-sync. */
 (function(){
   'use strict';
-  const VERSION='117.1';
+  const VERSION='117.2';
   const CHAT_ICON='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H9l-5 4V5Z"/><path d="M8 9h8M8 12h5"/></svg>';
   let observer=null;
 
   function normalize(button){
     if(!button)return false;
+    if(button.dataset.collaborationStandalone===VERSION&&button.classList.contains('nav-standalone')&&button.querySelector('.nav-item-label')?.textContent?.trim()==='تواصل الفريق')return false;
     const badge=button.querySelector('.kc-nav-badge');
     const unread=badge?.hidden?0:Number(badge?.textContent||0);
     button.classList.remove('nav-subitem');
     button.classList.add('nav-standalone','nav-collaboration');
     button.removeAttribute('data-nav-parent');
     button.dataset.navDecorated='v99';
+    button.dataset.collaborationStandalone=VERSION;
     button.style.setProperty('--nav-accent','#4da3ff');
     button.innerHTML=`<span class="nav-item-icon" aria-hidden="true">${CHAT_ICON}</span><span class="nav-item-label">تواصل الفريق</span><span class="kc-nav-badge" ${unread?'':'hidden'}>${unread||0}</span>`;
     return true;
@@ -37,7 +39,6 @@
     }
     document.documentElement.dataset.collaborationSidebar='ready';
     document.documentElement.dataset.collaborationSidebarVersion=VERSION;
-    window.KunSidebarGroupsV90?.sync?.();
     return true;
   }
 
