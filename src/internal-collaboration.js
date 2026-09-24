@@ -67,12 +67,12 @@ async function listConversations(env,{clientId,storeId,userId}){
       (SELECT body FROM collab_messages lm WHERE lm.conversation_id=c.id ORDER BY lm.created_at DESC LIMIT 1) last_body,
       (SELECT sender_name FROM collab_messages lm WHERE lm.conversation_id=c.id ORDER BY lm.created_at DESC LIMIT 1) last_sender,
       (SELECT created_at FROM collab_messages lm WHERE lm.conversation_id=c.id ORDER BY lm.created_at DESC LIMIT 1) last_message_at,
-      (SELECT COUNT(*) FROM collab_messages um WHERE um.conversation_id=c.id AND um.created_at>COALESCE((SELECT last_read_at FROM collab_reads r WHERE r.conversation_id=c.id AND r.user_id=?),'1970-01-01T00:00:00.000Z')) unread_count
+      (SELECT COUNT(*) FROM collab_messages um WHERE um.conversation_id=c.id AND um.sender_user_id<>? AND um.created_at>COALESCE((SELECT last_read_at FROM collab_reads r WHERE r.conversation_id=c.id AND r.user_id=?),'1970-01-01T00:00:00.000Z')) unread_count
     FROM collab_conversations c
     JOIN collab_members mine ON mine.conversation_id=c.id AND mine.user_id=?
     WHERE c.client_id=? AND c.store_id=?
     ORDER BY COALESCE(last_message_at,c.updated_at) DESC
-  `).bind(userId,userId,clientId,storeId).all();
+  `).bind(userId,userId,userId,clientId,storeId).all();
   const membership=await env.DB.prepare(`SELECT m.conversation_id,m.user_id,u.name,u.email,u.role FROM collab_members m JOIN collab_conversations c ON c.id=m.conversation_id LEFT JOIN users u ON u.id=m.user_id WHERE c.client_id=? AND c.store_id=? ORDER BY COALESCE(u.name,u.email,m.user_id)`).bind(clientId,storeId).all();
   const byConversation=new Map();for(const row of membership.results||[]){if(!byConversation.has(row.conversation_id))byConversation.set(row.conversation_id,[]);byConversation.get(row.conversation_id).push({id:String(row.user_id),name:row.name||row.email||row.user_id,email:row.email||'',role:row.role||'member'});}
   return results.map(row=>({...row,unreadCount:Number(row.unread_count||0),members:byConversation.get(row.id)||[]}));
@@ -134,6 +134,7 @@ async function sendMessage(env,{me,clientId,storeId,conversationId,body}){
   const text=clean(body.body,4000),orderId=clean(body.orderId,180),assignedTo=clean(body.assignedToUserId,200),memberIds=(await conversationMembers(env,conversationId)).map(x=>String(x.id)),mentions=uniq(body.mentions).filter(id=>memberIds.includes(id));
   if(orderId)await orderForStore(env,clientId,storeId,orderId);
   const storeMembers=await memberMap(env,me,clientId,storeId);if(assignedTo&&!storeMembers.has(assignedTo))throw Object.assign(new Error('الشخص المسند إليه غير متاح في هذا الفرع'),{status:400,code:'ASSIGNEE_INVALID'});
+  if(assignedTo&&!memberIds.includes(assignedTo))throw Object.assign(new Error('أضف الشخص للمحادثة قبل إسناد الأوردر إليه'),{status:400,code:'ASSIGNEE_NOT_IN_CONVERSATION'});
   if(assignedTo&&!orderId)throw Object.assign(new Error('اختار رقم الأوردر قبل تعيينه لشخص'),{status:400,code:'ORDER_REQUIRED_FOR_ASSIGNMENT'});
   const taskData=body.createTask&&typeof body.createTask==='object'?body.createTask:null;
   if(!text&&!orderId&&!taskData)throw Object.assign(new Error('اكتب رسالة أو اربط أوردر أو أنشئ تاسك'),{status:400,code:'MESSAGE_EMPTY'});
@@ -144,6 +145,7 @@ async function sendMessage(env,{me,clientId,storeId,conversationId,body}){
     const title=clean(taskData.title||text,240);if(!title)throw Object.assign(new Error('عنوان التاسك مطلوب'),{status:400,code:'TASK_TITLE_REQUIRED'});
     const taskAssignee=clean(taskData.assignedToUserId||assignedTo,200),priority=TASK_PRIORITIES.has(taskData.priority)?taskData.priority:'normal',dueAt=clean(taskData.dueAt,60)||null;
     if(taskAssignee&&!storeMembers.has(taskAssignee))throw Object.assign(new Error('المسند إليه في التاسك غير متاح'),{status:400,code:'ASSIGNEE_INVALID'});
+    if(taskAssignee&&!memberIds.includes(taskAssignee))throw Object.assign(new Error('أضف الشخص للمحادثة قبل إسناد التاسك إليه'),{status:400,code:'ASSIGNEE_NOT_IN_CONVERSATION'});
     statements.push(env.DB.prepare('INSERT INTO collab_tasks (id,client_id,store_id,conversation_id,title,description,status,priority,due_at,order_id,assigned_to_user_id,assigned_to_name,created_by,created_by_name,mentions_json,created_at,updated_at,completed_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL)').bind(taskId,clientId,storeId,conversationId,title,clean(taskData.description,2000)||null,'open',priority,dueAt,orderId||null,taskAssignee||null,taskAssignee?(storeMembers.get(taskAssignee)?.name||taskAssignee):null,mine,mineName,JSON.stringify(mentions),ts,ts));
   }
   await env.DB.batch(statements);if(assignedTo)await assignOrder(env,{clientId,storeId,orderId,target:assignedTo,targetName,me,conversationId,messageId,note:text});
@@ -167,7 +169,13 @@ async function updateTask(env,{me,clientId,storeId,taskId,body}){
 }
 async function directAssign(env,{me,clientId,storeId,orderId,body}){
   await scopeFor(env,me,clientId,storeId,{write:true});await requireSchema(env);const members=await memberMap(env,me,clientId,storeId),target=clean(body.assignedToUserId,200);if(!target||!members.has(target))throw Object.assign(new Error('اختار عضو فريق متاح'),{status:400,code:'ASSIGNEE_INVALID'});
-  const targetName=members.get(target)?.name||target;await assignOrder(env,{clientId,storeId,orderId,target,targetName,me,conversationId:clean(body.conversationId,200)||null,messageId:null,note:clean(body.note,1000)});return {ok:true,orderId,assignedTo:{id:target,name:targetName}};
+  const conversationId=clean(body.conversationId,200)||null;
+  if(conversationId){
+    await conversationFor(env,clientId,storeId,conversationId,actorId(me));
+    const conversationMemberIds=(await conversationMembers(env,conversationId)).map(x=>String(x.id));
+    if(!conversationMemberIds.includes(target))throw Object.assign(new Error('لا يمكن ربط التعيين بمحادثة لا تضم الشخص المسند إليه'),{status:400,code:'ASSIGNEE_NOT_IN_CONVERSATION'});
+  }
+  const targetName=members.get(target)?.name||target;await assignOrder(env,{clientId,storeId,orderId,target,targetName,me,conversationId,messageId:null,note:clean(body.note,1000)});return {ok:true,orderId,assignedTo:{id:target,name:targetName}};
 }
 
 export async function handleInternalCollaboration({request,env,ctx={},delegate}){
