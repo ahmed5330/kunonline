@@ -1,4 +1,4 @@
-/* Kun Online v51.11 — permission-aware navigation + Finance tools bootstrap. */
+/* Kun Online v51.11 — permission-aware navigation, targeted late-nav refresh + Finance tools bootstrap. */
 (function(){
   const OWNER_ROLES=new Set(['admin','client']);
   const VIEW_RULES=Object.freeze({
