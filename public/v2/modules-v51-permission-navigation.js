@@ -42,7 +42,7 @@
     control:['owner'],
     settings:['owner']
   });
-  let snapshot=null,ready=false,allowed=new Set(),redirecting=false,navObserver=null,navApplyQueued=false;
+  let snapshot=null,ready=false,allowed=new Set(),redirecting=false,lateNavTimer=null;
   const text=v=>String(v??'').trim();
   const permissions=()=>Array.isArray(snapshot?.permissions)?snapshot.permissions:[];
   function match(rule,target){
@@ -86,21 +86,16 @@
     window.KunFinanceCommandCenterV96?.mergeNavigation?.();
     goFirstAllowed();
   }
-  function observeDynamicNavigation(){
-    const nav=document.querySelector('.nav');if(!nav||navObserver)return;
-    navObserver=new MutationObserver(records=>{
-      if(!ready||!records.some(record=>record.type==='childList'&&record.addedNodes?.length))return;
-      if(navApplyQueued)return;navApplyQueued=true;
-      queueMicrotask(()=>{navApplyQueued=false;apply();});
-    });
-    navObserver.observe(nav,{childList:true,subtree:true});
+  function scheduleLateNavApply(){
+    clearTimeout(lateNavTimer);
+    lateNavTimer=setTimeout(()=>{if(ready)apply();},650);
   }
   async function loadAccess(force=false){
     try{
       if(force)window.KunPerformanceCore?.invalidate?.('/api/navigation-access');
       const response=await fetch('/api/navigation-access',{credentials:'include'}),data=await response.json().catch(()=>({}));
       if(!response.ok||!data?.role)throw new Error(data.error||`HTTP ${response.status}`);
-      snapshot=data;ready=true;apply();return data;
+      snapshot=data;ready=true;apply();scheduleLateNavApply();return data;
     }catch(error){console.warn('Permission navigation unavailable',error);return null;}
   }
   function targetView(element){return text(element?.dataset?.view||element?.dataset?.go);}
@@ -123,8 +118,7 @@
     if(!window.KunFinanceCommandCenterV96)appendScript('/v2/modules-v96-finance-command-center.js?v=96.0','data-kun-v96-finance',()=>{window.KunFinanceCommandCenterV96?.mergeNavigation?.();if(ready)apply();});
     if(!window.KunAccountingNavigationGuardV103)appendScript('/v2/modules-v103-accounting-navigation-guard.js?v=103.1','data-kun-accounting-navigation-guard',()=>{if(currentView()==='accounting')window.KunAccountingNavigationGuardV103?.retry?.();});
   }
-  function bootAccess(){observeDynamicNavigation();loadAccess();}
   loadFinanceTools();
-  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',bootAccess,{once:true});else bootAccess();
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>loadAccess(),{once:true});else loadAccess();
   window.KunPermissionNavigationV51={load:()=>loadAccess(true),apply,allowedView,match,loadFinanceTools,loadEcommerceCalculator:loadFinanceTools,get snapshot(){return snapshot;},get allowed(){return [...allowed];},rules:VIEW_RULES,version:'51.11'};
 })();
