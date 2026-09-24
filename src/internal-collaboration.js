@@ -48,7 +48,7 @@ async function visibleMembers(env,me,clientId,storeId){
 async function memberMap(env,me,clientId,storeId){return new Map((await visibleMembers(env,me,clientId,storeId)).map(x=>[String(x.id),x]));}
 async function orderForStore(env,clientId,storeId,orderId){
   const id=clean(orderId,180);if(!id)return null;
-  const row=await env.DB.prepare('SELECT id,name,phone,state,total,assigned_user_id,assigned_user_name FROM orders WHERE id=? AND client_id=? AND store_id=?').bind(id,clientId,storeId).first();
+  const row=await env.DB.prepare('SELECT id,name,phone,state,total FROM orders WHERE id=? AND client_id=? AND store_id=?').bind(id,clientId,storeId).first();
   if(!row)throw Object.assign(new Error('الأوردر غير موجود داخل الفرع المحدد'),{status:404,code:'ORDER_NOT_FOUND'});
   return row;
 }
@@ -123,7 +123,6 @@ async function getMessages(env,{me,clientId,storeId,conversationId}){
 async function assignOrder(env,{clientId,storeId,orderId,target,targetName,me,conversationId,messageId,note}){
   const ts=now(),mine=actorId(me),mineName=actorName(me);await orderForStore(env,clientId,storeId,orderId);
   await env.DB.batch([
-    env.DB.prepare('UPDATE orders SET assigned_user_id=?,assigned_user_name=?,assigned_at=?,assigned_by_user_id=? WHERE id=? AND client_id=? AND store_id=?').bind(target,targetName,ts,mine,orderId,clientId,storeId),
     env.DB.prepare("UPDATE collab_order_assignments SET status='reassigned',updated_at=? WHERE client_id=? AND store_id=? AND order_id=? AND status='active'").bind(ts,clientId,storeId,orderId),
     env.DB.prepare('INSERT INTO collab_order_assignments (id,client_id,store_id,order_id,assigned_to_user_id,assigned_to_name,assigned_by_user_id,assigned_by_name,conversation_id,message_id,note,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(rid('ASN'),clientId,storeId,orderId,target,targetName,mine,mineName,conversationId||null,messageId||null,clean(note,1000)||null,'active',ts,ts)
   ]);
