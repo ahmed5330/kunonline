@@ -16,6 +16,7 @@ const V2_UI_SCRIPTS=[
   '<script src="/v2/modules-v106-manual-jnt-order.js?v=106.0" data-kun-manual-jnt-order="1"></script>',
   '<script src="/v2/modules-v107-mobile-app-update.js?v=107.0" data-kun-mobile-app-update="1"></script>',
   '<script src="/v2/modules-v109-operational-date-contact.js?v=109.1" data-kun-operational-date-contact="1"></script>',
+  '<script src="/v2/modules-v118-customer-service-nav-ready.js?v=118.0" data-kun-customer-service-nav-ready="1"></script>',
   '<script src="/v2/modules-v117-collaboration-root.js?v=117.0" data-kun-collaboration-root="1"></script>',
   '<script src="/v2/modules-v117-collaboration.js?v=117.0" data-kun-collaboration="1"></script>',
   '<script src="/v2/modules-v117-collaboration-sidebar.js?v=117.2" data-kun-collaboration-sidebar="1"></script>'
