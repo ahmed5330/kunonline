@@ -49,7 +49,9 @@ for(const index of ['idx_collab_conversations_store','idx_collab_direct_unique',
 must(!/\bDROP\s+TABLE\b/i.test(migration),'Collaboration migration must not drop tables.');
 must(!/\bDELETE\s+FROM\b/i.test(migration),'Collaboration migration must not delete existing data.');
 must(!/\bTRUNCATE\b/i.test(migration),'Collaboration migration must not truncate existing data.');
-must(schema.includes('env.DB.exec(COLLAB_SCHEMA_SQL)'),'Worker bootstrap must apply the additive collaboration schema through the production D1 binding.');
+must(schema.includes('COLLAB_SCHEMA_STATEMENTS'),'Worker bootstrap must keep the additive DDL as explicit statements.');
+must(schema.includes('for(const sql of COLLAB_SCHEMA_STATEMENTS)await db.prepare(sql).run()'),'Worker bootstrap must execute each DDL statement independently through the production D1 binding.');
+must(!schema.includes('env.DB.exec('),'Worker bootstrap must not rely on multi-statement D1 exec for collaboration DDL.');
 must(schema.includes('missingAfter.length'),'Worker bootstrap must verify every required schema object after creation.');
 
 // UI/worker wiring contract.
@@ -68,4 +70,4 @@ must(frontend.includes('/api/collaboration/tasks'),'UI must support tasks.');
 must(frontend.includes('assignedToUserId'),'UI must support assigning work/orders to team members.');
 must(frontend.includes("const allowed=(c.members||[]).filter"),'Chat assignment controls must derive from active conversation members.');
 
-console.log('Internal collaboration isolation, schema bootstrap and contract checks passed.');
+console.log('Internal collaboration isolation, sequential schema bootstrap and contract checks passed.');
