@@ -1,6 +1,7 @@
 import app from './index-commerce-v38-base.js';
 import safety from './index-commerce-v38-safety.js';
 import core from './index-commerce-v38-core.js';
+import {requirePermission} from './access-control.js';
 import {handleJtHistoryReconcile} from './jt-history-reconcile.js';
 import {handleAccountingMonthly} from './accounting-monthly.js';
 import {handleAutomationWorkflowsV104} from './automation-workflows-v104.js';
@@ -25,6 +26,16 @@ function redirectLegacyRoot(request){
   if(url.pathname!=='/')return null;
   url.pathname='/v2/';
   return new Response(null,{status:302,headers:{Location:url.toString(),'Cache-Control':'no-store'}});
+}
+
+async function collaborationPermissionGuard(request,env,ctx){
+  const url=new URL(request.url);if(!url.pathname.startsWith('/api/collaboration'))return null;
+  const meUrl=new URL(request.url);meUrl.pathname='/api/me';meUrl.search='';
+  const meResponse=await app.fetch(new Request(meUrl,{method:'GET',headers:request.headers}),env,ctx);
+  const me=await meResponse.json().catch(()=>({}));
+  if(!meResponse.ok||!me?.role)return new Response(JSON.stringify({ok:false,error:me?.error||'محتاج تسجّل دخول',code:'AUTH_REQUIRED'}),{status:meResponse.ok?401:meResponse.status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}});
+  try{requirePermission(me,'inbox',request.method.toUpperCase()==='GET'?'read':'write');return null;}
+  catch(error){return new Response(JSON.stringify({ok:false,error:error?.message||'مش مسموح',code:error?.code||'PERMISSION_DENIED'}),{status:Number(error?.status)||403,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}});}
 }
 
 async function injectV2Ui(request,response){
@@ -82,6 +93,8 @@ export default {
     if(rootRedirect)return rootRedirect;
     const mobileUpdate=await handleMobileAppUpdate(request);
     if(mobileUpdate)return mobileUpdate;
+    const collaborationDenied=await collaborationPermissionGuard(request,env,ctx);
+    if(collaborationDenied)return collaborationDenied;
     const collaboration=await handleInternalCollaborationV117({request,env,ctx,delegate:app});
     if(collaboration)return collaboration;
     const periodBoard=await handleCustomerServicePeriodV111({request,env,ctx,delegate:app});
