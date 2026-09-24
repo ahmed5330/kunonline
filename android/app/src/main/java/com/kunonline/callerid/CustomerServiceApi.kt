@@ -88,7 +88,7 @@ object KunCustomerServiceApi {
             readTimeout = 20000
             setRequestProperty("Accept", "application/json")
             setRequestProperty("Content-Type", "application/json; charset=utf-8")
-            setRequestProperty("X-Kun-Mobile", "native-android/2.3")
+            setRequestProperty("X-Kun-Mobile", "native-android/2.6.7")
             setRequestProperty("Cookie", cookie)
             if (body != null) doOutput = true
         }
@@ -148,10 +148,10 @@ object KunCustomerServiceApi {
                     put(key, obj.optString(key))
                 }
             }
-            val orders = buildList {
+            val orders = MobileDateFilterState.filterCustomerServiceOrders(buildList {
                 val array = root.optJSONArray("orders") ?: JSONArray()
                 for (i in 0 until array.length()) array.optJSONObject(i)?.let { add(parseOrder(it)) }
-            }
+            })
             CustomerServiceBoardResult(
                 ok = true,
                 message = "تم تحميل خدمة العملاء",
