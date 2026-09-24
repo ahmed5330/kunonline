@@ -7,13 +7,15 @@ import {handleAutomationWorkflowsV104} from './automation-workflows-v104.js';
 import {handleOperationalWorkflowV110} from './operational-workflow-v110.js';
 import {handleMobileAppUpdate} from './mobile-app-update.js';
 import {handleCustomerServicePeriodV111} from './customer-service-period-v111.js';
+import {handleInternalCollaborationV117} from './internal-collaboration-v117.js';
 
 const V2_UI_SCRIPTS=[
   '<script src="/v2/modules-v105-customer-service-claim.js?v=105.2" data-kun-customer-service-claim="1"></script>',
   '<script src="/v2/modules-v105-section-nav-actions.js?v=105.1" data-kun-section-nav-actions="1"></script>',
   '<script src="/v2/modules-v106-manual-jnt-order.js?v=106.0" data-kun-manual-jnt-order="1"></script>',
   '<script src="/v2/modules-v107-mobile-app-update.js?v=107.0" data-kun-mobile-app-update="1"></script>',
-  '<script src="/v2/modules-v109-operational-date-contact.js?v=109.1" data-kun-operational-date-contact="1"></script>'
+  '<script src="/v2/modules-v109-operational-date-contact.js?v=109.1" data-kun-operational-date-contact="1"></script>',
+  '<script src="/v2/modules-v117-collaboration.js?v=117.0" data-kun-collaboration="1"></script>'
 ].join('');
 
 function redirectLegacyRoot(request){
@@ -79,6 +81,8 @@ export default {
     if(rootRedirect)return rootRedirect;
     const mobileUpdate=await handleMobileAppUpdate(request);
     if(mobileUpdate)return mobileUpdate;
+    const collaboration=await handleInternalCollaborationV117({request,env,ctx,delegate:app});
+    if(collaboration)return collaboration;
     const periodBoard=await handleCustomerServicePeriodV111({request,env,ctx,delegate:app});
     if(periodBoard)return periodBoard;
     const operational=await handleOperationalWorkflowV110({request,env,ctx,delegate:app});
