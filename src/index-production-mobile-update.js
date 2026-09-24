@@ -19,7 +19,15 @@ async function websiteWithDirectAndroidDownload(request,env){
   const type=String(asset.headers.get('Content-Type')||'');
   if(!asset.ok||!type.includes('text/html'))return asset;
 
-  const html=(await asset.text()).replaceAll(LEGACY_APK_URL,DIRECT_APK_PATH);
+  let html=await asset.text();
+  html=html
+    .replaceAll(LEGACY_APK_URL,DIRECT_APK_PATH)
+    .replaceAll('/v2/modules-v51-permission-navigation.js?v=51.10','/v2/modules-v51-permission-navigation.js?v=51.11')
+    .replaceAll('/v2/modules-v78-jt-shipping-order.js?v=78.4','/v2/modules-v78-jt-shipping-order.js?v=78.5')
+    .replaceAll('/v2/modules-v79-printing.js?v=79.7','/v2/modules-v79-printing.js?v=79.8');
+  if(!html.includes('/v2/modules-v116-print-routing.js')){
+    html=html.replace('</body>','<script src="/v2/modules-v116-print-routing.js?v=116.0" data-kun-print-routing="1"></script></body>');
+  }
   const headers=new Headers(asset.headers);
   headers.set('Content-Type','text/html; charset=utf-8');
   headers.set('Cache-Control','no-cache, no-store, must-revalidate');
