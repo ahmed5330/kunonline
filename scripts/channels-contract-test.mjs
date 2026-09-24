@@ -7,6 +7,7 @@ const collab=await readFile(new URL('../src/internal-collaboration-v117.js',impo
 const entry=await readFile(new URL('../src/index-commerce-v38.js',import.meta.url),'utf8');
 const nav=await readFile(new URL('../public/v2/modules-v51-permission-navigation.js',import.meta.url),'utf8');
 const collabSidebar=await readFile(new URL('../public/v2/modules-v117-collaboration-sidebar.js',import.meta.url),'utf8');
+const customerServiceNavReady=await readFile(new URL('../public/v2/modules-v118-customer-service-nav-ready.js',import.meta.url),'utf8');
 const mobileRunner=await readFile(new URL('./browser-preview-mobile-qa-runner.mjs',import.meta.url),'utf8');
 const must=(ok,msg)=>{if(!ok)throw new Error(msg)};
 for(const t of ['conversations','channel_messages','marketing_campaigns','campaign_daily_metrics'])must(migration.includes(`CREATE TABLE IF NOT EXISTS ${t}`),`Missing ${t}`);
@@ -23,6 +24,7 @@ must(collab.includes('resolveStoreScope(env,me,clientId,requestedStore,{write})'
 must(collab.includes('WHERE id=? AND client_id=? AND store_id=?'),'Collaboration order linking must stay inside the active client/store');
 must(entry.includes("requirePermission(me,'inbox',request.method.toUpperCase()==='GET'?'read':'write')"),'Collaboration API must enforce Inbox read/write permissions');
 must(entry.includes('modules-v117-collaboration-sidebar.js?v=117.2')&&entry.includes('data-kun-collaboration-sidebar="1"'),'Preview v2 shell must load the idempotent first-class collaboration sidebar route after collaboration');
+must(entry.includes('modules-v118-customer-service-nav-ready.js?v=118.0')&&entry.includes('data-kun-customer-service-nav-ready="1"'),'Preview v2 shell must preserve Customer Service clicks that land before v31 finishes booting');
 must(nav.includes("collaboration:['inbox.read']"),'Dynamic collaboration navigation must inherit Inbox read permission');
 must(nav.includes('refreshLateInjectedNavigation')&&nav.includes('setTimeout(refreshLateInjectedNavigation,650)'),'Permission navigation must refresh only the late-injected collaboration item without re-applying every navigation rule');
 must(!nav.includes('setTimeout(()=>{if(ready)apply();},650)'),'Late collaboration injection must not trigger a full navigation re-apply');
@@ -32,6 +34,8 @@ must(collabSidebar.includes("button[data-view=\"collaboration\"]")&&collabSideba
 must(collabSidebar.includes('[data-kun-shortcuts-nav]')&&collabSidebar.includes("dataset.collaborationSidebar='ready'"),'Collaboration sidebar placement must stay visible beside the primary mobile navigation and expose a readiness marker');
 must(collabSidebar.includes("dataset.collaborationStandalone=VERSION"),'Collaboration sidebar placement must mark its one-time normalization state');
 must(!collabSidebar.includes('KunSidebarGroupsV90?.sync?.()'),'Collaboration sidebar placement must not broadly re-sync grouped navigation and race unrelated views');
+must(customerServiceNavReady.includes('customerServiceNavReady=\'pending\'')&&customerServiceNavReady.includes('KunCustomerServiceV31.render()'),'Early Customer Service navigation must be replayed exactly through the v31 renderer once that route is ready');
+must(customerServiceNavReady.includes("button.classList.contains('is-visible')")&&customerServiceNavReady.includes('attempts<80'),'Customer Service early-click recovery must be bounded and wait for the real v31 readiness marker');
 must(mobileRunner.includes('fresh mobile shell before'),'Mobile exhaustive QA must isolate its 390px and 360px viewport sweeps');
 must(mobileRunner.includes('collaboration standalone sidebar route'),'Mobile browser QA must explicitly guard the visible collaboration sidebar route');
 console.log('Channels contract checks passed: unified inbox, campaign analytics and store-scoped internal collaboration permissions.');
