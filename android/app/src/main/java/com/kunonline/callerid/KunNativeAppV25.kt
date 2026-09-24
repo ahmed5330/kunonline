@@ -78,10 +78,20 @@ fun KunNativeAppV25(activity: MainActivity) {
     var lastSyncAt by remember { mutableLongStateOf(CustomerCache.lastSyncedAt(context)) }
     val dateRevision = MobileDateFilterState.revision
 
+    fun rawOrderIds(value: CommerceSnapshot?): Set<String> {
+        val array = value?.raw?.optJSONArray("orders") ?: return emptySet()
+        return buildSet {
+            for (index in 0 until array.length()) {
+                val id = array.optJSONObject(index)?.optString("id").orEmpty()
+                if (id.isNotBlank()) add(id)
+            }
+        }
+    }
+
     suspend fun performRefresh(manual: Boolean = false) {
         if (!loggedIn || loading) return
         loading = true
-        val previousIds = snapshot?.orders?.map { it.id }?.toSet().orEmpty()
+        val previousIds = rawOrderIds(snapshot)
         val hadSnapshot = snapshot != null
         val result = try {
             withContext(Dispatchers.IO) { KunApi.fetchState(context, forceFull = manual) }
@@ -92,9 +102,10 @@ fun KunNativeAppV25(activity: MainActivity) {
             val next = result.snapshot ?: CommerceSnapshot()
             snapshot = next
             lastSyncAt = CustomerCache.lastSyncedAt(context)
-            val added = if (hadSnapshot) next.orders.count { it.id !in previousIds } else 0
+            val nextIds = rawOrderIds(next)
+            val added = if (hadSnapshot) nextIds.count { it !in previousIds } else 0
             newOrdersNotice = when {
-                added > 0 -> if (added == 1) "وصل أوردر جديد وتمت مزامنته مع المكالمات" else "وصل $added أوردر جديد وتمت مزامنتم مع المكالمات"
+                added > 0 -> if (added == 1) "وصل أوردر جديد وتمت مزامنته مع المكالمات" else "وصل $added أوردر جديد وتمت مزامنتهم مع المكالمات"
                 manual -> "تم تحديث الطلبات وCaller ID"
                 else -> ""
             }
