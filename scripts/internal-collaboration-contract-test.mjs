@@ -25,6 +25,13 @@ must(backend.includes('if(current.conversation_id){await conversationFor'),'Edit
 must(backend.includes('mentions=mentions.filter(id=>conversationIds.has(id))'),'Conversation-linked task mentions must be limited to participants.');
 must(backend.includes("لا يمكن إسناد تاسك المحادثة لشخص خارجها"),'Conversation-linked task edits must reject outside assignees.');
 
+// Closed-chat unread notifications must use a lightweight scoped count, not a full bootstrap refresh.
+must(backend.includes("path==='/api/collaboration/notifications'"),'Collaboration API must expose a lightweight unread endpoint.');
+must(backend.includes('JOIN collab_members mine ON mine.conversation_id=m.conversation_id AND mine.user_id=?'),'Unread counts must only include conversations the user belongs to.');
+must(backend.includes('m.client_id=? AND m.store_id=? AND m.sender_user_id<>?'),'Unread counts must be tenant/store scoped and exclude the current user.');
+must(frontend.includes("api('/api/collaboration/notifications')"),'Closed collaboration UI must use the lightweight unread endpoint.');
+must(frontend.includes('state.open?8000:60000'),'Open chat can refresh frequently while closed chat polling stays lightweight and infrequent.');
+
 // Order assignment is collaboration metadata only; it must not rewrite the order record.
 must(backend.includes('collab_order_assignments'),'Order assignment history table must be used.');
 must(!backend.includes('UPDATE orders SET assigned_user_id'),'Collaboration must not mutate assignment columns on orders.');
