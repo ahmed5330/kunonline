@@ -22,7 +22,7 @@ must(collab.includes('resolveTenant(me,requestedClient)'),'Collaboration must pr
 must(collab.includes('resolveStoreScope(env,me,clientId,requestedStore,{write})'),'Collaboration must preserve store isolation and viewer write guards');
 must(collab.includes('WHERE id=? AND client_id=? AND store_id=?'),'Collaboration order linking must stay inside the active client/store');
 must(entry.includes("requirePermission(me,'inbox',request.method.toUpperCase()==='GET'?'read':'write')"),'Collaboration API must enforce Inbox read/write permissions');
-must(entry.includes('modules-v117-collaboration-sidebar.js?v=117.1')&&entry.includes('data-kun-collaboration-sidebar="1"'),'Preview v2 shell must load the first-class collaboration sidebar route after collaboration');
+must(entry.includes('modules-v117-collaboration-sidebar.js?v=117.2')&&entry.includes('data-kun-collaboration-sidebar="1"'),'Preview v2 shell must load the idempotent first-class collaboration sidebar route after collaboration');
 must(nav.includes("collaboration:['inbox.read']"),'Dynamic collaboration navigation must inherit Inbox read permission');
 must(nav.includes('refreshLateInjectedNavigation')&&nav.includes('setTimeout(refreshLateInjectedNavigation,650)'),'Permission navigation must refresh only the late-injected collaboration item without re-applying every navigation rule');
 must(!nav.includes('setTimeout(()=>{if(ready)apply();},650)'),'Late collaboration injection must not trigger a full navigation re-apply');
@@ -30,7 +30,8 @@ must(!nav.includes('new MutationObserver'),'Permission navigation must not watch
 must(nav.includes("permissionNavigationVersion='51.11'"),'Permission navigation must expose the active runtime version marker');
 must(collabSidebar.includes("button[data-view=\"collaboration\"]")&&collabSidebar.includes("classList.add('nav-standalone','nav-collaboration')"),'Collaboration must be promoted to a visible standalone sidebar route');
 must(collabSidebar.includes('[data-kun-shortcuts-nav]')&&collabSidebar.includes("dataset.collaborationSidebar='ready'"),'Collaboration sidebar placement must stay visible beside the primary mobile navigation and expose a readiness marker');
-must(collabSidebar.includes('KunSidebarGroupsV90?.sync?.()'),'Collaboration sidebar placement must resync grouped navigation after moving the late route');
+must(collabSidebar.includes("dataset.collaborationStandalone=VERSION"),'Collaboration sidebar placement must mark its one-time normalization state');
+must(!collabSidebar.includes('KunSidebarGroupsV90?.sync?.()'),'Collaboration sidebar placement must not broadly re-sync grouped navigation and race unrelated views');
 must(mobileRunner.includes('fresh mobile shell before'),'Mobile exhaustive QA must isolate its 390px and 360px viewport sweeps');
 must(mobileRunner.includes('collaboration standalone sidebar route'),'Mobile browser QA must explicitly guard the visible collaboration sidebar route');
 console.log('Channels contract checks passed: unified inbox, campaign analytics and store-scoped internal collaboration permissions.');
