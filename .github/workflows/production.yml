@@ -19,14 +19,20 @@ jobs:
           node-version: 22
           package-manager-cache: false
       - run: npm install --ignore-scripts
-      - name: Validate Android update, J&T guard and Customer Service sources
+      - name: Validate Android update, Printing/J&T guard and Customer Service sources
         run: |
           node --check src/mobile-app-update.js
           node scripts/mobile-state-sync-test.mjs
           node --check src/production-mobile-order-guard.js
           node --check src/production-customer-service.js
           node --check src/production-caller-jnt-edit.js
+          node --check src/production-printing-queue.js
+          node --check src/jt-print-workflow-v2.js
           node --check src/index-production-mobile-update.js
+          node --check public/v2/modules-v78-jt-shipping-order.js
+          node --check public/v2/modules-v79-printing.js
+          node --check public/v2/modules-v116-print-routing.js
+          node scripts/integration-setup-test.mjs
       - name: Verify Worker builds without touching Production
         run: npx wrangler deploy --dry-run --config wrangler.production.toml
   deploy:
@@ -60,7 +66,7 @@ jobs:
           const fs=require('fs');
           const d=JSON.parse(fs.readFileSync('/tmp/mobile-update.json','utf8'));
           if(d.ok!==true)process.exit(1);
-          if(!Number.isInteger(Number(d.versionCode))||Number(d.versionCode)<110)process.exit(1);
+          if(!Number.isInteger(Number(d.versionCode))||Number(d.versionCode)<116)process.exit(1);
           if(!String(d.versionName||'').trim())process.exit(1);
           const apkUrl=new URL(String(d.apkUrl||''));
           if(apkUrl.origin!=='https://app.kun-online.com'||apkUrl.pathname!=='/api/mobile/app-update/apk')process.exit(1);
@@ -99,7 +105,7 @@ jobs:
             node -e "const d=require('/tmp/${file}'); if(!d.name||!d.code||!Array.isArray(d.cities)) process.exit(1)"
           done
           echo "All J&T province/city/area files are live and readable."
-      - name: Verify live Customer Service API routes
+      - name: Verify live Customer Service and Printing API routes
         run: |
           set -euo pipefail
           check_guarded_route() {
@@ -108,20 +114,21 @@ jobs:
             body="$(mktemp)"
             code="$(curl -sS -o "$body" -w '%{http_code}' "https://app.kun-online.com${path}")"
             if [ "$code" != "401" ]; then
-              echo "Expected protected Customer Service route to return 401 without a session: ${path}; got HTTP ${code}"
+              echo "Expected protected route to return 401 without a session: ${path}; got HTTP ${code}"
               cat "$body"
               exit 1
             fi
             if grep -Fq 'مسار غير معروف' "$body"; then
-              echo "Customer Service route still resolves to the legacy unknown-route handler: ${path}"
+              echo "Route still resolves to the legacy unknown-route handler: ${path}"
               cat "$body"
               exit 1
             fi
-            echo "Customer Service route verified: ${path} -> HTTP 401"
+            echo "Protected route verified: ${path} -> HTTP 401"
           }
           check_guarded_route '/api/mobile/state-sync'
           check_guarded_route '/api/mobile/board-sync'
           check_guarded_route '/api/customer-service'
+          check_guarded_route '/api/printing?clientId=probe'
           check_guarded_route '/api/my-client-context'
           check_guarded_route '/api/catalog/products?clientId=probe'
           check_guarded_route '/api/orders/TEST/details?clientId=probe'
@@ -135,7 +142,7 @@ jobs:
             exit 1
           fi
           echo "Caller J&T edit route verified: /api/caller-jnt/orders/TEST -> HTTP 401"
-      - name: Verify website downloads a valid APK through Kun Online
+      - name: Verify live Printing UI and Android download
         run: |
           set -euo pipefail
           page="$(curl -fsS https://app.kun-online.com/)"
@@ -144,6 +151,12 @@ jobs:
             echo "Website still exposes the legacy direct GitHub APK URL."
             exit 1
           fi
+          grep -Fq '/v2/modules-v51-permission-navigation.js?v=51.11' <<< "$page"
+          grep -Fq '/v2/modules-v78-jt-shipping-order.js?v=78.5' <<< "$page"
+          grep -Fq '/v2/modules-v79-printing.js?v=79.8' <<< "$page"
+          grep -Fq '/v2/modules-v116-print-routing.js?v=116.0' <<< "$page"
+          curl -fsS https://app.kun-online.com/v2/modules-v79-printing.js?v=79.8 | grep -Fq 'إرسال إلى J&T وطباعة البوليصة'
+          curl -fsS https://app.kun-online.com/v2/modules-v116-print-routing.js?v=116.0 | grep -Fq 'تم تأكيد الأوردر ونقله تلقائيًا إلى قسم الطباعة'
 
           expected_code="$(node -e "const d=require('/tmp/mobile-update.json'); process.stdout.write(String(d.versionCode))")"
           expected_version="$(node -e "const d=require('/tmp/mobile-update.json'); process.stdout.write(String(d.versionName))")"
@@ -177,4 +190,4 @@ jobs:
             actual_sha="$(sha256sum "$apk" | awk '{print $1}')"
             test "$actual_sha" = "$expected_sha"
           fi
-          echo "Website Android download verified through Kun Online: $(wc -c < "$apk") bytes"
+          echo "Printing UI and Android download verified through Kun Online: $(wc -c < "$apk") bytes"
