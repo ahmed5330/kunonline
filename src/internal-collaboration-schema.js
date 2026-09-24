@@ -7,8 +7,8 @@ const REQUIRED_INDEXES=[
 const REQUIRED_OBJECTS=[...REQUIRED_TABLES,...REQUIRED_INDEXES];
 
 // Mirrors migrations/0091_internal_collaboration.sql exactly. Additive/idempotent only.
-const COLLAB_SCHEMA_SQL=`
-CREATE TABLE IF NOT EXISTS collab_conversations (
+const COLLAB_SCHEMA_STATEMENTS=[
+`CREATE TABLE IF NOT EXISTS collab_conversations (
   id TEXT PRIMARY KEY,
   client_id TEXT NOT NULL,
   store_id TEXT NOT NULL,
@@ -18,20 +18,18 @@ CREATE TABLE IF NOT EXISTS collab_conversations (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   direct_key TEXT
-);
-CREATE INDEX IF NOT EXISTS idx_collab_conversations_store ON collab_conversations(client_id,store_id,updated_at);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_collab_direct_unique ON collab_conversations(client_id,store_id,direct_key) WHERE type='direct' AND direct_key IS NOT NULL;
-
-CREATE TABLE IF NOT EXISTS collab_members (
+)`,
+`CREATE INDEX IF NOT EXISTS idx_collab_conversations_store ON collab_conversations(client_id,store_id,updated_at)`,
+`CREATE UNIQUE INDEX IF NOT EXISTS idx_collab_direct_unique ON collab_conversations(client_id,store_id,direct_key) WHERE type='direct' AND direct_key IS NOT NULL`,
+`CREATE TABLE IF NOT EXISTS collab_members (
   conversation_id TEXT NOT NULL,
   user_id TEXT NOT NULL,
   role TEXT NOT NULL DEFAULT 'member',
   joined_at TEXT NOT NULL,
   PRIMARY KEY(conversation_id,user_id)
-);
-CREATE INDEX IF NOT EXISTS idx_collab_members_user ON collab_members(user_id,conversation_id);
-
-CREATE TABLE IF NOT EXISTS collab_messages (
+)`,
+`CREATE INDEX IF NOT EXISTS idx_collab_members_user ON collab_members(user_id,conversation_id)`,
+`CREATE TABLE IF NOT EXISTS collab_messages (
   id TEXT PRIMARY KEY,
   conversation_id TEXT NOT NULL,
   client_id TEXT NOT NULL,
@@ -45,11 +43,10 @@ CREATE TABLE IF NOT EXISTS collab_messages (
   task_id TEXT,
   mentions_json TEXT NOT NULL DEFAULT '[]',
   created_at TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_collab_messages_conversation ON collab_messages(conversation_id,created_at);
-CREATE INDEX IF NOT EXISTS idx_collab_messages_order ON collab_messages(client_id,store_id,order_id,created_at);
-
-CREATE TABLE IF NOT EXISTS collab_message_mentions (
+)`,
+`CREATE INDEX IF NOT EXISTS idx_collab_messages_conversation ON collab_messages(conversation_id,created_at)`,
+`CREATE INDEX IF NOT EXISTS idx_collab_messages_order ON collab_messages(client_id,store_id,order_id,created_at)`,
+`CREATE TABLE IF NOT EXISTS collab_message_mentions (
   id TEXT PRIMARY KEY,
   message_id TEXT NOT NULL,
   conversation_id TEXT NOT NULL,
@@ -57,17 +54,15 @@ CREATE TABLE IF NOT EXISTS collab_message_mentions (
   created_at TEXT NOT NULL,
   read_at TEXT,
   UNIQUE(message_id,user_id)
-);
-CREATE INDEX IF NOT EXISTS idx_collab_mentions_user ON collab_message_mentions(user_id,read_at,created_at);
-
-CREATE TABLE IF NOT EXISTS collab_reads (
+)`,
+`CREATE INDEX IF NOT EXISTS idx_collab_mentions_user ON collab_message_mentions(user_id,read_at,created_at)`,
+`CREATE TABLE IF NOT EXISTS collab_reads (
   conversation_id TEXT NOT NULL,
   user_id TEXT NOT NULL,
   last_read_at TEXT NOT NULL,
   PRIMARY KEY(conversation_id,user_id)
-);
-
-CREATE TABLE IF NOT EXISTS collab_tasks (
+)`,
+`CREATE TABLE IF NOT EXISTS collab_tasks (
   id TEXT PRIMARY KEY,
   client_id TEXT NOT NULL,
   store_id TEXT NOT NULL,
@@ -86,12 +81,11 @@ CREATE TABLE IF NOT EXISTS collab_tasks (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   completed_at TEXT
-);
-CREATE INDEX IF NOT EXISTS idx_collab_tasks_store ON collab_tasks(client_id,store_id,status,priority,updated_at);
-CREATE INDEX IF NOT EXISTS idx_collab_tasks_assignee ON collab_tasks(client_id,store_id,assigned_to_user_id,status);
-CREATE INDEX IF NOT EXISTS idx_collab_tasks_order ON collab_tasks(client_id,store_id,order_id);
-
-CREATE TABLE IF NOT EXISTS collab_order_assignments (
+)`,
+`CREATE INDEX IF NOT EXISTS idx_collab_tasks_store ON collab_tasks(client_id,store_id,status,priority,updated_at)`,
+`CREATE INDEX IF NOT EXISTS idx_collab_tasks_assignee ON collab_tasks(client_id,store_id,assigned_to_user_id,status)`,
+`CREATE INDEX IF NOT EXISTS idx_collab_tasks_order ON collab_tasks(client_id,store_id,order_id)`,
+`CREATE TABLE IF NOT EXISTS collab_order_assignments (
   id TEXT PRIMARY KEY,
   client_id TEXT NOT NULL,
   store_id TEXT NOT NULL,
@@ -106,10 +100,10 @@ CREATE TABLE IF NOT EXISTS collab_order_assignments (
   status TEXT NOT NULL DEFAULT 'active',
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_collab_order_assignments_order ON collab_order_assignments(client_id,store_id,order_id,status,updated_at);
-CREATE INDEX IF NOT EXISTS idx_collab_order_assignments_user ON collab_order_assignments(client_id,store_id,assigned_to_user_id,status,updated_at);
-`;
+)`,
+`CREATE INDEX IF NOT EXISTS idx_collab_order_assignments_order ON collab_order_assignments(client_id,store_id,order_id,status,updated_at)`,
+`CREATE INDEX IF NOT EXISTS idx_collab_order_assignments_user ON collab_order_assignments(client_id,store_id,assigned_to_user_id,status,updated_at)`
+];
 
 let schemaReadyPromise=null;
 
@@ -118,13 +112,17 @@ async function existingObjects(db){
   return new Set(results.map(row=>String(row.name||'')));
 }
 
+async function applySchema(db){
+  for(const sql of COLLAB_SCHEMA_STATEMENTS)await db.prepare(sql).run();
+}
+
 export async function ensureInternalCollaborationSchema(env){
   if(!env?.DB)throw new Error('Production D1 binding DB is unavailable');
   if(!schemaReadyPromise){
     schemaReadyPromise=(async()=>{
       let names=await existingObjects(env.DB);
       const missingBefore=REQUIRED_OBJECTS.filter(name=>!names.has(name));
-      if(missingBefore.length)await env.DB.exec(COLLAB_SCHEMA_SQL);
+      if(missingBefore.length)await applySchema(env.DB);
       names=await existingObjects(env.DB);
       const missingAfter=REQUIRED_OBJECTS.filter(name=>!names.has(name));
       if(missingAfter.length)throw new Error(`Collaboration schema bootstrap incomplete: ${missingAfter.join(', ')}`);
