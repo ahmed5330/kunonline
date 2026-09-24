@@ -6,6 +6,7 @@ const collabMigration=await readFile(new URL('../migrations/0091_internal_collab
 const collab=await readFile(new URL('../src/internal-collaboration-v117.js',import.meta.url),'utf8');
 const entry=await readFile(new URL('../src/index-commerce-v38.js',import.meta.url),'utf8');
 const nav=await readFile(new URL('../public/v2/modules-v51-permission-navigation.js',import.meta.url),'utf8');
+const collabSidebar=await readFile(new URL('../public/v2/modules-v117-collaboration-sidebar.js',import.meta.url),'utf8');
 const mobileRunner=await readFile(new URL('./browser-preview-mobile-qa-runner.mjs',import.meta.url),'utf8');
 const must=(ok,msg)=>{if(!ok)throw new Error(msg)};
 for(const t of ['conversations','channel_messages','marketing_campaigns','campaign_daily_metrics'])must(migration.includes(`CREATE TABLE IF NOT EXISTS ${t}`),`Missing ${t}`);
@@ -21,10 +22,15 @@ must(collab.includes('resolveTenant(me,requestedClient)'),'Collaboration must pr
 must(collab.includes('resolveStoreScope(env,me,clientId,requestedStore,{write})'),'Collaboration must preserve store isolation and viewer write guards');
 must(collab.includes('WHERE id=? AND client_id=? AND store_id=?'),'Collaboration order linking must stay inside the active client/store');
 must(entry.includes("requirePermission(me,'inbox',request.method.toUpperCase()==='GET'?'read':'write')"),'Collaboration API must enforce Inbox read/write permissions');
+must(entry.includes('modules-v117-collaboration-sidebar.js?v=117.1')&&entry.includes('data-kun-collaboration-sidebar="1"'),'Preview v2 shell must load the first-class collaboration sidebar route after collaboration');
 must(nav.includes("collaboration:['inbox.read']"),'Dynamic collaboration navigation must inherit Inbox read permission');
 must(nav.includes('refreshLateInjectedNavigation')&&nav.includes('setTimeout(refreshLateInjectedNavigation,650)'),'Permission navigation must refresh only the late-injected collaboration item without re-applying every navigation rule');
 must(!nav.includes('setTimeout(()=>{if(ready)apply();},650)'),'Late collaboration injection must not trigger a full navigation re-apply');
 must(!nav.includes('new MutationObserver'),'Permission navigation must not watch every navigation mutation');
 must(nav.includes("permissionNavigationVersion='51.11'"),'Permission navigation must expose the active runtime version marker');
+must(collabSidebar.includes("button[data-view=\"collaboration\"]")&&collabSidebar.includes("classList.add('nav-standalone','nav-collaboration')"),'Collaboration must be promoted to a visible standalone sidebar route');
+must(collabSidebar.includes('[data-kun-shortcuts-nav]')&&collabSidebar.includes("dataset.collaborationSidebar='ready'"),'Collaboration sidebar placement must stay visible beside the primary mobile navigation and expose a readiness marker');
+must(collabSidebar.includes('KunSidebarGroupsV90?.sync?.()'),'Collaboration sidebar placement must resync grouped navigation after moving the late route');
 must(mobileRunner.includes('fresh mobile shell before'),'Mobile exhaustive QA must isolate its 390px and 360px viewport sweeps');
+must(mobileRunner.includes('collaboration standalone sidebar route'),'Mobile browser QA must explicitly guard the visible collaboration sidebar route');
 console.log('Channels contract checks passed: unified inbox, campaign analytics and store-scoped internal collaboration permissions.');
