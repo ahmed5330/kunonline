@@ -1,0 +1,37 @@
+name: Internal Collaboration Contract
+
+on:
+  push:
+    branches:
+      - feature/internal-collaboration-v117
+    paths:
+      - 'src/internal-collaboration.js'
+      - 'public/v2/modules-v117-team-collaboration.js'
+      - 'src/index-production-mobile-update.js'
+      - 'migrations/0091_internal_collaboration.sql'
+      - 'scripts/internal-collaboration-contract-test.mjs'
+      - '.github/workflows/internal-collaboration-contract.yml'
+  pull_request:
+    paths:
+      - 'src/internal-collaboration.js'
+      - 'public/v2/modules-v117-team-collaboration.js'
+      - 'src/index-production-mobile-update.js'
+      - 'migrations/0091_internal_collaboration.sql'
+      - 'scripts/internal-collaboration-contract-test.mjs'
+  workflow_dispatch:
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax check
+        run: |
+          node --check src/internal-collaboration.js
+          node --check public/v2/modules-v117-team-collaboration.js
+          node --check scripts/internal-collaboration-contract-test.mjs
+      - name: Collaboration isolation contract
+        run: node scripts/internal-collaboration-contract-test.mjs

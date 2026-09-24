@@ -48,7 +48,7 @@ assert.ok(ui.includes("method:'DELETE'"),'Accounting UI must support deleting ma
 assert.ok(index.includes('data-view="accounting">الحسابات والحركات</button>'),'Accounting navigation must be present before the base router binds click handlers');
 assert.ok(index.includes('modules-v36-accounting.js?v=100.1'),'Accounting v100.1 module is not cache-busted in v2');
 assert.ok(index.includes('modules-v97-view-persistence-v976.js?v=97.6'),'View persistence v97.6 must use a versioned asset path so stale navigation/bootstrap state cannot win');
-assert.ok(index.includes('modules-v51-permission-navigation.js?v=51.10'),'Permission navigation must be cache-busted for the accounting guard loader');
+assert.ok(index.includes('modules-v51-permission-navigation.js?v=51.11'),'Permission navigation v51.11 must be cache-busted for the accounting guard loader');
 assert.ok(index.includes('modules-v103-accounting-navigation-guard.js?v=103.1'),'Accounting deterministic navigation guard must be directly loaded by v2');
 for(const marker of ['/api/accounting/monthly','/api/accounting/overview','صافي الربح المحاسبي / الخسارة','إيرادات أخرى مسجلة يدويًا','kun:accounting-changed','operatingNet+otherIncome'])assert.ok(financeSync.includes(marker),`Finance accounting sync missing ${marker}`);
 assert.ok(loader.includes('/v2/modules-v101-finance-accounting-sync.js?v=101.0'),'Finance accounting sync asset is not runtime-loaded');
@@ -58,6 +58,6 @@ assert.ok(!guard.includes('Do not stop propagation'),'Accounting route must not 
 assert.ok(guard.includes("version:'103.1'"),'Accounting navigation guard must expose v103.1');
 assert.ok(permissionLoader.includes("accounting:['finance.read']"),'Accounting route must remain permission-gated by finance.read');
 assert.ok(permissionLoader.includes('/v2/modules-v103-accounting-navigation-guard.js?v=103.1'),'Permission bootstrap must load the deterministic accounting guard');
-assert.ok(permissionLoader.includes("version:'51.10'"),'Permission navigation cache version must match v51.10');
+assert.ok(permissionLoader.includes("version:'51.11'"),'Permission navigation cache version must match v51.11');
 assert.ok(!service.includes('UPDATE order_management_fees SET rate_pct'),'Existing order fee rate must not be repriced when store rate changes');
 console.log('Accounting + management fee contract passed: unified monthly P&L, store-aware manual movements, cash/revenue separation, management-fee reconciliation, immutable historical rates, deterministic accounting navigation, v100 accounting UI, v101 Finance sync and v103.1 dashboard-fallback protection.');
