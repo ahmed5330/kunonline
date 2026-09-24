@@ -4,7 +4,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.Print
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -20,22 +19,19 @@ import kotlinx.coroutines.isActive
 
 /**
  * Kun Online Android v2.6 shell.
- * Keeps the proven v2.5 experience and adds native J&T order creation + Printing handoff.
+ * Keeps the proven v2.5 experience and adds native J&T order creation.
+ * Printing stays in the main Kun Online system, not in the Android app.
  */
 @Composable
 fun KunNativeAppV26(activity: MainActivity) {
     val context = LocalContext.current
     var hasSession by remember { mutableStateOf(KunApi.hasSession(context)) }
     var showAddOrder by remember { mutableStateOf(false) }
-    var showPrinting by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         while (isActive) {
             hasSession = KunApi.hasSession(context)
-            if (!hasSession) {
-                showAddOrder = false
-                showPrinting = false
-            }
+            if (!hasSession) showAddOrder = false
             delay(800)
         }
     }
@@ -45,15 +41,6 @@ fun KunNativeAppV26(activity: MainActivity) {
             KunNativeAppV25(activity)
 
             if (hasSession) {
-                ExtendedFloatingActionButton(
-                    onClick = { showPrinting = true },
-                    icon = { Icon(Icons.Outlined.Print, contentDescription = null) },
-                    text = { Text("الطباعة") },
-                    modifier = Modifier
-                        .align(Alignment.BottomStart)
-                        .padding(start = 18.dp, bottom = 150.dp)
-                        .zIndex(20f)
-                )
                 ExtendedFloatingActionButton(
                     onClick = { showAddOrder = true },
                     icon = { Icon(Icons.Outlined.Add, contentDescription = null) },
@@ -70,10 +57,6 @@ fun KunNativeAppV26(activity: MainActivity) {
                     onDismiss = { showAddOrder = false },
                     onCreated = { showAddOrder = false }
                 )
-            }
-
-            if (showPrinting) {
-                PrintingMobileV26(onDismiss = { showPrinting = false })
             }
         }
     }
