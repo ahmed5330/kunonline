@@ -6,6 +6,7 @@ on:
       - feature/internal-collaboration-v117
     paths:
       - 'src/internal-collaboration.js'
+      - 'src/internal-collaboration-schema.js'
       - 'public/v2/modules-v117-team-collaboration.js'
       - 'src/index-production-mobile-update.js'
       - 'migrations/0091_internal_collaboration.sql'
@@ -14,6 +15,7 @@ on:
   pull_request:
     paths:
       - 'src/internal-collaboration.js'
+      - 'src/internal-collaboration-schema.js'
       - 'public/v2/modules-v117-team-collaboration.js'
       - 'src/index-production-mobile-update.js'
       - 'migrations/0091_internal_collaboration.sql'
@@ -31,6 +33,7 @@ jobs:
       - name: Syntax check
         run: |
           node --check src/internal-collaboration.js
+          node --check src/internal-collaboration-schema.js
           node --check public/v2/modules-v117-team-collaboration.js
           node --check scripts/internal-collaboration-contract-test.mjs
       - name: Collaboration isolation contract
