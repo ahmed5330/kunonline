@@ -12,9 +12,9 @@ android {
         applicationId = "com.kunonline.callerid.stable"
         minSdk = 29
         targetSdk = 35
-        // v2.6.6 routes confirmed orders to Printing and sends J&T only from there.
-        versionCode = 116
-        versionName = "2.6.6"
+        // v2.6.7 adds app-wide date filters and keeps Printing on the web system.
+        versionCode = 117
+        versionName = "2.6.7"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
