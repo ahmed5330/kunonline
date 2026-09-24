@@ -29,6 +29,9 @@ must(entry.includes('handleCollaborationOrderInputV119')&&entry.includes('collab
 must(entry.includes('modules-v117-collaboration-sidebar.js?v=117.3')&&entry.includes('data-kun-collaboration-sidebar="1"'),'Preview v2 shell must load the first-class collaboration sidebar route after collaboration');
 must(entry.includes('modules-v119-collaboration-order-link.js?v=119.0')&&entry.includes('data-kun-collaboration-order-link="1"'),'Preview v2 shell must load searchable collaboration order linking');
 must(entry.includes('modules-v118-customer-service-nav-ready.js?v=118.0')&&entry.includes('data-kun-customer-service-nav-ready="1"'),'Preview v2 shell must preserve Customer Service clicks that land before v31 finishes booting');
+must(entry.includes('function missingV2UiScripts(html)')&&entry.includes('V2_UI_SCRIPTS.filter(tag=>'),'Preview v2 UI injection must check every dynamic module independently');
+must(!entry.includes("if(html.includes('data-kun-customer-service-claim=\"1\"'))return"),'One legacy marker must never suppress newer collaboration/mobile UI injection');
+must(entry.includes('const html=await response.text(),scripts=missingV2UiScripts(html)'),'Preview HTML must inject only the missing v2 runtime modules');
 must(collabOrderInput.includes("replace(/^#\\s*/,'')"),'Collaboration order linking must accept a leading # without breaking lookup');
 must(collabOrderInput.includes('(id=? OR ref=? OR awb=?)'),'Collaboration order linking must resolve internal ID, Easy Orders/reference code and AWB');
 must(collabOrderInput.includes('resolveStoreScope(env,me,clientId,requestedStore,{write})'),'Order lookup/search must preserve active-store isolation');
@@ -49,4 +52,4 @@ must(customerServiceNavReady.includes('customerServiceNavReady=\'pending\'')&&cu
 must(customerServiceNavReady.includes("button.classList.contains('is-visible')")&&customerServiceNavReady.includes('attempts<80'),'Customer Service early-click recovery must be bounded and wait for the real v31 readiness marker');
 must(mobileRunner.includes('fresh mobile shell before'),'Mobile exhaustive QA must isolate its 390px and 360px viewport sweeps');
 must(mobileRunner.includes('collaboration standalone sidebar route'),'Mobile browser QA must explicitly guard the visible collaboration sidebar route');
-console.log('Channels contract checks passed: unified inbox, campaign analytics, visible team collaboration and store-scoped searchable order linking.');
+console.log('Channels contract checks passed: unified inbox, campaign analytics, deterministic collaboration UI injection and store-scoped searchable order linking.');
