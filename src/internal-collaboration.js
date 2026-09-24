@@ -61,6 +61,7 @@ async function conversationMembers(env,conversationId){
   const {results=[]}=await env.DB.prepare(`SELECT m.user_id,u.name,u.email,u.role FROM collab_members m LEFT JOIN users u ON u.id=m.user_id WHERE m.conversation_id=? ORDER BY COALESCE(u.name,u.email,m.user_id)`).bind(conversationId).all();
   return results.map(row=>({id:String(row.user_id),name:row.name||row.email||row.user_id,email:row.email||'',role:row.role||'member'}));
 }
+async function conversationMemberIds(env,conversationId){return new Set((await conversationMembers(env,conversationId)).map(x=>String(x.id)));}
 async function listConversations(env,{clientId,storeId,userId}){
   const {results=[]}=await env.DB.prepare(`
     SELECT c.id,c.type,c.name,c.created_by,c.created_at,c.updated_at,
@@ -77,15 +78,15 @@ async function listConversations(env,{clientId,storeId,userId}){
   const byConversation=new Map();for(const row of membership.results||[]){if(!byConversation.has(row.conversation_id))byConversation.set(row.conversation_id,[]);byConversation.get(row.conversation_id).push({id:String(row.user_id),name:row.name||row.email||row.user_id,email:row.email||'',role:row.role||'member'});}
   return results.map(row=>({...row,unreadCount:Number(row.unread_count||0),members:byConversation.get(row.id)||[]}));
 }
-async function listTasks(env,{clientId,storeId,status=''}){
-  const binds=[clientId,storeId];let where='client_id=? AND store_id=?';
-  if(status&&TASK_STATUSES.has(status)){where+=' AND status=?';binds.push(status);}
-  const {results=[]}=await env.DB.prepare(`SELECT * FROM collab_tasks WHERE ${where} ORDER BY CASE status WHEN 'open' THEN 0 WHEN 'in_progress' THEN 1 WHEN 'done' THEN 2 ELSE 3 END,CASE priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END,COALESCE(due_at,'9999-12-31'),created_at DESC LIMIT 250`).bind(...binds).all();
+async function listTasks(env,{clientId,storeId,userId,status=''}){
+  const binds=[clientId,storeId,userId];let where='t.client_id=? AND t.store_id=? AND (t.conversation_id IS NULL OR EXISTS (SELECT 1 FROM collab_members tm WHERE tm.conversation_id=t.conversation_id AND tm.user_id=?))';
+  if(status&&TASK_STATUSES.has(status)){where+=' AND t.status=?';binds.push(status);}
+  const {results=[]}=await env.DB.prepare(`SELECT t.* FROM collab_tasks t WHERE ${where} ORDER BY CASE t.status WHEN 'open' THEN 0 WHEN 'in_progress' THEN 1 WHEN 'done' THEN 2 ELSE 3 END,CASE t.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END,COALESCE(t.due_at,'9999-12-31'),t.created_at DESC LIMIT 250`).bind(...binds).all();
   return results.map(row=>({...row,mentions:JSON.parse(row.mentions_json||'[]')}));
 }
 async function bootstrap(env,{me,clientId,storeId}){
   await scopeFor(env,me,clientId,storeId,{write:false});await requireSchema(env);
-  const userId=actorId(me),members=await visibleMembers(env,me,clientId,storeId),conversations=await listConversations(env,{clientId,storeId,userId}),tasks=await listTasks(env,{clientId,storeId});
+  const userId=actorId(me),members=await visibleMembers(env,me,clientId,storeId),conversations=await listConversations(env,{clientId,storeId,userId}),tasks=await listTasks(env,{clientId,storeId,userId});
   const mentionRow=await env.DB.prepare('SELECT COUNT(*) count FROM collab_message_mentions mm JOIN collab_messages m ON m.id=mm.message_id WHERE mm.user_id=? AND mm.read_at IS NULL AND m.client_id=? AND m.store_id=?').bind(userId,clientId,storeId).first();
   return {ok:true,me:{id:userId,name:actorName(me),role:me.role},clientId,storeId,members,conversations,tasks,unreadMentions:Number(mentionRow?.count||0),serverTime:now()};
 }
@@ -131,10 +132,10 @@ async function assignOrder(env,{clientId,storeId,orderId,target,targetName,me,co
 }
 async function sendMessage(env,{me,clientId,storeId,conversationId,body}){
   await scopeFor(env,me,clientId,storeId,{write:true});await requireSchema(env);const mine=actorId(me),mineName=actorName(me);await conversationFor(env,clientId,storeId,conversationId,mine);
-  const text=clean(body.body,4000),orderId=clean(body.orderId,180),assignedTo=clean(body.assignedToUserId,200),memberIds=(await conversationMembers(env,conversationId)).map(x=>String(x.id)),mentions=uniq(body.mentions).filter(id=>memberIds.includes(id));
+  const text=clean(body.body,4000),orderId=clean(body.orderId,180),assignedTo=clean(body.assignedToUserId,200),memberIds=await conversationMemberIds(env,conversationId),mentions=uniq(body.mentions).filter(id=>memberIds.has(id));
   if(orderId)await orderForStore(env,clientId,storeId,orderId);
   const storeMembers=await memberMap(env,me,clientId,storeId);if(assignedTo&&!storeMembers.has(assignedTo))throw Object.assign(new Error('الشخص المسند إليه غير متاح في هذا الفرع'),{status:400,code:'ASSIGNEE_INVALID'});
-  if(assignedTo&&!memberIds.includes(assignedTo))throw Object.assign(new Error('أضف الشخص للمحادثة قبل إسناد الأوردر إليه'),{status:400,code:'ASSIGNEE_NOT_IN_CONVERSATION'});
+  if(assignedTo&&!memberIds.has(assignedTo))throw Object.assign(new Error('أضف الشخص للمحادثة قبل إسناد الأوردر إليه'),{status:400,code:'ASSIGNEE_NOT_IN_CONVERSATION'});
   if(assignedTo&&!orderId)throw Object.assign(new Error('اختار رقم الأوردر قبل تعيينه لشخص'),{status:400,code:'ORDER_REQUIRED_FOR_ASSIGNMENT'});
   const taskData=body.createTask&&typeof body.createTask==='object'?body.createTask:null;
   if(!text&&!orderId&&!taskData)throw Object.assign(new Error('اكتب رسالة أو اربط أوردر أو أنشئ تاسك'),{status:400,code:'MESSAGE_EMPTY'});
@@ -145,7 +146,7 @@ async function sendMessage(env,{me,clientId,storeId,conversationId,body}){
     const title=clean(taskData.title||text,240);if(!title)throw Object.assign(new Error('عنوان التاسك مطلوب'),{status:400,code:'TASK_TITLE_REQUIRED'});
     const taskAssignee=clean(taskData.assignedToUserId||assignedTo,200),priority=TASK_PRIORITIES.has(taskData.priority)?taskData.priority:'normal',dueAt=clean(taskData.dueAt,60)||null;
     if(taskAssignee&&!storeMembers.has(taskAssignee))throw Object.assign(new Error('المسند إليه في التاسك غير متاح'),{status:400,code:'ASSIGNEE_INVALID'});
-    if(taskAssignee&&!memberIds.includes(taskAssignee))throw Object.assign(new Error('أضف الشخص للمحادثة قبل إسناد التاسك إليه'),{status:400,code:'ASSIGNEE_NOT_IN_CONVERSATION'});
+    if(taskAssignee&&!memberIds.has(taskAssignee))throw Object.assign(new Error('أضف الشخص للمحادثة قبل إسناد التاسك إليه'),{status:400,code:'ASSIGNEE_NOT_IN_CONVERSATION'});
     statements.push(env.DB.prepare('INSERT INTO collab_tasks (id,client_id,store_id,conversation_id,title,description,status,priority,due_at,order_id,assigned_to_user_id,assigned_to_name,created_by,created_by_name,mentions_json,created_at,updated_at,completed_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL)').bind(taskId,clientId,storeId,conversationId,title,clean(taskData.description,2000)||null,'open',priority,dueAt,orderId||null,taskAssignee||null,taskAssignee?(storeMembers.get(taskAssignee)?.name||taskAssignee):null,mine,mineName,JSON.stringify(mentions),ts,ts));
   }
   await env.DB.batch(statements);if(assignedTo)await assignOrder(env,{clientId,storeId,orderId,target:assignedTo,targetName,me,conversationId,messageId,note:text});
@@ -153,16 +154,22 @@ async function sendMessage(env,{me,clientId,storeId,conversationId,body}){
 }
 async function createTask(env,{me,clientId,storeId,body}){
   await scopeFor(env,me,clientId,storeId,{write:true});await requireSchema(env);const mine=actorId(me),mineName=actorName(me),title=clean(body.title,240);if(!title)throw Object.assign(new Error('عنوان التاسك مطلوب'),{status:400,code:'TASK_TITLE_REQUIRED'});
-  const members=await memberMap(env,me,clientId,storeId),assignedTo=clean(body.assignedToUserId,200),orderId=clean(body.orderId,180),conversationId=clean(body.conversationId,200),mentions=uniq(body.mentions).filter(x=>members.has(x));
-  if(assignedTo&&!members.has(assignedTo))throw Object.assign(new Error('المسند إليه غير متاح في هذا الفرع'),{status:400,code:'ASSIGNEE_INVALID'});if(orderId)await orderForStore(env,clientId,storeId,orderId);if(conversationId)await conversationFor(env,clientId,storeId,conversationId,mine);
+  const members=await memberMap(env,me,clientId,storeId),assignedTo=clean(body.assignedToUserId,200),orderId=clean(body.orderId,180),conversationId=clean(body.conversationId,200);let mentions=uniq(body.mentions).filter(x=>members.has(x));
+  if(assignedTo&&!members.has(assignedTo))throw Object.assign(new Error('المسند إليه غير متاح في هذا الفرع'),{status:400,code:'ASSIGNEE_INVALID'});if(orderId)await orderForStore(env,clientId,storeId,orderId);
+  if(conversationId){
+    await conversationFor(env,clientId,storeId,conversationId,mine);const conversationIds=await conversationMemberIds(env,conversationId);
+    if(assignedTo&&!conversationIds.has(assignedTo))throw Object.assign(new Error('أضف الشخص للمحادثة قبل إسناد التاسك إليه'),{status:400,code:'ASSIGNEE_NOT_IN_CONVERSATION'});
+    mentions=mentions.filter(id=>conversationIds.has(id));
+  }
   const priority=TASK_PRIORITIES.has(body.priority)?body.priority:'normal',status=TASK_STATUSES.has(body.status)?body.status:'open',ts=now(),id=rid('TSK');
   await env.DB.prepare('INSERT INTO collab_tasks (id,client_id,store_id,conversation_id,title,description,status,priority,due_at,order_id,assigned_to_user_id,assigned_to_name,created_by,created_by_name,mentions_json,created_at,updated_at,completed_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(id,clientId,storeId,conversationId||null,title,clean(body.description,2000)||null,status,priority,clean(body.dueAt,60)||null,orderId||null,assignedTo||null,assignedTo?(members.get(assignedTo)?.name||assignedTo):null,mine,mineName,JSON.stringify(mentions),ts,ts,status==='done'?ts:null).run();
   return {ok:true,id};
 }
 async function updateTask(env,{me,clientId,storeId,taskId,body}){
-  await scopeFor(env,me,clientId,storeId,{write:true});await requireSchema(env);const current=await env.DB.prepare('SELECT * FROM collab_tasks WHERE id=? AND client_id=? AND store_id=?').bind(taskId,clientId,storeId).first();if(!current)throw Object.assign(new Error('التاسك غير موجود'),{status:404,code:'TASK_NOT_FOUND'});
+  await scopeFor(env,me,clientId,storeId,{write:true});await requireSchema(env);const mine=actorId(me),current=await env.DB.prepare('SELECT * FROM collab_tasks WHERE id=? AND client_id=? AND store_id=?').bind(taskId,clientId,storeId).first();if(!current)throw Object.assign(new Error('التاسك غير موجود'),{status:404,code:'TASK_NOT_FOUND'});
+  let conversationIds=null;if(current.conversation_id){await conversationFor(env,clientId,storeId,current.conversation_id,mine);conversationIds=await conversationMemberIds(env,current.conversation_id);}
   const members=await memberMap(env,me,clientId,storeId),status=body.status!==undefined?String(body.status):current.status,priority=body.priority!==undefined?String(body.priority):current.priority,assignedTo=body.assignedToUserId!==undefined?clean(body.assignedToUserId,200):clean(current.assigned_to_user_id,200);
-  if(!TASK_STATUSES.has(status))throw Object.assign(new Error('حالة التاسك غير صحيحة'),{status:400,code:'TASK_STATUS_INVALID'});if(!TASK_PRIORITIES.has(priority))throw Object.assign(new Error('أولوية التاسك غير صحيحة'),{status:400,code:'TASK_PRIORITY_INVALID'});if(assignedTo&&!members.has(assignedTo))throw Object.assign(new Error('المسند إليه غير متاح'),{status:400,code:'ASSIGNEE_INVALID'});
+  if(!TASK_STATUSES.has(status))throw Object.assign(new Error('حالة التاسك غير صحيحة'),{status:400,code:'TASK_STATUS_INVALID'});if(!TASK_PRIORITIES.has(priority))throw Object.assign(new Error('أولوية التاسك غير صحيحة'),{status:400,code:'TASK_PRIORITY_INVALID'});if(assignedTo&&!members.has(assignedTo))throw Object.assign(new Error('المسند إليه غير متاح'),{status:400,code:'ASSIGNEE_INVALID'});if(assignedTo&&conversationIds&&!conversationIds.has(assignedTo))throw Object.assign(new Error('لا يمكن إسناد تاسك المحادثة لشخص خارجها'),{status:400,code:'ASSIGNEE_NOT_IN_CONVERSATION'});
   const orderId=body.orderId!==undefined?clean(body.orderId,180):clean(current.order_id,180);if(orderId)await orderForStore(env,clientId,storeId,orderId);const ts=now();
   await env.DB.prepare('UPDATE collab_tasks SET title=?,description=?,status=?,priority=?,due_at=?,order_id=?,assigned_to_user_id=?,assigned_to_name=?,updated_at=?,completed_at=? WHERE id=? AND client_id=? AND store_id=?').bind(body.title!==undefined?clean(body.title,240):current.title,body.description!==undefined?clean(body.description,2000):current.description,status,priority,body.dueAt!==undefined?(clean(body.dueAt,60)||null):current.due_at,orderId||null,assignedTo||null,assignedTo?(members.get(assignedTo)?.name||assignedTo):null,ts,status==='done'?(current.completed_at||ts):null,taskId,clientId,storeId).run();
   return {ok:true,id:taskId};
@@ -172,8 +179,8 @@ async function directAssign(env,{me,clientId,storeId,orderId,body}){
   const conversationId=clean(body.conversationId,200)||null;
   if(conversationId){
     await conversationFor(env,clientId,storeId,conversationId,actorId(me));
-    const conversationMemberIds=(await conversationMembers(env,conversationId)).map(x=>String(x.id));
-    if(!conversationMemberIds.includes(target))throw Object.assign(new Error('لا يمكن ربط التعيين بمحادثة لا تضم الشخص المسند إليه'),{status:400,code:'ASSIGNEE_NOT_IN_CONVERSATION'});
+    const conversationIds=await conversationMemberIds(env,conversationId);
+    if(!conversationIds.has(target))throw Object.assign(new Error('لا يمكن ربط التعيين بمحادثة لا تضم الشخص المسند إليه'),{status:400,code:'ASSIGNEE_NOT_IN_CONVERSATION'});
   }
   const targetName=members.get(target)?.name||target;await assignOrder(env,{clientId,storeId,orderId,target,targetName,me,conversationId,messageId:null,note:clean(body.note,1000)});return {ok:true,orderId,assignedTo:{id:target,name:targetName}};
 }
@@ -189,7 +196,7 @@ export async function handleInternalCollaboration({request,env,ctx={},delegate})
     const messagesMatch=path.match(/^\/api\/collaboration\/conversations\/([^/]+)\/messages$/);
     if(messagesMatch&&method==='GET')return json(await getMessages(env,{me,clientId,storeId,conversationId:decodeURIComponent(messagesMatch[1])}));
     if(messagesMatch&&method==='POST')return json(await sendMessage(env,{me,clientId,storeId,conversationId:decodeURIComponent(messagesMatch[1]),body}),201);
-    if(path==='/api/collaboration/tasks'&&method==='GET'){await scopeFor(env,me,clientId,storeId);await requireSchema(env);return json({ok:true,tasks:await listTasks(env,{clientId,storeId,status:url.searchParams.get('status')||''})});}
+    if(path==='/api/collaboration/tasks'&&method==='GET'){await scopeFor(env,me,clientId,storeId);await requireSchema(env);return json({ok:true,tasks:await listTasks(env,{clientId,storeId,userId:actorId(me),status:url.searchParams.get('status')||''})});}
     if(path==='/api/collaboration/tasks'&&method==='POST')return json(await createTask(env,{me,clientId,storeId,body}),201);
     const taskMatch=path.match(/^\/api\/collaboration\/tasks\/([^/]+)$/);if(taskMatch&&method==='PATCH')return json(await updateTask(env,{me,clientId,storeId,taskId:decodeURIComponent(taskMatch[1]),body}));
     const assignMatch=path.match(/^\/api\/collaboration\/orders\/([^/]+)\/assign$/);if(assignMatch&&method==='POST')return json(await directAssign(env,{me,clientId,storeId,orderId:decodeURIComponent(assignMatch[1]),body}));
