@@ -86,9 +86,17 @@
     window.KunFinanceCommandCenterV96?.mergeNavigation?.();
     goFirstAllowed();
   }
+  function refreshLateInjectedNavigation(){
+    if(!ready||!snapshot?.role)return;
+    const button=document.querySelector('.nav button[data-view="collaboration"]');
+    if(!button)return;
+    const ok=allowedView('collaboration',snapshot);
+    button.hidden=!ok;button.style.display=ok?'':'none';button.setAttribute('aria-hidden',ok?'false':'true');button.tabIndex=ok?0:-1;
+    if(ok)allowed.add('collaboration');else{allowed.delete('collaboration');button.classList.remove('active');}
+  }
   function scheduleLateNavApply(){
     clearTimeout(lateNavTimer);
-    lateNavTimer=setTimeout(()=>{if(ready)apply();},650);
+    lateNavTimer=setTimeout(refreshLateInjectedNavigation,650);
   }
   async function loadAccess(force=false){
     try{
