@@ -26,7 +26,7 @@ async function websiteWithDirectAndroidDownload(request,env){
     .replaceAll('/v2/modules-v51-permission-navigation.js?v=51.10','/v2/modules-v51-permission-navigation.js?v=51.11')
     .replaceAll('/v2/modules-v78-jt-shipping-order.js?v=78.4','/v2/modules-v78-jt-shipping-order.js?v=78.5')
     .replaceAll('/v2/modules-v79-printing.js?v=79.7','/v2/modules-v79-printing.js?v=79.8');
-  if(url.pathname.startsWith('/v2')&&!html.includes('/v2/modules-v116-print-routing.js')){
+  if(!html.includes('/v2/modules-v116-print-routing.js')){
     html=html.replace('</body>','<script src="/v2/modules-v116-print-routing.js?v=116.0" data-kun-print-routing="1"></script></body>');
   }
   const headers=new Headers(asset.headers);
