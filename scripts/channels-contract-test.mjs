@@ -22,6 +22,8 @@ must(collab.includes('resolveStoreScope(env,me,clientId,requestedStore,{write})'
 must(collab.includes('WHERE id=? AND client_id=? AND store_id=?'),'Collaboration order linking must stay inside the active client/store');
 must(entry.includes("requirePermission(me,'inbox',request.method.toUpperCase()==='GET'?'read':'write')"),'Collaboration API must enforce Inbox read/write permissions');
 must(nav.includes("collaboration:['inbox.read']"),'Dynamic collaboration navigation must inherit Inbox read permission');
-must(nav.includes('new MutationObserver'),'Permission navigation must re-apply when collaboration is injected dynamically');
+must(nav.includes('scheduleLateNavApply')&&nav.includes('setTimeout(()=>{if(ready)apply();},650)'),'Permission navigation must re-apply once after late collaboration injection without a broad observer');
+must(!nav.includes('new MutationObserver'),'Permission navigation must not watch every navigation mutation');
+must(nav.includes("permissionNavigationVersion='51.11'"),'Permission navigation must expose the active runtime version marker');
 must(mobileRunner.includes('fresh mobile shell before'),'Mobile exhaustive QA must isolate its 390px and 360px viewport sweeps');
 console.log('Channels contract checks passed: unified inbox, campaign analytics and store-scoped internal collaboration permissions.');
