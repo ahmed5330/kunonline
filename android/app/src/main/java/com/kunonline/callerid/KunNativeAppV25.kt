@@ -76,6 +76,7 @@ fun KunNativeAppV25(activity: MainActivity) {
     var selected by remember { mutableStateOf(MobileV25Tab.HOME) }
     var newOrdersNotice by remember { mutableStateOf("") }
     var lastSyncAt by remember { mutableLongStateOf(CustomerCache.lastSyncedAt(context)) }
+    val dateRevision = MobileDateFilterState.revision
 
     suspend fun performRefresh(manual: Boolean = false) {
         if (!loggedIn || loading) return
@@ -93,7 +94,7 @@ fun KunNativeAppV25(activity: MainActivity) {
             lastSyncAt = CustomerCache.lastSyncedAt(context)
             val added = if (hadSnapshot) next.orders.count { it.id !in previousIds } else 0
             newOrdersNotice = when {
-                added > 0 -> if (added == 1) "وصل أوردر جديد وتمت مزامنته مع المكالمات" else "وصل $added أوردر جديد وتمت مزامنتهم مع المكالمات"
+                added > 0 -> if (added == 1) "وصل أوردر جديد وتمت مزامنته مع المكالمات" else "وصل $added أوردر جديد وتمت مزامنتم مع المكالمات"
                 manual -> "تم تحديث الطلبات وCaller ID"
                 else -> ""
             }
@@ -112,6 +113,11 @@ fun KunNativeAppV25(activity: MainActivity) {
     LaunchedEffect(loggedIn) {
         if (!loggedIn) return@LaunchedEffect
         SyncJobService.schedule(context)
+    }
+    // A period switch does one immediate delta refresh. It does not create a new
+    // recurring timer, so normal Cloudflare request cadence stays unchanged.
+    LaunchedEffect(loggedIn, dateRevision) {
+        if (loggedIn && dateRevision > 0) performRefresh(false)
     }
     // Keep the caller-ID cache current while customer service is visible too.
     ForegroundPolling(loggedIn, enabled = loggedIn && selected != MobileV25Tab.SETTINGS, intervalMillis = V25_FOREGROUND_SYNC_MS) {
@@ -221,43 +227,46 @@ fun KunNativeAppV25(activity: MainActivity) {
                         }
                     }
                 ) { padding ->
-                    Box(Modifier.fillMaxSize().padding(padding)) {
-                        when (selected) {
-                            MobileV25Tab.HOME -> V25Home(
-                                snapshot = snapshot ?: CommerceSnapshot(),
-                                newOrdersNotice = newOrdersNotice,
-                                onOpenOrders = { selected = MobileV25Tab.ORDERS },
-                                onOpenCustomerService = { selected = MobileV25Tab.CUSTOMER_SERVICE }
-                            )
-                            MobileV25Tab.ORDERS -> V25Orders(
-                                snapshot = snapshot ?: CommerceSnapshot(),
-                                onRefresh = { refresh(false) }
-                            )
-                            MobileV25Tab.CUSTOMER_SERVICE -> V25CustomerServiceHub(
-                                snapshot = snapshot ?: CommerceSnapshot(),
-                                onGlobalRefresh = { refresh(false) }
-                            )
-                            MobileV25Tab.SETTINGS -> V25Settings(
-                                activity = activity,
-                                snapshot = snapshot ?: CommerceSnapshot(),
-                                lastSyncAt = lastSyncAt,
-                                onRefresh = { refresh(true) },
-                                onLogout = {
-                                    KunApi.logout(context)
-                                    CallActivityStore.clear(context)
-                                    SyncJobService.cancel(context)
-                                    loggedIn = false
-                                    snapshot = null
-                                    selected = MobileV25Tab.HOME
-                                }
-                            )
-                        }
-                        if (loading) {
-                            LinearProgressIndicator(
-                                modifier = Modifier.fillMaxWidth().align(Alignment.TopCenter),
-                                color = KunColors.Pine,
-                                trackColor = KunColors.PineSoft
-                            )
+                    Column(Modifier.fillMaxSize().padding(padding)) {
+                        MobileDateFilterBar()
+                        Box(Modifier.fillMaxWidth().weight(1f)) {
+                            when (selected) {
+                                MobileV25Tab.HOME -> V25Home(
+                                    snapshot = snapshot ?: CommerceSnapshot(),
+                                    newOrdersNotice = newOrdersNotice,
+                                    onOpenOrders = { selected = MobileV25Tab.ORDERS },
+                                    onOpenCustomerService = { selected = MobileV25Tab.CUSTOMER_SERVICE }
+                                )
+                                MobileV25Tab.ORDERS -> V25Orders(
+                                    snapshot = snapshot ?: CommerceSnapshot(),
+                                    onRefresh = { refresh(false) }
+                                )
+                                MobileV25Tab.CUSTOMER_SERVICE -> V25CustomerServiceHub(
+                                    snapshot = snapshot ?: CommerceSnapshot(),
+                                    onGlobalRefresh = { refresh(false) }
+                                )
+                                MobileV25Tab.SETTINGS -> V25Settings(
+                                    activity = activity,
+                                    snapshot = snapshot ?: CommerceSnapshot(),
+                                    lastSyncAt = lastSyncAt,
+                                    onRefresh = { refresh(true) },
+                                    onLogout = {
+                                        KunApi.logout(context)
+                                        CallActivityStore.clear(context)
+                                        SyncJobService.cancel(context)
+                                        loggedIn = false
+                                        snapshot = null
+                                        selected = MobileV25Tab.HOME
+                                    }
+                                )
+                            }
+                            if (loading) {
+                                LinearProgressIndicator(
+                                    modifier = Modifier.fillMaxWidth().align(Alignment.TopCenter),
+                                    color = KunColors.Pine,
+                                    trackColor = KunColors.PineSoft
+                                )
+                            }
                         }
                     }
                 }
@@ -342,10 +351,11 @@ private fun V25Home(
     onOpenOrders: () -> Unit,
     onOpenCustomerService: () -> Unit
 ) {
-    val today = remember(snapshot.orders) { v23FilterOrders(snapshot.orders, DashboardRange.TODAY) }
-    val pending = today.count { it.state in setOf("pending", "new") }
-    val confirmed = today.count { it.state in setOf("confirmed", "preparing") }
-    val total = today.sumOf { it.total }
+    val orders = snapshot.orders
+    val periodLabel = MobileDateFilterState.periodLabel
+    val pending = orders.count { it.state in setOf("pending", "new") }
+    val confirmed = orders.count { it.state in setOf("confirmed", "preparing") }
+    val total = orders.sumOf { it.total }
     val activeLocal = CallActivityStore.active(LocalContext.current).size
     LazyColumn(
         Modifier.fillMaxSize().padding(horizontal = 16.dp),
@@ -353,7 +363,7 @@ private fun V25Home(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
-            KunPageIntro("متابعة اليوم", "كل جديد في الطلبات والتواصل يظهر هنا تلقائيًا")
+            KunPageIntro("متابعة $periodLabel", "كل جديد في الطلبات والتواصل يظهر هنا تلقائيًا")
         }
         if (newOrdersNotice.isNotBlank()) {
             item {
@@ -373,9 +383,9 @@ private fun V25Home(
                 colors = CardDefaults.cardColors(containerColor = KunColors.Chrome)
             ) {
                 Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                    Text("مبيعات اليوم", color = Color.White.copy(alpha = .7f), style = MaterialTheme.typography.labelLarge)
+                    Text("مبيعات $periodLabel", color = Color.White.copy(alpha = .7f), style = MaterialTheme.typography.labelLarge)
                     Text(v25Money(total), color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.ExtraBold)
-                    Text("${today.size} طلب اليوم", color = Color.White.copy(alpha = .86f))
+                    Text("${orders.size} طلب", color = Color.White.copy(alpha = .86f))
                 }
             }
         }
@@ -406,12 +416,12 @@ private fun V25Home(
             }
         }
         item {
-            Text("أحدث طلبات اليوم", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
+            Text("أحدث طلبات $periodLabel", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
         }
-        if (today.isEmpty()) {
-            item { V25Empty("لا توجد طلبات اليوم حتى الآن") }
+        if (orders.isEmpty()) {
+            item { V25Empty("لا توجد طلبات في الفترة المختارة") }
         } else {
-            items(today.take(6), key = { it.id }) { order ->
+            items(orders.take(6), key = { it.id }) { order ->
                 V25CompactOrder(order)
             }
         }
@@ -459,7 +469,7 @@ private fun V25Orders(snapshot: CommerceSnapshot, onRefresh: () -> Unit) {
                     )
                 }
             }
-            Text("${orders.size} طلب", color = KunColors.Ink2, style = MaterialTheme.typography.labelLarge)
+            Text("${orders.size} طلب • ${MobileDateFilterState.periodLabel}", color = KunColors.Ink2, style = MaterialTheme.typography.labelLarge)
         }
         if (orders.isEmpty()) {
             Box(Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) { V25Empty("لا توجد طلبات مطابقة") }
@@ -491,6 +501,7 @@ private fun V25Orders(snapshot: CommerceSnapshot, onRefresh: () -> Unit) {
 @Composable
 private fun V25CustomerServiceHub(snapshot: CommerceSnapshot, onGlobalRefresh: () -> Unit) {
     var contacting by remember { mutableStateOf(true) }
+    val dateRevision = MobileDateFilterState.revision
     Column(Modifier.fillMaxSize()) {
         Row(
             Modifier.fillMaxWidth().background(KunColors.Surface).padding(horizontal = 16.dp, vertical = 10.dp),
@@ -511,8 +522,10 @@ private fun V25CustomerServiceHub(snapshot: CommerceSnapshot, onGlobalRefresh: (
                 colors = FilterChipDefaults.filterChipColors(selectedContainerColor = KunColors.PineSoft, selectedLabelColor = KunColors.Pine)
             )
         }
-        if (contacting) V25Contacting(onGlobalRefresh)
-        else V23CustomerService(snapshot = snapshot, onGlobalRefresh = onGlobalRefresh)
+        key(dateRevision) {
+            if (contacting) V25Contacting(onGlobalRefresh)
+            else V23CustomerService(snapshot = snapshot, onGlobalRefresh = onGlobalRefresh)
+        }
     }
 }
 
@@ -768,14 +781,14 @@ private fun V25Settings(
         }
         KunSectionCard(Modifier.fillMaxWidth()) {
             Text("المزامنة", style = MaterialTheme.typography.titleLarge)
-            Text("• كل 15 ثانية أثناء فتح التطبيق\n• كل 15 دقيقة تقريبًا في الخلفية حسب Android\n• مزامنة فورية عند ورود/فحص مكالمة", color = KunColors.Ink2)
+            Text("• كل 15 ثانية أثناء فتح التطبيق\n• كل 15 دقيقة تقريبًا في الخلفية حسب Android\n• مزامنة فورية عند ورود/فحص مكالمة\n• تغيير المدة يعمل بتحديث Delta واحد فقط", color = KunColors.Ink2)
             Row {
                 Column(Modifier.weight(1f)) {
-                    Text("الطلبات", color = KunColors.Ink3, style = MaterialTheme.typography.bodySmall)
+                    Text("الطلبات (${MobileDateFilterState.periodLabel})", color = KunColors.Ink3, style = MaterialTheme.typography.bodySmall)
                     Text(snapshot.orders.size.toString(), fontWeight = FontWeight.ExtraBold, fontSize = 20.sp)
                 }
                 Column(Modifier.weight(1f)) {
-                    Text("Caller ID", color = KunColors.Ink3, style = MaterialTheme.typography.bodySmall)
+                    Text("Caller ID — كامل", color = KunColors.Ink3, style = MaterialTheme.typography.bodySmall)
                     Text(CustomerCache.count(context).toString(), fontWeight = FontWeight.ExtraBold, fontSize = 20.sp)
                 }
             }
