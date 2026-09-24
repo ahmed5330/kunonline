@@ -3,13 +3,19 @@ const worker=await readFile(new URL('../src/index-commerce-v18.js',import.meta.u
 const jtWorker=await readFile(new URL('../src/index-commerce-v37.js',import.meta.url),'utf8');
 const jtWorkflow=await readFile(new URL('../src/jt-print-workflow-v2.js',import.meta.url),'utf8');
 const v38Core=await readFile(new URL('../src/index-commerce-v38-core.js',import.meta.url),'utf8');
+const production=await readFile(new URL('../src/index-production-mobile-update.js',import.meta.url),'utf8');
+const printingRoute=await readFile(new URL('../src/production-printing-queue.js',import.meta.url),'utf8');
 const ui=await readFile(new URL('../public/v2/modules-v16.js',import.meta.url),'utf8');
 const jtUi=await readFile(new URL('../public/v2/modules-v84-jt-create-setup.js',import.meta.url),'utf8');
 const shippingUi=await readFile(new URL('../public/v2/modules-v78-jt-shipping-order.js',import.meta.url),'utf8');
 const printingUi=await readFile(new URL('../public/v2/modules-v79-printing.js',import.meta.url),'utf8');
+const printingRouting=await readFile(new URL('../public/v2/modules-v116-print-routing.js',import.meta.url),'utf8');
 const trackingUi=await readFile(new URL('../public/v2/modules-v82-jt-tracking-cards.js',import.meta.url),'utf8');
-const index=await readFile(new URL('../public/v2/index.html',import.meta.url),'utf8');
+const androidPrinting=await readFile(new URL('../android/app/src/main/java/com/kunonline/callerid/PrintingMobileV26.kt',import.meta.url),'utf8');
+const androidShell=await readFile(new URL('../android/app/src/main/java/com/kunonline/callerid/KunNativeAppV26.kt',import.meta.url),'utf8');
+const androidGradle=await readFile(new URL('../android/app/build.gradle.kts',import.meta.url),'utf8');
 const must=(ok,msg)=>{if(!ok)throw new Error(msg)};
+
 for(const marker of ['/api/integrations/connections','providerById','integration.connection.create','integration.connection.delete'])must(worker.includes(marker),`Integration setup missing ${marker}`);
 must(worker.includes("requirePermission(m,'integrations'"),'Integration setup must require permissions');
 must(worker.includes('deduplicated:true')&&worker.includes('lower(store_name)=lower(?)'),'Repeated setup must reuse an existing provider/store connection');
@@ -21,30 +27,42 @@ must(ui.includes("btn.textContent='جاري الإزالة...'")&&ui.includes("m
 must(!ui.includes('localStorage.setItem')&&!ui.includes('sessionStorage.setItem'),'Integration UI must not persist credentials in browser storage');
 must(jtUi.includes("if(meta&&meta.textContent!==requiredText)meta.textContent=requiredText"),'J&T setup observer must not rewrite identical textContent and trigger itself forever');
 must(jtUi.includes("if(input.placeholder!==placeholder)input.placeholder=placeholder"),'J&T setup enhancement must keep repeated scans idempotent');
-must(index.includes('/v2/modules-v78-jt-shipping-order.js?v=78.4'),'J&T shipping queue asset must be cache-busted to v78.4');
-must(index.includes('/v2/modules-v79-printing.js?v=79.7'),'J&T queue-first printing asset must be cache-busted to v79.7');
-must(index.includes('/v2/modules-v82-jt-tracking-cards.js?v=82.1'),'J&T live tracking asset must be cache-busted to v82.1');
-must(v38Core.includes('handleJtPrintWorkflowV2')&&v38Core.includes('workflowResponse'),'v38 must intercept J&T create/print before the legacy v37 routes');
+
+must(v38Core.includes('handleJtPrintWorkflowV2')&&v38Core.includes('workflowResponse'),'v38 must intercept J&T create/print before legacy routes');
 const queueStart=jtWorkflow.indexOf('async function queueForPrint'),queueEnd=jtWorkflow.indexOf('function walkObjects');
 const queueBlock=jtWorkflow.slice(queueStart,queueEnd);
 must(queueStart>=0&&queueEnd>queueStart,'J&T local queue handler must exist');
-must(queueBlock.includes('jt_print_queued'),'Queue handler must persist the J&T shipment draft');
-must(!queueBlock.includes('createJtShipment(')&&!queueBlock.includes('PRINT_ORDER_PATH'),'Sending to the printing queue must not call J&T addOrder or printOrder');
+must(queueBlock.includes('jt_print_queued'),'Printing preparation must persist the J&T shipment draft');
+must(queueBlock.includes('buildJtCreatePayload(shipment,secrets,{requireBusiness:true})'),'Printing preparation must validate the future create payload');
+must(!queueBlock.includes('createJtShipment(')&&!queueBlock.includes('PRINT_ORDER_PATH'),'Preparing an order in Printing must not contact J&T');
+must(!queueBlock.includes("UPDATE orders SET state='shipped'")&&!queueBlock.includes('delegateState('),'Confirmed order must remain out of shipping until the explicit Printing send succeeds');
+must(queueBlock.includes('state:row.state'),'Queue preparation must keep the current confirmed/preparing state');
+
 const printStart=jtWorkflow.indexOf('async function createAndPrint'),printEnd=jtWorkflow.indexOf('export async function handleJtPrintWorkflowV2');
 const printBlock=jtWorkflow.slice(printStart,printEnd);
-must(printBlock.includes('createJtShipment({shipment,secrets})'),'Explicit print must create the J&T shipment if AWB does not exist');
-must(printBlock.includes("printSize:'2'")&&printBlock.includes('printCode:1'),'Official J&T print route must request the 100x150 carrier label with barcode');
+for(const marker of ['createJtShipment({shipment,secrets})',"UPDATE orders SET awb=?",'jt_shipment_created','jt_print_requested',"printSize:'2'",'printCode:1','signedPost(PRINT_ORDER_PATH','jt_print_failed','jt_label_printed','official:true',"UPDATE orders SET state='shipped'",'jt_handoff_shipped'])must(printBlock.includes(marker),`Explicit Printing send workflow missing ${marker}`);
 must(printBlock.indexOf('createJtShipment({shipment,secrets})')<printBlock.indexOf('signedPost(PRINT_ORDER_PATH'),'AWB creation must happen before printOrder');
-must(printBlock.includes("UPDATE orders SET awb=?")&&printBlock.includes('jt_print_failed'),'AWB must be persisted before print retry handling');
-must(shippingUi.includes('إرسال إلى طابور الطباعة')&&shippingUi.includes('لا ترسل Create Order إلى J&T'),'Customer Service must stage the order locally instead of creating it at J&T');
-must(printingUi.includes('/api/jt/shipments/${encodeURIComponent(id)}/print'),'J&T print action must request the carrier-generated official label');
-must(printingUi.includes('في انتظار الطباعة')&&printingUi.includes('تمت الطباعة'),'J&T printing must expose explicit waiting and printed queues');
-must(printingUi.includes('طباعة ونقل إلى تمت الطباعة'),'J&T print command must be tied to the explicit printed transition');
-must(printingUi.includes("version:'79.7'"),'J&T printing runtime must identify queue-first v79.7');
-must(printingUi.includes('addOrder')&&printingUi.includes('AWB / Bill Code')&&printingUi.includes('printOrder'),'Printing UI must explain create-AWB-then-print sequence');
-must(!printingUi.includes("data-print79-print ${!awb?'disabled':''}"),'Missing AWB must not disable explicit printing because AWB is created at print time');
-must(!printingUi.includes('fallbackPrint')&&!printingUi.includes('window.print')&&!printingUi.includes('@media print')&&!printingUi.includes('print79-barcode'),'Failed carrier printing must stay in the waiting queue and the UI must not contain local label/browser-print code');
-must(trackingUi.includes('PULL_INTERVAL=300000')&&trackingUi.includes('/track?clientId='),'J&T cards must include a guarded live tracking fallback when webhook delivery is delayed');
-must(jtWorker.includes("PRINT_ORDER_PATH='/webopenplatformapi/api/order/printOrder'"),'Legacy route remains available only behind the v38 interception layer for rollback compatibility');
-console.log('Integration setup checks passed: J&T orders are staged locally, AWB is created only on explicit print, official carrier printing remains guarded, and live tracking is preserved.');
+must(printBlock.indexOf('jt_label_printed')<printBlock.indexOf("UPDATE orders SET state='shipped'"),'Order may enter shipping only after official J&T label succeeds');
+
+must(printingRoute.includes("url.pathname!=='/api/printing'")&&printingRoute.includes("['confirmed','preparing','shipped']"),'Production must expose a dedicated Printing queue containing confirmed orders and legacy queued shipments');
+must(printingRoute.includes("order.state!=='shipped'||order.queuedForPrint||order.printed"),'Unrelated shipped orders must not leak into Printing');
+must(production.includes('routeConfirmedOrdersToPrinting')&&production.includes("new Set(['confirmed','preparing'])"),'Confirmed orders must disappear from Customer Service and route to Printing');
+for(const marker of ['modules-v51-permission-navigation.js?v=51.11','modules-v78-jt-shipping-order.js?v=78.5','modules-v79-printing.js?v=79.8','modules-v116-print-routing.js?v=116.0'])must(production.includes(marker),`Production HTML must cache-bust/load ${marker}`);
+
+must(shippingUi.includes('الإرسال الحقيقي وإنشاء AWB يتمان فقط')&&shippingUi.includes('قسم الطباعة'),'J&T editor must make clear that external sending happens only in Printing');
+must(shippingUi.includes("version:'78.5'"),'J&T editor runtime must identify v78.5');
+must(!shippingUi.includes("moveState?.(orderId,'shipped')"),'Editing/preparing J&T data must not move the order to shipping');
+must(printingUi.includes('/api/printing?clientId=')&&printingUi.includes('إرسال إلى J&T وطباعة البوليصة'),'Printing UI must own the external handoff action');
+must(printingUi.includes('/api/jt/shipments/${encodeURIComponent(o.id)}')&&printingUi.includes('/api/jt/shipments/${encodeURIComponent(id)}/print'),'Printing must stage locally then call J&T create/print');
+must(printingUi.includes("version:'79.8'"),'Printing runtime must identify v79.8');
+must(printingRouting.includes("new Set(['confirmed','preparing'])")&&printingRouting.includes('تم تأكيد الأوردر ونقله تلقائيًا إلى قسم الطباعة'),'Customer Service UI must immediately remove confirmed orders');
+
+must(androidShell.includes('PrintingMobileV26')&&androidShell.includes('Text("الطباعة")'),'Android app must expose the Printing workspace');
+must(androidPrinting.includes('/api/printing?clientId=')&&androidPrinting.includes('/api/jt/shipments/${enc(order.id)}/print'),'Android Printing must use the same governed workflow');
+must(androidPrinting.includes('CallerJntOrderEditActivity'),'Android Printing must allow J&T structured address correction before send');
+must(androidGradle.includes('versionCode = 116')&&androidGradle.includes('versionName = "2.6.6"'),'Android Printing release must be v2.6.6 code 116');
+
+must(trackingUi.includes('PULL_INTERVAL=300000')&&trackingUi.includes('/track?clientId='),'J&T live tracking fallback must remain protected');
+must(jtWorker.includes("PRINT_ORDER_PATH='/webopenplatformapi/api/order/printOrder'"),'Legacy print route remains only for rollback compatibility behind v38 interception');
+console.log('Integration setup checks passed: confirmation routes to Printing; only Printing sends to J&T; successful carrier label moves the order to shipping on web and Android.');
 await import('./jt-live-shipping-test.mjs');
