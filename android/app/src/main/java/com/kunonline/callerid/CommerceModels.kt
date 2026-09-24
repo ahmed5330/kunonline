@@ -91,7 +91,7 @@ object CommerceParser {
                     product = o.str("product"),
                     qty = o.optInt("qty", 1).coerceAtLeast(1),
                     awb = o.str("awb"),
-                    date = o.str("date"),
+                    date = o.str("date").ifBlank { o.str("createdAt") }.ifBlank { o.str("created_at") },
                     note = o.str("note"),
                     source = o.str("source")
                 )
