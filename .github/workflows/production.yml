@@ -28,6 +28,7 @@ jobs:
           node --check src/production-caller-jnt-edit.js
           node --check src/production-printing-queue.js
           node --check src/jt-print-workflow-v2.js
+          node --check src/internal-collaboration-schema.js
           node --check src/index-production-mobile-update.js
           node --check public/v2/modules-v78-jt-shipping-order.js
           node --check public/v2/modules-v79-printing.js
@@ -105,7 +106,7 @@ jobs:
             node -e "const d=require('/tmp/${file}'); if(!d.name||!d.code||!Array.isArray(d.cities)) process.exit(1)"
           done
           echo "All J&T province/city/area files are live and readable."
-      - name: Verify live Customer Service and Printing API routes
+      - name: Verify live Customer Service, Printing and Collaboration API routes
         run: |
           set -euo pipefail
           check_guarded_route() {
@@ -133,6 +134,7 @@ jobs:
           check_guarded_route '/api/catalog/products?clientId=probe'
           check_guarded_route '/api/orders/TEST/details?clientId=probe'
           check_guarded_route '/api/customer-service/orders/TEST/history?clientId=probe'
+          check_guarded_route '/api/collaboration/bootstrap?clientId=probe&storeId=probe'
 
           caller_body="$(mktemp)"
           caller_code="$(curl -sS -X PATCH -H 'Content-Type: application/json' -d '{}' -o "$caller_body" -w '%{http_code}' 'https://app.kun-online.com/api/caller-jnt/orders/TEST')"
