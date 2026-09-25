@@ -41,6 +41,18 @@ object MobileSyncClient {
             states.remove(source)
             return get(cookie, source)
         }
+        if (response.code in 500..599) {
+            // The delta layer is an optimisation only. If it has a transient server
+            // problem, immediately fall back to the authoritative source so orders
+            // never stop refreshing just because delta transport is unavailable.
+            val authoritative = get(cookie, source)
+            if (authoritative.code in 200..299) {
+                legacyUntil = SystemClock.elapsedRealtime() + 60_000L
+                states.remove(source)
+                return authoritative
+            }
+            return response
+        }
         if (response.code !in 200..299) return response
         if (SystemClock.elapsedRealtime() < legacyUntil) return response
         val changed = try {
@@ -49,9 +61,19 @@ object MobileSyncClient {
             // Never merge a partial/corrupt delta. Rebase once from the server.
             states.remove(source)
             val reset = get(cookie, endpoint + "?" + query)
-            if (reset.code !in 200..299) return reset
+            if (reset.code !in 200..299) {
+                val authoritative = get(cookie, source)
+                if (authoritative.code in 200..299) legacyUntil = SystemClock.elapsedRealtime() + 60_000L
+                return authoritative
+            }
             val fresh = MobileSyncAccumulator()
-            fresh.accept(reset.body)
+            try {
+                fresh.accept(reset.body)
+            } catch (_: Exception) {
+                val authoritative = get(cookie, source)
+                if (authoritative.code in 200..299) legacyUntil = SystemClock.elapsedRealtime() + 60_000L
+                return authoritative
+            }
             states[source] = fresh
             return MobileSyncResponse(200, JSONObject(requireNotNull(fresh.state).toString()))
         }
@@ -65,7 +87,7 @@ object MobileSyncClient {
             readTimeout = 20_000
             setRequestProperty("Cookie", cookie)
             setRequestProperty("Accept", "application/json")
-            setRequestProperty("X-Kun-Mobile", "native-android/2.6.7")
+            setRequestProperty("X-Kun-Mobile", "native-android/2.6.8")
         }
         try {
             val code = connection.responseCode
