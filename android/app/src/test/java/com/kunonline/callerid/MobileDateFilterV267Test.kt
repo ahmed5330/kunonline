@@ -41,4 +41,22 @@ class MobileDateFilterV267Test {
         assertTrue(MobileDateFilterState.matches("2026-09-15T12:30:00Z"))
         assertFalse(MobileDateFilterState.matches("2026-09-16"))
     }
+
+    @Test
+    fun parsesCommonOrderDateFormatsWithoutDroppingSyncedOrders() {
+        assertEquals(LocalDate.of(2026, 9, 24), MobileDateFilterState.parseDate("2026-09-24 13:45:11"))
+        assertEquals(LocalDate.of(2026, 9, 24), MobileDateFilterState.parseDate("24/09/2026"))
+        assertEquals(LocalDate.of(2026, 9, 24), MobileDateFilterState.parseDate("24-09-2026"))
+        assertEquals(LocalDate.of(2026, 9, 24), MobileDateFilterState.parseDate("2026/09/24"))
+        assertEquals(LocalDate.of(2026, 9, 24), MobileDateFilterState.parseDate("2026-09-24T20:30:00Z"))
+    }
+
+    @Test
+    fun explicitRefreshAdvancesRevisionWithoutChangingPreset() {
+        MobileDateFilterState.select(MobileDatePreset.TODAY)
+        val before = MobileDateFilterState.revision
+        MobileDateFilterState.requestRefresh()
+        assertEquals(MobileDatePreset.TODAY, MobileDateFilterState.preset)
+        assertTrue(MobileDateFilterState.revision > before)
+    }
 }
