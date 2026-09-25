@@ -6,6 +6,7 @@ import {handleProductionMobileOrderGuard} from './production-mobile-order-guard.
 import {handleProductionCallerJntEdit} from './production-caller-jnt-edit.js';
 import {handleProductionPrintingQueue} from './production-printing-queue.js';
 import {handleInternalCollaboration} from './internal-collaboration.js';
+import {handleCollaborationOrderSearch} from './internal-collaboration-order-search.js';
 import {ensureInternalCollaborationSchema} from './internal-collaboration-schema.js';
 
 const LEGACY_APK_URL='https://github.com/ahmed5330/kunonline/releases/download/android-latest/Kun-Online-Mobile.apk';
@@ -33,6 +34,9 @@ async function websiteWithDirectAndroidDownload(request,env){
   }
   if(!html.includes('/v2/modules-v117-team-collaboration.js')){
     html=html.replace('</body>','<script src="/v2/modules-v117-team-collaboration.js?v=117.0" data-kun-team-collaboration="1"></script></body>');
+  }
+  if(!html.includes('/v2/modules-v118-collaboration-order-picker.js')){
+    html=html.replace('</body>','<script src="/v2/modules-v118-collaboration-order-picker.js?v=118.0" data-kun-collaboration-order-picker="1"></script></body>');
   }
   const headers=new Headers(asset.headers);
   headers.set('Content-Type','text/html; charset=utf-8');
@@ -78,6 +82,9 @@ export default {
 
     const customerService=await handleProductionCustomerService({request,env,ctx,delegate:app});
     if(customerService)return routeConfirmedOrdersToPrinting(request,customerService);
+
+    const collaborationOrderSearch=await handleCollaborationOrderSearch({request,env,ctx,delegate:app});
+    if(collaborationOrderSearch)return collaborationOrderSearch;
 
     if(new URL(request.url).pathname.startsWith('/api/collaboration')){
       try{await ensureInternalCollaborationSchema(env);}catch{return collaborationSchemaFailure();}
