@@ -39,15 +39,21 @@ must(frontend.includes('state.open?8000:60000'),'Open chat can refresh frequentl
 must(backend.includes('collab_order_assignments'),'Order assignment history table must be used.');
 must(!backend.includes('UPDATE orders SET assigned_user_id'),'Collaboration must not mutate assignment columns on orders.');
 
-// Searchable order picker must stay authenticated, tenant/store scoped and support ID, name and phone lookup.
+// Searchable order picker must stay authenticated, tenant/store scoped and progressively match partial ID, name and phone input.
 must(orderSearch.includes("url.pathname!=='/api/collaboration/orders/search'"),'Order search must expose only the collaboration order-search route.');
 must(orderSearch.includes('resolveTenant(me,'),'Order search must resolve the authenticated tenant.');
 must(orderSearch.includes('resolveStoreScope(env,me,clientId,storeId,{write:false})'),'Order search must enforce selected-store read access.');
 must(orderSearch.includes('WHERE client_id=? AND store_id=?'),'Order search must remain tenant/store scoped.');
-must(orderSearch.includes("COALESCE(name,'') LIKE ?")&&orderSearch.includes("COALESCE(phone,'') LIKE ?")&&orderSearch.includes('id LIKE ?'),'Order search must support customer name, phone and order ID.');
+must(orderSearch.includes("COALESCE(name,'') LIKE ?")&&orderSearch.includes("COALESCE(phone,'') LIKE ?")&&orderSearch.includes('id LIKE ?'),'Order search must support partial customer name, phone and order ID lookup.');
+must(orderSearch.includes('normalizeText')&&orderSearch.includes('normalizedNameSql'),'Order search must normalize common Arabic spelling variants.');
+must(orderSearch.includes("return 'exact'")&&orderSearch.includes("return 'prefix'")&&orderSearch.includes("return 'similar'"),'Order search must rank exact, prefix and similar results without discarding similar matches.');
+must(orderSearch.includes('LIMIT 100'),'Partial order search must return a broad live candidate set.');
 must(orderPicker.includes('/api/collaboration/orders/search'),'Order picker must query the scoped order-search endpoint.');
-must(orderPicker.includes('ابحث بالاسم / رقم الهاتف / رقم الأوردر'),'Order picker must clearly advertise name, phone and order-ID search.');
+must(orderPicker.includes('اكتب أي جزء من الاسم / الهاتف / رقم الأوردر'),'Order picker must clearly advertise partial live search.');
 must(orderPicker.includes("credentials:'include'"),'Order picker must send the authenticated session.');
+must(orderPicker.includes('schedule(e.target.value.trim(),70)'),'Order picker must search shortly after every input change.');
+must(orderPicker.includes("MATCH_LABEL={exact:'مطابقة كاملة',prefix:'يبدأ بنفس البحث',similar:'نتيجة مشابهة'"),'Order picker must expose match quality while preserving similar results.');
+must(orderPicker.includes("version:'118.1'"),'Order picker runtime version must be 118.1.');
 
 // Migration must remain additive/idempotent and the Worker bootstrap must mirror it.
 for(const table of ['collab_conversations','collab_members','collab_messages','collab_message_mentions','collab_reads','collab_tasks','collab_order_assignments']){
@@ -76,7 +82,7 @@ must(entry.indexOf('await ensureInternalCollaborationSchema(env)')<entry.indexOf
 must(entry.includes('COLLAB_SCHEMA_BOOTSTRAP_FAILED'),'Production must fail closed if schema bootstrap cannot be verified.');
 must(entry.includes('await handleInternalCollaboration({request,env,ctx,delegate:app})'),'Production worker must route collaboration API calls.');
 must(entry.includes('/v2/modules-v117-team-collaboration.js'),'Production HTML must inject collaboration UI.');
-must(entry.includes('/v2/modules-v118-collaboration-order-picker.js?v=118.0'),'Production HTML must inject the searchable order picker.');
+must(entry.includes('/v2/modules-v118-collaboration-order-picker.js?v=118.1'),'Production HTML must inject the cache-busted live partial order picker.');
 must(frontend.includes("credentials:'include'"),'Collaboration UI must send authenticated requests.');
 must(frontend.includes("clientId:state.clientId,storeId:state.storeId"),'Collaboration UI must include tenant/store context.');
 must(frontend.includes("body.type==='direct'")||frontend.includes("type:'direct'"),'UI must support private conversations.');
@@ -85,4 +91,4 @@ must(frontend.includes('/api/collaboration/tasks'),'UI must support tasks.');
 must(frontend.includes('assignedToUserId'),'UI must support assigning work/orders to team members.');
 must(frontend.includes("const allowed=(c.members||[]).filter"),'Chat assignment controls must derive from active conversation members.');
 
-console.log('Internal collaboration isolation, order search/picker, sequential schema bootstrap and contract checks passed.');
+console.log('Internal collaboration isolation, live partial order search/picker, sequential schema bootstrap and contract checks passed.');
