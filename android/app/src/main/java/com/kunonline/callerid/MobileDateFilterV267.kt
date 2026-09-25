@@ -22,6 +22,8 @@ import androidx.compose.ui.unit.dp
 import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.temporal.TemporalAdjusters
@@ -48,6 +50,19 @@ data class MobileDateBounds(val start: LocalDate, val end: LocalDate)
  */
 object MobileDateFilterState {
     private val cairo = ZoneId.of("Africa/Cairo")
+    private val localDateTimeFormats = listOf(
+        DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"),
+        DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS"),
+        DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm:ss")
+    )
+    private val localDateFormats = listOf(
+        DateTimeFormatter.ISO_LOCAL_DATE,
+        DateTimeFormatter.ofPattern("yyyy/MM/dd"),
+        DateTimeFormatter.ofPattern("dd/MM/yyyy"),
+        DateTimeFormatter.ofPattern("d/M/yyyy"),
+        DateTimeFormatter.ofPattern("dd-MM-yyyy"),
+        DateTimeFormatter.ofPattern("d-M-yyyy")
+    )
 
     var preset by mutableStateOf(MobileDatePreset.TODAY)
         private set
@@ -85,6 +100,11 @@ object MobileDateFilterState {
         revision++
     }
 
+    /** Trigger one immediate state refresh without changing the selected date range. */
+    fun requestRefresh() {
+        revision++
+    }
+
     fun bounds(today: LocalDate = LocalDate.now(cairo)): MobileDateBounds = when (preset) {
         MobileDatePreset.TODAY -> MobileDateBounds(today, today)
         MobileDatePreset.YESTERDAY -> MobileDateBounds(today.minusDays(1), today.minusDays(1))
@@ -111,8 +131,25 @@ object MobileDateFilterState {
     fun parseDate(value: String): LocalDate? {
         val raw = value.trim()
         if (raw.isBlank()) return null
-        return runCatching { LocalDate.parse(raw.take(10), DateTimeFormatter.ISO_LOCAL_DATE) }.getOrNull()
-            ?: runCatching { Instant.parse(raw).atZone(cairo).toLocalDate() }.getOrNull()
+
+        runCatching { Instant.parse(raw).atZone(cairo).toLocalDate() }.getOrNull()?.let { return it }
+        runCatching { OffsetDateTime.parse(raw).atZoneSameInstant(cairo).toLocalDate() }.getOrNull()?.let { return it }
+
+        localDateTimeFormats.forEach { formatter ->
+            runCatching { LocalDateTime.parse(raw, formatter).atZone(cairo).toLocalDate() }.getOrNull()?.let { return it }
+        }
+        localDateFormats.forEach { formatter ->
+            runCatching { LocalDate.parse(raw.take(10), formatter) }.getOrNull()?.let { return it }
+            runCatching { LocalDate.parse(raw, formatter) }.getOrNull()?.let { return it }
+        }
+
+        if (raw.all { it.isDigit() }) {
+            raw.toLongOrNull()?.let { epoch ->
+                val millis = if (raw.length <= 10) epoch * 1000L else epoch
+                runCatching { Instant.ofEpochMilli(millis).atZone(cairo).toLocalDate() }.getOrNull()?.let { return it }
+            }
+        }
+        return null
     }
 
     fun matches(value: String, fallback: String = ""): Boolean {
