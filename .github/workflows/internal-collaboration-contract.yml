@@ -7,7 +7,9 @@ on:
     paths:
       - 'src/internal-collaboration.js'
       - 'src/internal-collaboration-schema.js'
+      - 'src/internal-collaboration-order-search.js'
       - 'public/v2/modules-v117-team-collaboration.js'
+      - 'public/v2/modules-v118-collaboration-order-picker.js'
       - 'src/index-production-mobile-update.js'
       - 'migrations/0091_internal_collaboration.sql'
       - 'scripts/internal-collaboration-contract-test.mjs'
@@ -16,10 +18,13 @@ on:
     paths:
       - 'src/internal-collaboration.js'
       - 'src/internal-collaboration-schema.js'
+      - 'src/internal-collaboration-order-search.js'
       - 'public/v2/modules-v117-team-collaboration.js'
+      - 'public/v2/modules-v118-collaboration-order-picker.js'
       - 'src/index-production-mobile-update.js'
       - 'migrations/0091_internal_collaboration.sql'
       - 'scripts/internal-collaboration-contract-test.mjs'
+      - '.github/workflows/internal-collaboration-contract.yml'
   workflow_dispatch:
 
 jobs:
@@ -34,7 +39,9 @@ jobs:
         run: |
           node --check src/internal-collaboration.js
           node --check src/internal-collaboration-schema.js
+          node --check src/internal-collaboration-order-search.js
           node --check public/v2/modules-v117-team-collaboration.js
+          node --check public/v2/modules-v118-collaboration-order-picker.js
           node --check scripts/internal-collaboration-contract-test.mjs
       - name: Collaboration isolation contract
         run: node scripts/internal-collaboration-contract-test.mjs
