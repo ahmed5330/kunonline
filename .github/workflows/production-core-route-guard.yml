@@ -1,0 +1,42 @@
+name: Production core route guard
+
+on:
+  workflow_run:
+    workflows: ["Production deploy (no database migrations)"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  verify-core-routes:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify dashboard and Meta campaign routes resolve to the modern backend
+        shell: bash
+        run: |
+          set -euo pipefail
+          check_guarded_route() {
+            local path="$1"
+            local body code
+            body="$(mktemp)"
+            code="$(curl -sS -H 'Cache-Control: no-cache' -o "$body" -w '%{http_code}' "https://app.kun-online.com${path}?route_guard=${GITHUB_RUN_ID}")"
+            if [ "$code" != "401" ]; then
+              echo "Expected protected route to return 401 without a session: ${path}; got HTTP ${code}"
+              cat "$body"
+              exit 1
+            fi
+            if grep -Fq 'مسار غير معروف' "$body"; then
+              echo "Route still resolves to the legacy unknown-route handler: ${path}"
+              cat "$body"
+              exit 1
+            fi
+            echo "Modern protected route verified: ${path} -> HTTP 401"
+          }
+
+          check_guarded_route '/api/dashboard'
+          check_guarded_route '/api/integrations/meta-ads/campaign-hub'
+          check_guarded_route '/api/integrations/meta-ads/daily-comparison'
+          check_guarded_route '/api/integrations/meta-ads/breakdowns'
