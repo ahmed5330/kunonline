@@ -30,6 +30,12 @@ async function websiteWithDirectAndroidDownload(request,env){
     .replaceAll('/v2/modules-v78-jt-shipping-order.js?v=78.4','/v2/modules-v78-jt-shipping-order.js?v=78.5')
     .replaceAll('/v2/modules-v79-printing.js?v=79.7','/v2/modules-v79-printing.js?v=79.8')
     .replaceAll('/v2/modules-v118-collaboration-order-picker.js?v=118.0','/v2/modules-v118-collaboration-order-picker.js?v=118.1');
+  if(!html.includes('/v2/modules-v66-campaign-hub.js')){
+    html=html.replace('</body>','<script src="/v2/modules-v66-campaign-hub.js?v=66.0" data-kun-campaign-hub="1"></script></body>');
+  }
+  if(!html.includes('/v2/modules-v67-campaign-comparison-ux.js')){
+    html=html.replace('</body>','<script src="/v2/modules-v67-campaign-comparison-ux.js?v=67.1" data-kun-campaign-ux="1"></script></body>');
+  }
   if(!html.includes('/v2/modules-v116-print-routing.js')){
     html=html.replace('</body>','<script src="/v2/modules-v116-print-routing.js?v=116.0" data-kun-print-routing="1"></script></body>');
   }
