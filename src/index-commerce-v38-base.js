@@ -17,6 +17,9 @@ function normalizeDashboardContract(data){
   return {...data,overview:{...(data.overview||{}),productCostSource:'current_inventory'},costing:{...(data.costing||{}),source:'current_inventory',resolution:'current_inventory_resolved'}};
 }
 function summary(label,value,{money=false,percent=false,text=null}={}){return {label,value:round(value),money,percent,text};}
+function postProcessFailure(label,error){console.error(`[v38 post-process] ${label} failed`,error?.stack||error?.message||error);}
+async function safeDashboardShipping(env,data,scope){try{return await adjustDashboardForShipping(env,data,scope);}catch(error){postProcessFailure('dashboard shipping finance',error);return data;}}
+async function safeExpenseShipping(env,data,scope){try{return await adjustExpenseDetailsForShipping(env,data,scope);}catch(error){postProcessFailure('expense shipping finance',error);return data;}}
 async function currentUser(request,env,ctx){const u=new URL(request.url);u.pathname='/api/me';u.search='';const r=await safety.fetch(new Request(u,{method:'GET',headers:request.headers}),env,ctx),d=await r.json().catch(()=>({}));if(!r.ok||!d.role)throw Object.assign(new Error(d.error||'محتاج تسجّل دخول'),{status:r.status||401,code:'AUTH_REQUIRED'});return d;}
 function scopedClient(me,url,body={}){const requested=clean(body.clientId||body.client_id||url.searchParams.get('clientId')||me?.clientId);if(me.role==='client'){if(requested&&requested!==String(me.clientId))throw Object.assign(new Error('مش مسموح الوصول لبيانات متجر آخر'),{status:403,code:'TENANT_ISOLATION'});return String(me.clientId||'');}if(!requested)throw Object.assign(new Error('محتاج clientId'),{status:400,code:'CLIENT_ID_REQUIRED'});return requested;}
 function scopedStore(url,body={}){return clean(body.storeId||body.store_id||url.searchParams.get('storeId'))||null;}
@@ -26,12 +29,12 @@ async function dashboardForInputs(request,env,ctx,{clientId,storeId,from,to}){
   if(clientId)url.searchParams.set('clientId',clientId);if(storeId)url.searchParams.set('storeId',storeId);if(from)url.searchParams.set('from',from);if(to)url.searchParams.set('to',to);
   const response=await safety.fetch(new Request(url,{method:'GET',headers:request.headers}),env,ctx);
   if(!response.ok)return {response};
-  let data=await response.json().catch(()=>({}));data=await adjustDashboardForShipping(env,data,{clientId,storeId,from:clean(data.from||from),to:clean(data.to||to)});return {data:normalizeDashboardContract(data)};
+  let data=await response.json().catch(()=>({}));data=await safeDashboardShipping(env,data,{clientId,storeId,from:clean(data.from||from),to:clean(data.to||to)});return {data:normalizeDashboardContract(data)};
 }
 async function expenseInputs(request,env,ctx,{clientId,storeId,from,to}){
   const url=new URL(request.url);url.pathname='/api/system/dashboard/expense-details';url.search='';
   if(clientId)url.searchParams.set('clientId',clientId);if(storeId)url.searchParams.set('storeId',storeId);url.searchParams.set('from',from);url.searchParams.set('to',to);url.searchParams.set('kind','all');
-  const response=await safety.fetch(new Request(url,{method:'GET',headers:request.headers}),env,ctx);if(!response.ok)return {response};const data=await adjustExpenseDetailsForShipping(env,await response.json(),{clientId,storeId,from,to});return {data};
+  const response=await safety.fetch(new Request(url,{method:'GET',headers:request.headers}),env,ctx);if(!response.ok)return {response};const data=await safeExpenseShipping(env,await response.json(),{clientId,storeId,from,to});return {data};
 }
 async function revenueRows(env,{clientId,storeId,from,to}){const rows=await shippingRowsForRange(env,{clientId,storeId,from,to});return rows.filter(row=>!excludedMarginStates.has(clean(row.state))).map(row=>({id:row.id,date:clean(row.date||row.created_at).slice(0,10),label:`أوردر ${clean(row.ref||row.id)}`,description:`${clean(row.name)||'بدون اسم'} · إجمالي ${round(row.finance.orderTotal)} ج · شحن العميل ${round(row.finance.customerShippingCharge)} ج`,amount:round(row.finance.productRevenue)}));}
 async function productCostRows(env,{clientId,storeId,from,to}){
@@ -66,7 +69,12 @@ async function dashboardInputDetails(request,env,ctx,url){
   if(kind==='profitMargin')return json({ok:true,kind,from:resolvedFrom,to:resolvedTo,total:round(overview.profitMargin),formula:'صافي الربح ÷ إيراد المنتجات × 100',summary:[summary('صافي الربح',finance.netProfit,{money:true}),summary('إيراد المنتجات',finance.revenue??overview.expectedRevenue,{money:true}),summary('هامش الربح',overview.profitMargin,{percent:true})],rows:[]});
   return json({error:'نوع تفاصيل المؤشر غير معروف',code:'DASHBOARD_INPUT_KIND_INVALID'},400);
 }
-async function maybeEnrichOperationalResponse(env,url,data){if(!data||!Array.isArray(data.orders)||!data.orders.length)return data;const clientId=clean(data.clientId||url.searchParams.get('clientId')||data.orders[0]?.clientId||data.orders[0]?.client_id);if(!clientId)return data;return {...data,orders:await enrichShippingFinanceOrders(env,data.orders,{clientId})};}
+async function maybeEnrichOperationalResponse(env,url,data){
+  if(!data||!Array.isArray(data.orders)||!data.orders.length)return data;
+  const clientId=clean(data.clientId||url.searchParams.get('clientId')||data.orders[0]?.clientId||data.orders[0]?.client_id);if(!clientId)return data;
+  try{return {...data,orders:await enrichShippingFinanceOrders(env,data.orders,{clientId})};}
+  catch(error){postProcessFailure('operational shipping finance',error);return data;}
+}
 async function fetchV38(request,env,ctx){
   const url=new URL(request.url),method=request.method.toUpperCase(),dashboardContract=method==='GET'&&url.pathname==='/api/dashboard',dashboardInputs=method==='GET'&&url.pathname==='/api/system/dashboard/input-details',expenseDetails=method==='GET'&&url.pathname==='/api/system/dashboard/expense-details',shippingSettings=url.pathname==='/api/system/shipping-finance/settings';
   try{
@@ -77,8 +85,8 @@ async function fetchV38(request,env,ctx){
       if(url.pathname.startsWith('/webhooks/easyorders/')){const d=await response.clone().json().catch(()=>null);if(d?.id)await snapshotOrderShippingFinance(env,{orderId:d.id,clientId:d.clientId||null,source:'easyorders'}).catch(()=>{});return response;}
       const data=await response.clone().json().catch(()=>null);
       if(data?.id&&data?.financials&&Object.prototype.hasOwnProperty.call(data.financials,'shippingCost'))await snapshotOrderShippingFinance(env,{orderId:data.id,source:'carrier',carrierShippingCost:data.financials.shippingCost}).catch(()=>{});
-      if(dashboardContract&&data){const scope={clientId:clean(url.searchParams.get('clientId')),storeId:clean(url.searchParams.get('storeId'))||null,from:clean(data.from||url.searchParams.get('from')),to:clean(data.to||url.searchParams.get('to'))},adjusted=await adjustDashboardForShipping(env,data,scope),normalized=normalizeDashboardContract(adjusted);return json(normalized,response.status);}
-      if(expenseDetails&&data){const adjusted=await adjustExpenseDetailsForShipping(env,data,{clientId:clean(url.searchParams.get('clientId')),storeId:clean(url.searchParams.get('storeId'))||null,from:clean(url.searchParams.get('from')),to:clean(url.searchParams.get('to'))});return json(adjusted,response.status);}
+      if(dashboardContract&&data){const scope={clientId:clean(url.searchParams.get('clientId')),storeId:clean(url.searchParams.get('storeId'))||null,from:clean(data.from||url.searchParams.get('from')),to:clean(data.to||url.searchParams.get('to'))},adjusted=await safeDashboardShipping(env,data,scope),normalized=normalizeDashboardContract(adjusted);return json(normalized,response.status);}
+      if(expenseDetails&&data){const adjusted=await safeExpenseShipping(env,data,{clientId:clean(url.searchParams.get('clientId')),storeId:clean(url.searchParams.get('storeId'))||null,from:clean(url.searchParams.get('from')),to:clean(url.searchParams.get('to'))});return json(adjusted,response.status);}
       if(method==='GET'&&(url.pathname==='/api/customer-service'||url.pathname==='/api/post-shipping')&&data)return json(await maybeEnrichOperationalResponse(env,url,data),response.status);
     }
     if(response.status!==500)return response;
