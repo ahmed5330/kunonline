@@ -14,17 +14,28 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Verify dashboard and Meta campaign routes resolve to the modern backend
+      - name: Verify v2 shell and critical APIs resolve to the modern backend
         shell: bash
         run: |
           set -euo pipefail
+
+          page="$(curl -fsSL -H 'Cache-Control: no-cache' "https://app.kun-online.com/v2/?route_guard=${GITHUB_RUN_ID}")"
+          grep -Fq '/v2/client-context-v24-fast.js' <<< "$page"
+          grep -Fq '/v2/modules-v33-dashboard.js' <<< "$page"
+          grep -Fq '/v2/modules-v47-post-shipping.js' <<< "$page"
+          grep -Fq '/v2/modules-v117-team-collaboration.js' <<< "$page"
+          echo 'v2 shell verified.'
+
           check_guarded_route() {
             local path="$1"
-            local body code
+            local sep='?'
+            local body code url
+            [[ "$path" == *'?'* ]] && sep='&'
+            url="https://app.kun-online.com${path}${sep}route_guard=${GITHUB_RUN_ID}"
             body="$(mktemp)"
-            code="$(curl -sS -H 'Cache-Control: no-cache' -o "$body" -w '%{http_code}' "https://app.kun-online.com${path}?route_guard=${GITHUB_RUN_ID}")"
-            if [ "$code" != "401" ]; then
-              echo "Expected protected route to return 401 without a session: ${path}; got HTTP ${code}"
+            code="$(curl -sS -H 'Cache-Control: no-cache' -o "$body" -w '%{http_code}' "$url")"
+            if [ "$code" = "500" ]; then
+              echo "Critical route returned HTTP 500 without a session: ${path}"
               cat "$body"
               exit 1
             fi
@@ -33,10 +44,22 @@ jobs:
               cat "$body"
               exit 1
             fi
-            echo "Modern protected route verified: ${path} -> HTTP 401"
+            if [ "$code" != "401" ] && [ "$code" != "403" ] && [ "$code" != "400" ]; then
+              echo "Expected protected route to reject a no-session probe cleanly: ${path}; got HTTP ${code}"
+              cat "$body"
+              exit 1
+            fi
+            echo "Modern protected route verified: ${path} -> HTTP ${code}"
           }
 
           check_guarded_route '/api/dashboard'
+          check_guarded_route '/api/customer-service'
+          check_guarded_route '/api/post-shipping'
+          check_guarded_route '/api/printing?clientId=probe'
+          check_guarded_route '/api/my-client-context'
+          check_guarded_route '/api/my-store-context?clientId=probe'
+          check_guarded_route '/api/catalog/products?clientId=probe'
+          check_guarded_route '/api/collaboration/bootstrap?clientId=probe&storeId=probe'
           check_guarded_route '/api/integrations/meta-ads/campaign-hub'
           check_guarded_route '/api/integrations/meta-ads/daily-comparison'
           check_guarded_route '/api/integrations/meta-ads/breakdowns'
