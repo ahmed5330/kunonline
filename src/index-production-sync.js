@@ -1,6 +1,6 @@
-import app from './index.js';
+import app from './index-commerce-v38.js';
 
-const BUILD='production-sync-hotfix-2026-09-23-seed-cache-budget';
+const BUILD='production-sync-hotfix-2026-09-28-modern-commerce-core';
 const SHORT_ORDER_BASE='https://api.easy-orders.net/api/v1/external-apps/orders/short/';
 const ORDER_BY_ID_BASE='https://api.easy-orders.net/api/v1/external-apps/orders/';
 const MAX_REQUESTS_PER_RUN=30;
