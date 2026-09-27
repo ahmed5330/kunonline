@@ -61,6 +61,13 @@ jobs:
           out="$(npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command \"SELECT name FROM pragma_table_info('orders');\" --json)"
           node -e "const d=JSON.parse(process.argv[1]);const s=new Set((d[0]?.results||[]).map(x=>x.name));const e=['store_id','awb','checkpoint','signed_at','collected_at','collected_amount','history','restocked'];process.exit(e.every(x=>s.has(x))?0:1)" "$out"
 
+      - name: shipping-finance-schema
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          out="$(npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command \"SELECT 'table:'||name item FROM sqlite_master WHERE type='table' AND name='shipping_financial_settings' UNION ALL SELECT 'orders:'||name FROM pragma_table_info('orders');\" --json)"
+          node -e "const d=JSON.parse(process.argv[1]);const s=new Set((d[0]?.results||[]).map(x=>x.item));const e=['table:shipping_financial_settings','orders:product_subtotal','orders:customer_shipping_charge','orders:carrier_shipping_cost','orders:business_shipping_cost','orders:shipping_finance_mode','orders:shipping_finance_source'];process.exit(e.every(x=>s.has(x))?0:1)" "$out"
+
       - name: shipping-inventory-schema
         continue-on-error: true
         run: |
