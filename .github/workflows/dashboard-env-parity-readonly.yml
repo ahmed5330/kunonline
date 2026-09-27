@@ -13,7 +13,7 @@ jobs:
   compare:
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 10
     environment:
       name: production
     env:
@@ -22,62 +22,49 @@ jobs:
       TARGET_EMAIL: esraanabilismail@gmail.com
     steps:
       - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: npm install --ignore-scripts
       - name: Compare dashboard source data without writes
         shell: bash
         run: |
           set -euo pipefail
           node <<'NODE'
-          const fs=require('fs');
-          const account=process.env.CLOUDFLARE_ACCOUNT_ID;
-          const token=process.env.CLOUDFLARE_API_TOKEN;
+          const {execFileSync}=require('child_process');
           const email=String(process.env.TARGET_EMAIL||'').trim().toLowerCase();
-          if(!account||!token||!email) throw new Error('Audit configuration is incomplete');
-          const dbId=file=>fs.readFileSync(file,'utf8').match(/database_id\s*=\s*"([^"]+)"/)?.[1];
-          const dbs={production:dbId('wrangler.production.toml'),preview:dbId('wrangler.preview.toml')};
-          if(!dbs.production||!dbs.preview) throw new Error('D1 ids are missing from Wrangler configs');
-          const cairoDay=new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Cairo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
-          async function query(db,sql,params=[]){
-            const url=`https://api.cloudflare.com/client/v4/accounts/${account}/d1/database/${db}/query`;
-            for(let attempt=1;attempt<=5;attempt++){
-              const response=await fetch(url,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({sql,params})});
-              const payload=await response.json().catch(()=>({}));
-              const result=payload?.result?.[0];
-              if(response.ok&&payload.success!==false&&result?.success!==false)return result?.results||[];
-              if(attempt===5)throw new Error(`D1 read-only query failed after ${attempt} attempts`);
-              await new Promise(r=>setTimeout(r,attempt*1000));
+          if(!email||!/^[^']+@[^']+$/.test(email))throw new Error('Invalid audit email');
+          const configs={production:{db:'kunonline',config:'wrangler.production.toml'},preview:{db:'kunonline-preview',config:'wrangler.preview.toml'}};
+          const lit=v=>`'${String(v).replaceAll("'","''")}'`;
+          function query(envName,sql){
+            const cfg=configs[envName];
+            let raw='';
+            try{
+              raw=execFileSync('npx',['wrangler','d1','execute',cfg.db,'--remote','--config',cfg.config,'--command',sql,'--json'],{encoding:'utf8',stdio:['ignore','pipe','pipe'],env:process.env,maxBuffer:20*1024*1024});
+            }catch(error){
+              const detail=String(error?.stderr||error?.stdout||error?.message||error).slice(0,2000);
+              throw new Error(`${envName} D1 read-only query failed: ${detail}`);
             }
+            const parsed=JSON.parse(raw);return parsed?.[0]?.results||[];
           }
-          async function safe(db,sql,params=[]){try{return await query(db,sql,params);}catch(error){return [{__audit_error:String(error.message||error)}];}}
-          async function snapshot(label,db){
-            const user=(await query(db,"SELECT id,client_id,role,status FROM users WHERE lower(trim(email))=? ORDER BY CASE role WHEN 'client' THEN 0 ELSE 1 END,created_at LIMIT 1",[email]))[0];
-            if(!user)return {label,userFound:false,cairoDay};
-            const clientId=String(user.client_id||'');
-            const stores=await safe(db,"SELECT id,name,code,status,is_default FROM stores WHERE client_id=? ORDER BY is_default DESC,name",[clientId]);
-            const summary=(await safe(db,`SELECT COUNT(*) total_orders, SUM(CASE WHEN NOT EXISTS (SELECT 1 FROM order_duplicate_links d WHERE d.duplicate_order_id=o.id) THEN 1 ELSE 0 END) canonical_orders, SUM(CASE WHEN date(COALESCE(o.date,o.created_at))=? AND NOT EXISTS (SELECT 1 FROM order_duplicate_links d WHERE d.duplicate_order_id=o.id) THEN 1 ELSE 0 END) today_canonical, MIN(date(COALESCE(o.date,o.created_at))) first_order_day, MAX(date(COALESCE(o.date,o.created_at))) last_order_day, MAX(o.created_at) latest_created_at FROM orders o WHERE o.client_id=?`,[cairoDay,clientId]))[0]||{};
-            const states=await safe(db,"SELECT COALESCE(o.state,'pending') state,COUNT(*) n FROM orders o WHERE o.client_id=? AND NOT EXISTS (SELECT 1 FROM order_duplicate_links d WHERE d.duplicate_order_id=o.id) GROUP BY COALESCE(o.state,'pending') ORDER BY n DESC",[clientId]);
-            const sources=await safe(db,"SELECT COALESCE(o.source,'') source,COUNT(*) n,MAX(o.created_at) latest_created_at FROM orders o WHERE o.client_id=? AND NOT EXISTS (SELECT 1 FROM order_duplicate_links d WHERE d.duplicate_order_id=o.id) GROUP BY COALESCE(o.source,'') ORDER BY n DESC",[clientId]);
-            const orders=await safe(db,"SELECT o.id,o.store_id,date(COALESCE(o.date,o.created_at)) order_day,o.created_at,COALESCE(o.state,'pending') state,COALESCE(o.source,'') source FROM orders o WHERE o.client_id=? AND NOT EXISTS (SELECT 1 FROM order_duplicate_links d WHERE d.duplicate_order_id=o.id) ORDER BY COALESCE(o.date,o.created_at),o.created_at",[clientId]);
-            const state=(await safe(db,"SELECT updated_at,json_extract(json,'$.easyOrdersRecovery.lastRunAt') recovery_last_run,json_extract(json,'$.easyOrdersRecovery.status') recovery_status,json_extract(json,'$.easyOrdersRecovery.connectedClients') recovery_clients,json_extract(json,'$.easyOrdersRecovery.requests') recovery_requests,json_extract(json,'$.easyOrdersRecovery.recovered') recovery_recovered,json_extract(json,'$.easyOrdersRecovery.updated') recovery_updated,json_array_length(json_extract(json,'$.clients')) configured_clients FROM state WHERE id=1"))[0]||{};
-            return {label,userFound:true,clientId,role:user.role,status:user.status,cairoDay,stores,summary,states,sources,orders,state};
+          const cairoDay=new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Cairo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+          function snapshot(envName){
+            const user=query(envName,`SELECT id,client_id,role,status FROM users WHERE lower(trim(email))=${lit(email)} ORDER BY CASE role WHEN 'client' THEN 0 ELSE 1 END,created_at LIMIT 1`)[0];
+            if(!user)return {label:envName,userFound:false,cairoDay};
+            const clientId=String(user.client_id||''), cid=lit(clientId);
+            const stores=query(envName,`SELECT id,name,code,status,is_default FROM stores WHERE client_id=${cid} ORDER BY is_default DESC,name`);
+            const summary=query(envName,`SELECT COUNT(*) total_orders, SUM(CASE WHEN NOT EXISTS (SELECT 1 FROM order_duplicate_links d WHERE d.duplicate_order_id=o.id) THEN 1 ELSE 0 END) canonical_orders, SUM(CASE WHEN date(COALESCE(o.date,o.created_at))=${lit(cairoDay)} AND NOT EXISTS (SELECT 1 FROM order_duplicate_links d WHERE d.duplicate_order_id=o.id) THEN 1 ELSE 0 END) today_canonical, MIN(date(COALESCE(o.date,o.created_at))) first_order_day, MAX(date(COALESCE(o.date,o.created_at))) last_order_day, MAX(o.created_at) latest_created_at FROM orders o WHERE o.client_id=${cid}`)[0]||{};
+            const states=query(envName,`SELECT COALESCE(o.state,'pending') state,COUNT(*) n FROM orders o WHERE o.client_id=${cid} AND NOT EXISTS (SELECT 1 FROM order_duplicate_links d WHERE d.duplicate_order_id=o.id) GROUP BY COALESCE(o.state,'pending') ORDER BY n DESC`);
+            const sources=query(envName,`SELECT COALESCE(o.source,'') source,COUNT(*) n,MAX(o.created_at) latest_created_at FROM orders o WHERE o.client_id=${cid} AND NOT EXISTS (SELECT 1 FROM order_duplicate_links d WHERE d.duplicate_order_id=o.id) GROUP BY COALESCE(o.source,'') ORDER BY n DESC`);
+            const orders=query(envName,`SELECT o.id,o.store_id,date(COALESCE(o.date,o.created_at)) order_day,o.created_at,COALESCE(o.state,'pending') state,COALESCE(o.source,'') source FROM orders o WHERE o.client_id=${cid} AND NOT EXISTS (SELECT 1 FROM order_duplicate_links d WHERE d.duplicate_order_id=o.id) ORDER BY COALESCE(o.date,o.created_at),o.created_at`);
+            let syncState={};try{syncState=query(envName,"SELECT updated_at,json_extract(json,'$.easyOrdersRecovery.lastRunAt') recovery_last_run,json_extract(json,'$.easyOrdersRecovery.status') recovery_status,json_extract(json,'$.easyOrdersRecovery.connectedClients') recovery_clients,json_extract(json,'$.easyOrdersRecovery.requests') recovery_requests,json_extract(json,'$.easyOrdersRecovery.recovered') recovery_recovered,json_extract(json,'$.easyOrdersRecovery.updated') recovery_updated,json_array_length(json_extract(json,'$.clients')) configured_clients FROM state WHERE id=1")[0]||{};}catch(error){syncState={auditError:String(error.message||error)}}
+            return {label:envName,userFound:true,clientId,role:user.role,status:user.status,cairoDay,stores,summary,states,sources,orders,syncState};
           }
-          function safeOrderRows(rows){return (rows||[]).filter(x=>x&&!x.__audit_error);}
-          (async()=>{
-            const production=await snapshot('production',dbs.production);
-            const preview=await snapshot('preview',dbs.preview);
-            const prodOrders=safeOrderRows(production.orders),prevOrders=safeOrderRows(preview.orders);
-            const prodMap=new Map(prodOrders.map(x=>[String(x.id),x]));
-            const prevMap=new Map(prevOrders.map(x=>[String(x.id),x]));
-            const missingInProduction=prevOrders.filter(x=>!prodMap.has(String(x.id)));
-            const missingInPreview=prodOrders.filter(x=>!prevMap.has(String(x.id)));
-            const common=[...prodMap.keys()].filter(id=>prevMap.has(id));
-            const stateDiffs=common.map(id=>({id,production:prodMap.get(id),preview:prevMap.get(id)})).filter(x=>String(x.production.state)!==String(x.preview.state)||String(x.production.store_id||'')!==String(x.preview.store_id||'')||String(x.production.order_day||'')!==String(x.preview.order_day||''));
-            const output={
-              cairoDay,
-              production:{userFound:production.userFound,clientId:production.clientId,role:production.role,status:production.status,stores:production.stores,summary:production.summary,states:production.states,sources:production.sources,syncState:production.state},
-              preview:{userFound:preview.userFound,clientId:preview.clientId,role:preview.role,status:preview.status,stores:preview.stores,summary:preview.summary,states:preview.states,sources:preview.sources,syncState:preview.state},
-              parity:{commonOrders:common.length,missingInProduction:missingInProduction.length,missingInPreview:missingInPreview.length,stateOrScopeDifferences:stateDiffs.length,missingInProductionSample:missingInProduction.slice(-12),missingInPreviewSample:missingInPreview.slice(-12),stateDifferenceSample:stateDiffs.slice(-12)}
-            };
-            console.log('DASHBOARD_ENV_PARITY_READONLY');
-            console.log(JSON.stringify(output,null,2));
-          })().catch(error=>{console.error(error.stack||error.message||error);process.exit(1)});
+          const production=snapshot('production'),preview=snapshot('preview');
+          const prodOrders=production.orders||[],prevOrders=preview.orders||[],prodMap=new Map(prodOrders.map(x=>[String(x.id),x])),prevMap=new Map(prevOrders.map(x=>[String(x.id),x]));
+          const missingInProduction=prevOrders.filter(x=>!prodMap.has(String(x.id))),missingInPreview=prodOrders.filter(x=>!prevMap.has(String(x.id))),common=[...prodMap.keys()].filter(id=>prevMap.has(id));
+          const stateDiffs=common.map(id=>({id,production:prodMap.get(id),preview:prevMap.get(id)})).filter(x=>String(x.production.state)!==String(x.preview.state)||String(x.production.store_id||'')!==String(x.preview.store_id||'')||String(x.production.order_day||'')!==String(x.preview.order_day||''));
+          const output={cairoDay,production:{userFound:production.userFound,clientId:production.clientId,role:production.role,status:production.status,stores:production.stores,summary:production.summary,states:production.states,sources:production.sources,syncState:production.syncState},preview:{userFound:preview.userFound,clientId:preview.clientId,role:preview.role,status:preview.status,stores:preview.stores,summary:preview.summary,states:preview.states,sources:preview.sources,syncState:preview.syncState},parity:{commonOrders:common.length,missingInProduction:missingInProduction.length,missingInPreview:missingInPreview.length,stateOrScopeDifferences:stateDiffs.length,missingInProductionSample:missingInProduction.slice(-15),missingInPreviewSample:missingInPreview.slice(-15),stateDifferenceSample:stateDiffs.slice(-15)}};
+          console.log('DASHBOARD_ENV_PARITY_READONLY');console.log(JSON.stringify(output,null,2));
           NODE
