@@ -1,4 +1,4 @@
-/* Kun Online v57.2 — one reload control per main workspace section, without browser-page reload. */
+/* Kun Online v57.3 — one reload control per main workspace section, without browser-page reload. */
 (function(){
   const K=window.KunActionsV23||{};
   const root=document.getElementById('root');
@@ -111,13 +111,13 @@
     register:(view,handler)=>{if(view&&typeof handler==='function')registry.set(String(view),handler);},
     ensure:ensureButton,
     activeView,
-    version:'57.2'
+    version:'57.3'
   };
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',ensureButton,{once:true});else setTimeout(ensureButton,0);
-  document.documentElement.dataset.sectionReload='v57.2-ready';
+  document.documentElement.dataset.sectionReload='v57.3-ready';
 })();
 
-// Campaign Hub keeps v66 workspaces and layers comparison v67.2, analysis v68, readable measurements v70.1, reliable controls v71.2, compact visual density v72 and parent scopes v73.
+// Campaign Hub keeps v66 workspaces and layers comparison v67.3, analysis v68, readable measurements v70.1, reliable controls v71.2, compact visual density v72 and parent scopes v73.
 {
   const hubId='kunCampaignHubV66Loader',uxId='kunCampaignUXV67Loader',breakdownId='kunBreakdownAnalysisV68Loader',measureId='kunBreakdownMeasurementsV70Loader',controlsId='kunBreakdownControlsV71Loader',visualId='kunCampaignVisualDensityV72Loader',parentId='kunCampaignParentScopeV73Loader';
   const loadParent=()=>{
@@ -147,10 +147,10 @@
   const loadUX=()=>{
     const existingUX=document.getElementById(uxId);
     if(existingUX){if(window.KunCampaignUXV67)loadBreakdownUX();else existingUX.addEventListener('load',loadBreakdownUX,{once:true});return;}
-    const ux=document.createElement('script');ux.id=uxId;ux.src='/v2/modules-v67-campaign-comparison-ux.js?v=67.2';ux.async=false;ux.addEventListener('load',loadBreakdownUX,{once:true});document.head.appendChild(ux);
+    const ux=document.createElement('script');ux.id=uxId;ux.src='/v2/modules-v67-campaign-comparison-ux.js?v=67.3';ux.async=false;ux.addEventListener('load',loadBreakdownUX,{once:true});document.head.appendChild(ux);
   };
   const existing=document.getElementById(hubId);
   if(!existing){
-    const module=document.createElement('script');module.id=hubId;module.src='/v2/modules-v66-campaign-hub.js?v=66.0';module.async=false;module.addEventListener('load',loadUX,{once:true});document.head.appendChild(module);
+    const module=document.createElement('script');module.id=hubId;module.src='/v2/modules-v66-campaign-hub.js?v=66.1';module.async=false;module.addEventListener('load',loadUX,{once:true});document.head.appendChild(module);
   }else if(window.KunCampaignHubV66)loadUX();else existing.addEventListener('load',loadUX,{once:true});
 }

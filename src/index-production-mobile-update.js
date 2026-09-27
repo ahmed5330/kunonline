@@ -27,16 +27,12 @@ async function websiteWithDirectAndroidDownload(request,env){
   html=html
     .replaceAll(LEGACY_APK_URL,DIRECT_APK_PATH)
     .replaceAll('/v2/modules-v51-permission-navigation.js?v=51.10','/v2/modules-v51-permission-navigation.js?v=51.11')
-    .replaceAll('/v2/modules-v57-section-reload.js?v=57.1','/v2/modules-v57-section-reload.js?v=57.2')
+    .replace(/\/v2\/modules-v57-section-reload\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v57-section-reload.js?v=57.3')
     .replaceAll('/v2/modules-v78-jt-shipping-order.js?v=78.4','/v2/modules-v78-jt-shipping-order.js?v=78.5')
     .replaceAll('/v2/modules-v79-printing.js?v=79.7','/v2/modules-v79-printing.js?v=79.8')
     .replaceAll('/v2/modules-v118-collaboration-order-picker.js?v=118.0','/v2/modules-v118-collaboration-order-picker.js?v=118.1');
-  if(!html.includes('/v2/modules-v66-campaign-hub.js')){
-    html=html.replace('</body>','<script src="/v2/modules-v66-campaign-hub.js?v=66.0" data-kun-campaign-hub="1"></script></body>');
-  }
-  if(!html.includes('/v2/modules-v67-campaign-comparison-ux.js')){
-    html=html.replace('</body>','<script src="/v2/modules-v67-campaign-comparison-ux.js?v=67.2" data-kun-campaign-ux="1"></script></body>');
-  }
+  // v57 owns the ordered v66 -> v67 -> v68... chain. Injecting v66/v67 here
+  // executes them twice and splits the hub state from its event handlers.
   if(!html.includes('/v2/modules-v116-print-routing.js')){
     html=html.replace('</body>','<script src="/v2/modules-v116-print-routing.js?v=116.0" data-kun-print-routing="1"></script></body>');
   }

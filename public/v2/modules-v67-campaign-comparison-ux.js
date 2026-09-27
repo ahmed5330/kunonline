@@ -1,5 +1,7 @@
-/* Kun Online v67.1 — expert comparison UX + weekday-only analysis for Campaign Hub v66. */
+/* Kun Online v67.3 — expert comparison UX + weekday-only analysis for Campaign Hub v66. */
 (function(){
+  const VERSION='67.3';
+  if(window.KunCampaignUXV67?.version===VERSION)return;
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const n=v=>Number.isFinite(Number(v))?Number(v):0;
   const r2=v=>Math.round(n(v)*100)/100;
@@ -20,7 +22,9 @@
   const severityRank={high:3,watch:2,good:1};
 
   function ensureStyle(){
-    if(document.getElementById('kunCampaignUXV67Style'))return;
+    const existing=document.getElementById('kunCampaignUXV67Style');
+    if(existing?.dataset.version===VERSION)return;
+    existing?.remove();
     const s=document.createElement('style');s.id='kunCampaignUXV67Style';s.textContent=`
       .campaign67-comparison{display:grid;gap:14px}
       .campaign67-comparison .ux67-head{display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap}
@@ -69,7 +73,7 @@
       .campaign67-comparison .ux67-empty{padding:22px;text-align:center;color:var(--muted,#64748b)}
       @keyframes ux67Flash{0%,100%{transform:none}35%{transform:scale(1.012);box-shadow:0 0 0 3px rgba(59,130,246,.14)}}
       @media(max-width:760px){.campaign67-comparison .ux67-analysis-grid{grid-template-columns:1fr}.campaign67-comparison .ux67-summary{width:100%;margin:0}.campaign67-comparison .ux67-view-toggle{width:100%}.campaign67-comparison .ux67-view-toggle button{flex:1}.campaign67-comparison .ux67-matrix th,.campaign67-comparison .ux67-matrix td{min-width:104px;padding:9px}.campaign67-comparison .ux67-matrix .ux67-metric-col{min-width:145px;max-width:145px}}
-    `;document.head.appendChild(s);
+    `;s.dataset.version=VERSION;document.head.appendChild(s);
   }
 
   function statusBadge(status){const v=String(status||'').toLowerCase();const label=v==='active'?'شغالة':v.includes('paused')?'متوقفة':v==='archived'?'مؤرشفة':v||'—';return `<span class="badge ${v==='active'?'b-delivered':v.includes('paused')||v==='archived'?'b-pending':'b-cancelled'}">${esc(label)}</span>`;}
@@ -123,21 +127,21 @@
   }
   function viewToggle(mode){return `<div class="ux67-view-toggle" role="group" aria-label="نوع المقارنة"><button type="button" data-ux67-view="date" class="${mode==='date'?'active':''}" aria-pressed="${mode==='date'}">حسب التاريخ</button><button type="button" data-ux67-view="weekday" class="${mode==='weekday'?'active':''}" aria-pressed="${mode==='weekday'}">تحليل باليوم فقط</button></div>`;}
   function renderEnhanced(card,level,section,range){
-    ensureStyle();const data=section?.comparison||{},rows=Array.isArray(data.rows)?data.rows:[],dates=Array.isArray(data.dates)?data.dates:[],mode=viewModes[level]||'date';card.dataset.ux67='1';
+    ensureStyle();const data=section?.comparison||{},rows=Array.isArray(data.rows)?data.rows:[],dates=Array.isArray(data.dates)?data.dates:[],mode=viewModes[level]||'date';card.dataset.ux67='1';card.dataset.ux67Version=VERSION;
     const subtitle=mode==='weekday'?'تم تجميع كل جمعة معًا، وكل سبت معًا، وهكذا داخل الفترة المختارة.':'اسم اليوم ظاهر أعلى كل تاريخ لتسهيل قراءة الأداء يومًا بيوم.';
     card.innerHTML=`<div class="campaign67-comparison" data-ux67-view-mode="${mode}"><div class="ux67-head"><div><h3 style="margin:0">مقارنة ${esc(levelLabels[level]||level)} — قراءة بصرية</h3><div class="muted">المعايير الأساسية ثابتة على الشمال، والأيام تتحرك فقط. ${range?`${esc(range.from)} ← ${esc(range.to)}`:''}</div><div class="ux67-weekday-note">${subtitle}</div></div>${viewToggle(mode)}<div class="spacer"></div><div class="ux67-legend"><span><i class="ux67-dot high"></i>راجع الآن</span><span><i class="ux67-dot watch"></i>راقب</span><span><i class="ux67-dot good"></i>فرصة إيجابية</span></div></div>${rows.length?rows.map((row,i)=>entityCard(row,dates,i,mode)).join(''):'<div class="ux67-empty">لا توجد عناصر مطابقة للفترة والفلتر الحاليين.</div>'}</div>`;
   }
   function enhance(){
     const hub=window.KunCampaignHubV66,root=document.getElementById('root');if(!hub||!root)return;
     const level=hub.state?.level,section=hub.state?.sections?.[level];if(!level||section?.mode!=='comparison'||!section?.comparison)return;
-    const oldTable=root.querySelector('.campaign66 table.compare');if(!oldTable)return;const card=oldTable.closest('.card');if(!card||card.dataset.ux67==='1')return;
+    const surface=root.querySelector('.campaign66 table.compare,.campaign66 .campaign67-comparison');if(!surface)return;const card=surface.closest('.card');if(!card||card.dataset.ux67Version===VERSION)return;
     const range=typeof hub.rangeFor==='function'?hub.rangeFor(level):null;renderEnhanced(card,level,section,range);
   }
   function switchView(event){const button=event.target.closest?.('[data-ux67-view]');if(!button)return false;event.preventDefault();const mode=button.dataset.ux67View==='weekday'?'weekday':'date',hub=window.KunCampaignHubV66,level=hub?.state?.level,section=hub?.state?.sections?.[level],card=button.closest('.card');if(!level||!section?.comparison||!card)return true;viewModes[level]=mode;const range=typeof hub.rangeFor==='function'?hub.rangeFor(level):null;renderEnhanced(card,level,section,range);return true;}
   function focusSignal(event){const hit=event.target.closest?.('[data-ux67-signal]');if(!hit)return;const entity=hit.closest('[data-ux67-entity]'),id=hit.dataset.ux67Signal,index=entity?.dataset.ux67Entity,target=document.getElementById(`ux67Insight-${index}-${id}`);if(!target)return;target.scrollIntoView({behavior:'smooth',block:'center'});target.classList.remove('flash');requestAnimationFrame(()=>target.classList.add('flash'));setTimeout(()=>target.classList.remove('flash'),1300);}
   const root=document.getElementById('root');if(root){new MutationObserver(()=>queueMicrotask(enhance)).observe(root,{childList:true,subtree:true});root.addEventListener('click',event=>{if(!switchView(event))focusSignal(event);});}
   window.addEventListener('kun:section-reloaded',()=>setTimeout(enhance,0));document.addEventListener('click',e=>{if(e.target.closest?.('.campaign66 [data-section-mode],.campaign66 [data-campaign-section],.campaign66 [data-date-preset],.campaign66 [data-status]'))setTimeout(enhance,0);},true);
-  window.KunCampaignUXV67={enhance,buildSignals,metrics,groupWeekdays,weekdayLabel,version:'67.1'};
-  document.documentElement.dataset.campaignUx='v67-1-ready';
+  window.KunCampaignUXV67={enhance,buildSignals,metrics,groupWeekdays,weekdayLabel,version:VERSION};
+  document.documentElement.dataset.campaignUx='v67-3-ready';
   setTimeout(enhance,0);
 })();

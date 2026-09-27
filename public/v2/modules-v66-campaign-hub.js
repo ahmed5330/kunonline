@@ -1,5 +1,7 @@
 /* Kun Online v66 — Campaign / Ad Set / Ad workspaces with independent date ranges and comparisons. */
 (function(){
+  // A second script tag must not replace the state owned by existing handlers.
+  if(window.KunCampaignHubV66)return;
   const root=()=>document.getElementById('root');
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const n=v=>Number.isFinite(Number(v))?Number(v):0;
@@ -128,7 +130,7 @@
   }
   async function render(){activate();style();const host=root();if(!host)return;host.innerHTML='<div class="card empty">جارٍ تجهيز مركز الحملات...</div>';await ensureCurrent();}
   window.addEventListener('click',event=>{const button=event.target.closest?.('.nav button[data-view="campaigns"]');if(!button)return;event.preventDefault();event.stopPropagation();event.stopImmediatePropagation();setTimeout(render,0);},true);
-  window.KunCampaignHubV66={render,reload:async()=>{for(const level of ['campaign','adset','ad'])invalidate(level);return render();},state,rangeFor,version:'66.0'};
+  window.KunCampaignHubV66={render,reload:async()=>{for(const level of ['campaign','adset','ad'])invalidate(level);return render();},state,rangeFor,version:'66.1'};
   if(window.KunSectionReloadV57?.register)window.KunSectionReloadV57.register('campaigns',()=>window.KunCampaignHubV66.reload());
   document.documentElement.dataset.campaignHub='v66-ready';
 })();
