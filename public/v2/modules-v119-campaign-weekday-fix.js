@@ -1,4 +1,4 @@
-/* Kun Online v119 — force weekday labels + weekday-only aggregation on Campaign Hub comparison. */
+/* Kun Online v119.1 — force weekday labels + weekday-only aggregation on Campaign Hub comparison. */
 (function(){
   const modes={campaign:'date',adset:'date',ad:'date'};
   const originals=new WeakMap();
@@ -46,37 +46,40 @@
       .ux119-toggle button{border:0;background:transparent;color:inherit;padding:6px 11px;border-radius:8px;font:inherit;font-size:11px;font-weight:800;cursor:pointer;white-space:nowrap}
       .ux119-toggle button.active{background:var(--ink,#111827);color:#fff}
       .ux119-weekday-table th b{display:block}.ux119-weekday-table th small{display:block;margin-top:2px;color:var(--muted,#64748b);font-size:10px}
-      .ux119-weekday-note{font-size:11px;color:var(--muted,#64748b);margin-top:4px}
     `;document.head.appendChild(s);
   }
   function patchDateHeaders(table,dates){
     const cells=[...table.querySelectorAll('thead th')];
     if(cells.length<dates.length+2)return;
-    dates.forEach((date,i)=>{const th=cells[i+1];th.innerHTML=`<b>${esc(weekdayLabel(date))}</b><small>${esc(date)}</small>`;});
+    dates.forEach((date,i)=>{const th=cells[i+1];const html=`<b>${esc(weekdayLabel(date))}</b><small>${esc(date)}</small>`;if(th.innerHTML!==html)th.innerHTML=html;});
     table.classList.add('ux119-weekday-table');
   }
   function weekdayTable(row,dates){
     const points=groupedPoints(row,dates),total=row?.total||{};
     return `<thead><tr><th class="ux67-metric-col">المعيار الأساسي</th>${points.map(p=>`<th><b>${esc(p.label)}</b><small>${integer(p.count)} ${p.count===1?'يوم':'أيام'}</small></th>`).join('')}<th>إجمالي الفترة</th></tr></thead><tbody>${metrics.map(metric=>`<tr><th class="ux67-metric-col"><b>${metric.label}</b><small>${metric.hint}</small></th>${points.map(p=>`<td><span class="ux67-value">${metric.format(p.metric[metric.key])}</span></td>`).join('')}<td><span class="ux67-value">${metric.format(total?.[metric.key])}</span></td></tr>`).join('')}</tbody>`;
   }
-  function setMode(level,mode){modes[level]=mode;render();}
+  function setMode(level,mode){if(modes[level]===mode)return;modes[level]=mode;render(true);}
   function ensureToggle(container,level){
     let toggle=container.querySelector('.ux119-toggle');
     if(!toggle){toggle=document.createElement('div');toggle.className='ux119-toggle';const head=container.querySelector('.ux67-head');if(head)head.insertBefore(toggle,head.querySelector('.spacer'));}
     if(!toggle)return;
     const mode=modes[level]||'date';
+    if(toggle.dataset.mode===mode)return;
+    toggle.dataset.mode=mode;
     toggle.innerHTML=`<button type="button" data-ux119-mode="date" class="${mode==='date'?'active':''}">حسب التاريخ</button><button type="button" data-ux119-mode="weekday" class="${mode==='weekday'?'active':''}">تحليل باليوم فقط</button>`;
   }
-  function render(){
+  function render(force=false){
     ensureStyle();
     const hub=window.KunCampaignHubV66,root=document.getElementById('root');if(!hub||!root)return;
     const level=hub.state?.level,section=hub.state?.sections?.[level];if(!level||section?.mode!=='comparison'||!section?.comparison)return;
     const data=section.comparison||{},dates=Array.isArray(data.dates)?data.dates:[],rows=Array.isArray(data.rows)?data.rows:[];
     const container=root.querySelector('.campaign67-comparison');if(!container)return;
     ensureToggle(container,level);
-    const note=container.querySelector('.ux67-weekday-note');if(note)note.textContent=(modes[level]==='weekday'?'كل عمود يجمع كل مرات نفس اليوم داخل الفترة المختارة.':'اسم يوم الأسبوع ظاهر أعلى التاريخ في كل عمود.');
+    const note=container.querySelector('.ux67-weekday-note'),noteText=(modes[level]==='weekday'?'كل عمود يجمع كل مرات نفس اليوم داخل الفترة المختارة.':'اسم يوم الأسبوع ظاهر أعلى التاريخ في كل عمود.');if(note&&note.textContent!==noteText)note.textContent=noteText;
+    const sig=`${modes[level]}:${dates.join('|')}`;
     const entities=[...container.querySelectorAll('[data-ux67-entity]')];
     entities.forEach((entity,i)=>{
+      if(!force&&entity.dataset.ux119Sig===sig)return;
       const table=entity.querySelector('.ux67-matrix'),analysis=entity.querySelector('.ux67-analysis');if(!table)return;
       if(!originals.has(table))originals.set(table,table.innerHTML);
       if(analysis&&!analysisOriginals.has(analysis))analysisOriginals.set(analysis,analysis.innerHTML);
@@ -88,12 +91,13 @@
         patchDateHeaders(table,dates);
         if(analysis){const originalAnalysis=analysisOriginals.get(analysis);if(originalAnalysis)analysis.innerHTML=originalAnalysis;}
       }
+      entity.dataset.ux119Sig=sig;
     });
   }
   function onClick(event){const button=event.target.closest?.('[data-ux119-mode]');if(!button)return;event.preventDefault();event.stopPropagation();const hub=window.KunCampaignHubV66,level=hub?.state?.level;if(!level)return;setMode(level,button.dataset.ux119Mode==='weekday'?'weekday':'date');}
-  const root=document.getElementById('root');if(root){root.addEventListener('click',onClick,true);new MutationObserver(()=>queueMicrotask(render)).observe(root,{childList:true,subtree:true});}
-  document.addEventListener('click',e=>{if(e.target.closest?.('.campaign66 [data-section-mode],.campaign66 [data-campaign-section],.campaign66 [data-date-preset],.campaign66 [data-status]'))setTimeout(render,0);},true);
-  window.KunCampaignWeekdayV119={render,version:'119.0'};
-  document.documentElement.dataset.campaignWeekday='v119-ready';
-  setTimeout(render,0);
+  const root=document.getElementById('root');if(root){root.addEventListener('click',onClick,true);new MutationObserver(()=>queueMicrotask(()=>render(false))).observe(root,{childList:true,subtree:true});}
+  document.addEventListener('click',e=>{if(e.target.closest?.('.campaign66 [data-section-mode],.campaign66 [data-campaign-section],.campaign66 [data-date-preset],.campaign66 [data-status]'))setTimeout(()=>render(false),0);},true);
+  window.KunCampaignWeekdayV119={render,version:'119.1'};
+  document.documentElement.dataset.campaignWeekday='v119-1-ready';
+  setTimeout(()=>render(false),0);
 })();
