@@ -25,6 +25,7 @@ const requiredConfig = [
   ['Production D1 name', /^database_name\s*=\s*"kunonline"\s*$/m],
   ['Production D1 ID', /^database_id\s*=\s*"c426601d-182f-486e-a5c1-bb1bca0ecb0b"\s*$/m],
   ['Easy Orders five-minute recovery Cron', /^crons\s*=\s*\[[^\]]*"\*\/5 \* \* \* \*"[^\]]*\]\s*$/m],
+  ['Near-live fifteen-minute sync Cron', /^crons\s*=\s*\[[^\]]*"\*\/15 \* \* \* \*"[^\]]*\]\s*$/m],
   ['Legacy two-hour shipping Cron', /^crons\s*=\s*\[[^\]]*"0 \*\/2 \* \* \*"[^\]]*\]\s*$/m],
 ];
 
@@ -54,6 +55,7 @@ for (const path of [
   'src/production-mobile-order-guard.js',
   'src/jt-history-reconcile.js',
   'src/index-production-jt-history.js',
+  productionSyncPath,
   productionEntryPath,
   'public/v2/modules-v91-jt-history-reconcile.js',
 ]) {
@@ -93,17 +95,21 @@ if (!/wrangler\s+rollback\s+"\$\{\{ inputs\.version_id \}\}"\s+--config\s+wrangl
 }
 
 const syncGuards = [
-  [productionSync.includes('const MAX_REQUESTS_PER_RUN=30;'), 'Production Easy Orders recovery must keep a 30-request global run cap.'],
-  [productionSync.includes('const MAX_REQUESTS_PER_CLIENT=10;'), 'Production Easy Orders recovery must keep a per-client fairness cap.'],
-  [productionSync.includes('let remaining=MAX_REQUESTS_PER_RUN;'), 'Production Easy Orders recovery must track one shared remaining budget.'],
-  [productionSync.includes('remaining=Math.max(0,remaining-r.requests)'), 'Production Easy Orders recovery must debit every client from the shared budget.'],
-  [productionSync.includes('requestLimit:MAX_REQUESTS_PER_RUN'), 'Production health must expose the global request limit.'],
-  [productionSync.includes("MAX_REQUESTS_PER_RUN=30") && !productionSync.includes('MAX_REQUESTS_PER_CLIENT=35'), 'Legacy 35-requests-per-client behavior must not return.'],
+  [productionSync.includes("import {easyOrdersRecoveryStatus} from './easyorders-order-reconciliation.js';"), 'Production sync health must read the canonical Easy Orders reconciliation state.'],
+  [productionSync.includes("mode:'canonical-v38-with-legacy-fallback'"), 'Production Easy Orders must use canonical v38 reconciliation with a legacy fallback only.'],
+  [productionSync.includes("if(cron==='*/5 * * * *')task=runFiveMinute(event,env,ctx);"), 'Five-minute Production recovery must run through the canonical scheduler first.'],
+  [productionSync.includes("else if(cron==='*/15 * * * *')task=delegateScheduled(event,env,ctx,'* * * * *');"), 'Fifteen-minute Production sync must map to the canonical minute/near-live scheduler contract.'],
+  [productionSync.includes('const MAX_REQUESTS_PER_RUN=30;'), 'Legacy fallback must keep a 30-request global run cap.'],
+  [productionSync.includes('const MAX_REQUESTS_PER_CLIENT=10;'), 'Legacy fallback must keep a per-client fairness cap.'],
+  [productionSync.includes('let remaining=MAX_REQUESTS_PER_RUN;'), 'Legacy fallback must track one shared remaining budget.'],
+  [productionSync.includes('remaining=Math.max(0,remaining-r.requests)'), 'Legacy fallback must debit every client from the shared budget.'],
+  [productionSync.includes('requestLimit:Number(legacy.requestLimit||MAX_REQUESTS_PER_RUN)'), 'Production health must expose the legacy fallback request limit.'],
+  [productionSync.includes('MAX_REQUESTS_PER_RUN=30') && !productionSync.includes('MAX_REQUESTS_PER_CLIENT=35'), 'Legacy 35-requests-per-client behavior must not return.'],
 ];
-for (const [ok, message] of syncGuards) if (!ok) throw new Error(`Production free-tier safety check failed: ${message}`);
+for (const [ok, message] of syncGuards) if (!ok) throw new Error(`Production sync safety check failed: ${message}`);
 
 for (const marker of ['approval-only','DO NOT run from CI','idx_orders_easyorders_recovery','idx_orders_deferred_due']) {
   if (!productionIndexSql.includes(marker)) throw new Error(`Production index maintenance SQL is missing safety marker: ${marker}`);
 }
 
-console.log('Production deploy and rollback safety checks passed. Composed Android + Customer Service + mobile guard + J&T history runtime parses safely, Easy Orders recovery has a 30-request global budget, index SQL is approval-only, and CI contains no Production database mutation command.');
+console.log('Production deploy and rollback safety checks passed. Production now uses the canonical v38 Easy Orders recovery every five minutes, the Preview-equivalent near-live contract every fifteen minutes, keeps the two-hour deep sync, retains a bounded legacy fallback, and CI contains no Production database mutation command.');

@@ -14,7 +14,7 @@ database_name = "kunonline"
 database_id = "c426601d-182f-486e-a5c1-bb1bca0ecb0b"
 
 [triggers]
-crons = ["*/5 * * * *", "0 */2 * * *"]
+crons = ["*/5 * * * *", "*/15 * * * *", "0 */2 * * *"]
 
 [vars]
 APP_ENV = "production"

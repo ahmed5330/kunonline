@@ -1,6 +1,7 @@
 import app from './index-commerce-v38.js';
+import {easyOrdersRecoveryStatus} from './easyorders-order-reconciliation.js';
 
-const BUILD='production-sync-hotfix-2026-09-28-modern-commerce-core';
+const BUILD='production-sync-v2-2026-09-28-canonical-recovery';
 const SHORT_ORDER_BASE='https://api.easy-orders.net/api/v1/external-apps/orders/short/';
 const ORDER_BY_ID_BASE='https://api.easy-orders.net/api/v1/external-apps/orders/';
 const MAX_REQUESTS_PER_RUN=30;
@@ -47,10 +48,9 @@ async function fetchById(apiKey,id){return easyGet(`${ORDER_BY_ID_BASE}${encodeU
 async function fetchByShort(apiKey,id){return easyGet(`${SHORT_ORDER_BASE}${encodeURIComponent(String(id))}`,apiKey);}
 
 /*
- * This query can be expensive on D1 when orders grows because it filters/sorts the
- * orders table. It is therefore used only to seed a client. The resulting
- * Easy Orders short_id is persisted inside the single state row and reused by all
- * subsequent five-minute recovery runs.
+ * Legacy fallback only. The normal Production five-minute path now delegates to
+ * the same canonical reconciliation used by v38/Preview. This code remains for
+ * old accounts whose Easy Orders connection metadata has not yet been upgraded.
  */
 async function latestEasyOrdersRows(env,clientId){
   const {results=[]}=await env.DB.prepare("SELECT id,date,created_at FROM orders WHERE client_id=? AND source='المتجر (إيزي أوردرز)' ORDER BY created_at DESC LIMIT 5").bind(clientId).all();
@@ -148,12 +148,38 @@ async function runRecovery(env){
   health.remainingRequests=remaining;
   health.status=health.errors?'error':health.rateLimited?'rate_limited':clients.length?'healthy':'no_connections';
   await persistHealth(env,health);
-  console.log(`Easy Orders production recovery: clients=${health.connectedClients} checked=${health.checkedClients} requests=${health.requests}/${MAX_REQUESTS_PER_RUN} recovered=${health.recovered} updated=${health.updated} status=${health.status}`);
+  console.log(`Easy Orders legacy fallback: clients=${health.connectedClients} checked=${health.checkedClients} requests=${health.requests}/${MAX_REQUESTS_PER_RUN} recovered=${health.recovered} updated=${health.updated} status=${health.status}`);
   return health;
 }
+
+async function canonicalHealth(env){
+  try{
+    const h=await easyOrdersRecoveryStatus(env);
+    return {ok:true,status:h.status||'unknown',connections:Number(h.connections||0),healthyConnections:Number(h.healthyConnections||0),catchingUpConnections:Number(h.catchingUpConnections||0),waitingConnections:Number(h.waitingConnections||0),errorConnections:Number(h.errorConnections||0),estimatedRemaining:Number(h.estimatedRemaining||0),recoveredTotal:Number(h.recoveredTotal||0)};
+  }catch(error){return {ok:false,status:'unavailable',error:text(error?.message||error).slice(0,300)};}
+}
 async function healthPayload(env){
-  const state=await rawState(env),h=state.easyOrdersRecovery||{};
-  return {ok:true,service:'easyorders-production-sync',build:BUILD,status:h.status||'not_run',lastRunAt:h.lastRunAt||null,connectedClients:Number(h.connectedClients||0),checkedClients:Number(h.checkedClients||0),requests:Number(h.requests||0),requestLimit:Number(h.requestLimit||MAX_REQUESTS_PER_RUN),remainingRequests:Number(h.remainingRequests??MAX_REQUESTS_PER_RUN),recovered:Number(h.recovered||0),updated:Number(h.updated||0),rateLimited:!!h.rateLimited,budgetExhausted:!!h.budgetExhausted,errors:Number(h.errors||0)};
+  const state=await rawState(env),legacy=state.easyOrdersRecovery||{},canonical=await canonicalHealth(env);
+  return {ok:true,service:'easyorders-production-sync',build:BUILD,mode:'canonical-v38-with-legacy-fallback',status:canonical.ok?canonical.status:(legacy.status||'not_run'),scheduler:{easyOrdersRecovery:'every-5-minutes-canonical',metaNearLive:'every-15-minutes',deepSync:'every-2-hours'},canonical,legacyFallback:{status:legacy.status||'not_run',lastRunAt:legacy.lastRunAt||null,connectedClients:Number(legacy.connectedClients||0),checkedClients:Number(legacy.checkedClients||0),requests:Number(legacy.requests||0),requestLimit:Number(legacy.requestLimit||MAX_REQUESTS_PER_RUN),remainingRequests:Number(legacy.remainingRequests??MAX_REQUESTS_PER_RUN),recovered:Number(legacy.recovered||0),updated:Number(legacy.updated||0),rateLimited:!!legacy.rateLimited,budgetExhausted:!!legacy.budgetExhausted,errors:Number(legacy.errors||0)}};
+}
+
+async function delegateScheduled(event,env,ctx,cronOverride=null){
+  if(typeof app.scheduled!=='function')return null;
+  const controller=cronOverride?{cron:cronOverride,scheduledTime:event?.scheduledTime||Date.now()}:event;
+  const delegated=app.scheduled(controller,env,ctx);
+  return delegated&&typeof delegated.then==='function'?await delegated:delegated;
+}
+async function runFiveMinute(event,env,ctx){
+  let canonical=null,canonicalError=null;
+  try{canonical=await delegateScheduled(event,env,ctx);}catch(error){canonicalError=text(error?.message||error).slice(0,400);console.error('Canonical Easy Orders recovery failed; checking legacy fallback',error);}
+  const status=text(canonical?.status),connections=Number(canonical?.connections||0);
+  const needsLegacy=!canonical||connections===0||status==='waiting_for_short_id'||status==='error';
+  if(!needsLegacy){
+    console.log(`Easy Orders canonical recovery: connections=${connections} requests=${Number(canonical.requests||0)} recovered=${Number(canonical.recovered||0)} updated=${Number(canonical.updated||0)} status=${status||'healthy'}`);
+    return {ok:true,mode:'canonical',canonical};
+  }
+  const legacy=await runRecovery(env);
+  return {ok:legacy.status!=='error',mode:'canonical-with-legacy-fallback',canonical,canonicalError,legacy};
 }
 
 export default {
@@ -164,13 +190,12 @@ export default {
   },
   scheduled(event,env,ctx){
     const cron=String(event?.cron||'');
-    const tasks=[];
-    if(cron==='*/5 * * * *')tasks.push(runRecovery(env));
-    if(cron!=='*/5 * * * *'&&typeof app.scheduled==='function'){
-      try{const delegated=app.scheduled(event,env,ctx);if(delegated)tasks.push(Promise.resolve(delegated));}catch(error){tasks.push(Promise.reject(error));}
-    }
-    const task=Promise.allSettled(tasks);
-    ctx?.waitUntil?.(task);
-    return task;
+    let task;
+    if(cron==='*/5 * * * *')task=runFiveMinute(event,env,ctx);
+    else if(cron==='*/15 * * * *')task=delegateScheduled(event,env,ctx,'* * * * *');
+    else task=delegateScheduled(event,env,ctx);
+    const settled=Promise.resolve(task).catch(error=>{console.error(`Production scheduled task failed for ${cron||'(empty)'}`,error);throw error;});
+    ctx?.waitUntil?.(settled);
+    return settled;
   }
 };
