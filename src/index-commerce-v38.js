@@ -15,6 +15,8 @@ const V2_UI_SCRIPTS=[
   '<script src="/v2/modules-v107-mobile-app-update.js?v=107.0" data-kun-mobile-app-update="1"></script>',
   '<script src="/v2/modules-v109-operational-date-contact.js?v=109.1" data-kun-operational-date-contact="1"></script>'
 ].join('');
+const LIVE_TEAM_ASSET_FROM='/v2/modules-v117-team-collaboration.js?v=117.0';
+const LIVE_TEAM_ASSET_TO='/v2/modules-v117-team-collaboration.js?v=117.1';
 
 function redirectLegacyRoot(request){
   if(request.method!=='GET'&&request.method!=='HEAD')return null;
@@ -30,10 +32,11 @@ async function injectV2Ui(request,response){
   if(path!=='/v2'&&path!=='/v2/'&&path!=='/v2/index.html')return response;
   const type=response.headers.get('content-type')||'';
   if(!type.includes('text/html'))return response;
-  const html=await response.text();
-  if(html.includes('data-kun-customer-service-claim="1"'))return new Response(html,{status:response.status,statusText:response.statusText,headers:response.headers});
-  const body=html.includes('</body>')?html.replace('</body>',`${V2_UI_SCRIPTS}</body>`):html+V2_UI_SCRIPTS;
+  let html=await response.text();
+  html=html.replaceAll(LIVE_TEAM_ASSET_FROM,LIVE_TEAM_ASSET_TO);
   const headers=new Headers(response.headers);headers.delete('content-length');headers.set('Cache-Control','no-store');
+  if(html.includes('data-kun-customer-service-claim="1"'))return new Response(html,{status:response.status,statusText:response.statusText,headers});
+  const body=html.includes('</body>')?html.replace('</body>',`${V2_UI_SCRIPTS}</body>`):html+V2_UI_SCRIPTS;
   return new Response(body,{status:response.status,statusText:response.statusText,headers});
 }
 
