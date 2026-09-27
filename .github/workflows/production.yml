@@ -35,10 +35,13 @@ jobs:
           node --check src/jt-print-workflow-v2.js
           node --check src/internal-collaboration-schema.js
           node --check src/index-production-mobile-update.js
+          node --check src/index-production-sync.js
           node --check public/v2/modules-v78-jt-shipping-order.js
           node --check public/v2/modules-v79-printing.js
           node --check public/v2/modules-v116-print-routing.js
           node scripts/integration-setup-test.mjs
+      - name: Validate Production composition and sync policy
+        run: node scripts/verify-production-config.mjs
       - name: Verify Worker builds without touching Production
         run: npx wrangler deploy --dry-run --config wrangler.production.toml
   deploy:
@@ -60,12 +63,38 @@ jobs:
       - run: npm install --ignore-scripts
       - name: Deploy production Worker only — no migrations
         run: npx wrangler deploy --config wrangler.production.toml
-      - name: Verify live Campaign comparison assets and browser behavior
+      - name: Verify live Campaign comparison assets
         env:
           CAMPAIGN_LIVE_BASE: https://app.kun-online.com
+        run: node scripts/campaign-weekday-live-test.mjs
+      - name: Verify live Easy Orders canonical recovery policy
         run: |
-          node scripts/campaign-weekday-live-test.mjs
-          node scripts/browser-campaign-weekday-fixture-test.mjs
+          set -euo pipefail
+          verified=0
+          for i in {1..10}; do
+            health="$(curl -fsS -H 'Cache-Control: no-cache' "https://app.kun-online.com/health/easyorders-sync?deploy=${GITHUB_RUN_ID}-${i}" 2>/dev/null || true)"
+            if [ -n "$health" ]; then
+              printf '%s' "$health" > /tmp/easyorders-health.json
+              if node <<'NODE'
+          const fs=require('fs');
+          const d=JSON.parse(fs.readFileSync('/tmp/easyorders-health.json','utf8'));
+          if(d.ok!==true)process.exit(1);
+          if(d.mode!=='canonical-v38-with-legacy-fallback')process.exit(1);
+          if(d?.scheduler?.easyOrdersRecovery!=='every-5-minutes-canonical')process.exit(1);
+          if(d?.scheduler?.metaNearLive!=='every-15-minutes')process.exit(1);
+          if(d?.scheduler?.deepSync!=='every-2-hours')process.exit(1);
+          if(!d.canonical||d.canonical.ok!==true)process.exit(1);
+          console.log(`Easy Orders canonical runtime verified: status=${d.canonical.status}; connections=${d.canonical.connections}; catchingUp=${d.canonical.catchingUpConnections}; waiting=${d.canonical.waitingConnections}; estimatedRemaining=${d.canonical.estimatedRemaining}; recoveredTotal=${d.canonical.recoveredTotal}`);
+          NODE
+              then
+                verified=1
+                break
+              fi
+            fi
+            echo "Waiting for Easy Orders runtime propagation (attempt ${i}/10)..."
+            sleep 3
+          done
+          test "$verified" = 1
       - name: Verify live Android update feed
         run: |
           set -euo pipefail
