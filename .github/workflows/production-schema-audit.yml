@@ -1,0 +1,70 @@
+name: Production schema compatibility audit
+
+on:
+  workflow_run:
+    workflows: ["Production deploy (no database migrations)"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      missing: ${{ steps.audit.outputs.missing }}
+      count: ${{ steps.audit.outputs.count }}
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: npm install --ignore-scripts
+      - id: audit
+        name: Read-only D1 schema probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          SQL="SELECT 'table:'||name item FROM sqlite_master WHERE type='table' AND name IN ('orders','stores','user_store_access','order_duplicate_links','transactions','order_billing','products','campaign_daily_metrics','ai_insight_snapshots','store_connections','order_items','order_item_stock_allocations','order_stock_allocations','collab_conversations','collab_members','collab_messages','collab_message_mentions','collab_reads','collab_tasks','collab_order_assignments') UNION ALL SELECT 'orders:'||name FROM pragma_table_info('orders') UNION ALL SELECT 'stores:'||name FROM pragma_table_info('stores') UNION ALL SELECT 'products:'||name FROM pragma_table_info('products');"
+          npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "$SQL" --json > /tmp/schema.json
+          node <<'NODE'
+          const fs=require('fs');
+          const raw=JSON.parse(fs.readFileSync('/tmp/schema.json','utf8'));
+          const rows=(Array.isArray(raw)?raw:[]).flatMap(x=>x?.results||[]);
+          const present=new Set(rows.map(r=>String(r.item||'')));
+          const tables=['orders','stores','user_store_access','order_duplicate_links','transactions','order_billing','products','campaign_daily_metrics','ai_insight_snapshots','store_connections','order_items','order_item_stock_allocations','order_stock_allocations','collab_conversations','collab_members','collab_messages','collab_message_mentions','collab_reads','collab_tasks','collab_order_assignments'];
+          const orderCols=['id','client_id','store_id','ref','date','created_at','state','total','product_cost','shipping_cost','other_cost','gov','source','customer_id','product_id','variant_id','qty','awb','checkpoint','signed_at','collected_at','collected_amount','history','restocked'];
+          const storeCols=['id','client_id','name','code','is_default','status','currency'];
+          const productCols=['id','client_id','store_id','cost','price','active'];
+          const expected=[...tables.map(x=>'table:'+x),...orderCols.map(x=>'orders:'+x),...storeCols.map(x=>'stores:'+x),...productCols.map(x=>'products:'+x)];
+          const missing=expected.filter(x=>!present.has(x));
+          fs.appendFileSync(process.env.GITHUB_OUTPUT,`missing=${JSON.stringify(missing)}\ncount=${missing.length}\n`);
+          console.log(`Production schema audit: ${missing.length} missing expected objects/columns.`);
+          NODE
+
+  report:
+    needs: probe
+    if: ${{ needs.probe.outputs.count != '0' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        item: ${{ fromJSON(needs.probe.outputs.missing) }}
+    name: missing-${{ matrix.item }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Missing Production schema dependency: ${{ matrix.item }}"
+
+  healthy:
+    needs: probe
+    if: ${{ needs.probe.outputs.count == '0' }}
+    name: schema-compatible
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Production schema contains all checked dependencies."
