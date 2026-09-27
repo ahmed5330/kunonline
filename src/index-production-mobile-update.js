@@ -36,6 +36,9 @@ async function websiteWithDirectAndroidDownload(request,env){
   if(!html.includes('/v2/modules-v67-campaign-comparison-ux.js')){
     html=html.replace('</body>','<script src="/v2/modules-v67-campaign-comparison-ux.js?v=67.1" data-kun-campaign-ux="1"></script></body>');
   }
+  if(!html.includes('/v2/modules-v119-campaign-weekday-fix.js')){
+    html=html.replace('</body>','<script src="/v2/modules-v119-campaign-weekday-fix.js?v=119.0" data-kun-campaign-weekday="1"></script></body>');
+  }
   if(!html.includes('/v2/modules-v116-print-routing.js')){
     html=html.replace('</body>','<script src="/v2/modules-v116-print-routing.js?v=116.0" data-kun-print-routing="1"></script></body>');
   }
