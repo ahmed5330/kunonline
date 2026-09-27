@@ -12,7 +12,7 @@ jobs:
   verify-core-routes:
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 7
     steps:
       - name: Verify v2 shell and critical APIs resolve to the modern backend
         shell: bash
@@ -23,7 +23,7 @@ jobs:
           grep -Fq '/v2/client-context-v24-fast.js' <<< "$page"
           grep -Fq '/v2/modules-v33-dashboard.js' <<< "$page"
           grep -Fq '/v2/modules-v47-post-shipping.js' <<< "$page"
-          grep -Fq '/v2/modules-v117-team-collaboration.js' <<< "$page"
+          grep -Fq '/v2/modules-v117-team-collaboration.js?v=117.1' <<< "$page"
           echo 'v2 shell verified.'
 
           check_guarded_route() {
@@ -52,13 +52,42 @@ jobs:
             echo "Modern protected route verified: ${path} -> HTTP ${code}"
           }
 
+          # Context and account shell
+          check_guarded_route '/api/state'
+          check_guarded_route '/api/my-client-context'
+          check_guarded_route '/api/my-store-context?clientId=probe'
+          check_guarded_route '/api/stores?clientId=probe'
+          check_guarded_route '/api/team-members?clientId=probe'
+
+          # Commerce operations
           check_guarded_route '/api/dashboard'
+          check_guarded_route '/api/orders?clientId=probe'
           check_guarded_route '/api/customer-service'
           check_guarded_route '/api/post-shipping'
           check_guarded_route '/api/printing?clientId=probe'
-          check_guarded_route '/api/my-client-context'
-          check_guarded_route '/api/my-store-context?clientId=probe'
+          check_guarded_route '/api/customers?clientId=probe'
+          check_guarded_route '/api/products?clientId=probe'
           check_guarded_route '/api/catalog/products?clientId=probe'
+          check_guarded_route '/api/variants?clientId=probe'
+          check_guarded_route '/api/suppliers?clientId=probe'
+          check_guarded_route '/api/purchase-orders?clientId=probe'
+
+          # Finance, analytics and automation
+          check_guarded_route '/api/finance?clientId=probe'
+          check_guarded_route '/api/transactions?clientId=probe'
+          check_guarded_route '/api/cod-reconciliation?clientId=probe'
+          check_guarded_route '/api/profit-intelligence?clientId=probe'
+          check_guarded_route '/api/ai/insights?clientId=probe'
+          check_guarded_route '/api/workflows?clientId=probe'
+          check_guarded_route '/api/approvals?clientId=probe'
+          check_guarded_route '/api/execution-jobs?clientId=probe'
+          check_guarded_route '/api/audit-log?clientId=probe'
+          check_guarded_route '/api/notifications?clientId=probe'
+
+          # Integrations and collaboration
+          check_guarded_route '/api/store-connections?clientId=probe'
+          check_guarded_route '/api/integrations/readiness?clientId=probe'
+          check_guarded_route '/api/integrations/health?clientId=probe'
           check_guarded_route '/api/collaboration/bootstrap?clientId=probe&storeId=probe'
           check_guarded_route '/api/integrations/meta-ads/campaign-hub'
           check_guarded_route '/api/integrations/meta-ads/daily-comparison'
