@@ -1,19 +1,21 @@
 import app from './index-commerce-v38.js';
 import {easyOrdersRecoveryStatus} from './easyorders-order-reconciliation.js';
 
-const BUILD='production-sync-v2-2026-09-28-canonical-recovery';
+const BUILD='production-sync-v3-2026-09-28-preview-parity-backfill';
 const SHORT_ORDER_BASE='https://api.easy-orders.net/api/v1/external-apps/orders/short/';
 const ORDER_BY_ID_BASE='https://api.easy-orders.net/api/v1/external-apps/orders/';
 const MAX_REQUESTS_PER_RUN=30;
 const MAX_REQUESTS_PER_CLIENT=10;
-const IMMEDIATE_WINDOW=10;
-const FAR_WINDOW=20;
+const CATCHUP_REQUESTS_PER_CLIENT=30;
+const LEGACY_BACKFILL_LOOKBACK=80;
+const CURRENT_RESERVE_DURING_BACKFILL=5;
+const IMMEDIATE_WINDOW=3;
+const FAR_WINDOW=3;
 const MAX_FAR_OFFSET=210;
 
 const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Kun-Sync-Build':BUILD}});
 const text=v=>String(v??'').trim();
 const positiveInt=v=>{const n=Math.floor(Number(v));return Number.isFinite(n)&&n>0?n:0;};
-const toB64=bytes=>btoa(String.fromCharCode(...bytes));
 const fromB64=str=>Uint8Array.from(atob(str),c=>c.charCodeAt(0));
 
 async function encKeyFrom(env){
@@ -48,9 +50,11 @@ async function fetchById(apiKey,id){return easyGet(`${ORDER_BY_ID_BASE}${encodeU
 async function fetchByShort(apiKey,id){return easyGet(`${SHORT_ORDER_BASE}${encodeURIComponent(String(id))}`,apiKey);}
 
 /*
- * Legacy fallback only. The normal Production five-minute path now delegates to
- * the same canonical reconciliation used by v38/Preview. This code remains for
- * old accounts whose Easy Orders connection metadata has not yet been upgraded.
+ * Compatibility fallback for legacy Production accounts that still keep Easy
+ * Orders credentials in state.clients instead of store_connections. It now uses
+ * the same 80-short-id historical recovery window as the canonical v38 path,
+ * then keeps a progressive forward cursor so gaps larger than ten ids cannot
+ * permanently stall Production again.
  */
 async function latestEasyOrdersRows(env,clientId){
   const {results=[]}=await env.DB.prepare("SELECT id,date,created_at FROM orders WHERE client_id=? AND source='المتجر (إيزي أوردرز)' ORDER BY created_at DESC LIMIT 5").bind(clientId).all();
@@ -66,23 +70,11 @@ async function ingestViaExistingWebhook(env,order){
 }
 async function existingOrder(env,id){return env.DB.prepare('SELECT id FROM orders WHERE id=? LIMIT 1').bind(text(id)).first();}
 
-function nextFarOffset(previous,found){
-  if(found)return IMMEDIATE_WINDOW;
-  const current=Math.max(IMMEDIATE_WINDOW,positiveInt(previous)||IMMEDIATE_WINDOW);
-  return current>=MAX_FAR_OFFSET?IMMEDIATE_WINDOW:current+FAR_WINDOW;
-}
-function scanIds(base,farOffset){
-  const ids=[];
-  for(let i=1;i<=IMMEDIATE_WINDOW;i++)ids.push(base+i);
-  const start=Math.max(IMMEDIATE_WINDOW,positiveInt(farOffset)||IMMEDIATE_WINDOW)+1;
-  for(let i=0;i<FAR_WINDOW;i++)ids.push(base+start+i);
-  return [...new Set(ids)].slice(0,30);
-}
-
-async function reconcileClient(env,client,previousOffset,previousBase,requestBudget=MAX_REQUESTS_PER_CLIENT){
-  const budget=Math.min(MAX_REQUESTS_PER_CLIENT,positiveInt(requestBudget));
-  const cachedBase=positiveInt(previousBase);
-  const result={status:'healthy',requests:0,recovered:0,updated:0,baseShortId:cachedBase,highestFoundShortId:0,nextBaseShortId:cachedBase,nextFarOffset:previousOffset||IMMEDIATE_WINDOW,seedSource:cachedBase?'cache':'orders',error:null};
+async function reconcileClient(env,client,progress={},requestBudget=MAX_REQUESTS_PER_CLIENT){
+  const previousBackfillComplete=progress.backfillComplete===true;
+  const budget=Math.min(previousBackfillComplete?MAX_REQUESTS_PER_CLIENT:CATCHUP_REQUESTS_PER_CLIENT,positiveInt(requestBudget));
+  const cachedBase=positiveInt(progress.previousBase);
+  const result={status:'healthy',requests:0,recovered:0,updated:0,baseShortId:cachedBase,highestFoundShortId:0,nextBaseShortId:cachedBase,forwardCursor:positiveInt(progress.forwardCursor),backfillCursor:positiveInt(progress.backfillCursor),backfillFloor:positiveInt(progress.backfillFloor),backfillComplete:previousBackfillComplete,backfillRemaining:0,seedSource:cachedBase?'cache':'orders',error:null};
   if(!budget){result.status='budget_exhausted';return result;}
   try{
     const apiKey=text(await decryptSecret(client.easyOrdersToken,env));
@@ -102,29 +94,66 @@ async function reconcileClient(env,client,previousOffset,previousBase,requestBud
         if(shortId){base=shortId;break;}
       }
     }
-    if(!base){result.status='waiting_for_seed';result.nextFarOffset=IMMEDIATE_WINDOW;return result;}
+    if(!base){result.status='waiting_for_seed';return result;}
 
-    result.baseShortId=base;
-    result.nextBaseShortId=base;
-    let foundAny=false;
-    for(const shortId of scanIds(base,previousOffset)){
-      if(result.requests>=budget)break;
-      const fetched=await fetchByShort(apiKey,shortId);result.requests++;
-      if(fetched.kind==='rate_limited'){result.status='rate_limited';break;}
-      if(fetched.kind!=='found')continue;
-      const order=fetched.data||{};
-      if(text(order.store_id||order.storeId)!==text(client.storeId))continue;
-      const before=await existingOrder(env,order.id);
-      const ingest=await ingestViaExistingWebhook(env,order);
-      if(ingest?.id||ingest?.event){if(before)result.updated++;else result.recovered++;}
-      const actual=positiveInt(order.short_id||order.shortId)||shortId;
+    result.baseShortId=base;result.nextBaseShortId=base;
+    if(!result.backfillFloor)result.backfillFloor=Math.max(1,base-LEGACY_BACKFILL_LOOKBACK);
+    if(!result.backfillComplete&&!result.backfillCursor)result.backfillCursor=Math.max(result.backfillFloor,base-1);
+
+    const ingestIfOurs=async(fetched,requestedShortId)=>{
+      if(fetched.kind!=='found')return {providerFound:false,ours:false,actual:requestedShortId};
+      const order=fetched.data||{},actual=positiveInt(order.short_id||order.shortId)||requestedShortId;
       result.highestFoundShortId=Math.max(result.highestFoundShortId,actual);
-      result.nextBaseShortId=Math.max(result.nextBaseShortId,actual);
-      foundAny=true;
+      const ours=text(order.store_id||order.storeId)===text(client.storeId);
+      if(ours){
+        const before=await existingOrder(env,order.id),ingest=await ingestViaExistingWebhook(env,order);
+        if(ingest?.id||ingest?.event){if(before)result.updated++;else result.recovered++;}
+      }
+      return {providerFound:true,ours,actual};
+    };
+
+    if(!result.backfillComplete){
+      const reserve=Math.min(CURRENT_RESERVE_DURING_BACKFILL,budget),backfillLimit=Math.max(0,budget-reserve);
+      let used=0;
+      while(result.backfillCursor>=result.backfillFloor&&result.requests<budget&&used<backfillLimit){
+        const shortId=result.backfillCursor,fetched=await fetchByShort(apiKey,shortId);result.requests++;used++;result.backfillCursor=shortId-1;
+        if(fetched.kind==='rate_limited'){result.status='rate_limited';break;}
+        await ingestIfOurs(fetched,shortId);
+      }
+      if(result.backfillCursor<result.backfillFloor)result.backfillComplete=true;
     }
-    result.nextFarOffset=nextFarOffset(previousOffset,foundAny);
+    result.backfillRemaining=result.backfillComplete?0:Math.max(0,result.backfillCursor-result.backfillFloor+1);
+    if(result.status==='rate_limited'){return result;}
+
+    let currentBase=result.nextBaseShortId||base,foundCurrent=false;
+    for(let delta=1;delta<=IMMEDIATE_WINDOW&&result.requests<budget;delta++){
+      const shortId=currentBase+delta,fetched=await fetchByShort(apiKey,shortId);result.requests++;
+      if(fetched.kind==='rate_limited'){result.status='rate_limited';break;}
+      const seen=await ingestIfOurs(fetched,shortId);
+      if(seen.providerFound){result.nextBaseShortId=Math.max(result.nextBaseShortId,seen.actual);foundCurrent=true;}
+    }
+    if(result.status==='rate_limited')return result;
+
+    if(foundCurrent){
+      result.forwardCursor=(result.nextBaseShortId||currentBase)+IMMEDIATE_WINDOW+1;
+    }else{
+      const minFar=currentBase+IMMEDIATE_WINDOW+1,maxFar=currentBase+MAX_FAR_OFFSET;
+      let cursor=positiveInt(result.forwardCursor);if(!cursor||cursor<minFar||cursor>maxFar)cursor=minFar;
+      let farScanned=0,farFound=false;
+      while(result.requests<budget&&farScanned<FAR_WINDOW){
+        const shortId=cursor,fetched=await fetchByShort(apiKey,shortId);result.requests++;farScanned++;cursor++;
+        if(fetched.kind==='rate_limited'){result.status='rate_limited';break;}
+        const seen=await ingestIfOurs(fetched,shortId);
+        if(seen.providerFound){result.nextBaseShortId=Math.max(result.nextBaseShortId,seen.actual);farFound=true;}
+      }
+      if(farFound)cursor=(result.nextBaseShortId||currentBase)+IMMEDIATE_WINDOW+1;
+      if(cursor>maxFar)cursor=minFar;
+      result.forwardCursor=cursor;
+    }
+
+    if(result.status!=='rate_limited')result.status=result.backfillComplete?'healthy':'catching_up';
     return result;
-  }catch(error){result.status='error';result.error=String(error?.message||error).slice(0,400);result.nextFarOffset=nextFarOffset(previousOffset,false);return result;}
+  }catch(error){result.status='error';result.error=String(error?.message||error).slice(0,400);return result;}
 }
 
 async function persistHealth(env,health){
@@ -133,22 +162,25 @@ async function persistHealth(env,health){
   }catch(error){console.error('easyOrders recovery health persist failed',error);}
 }
 async function runRecovery(env){
-  const state=await rawState(env),clients=(state.clients||[]).filter(c=>text(c.storeId)&&c.easyOrdersToken),previous=state.easyOrdersRecovery?.probeOffsets||{},previousBases=state.easyOrdersRecovery?.baseShortIds||{};
-  const health={build:BUILD,lastRunAt:new Date().toISOString(),status:'healthy',connectedClients:clients.length,checkedClients:0,requests:0,requestLimit:MAX_REQUESTS_PER_RUN,remainingRequests:MAX_REQUESTS_PER_RUN,recovered:0,updated:0,rateLimited:false,errors:0,budgetExhausted:false,probeOffsets:{...previous},baseShortIds:{...previousBases},results:[]};
+  const state=await rawState(env),clients=(state.clients||[]).filter(c=>text(c.storeId)&&c.easyOrdersToken),previous=state.easyOrdersRecovery||{};
+  const backfillCursors={...(previous.backfillCursors||{})},backfillFloors={...(previous.backfillFloors||{})},backfillComplete={...(previous.backfillComplete||{})},forwardCursors={...(previous.forwardCursors||{})},baseShortIds={...(previous.baseShortIds||{})};
+  const health={build:BUILD,lastRunAt:new Date().toISOString(),status:'healthy',connectedClients:clients.length,checkedClients:0,requests:0,requestLimit:MAX_REQUESTS_PER_RUN,remainingRequests:MAX_REQUESTS_PER_RUN,recovered:0,updated:0,rateLimited:false,errors:0,budgetExhausted:false,backfillPendingClients:0,backfillCompleteClients:0,backfillRemainingApprox:0,baseShortIds,backfillCursors,backfillFloors,backfillComplete,forwardCursors,results:[]};
   let remaining=MAX_REQUESTS_PER_RUN;
-  for(const client of clients){
+  for(let i=0;i<clients.length;i++){
     if(remaining<=0){health.budgetExhausted=true;break;}
-    const r=await reconcileClient(env,client,previous?.[client.id],previousBases?.[client.id],Math.min(MAX_REQUESTS_PER_CLIENT,remaining));health.checkedClients++;health.requests+=r.requests;health.recovered+=r.recovered;health.updated+=r.updated;if(r.status==='rate_limited')health.rateLimited=true;if(r.status==='error')health.errors++;
+    const client=clients[i],id=client.id,alreadyComplete=backfillComplete[id]===true,clientsLeft=Math.max(1,clients.length-i),fairShare=Math.max(1,Math.floor(remaining/clientsLeft)),clientCap=alreadyComplete?MAX_REQUESTS_PER_CLIENT:CATCHUP_REQUESTS_PER_CLIENT;
+    const r=await reconcileClient(env,client,{previousBase:baseShortIds[id],forwardCursor:forwardCursors[id],backfillCursor:backfillCursors[id],backfillFloor:backfillFloors[id],backfillComplete:alreadyComplete},Math.min(clientCap,fairShare,remaining));
+    health.checkedClients++;health.requests+=r.requests;health.recovered+=r.recovered;health.updated+=r.updated;if(r.status==='rate_limited')health.rateLimited=true;if(r.status==='error')health.errors++;
     remaining=Math.max(0,remaining-r.requests);
-    health.probeOffsets[client.id]=r.nextFarOffset;
-    if(r.nextBaseShortId)health.baseShortIds[client.id]=r.nextBaseShortId;
-    health.results.push({clientId:client.id,status:r.status,requests:r.requests,recovered:r.recovered,updated:r.updated,baseShortId:r.baseShortId,nextBaseShortId:r.nextBaseShortId,highestFoundShortId:r.highestFoundShortId,seedSource:r.seedSource,error:r.error});
+    if(r.nextBaseShortId)baseShortIds[id]=r.nextBaseShortId;if(r.forwardCursor)forwardCursors[id]=r.forwardCursor;if(r.backfillFloor)backfillFloors[id]=r.backfillFloor;backfillCursors[id]=r.backfillCursor||0;backfillComplete[id]=r.backfillComplete===true;
+    if(r.backfillComplete)health.backfillCompleteClients++;else {health.backfillPendingClients++;health.backfillRemainingApprox+=Number(r.backfillRemaining||0);}
+    health.results.push({clientId:id,status:r.status,requests:r.requests,recovered:r.recovered,updated:r.updated,baseShortId:r.baseShortId,nextBaseShortId:r.nextBaseShortId,highestFoundShortId:r.highestFoundShortId,forwardCursor:r.forwardCursor,backfillCursor:r.backfillCursor,backfillFloor:r.backfillFloor,backfillComplete:r.backfillComplete,backfillRemaining:r.backfillRemaining,seedSource:r.seedSource,error:r.error});
   }
   if(remaining<=0&&health.checkedClients<clients.length)health.budgetExhausted=true;
   health.remainingRequests=remaining;
-  health.status=health.errors?'error':health.rateLimited?'rate_limited':clients.length?'healthy':'no_connections';
+  health.status=health.errors?'error':health.rateLimited?'rate_limited':!clients.length?'no_connections':health.backfillPendingClients?'catching_up':'healthy';
   await persistHealth(env,health);
-  console.log(`Easy Orders legacy fallback: clients=${health.connectedClients} checked=${health.checkedClients} requests=${health.requests}/${MAX_REQUESTS_PER_RUN} recovered=${health.recovered} updated=${health.updated} status=${health.status}`);
+  console.log(`Easy Orders legacy parity recovery: clients=${health.connectedClients} checked=${health.checkedClients} requests=${health.requests}/${MAX_REQUESTS_PER_RUN} recovered=${health.recovered} updated=${health.updated} backfillPending=${health.backfillPendingClients} backfillRemaining≈${health.backfillRemainingApprox} status=${health.status}`);
   return health;
 }
 
@@ -159,8 +191,8 @@ async function canonicalHealth(env){
   }catch(error){return {ok:false,status:'unavailable',error:text(error?.message||error).slice(0,300)};}
 }
 async function healthPayload(env){
-  const state=await rawState(env),legacy=state.easyOrdersRecovery||{},canonical=await canonicalHealth(env);
-  return {ok:true,service:'easyorders-production-sync',build:BUILD,mode:'canonical-v38-with-legacy-fallback',status:canonical.ok?canonical.status:(legacy.status||'not_run'),scheduler:{easyOrdersRecovery:'every-5-minutes-canonical',metaNearLive:'every-15-minutes',deepSync:'every-2-hours'},canonical,legacyFallback:{status:legacy.status||'not_run',lastRunAt:legacy.lastRunAt||null,connectedClients:Number(legacy.connectedClients||0),checkedClients:Number(legacy.checkedClients||0),requests:Number(legacy.requests||0),requestLimit:Number(legacy.requestLimit||MAX_REQUESTS_PER_RUN),remainingRequests:Number(legacy.remainingRequests??MAX_REQUESTS_PER_RUN),recovered:Number(legacy.recovered||0),updated:Number(legacy.updated||0),rateLimited:!!legacy.rateLimited,budgetExhausted:!!legacy.budgetExhausted,errors:Number(legacy.errors||0)}};
+  const state=await rawState(env),legacy=state.easyOrdersRecovery||{},canonical=await canonicalHealth(env),canonicalActive=canonical.ok&&canonical.connections>0;
+  return {ok:true,service:'easyorders-production-sync',build:BUILD,mode:'canonical-v38-with-legacy-parity-fallback',status:canonicalActive?canonical.status:(legacy.status||'not_run'),scheduler:{easyOrdersRecovery:'every-5-minutes-canonical-first',metaNearLive:'every-15-minutes',deepSync:'every-2-hours'},canonical,legacyFallback:{active:!canonicalActive,status:legacy.status||'not_run',lastRunAt:legacy.lastRunAt||null,connectedClients:Number(legacy.connectedClients||0),checkedClients:Number(legacy.checkedClients||0),requests:Number(legacy.requests||0),requestLimit:Number(legacy.requestLimit||MAX_REQUESTS_PER_RUN),remainingRequests:Number(legacy.remainingRequests??MAX_REQUESTS_PER_RUN),recovered:Number(legacy.recovered||0),updated:Number(legacy.updated||0),backfillPendingClients:Number(legacy.backfillPendingClients||0),backfillCompleteClients:Number(legacy.backfillCompleteClients||0),backfillRemainingApprox:Number(legacy.backfillRemainingApprox||0),rateLimited:!!legacy.rateLimited,budgetExhausted:!!legacy.budgetExhausted,errors:Number(legacy.errors||0)}};
 }
 
 async function delegateScheduled(event,env,ctx,cronOverride=null){
@@ -179,7 +211,7 @@ async function runFiveMinute(event,env,ctx){
     return {ok:true,mode:'canonical',canonical};
   }
   const legacy=await runRecovery(env);
-  return {ok:legacy.status!=='error',mode:'canonical-with-legacy-fallback',canonical,canonicalError,legacy};
+  return {ok:legacy.status!=='error',mode:'canonical-with-legacy-parity-fallback',canonical,canonicalError,legacy};
 }
 
 export default {

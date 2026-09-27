@@ -67,11 +67,11 @@ jobs:
         env:
           CAMPAIGN_LIVE_BASE: https://app.kun-online.com
         run: node scripts/campaign-weekday-live-test.mjs
-      - name: Verify live Easy Orders canonical recovery policy
+      - name: Verify live Easy Orders recovery and parity backfill
         run: |
           set -euo pipefail
           verified=0
-          for i in {1..10}; do
+          for i in {1..75}; do
             health="$(curl -fsS -H 'Cache-Control: no-cache' "https://app.kun-online.com/health/easyorders-sync?deploy=${GITHUB_RUN_ID}-${i}" 2>/dev/null || true)"
             if [ -n "$health" ]; then
               printf '%s' "$health" > /tmp/easyorders-health.json
@@ -79,22 +79,35 @@ jobs:
           const fs=require('fs');
           const d=JSON.parse(fs.readFileSync('/tmp/easyorders-health.json','utf8'));
           if(d.ok!==true)process.exit(1);
-          if(d.mode!=='canonical-v38-with-legacy-fallback')process.exit(1);
-          if(d?.scheduler?.easyOrdersRecovery!=='every-5-minutes-canonical')process.exit(1);
+          if(d.mode!=='canonical-v38-with-legacy-parity-fallback')process.exit(1);
+          if(d?.scheduler?.easyOrdersRecovery!=='every-5-minutes-canonical-first')process.exit(1);
           if(d?.scheduler?.metaNearLive!=='every-15-minutes')process.exit(1);
           if(d?.scheduler?.deepSync!=='every-2-hours')process.exit(1);
           if(!d.canonical||d.canonical.ok!==true)process.exit(1);
-          console.log(`Easy Orders canonical runtime verified: status=${d.canonical.status}; connections=${d.canonical.connections}; catchingUp=${d.canonical.catchingUpConnections}; waiting=${d.canonical.waitingConnections}; estimatedRemaining=${d.canonical.estimatedRemaining}; recoveredTotal=${d.canonical.recoveredTotal}`);
+          const canonicalActive=Number(d.canonical.connections||0)>0;
+          const legacy=d.legacyFallback||{};
+          if(!canonicalActive){
+            if(legacy.active!==true||Number(legacy.connectedClients||0)<1)process.exit(1);
+            // These counters are written only by the v3 parity recovery. Waiting for
+            // either one proves at least one post-release five-minute cron executed.
+            if(Number(legacy.backfillPendingClients||0)+Number(legacy.backfillCompleteClients||0)<1)process.exit(1);
+            if(['error','rate_limited','no_connections'].includes(String(legacy.status||'')))process.exit(1);
+          }
+          console.log(`Easy Orders runtime verified: canonicalConnections=${d.canonical.connections}; canonicalStatus=${d.canonical.status}; legacyActive=${legacy.active}; legacyStatus=${legacy.status}; legacyClients=${legacy.connectedClients}; recoveredThisRun=${legacy.recovered}; updatedThisRun=${legacy.updated}; backfillPending=${legacy.backfillPendingClients}; backfillComplete=${legacy.backfillCompleteClients}; backfillRemaining≈${legacy.backfillRemainingApprox}`);
           NODE
               then
                 verified=1
                 break
               fi
             fi
-            echo "Waiting for Easy Orders runtime propagation (attempt ${i}/10)..."
-            sleep 3
+            if [ $((i % 15)) -eq 0 ]; then echo "Waiting for the first v3 five-minute recovery cycle (${i}/75)..."; fi
+            sleep 4
           done
-          test "$verified" = 1
+          if [ "$verified" != 1 ]; then
+            echo 'Easy Orders parity recovery did not become healthy within the verification window.'
+            cat /tmp/easyorders-health.json 2>/dev/null || true
+            exit 1
+          fi
       - name: Verify live Android update feed
         run: |
           set -euo pipefail
@@ -136,9 +149,7 @@ jobs:
           if (!Array.isArray(data.provinces) || data.provinces.length !== 27) throw new Error('Expected 27 J&T provinces');
           if (Number(data.rows) !== 6474) throw new Error('Unexpected J&T source row count');
           if (Number(data.selectableAreas) !== 6473) throw new Error('Unexpected J&T selectable area count');
-          for (const p of data.provinces) {
-            if (!p.name || !p.code || !p.file) throw new Error('Incomplete J&T province entry');
-          }
+          for (const p of data.provinces) if (!p.name || !p.code || !p.file) throw new Error('Incomplete J&T province entry');
           console.log(`J&T manifest verified: ${data.provinces.length} provinces, ${data.selectableAreas} selectable areas`);
           NODE
           node -e "const d=require('/tmp/jnt-index.json'); for(const p of d.provinces) console.log(p.file)" | while read -r file; do
@@ -150,20 +161,11 @@ jobs:
         run: |
           set -euo pipefail
           check_guarded_route() {
-            local path="$1"
-            local body code
+            local path="$1" body code
             body="$(mktemp)"
             code="$(curl -sS -o "$body" -w '%{http_code}' "https://app.kun-online.com${path}")"
-            if [ "$code" != "401" ]; then
-              echo "Expected protected route to return 401 without a session: ${path}; got HTTP ${code}"
-              cat "$body"
-              exit 1
-            fi
-            if grep -Fq 'مسار غير معروف' "$body"; then
-              echo "Route still resolves to the legacy unknown-route handler: ${path}"
-              cat "$body"
-              exit 1
-            fi
+            if [ "$code" != "401" ]; then echo "Expected protected route to return 401 without a session: ${path}; got HTTP ${code}"; cat "$body"; exit 1; fi
+            if grep -Fq 'مسار غير معروف' "$body"; then echo "Route still resolves to the legacy unknown-route handler: ${path}"; cat "$body"; exit 1; fi
             echo "Protected route verified: ${path} -> HTTP 401"
           }
           check_guarded_route '/api/mobile/state-sync'
@@ -175,14 +177,9 @@ jobs:
           check_guarded_route '/api/orders/TEST/details?clientId=probe'
           check_guarded_route '/api/customer-service/orders/TEST/history?clientId=probe'
           check_guarded_route '/api/collaboration/bootstrap?clientId=probe&storeId=probe'
-
           caller_body="$(mktemp)"
           caller_code="$(curl -sS -X PATCH -H 'Content-Type: application/json' -d '{}' -o "$caller_body" -w '%{http_code}' 'https://app.kun-online.com/api/caller-jnt/orders/TEST')"
-          if [ "$caller_code" != "401" ]; then
-            echo "Expected protected caller J&T edit route to return 401 without a session; got HTTP ${caller_code}"
-            cat "$caller_body"
-            exit 1
-          fi
+          if [ "$caller_code" != "401" ]; then echo "Expected protected caller J&T edit route to return 401 without a session; got HTTP ${caller_code}"; cat "$caller_body"; exit 1; fi
           echo "Caller J&T edit route verified: /api/caller-jnt/orders/TEST -> HTTP 401"
       - name: Verify live Printing UI and Android download
         run: |
@@ -199,50 +196,24 @@ jobs:
               && grep -Fq '/v2/modules-v79-printing.js?v=79.8' <<< "$page" \
               && grep -Fq '/v2/modules-v116-print-routing.js?v=116.0' <<< "$page" \
               && grep -Fq 'إرسال إلى J&T وطباعة البوليصة' <<< "$printing" \
-              && grep -Fq 'تم تأكيد الأوردر ونقله تلقائيًا إلى قسم الطباعة' <<< "$routing"; then
-              ui_verified=1
-              break
-            fi
-            echo "Waiting for Printing UI propagation (attempt ${i}/10)..."
+              && grep -Fq 'تم تأكيد الأوردر ونقله تلقائيًا إلى قسم الطباعة' <<< "$routing"; then ui_verified=1; break; fi
             sleep 3
           done
           test "$ui_verified" = 1
-
-          if grep -Fq "https://github.com/ahmed5330/kunonline/releases/download/android-latest/Kun-Online-Mobile.apk" <<< "$page"; then
-            echo "Website still exposes the legacy direct GitHub APK URL."
-            exit 1
-          fi
-
+          if grep -Fq "https://github.com/ahmed5330/kunonline/releases/download/android-latest/Kun-Online-Mobile.apk" <<< "$page"; then echo "Website still exposes the legacy direct GitHub APK URL."; exit 1; fi
           expected_code="$(node -e "const d=require('/tmp/mobile-update.json'); process.stdout.write(String(d.versionCode))")"
           expected_version="$(node -e "const d=require('/tmp/mobile-update.json'); process.stdout.write(String(d.versionName))")"
           expected_sha="$(node -e "const d=require('/tmp/mobile-update.json'); process.stdout.write(String(d.sha256||''))")"
-
-          headers="$(mktemp)"
-          apk="$(mktemp --suffix=.apk)"
-          listing="$(mktemp)"
+          headers="$(mktemp)"; apk="$(mktemp --suffix=.apk)"; listing="$(mktemp)"
           curl -fsS -D "$headers" -o "$apk" "https://app.kun-online.com/api/mobile/app-update/apk?versionCode=${expected_code}&versionName=${expected_version}&deploy=${GITHUB_RUN_ID}"
           clean_headers="$(tr -d '\r' < "$headers")"
-          if ! grep -Eiq '^content-type: application/vnd\.android\.package-archive([;]|$)' <<< "$clean_headers"; then
-            echo "Unexpected APK content type"
-            printf '%s\n' "$clean_headers"
-            exit 1
-          fi
-          if ! grep -Eiq '^content-disposition: attachment' <<< "$clean_headers" || ! grep -Fiq "Kun-Online-Mobile-v${expected_version}.apk" <<< "$clean_headers"; then
-            echo "Unexpected APK content disposition"
-            printf '%s\n' "$clean_headers"
-            exit 1
-          fi
-          if ! grep -Eiq "^x-kun-online-android-version: ${expected_code}$" <<< "$clean_headers"; then
-            echo "Unexpected Android version header"
-            printf '%s\n' "$clean_headers"
-            exit 1
-          fi
+          grep -Eiq '^content-type: application/vnd\.android\.package-archive([;]|$)' <<< "$clean_headers"
+          grep -Eiq '^content-disposition: attachment' <<< "$clean_headers"
+          grep -Fiq "Kun-Online-Mobile-v${expected_version}.apk" <<< "$clean_headers"
+          grep -Eiq "^x-kun-online-android-version: ${expected_code}$" <<< "$clean_headers"
           test "$(wc -c < "$apk")" -gt 1000000
           unzip -tq "$apk"
           unzip -l "$apk" > "$listing"
           grep -Fq 'AndroidManifest.xml' "$listing"
-          if [ -n "$expected_sha" ]; then
-            actual_sha="$(sha256sum "$apk" | awk '{print $1}')"
-            test "$actual_sha" = "$expected_sha"
-          fi
+          if [ -n "$expected_sha" ]; then actual_sha="$(sha256sum "$apk" | awk '{print $1}')"; test "$actual_sha" = "$expected_sha"; fi
           echo "Printing UI and Android download verified through Kun Online: $(wc -c < "$apk") bytes"
