@@ -13,6 +13,13 @@ binding = "DB"
 database_name = "kunonline"
 database_id = "c426601d-182f-486e-a5c1-bb1bca0ecb0b"
 
+# Temporary parity source binding. The production code only reads this binding;
+# all production writes continue to use DB.
+[[d1_databases]]
+binding = "PREVIEW_DB"
+database_name = "kunonline-preview"
+database_id = "31cd5cdf-fc01-42d7-ba1e-571f3dd58495"
+
 [triggers]
 crons = ["*/5 * * * *", "*/15 * * * *", "0 */2 * * *"]
 
