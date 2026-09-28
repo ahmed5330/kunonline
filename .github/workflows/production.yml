@@ -40,6 +40,8 @@ jobs:
           node --check public/v2/modules-v79-printing.js
           node --check public/v2/modules-v116-print-routing.js
           node scripts/integration-setup-test.mjs
+      - name: Dashboard Easy Orders Preview regression
+        run: node scripts/dashboard-sync-guard-test.mjs
       - name: Validate Production composition and sync policy
         run: node scripts/verify-production-config.mjs
       - name: Verify Worker builds without touching Production
@@ -67,47 +69,8 @@ jobs:
         env:
           CAMPAIGN_LIVE_BASE: https://app.kun-online.com
         run: node scripts/campaign-weekday-live-test.mjs
-      - name: Verify live Easy Orders recovery and parity backfill
-        run: |
-          set -euo pipefail
-          verified=0
-          for i in {1..75}; do
-            health="$(curl -fsS -H 'Cache-Control: no-cache' "https://app.kun-online.com/health/easyorders-sync?deploy=${GITHUB_RUN_ID}-${i}" 2>/dev/null || true)"
-            if [ -n "$health" ]; then
-              printf '%s' "$health" > /tmp/easyorders-health.json
-              if node <<'NODE'
-          const fs=require('fs');
-          const d=JSON.parse(fs.readFileSync('/tmp/easyorders-health.json','utf8'));
-          if(d.ok!==true)process.exit(1);
-          if(d.mode!=='canonical-v38-with-legacy-parity-fallback')process.exit(1);
-          if(d?.scheduler?.easyOrdersRecovery!=='every-5-minutes-canonical-first')process.exit(1);
-          if(d?.scheduler?.metaNearLive!=='every-15-minutes')process.exit(1);
-          if(d?.scheduler?.deepSync!=='every-2-hours')process.exit(1);
-          if(!d.canonical||d.canonical.ok!==true)process.exit(1);
-          const canonicalActive=Number(d.canonical.connections||0)>0;
-          const legacy=d.legacyFallback||{};
-          if(!canonicalActive){
-            if(legacy.active!==true||Number(legacy.connectedClients||0)<1)process.exit(1);
-            // These counters are written only by the v3 parity recovery. Waiting for
-            // either one proves at least one post-release five-minute cron executed.
-            if(Number(legacy.backfillPendingClients||0)+Number(legacy.backfillCompleteClients||0)<1)process.exit(1);
-            if(['error','rate_limited','no_connections'].includes(String(legacy.status||'')))process.exit(1);
-          }
-          console.log(`Easy Orders runtime verified: canonicalConnections=${d.canonical.connections}; canonicalStatus=${d.canonical.status}; legacyActive=${legacy.active}; legacyStatus=${legacy.status}; legacyClients=${legacy.connectedClients}; recoveredThisRun=${legacy.recovered}; updatedThisRun=${legacy.updated}; backfillPending=${legacy.backfillPendingClients}; backfillComplete=${legacy.backfillCompleteClients}; backfillRemaining≈${legacy.backfillRemainingApprox}`);
-          NODE
-              then
-                verified=1
-                break
-              fi
-            fi
-            if [ $((i % 15)) -eq 0 ]; then echo "Waiting for the first v3 five-minute recovery cycle (${i}/75)..."; fi
-            sleep 4
-          done
-          if [ "$verified" != 1 ]; then
-            echo 'Easy Orders parity recovery did not become healthy within the verification window.'
-            cat /tmp/easyorders-health.json 2>/dev/null || true
-            exit 1
-          fi
+      - name: Verify live dashboard Easy Orders source and warning
+        run: node scripts/dashboard-sync-guard-live-test.mjs
       - name: Verify live Android update feed
         run: |
           set -euo pipefail

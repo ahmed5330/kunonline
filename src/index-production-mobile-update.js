@@ -9,6 +9,7 @@ import {handleInternalCollaboration} from './internal-collaboration.js';
 import {handleCollaborationOrderSearch} from './internal-collaboration-order-search.js';
 import {ensureInternalCollaborationSchema} from './internal-collaboration-schema.js';
 import {handleProductionPreviewParity} from './production-preview-parity.js';
+import {handleProductionEasyOrdersHealth} from './production-easyorders-health.js';
 
 const LEGACY_APK_URL='https://github.com/ahmed5330/kunonline/releases/download/android-latest/Kun-Online-Mobile.apk';
 const DIRECT_APK_PATH='/api/mobile/app-update/apk';
@@ -58,6 +59,7 @@ async function websiteWithDirectAndroidDownload(request,env){
 
   let html=await asset.text();
   html=html
+    .replace(/\/v2\/modules-v121-dashboard-sync-guard\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v121-dashboard-sync-guard.js?v=121.1')
     .replaceAll(LEGACY_APK_URL,DIRECT_APK_PATH)
     .replaceAll('/v2/modules-v51-permission-navigation.js?v=51.10','/v2/modules-v51-permission-navigation.js?v=51.11')
     .replace(/\/v2\/modules-v57-section-reload\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v57-section-reload.js?v=57.3')
@@ -77,7 +79,7 @@ async function websiteWithDirectAndroidDownload(request,env){
     html=html.replace('</body>','<script src="/v2/modules-v118-collaboration-order-picker.js?v=118.1" data-kun-collaboration-order-picker="1"></script></body>');
   }
   if(!html.includes('/v2/modules-v121-dashboard-sync-guard.js')){
-    html=html.replace('</body>','<script src="/v2/modules-v121-dashboard-sync-guard.js?v=121.0" data-kun-dashboard-sync-guard="1"></script></body>');
+    html=html.replace('</body>','<script src="/v2/modules-v121-dashboard-sync-guard.js?v=121.1" data-kun-dashboard-sync-guard="1"></script></body>');
   }
   const headers=new Headers(asset.headers);
   headers.set('Content-Type','text/html; charset=utf-8');
@@ -105,6 +107,8 @@ function collaborationSchemaFailure(){
 
 export default {
   async fetch(request,env,ctx){
+    const easyOrdersHealth=await handleProductionEasyOrdersHealth(request,env);
+    if(easyOrdersHealth)return easyOrdersHealth;
     const parity=await handleProductionPreviewParity(request,env);
     if(parity)return parity;
 
