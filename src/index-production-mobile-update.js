@@ -8,6 +8,7 @@ import {handleProductionPrintingQueue} from './production-printing-queue.js';
 import {handleInternalCollaboration} from './internal-collaboration.js';
 import {handleCollaborationOrderSearch} from './internal-collaboration-order-search.js';
 import {ensureInternalCollaborationSchema} from './internal-collaboration-schema.js';
+import {handleProductionPreviewParity} from './production-preview-parity.js';
 
 const LEGACY_APK_URL='https://github.com/ahmed5330/kunonline/releases/download/android-latest/Kun-Online-Mobile.apk';
 const DIRECT_APK_PATH='/api/mobile/app-update/apk';
@@ -77,6 +78,9 @@ function collaborationSchemaFailure(){
 
 export default {
   async fetch(request,env,ctx){
+    const parity=await handleProductionPreviewParity(request,env);
+    if(parity)return parity;
+
     const mobileUpdate=await handleMobileAppUpdate(request);
     if(mobileUpdate)return mobileUpdate;
 
