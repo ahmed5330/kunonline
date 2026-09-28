@@ -43,6 +43,9 @@ async function websiteWithDirectAndroidDownload(request,env){
   if(!html.includes('/v2/modules-v118-collaboration-order-picker.js')){
     html=html.replace('</body>','<script src="/v2/modules-v118-collaboration-order-picker.js?v=118.1" data-kun-collaboration-order-picker="1"></script></body>');
   }
+  if(!html.includes('/v2/modules-v121-dashboard-sync-guard.js')){
+    html=html.replace('</body>','<script src="/v2/modules-v121-dashboard-sync-guard.js?v=121.0" data-kun-dashboard-sync-guard="1"></script></body>');
+  }
   const headers=new Headers(asset.headers);
   headers.set('Content-Type','text/html; charset=utf-8');
   headers.set('Cache-Control','no-cache, no-store, must-revalidate');
