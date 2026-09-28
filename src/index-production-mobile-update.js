@@ -135,7 +135,7 @@ export default {
     const collaborationOrderSearch=await handleCollaborationOrderSearch({request,env:dataEnv,ctx,delegate});
     if(collaborationOrderSearch)return collaborationOrderSearch;
 
-    if(new URL(request.url).pathname.startsWith('/api/collaboration')){
+    if(new URL(request.url).pathname.startsWith('/api/collaboration')&&!env.PREVIEW_DB){
       try{await ensureInternalCollaborationSchema(dataEnv);}catch{return collaborationSchemaFailure();}
     }
     const collaboration=await handleInternalCollaboration({request,env:dataEnv,ctx,delegate});
