@@ -1,0 +1,17 @@
+name: Live Production Preview parity probe 2026-09-28
+on:
+  push:
+    branches: [fix/production-preview-parity-runtime-20260928]
+    paths: [.github/workflows/parity-live-read-20260928.yml]
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Read parity endpoint
+        run: |
+          set -euo pipefail
+          curl -fsS -H 'Cache-Control: no-cache' 'https://app.kun-online.com/health/preview-parity?probe=${{ github.run_id }}' | tee /tmp/parity.json
+          node -e "const d=require('/tmp/parity.json'); if(d.ok!==true) process.exit(1); console.log('PARITY_OK')"
