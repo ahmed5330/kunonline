@@ -17,13 +17,45 @@ async function injectMobileUpdateUi(request,response){
   return new Response(body,{status:response.status,statusText:response.statusText,headers});
 }
 
+async function augmentEasyOrdersHealth(request,response,env){
+  const url=new URL(request.url);
+  if(request.method!=='GET'||url.pathname!=='/health/easyorders-sync'||!response)return response;
+  const data=await response.clone().json().catch(()=>null);
+  if(!data||typeof data!=='object')return response;
+  let state={};
+  try{
+    const row=await env.DB.prepare('SELECT json FROM state WHERE id=1').first();
+    state=JSON.parse(row?.json||'{}');
+  }catch(error){
+    state={__diagnosticError:String(error?.message||error).slice(0,200)};
+  }
+  const clients=Array.isArray(state.clients)?state.clients:[];
+  const configured=clients.filter(c=>String(c?.storeId||'').trim()&&c?.easyOrdersToken);
+  const encrypted=configured.filter(c=>String(c.easyOrdersToken||'').startsWith('enc$')).length;
+  const plain=configured.length-encrypted;
+  const results=Array.isArray(state?.easyOrdersRecovery?.results)?state.easyOrdersRecovery.results:[];
+  data.runtimeDiagnostics={
+    tokenEncKeyConfigured:Boolean(env.TOKEN_ENC_KEY),
+    integrationEncryptionKeyConfigured:Boolean(env.INTEGRATION_ENCRYPTION_KEY),
+    sessionSecretConfigured:Boolean(env.SESSION_SECRET),
+    easyOrdersWebhookSecretConfigured:Boolean(env.EASYORDERS_WEBHOOK_SECRET),
+    legacyCredentials:{configuredClients:configured.length,encryptedClients:encrypted,plainClients:plain},
+    legacyErrors:results.filter(r=>r?.status==='error'||r?.error).map(r=>({clientId:String(r?.clientId||''),status:String(r?.status||''),error:String(r?.error||'').slice(0,240)})),
+    stateReadError:state.__diagnosticError||null
+  };
+  const headers=new Headers(response.headers);headers.set('Content-Type','application/json; charset=utf-8');headers.set('Cache-Control','no-store');headers.delete('Content-Length');
+  return new Response(JSON.stringify(data),{status:response.status,statusText:response.statusText,headers});
+}
+
 export default {
   async fetch(request,env,ctx){
     const mobileUpdate=await handleMobileAppUpdate(request);
     if(mobileUpdate)return mobileUpdate;
     const handled=await handleJtHistoryReconcile({request,env,ctx,delegate:app});
     if(handled)return handled;
-    return injectMobileUpdateUi(request,await app.fetch(request,env,ctx));
+    const response=await app.fetch(request,env,ctx);
+    const diagnosed=await augmentEasyOrdersHealth(request,response,env);
+    return injectMobileUpdateUi(request,diagnosed);
   },
   scheduled(event,env,ctx){return app.scheduled?.(event,env,ctx);}
 };
