@@ -13,21 +13,19 @@ const LEGACY_APK_URL='https://github.com/ahmed5330/kunonline/releases/download/a
 const DIRECT_APK_PATH='/api/mobile/app-update/apk';
 const PRINTING_STATES=new Set(['confirmed','preparing']);
 const HTML_PATHS=new Set(['/','/index.html','/v2','/v2/','/v2/index.html']);
-const CANONICAL_V2_ASSET='/v2/index.html';
-
-function canonicalWebsiteRequest(request,url){
-  if(url.pathname!=='/'&&url.pathname!=='/index.html')return request;
-  const assetUrl=new URL(request.url);
-  assetUrl.pathname=CANONICAL_V2_ASSET;
-  return new Request(assetUrl.toString(),request);
-}
 
 async function websiteWithDirectAndroidDownload(request,env){
   const url=new URL(request.url);
   if(request.method!=='GET'||!HTML_PATHS.has(url.pathname))return null;
   if(!env.ASSETS?.fetch)return null;
 
-  const asset=await env.ASSETS.fetch(canonicalWebsiteRequest(request,url));
+  let assetRequest=request;
+  if(url.pathname==='/'||url.pathname==='/index.html'){
+    const assetUrl=new URL(request.url);
+    assetUrl.pathname='/v2/index.html';
+    assetRequest=new Request(assetUrl.toString(),request);
+  }
+  const asset=await env.ASSETS.fetch(assetRequest);
   const type=String(asset.headers.get('Content-Type')||'');
   if(!asset.ok||!type.includes('text/html'))return asset;
 
