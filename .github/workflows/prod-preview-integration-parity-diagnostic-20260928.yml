@@ -9,6 +9,8 @@ jobs:
   inspect:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    environment:
+      name: production
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -37,15 +39,11 @@ jobs:
               UNION ALL SELECT 'campaign_daily_metrics', COUNT(*) FROM campaign_daily_metrics
               UNION ALL SELECT 'meta_ad_entities', COUNT(*) FROM meta_ad_entities
               UNION ALL SELECT 'meta_ad_daily_metrics', COUNT(*) FROM meta_ad_daily_metrics;
-            " --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const d=JSON.parse(s); console.log(JSON.stringify(d.flatMap(x=>x.results||[]),null,2));})"
+            " --json
             echo "===== ${label}: STORE_CONNECTIONS COLUMNS ====="
-            npx wrangler d1 execute "$db" --remote --config "$cfg" --command "PRAGMA table_info('store_connections');" --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const d=JSON.parse(s); console.log(JSON.stringify((d[0]?.results||[]).map(x=>x.name),null,2));})"
+            npx wrangler d1 execute "$db" --remote --config "$cfg" --command "PRAGMA table_info('store_connections');" --json
             echo "===== ${label}: INTEGRATION_SECRETS COLUMNS ====="
-            npx wrangler d1 execute "$db" --remote --config "$cfg" --command "PRAGMA table_info('integration_secrets');" --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const d=JSON.parse(s); console.log(JSON.stringify((d[0]?.results||[]).map(x=>x.name),null,2));})"
-            echo "===== ${label}: CONNECTION METADATA (NO SECRET VALUES) ====="
-            npx wrangler d1 execute "$db" --remote --config "$cfg" --command "SELECT client_id, store_id, provider, status, COUNT(*) AS n FROM store_connections GROUP BY client_id,store_id,provider,status ORDER BY client_id,store_id,provider,status;" --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const d=JSON.parse(s); console.log(JSON.stringify(d.flatMap(x=>x.results||[]),null,2));})"
-            echo "===== ${label}: SECRET KEY NAMES ONLY ====="
-            npx wrangler d1 execute "$db" --remote --config "$cfg" --command "SELECT client_id, provider, key_name, COUNT(*) AS n FROM integration_secrets GROUP BY client_id,provider,key_name ORDER BY client_id,provider,key_name;" --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const d=JSON.parse(s); console.log(JSON.stringify(d.flatMap(x=>x.results||[]),null,2));})"
+            npx wrangler d1 execute "$db" --remote --config "$cfg" --command "PRAGMA table_info('integration_secrets');" --json
           }
           inspect_db PRODUCTION kunonline wrangler.production.toml
           inspect_db PREVIEW kunonline-preview wrangler.preview.toml
