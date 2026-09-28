@@ -1,0 +1,47 @@
+name: Integration parity read-only 2026-09-28
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/integration-parity-readonly-20260928.yml]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: npm install --ignore-scripts
+      - name: Read Production and Preview parity without secret values
+        run: |
+          set -euo pipefail
+          inspect_db(){
+            local label="$1" db="$2" cfg="$3"
+            echo "===== ${label}: COUNTS ====="
+            npx wrangler d1 execute "$db" --remote --config "$cfg" --command "
+              SELECT 'clients' AS table_name, COUNT(*) AS row_count FROM clients
+              UNION ALL SELECT 'users', COUNT(*) FROM users
+              UNION ALL SELECT 'stores', COUNT(*) FROM stores
+              UNION ALL SELECT 'orders', COUNT(*) FROM orders
+              UNION ALL SELECT 'customers', COUNT(*) FROM customers
+              UNION ALL SELECT 'products', COUNT(*) FROM products
+              UNION ALL SELECT 'store_connections', COUNT(*) FROM store_connections
+              UNION ALL SELECT 'integration_secrets', COUNT(*) FROM integration_secrets
+              UNION ALL SELECT 'campaign_daily_metrics', COUNT(*) FROM campaign_daily_metrics
+              UNION ALL SELECT 'meta_ad_entities', COUNT(*) FROM meta_ad_entities
+              UNION ALL SELECT 'meta_ad_daily_metrics', COUNT(*) FROM meta_ad_daily_metrics;
+            " --json
+            echo "===== ${label}: STORE_CONNECTIONS DEFINITION ====="
+            npx wrangler d1 execute "$db" --remote --config "$cfg" --command "SELECT sql FROM sqlite_master WHERE type='table' AND name='store_connections';" --json
+            echo "===== ${label}: INTEGRATION_SECRETS KEY NAMES ONLY ====="
+            npx wrangler d1 execute "$db" --remote --config "$cfg" --command "SELECT provider,key_name,COUNT(*) AS row_count FROM integration_secrets GROUP BY provider,key_name ORDER BY provider,key_name;" --json
+          }
+          inspect_db PRODUCTION kunonline wrangler.production.toml
+          inspect_db PREVIEW kunonline-preview wrangler.preview.toml
