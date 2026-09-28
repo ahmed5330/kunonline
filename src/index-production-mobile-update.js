@@ -12,14 +12,22 @@ import {ensureInternalCollaborationSchema} from './internal-collaboration-schema
 const LEGACY_APK_URL='https://github.com/ahmed5330/kunonline/releases/download/android-latest/Kun-Online-Mobile.apk';
 const DIRECT_APK_PATH='/api/mobile/app-update/apk';
 const PRINTING_STATES=new Set(['confirmed','preparing']);
-const HTML_PATHS=new Set(['/','/index.html','/v2/','/v2/index.html']);
+const HTML_PATHS=new Set(['/','/index.html','/v2','/v2/','/v2/index.html']);
+const CANONICAL_V2_ASSET='/v2/index.html';
+
+function canonicalWebsiteRequest(request,url){
+  if(url.pathname!=='/'&&url.pathname!=='/index.html')return request;
+  const assetUrl=new URL(request.url);
+  assetUrl.pathname=CANONICAL_V2_ASSET;
+  return new Request(assetUrl.toString(),request);
+}
 
 async function websiteWithDirectAndroidDownload(request,env){
   const url=new URL(request.url);
   if(request.method!=='GET'||!HTML_PATHS.has(url.pathname))return null;
   if(!env.ASSETS?.fetch)return null;
 
-  const asset=await env.ASSETS.fetch(request);
+  const asset=await env.ASSETS.fetch(canonicalWebsiteRequest(request,url));
   const type=String(asset.headers.get('Content-Type')||'');
   if(!asset.ok||!type.includes('text/html'))return asset;
 
@@ -49,6 +57,7 @@ async function websiteWithDirectAndroidDownload(request,env){
   const headers=new Headers(asset.headers);
   headers.set('Content-Type','text/html; charset=utf-8');
   headers.set('Cache-Control','no-cache, no-store, must-revalidate');
+  headers.set('X-Kun-Canonical-App','v2');
   headers.delete('Content-Length');
   return new Response(html,{status:asset.status,headers});
 }
