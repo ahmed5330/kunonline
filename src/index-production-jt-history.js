@@ -27,21 +27,21 @@ async function augmentEasyOrdersHealth(request,response,env){
     const row=await env.DB.prepare('SELECT json FROM state WHERE id=1').first();
     state=JSON.parse(row?.json||'{}');
   }catch(error){
-    state={__diagnosticError:String(error?.message||error).slice(0,200)};
+    state={__diagnosticError:String(error?.message||error).slice(0,160)};
   }
   const clients=Array.isArray(state.clients)?state.clients:[];
   const configured=clients.filter(c=>String(c?.storeId||'').trim()&&c?.easyOrdersToken);
-  const encrypted=configured.filter(c=>String(c.easyOrdersToken||'').startsWith('enc$')).length;
-  const plain=configured.length-encrypted;
   const results=Array.isArray(state?.easyOrdersRecovery?.results)?state.easyOrdersRecovery.results:[];
+  const failed=results.filter(r=>r?.status==='error'||r?.error);
+  const invalidApiKey=failed.filter(r=>/api-key\s+not\s+valid|invalid\s+api.?key/i.test(String(r?.error||''))).length;
+  const unreadableKey=failed.filter(r=>/missing or cannot be decrypted|cannot be decrypted/i.test(String(r?.error||''))).length;
   data.runtimeDiagnostics={
-    tokenEncKeyConfigured:Boolean(env.TOKEN_ENC_KEY),
-    integrationEncryptionKeyConfigured:Boolean(env.INTEGRATION_ENCRYPTION_KEY),
-    sessionSecretConfigured:Boolean(env.SESSION_SECRET),
-    easyOrdersWebhookSecretConfigured:Boolean(env.EASYORDERS_WEBHOOK_SECRET),
-    legacyCredentials:{configuredClients:configured.length,encryptedClients:encrypted,plainClients:plain},
-    legacyErrors:results.filter(r=>r?.status==='error'||r?.error).map(r=>({clientId:String(r?.clientId||''),status:String(r?.status||''),error:String(r?.error||'').slice(0,240)})),
-    stateReadError:state.__diagnosticError||null
+    configuredLegacyClients:configured.length,
+    failedLegacyClients:failed.length,
+    failureCode:invalidApiKey?'EASYORDERS_API_KEY_INVALID':unreadableKey?'EASYORDERS_API_KEY_UNREADABLE':failed.length?'EASYORDERS_SYNC_ERROR':null,
+    invalidApiKeyClients:invalidApiKey,
+    unreadableKeyClients:unreadableKey,
+    stateReadFailed:Boolean(state.__diagnosticError)
   };
   const headers=new Headers(response.headers);headers.set('Content-Type','application/json; charset=utf-8');headers.set('Cache-Control','no-store');headers.delete('Content-Length');
   return new Response(JSON.stringify(data),{status:response.status,statusText:response.statusText,headers});
