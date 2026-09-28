@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Read integration key compatibility
+      - name: Read target tenant inventory
         run: |
           set -euo pipefail
           curl -fsS -H 'Cache-Control: no-cache' 'https://app.kun-online.com/health/preview-parity?probe=${{ github.run_id }}' | tee /tmp/parity.json
