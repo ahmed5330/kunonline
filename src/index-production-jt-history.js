@@ -43,6 +43,12 @@ async function augmentEasyOrdersHealth(request,response,env){
     unreadableKeyClients:unreadableKey,
     stateReadFailed:Boolean(state.__diagnosticError)
   };
+  const credentialFailure=data.runtimeDiagnostics.failureCode==='EASYORDERS_API_KEY_INVALID'||data.runtimeDiagnostics.failureCode==='EASYORDERS_API_KEY_UNREADABLE';
+  if(credentialFailure&&data?.legacyFallback?.active===true&&String(data.legacyFallback.status||'')==='error'){
+    data.legacyFallback.status='needs_reconnect';
+    if(String(data.status||'')==='error')data.status='needs_reconnect';
+    data.runtimeDiagnostics.actionRequired='reconnect_easyorders';
+  }
   const headers=new Headers(response.headers);headers.set('Content-Type','application/json; charset=utf-8');headers.set('Cache-Control','no-store');headers.delete('Content-Length');
   return new Response(JSON.stringify(data),{status:response.status,statusText:response.statusText,headers});
 }
