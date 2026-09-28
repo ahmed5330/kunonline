@@ -13,12 +13,18 @@ binding = "DB"
 database_name = "kunonline"
 database_id = "c426601d-182f-486e-a5c1-bb1bca0ecb0b"
 
-# Temporary parity source binding. The production code only reads this binding;
-# all production writes continue to use DB.
+# Preview remains available as the canonical data source while Production data is
+# preserved untouched. Production-specific UI/mobile guards continue to run here.
 [[d1_databases]]
 binding = "PREVIEW_DB"
 database_name = "kunonline-preview"
 database_id = "31cd5cdf-fc01-42d7-ba1e-571f3dd58495"
+
+# Internal Worker-to-Worker binding: integration/API requests can execute inside
+# the Preview Worker so its encrypted credentials never leave that environment.
+[[services]]
+binding = "PREVIEW_APP"
+service = "kunonline-preview"
 
 [triggers]
 crons = ["*/5 * * * *", "*/15 * * * *", "0 */2 * * *"]
@@ -26,6 +32,7 @@ crons = ["*/5 * * * *", "*/15 * * * *", "0 */2 * * *"]
 [vars]
 APP_ENV = "production"
 TRACKING_PROVIDER = "track123"
+META_GRAPH_API_VERSION = "v25.0"
 
 [observability]
 enabled = true
