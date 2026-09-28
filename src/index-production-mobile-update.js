@@ -15,6 +15,32 @@ const DIRECT_APK_PATH='/api/mobile/app-update/apk';
 const PRINTING_STATES=new Set(['confirmed','preparing']);
 const HTML_PATHS=new Set(['/','/index.html','/v2','/v2/','/v2/index.html']);
 
+function previewRuntimeEnv(env){
+  if(!env?.PREVIEW_DB)return env;
+  return new Proxy(env,{get(target,key,receiver){if(key==='DB')return target.PREVIEW_DB;return Reflect.get(target,key,receiver);}});
+}
+
+async function previewFetch(request,env){
+  if(!env?.PREVIEW_APP?.fetch)return null;
+  const response=await env.PREVIEW_APP.fetch(request);
+  const headers=new Headers(response.headers);
+  headers.set('X-Kun-Data-Source','preview');
+  headers.delete('Content-Length');
+  return new Response(response.body,{status:response.status,statusText:response.statusText,headers});
+}
+
+function previewDelegate(env,dataEnv,ctx){
+  return {fetch:async request=>{
+    const response=await previewFetch(request,env);
+    return response||app.fetch(request,dataEnv,ctx);
+  }};
+}
+
+function shouldUsePreviewBackend(request){
+  const path=new URL(request.url).pathname;
+  return path.startsWith('/api/')||path.startsWith('/webhooks/')||path.startsWith('/webhook/');
+}
+
 async function websiteWithDirectAndroidDownload(request,env){
   const url=new URL(request.url);
   if(request.method!=='GET'||!HTML_PATHS.has(url.pathname))return null;
@@ -57,6 +83,7 @@ async function websiteWithDirectAndroidDownload(request,env){
   headers.set('Content-Type','text/html; charset=utf-8');
   headers.set('Cache-Control','no-cache, no-store, must-revalidate');
   headers.set('X-Kun-Canonical-App','v2');
+  headers.set('X-Kun-Data-Source','preview');
   headers.delete('Content-Length');
   return new Response(html,{status:asset.status,headers});
 }
@@ -68,7 +95,7 @@ async function routeConfirmedOrdersToPrinting(request,response){
   if(!data||!Array.isArray(data.orders))return response;
   data.orders=data.orders.filter(order=>!PRINTING_STATES.has(String(order?.state||'')));
   if(Array.isArray(data.stages))data.stages=data.stages.filter(stage=>!PRINTING_STATES.has(String(stage?.id||'')));
-  const headers=new Headers(response.headers);headers.set('Content-Type','application/json; charset=utf-8');headers.set('Cache-Control','no-store');headers.delete('Content-Length');
+  const headers=new Headers(response.headers);headers.set('Content-Type','application/json; charset=utf-8');headers.set('Cache-Control','no-store');headers.set('X-Kun-Data-Source','preview');headers.delete('Content-Length');
   return new Response(JSON.stringify(data),{status:response.status,headers});
 }
 
@@ -84,35 +111,43 @@ export default {
     const mobileUpdate=await handleMobileAppUpdate(request);
     if(mobileUpdate)return mobileUpdate;
 
+    const dataEnv=previewRuntimeEnv(env);
+    const delegate=previewDelegate(env,dataEnv,ctx);
+
     const mobileSync=await handleMobileSync({request,load:async sourceRequest=>{
-      const board=await handleProductionCustomerService({request:sourceRequest,env,ctx,delegate:app});
-      return board?routeConfirmedOrdersToPrinting(sourceRequest,board):app.fetch(sourceRequest,env,ctx);
+      const board=await handleProductionCustomerService({request:sourceRequest,env:dataEnv,ctx,delegate});
+      return board?routeConfirmedOrdersToPrinting(sourceRequest,board):delegate.fetch(sourceRequest);
     }});
     if(mobileSync)return mobileSync;
 
-    const mobileOrderGuard=await handleProductionMobileOrderGuard({request,env});
+    const mobileOrderGuard=await handleProductionMobileOrderGuard({request,env:dataEnv});
     if(mobileOrderGuard)return mobileOrderGuard;
 
-    const callerJntEdit=await handleProductionCallerJntEdit({request,env,ctx,delegate:app});
+    const callerJntEdit=await handleProductionCallerJntEdit({request,env:dataEnv,ctx,delegate});
     if(callerJntEdit)return callerJntEdit;
 
-    const printing=await handleProductionPrintingQueue({request,env,ctx,delegate:app});
+    const printing=await handleProductionPrintingQueue({request,env:dataEnv,ctx,delegate});
     if(printing)return printing;
 
-    const customerService=await handleProductionCustomerService({request,env,ctx,delegate:app});
+    const customerService=await handleProductionCustomerService({request,env:dataEnv,ctx,delegate});
     if(customerService)return routeConfirmedOrdersToPrinting(request,customerService);
 
-    const collaborationOrderSearch=await handleCollaborationOrderSearch({request,env,ctx,delegate:app});
+    const collaborationOrderSearch=await handleCollaborationOrderSearch({request,env:dataEnv,ctx,delegate});
     if(collaborationOrderSearch)return collaborationOrderSearch;
 
     if(new URL(request.url).pathname.startsWith('/api/collaboration')){
-      try{await ensureInternalCollaborationSchema(env);}catch{return collaborationSchemaFailure();}
+      try{await ensureInternalCollaborationSchema(dataEnv);}catch{return collaborationSchemaFailure();}
     }
-    const collaboration=await handleInternalCollaboration({request,env,ctx,delegate:app});
+    const collaboration=await handleInternalCollaboration({request,env:dataEnv,ctx,delegate});
     if(collaboration)return collaboration;
 
     const website=await websiteWithDirectAndroidDownload(request,env);
     if(website)return website;
+
+    if(shouldUsePreviewBackend(request)){
+      const preview=await previewFetch(request,env);
+      if(preview)return preview;
+    }
 
     return app.fetch(request,env,ctx);
   },
