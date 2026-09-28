@@ -1,0 +1,51 @@
+name: Production Preview integration parity diagnostic 2026-09-28
+on:
+  push:
+    branches: [diag/prod-preview-integration-parity-20260928]
+    paths: [.github/workflows/prod-preview-integration-parity-diagnostic-20260928.yml]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: npm install --ignore-scripts
+      - name: Compare non-secret data counts and integration schema
+        run: |
+          set -euo pipefail
+          inspect_db(){
+            local label="$1" db="$2" cfg="$3"
+            echo "===== ${label}: COUNTS ====="
+            npx wrangler d1 execute "$db" --remote --config "$cfg" --command "
+              SELECT 'clients' AS table_name, COUNT(*) AS row_count FROM clients
+              UNION ALL SELECT 'users', COUNT(*) FROM users
+              UNION ALL SELECT 'stores', COUNT(*) FROM stores
+              UNION ALL SELECT 'orders', COUNT(*) FROM orders
+              UNION ALL SELECT 'customers', COUNT(*) FROM customers
+              UNION ALL SELECT 'products', COUNT(*) FROM products
+              UNION ALL SELECT 'store_connections', COUNT(*) FROM store_connections
+              UNION ALL SELECT 'integration_secrets', COUNT(*) FROM integration_secrets
+              UNION ALL SELECT 'campaign_daily_metrics', COUNT(*) FROM campaign_daily_metrics
+              UNION ALL SELECT 'meta_ad_entities', COUNT(*) FROM meta_ad_entities
+              UNION ALL SELECT 'meta_ad_daily_metrics', COUNT(*) FROM meta_ad_daily_metrics;
+            " --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const d=JSON.parse(s); console.log(JSON.stringify(d.flatMap(x=>x.results||[]),null,2));})"
+            echo "===== ${label}: STORE_CONNECTIONS COLUMNS ====="
+            npx wrangler d1 execute "$db" --remote --config "$cfg" --command "PRAGMA table_info('store_connections');" --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const d=JSON.parse(s); console.log(JSON.stringify((d[0]?.results||[]).map(x=>x.name),null,2));})"
+            echo "===== ${label}: INTEGRATION_SECRETS COLUMNS ====="
+            npx wrangler d1 execute "$db" --remote --config "$cfg" --command "PRAGMA table_info('integration_secrets');" --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const d=JSON.parse(s); console.log(JSON.stringify((d[0]?.results||[]).map(x=>x.name),null,2));})"
+            echo "===== ${label}: CONNECTION METADATA (NO SECRET VALUES) ====="
+            npx wrangler d1 execute "$db" --remote --config "$cfg" --command "SELECT client_id, store_id, provider, status, COUNT(*) AS n FROM store_connections GROUP BY client_id,store_id,provider,status ORDER BY client_id,store_id,provider,status;" --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const d=JSON.parse(s); console.log(JSON.stringify(d.flatMap(x=>x.results||[]),null,2));})"
+            echo "===== ${label}: SECRET KEY NAMES ONLY ====="
+            npx wrangler d1 execute "$db" --remote --config "$cfg" --command "SELECT client_id, provider, key_name, COUNT(*) AS n FROM integration_secrets GROUP BY client_id,provider,key_name ORDER BY client_id,provider,key_name;" --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const d=JSON.parse(s); console.log(JSON.stringify(d.flatMap(x=>x.results||[]),null,2));})"
+          }
+          inspect_db PRODUCTION kunonline wrangler.production.toml
+          inspect_db PREVIEW kunonline-preview wrangler.preview.toml
