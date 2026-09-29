@@ -1,0 +1,18 @@
+import {readFile} from 'node:fs/promises';
+import {execFileSync} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
+const url=new URL('../public/v2/modules-v122-dashboard-experience.js',import.meta.url);
+const src=await readFile(url,'utf8');
+const preview=await readFile(new URL('../src/index-commerce-v38.js',import.meta.url),'utf8');
+const production=await readFile(new URL('../src/index-production-mobile-update.js',import.meta.url),'utf8');
+const must=(x,m)=>{if(!x)throw new Error(m)};
+execFileSync(process.execPath,['--check',fileURLToPath(url)],{stdio:'pipe'});
+for(const token of ['EXECUTIVE PULSE','نبض المتجر في قراءة واحدة','Commerce Command Center','dash-x-nav','dash-x-metrics','dash-x-insights','dash-x-delta-grid','changeMeta','trendDepth','dedupe'])must(src.includes(token),`Dashboard UX missing ${token}`);
+must(src.includes("const sectionOrder=['overview','trend','finance','ads','rates','provinces','ai']"),'Dashboard analytical hierarchy changed unexpectedly.');
+must(src.includes("hidden=['actualOrderCost','margin','adSpend']"),'Repeated overview KPI removal is missing.');
+must(src.includes(".dash-section-actions .dash-period-control")&&src.includes(".dash-drill-head>.dash-period-chip"),'Repeated period controls are not removed.');
+must(src.includes("$('[data-dash-section=\"ads\"] .dash-campaign-strip',root)?.remove()")||src.includes("dash-campaign-strip',root)?.remove()"),'Repeated campaign strip removal is missing.');
+must(src.includes("$('[data-dash-section=\"ai\"] .dash-ai-ad-kpis',root)?.remove()")||src.includes("dash-ai-ad-kpis',root)?.remove()"),'Repeated AI KPI strip removal is missing.');
+must(preview.includes('/v2/modules-v122-dashboard-experience.js?v=122.0'),'Preview dashboard v122 injection missing.');
+must(production.includes('/v2/modules-v122-dashboard-experience.js?v=122.0'),'Production dashboard v122 injection missing.');
+console.log('Dashboard v122 UX contract passed.');
