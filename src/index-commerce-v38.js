@@ -13,7 +13,8 @@ const V2_UI_SCRIPTS=[
   '<script src="/v2/modules-v105-section-nav-actions.js?v=105.1" data-kun-section-nav-actions="1"></script>',
   '<script src="/v2/modules-v106-manual-jnt-order.js?v=106.0" data-kun-manual-jnt-order="1"></script>',
   '<script src="/v2/modules-v107-mobile-app-update.js?v=107.0" data-kun-mobile-app-update="1"></script>',
-  '<script src="/v2/modules-v109-operational-date-contact.js?v=109.1" data-kun-operational-date-contact="1"></script>'
+  '<script src="/v2/modules-v109-operational-date-contact.js?v=109.1" data-kun-operational-date-contact="1"></script>',
+  '<script src="/v2/modules-v122-dashboard-experience.js?v=122.0" data-kun-dashboard-experience="1"></script>'
 ].join('');
 const LIVE_TEAM_ASSET_FROM='/v2/modules-v117-team-collaboration.js?v=117.0';
 const LIVE_TEAM_ASSET_TO='/v2/modules-v117-team-collaboration.js?v=117.1';
