@@ -1,0 +1,23 @@
+name: Dashboard v122 Contract
+
+on:
+  pull_request:
+    paths:
+      - 'public/v2/modules-v122-dashboard-experience.js'
+      - 'src/index-commerce-v38.js'
+      - 'src/index-production-mobile-update.js'
+      - 'scripts/dashboard-v122-contract-test.mjs'
+      - 'scripts/release-ui-test.mjs'
+      - '.github/workflows/dashboard-v122-contract.yml'
+  workflow_dispatch:
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Dashboard UX contract
+        run: node scripts/dashboard-v122-contract-test.mjs
