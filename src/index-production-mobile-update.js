@@ -66,7 +66,7 @@ async function websiteWithDirectAndroidDownload(request,env){
     .replaceAll('/v2/modules-v78-jt-shipping-order.js?v=78.4','/v2/modules-v78-jt-shipping-order.js?v=78.5')
     .replaceAll('/v2/modules-v79-printing.js?v=79.7','/v2/modules-v79-printing.js?v=79.8')
     .replaceAll('/v2/modules-v117-team-collaboration.js?v=117.0','/v2/modules-v117-team-collaboration.js?v=117.1')
-    .replaceAll('/v2/modules-v118-collaboration-order-picker.js?v=118.0','/v2/modules-v118-collaboration-order-picker.js?v=118.1');
+    .replaceAll('/v2/modules-v118-collaboration-order-picker.js?v=118.0','/v2/modules-v118-collaboration-order-picker.js?v=118.1.1');
   // v57 owns the ordered v66 -> v67 -> v68... chain. Injecting v66/v67 here
   // executes them twice and splits the hub state from its event handlers.
   if(!html.includes('/v2/modules-v116-print-routing.js')){
@@ -76,7 +76,7 @@ async function websiteWithDirectAndroidDownload(request,env){
     html=html.replace('</body>','<script src="/v2/modules-v117-team-collaboration.js?v=117.1" data-kun-team-collaboration="1"></script></body>');
   }
   if(!html.includes('/v2/modules-v118-collaboration-order-picker.js')){
-    html=html.replace('</body>','<script src="/v2/modules-v118-collaboration-order-picker.js?v=118.1" data-kun-collaboration-order-picker="1"></script></body>');
+    html=html.replace('</body>','<script src="/v2/modules-v118-collaboration-order-picker.js?v=118.1.1" data-kun-collaboration-order-picker="1"></script></body>');
   }
   if(!html.includes('/v2/modules-v121-dashboard-sync-guard.js')){
     html=html.replace('</body>','<script src="/v2/modules-v121-dashboard-sync-guard.js?v=121.1" data-kun-dashboard-sync-guard="1"></script></body>');
