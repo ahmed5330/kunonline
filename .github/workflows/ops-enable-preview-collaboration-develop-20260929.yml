@@ -1,0 +1,64 @@
+name: Enable Preview Collaboration Schema Dev Ops
+
+on:
+  push:
+    branches:
+      - develop/preview-collaboration-ops-20260929
+    paths:
+      - '.github/workflows/ops-enable-preview-collaboration-develop-20260929.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  apply-preview-collaboration-schema:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: preview
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - name: Install dependencies
+        run: npm install --ignore-scripts
+      - name: Apply collaboration tables to Preview D1 only
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute kunonline-preview \
+            --remote \
+            --config wrangler.preview.toml \
+            --file migrations/0091_internal_collaboration.sql
+      - name: Verify collaboration tables and indexes on Preview D1
+        run: |
+          set -euo pipefail
+          npx wrangler d1 execute kunonline-preview \
+            --remote \
+            --config wrangler.preview.toml \
+            --command "SELECT name FROM sqlite_master WHERE name LIKE 'collab_%' OR name LIKE 'idx_collab_%' ORDER BY name" \
+            --json > /tmp/collab-schema.json
+          node <<'NODE'
+          const fs=require('fs');
+          const root=JSON.parse(fs.readFileSync('/tmp/collab-schema.json','utf8'));
+          const required=[
+            'collab_conversations','collab_members','collab_messages','collab_message_mentions','collab_reads','collab_tasks','collab_order_assignments',
+            'idx_collab_conversations_store','idx_collab_direct_unique','idx_collab_members_user','idx_collab_messages_conversation','idx_collab_messages_order','idx_collab_mentions_user','idx_collab_tasks_store','idx_collab_tasks_assignee','idx_collab_tasks_order','idx_collab_order_assignments_order','idx_collab_order_assignments_user'
+          ];
+          const names=new Set();
+          const walk=x=>{
+            if(Array.isArray(x)){for(const v of x)walk(v);return;}
+            if(!x||typeof x!=='object')return;
+            if(typeof x.name==='string')names.add(x.name);
+            for(const v of Object.values(x))walk(v);
+          };
+          walk(root);
+          const missing=required.filter(x=>!names.has(x));
+          if(missing.length){console.error('Missing:',missing.join(', '));process.exit(1);}
+          console.log(`Preview collaboration schema verified: ${required.length}/${required.length} objects present.`);
+          NODE
