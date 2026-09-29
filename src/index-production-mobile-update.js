@@ -81,6 +81,9 @@ async function websiteWithDirectAndroidDownload(request,env){
   if(!html.includes('/v2/modules-v121-dashboard-sync-guard.js')){
     html=html.replace('</body>','<script src="/v2/modules-v121-dashboard-sync-guard.js?v=121.1" data-kun-dashboard-sync-guard="1"></script></body>');
   }
+  if(!html.includes('/v2/modules-v122-dashboard-experience.js')){
+    html=html.replace('</body>','<script src="/v2/modules-v122-dashboard-experience.js?v=122.0" data-kun-dashboard-experience="1"></script></body>');
+  }
   const headers=new Headers(asset.headers);
   headers.set('Content-Type','text/html; charset=utf-8');
   headers.set('Cache-Control','no-cache, no-store, must-revalidate');
