@@ -1,0 +1,20 @@
+import {readFile} from 'node:fs/promises';
+const ui=await readFile(new URL('../public/v2/modules-v123-dashboard-unified.js',import.meta.url),'utf8');
+const preview=await readFile(new URL('../src/index-commerce-v38.js',import.meta.url),'utf8');
+const production=await readFile(new URL('../src/index-production-mobile-update.js',import.meta.url),'utf8');
+const must=(ok,msg)=>{if(!ok)throw new Error(msg)};
+
+must(ui.includes("const isActive=row=>String(row?.status||'').trim().toLowerCase()==='active'"),'Homepage ads must filter exact ACTIVE status');
+must(ui.includes('[data-dash-section^="ad48-"]{display:none!important}'),'Standalone expert ad sections must be hidden');
+must(ui.includes('[data-dash-section="ai"] .dash-ai-analysis{display:none!important}'),'Duplicate AI advertising analysis must be hidden');
+must(ui.includes('data-du-ads-tab="${key}"'),'Unified ads must expose interactive tabs');
+for(const key of ['campaigns','adsets','ads'])must(ui.includes(`['${key}'`)||ui.includes(`'${key}'`),`Missing active ads tab ${key}`);
+must(ui.includes('data-du-province="quick"')&&ui.includes('data-du-province="table"'),'Province duplicate views must be toggleable');
+must(ui.includes('dash-u-province-hidden'),'Only one province representation should be visible at once');
+must(ui.includes('data-du-collapse'),'Dashboard sections must support interactive collapse');
+must(ui.includes('window.KunAdsExpertV48?.sync?.()'),'Unified ads must keep Meta refresh interaction');
+must(!/env\.DB|DELETE FROM|DROP TABLE|ALTER TABLE|CREATE TABLE/i.test(ui),'v123 UI must not mutate or access the database directly');
+for(const source of [preview,production])must(source.includes('/v2/modules-v123-dashboard-unified.js?v=123.0'),'v123 must be injected consistently');
+must(preview.indexOf('modules-v122-dashboard-experience.js')<preview.indexOf('modules-v123-dashboard-unified.js'),'Preview must load v123 after v122');
+must(production.indexOf('modules-v122-dashboard-experience.js')<production.indexOf('modules-v123-dashboard-unified.js'),'Production must load v123 after v122');
+console.log('Dashboard v123 unified homepage contract passed.');

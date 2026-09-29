@@ -1,0 +1,24 @@
+name: Dashboard v123 Contract
+
+on:
+  pull_request:
+    paths:
+      - 'public/v2/modules-v123-dashboard-unified.js'
+      - 'src/index-commerce-v38.js'
+      - 'src/index-production-mobile-update.js'
+      - 'scripts/dashboard-v123-contract-test.mjs'
+      - '.github/workflows/dashboard-v123-contract.yml'
+  workflow_dispatch:
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Syntax check
+        run: node --check public/v2/modules-v123-dashboard-unified.js
+      - name: Dashboard unified homepage contract
+        run: node scripts/dashboard-v123-contract-test.mjs
