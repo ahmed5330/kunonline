@@ -77,10 +77,13 @@ must(entry.includes("import {handleInternalCollaboration} from './internal-colla
 must(entry.includes("import {handleCollaborationOrderSearch} from './internal-collaboration-order-search.js'"),'Production worker must import collaboration order search.');
 must(entry.includes("import {ensureInternalCollaborationSchema} from './internal-collaboration-schema.js'"),'Production worker must import collaboration schema bootstrap.');
 must(entry.includes("pathname.startsWith('/api/collaboration')"),'Only collaboration API traffic should trigger schema bootstrap.');
-must(entry.indexOf('await handleCollaborationOrderSearch({request,env,ctx,delegate:app})')<entry.indexOf('await ensureInternalCollaborationSchema(env)'),'Order search must be handled before schema bootstrap because it only reads existing orders.');
-must(entry.indexOf('await ensureInternalCollaborationSchema(env)')<entry.indexOf('await handleInternalCollaboration({request,env,ctx,delegate:app})'),'Schema bootstrap must complete before collaboration API handling.');
+const orderSearchCall='await handleCollaborationOrderSearch({request,env:dataEnv,ctx,delegate})';
+const schemaBootstrapCall='await ensureInternalCollaborationSchema(dataEnv)';
+const collaborationCall='await handleInternalCollaboration({request,env:dataEnv,ctx,delegate})';
+must(entry.indexOf(orderSearchCall)<entry.indexOf(schemaBootstrapCall),'Order search must be handled before schema bootstrap because it only reads existing orders.');
+must(entry.indexOf(schemaBootstrapCall)<entry.indexOf(collaborationCall),'Schema bootstrap must complete before collaboration API handling.');
 must(entry.includes('COLLAB_SCHEMA_BOOTSTRAP_FAILED'),'Production must fail closed if schema bootstrap cannot be verified.');
-must(entry.includes('await handleInternalCollaboration({request,env,ctx,delegate:app})'),'Production worker must route collaboration API calls.');
+must(entry.includes(collaborationCall),'Production worker must route collaboration API calls through the isolated data environment.');
 must(entry.includes('/v2/modules-v117-team-collaboration.js'),'Production HTML must inject collaboration UI.');
 must(entry.includes('/v2/modules-v118-collaboration-order-picker.js?v=118.1'),'Production HTML must inject the cache-busted live partial order picker.');
 must(frontend.includes("credentials:'include'"),'Collaboration UI must send authenticated requests.');
