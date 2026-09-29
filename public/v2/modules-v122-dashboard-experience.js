@@ -66,15 +66,16 @@
   }
   function nav(){return `<nav class="dash-x-nav" aria-label="أقسام الداشبورد">${sectionOrder.map(k=>`<button type="button" data-dx-jump="${k}">${esc(sectionMeta[k][1])}</button>`).join('')}</nav>`;}
   function decorateHero(root){
-    const hero=$('.dash-hero',root);if(!hero)return;
+    const hero=$('.dash-hero',root);if(!hero||hero.dataset.dxHero==='122')return;
     const eyebrow=$('.dash-eyebrow',hero),title=$('.title',hero),sub=$('.sub',hero),side=$('.dash-hero-side',hero);
     if(eyebrow)eyebrow.textContent='Commerce Command Center';
     if(title)title.textContent='لوحة قيادة المتجر';
     if(sub)sub.textContent='من الطلب إلى الربح: رؤية موحدة للتسويق والتشغيل والشحن والمالية، بدون تكرار أو تشتيت.';
     if(side){side.classList.add('dash-x-hero-side');side.innerHTML='<span>مصدر القرار</span><strong>طلبات + إعلانات + مالية + شحن</strong><small>كل المؤشرات مربوطة بنفس سياق الفرع والفترة.</small>';}
+    hero.dataset.dxHero='122';
   }
   function decorateSections(root){
-    for(const key of sectionOrder){const sec=$(`[data-dash-section="${key}"]`,root),m=sectionMeta[key];if(!sec||!m)continue;const head=$('.dash-section-head>div:first-child',sec),h=$('h2',head),p=$('p',head);if(head&&!$('.dash-x-kicker',head))head.insertAdjacentHTML('afterbegin',`<span class="dash-x-kicker">${esc(m[0])}</span>`);if(h)h.textContent=m[1];if(p)p.textContent=m[2];}
+    for(const key of sectionOrder){const sec=$(`[data-dash-section="${key}"]`,root),m=sectionMeta[key];if(!sec||!m||sec.dataset.dxCopy==='122')continue;const head=$('.dash-section-head>div:first-child',sec),h=$('h2',head),p=$('p',head);if(head&&!$('.dash-x-kicker',head))head.insertAdjacentHTML('afterbegin',`<span class="dash-x-kicker">${esc(m[0])}</span>`);if(h)h.textContent=m[1];if(p)p.textContent=m[2];sec.dataset.dxCopy='122';}
   }
   function dedupe(root){
     $$('.dash-section-actions .dash-period-control,.dash-section-actions .dash-period-chip,.dash-drill-head>.dash-period-chip',root).forEach(x=>x.remove());
@@ -90,7 +91,7 @@
   }
   function ensureStructure(root,d){
     const dashboard=$('.v33-dashboard',root);if(!dashboard)return;
-    let toolbar=$('.dash-period-toolbar',root),legacy=$('.dash-range',root);
+    const toolbar=$('.dash-period-toolbar',root),legacy=$('.dash-range',root);
     if(!$('.dash-x-nav',dashboard)){const target=toolbar||legacy||$('.dash-hero',dashboard);target?.insertAdjacentHTML('afterend',nav());}
     const sig=d?`${d.from}|${d.to}|${n(d.finance?.netProfit)}|${n(d.overview?.totalOrders)}|${n(d.ads?.realRoas)}`:'';
     let exec=$('[data-dash-executive="122"]',dashboard);if(d&&exec?.dataset.sig!==sig){const html=executive(d);if(exec)exec.outerHTML=html;else{const navEl=$('.dash-x-nav',dashboard),insertAfter=navEl||toolbar||legacy||$('.dash-hero',dashboard);insertAfter?.insertAdjacentHTML('afterend',html);}exec=$('[data-dash-executive="122"]',dashboard);if(exec)exec.dataset.sig=sig;}
