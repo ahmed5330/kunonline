@@ -11,6 +11,7 @@ import {ensureInternalCollaborationSchema} from './internal-collaboration-schema
 import {handleProductionPreviewParity} from './production-preview-parity.js';
 import {handleProductionEasyOrdersHealth} from './production-easyorders-health.js';
 import {reconcileMonthlySubscriptions} from './subscription-billing.js';
+import {handleSubscriptionControl} from './subscription-control.js';
 
 const LEGACY_APK_URL='https://github.com/ahmed5330/kunonline/releases/download/android-latest/Kun-Online-Mobile.apk';
 const DIRECT_APK_PATH='/api/mobile/app-update/apk';
@@ -136,6 +137,8 @@ export default {
 
     const dataEnv=previewRuntimeEnv(env);
     const delegate=previewDelegate(env,dataEnv,ctx);
+    const subscription=await handleSubscriptionControl({request,env:dataEnv,ctx,delegate});
+    if(subscription)return subscription;
 
     const mobileSync=await handleMobileSync({request,load:async sourceRequest=>{
       const board=await handleProductionCustomerService({request:sourceRequest,env:dataEnv,ctx,delegate});
