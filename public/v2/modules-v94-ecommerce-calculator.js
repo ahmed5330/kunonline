@@ -21,59 +21,102 @@
 
   const GROUPS={
     orders:[
-      ['totalOrders','Total Orders — إجمالي الطلبات','طلب','كل الطلبات التي تم إنشاؤها'],
-      ['cancelledOrders','Cancelled Orders — الملغاة','طلب','قبل الشحن'],
-      ['shippedOrders','Shipped Orders — المشحونة','طلب','خرجت فعليًا للشحن'],
-      ['rtoOrders','RTO Orders — مرتجع قبل التسليم','طلب','Return To Origin'],
-      ['deliveredOrders','Delivered Orders — المسلّمة','طلب','وصلت للعميل'],
-      ['returnedOrders','Returns After Delivery — مرتجع بعد التسليم','طلب','استلام ثم إرجاع / استرداد']
+      ['totalOrders','إجمالي الطلبات','طلب','كل الطلبات اللي اتعملت في نفس الفترة'],
+      ['cancelledOrders','الطلبات الملغاة','طلب','اتلغت قبل الشحن'],
+      ['shippedOrders','الطلبات التي تم شحنها','طلب','خرجت فعليًا لشركة الشحن'],
+      ['rtoOrders','مرتجعات قبل التسليم (RTO)','طلب','رجعت من شركة الشحن قبل ما العميل يستلم'],
+      ['deliveredOrders','الطلبات المسلّمة','طلب','وصلت للعميل فعليًا'],
+      ['returnedOrders','مرتجعات بعد التسليم','طلب','العميل استلم وبعدها رجّع الطلب']
     ],
     revenue:[
-      ['grossAov','Gross AOV — متوسط قيمة الطلب قبل الخصم','ج.م','متوسط قيمة الطلب الأصلية'],
-      ['discountPercent','Average Discounts — متوسط الخصم','%','خصم فعلي من قيمة الطلب'],
-      ['customerShippingRevenue','شحن محصل من العميل لكل Order محتفظ به','ج.م','إن وجد؛ لا تضع تكلفة شركة الشحن هنا'],
-      ['otherRevenue','إيرادات أخرى محققة','ج.م','إيراد فعلي إضافي لنفس الفترة'],
-      ['platformReportedRevenue','Platform Reported Revenue','ج.م','Revenue الظاهر في المنصة/Ads Manager']
+      ['grossAov','متوسط قيمة الطلب قبل الخصم (AOV)','ج.م','متوسط قيمة الطلب الأصلية قبل الخصومات'],
+      ['discountPercent','متوسط نسبة الخصم','%','متوسط الخصم الفعلي على الطلبات'],
+      ['customerShippingRevenue','الشحن المحصل من العميل لكل طلب محتفظ به','ج.م','المبلغ اللي العميل بيدفعه كشحن'],
+      ['otherRevenue','إيرادات أخرى محققة','ج.م','أي إيراد إضافي حقيقي لنفس الفترة'],
+      ['platformReportedRevenue','الإيراد الظاهر في المنصة / Ads Manager','ج.م','الرقم الظاهر في المنصة قبل تصفية الإلغاءات والمرتجعات']
     ],
     variable:[
-      ['cogsPerKept','COGS لكل Order محتفظ به','ج.م','تكلفة المنتج الفعلية'],
-      ['returnedCogsLossPercent','خسارة COGS في المرتجع بعد التسليم','%','الجزء غير القابل للاسترداد من تكلفة المنتج'],
-      ['packagingPerShipped','Packaging لكل شحنة','ج.م','كرتونة / تغليف / مطبوعات'],
-      ['forwardShippingPerShipped','Forward Shipping لكل شحنة','ج.م','تكلفة الذهاب لشركة الشحن'],
-      ['rtoCostPerOrder','RTO Cost لكل مرتجع RTO','ج.م','الرجوع / المحاولة / المعالجة'],
-      ['returnCostPerOrder','Return Cost بعد التسليم','ج.م','تكلفة الرجوع والمعالجة'],
-      ['paymentFeePercent','Payment / COD Fees','%','نسبة من الإيراد المحقق'],
-      ['paymentFeeFixed','رسوم دفع ثابتة لكل Order محتفظ به','ج.م','إن وجدت'],
-      ['fulfillmentPerShipped','Fulfillment / Handling لكل شحنة','ج.م','تجهيز / Pick & Pack'],
-      ['otherVariablePerShipped','تكلفة متغيرة أخرى لكل شحنة','ج.م','هدايا / عمولات / اتصالات']
+      ['cogsPerKept','تكلفة المنتج لكل طلب محتفظ به (COGS)','ج.م','تكلفة البضاعة الفعلية للطلب اللي فضل مع العميل'],
+      ['returnedCogsLossPercent','نسبة خسارة تكلفة المنتج في مرتجع بعد التسليم','%','الجزء اللي مش هتعرف تسترده من تكلفة المنتج المرتجع'],
+      ['packagingPerShipped','تكلفة التغليف لكل شحنة','ج.م','كرتونة وتغليف ومطبوعات'],
+      ['forwardShippingPerShipped','تكلفة الشحن ذهاب لكل شحنة','ج.م','تكلفة إرسال الشحنة للعميل'],
+      ['rtoCostPerOrder','تكلفة المرتجع قبل التسليم (RTO)','ج.م','تكلفة رجوع الشحنة اللي العميل ما استلمهاش'],
+      ['returnCostPerOrder','تكلفة المرتجع بعد التسليم','ج.م','تكلفة رجوع الطلب بعد ما العميل استلمه'],
+      ['paymentFeePercent','عمولة الدفع / التحصيل (COD)','%','نسبة شركة الدفع أو التحصيل من الإيراد المحقق'],
+      ['paymentFeeFixed','رسوم دفع ثابتة لكل طلب محتفظ به','ج.م','رسوم ثابتة زيادة على النسبة إن وجدت'],
+      ['fulfillmentPerShipped','تكلفة التجهيز لكل شحنة','ج.م','تجهيز وPick & Pack ومناولة'],
+      ['otherVariablePerShipped','تكلفة متغيرة أخرى لكل شحنة','ج.م','هدايا أو عمولات أو اتصالات مرتبطة بالشحنة']
     ],
     marketing:[
-      ['adSpend','Ad Spend — الإنفاق الإعلاني','ج.م','إجمالي الإنفاق لنفس الفترة']
+      ['adSpend','الإنفاق الإعلاني','ج.م','إجمالي اللي اتصرف على الإعلانات لنفس الفترة']
     ],
     fixed:[
-      ['salaries','الرواتب','ج.م','لنفس الفترة'],
-      ['rent','الإيجار','ج.م','مكتب / مخزن'],
-      ['software','Software & Subscriptions','ج.م','منصات وأدوات'],
-      ['warehouseUtilities','مخزن / مرافق / كهرباء','ج.م','تكاليف تشغيل ثابتة'],
-      ['agencyFees','Agency / Freelancers','ج.م','أتعاب ثابتة'],
-      ['otherFixed','Fixed Costs أخرى','ج.م','محاسبة / إدارة / مصروفات ثابتة']
+      ['salaries','الرواتب','ج.م','رواتب نفس الفترة اللي بتحسب عليها'],
+      ['rent','الإيجار','ج.م','إيجار المكتب أو المخزن'],
+      ['software','البرامج والاشتراكات','ج.م','منصات وأدوات وبرامج مدفوعة'],
+      ['warehouseUtilities','المخزن والمرافق','ج.م','كهرباء ومياه وتشغيل ثابت للمخزن'],
+      ['agencyFees','أتعاب وكالة / مستقلين','ج.م','أتعاب ثابتة لوكالة أو فريلانسر'],
+      ['otherFixed','مصروفات ثابتة أخرى','ج.م','محاسبة وإدارة وأي مصروف ثابت تاني']
     ],
     targets:[
-      ['targetProfit','Target Net Profit','ج.م','الربح المستهدف لنفس الفترة'],
-      ['targetMargin','Target Net Margin','%','هامش صافي الربح المستهدف'],
-      ['targetRtoRate','Target RTO Rate','%','مثال: 10%'],
-      ['targetAovLift','Target AOV Change','%','مثال: 10% زيادة'],
-      ['targetCpaChange','Target CPA Change','%','اكتب -20 لتقليل CPA 20%'],
-      ['targetCogsChange','Target COGS Change','%','اكتب -5 لتقليل COGS 5%'],
-      ['targetReturnChange','Target Returns Change','%','اكتب -20 لتقليل المرتجعات 20%']
+      ['targetProfit','صافي الربح المستهدف','ج.م','الربح اللي عايز توصل له في نفس الفترة'],
+      ['targetMargin','هامش صافي الربح المستهدف','%','نسبة صافي الربح اللي عايز تحققها من الإيراد المحقق'],
+      ['targetRtoRate','نسبة RTO المستهدفة','%','النسبة اللي عايز توصل لها للمرتجع قبل التسليم'],
+      ['targetAovLift','التغيير المستهدف في متوسط الطلب (AOV)','%','مثال: 10 يعني زيادة 10%'],
+      ['targetCpaChange','التغيير المستهدف في تكلفة الطلب (CPA)','%','مثال: -20 يعني تقليل CPA بنسبة 20%'],
+      ['targetCogsChange','التغيير المستهدف في تكلفة المنتج (COGS)','%','مثال: -5 يعني تقليل تكلفة المنتج 5%'],
+      ['targetReturnChange','التغيير المستهدف في مرتجعات ما بعد التسليم','%','مثال: -20 يعني تقليل المرتجعات 20%']
     ],
     stress:[
-      ['stressRtoRate','Stress RTO Rate','%','مثال: 25%'],
-      ['stressAovChange','Stress AOV Change','%','مثال: -10%'],
-      ['stressCpaChange','Stress CPA Change','%','مثال: 20%'],
-      ['stressCogsChange','Stress COGS Change','%','مثال: 10%'],
-      ['stressReturnChange','Stress Returns Change','%','مثال: 25%']
+      ['stressRtoRate','نسبة RTO في السيناريو المتشائم','%','النسبة اللي ممكن توصل لها لو الأداء ساء'],
+      ['stressAovChange','تغيير متوسط الطلب في السيناريو المتشائم','%','مثال: -10 يعني AOV أقل 10%'],
+      ['stressCpaChange','تغيير CPA في السيناريو المتشائم','%','مثال: 20 يعني CPA أعلى 20%'],
+      ['stressCogsChange','تغيير COGS في السيناريو المتشائم','%','مثال: 10 يعني تكلفة المنتج أعلى 10%'],
+      ['stressReturnChange','تغيير مرتجعات ما بعد التسليم في السيناريو المتشائم','%','مثال: 25 يعني المرتجعات أعلى 25%']
     ]
+  };
+
+  const FIELD_HELP={
+    totalOrders:'اكتب إجمالي عدد الطلبات اللي اتعملت في نفس الفترة اللي بتحسب عليها. خلي كل الأرقام في الحاسبة لنفس المدة، زي آخر 30 يوم مثلًا.',
+    cancelledOrders:'اكتب الطلبات اللي اتلغت قبل ما تخرج للشحن. ما تحطش هنا الشحنات اللي خرجت ورجعت؛ دي تتحط في RTO.',
+    shippedOrders:'اكتب عدد الطلبات اللي خرجت فعليًا لشركة الشحن. الرقم ده يشمل اللي اتسلّم واللي رجع RTO واللي لسه في الطريق.',
+    rtoOrders:'اكتب الشحنات اللي خرجت للشحن ورجعت قبل ما العميل يستلم. دي غير المرتجع بعد التسليم.',
+    deliveredOrders:'اكتب عدد الشحنات اللي شركة الشحن سجلتها تم التسليم للعميل. قبل خصم المرتجعات اللي حصلت بعد التسليم.',
+    returnedOrders:'اكتب الطلبات اللي العميل استلمها فعلًا وبعد كده رجعها أو طلب Refund. ما تدخلش RTO هنا.',
+    grossAov:'اكتب متوسط قيمة الطلب قبل الخصم. لو عندك إجمالي قيمة الطلبات قبل الخصومات اقسمها على عدد الطلبات.',
+    discountPercent:'اكتب متوسط نسبة الخصم الفعلية على الطلبات. لو مفيش خصومات حط 0.',
+    customerShippingRevenue:'اكتب متوسط الشحن اللي بتحصله من العميل للطلب اللي فضل معاه. دي فلوس داخلة، مش تكلفة شركة الشحن.',
+    otherRevenue:'أي إيراد فعلي إضافي مرتبط بنفس الفترة ومش داخل في قيمة الطلبات، زي رسوم خدمة أو دخل إضافي واضح. لو مفيش حط 0.',
+    platformReportedRevenue:'اكتب الإيراد اللي المنصة أو Ads Manager بيعرضه قبل ما تصفي الإلغاءات وRTO والمرتجعات. الخانة دي للمقارنة بين الإيراد الظاهر والإيراد الحقيقي.',
+    cogsPerKept:'اكتب تكلفة البضاعة الفعلية للطلب اللي العميل احتفظ بيه: سعر شراء أو تصنيع المنتج وتكلفته المباشرة. ما تضيفش الإعلان أو الشحن هنا.',
+    returnedCogsLossPercent:'لو المنتج المرتجع بعد التسليم ممكن يرجع للمخزون كامل حط 0%. لو جزء من تكلفته بيضيع بسبب تلف أو فتح أو إعادة تجهيز، اكتب النسبة اللي بتخسرها.',
+    packagingPerShipped:'اكتب تكلفة الكرتونة والتغليف والاستيكر والمطبوعات لكل شحنة بتخرج، حتى لو الشحنة رجعت.',
+    forwardShippingPerShipped:'اكتب تكلفة إرسال الشحنة من عندك للعميل لكل شحنة خرجت. ما تضيفش تكلفة رجوع RTO هنا.',
+    rtoCostPerOrder:'اكتب اللي شركة الشحن بتحمله عليك لما الشحنة ترجع قبل التسليم، شامل الرجوع أو المحاولة لو محسوبة عليك.',
+    returnCostPerOrder:'اكتب تكلفة رجوع الطلب بعد ما العميل يكون استلمه: شحن رجوع، استلام، فحص أو إعادة تجهيز لو بتتحسب لكل مرتجع.',
+    paymentFeePercent:'اكتب نسبة عمولة الدفع الإلكتروني أو تحصيل COD اللي بتتخصم من الإيراد المحقق. مثال 2 يعني 2%.',
+    paymentFeeFixed:'لو فيه مبلغ ثابت بيتخصم مع كل طلب متسلم فوق النسبة، اكتبه هنا. لو مفيش حط 0.',
+    fulfillmentPerShipped:'اكتب تكلفة تجهيز ومناولة الشحنة الواحدة لو بتدفع Pick & Pack أو Fulfillment لكل شحنة.',
+    otherVariablePerShipped:'أي تكلفة بتزيد مع كل شحنة ومش موجودة فوق، زي هدية أو عمولة أو تكلفة اتصال مرتبطة بالطلب.',
+    adSpend:'اكتب إجمالي الإنفاق الإعلاني لنفس الفترة بالظبط. الحاسبة هتطلع CPA وROAS تلقائي من الأرقام الفعلية.',
+    salaries:'إجمالي الرواتب اللي تخص نفس الفترة. لو بتحسب شهر، حط رواتب الشهر.',
+    rent:'إيجار المكتب أو المخزن لنفس الفترة. لو الإيجار سنوي قسمه على المدة اللي بتحسب عليها.',
+    software:'اشتراكات البرامج والمنصات والأدوات المدفوعة لنفس الفترة، زي المتجر أو CRM أو أدوات التحليل.',
+    warehouseUtilities:'المصاريف الثابتة لتشغيل المخزن أو المكتب زي كهرباء ومياه وإنترنت لو بتعتبرها ضمن التشغيل.',
+    agencyFees:'أتعاب ثابتة لوكالة تسويق أو مستقلين خلال نفس الفترة. الإنفاق الإعلاني نفسه يتحط في خانة الإنفاق الإعلاني.',
+    otherFixed:'أي مصروف ثابت مش بيتغير مباشرة مع عدد الطلبات ومش موجود فوق، زي المحاسبة أو الإدارة.',
+    targetProfit:'اكتب صافي الربح اللي نفسك توصل له في نفس الفترة. الحاسبة هتقارن الهدف بالنتيجة الحالية وتقولك الفجوة.',
+    targetMargin:'اكتب هامش صافي الربح المستهدف كنسبة من الإيراد المحقق. مثال 20 يعني عايز 20% صافي ربح.',
+    targetRtoRate:'اكتب نسبة RTO اللي عايز توصل لها من الشحنات المشحونة. مثال 10 يعني هدفك RTO = 10%.',
+    targetAovLift:'اكتب التغيير اللي مستهدفه في متوسط قيمة الطلب. رقم موجب للزيادة وسالب للنقص، مثال 10 يعني +10%.',
+    targetCpaChange:'اكتب التغيير المستهدف في CPA. لو عايز تقلله 20% اكتب -20، ولو متوقع يزيد 10% اكتب 10.',
+    targetCogsChange:'اكتب التغيير المستهدف في تكلفة المنتج. -5 يعني قدرت تقلل COGS بنسبة 5%.',
+    targetReturnChange:'اكتب التغيير المستهدف في المرتجعات بعد التسليم. -20 يعني تقليلها 20% عن الوضع الحالي.',
+    stressRtoRate:'دي نسبة RTO اللي عايز تختبر عليها أسوأ سيناريو منطقي. استخدمها عشان تعرف البيزنس يستحمل لحد فين.',
+    stressAovChange:'اكتب قد إيه متوسط الطلب ممكن ينخفض في السيناريو المتشائم. مثال -10 يعني AOV أقل 10%.',
+    stressCpaChange:'اكتب قد إيه CPA ممكن يزيد لو الإعلانات ساءت. مثال 20 يعني تكلفة الطلب أعلى 20%.',
+    stressCogsChange:'اكتب قد إيه تكلفة المنتج ممكن تزيد في السيناريو المتشائم. مثال 10 يعني COGS أعلى 10%.',
+    stressReturnChange:'اكتب قد إيه مرتجعات ما بعد التسليم ممكن تزيد في السيناريو المتشائم. مثال 25 يعني زيادة 25%.'
   };
 
   const DEFAULTS={
@@ -197,15 +240,15 @@
     const targetMarginGap=d.targetMargin-netMargin;
 
     const warnings=[];
-    if(total>0&&cancelled>total)warnings.push('Cancelled Orders أكبر من Total Orders.');
-    if(total>0&&shipped>total)warnings.push('Shipped Orders أكبر من Total Orders.');
-    if(rto>shipped)warnings.push('RTO Orders أكبر من Shipped Orders.');
-    if(delivered>shipped)warnings.push('Delivered Orders أكبر من Shipped Orders.');
-    if(returned>delivered)warnings.push('Returns After Delivery أكبر من Delivered Orders.');
-    if(shipped>0&&rto+delivered>shipped)warnings.push('RTO + Delivered أكبر من Shipped؛ راجع تصنيف الحالات.');
-    if(total>0&&cancelled+shipped>total)warnings.push('Cancelled + Shipped أكبر من Total Orders؛ قد يكون هناك تداخل في الحالات.');
-    if(platformRevenue>0&&realizedRevenue>platformRevenue*1.05)warnings.push('Realized Revenue أعلى من Platform Revenue بأكثر من 5%؛ راجع Other Revenue وشحن العميل.');
-    if(inTransit>0)warnings.push(`${fmt(inTransit,0)} Order مشحون لم يُصنّف بعد كـ Delivered أو RTO (In Transit / Pending).`);
+    if(total>0&&cancelled>total)warnings.push('الطلبات الملغاة أكبر من إجمالي الطلبات؛ راجع الأرقام.');
+    if(total>0&&shipped>total)warnings.push('الطلبات المشحونة أكبر من إجمالي الطلبات؛ راجع الأرقام.');
+    if(rto>shipped)warnings.push('مرتجعات RTO أكبر من الطلبات المشحونة؛ راجع الأرقام.');
+    if(delivered>shipped)warnings.push('الطلبات المسلّمة أكبر من الطلبات المشحونة؛ راجع الأرقام.');
+    if(returned>delivered)warnings.push('مرتجعات ما بعد التسليم أكبر من الطلبات المسلّمة؛ راجع الأرقام.');
+    if(shipped>0&&rto+delivered>shipped)warnings.push('إجمالي RTO + المسلّم أكبر من المشحون؛ راجع تصنيف حالات الشحن.');
+    if(total>0&&cancelled+shipped>total)warnings.push('الملغي + المشحون أكبر من إجمالي الطلبات؛ ممكن يكون فيه تداخل في الحالات.');
+    if(platformRevenue>0&&realizedRevenue>platformRevenue*1.05)warnings.push('الإيراد المحقق أعلى من الإيراد الظاهر في المنصة بأكثر من 5%؛ راجع الإيرادات الأخرى والشحن المحصل من العميل.');
+    if(inTransit>0)warnings.push(`${fmt(inTransit,0)} طلب مشحون لسه ما اتصنّفش كمسلّم أو RTO؛ غالبًا لسه في الطريق أو قيد المتابعة.`);
 
     return {...d,keptOrders:kept,inTransitOrders:inTransit,netAov,realizedRevenue,platformRevenue,cogs,packaging,forwardShipping,rtoCost,returnCost,paymentFees,fulfillment,otherVariable,variableCosts,contributionBeforeAds,contributionProfit,fixedCosts,netProfit,currentCPA,shippedCPA,deliveredCPA,keptCPA,platformROAS,realizedROAS,netBreakEvenAdSpend,netBreakEvenCPA,contributionBreakEvenCPA,realizedBreakEvenROAS,platformBreakEvenROAS,cpaHeadroom,cpaHeadroomPercent,cancellationRate,shippingRate,rtoRate,deliveryRate,returnRate,keptRate,netMargin,contributionMargin,variableCostRate,discountLeakage,cancellationValue,rtoValue,returnsValue,revenueGap,profitPerPlaced,profitPerShipped,profitPerDelivered,profitPerKept,realizedRevenuePerPlaced,nonAdCostPerPlaced,targetProfitGap,targetMarginGap,warnings};
   }
@@ -278,7 +321,9 @@
   function field([key,label,unit,placeholder]){
     const value=model[key]??'';
     const allowNegative=key.includes('Change')||key==='targetAovLift';
-    return `<label class="kun96-field"><span>${escapeHtml(label)}</span><div class="kun96-input-wrap"><input type="number" step="any" ${allowNegative?'':'min="0"'} data-kun96-field="${escapeHtml(key)}" value="${escapeHtml(value)}" placeholder="${escapeHtml(placeholder)}"><em>${escapeHtml(unit)}</em></div></label>`;
+    const help=FIELD_HELP[key]||placeholder||'اكتب القيمة الفعلية لنفس الفترة اللي بتحسب عليها.';
+    const helpId=`kun96-help-${key}`;
+    return `<div class="kun96-field"><div class="kun96-field-head"><span>${escapeHtml(label)}</span><button type="button" class="kun96-help-btn" data-kun96-help="${escapeHtml(key)}" aria-label="شرح خانة ${escapeHtml(label)}" aria-describedby="${helpId}" aria-expanded="false">!</button><div class="kun96-tooltip" id="${helpId}" role="tooltip">${escapeHtml(help)}</div></div><label class="kun96-input-wrap"><input type="number" step="any" ${allowNegative?'':'min="0"'} data-kun96-field="${escapeHtml(key)}" value="${escapeHtml(value)}" placeholder="${escapeHtml(placeholder)}" aria-label="${escapeHtml(label)}"><em>${escapeHtml(unit)}</em></label></div>`;
   }
   function fields(group){return `<div class="kun96-fields">${GROUPS[group].map(field).join('')}</div>`;}
   function block(title,sub,content,open=true){return `<details class="kun96-block" ${open?'open':''}><summary><div><b>${title}</b><small>${sub}</small></div><span>⌄</span></summary><div class="kun96-block-body">${content}</div></details>`;}
