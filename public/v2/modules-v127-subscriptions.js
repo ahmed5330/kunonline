@@ -9,7 +9,8 @@
   const num=v=>new Intl.NumberFormat('ar-EG',{maximumFractionDigits:2}).format(n(v));
   const money=(v,c='EGP')=>`${num(v)} ${String(c||'EGP').toUpperCase()==='EGP'?'ج.م':esc(c)}`;
   const state={me:null,access:null,adminClients:[],topups:[],timer:0,locked:false};
-  const api=async(path,options={})=>{const r=await fetch(path,{credentials:'include',headers:{'Content-Type':'application/json',...(options.headers||{})},...options}),d=await r.json().catch(()=>({}));if(!r.ok){const e=new Error(d.error||`HTTP ${r.status}`);e.code=d.code;e.data=d;throw e;}return d;};
+  const nativeFetch=window.fetch.bind(window);
+  const api=async(path,options={})=>{const r=await nativeFetch(path,{credentials:'include',headers:{'Content-Type':'application/json',...(options.headers||{})},...options}),d=await r.json().catch(()=>({}));if(!r.ok){const e=new Error(d.error||`HTTP ${r.status}`);e.code=d.code;e.data=d;throw e;}return d;};
 
   function style(){
     if($('#kunSubscriptions127Style'))return;
@@ -159,11 +160,23 @@
     const root=$('#root');if(root)new MutationObserver(()=>{if(state.me?.role==='admin'&&$('.nav button.active[data-view="subscriptions"]')&&!root.dataset.sub127Admin)setTimeout(renderAdmin,30);if(state.me?.role!=='admin'&&$('.v33-dashboard')&&!$('[data-sub127-client-panel]'))setTimeout(ensureClientPanel,40);}).observe(root,{childList:true,subtree:true});
   }
 
+  function installFetchGuard(){
+    if(window.__kunSubscriptionFetch127)return;window.__kunSubscriptionFetch127=true;
+    window.fetch=async function(...args){
+      const response=await nativeFetch(...args);
+      try{
+        const input=args[0],url=typeof input==='string'?input:input?.url||'',parsed=new URL(url,location.origin),method=String(args[1]?.method||input?.method||'GET').toUpperCase();
+        if(response.status===402)response.clone().json().then(data=>{if(data?.code==='SUBSCRIPTION_BALANCE_REQUIRED'&&data.access){state.access=data.access;state.locked=true;lockNav();ensureClientPanel();}}).catch(()=>{});
+        if(method==='POST'&&(parsed.pathname==='/api/orders'||parsed.pathname==='/api/wa-order'||parsed.pathname==='/api/orders/bulk'))setTimeout(()=>refreshAccess(false),900);
+      }catch{}
+      return response;
+    };
+  }
   async function boot(){
     style();bind();
     try{state.me=await api('/api/me');}catch{return;}
     if(state.me.role==='admin'){addAdminNav();return;}
-    if(state.me.clientId){await refreshAccess(false);setInterval(()=>{if(state.locked)refreshAccess(false);},60000);}
+    if(state.me.clientId){installFetchGuard();await refreshAccess(false);setInterval(()=>refreshAccess(false),60000);}
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();
   window.KunSubscriptionsV127={version:VERSION,refreshAccess,renderAdmin,get access(){return state.access;}};
