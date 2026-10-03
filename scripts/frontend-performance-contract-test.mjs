@@ -63,8 +63,9 @@ assert.equal(ecommerceCalculator.includes("['cpp'"),false,'CPA must be derived f
 assert.ok(ecommerceCalculator.includes('const returnRate=safeDiv(returned,delivered)*100'),'post-delivery return rate must be derived from actual counts');
 assert.ok(ecommerceCalculator.includes('const currentCPA=safeDiv(d.adSpend,total)'),'current CPA must come from actual ad spend and total orders');
 assert.ok(ecommerceCalculator.includes('const netBreakEvenAdSpend=Math.max(0,contributionBeforeAds-fixedCosts)'),'net break-even ad spend must include fixed costs');
-assert.ok(ecommerceCalculator.includes("version:'96.1'"),'calculator must expose v96.1');
-assert.ok(permissions.includes('/v2/modules-v94-ecommerce-calculator.js?v=96.1'),'calculator bundle must be cache-busted for v96.1');
+assert.ok(ecommerceCalculator.includes("version:'96.2'"),'calculator must expose v96.2');
+assert.ok(permissions.includes('/v2/modules-v94-ecommerce-calculator.js?v=96.2'),'calculator bundle must be cache-busted for v96.2');
+for(const marker of ['kun96-overview','kun96-stepnav','data-kun96-jump','quickSummary','entryProgress','window.confirm'])assert.ok(ecommerceCalculator.includes(marker),`Calculator UX missing ${marker}`);
 
 assert.doesNotThrow(()=>new Function(financeCommandCenter),'finance command center browser module must parse');
 for(const endpoint of ['/api/dashboard','/api/accounting/overview','/api/accounting/entries','/api/accounting/collected-profit','/api/cod-reconciliation/candidates','/api/cod-reconciliation'])assert.ok(financeCommandCenter.includes(endpoint),`finance command center missing real source ${endpoint}`);
