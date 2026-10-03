@@ -799,6 +799,7 @@ async function loadPerf(clientIdOverride){
 function renderClient(client){
   if(clientTab==='add') return clientAddOrderView(client);
   if(clientTab==='products') return clientProductsView(client);
+  if(clientTab==='calculator') return clientCalculatorView(client);
   if(clientTab==='finance') return clientFinanceView(client);
   if(clientTab==='inventory') return clientInventoryView(client);
   if(clientTab==='service') return clientServiceView(client);
@@ -862,6 +863,7 @@ function renderClient(client){
       ${client.inventoryEnabled ? `<button data-ctab="inventory" aria-pressed="${clientTab==='inventory'}">المخزون</button>` : ''}
       ${client.customerServiceEnabled ? `<button data-ctab="service" aria-pressed="${clientTab==='service'}">خدمة العملاء</button>` : ''}
       <button data-ctab="products" aria-pressed="false">منتجاتي</button>
+      <button data-ctab="calculator" aria-pressed="${clientTab==='calculator'}">الحاسبة</button>
       <button data-ctab="customers" aria-pressed="${clientTab==='customers'}">العملاء</button>
       <button data-ctab="finance" aria-pressed="false">الحسابات</button>
       <button data-ctab="wallet" aria-pressed="${clientTab==='wallet'}">المحفظة</button>
@@ -1999,6 +2001,166 @@ function econSection(ec, cur){
     <p class="hint" style="margin-top:10px">الربح قبل الإعلان ${money(ec.contribution,1)} ${cur} (${ec.marginBefore.toFixed(0)}%) — ده الرقم اللي بنبني عليه سقف الميزانية.</p>
   </div>
 `;
+}
+
+function calculatorDefaults(client){
+  const e = Object.assign({}, ECON_DEFAULTS, client.econ||{});
+  const orders30 = ordersFor(client.id,'30');
+  const a = orderAgg(orders30);
+  const adSpend = adSpendFor(client.id,'30');
+  const closedShipments = a.signed + a.collected + a.returned;
+  const deliveryGivenConfirmed = closedShipments>0 ? safeDiv(a.signed+a.collected, closedShipments)*100 : 85;
+  return {
+    price: Number(e.price)||0, productCost:Number(e.productCost)||0, shipping:Number(e.shipping)||0,
+    packaging:Number(e.packaging)||0, codFeePct:Number(e.codFeePct)||0, confirmCost:Number(e.confirmCost)||0,
+    otherCost:Number(e.otherCost)||0, returnCost:Number(e.returnCost)||0,
+    cpa:safeDiv(adSpend,a.orders)||0, confirmRate:a.orders?a.confirmRate:85,
+    deliveryRate:closedShipments?deliveryGivenConfirmed:85, monthlyOrders:a.orders||1000,
+    fixedCosts:0, targetMargin:20, targetRevenue:a.revenue||100000
+  };
+}
+
+function profitScenario(x){
+  const clampPct=v=>Math.max(0,Math.min(100,Number(v)||0))/100;
+  const price=Math.max(0,Number(x.price)||0), cogs=Math.max(0,Number(x.productCost)||0);
+  const ship=Math.max(0,Number(x.shipping)||0), pack=Math.max(0,Number(x.packaging)||0);
+  const rto=Math.max(0,Number(x.returnCost)||0), confCost=Math.max(0,Number(x.confirmCost)||0);
+  const other=Math.max(0,Number(x.otherCost)||0), codPct=clampPct(x.codFeePct);
+  const rawCPA=Math.max(0,Number(x.cpa)||0), pConfirm=clampPct(x.confirmRate), pDeliver=clampPct(x.deliveryRate);
+  const pDelivered=pConfirm*pDeliver;
+  const deliveredRevenuePerRaw=pDelivered*price;
+  const deliveredVariablePerRaw=pDelivered*(cogs+ship+other+price*codPct);
+  const packagingPerRaw=pConfirm*pack;
+  const rtoPerRaw=pConfirm*(1-pDeliver)*rto;
+  const preAdsContributionPerRaw=deliveredRevenuePerRaw-deliveredVariablePerRaw-packagingPerRaw-rtoPerRaw-confCost;
+  const netPerRaw=preAdsContributionPerRaw-rawCPA;
+  const effectiveCAC=pDelivered>0?rawCPA/pDelivered:0;
+  const netPerDelivered=pDelivered>0?netPerRaw/pDelivered:0;
+  const breakEvenCPA=Math.max(0,preAdsContributionPerRaw), safeCPA=breakEvenCPA*0.8;
+  return {price,cogs,ship,pack,rto,confCost,other,codPct,rawCPA,pConfirm,pDeliver,pDelivered,deliveredRevenuePerRaw,
+    deliveredVariablePerRaw,packagingPerRaw,rtoPerRaw,preAdsContributionPerRaw,netPerRaw,effectiveCAC,netPerDelivered,
+    breakEvenCPA,safeCPA,breakEvenROAS:breakEvenCPA>0?price/breakEvenCPA:0,safeROAS:safeCPA>0?price/safeCPA:0};
+}
+
+function clientCalculatorView(client){
+  const d=calculatorDefaults(client),cur=client.currency||'EGP',n=(v,digits=0)=>Number(v||0).toFixed(digits);
+  return `
+  <div class="page-head"><div><div class="eyebrow">Profit Intelligence</div><h2>الحاسبة</h2></div><div class="spacer"></div>
+    <div class="seg" id="clientTabs">
+      <button data-ctab="dash" aria-pressed="false">الداشبورد</button>
+      <button data-ctab="add" aria-pressed="false">الأوردرات</button>
+      ${client.inventoryEnabled?`<button data-ctab="inventory" aria-pressed="false">المخزون</button>`:''}
+      ${client.customerServiceEnabled?`<button data-ctab="service" aria-pressed="false">خدمة العملاء</button>`:''}
+      <button data-ctab="products" aria-pressed="false">منتجاتي</button>
+      <button data-ctab="calculator" aria-pressed="true">الحاسبة</button>
+      <button data-ctab="customers" aria-pressed="false">العملاء</button>
+      <button data-ctab="finance" aria-pressed="false">الحسابات</button>
+      <button data-ctab="wallet" aria-pressed="false">المحفظة</button>
+      <button data-ctab="integrations" aria-pressed="false">التكاملات</button>
+    </div>
+  </div>
+  <div class="card">
+    <div class="sub-head">بيانات السيناريو</div>
+    <p class="hint" style="margin-bottom:12px">بدأنا بمتوسطات آخر 30 يوم لما تكون متاحة. غيّر أي رقم وشوف تأثيره فوراً. معدل التسليم هنا هو نسبة النجاح من الشحنات اللي اتقفلت فعلياً، بعد التأكيد.</p>
+    <div class="form-grid" id="calcInputs">
+      <div class="field"><label>متوسط قيمة الأوردر AOV</label><input data-calc="price" type="number" min="0" step="0.01" value="${n(d.price,2)}"></div>
+      <div class="field"><label>تكلفة المنتج COGS</label><input data-calc="productCost" type="number" min="0" step="0.01" value="${n(d.productCost,2)}"></div>
+      <div class="field"><label>الشحن للأوردر المتسلم</label><input data-calc="shipping" type="number" min="0" step="0.01" value="${n(d.shipping,2)}"></div>
+      <div class="field"><label>تكلفة المرتجع RTO</label><input data-calc="returnCost" type="number" min="0" step="0.01" value="${n(d.returnCost,2)}"></div>
+      <div class="field"><label>التغليف لكل شحنة مؤكدة</label><input data-calc="packaging" type="number" min="0" step="0.01" value="${n(d.packaging,2)}"></div>
+      <div class="field"><label>عمولة COD / الدفع %</label><input data-calc="codFeePct" type="number" min="0" max="100" step="0.1" value="${n(d.codFeePct,1)}"></div>
+      <div class="field"><label>التأكيد وخدمة العملاء / أوردر وارد</label><input data-calc="confirmCost" type="number" min="0" step="0.01" value="${n(d.confirmCost,2)}"></div>
+      <div class="field"><label>مصاريف أخرى / أوردر متسلم</label><input data-calc="otherCost" type="number" min="0" step="0.01" value="${n(d.otherCost,2)}"></div>
+      <div class="field"><label>CPA / CPP على الداشبورد</label><input data-calc="cpa" type="number" min="0" step="0.01" value="${n(d.cpa,2)}"></div>
+      <div class="field"><label>نسبة التأكيد %</label><input data-calc="confirmRate" type="number" min="0" max="100" step="0.1" value="${n(d.confirmRate,1)}"></div>
+      <div class="field"><label>نسبة التسليم بعد التأكيد %</label><input data-calc="deliveryRate" type="number" min="0" max="100" step="0.1" value="${n(d.deliveryRate,1)}"></div>
+      <div class="field"><label>الأوردرات الواردة / شهر</label><input data-calc="monthlyOrders" type="number" min="0" step="1" value="${n(d.monthlyOrders)}"></div>
+      <div class="field"><label>المصاريف الثابتة / شهر</label><input data-calc="fixedCosts" type="number" min="0" step="0.01" value="${n(d.fixedCosts,2)}"></div>
+      <div class="field"><label>هامش الربح المستهدف %</label><input data-calc="targetMargin" type="number" min="0" max="90" step="0.1" value="${n(d.targetMargin,1)}"></div>
+      <div class="field"><label>مبيعات مستهدفة / شهر</label><input data-calc="targetRevenue" type="number" min="0" step="0.01" value="${n(d.targetRevenue,2)}"></div>
+    </div>
+  </div>
+  <div class="section-title">الربحية ونقطة التعادل</div><div class="grid g4" id="calcMainKpis"></div>
+  <div class="card" id="calcBreakdown" style="margin-top:12px"></div>
+  <div class="section-title">تخطيط الميزانية والتسعير</div><div class="grid g3" id="calcPlanning"></div>
+  <div class="section-title">تأثير الخصم</div>
+  <div class="card"><div class="form-grid">
+    <div class="field"><label>نسبة الخصم %</label><input id="discPct" type="number" min="0" max="90" step="0.1" value="10"></div>
+    <div class="field"><label>زيادة الأوردرات المتوقعة %</label><input id="discLift" type="number" min="-90" step="0.1" value="20"></div>
+    <div class="field"><label>CPA بعد العرض</label><input id="discCPA" type="number" min="0" step="0.01" value="${n(d.cpa,2)}"></div>
+  </div><div id="discountResult"></div></div>
+  <div class="section-title">مقارنة شركات الشحن</div>
+  <div class="card"><p class="hint" style="margin-bottom:12px">المقارنة لا تعتمد على سعر الشحن فقط؛ بتحسب نسبة التسليم والمرتجع وعمولة التحصيل.</p>
+    <div class="grid g2">
+      <div><div class="sub-head">الشركة A</div><div class="form-grid">
+        <div class="field"><label>سعر الشحن</label><input id="shipA" type="number" min="0" step="0.01" value="${n(d.shipping,2)}"></div>
+        <div class="field"><label>المرتجع</label><input id="rtoA" type="number" min="0" step="0.01" value="${n(d.returnCost,2)}"></div>
+        <div class="field"><label>التسليم %</label><input id="delA" type="number" min="0" max="100" step="0.1" value="${n(d.deliveryRate,1)}"></div>
+        <div class="field"><label>عمولة COD %</label><input id="codA" type="number" min="0" max="100" step="0.1" value="${n(d.codFeePct,1)}"></div>
+      </div></div>
+      <div><div class="sub-head">الشركة B</div><div class="form-grid">
+        <div class="field"><label>سعر الشحن</label><input id="shipB" type="number" min="0" step="0.01" value="${n(Math.max(0,d.shipping-5),2)}"></div>
+        <div class="field"><label>المرتجع</label><input id="rtoB" type="number" min="0" step="0.01" value="${n(Math.max(0,d.returnCost-5),2)}"></div>
+        <div class="field"><label>التسليم %</label><input id="delB" type="number" min="0" max="100" step="0.1" value="${n(Math.max(0,d.deliveryRate-5),1)}"></div>
+        <div class="field"><label>عمولة COD %</label><input id="codB" type="number" min="0" max="100" step="0.1" value="${n(d.codFeePct,1)}"></div>
+      </div></div>
+    </div><div id="shippingResult"></div>
+  </div>
+  <div class="note-card" style="margin-top:14px"><h4>طريقة الحساب</h4>
+    <p>Effective Delivery Rate = Confirmation × Delivery. تكلفة الإعلان الحقيقية للأوردر المتسلم = CPA ÷ Effective Delivery Rate. تكلفة الـRTO والتغليف المفقود داخلة في نقطة التعادل، والمصاريف الثابتة تدخل على مستوى الشهر فقط.</p></div>`;
+}
+
+function bindProfitCalculator(){
+  const q=s=>document.querySelector(s),qa=s=>Array.from(document.querySelectorAll(s));
+  const val=(id,fallback=0)=>{const el=typeof id==='string'?q(id):id,n=el?Number(el.value):fallback;return Number.isFinite(n)?n:fallback;};
+  const getInputs=()=>{const x={};qa('[data-calc]').forEach(el=>x[el.dataset.calc]=val(el,0));return x;};
+  const fmt=(v,d=1)=>Number.isFinite(v)?money(v,d):'—', pct=v=>(Number.isFinite(v)?v:0).toFixed(1)+'%';
+  const recalc=()=>{
+    const x=getInputs(),s=profitScenario(x),client=DB.clients.find(c=>session&&c.id===session.clientId),cur=(client&&client.currency)||'';
+    const monthlyOrders=Math.max(0,x.monthlyOrders||0),fixedCosts=Math.max(0,x.fixedCosts||0);
+    const monthlyDelivered=monthlyOrders*s.pDelivered,monthlyRevenue=monthlyOrders*s.deliveredRevenuePerRaw,monthlyAds=monthlyOrders*s.rawCPA;
+    const monthlyNet=monthlyOrders*s.netPerRaw-fixedCosts,breakEvenOrders=s.netPerRaw>0?fixedCosts/s.netPerRaw:0,breakEvenRevenue=breakEvenOrders*s.deliveredRevenuePerRaw;
+    q('#calcMainKpis').innerHTML=`
+      <div class="card kpi"><div class="k-label">Effective Delivery Rate</div><div class="k-val">${pct(s.pDelivered*100)}</div><div class="k-foot">التأكيد × التسليم</div></div>
+      <div class="card kpi"><div class="k-label">Effective CAC / متسلم</div><div class="k-val">${fmt(s.effectiveCAC)}<span class="cur">${cur}</span></div><div class="k-foot">التكلفة الإعلانية الحقيقية</div></div>
+      <div class="card kpi accent-gold"><div class="k-label">Break-even CPA</div><div class="k-val">${fmt(s.breakEvenCPA)}<span class="cur">${cur}</span></div><div class="k-foot">Safe CPA: ${fmt(s.safeCPA)} ${cur}</div></div>
+      <div class="card kpi ${s.netPerRaw>=0?'accent-pine':''}"><div class="k-label">صافي الربح / أوردر متسلم</div><div class="k-val" style="color:${s.netPerDelivered>=0?'var(--pine)':'var(--brick)'}">${fmt(s.netPerDelivered)}<span class="cur">${cur}</span></div><div class="k-foot">${s.netPerRaw>=0?'مربح قبل المصاريف الثابتة':'خاسر قبل المصاريف الثابتة'}</div></div>`;
+    q('#calcBreakdown').innerHTML=`
+      <div class="chart-head"><h3>الحساب الفعلي للسيناريو</h3><span class="legend">Break-even ROAS <b class="mono">${s.breakEvenROAS?s.breakEvenROAS.toFixed(2):'—'}x</b> · Safe ROAS <b class="mono">${s.safeROAS?s.safeROAS.toFixed(2):'—'}x</b></span></div>
+      <div class="detail-strip" style="margin-top:12px">
+        <div><div class="dt">أوردرات متسلمة متوقعة</div><div class="dd mono">${fmt(monthlyDelivered,0)}</div></div>
+        <div><div class="dt">إيراد محصّل متوقع</div><div class="dd mono">${fmt(monthlyRevenue,0)} ${cur}</div></div>
+        <div><div class="dt">ميزانية إعلانات</div><div class="dd mono">${fmt(monthlyAds,0)} ${cur}</div></div>
+        <div><div class="dt">صافي شهري بعد الثابت</div><div class="dd mono" style="color:${monthlyNet>=0?'var(--pine)':'var(--brick)'}">${fmt(monthlyNet,0)} ${cur}</div></div>
+        <div><div class="dt">أوردرات Break-even شهري</div><div class="dd mono">${s.netPerRaw>0?fmt(breakEvenOrders,0):'—'}</div></div>
+        <div><div class="dt">مبيعات Break-even</div><div class="dd mono">${s.netPerRaw>0?fmt(breakEvenRevenue,0)+' '+cur:'—'}</div></div>
+      </div><p class="hint" style="margin-top:10px">الـCPA هنا تكلفة الأوردر الوارد. لذلك الأوردر المتسلم بيتحمل تكلفة الأوردرات الملغية والمرتجعة أيضاً.</p>`;
+    const targetMargin=Math.max(0,Math.min(90,x.targetMargin||0))/100;
+    const nonPriceCosts=s.pDelivered*(s.cogs+s.ship+s.other)+s.pConfirm*s.pack+s.pConfirm*(1-s.pDeliver)*s.rto+s.confCost+s.rawCPA;
+    const denom=s.pDelivered*(1-s.codPct-targetMargin),targetPrice=denom>0?nonPriceCosts/denom:0;
+    const targetRevenue=Math.max(0,x.targetRevenue||0),targetDelivered=s.price>0?targetRevenue/s.price:0,rawNeeded=s.pDelivered>0?targetDelivered/s.pDelivered:0,budgetNeeded=rawNeeded*s.rawCPA;
+    q('#calcPlanning').innerHTML=`
+      <div class="card kpi"><div class="k-label">سعر بيع لهامش ${pct(targetMargin*100)}</div><div class="k-val">${targetPrice>0?fmt(targetPrice):'—'}<span class="cur">${cur}</span></div><div class="k-foot">بعد الإعلان وRTO والتسليم</div></div>
+      <div class="card kpi"><div class="k-label">Budget للمبيعات المستهدفة</div><div class="k-val">${fmt(budgetNeeded,0)}<span class="cur">${cur}</span></div><div class="k-foot">${fmt(rawNeeded,0)} أوردر وارد تقريباً</div></div>
+      <div class="card kpi"><div class="k-label">ميزانية يومية تقريبية</div><div class="k-val">${fmt(budgetNeeded/30,0)}<span class="cur">${cur}</span></div><div class="k-foot">على 30 يوم وبنفس CPA الحالي</div></div>`;
+    const discPct=Math.max(0,Math.min(90,val('#discPct')))/100,lift=val('#discLift')/100,discCPA=Math.max(0,val('#discCPA'));
+    const discounted=profitScenario(Object.assign({},x,{price:s.price*(1-discPct),cpa:discCPA}));
+    const before=monthlyOrders*s.netPerRaw-fixedCosts,afterOrders=Math.max(0,monthlyOrders*(1+lift)),after=afterOrders*discounted.netPerRaw-fixedCosts;
+    const reqLift=discounted.netPerRaw>0?Math.max(-1,s.netPerRaw/discounted.netPerRaw-1):Infinity;
+    q('#discountResult').innerHTML=`<div class="grid g3" style="margin-top:12px">
+      <div class="card kpi"><div class="k-label">الربح قبل العرض</div><div class="k-val">${fmt(before,0)}<span class="cur">${cur}</span></div></div>
+      <div class="card kpi"><div class="k-label">الربح بعد العرض</div><div class="k-val" style="color:${after>=before?'var(--pine)':'var(--brick)'}">${fmt(after,0)}<span class="cur">${cur}</span></div><div class="k-foot">${after>=before?'العرض زوّد الربح':'العرض قلّل الربح'}</div></div>
+      <div class="card kpi"><div class="k-label">الزيادة المطلوبة لتعويض الخصم</div><div class="k-val">${Number.isFinite(reqLift)?pct(reqLift*100):'غير ممكن'}</div><div class="k-foot">مع CPA بعد العرض المكتوب فوق</div></div></div>`;
+    const shippingCalc=(ship,rto,delivery,cod)=>{const pd=Math.max(0,Math.min(100,delivery))/100,codP=Math.max(0,Math.min(100,cod))/100;
+      const perConfirmed=pd*(Math.max(0,ship)+s.price*codP)+(1-pd)*Math.max(0,rto)+s.pack;return {perConfirmed,perDelivered:pd>0?perConfirmed/pd:Infinity};};
+    const A=shippingCalc(val('#shipA'),val('#rtoA'),val('#delA'),val('#codA')),B=shippingCalc(val('#shipB'),val('#rtoB'),val('#delB'),val('#codB'));
+    const confirmedMonthly=monthlyOrders*s.pConfirm,monthA=confirmedMonthly*A.perConfirmed,monthB=confirmedMonthly*B.perConfirmed,diff=Math.abs(monthA-monthB),winner=monthA<=monthB?'A':'B';
+    q('#shippingResult').innerHTML=`<div class="grid g3" style="margin-top:12px">
+      <div class="card kpi"><div class="k-label">A — تكلفة فعلية / متسلم</div><div class="k-val">${Number.isFinite(A.perDelivered)?fmt(A.perDelivered):'—'}<span class="cur">${cur}</span></div><div class="k-foot">شهرياً ${fmt(monthA,0)} ${cur}</div></div>
+      <div class="card kpi"><div class="k-label">B — تكلفة فعلية / متسلم</div><div class="k-val">${Number.isFinite(B.perDelivered)?fmt(B.perDelivered):'—'}<span class="cur">${cur}</span></div><div class="k-foot">شهرياً ${fmt(monthB,0)} ${cur}</div></div>
+      <div class="card kpi accent-pine"><div class="k-label">الأوفر في السيناريو الحالي</div><div class="k-val">شركة ${winner}</div><div class="k-foot">فرق تقريبي ${fmt(diff,0)} ${cur} / شهر</div></div></div>`;
+  };
+  qa('[data-calc],#discPct,#discLift,#discCPA,#shipA,#rtoA,#delA,#codA,#shipB,#rtoB,#delB,#codB').forEach(el=>el.addEventListener('input',recalc));recalc();
 }
 
 /* بطاقة تغيير كلمة المرور — بتظهر للعميل والإدارة */
@@ -4101,6 +4263,7 @@ function bindClient(c){
     paint();
   });
   if(clientTab==='integrations') bindClientIntegrations();
+  if(clientTab==='calculator') bindProfitCalculator();
   if(clientTab==='finance') bindClientFinance();
   if(clientTab==='inventory') bindClientInventory(c);
   if(clientTab==='service') bindClientService();
