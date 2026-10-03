@@ -110,11 +110,12 @@ export async function createAdminClient(env,body={},actor={}){
   if(existing)throw Object.assign(new Error('البريد الإلكتروني مستخدم بالفعل'),{status:409,code:'EMAIL_EXISTS'});
   const clientId=rid('CLI'),storeId=rid('STR'),ownerId=crypto.randomUUID(),subscriptionId=rid('SUB'),ts=now();
   const plan=allowedPlans.has(String(body.plan||''))?String(body.plan):'trial',currency=clean(body.currency)||'EGP',timezone=clean(body.timezone)||'Africa/Cairo';
-  const baseOrderFee=Math.max(0,Number(body.baseOrderFee??2)||0),moduleInput=body.modules&&typeof body.modules==='object'?body.modules:{};
+  const baseOrderFee=Math.max(0,Number(body.baseOrderFee??2)||0),monthlyMinimum=Math.max(0,Number(body.monthlyMinimum??0)||0),trialApproved=body.trialApproved===true,moduleInput=body.modules&&typeof body.modules==='object'?body.modules:{};
+  const trialStart=trialApproved?ts.slice(0,10):null,trialEnd=trialApproved?new Date(Date.now()+30*86400000).toISOString().slice(0,10):null;
   const passwordHash=await hashPassword(password),actorName=actor?.email||actor?.uid||'admin';
   const statements=[
     env.DB.prepare('INSERT INTO tenant_settings (client_id,display_name,timezone,currency,locale,plan,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)').bind(clientId,businessName,timezone,currency,'ar-EG',plan,'active',ts,ts),
-    env.DB.prepare('INSERT INTO subscriptions (id,client_id,plan,status,billing_cycle,amount,currency,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)').bind(subscriptionId,clientId,plan,plan==='trial'?'trialing':'active','monthly',0,currency,ts,ts),
+    env.DB.prepare('INSERT INTO subscriptions (id,client_id,plan,status,billing_cycle,amount,currency,period_start,period_end,provider,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)').bind(subscriptionId,clientId,plan,trialApproved?'trialing':'active','monthly',monthlyMinimum,currency,trialStart,trialEnd,'kun_wallet',ts,ts),
     env.DB.prepare('INSERT INTO stores (id,client_id,name,code,currency,timezone,status,is_default,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)').bind(storeId,clientId,storeName,'MAIN',currency,timezone,'active',1,ts,ts),
     env.DB.prepare('INSERT INTO users (id,email,name,password,role,client_id,status,created_at,last_login) VALUES (?,?,?,?,?,?,?,?,NULL)').bind(ownerId,email,ownerName,passwordHash,'client',clientId,'active',ts),
     env.DB.prepare('INSERT INTO user_store_access (id,client_id,user_id,store_id,role,created_at) VALUES (?,?,?,?,?,?)').bind(rid('USA'),clientId,ownerId,storeId,'owner',ts),
@@ -128,7 +129,7 @@ export async function createAdminClient(env,body={},actor={}){
   statements.push(env.DB.prepare('INSERT INTO audit_log (id,client_id,store_id,actor_user_id,actor_email,action,entity_type,entity_id,metadata_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)').bind(rid('AUD'),clientId,storeId,actor?.uid||null,actorName,'platform.client.create','tenant',clientId,JSON.stringify({businessName,ownerEmail:email,plan,storeId}),ts));
   await env.DB.batch(statements);
   await updateLegacyClient(env,clientId,c=>Object.assign(c,{id:clientId,name:businessName,status:'active',plan,phone,ownerName,ownerEmail:email,walletBalance:0,walletFeePerOrder:0,createdAt:ts}));
-  return {ok:true,clientId,storeId,ownerId,ownerEmail:email,plan,status:'active',baseOrderFee,feeCap:null};
+  return {ok:true,clientId,storeId,ownerId,ownerEmail:email,plan,status:'active',baseOrderFee,monthlyMinimum,trialApproved,trialEndsAt:trialEnd,feeCap:null};
 }
 
 export async function updateClientStatus(env,clientId,body={},actor={}){
