@@ -10,6 +10,7 @@ import {handleCollaborationOrderSearch} from './internal-collaboration-order-sea
 import {ensureInternalCollaborationSchema} from './internal-collaboration-schema.js';
 import {handleProductionPreviewParity} from './production-preview-parity.js';
 import {handleProductionEasyOrdersHealth} from './production-easyorders-health.js';
+import {reconcileMonthlySubscriptions} from './subscription-billing.js';
 
 const LEGACY_APK_URL='https://github.com/ahmed5330/kunonline/releases/download/android-latest/Kun-Online-Mobile.apk';
 const DIRECT_APK_PATH='/api/mobile/app-update/apk';
@@ -96,6 +97,9 @@ async function websiteWithDirectAndroidDownload(request,env){
   if(!html.includes('/v2/modules-v126-dashboard-finance-top.js')){
     html=html.replace('</body>','<script src="/v2/modules-v126-dashboard-finance-top.js?v=126.0" data-kun-dashboard-finance-top-v126="1"></script></body>');
   }
+  if(!html.includes('/v2/modules-v127-subscriptions.js')){
+    html=html.replace('</body>','<script src="/v2/modules-v127-subscriptions.js?v=127.0" data-kun-subscriptions-v127="1"></script></body>');
+  }
   const headers=new Headers(asset.headers);
   headers.set('Content-Type','text/html; charset=utf-8');
   headers.set('Cache-Control','no-cache, no-store, must-revalidate');
@@ -170,5 +174,5 @@ export default {
 
     return app.fetch(request,env,ctx);
   },
-  scheduled(event,env,ctx){return app.scheduled?.(event,env,ctx);}
+  scheduled(event,env,ctx){const dataEnv=previewRuntimeEnv(env);ctx?.waitUntil?.(reconcileMonthlySubscriptions(dataEnv,{limit:1000}).catch(()=>[]));return app.scheduled?.(event,env,ctx);}
 };
