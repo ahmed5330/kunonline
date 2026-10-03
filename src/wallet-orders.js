@@ -1,4 +1,4 @@
-import {effectiveOrderFee} from './feature-entitlements.js';
+import {subscriptionOrderFee} from './subscription-billing.js';
 import {now,rid,round2,ensureWalletAccount,mirrorLegacyBalance} from './wallet-core.js';
 
 export async function billOrder(env,orderId){
@@ -9,7 +9,7 @@ export async function billOrder(env,orderId){
   if(Number(order.order_rowid)<=Number(account.billing_start_rowid||0))return {ok:true,skipped:'pre_v27_order'};
   const existing=await env.DB.prepare('SELECT * FROM order_billing WHERE order_id=?').bind(orderId).first();
   if(existing?.status==='charged'||existing?.status==='waived')return {ok:true,status:existing.status,fee:Number(existing.fee)||0};
-  const fee=await effectiveOrderFee(env,order.client_id),ts=now();
+  const fee=await subscriptionOrderFee(env,order.client_id),ts=now();
   if(fee<=0){
     await env.DB.prepare(`INSERT INTO order_billing (order_id,client_id,store_id,fee,status,attempts,created_at,charged_at,updated_at)
       VALUES (?,?,?,?, 'waived',1,?,?,?) ON CONFLICT(order_id) DO UPDATE SET status='waived',fee=0,updated_at=excluded.updated_at`)
