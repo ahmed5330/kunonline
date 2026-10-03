@@ -123,8 +123,9 @@ export async function subscriptionOrderFee(env,clientId){
 }
 
 export async function configureSubscription(env,clientId,body={},actor='admin'){
-  const monthlyMinimum=clampMoney(body.monthlyMinimum??body.amount??0),baseOrderFee=clampMoney(body.baseOrderFee??0);
-  let row=await ensureSubscriptionRow(env,clientId,{monthlyMinimum});
+  const account=await ensureWalletAccount(env,clientId),current=await latestSubscription(env,clientId);
+  const monthlyMinimum=clampMoney(body.monthlyMinimum??body.amount??current?.amount??0),baseOrderFee=clampMoney(body.baseOrderFee??account.base_order_fee??0);
+  let row=current||await ensureSubscriptionRow(env,clientId,{monthlyMinimum});
   const ts=now(),status=['active','paused','suspended'].includes(text(body.status))?text(body.status):row.status;
   await env.DB.prepare('UPDATE subscriptions SET amount=?,status=?,billing_cycle=\'monthly\',provider=\'kun_wallet\',updated_at=? WHERE id=?')
     .bind(monthlyMinimum,status,ts,row.id).run();
