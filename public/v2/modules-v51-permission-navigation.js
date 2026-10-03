@@ -61,6 +61,15 @@
     if(rules.includes('owner')||rules.includes('admin'))return false;
     return rules.some(target=>(Array.isArray(data.permissions)?data.permissions:[]).some(rule=>match(rule,target)));
   }
+  function ensureFinanceCalculatorRoute(){
+    const nav=document.querySelector('.nav');if(!nav)return null;
+    let button=nav.querySelector('button[data-view="ecommerce-calculator"]');
+    if(button)return button;
+    button=document.createElement('button');button.type='button';button.dataset.view='ecommerce-calculator';button.textContent='حاسبة التجارة الإلكترونية';
+    const accounting=nav.querySelector('button[data-view="accounting"]'),finance=nav.querySelector('button[data-view="finance"]');
+    if(accounting)accounting.after(button);else if(finance)finance.after(button);else nav.appendChild(button);
+    return button;
+  }
   function visibleButtons(){return [...document.querySelectorAll('.nav button[data-view]')].filter(b=>!b.hidden&&b.style.display!=='none');}
   function firstAllowedButton(){return visibleButtons()[0]||null;}
   function currentView(){return document.querySelector('.nav button.active[data-view]')?.dataset.view||'';}
@@ -69,6 +78,7 @@
   function goFirstAllowed(){if(redirecting)return;const current=currentView();if(current&&allowed.has(current))return;const first=firstAllowedButton();if(!first){showNoAccess();return;}redirecting=true;setTimeout(()=>{try{first.click();}finally{redirecting=false;}},0);}
   function apply(){
     if(!snapshot?.role)return;
+    ensureFinanceCalculatorRoute();
     allowed=new Set();
     document.querySelectorAll('.nav button[data-view]').forEach(button=>{
       const view=button.dataset.view||'',ok=allowedView(view,snapshot);
@@ -81,6 +91,7 @@
       quick.hidden=!writable;quick.style.display=writable?'':'none';
     }
     document.documentElement.dataset.permissionNavigation='ready';
+    window.KunSidebarGroupsV90?.sync?.();
     window.KunEcommerceCalculatorShortcutV93?.sync?.();
     window.KunFinanceCommandCenterV96?.mergeNavigation?.();
     goFirstAllowed();
@@ -108,6 +119,7 @@
     const script=document.createElement('script');script.src=src;script.async=false;script.setAttribute(marker,'1');if(onload)script.onload=onload;document.body.appendChild(script);return true;
   }
   function loadFinanceTools(){
+    ensureFinanceCalculatorRoute();
     if(!window.KunEcommerceCalculatorV94)appendScript('/v2/modules-v94-ecommerce-calculator.js?v=96.0','data-kun-v96-ecommerce-calculator',()=>{if(ready)apply();});
     if(!window.KunEcommerceCalculatorShortcutV93)appendScript('/v2/modules-v93-ecommerce-calculator-shortcut.js?v=93.0','data-kun-v93-ecommerce-shortcut',()=>window.KunEcommerceCalculatorShortcutV93?.sync?.());
     if(!window.KunFinanceCommandCenterV96)appendScript('/v2/modules-v96-finance-command-center.js?v=96.0','data-kun-v96-finance',()=>{window.KunFinanceCommandCenterV96?.mergeNavigation?.();if(ready)apply();});
@@ -115,5 +127,5 @@
   }
   loadFinanceTools();
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',loadAccess,{once:true});else loadAccess();
-  window.KunPermissionNavigationV51={load:()=>loadAccess(true),apply,allowedView,match,loadFinanceTools,loadEcommerceCalculator:loadFinanceTools,get snapshot(){return snapshot;},get allowed(){return [...allowed];},rules:VIEW_RULES,version:'51.11'};
+  window.KunPermissionNavigationV51={load:()=>loadAccess(true),apply,allowedView,match,loadFinanceTools,loadEcommerceCalculator:loadFinanceTools,get snapshot(){return snapshot;},get allowed(){return [...allowed];},rules:VIEW_RULES,version:'51.12'};
 })();
