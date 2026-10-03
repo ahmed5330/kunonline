@@ -1,4 +1,4 @@
-/* Kun Online v96.0 — E-commerce Profitability & Growth Calculator. */
+/* Kun Online v96.2 — Arabic E-commerce Profitability Calculator UX refresh. */
 (function(){
   'use strict';
   if(window.KunEcommerceCalculatorV94)return;
@@ -318,6 +318,49 @@
     return {current:c,target,stress};
   }
 
+  const CORE_FIELDS=['totalOrders','shippedOrders','rtoOrders','deliveredOrders','grossAov','cogsPerKept','forwardShippingPerShipped','adSpend'];
+  const SECTION_NAV=[
+    ['orders','التشغيل','الطلبات وحالاتها'],
+    ['revenue','الإيراد','القيمة والخصومات'],
+    ['variable','التكاليف','المتغيرة والشحن'],
+    ['marketing','الإعلانات','الإنفاق والأداء'],
+    ['fixed','الثابتة','المصاريف الشهرية'],
+    ['targets','الهدف','سيناريو النمو'],
+    ['stress','الضغط','أسوأ سيناريو']
+  ];
+  function entryProgress(){
+    const filled=CORE_FIELDS.filter(key=>Math.abs(signed(model[key]))>0).length;
+    return {filled,total:CORE_FIELDS.length,percent:Math.round(filled/CORE_FIELDS.length*100)};
+  }
+  function quickSummary(c){
+    const progress=entryProgress(),hasData=progress.filled>=3;
+    const profitable=c.netProfit>=0;
+    const cpaOk=c.netBreakEvenCPA>0&&c.currentCPA<=c.netBreakEvenCPA;
+    const status=!hasData?'ابدأ بإدخال بياناتك':profitable?'الوضع الحالي مربح':'الوضع الحالي محتاج مراجعة';
+    const statusClass=!hasData?'neutral':profitable?'good':'bad';
+    return `<section class="kun96-overview" aria-label="ملخص سريع">
+      <div class="kun96-overview-top">
+        <div>
+          <span class="kun96-eyebrow">ملخص سريع</span>
+          <div class="kun96-status-row"><span class="kun96-status ${statusClass}"><i></i>${status}</span><span class="kun96-autosave" data-kun96-save-state aria-live="polite">الحفظ تلقائي</span></div>
+        </div>
+        <div class="kun96-progress-wrap" title="اكتمال أهم البيانات الأساسية">
+          <div class="kun96-progress-copy"><b>${progress.filled}/${progress.total}</b><span>بيانات أساسية</span></div>
+          <div class="kun96-progress"><span style="width:${progress.percent}%"></span></div>
+        </div>
+      </div>
+      <div class="kun96-overview-grid">
+        <div class="kun96-overview-kpi"><span>صافي الربح</span><strong class="${hasData?(profitable?'pos':'neg'):''}">${hasData?money(c.netProfit):'—'}</strong><small>${hasData?`هامش ${percent(c.netMargin)}`:'هيظهر بعد إدخال البيانات'}</small></div>
+        <div class="kun96-overview-kpi"><span>CPA الحالي</span><strong>${hasData?money(c.currentCPA):'—'}</strong><small>${hasData&&c.netBreakEvenCPA>0?`التعادل عند ${money(c.netBreakEvenCPA)}`:'تكلفة الطلب الإعلانية'}</small></div>
+        <div class="kun96-overview-kpi"><span>ROAS الحقيقي</span><strong>${hasData?multiple(c.realizedROAS):'—'}</strong><small>${hasData&&c.realizedBreakEvenROAS>0?`التعادل ${multiple(c.realizedBreakEvenROAS)}`:'بعد الإلغاءات والمرتجعات'}</small></div>
+        <div class="kun96-overview-kpi"><span>مساحة CPA</span><strong class="${hasData?(cpaOk?'pos':'neg'):''}">${hasData&&c.netBreakEvenCPA>0?money(c.cpaHeadroom):'—'}</strong><small>${hasData&&c.netBreakEvenCPA>0?(cpaOk?'لسه فيه مساحة قبل التعادل':'فوق أو عند نقطة التعادل'):'هتظهر بعد اكتمال البيانات'}</small></div>
+      </div>
+    </section>`;
+  }
+  function sectionNav(){
+    return `<nav class="kun96-stepnav" aria-label="انتقل بين أقسام الحاسبة">${SECTION_NAV.map(([id,label,sub],index)=>`<button type="button" data-kun96-jump="${id}"><span>${index+1}</span><b>${label}</b><small>${sub}</small></button>`).join('')}</nav>`;
+  }
+
   function field([key,label,unit,placeholder]){
     const value=model[key]??'';
     const allowNegative=key.includes('Change')||key==='targetAovLift';
@@ -326,7 +369,7 @@
     return `<div class="kun96-field"><div class="kun96-field-head"><span>${escapeHtml(label)}</span><button type="button" class="kun96-help-btn" data-kun96-help="${escapeHtml(key)}" aria-label="شرح خانة ${escapeHtml(label)}" aria-describedby="${helpId}" aria-expanded="false">!</button><div class="kun96-tooltip" id="${helpId}" role="tooltip">${escapeHtml(help)}</div></div><label class="kun96-input-wrap"><input type="number" step="any" ${allowNegative?'':'min="0"'} data-kun96-field="${escapeHtml(key)}" value="${escapeHtml(value)}" placeholder="${escapeHtml(placeholder)}" aria-label="${escapeHtml(label)}"><em>${escapeHtml(unit)}</em></label></div>`;
   }
   function fields(group){return `<div class="kun96-fields">${GROUPS[group].map(field).join('')}</div>`;}
-  function block(title,sub,content,open=true){return `<details class="kun96-block" ${open?'open':''}><summary><div><b>${title}</b><small>${sub}</small></div><span>⌄</span></summary><div class="kun96-block-body">${content}</div></details>`;}
+  function block(title,sub,content,open=true,id=''){return `<details class="kun96-block" ${id?`id="kun96-section-${escapeHtml(id)}"`:''} ${open?'open':''}><summary><div><b>${title}</b><small>${sub}</small></div><span class="kun96-chevron" aria-hidden="true">⌄</span></summary><div class="kun96-block-body">${content}</div></details>`;}
   function kpi(label,value,cls='',hint=''){return `<div class="kun96-kpi ${cls}"><span>${label}</span><strong>${value}</strong>${hint?`<small>${hint}</small>`:''}</div>`;}
   function row(label,value,cls=''){return `<div class="kun96-row ${cls}"><span>${label}</span><b>${value}</b></div>`;}
 
@@ -334,16 +377,28 @@
     if(document.getElementById('kunEcomCalc96Style'))return;
     const s=document.createElement('style');s.id='kunEcomCalc96Style';s.textContent=`
       .kun94-subnav{font-size:12px!important;padding-inline-start:24px!important;opacity:.9}.kun94-subnav::before{content:'↳';margin-inline-end:7px;opacity:.55}
-      .kun96-page{direction:rtl;display:grid;gap:16px}.kun96-head{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap}.kun96-head h2{margin:0 0 4px;font-size:22px}.kun96-head p{margin:0;color:#64748b;font-size:12px;line-height:1.7}.kun96-head .spacer{flex:1}.kun96-actions{display:flex;gap:8px;flex-wrap:wrap}
-      .kun96-actions button{border:1px solid #dbe3ea;background:#fff;border-radius:11px;padding:9px 12px;font:inherit;font-weight:800;cursor:pointer}.kun96-actions button.primary{background:#0f172a;color:#fff;border-color:#0f172a}
-      .kun96-process{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:7px}.kun96-process div{background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:9px;text-align:center;font-size:10px;font-weight:850}.kun96-layout{display:grid;grid-template-columns:minmax(0,1.08fr) minmax(400px,.92fr);gap:14px;align-items:start}.kun96-inputs,.kun96-results{display:grid;gap:11px}.kun96-results{position:sticky;top:70px}
-      .kun96-block{border:1px solid var(--line,#e2e8f0);border-radius:16px;background:var(--card,#fff);overflow:visible}.kun96-block summary{list-style:none;cursor:pointer;padding:14px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px}.kun96-block summary::-webkit-details-marker{display:none}.kun96-block summary b{display:block;font-size:14px}.kun96-block summary small{display:block;color:#64748b;font-size:10px;margin-top:3px}.kun96-block-body{padding:0 16px 16px}
-      .kun96-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.kun96-field{display:grid;gap:6px;min-width:0}.kun96-field-head{position:relative;display:flex;align-items:center;gap:6px;min-height:24px}.kun96-field-head>span{font-size:10.5px;color:#475569;font-weight:800;line-height:1.5}.kun96-help-btn{width:22px;height:22px;min-width:22px;border:1px solid #cbd5e1;border-radius:999px;background:#f8fafc;color:#334155;font:900 12px/1 inherit;padding:0;display:inline-grid;place-items:center;cursor:help}.kun96-help-btn:hover,.kun96-help-btn:focus-visible,.kun96-field-head[data-open="1"] .kun96-help-btn{background:#0f172a;color:#fff;border-color:#0f172a;outline:none}.kun96-tooltip{display:none;position:absolute;z-index:80;top:calc(100% + 6px);right:0;width:min(320px,calc(100vw - 56px));padding:10px 12px;border-radius:11px;background:#0f172a;color:#fff;font-size:10.5px;font-weight:650;line-height:1.8;box-shadow:0 10px 30px rgba(15,23,42,.18);text-align:right}.kun96-field-head:hover .kun96-tooltip,.kun96-field-head:focus-within .kun96-tooltip,.kun96-field-head[data-open="1"] .kun96-tooltip{display:block}.kun96-input-wrap{display:grid;grid-template-columns:minmax(0,1fr) auto;border:1px solid #dbe3ea;border-radius:10px;overflow:hidden;background:#fff}.kun96-input-wrap input{border:0!important;border-radius:0!important;min-width:0;padding:10px!important}.kun96-input-wrap em{font-style:normal;display:flex;align-items:center;padding:0 9px;background:#f8fafc;border-inline-start:1px solid #e2e8f0;font-size:9.5px;font-weight:800;color:#64748b;white-space:nowrap}
-      .kun96-kpis{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.kun96-kpi{border:1px solid #e2e8f0;border-radius:13px;padding:12px;background:#fff;display:grid;gap:4px}.kun96-kpi span{font-size:10px;color:#64748b;font-weight:800}.kun96-kpi strong{font-size:18px}.kun96-kpi small{font-size:9px;color:#64748b;line-height:1.5}.kun96-kpi.good strong{color:#15803d}.kun96-kpi.bad strong{color:#b91c1c}.kun96-kpi.focus{background:#eff6ff;border-color:#bfdbfe}.kun96-kpi.focus strong{color:#1d4ed8}
-      .kun96-row{display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px dashed #e2e8f0;font-size:10.5px}.kun96-row:last-child{border-bottom:0}.kun96-row b{font-size:11.5px}.kun96-row.good b{color:#15803d}.kun96-row.bad b{color:#b91c1c}.kun96-waterfall{display:grid;gap:6px}.kun96-bar{display:grid;grid-template-columns:135px 1fr 90px;gap:8px;align-items:center;font-size:9.5px}.kun96-track{height:10px;border-radius:999px;background:#f1f5f9;overflow:hidden}.kun96-fill{height:100%;background:#64748b;border-radius:999px}.kun96-fill.positive{background:#16a34a}.kun96-fill.negative{background:#dc2626}.kun96-bar b{text-align:left}
-      .kun96-impact{overflow:auto}.kun96-impact table{width:100%;border-collapse:collapse;font-size:9.5px;min-width:550px}.kun96-impact th,.kun96-impact td{padding:8px;border-bottom:1px solid #e2e8f0;text-align:right}.kun96-impact th{color:#64748b;background:#f8fafc}.kun96-impact .up{color:#15803d;font-weight:850}.kun96-impact .down{color:#b91c1c;font-weight:850}.kun96-scenarios{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.kun96-scenario{border:1px solid #e2e8f0;border-radius:13px;padding:11px;background:#fff}.kun96-scenario.target{background:#f0fdf4;border-color:#bbf7d0}.kun96-scenario.stress{background:#fff7ed;border-color:#fed7aa}.kun96-scenario h4{margin:0 0 8px;font-size:12px}.kun96-scenario strong{display:block;font-size:16px;margin-bottom:5px}.kun96-scenario small{display:block;font-size:9px;color:#64748b;line-height:1.65}
-      .kun96-alert{padding:10px 12px;border-radius:11px;font-size:10.5px;line-height:1.7;margin-bottom:8px}.kun96-alert.warn{background:#fff7ed;border:1px solid #fed7aa;color:#9a3412}.kun96-alert.ok{background:#f0fdf4;border:1px solid #bbf7d0;color:#166534}.kun96-alert.info{background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af}.kun96-decision{display:grid;gap:8px}.kun96-formula{font-size:9.5px;color:#475569;line-height:1.75;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px}
-      @media(max-width:1080px){.kun96-layout{grid-template-columns:1fr}.kun96-results{position:static}.kun96-process{grid-template-columns:repeat(3,1fr)}}@media(max-width:640px){.kun96-fields,.kun96-kpis{grid-template-columns:1fr}.kun96-scenarios{grid-template-columns:1fr}.kun96-process{grid-template-columns:repeat(2,1fr)}.kun96-bar{grid-template-columns:105px 1fr 72px}.kun96-head h2{font-size:18px}}@media print{.nav,.topbar,.kun96-actions{display:none!important}.kun96-layout{grid-template-columns:1fr}.kun96-results{position:static}.kun96-block{break-inside:avoid}}
+      .kun96-page{direction:rtl;display:grid;gap:16px;color:#0f172a}.kun96-page *{box-sizing:border-box}
+      .kun96-head{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:18px;align-items:center;padding:18px 20px;border:1px solid #e2e8f0;border-radius:20px;background:linear-gradient(135deg,#fff 0%,#f8fafc 100%)}
+      .kun96-titleline{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.kun96-head h2{margin:0;font-size:24px;letter-spacing:-.25px}.kun96-head p{margin:7px 0 0;color:#64748b;font-size:12.5px;line-height:1.8;max-width:760px}.kun96-version{font-size:9px;font-weight:900;padding:4px 8px;border-radius:999px;background:#eef2ff;color:#3730a3}
+      .kun96-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.kun96-actions button{min-height:40px;border:1px solid #dbe3ea;background:#fff;border-radius:12px;padding:9px 13px;font:inherit;font-size:11px;font-weight:850;cursor:pointer;transition:.18s ease}.kun96-actions button:hover{transform:translateY(-1px);border-color:#94a3b8}.kun96-actions button.primary{background:#0f172a;color:#fff;border-color:#0f172a}.kun96-actions button.danger{color:#b91c1c;background:#fff7f7;border-color:#fecaca}
+      .kun96-overview{border:1px solid #dbe3ea;border-radius:20px;background:#fff;padding:16px;display:grid;gap:14px}.kun96-overview-top{display:flex;gap:14px;align-items:center;justify-content:space-between;flex-wrap:wrap}.kun96-eyebrow{display:block;color:#64748b;font-size:9.5px;font-weight:900;margin-bottom:5px}.kun96-status-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.kun96-status{display:inline-flex;align-items:center;gap:7px;padding:6px 10px;border-radius:999px;font-size:11px;font-weight:900}.kun96-status i{width:7px;height:7px;border-radius:50%;background:currentColor}.kun96-status.good{background:#ecfdf3;color:#15803d}.kun96-status.bad{background:#fef2f2;color:#b91c1c}.kun96-status.neutral{background:#f1f5f9;color:#475569}.kun96-autosave{font-size:9.5px;color:#64748b;padding:5px 8px;border:1px solid #e2e8f0;border-radius:999px;background:#fff}
+      .kun96-progress-wrap{display:flex;align-items:center;gap:10px;min-width:210px}.kun96-progress-copy{display:grid;line-height:1.2;text-align:left}.kun96-progress-copy b{font-size:12px}.kun96-progress-copy span{font-size:9px;color:#64748b}.kun96-progress{width:118px;height:7px;background:#e2e8f0;border-radius:999px;overflow:hidden}.kun96-progress span{display:block;height:100%;background:#0f172a;border-radius:999px;transition:width .2s ease}
+      .kun96-overview-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px}.kun96-overview-kpi{padding:13px 14px;border:1px solid #edf0f3;border-radius:15px;background:#fbfcfd;min-width:0}.kun96-overview-kpi span{display:block;font-size:9.5px;color:#64748b;font-weight:850}.kun96-overview-kpi strong{display:block;font-size:20px;margin:4px 0 2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.kun96-overview-kpi strong.pos{color:#15803d}.kun96-overview-kpi strong.neg{color:#b91c1c}.kun96-overview-kpi small{font-size:8.8px;color:#64748b;line-height:1.5}
+      .kun96-stepnav{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:7px;padding:6px;border:1px solid #e2e8f0;border-radius:17px;background:#f8fafc}.kun96-stepnav button{display:grid;grid-template-columns:28px minmax(0,1fr);grid-template-rows:auto auto;column-gap:7px;align-items:center;text-align:right;border:1px solid transparent;border-radius:12px;background:transparent;padding:8px 9px;cursor:pointer;font:inherit;min-width:0}.kun96-stepnav button:hover,.kun96-stepnav button:focus-visible{background:#fff;border-color:#dbe3ea;outline:none}.kun96-stepnav button>span{grid-row:1/3;width:28px;height:28px;border-radius:9px;background:#fff;border:1px solid #e2e8f0;display:grid;place-items:center;font-size:10px;font-weight:900}.kun96-stepnav b{font-size:10.5px;white-space:nowrap}.kun96-stepnav small{font-size:8px;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .kun96-process{position:relative;display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:0;padding:12px 8px;border:1px solid #e2e8f0;border-radius:17px;background:#fff;overflow:hidden}.kun96-process::before{content:'';position:absolute;right:9%;left:9%;top:27px;height:2px;background:#e2e8f0}.kun96-process div{position:relative;z-index:1;display:grid;justify-items:center;gap:6px;font-size:9.5px;font-weight:850;color:#475569;text-align:center}.kun96-process div::before{content:attr(data-step);width:30px;height:30px;border-radius:50%;display:grid;place-items:center;background:#fff;border:2px solid #cbd5e1;color:#334155;font-size:9px}
+      .kun96-layout{display:grid;grid-template-columns:minmax(0,1.12fr) minmax(390px,.88fr);gap:16px;align-items:start}.kun96-inputs,.kun96-results{display:grid;gap:12px}.kun96-results{position:sticky;top:72px;max-height:calc(100vh - 86px);overflow:auto;padding-inline-start:2px;scrollbar-width:thin}
+      .kun96-block{scroll-margin-top:82px;border:1px solid #e2e8f0;border-radius:18px;background:#fff;overflow:visible;box-shadow:0 1px 2px rgba(15,23,42,.02)}.kun96-block[open]{border-color:#d5dde6}.kun96-block summary{list-style:none;cursor:pointer;padding:15px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;user-select:none}.kun96-block summary::-webkit-details-marker{display:none}.kun96-block summary b{display:block;font-size:13.5px}.kun96-block summary small{display:block;color:#64748b;font-size:9.5px;margin-top:4px;line-height:1.5}.kun96-chevron{width:28px;height:28px;border:1px solid #e2e8f0;border-radius:9px;display:grid;place-items:center;color:#64748b;transition:transform .18s ease}.kun96-block[open] .kun96-chevron{transform:rotate(180deg)}.kun96-block-body{padding:2px 16px 17px}
+      .kun96-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.kun96-field{display:grid;gap:7px;min-width:0}.kun96-field-head{position:relative;display:flex;align-items:center;gap:6px;min-height:27px}.kun96-field-head>span{font-size:10.5px;color:#334155;font-weight:850;line-height:1.5}.kun96-help-btn{width:25px;height:25px;min-width:25px;border:1px solid #d5dde6;border-radius:999px;background:#f8fafc;color:#475569;font:900 12px/1 inherit;padding:0;display:inline-grid;place-items:center;cursor:help;transition:.16s ease}.kun96-help-btn:hover,.kun96-help-btn:focus-visible,.kun96-field-head[data-open="1"] .kun96-help-btn{background:#0f172a;color:#fff;border-color:#0f172a;outline:none}.kun96-tooltip{display:none;position:absolute;z-index:100;top:calc(100% + 6px);right:0;width:min(330px,calc(100vw - 56px));padding:11px 13px;border-radius:12px;background:#0f172a;color:#fff;font-size:10.5px;font-weight:650;line-height:1.85;box-shadow:0 12px 34px rgba(15,23,42,.22);text-align:right}.kun96-field-head:hover .kun96-tooltip,.kun96-field-head:focus-within .kun96-tooltip,.kun96-field-head[data-open="1"] .kun96-tooltip{display:block}
+      .kun96-input-wrap{display:grid;grid-template-columns:minmax(0,1fr) auto;border:1px solid #cfd8e3;border-radius:12px;overflow:hidden;background:#fff;transition:border-color .16s ease,box-shadow .16s ease}.kun96-input-wrap:focus-within{border-color:#64748b;box-shadow:0 0 0 3px rgba(100,116,139,.10)}.kun96-input-wrap input{border:0!important;border-radius:0!important;min-width:0;min-height:45px;padding:11px 12px!important;font-size:14px!important;font-weight:750!important;background:transparent!important;color:#0f172a!important}.kun96-input-wrap input::placeholder{color:#b1bac6;font-weight:500}.kun96-input-wrap em{font-style:normal;display:flex;align-items:center;padding:0 11px;background:#f8fafc;border-inline-start:1px solid #e2e8f0;font-size:9.5px;font-weight:850;color:#64748b;white-space:nowrap}
+      .kun96-kpis{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.kun96-kpi{border:1px solid #e2e8f0;border-radius:14px;padding:12px 13px;background:#fff;display:grid;gap:4px;min-width:0}.kun96-kpi span{font-size:9.5px;color:#64748b;font-weight:850}.kun96-kpi strong{font-size:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.kun96-kpi small{font-size:8.8px;color:#64748b;line-height:1.5}.kun96-kpi.good{background:#f8fff9;border-color:#d9f3df}.kun96-kpi.good strong{color:#15803d}.kun96-kpi.bad{background:#fffafa;border-color:#fee2e2}.kun96-kpi.bad strong{color:#b91c1c}.kun96-kpi.focus{background:#f8fafc;border-color:#cbd5e1}.kun96-kpi.focus strong{color:#0f172a}
+      .kun96-row{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;padding:9px 0;border-bottom:1px dashed #e2e8f0;font-size:10.5px}.kun96-row:last-child{border-bottom:0}.kun96-row span{color:#475569}.kun96-row b{font-size:11.5px;text-align:left;white-space:nowrap}.kun96-row.good b{color:#15803d}.kun96-row.bad b{color:#b91c1c}
+      .kun96-waterfall{display:grid;gap:8px}.kun96-bar{display:grid;grid-template-columns:150px 1fr 92px;gap:9px;align-items:center;font-size:9.5px}.kun96-track{height:9px;border-radius:999px;background:#f1f5f9;overflow:hidden}.kun96-fill{height:100%;background:#64748b;border-radius:999px}.kun96-fill.positive{background:#16a34a}.kun96-fill.negative{background:#dc2626}.kun96-bar b{text-align:left}
+      .kun96-impact{overflow:auto;border:1px solid #eef2f7;border-radius:12px}.kun96-impact table{width:100%;border-collapse:collapse;font-size:9.5px;min-width:550px}.kun96-impact th,.kun96-impact td{padding:9px;border-bottom:1px solid #eef2f7;text-align:right}.kun96-impact th{color:#64748b;background:#f8fafc;position:sticky;top:0}.kun96-impact .up{color:#15803d;font-weight:850}.kun96-impact .down{color:#b91c1c;font-weight:850}.kun96-scenarios{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.kun96-scenario{border:1px solid #e2e8f0;border-radius:14px;padding:12px;background:#fff}.kun96-scenario.target{background:#f4fff6;border-color:#d9f3df}.kun96-scenario.stress{background:#fffaf5;border-color:#ffedd5}.kun96-scenario h4{margin:0 0 8px;font-size:11.5px}.kun96-scenario strong{display:block;font-size:16px;margin-bottom:6px}.kun96-scenario small{display:block;font-size:9px;color:#64748b;line-height:1.7}
+      .kun96-alert{padding:10px 12px;border-radius:12px;font-size:10.5px;line-height:1.75;margin-bottom:8px}.kun96-alert.warn{background:#fff8f1;border:1px solid #fed7aa;color:#9a3412}.kun96-alert.ok{background:#f3fff5;border:1px solid #bbf7d0;color:#166534}.kun96-alert.info{background:#f6f8ff;border:1px solid #dbe4ff;color:#1e40af}.kun96-decision{display:grid;gap:8px}.kun96-formula{font-size:9.5px;color:#475569;line-height:1.8;background:#f8fafc;border:1px solid #e2e8f0;border-radius:11px;padding:11px}
+      @media(max-width:1180px){.kun96-layout{grid-template-columns:1fr}.kun96-results{position:static;max-height:none;overflow:visible}.kun96-overview-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.kun96-stepnav{grid-template-columns:repeat(4,minmax(0,1fr))}}
+      @media(max-width:720px){.kun96-page{gap:12px}.kun96-head{grid-template-columns:1fr;padding:15px}.kun96-head h2{font-size:19px}.kun96-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%}.kun96-actions button{width:100%;min-height:44px}.kun96-actions button.primary{grid-column:1/-1;grid-row:1}.kun96-overview{padding:13px}.kun96-overview-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.kun96-progress-wrap{width:100%;justify-content:space-between}.kun96-progress{flex:1}.kun96-stepnav{display:flex;overflow:auto;scroll-snap-type:x proximity;padding:6px}.kun96-stepnav button{min-width:145px;scroll-snap-align:start}.kun96-process{grid-template-columns:repeat(3,1fr);row-gap:14px}.kun96-process::before{display:none}.kun96-fields,.kun96-kpis{grid-template-columns:1fr}.kun96-scenarios{grid-template-columns:1fr}.kun96-bar{grid-template-columns:112px 1fr 78px}.kun96-tooltip{position:fixed;top:auto;right:18px;left:18px;bottom:18px;width:auto;font-size:11px}.kun96-input-wrap input{min-height:48px;font-size:16px!important}}
+      @media(max-width:420px){.kun96-overview-grid{grid-template-columns:1fr}.kun96-actions{grid-template-columns:1fr}.kun96-actions button.primary{grid-column:auto}.kun96-process{grid-template-columns:repeat(2,1fr)}.kun96-head p{font-size:11.5px}}
+      @media print{.nav,.topbar,.kun96-actions,.kun96-stepnav{display:none!important}.kun96-head,.kun96-overview{border:0;padding:0}.kun96-layout{grid-template-columns:1fr}.kun96-results{position:static;max-height:none;overflow:visible}.kun96-block{break-inside:avoid}}
     `;document.head.appendChild(s);
   }
 
@@ -396,18 +451,46 @@
   }
 
   function render(){
-      if(!active())return;
-      const host=root();if(!host)return;
-      style();
-      const c=calculate(model);
-      host.innerHTML=`<div class="kun96-page"><header class="kun96-head"><div><h2>حاسبة ربحية التجارة الإلكترونية</h2><p>من أول الطلب لحد الإيراد المحقق وهامش المساهمة وصافي الربح — علشان القرار يبقى على البيزنس كله، مش على ROAS لوحده.</p></div><div class="spacer"></div><div class="kun96-actions"><button data-kun96-action="example">تحميل مثال 1000 طلب</button><button data-kun96-action="save" class="primary">حفظ البيانات</button><button data-kun96-action="print">طباعة</button><button data-kun96-action="reset">مسح البيانات</button></div></header><div class="kun96-process"><div>الطلبات</div><div>تم الشحن</div><div>المرتجعات</div><div>الإيراد المحقق</div><div>هامش المساهمة</div><div>صافي الربح</div></div><div class="kun96-layout"><div class="kun96-inputs">${block('1) بيانات التشغيل الفعلية — دورة الطلبات','دخل أعداد الحالات الفعلية لنفس الفترة، والحاسبة هتحسب النسب تلقائي.',fields('orders'))}${block('2) الإيرادات ومتوسط قيمة الطلب (AOV)','من قيمة الطلب قبل الخصم لحد الإيراد اللي اتحقق فعلًا.',fields('revenue'))}${block('3) التكاليف المتغيرة','كل تكلفة بتحصل بسبب الطلب أو الشحنة نفسها.',fields('variable'))}${block('4) الإنفاق الإعلاني','الحاسبة هتطلع CPA وROAS تلقائي من الإنفاق والنتائج الفعلية.',fields('marketing'))}${block('5) المصروفات الثابتة','رواتب وإيجار وبرامج وباقي المصاريف اللي مش بتتغير مباشرة مع عدد الطلبات.',fields('fixed'))}${block('6) الأهداف وافتراضات النمو','حط الأرقام اللي عايز توصل لها وشوف تأثير السيناريو المستهدف.',fields('targets'),false)}${block('7) افتراضات السيناريو المتشائم','اختبر البيزنس لو المؤشرات ساءت علشان تعرف حدود الأمان.',fields('stress'),false)}</div><aside class="kun96-results" data-kun96-results>${resultHtml(c)}</aside></div></div>`;
-      bind();
+    if(!active())return;
+    const host=root();if(!host)return;
+    style();
+    const c=calculate(model);
+    host.innerHTML=`<div class="kun96-page">
+      <header class="kun96-head">
+        <div><div class="kun96-titleline"><h2>حاسبة ربحية التجارة الإلكترونية</h2><span class="kun96-version">نسخة محسّنة</span></div><p>دخل أرقامك الفعلية لنفس الفترة، والحاسبة هتحولها لقرار واضح: أنت مربح ولا لأ، أقصى CPA تستحمله، فين التسريب، وإيه أفضل نقطة تحسنها.</p></div>
+        <div class="kun96-actions"><button data-kun96-action="example">تجربة مثال</button><button data-kun96-action="print">طباعة</button><button data-kun96-action="reset" class="danger">مسح البيانات</button><button data-kun96-action="save" class="primary">حفظ الآن</button></div>
+      </header>
+      ${quickSummary(c)}
+      ${sectionNav()}
+      <div class="kun96-process" aria-label="رحلة الحساب"><div data-step="1">الطلبات</div><div data-step="2">تم الشحن</div><div data-step="3">المرتجعات</div><div data-step="4">الإيراد المحقق</div><div data-step="5">هامش المساهمة</div><div data-step="6">صافي الربح</div></div>
+      <div class="kun96-layout">
+        <div class="kun96-inputs">
+          ${block('1) بيانات التشغيل الفعلية','ابدأ هنا: الطلبات وحالات الشحن لنفس الفترة.',fields('orders'),true,'orders')}
+          ${block('2) الإيرادات ومتوسط قيمة الطلب (AOV)','القيمة قبل وبعد الخصم، والشحن اللي بتحصله من العميل.',fields('revenue'),true,'revenue')}
+          ${block('3) التكاليف المتغيرة','المنتج والتغليف والشحن والمرتجعات وكل تكلفة مرتبطة بالطلب.',fields('variable'),true,'variable')}
+          ${block('4) الإنفاق الإعلاني','اكتب إجمالي الإنفاق لنفس الفترة، والباقي يتحسب تلقائي.',fields('marketing'),true,'marketing')}
+          ${block('5) المصروفات الثابتة','رواتب وإيجار وبرامج وباقي مصاريف الفترة.',fields('fixed'),false,'fixed')}
+          ${block('6) الأهداف وافتراضات النمو','حدد الهدف اللي عايز توصله واختبر تأثير التحسين.',fields('targets'),false,'targets')}
+          ${block('7) السيناريو المتشائم','اختبر حدود أمان البيزنس لو المؤشرات ساءت.',fields('stress'),false,'stress')}
+        </div>
+        <aside class="kun96-results" data-kun96-results aria-live="polite">${resultHtml(c)}</aside>
+      </div>
+    </div>`;
+    bind();
   }
 
-  function updateResults(){const out=document.querySelector('[data-kun96-results]');if(out)out.innerHTML=resultHtml(calculate(model));}
+  function updateResults(){
+    const c=calculate(model),out=document.querySelector('[data-kun96-results]');
+    if(out)out.innerHTML=resultHtml(c);
+    const overview=document.querySelector('.kun96-overview');
+    if(overview){const holder=document.createElement('div');holder.innerHTML=quickSummary(c);overview.replaceWith(holder.firstElementChild);}
+  }
   function bind(){
     const host=root();if(!host)return;
-    host.querySelectorAll('[data-kun96-field]').forEach(input=>input.addEventListener('input',()=>{const key=input.dataset.kun96Field;model[key]=signed(input.value);save();updateResults();}));
+    const setSaveState=text=>{const el=host.querySelector('[data-kun96-save-state]');if(el){el.textContent=text;clearTimeout(setSaveState.timer);setSaveState.timer=setTimeout(()=>{if(el.isConnected)el.textContent='الحفظ تلقائي';},1500);}};
+    host.querySelectorAll('[data-kun96-field]').forEach(input=>input.addEventListener('input',()=>{
+      const key=input.dataset.kun96Field;model[key]=signed(input.value);save();updateResults();setSaveState('تم الحفظ ✓');
+    }));
     host.querySelectorAll('[data-kun96-help]').forEach(button=>{
       button.addEventListener('click',event=>{
         event.preventDefault();event.stopPropagation();
@@ -417,12 +500,26 @@
       });
       button.addEventListener('keydown',event=>{if(event.key==='Escape'){const head=button.closest('.kun96-field-head');if(head)head.dataset.open='0';button.setAttribute('aria-expanded','false');button.blur();}});
     });
+    host.addEventListener('click',event=>{
+      if(!event.target.closest?.('[data-kun96-help],.kun96-tooltip'))host.querySelectorAll('.kun96-field-head[data-open="1"]').forEach(item=>{item.dataset.open='0';item.querySelector('[data-kun96-help]')?.setAttribute('aria-expanded','false');});
+    });
+    host.querySelectorAll('[data-kun96-jump]').forEach(button=>button.addEventListener('click',()=>{
+      const id=button.dataset.kun96Jump,target=host.querySelector(`#kun96-section-${CSS.escape(id)}`);
+      if(!target)return;target.open=true;target.scrollIntoView({behavior:'smooth',block:'start'});
+      setTimeout(()=>target.querySelector('input')?.focus({preventScroll:true}),260);
+    }));
     host.querySelectorAll('[data-kun96-action]').forEach(button=>button.addEventListener('click',()=>{
       const action=button.dataset.kun96Action;
-      if(action==='save'){save();window.showToast?.('تم حفظ بيانات حاسبة الربحية');return;}
+      if(action==='save'){save();setSaveState('تم الحفظ ✓');window.showToast?.('تم حفظ بيانات الحاسبة');return;}
       if(action==='print'){window.print();return;}
-      if(action==='reset'){model={...DEFAULTS};save();render();window.showToast?.('تم مسح بيانات الحاسبة');return;}
+      if(action==='reset'){
+        const hasData=Object.keys(DEFAULTS).some(key=>Math.abs(signed(model[key]))>0&&signed(model[key])!==signed(DEFAULTS[key]));
+        if(hasData&&!window.confirm('متأكد إنك عايز تمسح بيانات الحاسبة؟ مش هتقدر ترجعها بعد المسح.'))return;
+        model={...DEFAULTS};save();render();window.showToast?.('تم مسح بيانات الحاسبة');return;
+      }
       if(action==='example'){
+        const hasData=CORE_FIELDS.some(key=>Math.abs(signed(model[key]))>0);
+        if(hasData&&!window.confirm('تحميل المثال هيستبدل الأرقام الحالية في الحاسبة. تكمل؟'))return;
         model={...DEFAULTS,totalOrders:1000,cancelledOrders:50,shippedOrders:950,rtoOrders:150,deliveredOrders:800,returnedOrders:16,grossAov:800,discountPercent:3,customerShippingRevenue:0,otherRevenue:0,platformReportedRevenue:800000,cogsPerKept:350,returnedCogsLossPercent:0,packagingPerShipped:10,forwardShippingPerShipped:55,rtoCostPerOrder:35,returnCostPerOrder:40,paymentFeePercent:2,paymentFeeFixed:0,fulfillmentPerShipped:0,otherVariablePerShipped:0,adSpend:120000,salaries:25000,rent:10000,software:5000,warehouseUtilities:3000,agencyFees:0,otherFixed:2000,targetProfit:130000,targetMargin:20,targetRtoRate:10,targetAovLift:10,targetCpaChange:-20,targetCogsChange:-5,targetReturnChange:-20,stressRtoRate:25,stressAovChange:-10,stressCpaChange:20,stressCogsChange:10,stressReturnChange:25};
         save();render();window.showToast?.('تم تحميل مثال ربحية لـ 1000 طلب');
       }
@@ -435,5 +532,5 @@
   document.addEventListener('click',event=>{const target=event.target.closest?.(`[data-view="${VIEW}"],[data-go="${VIEW}"]`);if(target)setTimeout(render,0);},false);
   if(active())setTimeout(render,0);
 
-  window.KunEcommerceCalculatorV94={version:'96.1',render,calculate:()=>calculate(model),scenario:(opts)=>scenario(calculate(model),opts||{}),impact:()=>impactAnalysis(calculate(model)),get data(){return {...model};},set data(value){model={...DEFAULTS,...(value||{})};save();render();}};
+  window.KunEcommerceCalculatorV94={version:'96.2',render,calculate:()=>calculate(model),scenario:(opts)=>scenario(calculate(model),opts||{}),impact:()=>impactAnalysis(calculate(model)),get data(){return {...model};},set data(value){model={...DEFAULTS,...(value||{})};save();render();}};
 })();
