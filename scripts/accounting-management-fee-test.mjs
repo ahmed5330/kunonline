@@ -21,6 +21,7 @@ const [service,monthly,worker,scheduler,entry,ui,index,migration,financeSync,loa
 new Function(ui);
 new Function(financeSync);
 new Function(guard);
+new Function(permissionLoader);
 const monthlySyntax=spawnSync(process.execPath,['--check',fileURLToPath(new URL('../src/accounting-monthly.js',import.meta.url))],{encoding:'utf8'});
 assert.equal(monthlySyntax.status,0,`Monthly Accounting syntax invalid: ${monthlySyntax.stderr||monthlySyntax.stdout}`);
 const financeSyncSyntax=spawnSync(process.execPath,['--check',fileURLToPath(new URL('../public/v2/modules-v101-finance-accounting-sync.js',import.meta.url))],{encoding:'utf8'});
@@ -59,5 +60,6 @@ assert.ok(guard.includes("version:'103.1'"),'Accounting navigation guard must ex
 assert.ok(permissionLoader.includes("accounting:['finance.read']"),'Accounting route must remain permission-gated by finance.read');
 assert.ok(permissionLoader.includes('/v2/modules-v103-accounting-navigation-guard.js?v=103.1'),'Permission bootstrap must load the deterministic accounting guard');
 assert.ok(permissionLoader.includes("version:'51.13'"),'Permission navigation cache version must match v51.13');
+for(const marker of ['function routeNow(next)','button.dataset.kunDynamicRoute','button.onclick=()=>routeNow(\'ecommerce-calculator\')','beforeView=currentView()','sameRoot=Boolean(root&&root.innerHTML===beforeHtml)','if(now!==next||(beforeView!==next&&sameRoot))routeNow(next)','KunEcommerceCalculatorV94?.render?.()'])assert.ok(permissionLoader.includes(marker),`Deterministic delegated navigation missing ${marker}`);
 assert.ok(!service.includes('UPDATE order_management_fees SET rate_pct'),'Existing order fee rate must not be repriced when store rate changes');
 console.log('Accounting + management fee contract passed: unified monthly P&L, store-aware manual movements, cash/revenue separation, management-fee reconciliation, immutable historical rates, deterministic accounting navigation, v100 accounting UI, v101 Finance sync and v103.1 dashboard-fallback protection.');
