@@ -1,0 +1,33 @@
+name: Subscriptions v127 Contract
+
+on:
+  pull_request:
+    paths:
+      - 'src/subscription-billing.js'
+      - 'src/subscription-control.js'
+      - 'src/wallet-orders.js'
+      - 'src/wallet-topup-admin.js'
+      - 'src/admin-control.js'
+      - 'src/index-commerce-v38.js'
+      - 'src/index-production-mobile-update.js'
+      - 'public/v2/modules-v23-admin.js'
+      - 'public/v2/modules-v127-subscriptions.js'
+      - 'scripts/subscriptions-v127-contract-test.mjs'
+      - '.github/workflows/subscriptions-v127-contract.yml'
+  workflow_dispatch:
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Syntax check subscription modules
+        run: |
+          node --check src/subscription-billing.js
+          node --check src/subscription-control.js
+          node --check public/v2/modules-v127-subscriptions.js
+      - name: Validate v127 subscription contract
+        run: node scripts/subscriptions-v127-contract-test.mjs
