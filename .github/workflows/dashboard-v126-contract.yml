@@ -1,0 +1,24 @@
+name: Dashboard v126 Contract
+
+on:
+  pull_request:
+    paths:
+      - 'public/v2/modules-v126-dashboard-finance-top.js'
+      - 'src/index-commerce-v38.js'
+      - 'src/index-production-mobile-update.js'
+      - 'scripts/dashboard-v126-contract-test.mjs'
+      - '.github/workflows/dashboard-v126-contract.yml'
+  workflow_dispatch:
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Check dashboard v126 syntax
+        run: node --check public/v2/modules-v126-dashboard-finance-top.js
+      - name: Validate dashboard v126 contract
+        run: node scripts/dashboard-v126-contract-test.mjs

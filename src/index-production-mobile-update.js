@@ -93,6 +93,9 @@ async function websiteWithDirectAndroidDownload(request,env){
   if(!html.includes('/v2/modules-v125-dashboard-section-periods.js')){
     html=html.replace('</body>','<script src="/v2/modules-v125-dashboard-section-periods.js?v=125.0" data-kun-dashboard-section-periods-v125="1"></script></body>');
   }
+  if(!html.includes('/v2/modules-v126-dashboard-finance-top.js')){
+    html=html.replace('</body>','<script src="/v2/modules-v126-dashboard-finance-top.js?v=126.0" data-kun-dashboard-finance-top-v126="1"></script></body>');
+  }
   const headers=new Headers(asset.headers);
   headers.set('Content-Type','text/html; charset=utf-8');
   headers.set('Cache-Control','no-cache, no-store, must-revalidate');
