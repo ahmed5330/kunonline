@@ -99,7 +99,7 @@ export async function subscriptionAccess(env,clientId,{applyMonthly=true}={}){
   }
   const fresh=await env.DB.prepare('SELECT balance,status,currency FROM wallet_accounts WHERE client_id=?').bind(clientId).first()||account;
   const subscriptionPaused=['paused','cancelled','suspended'].includes(text(subscription.status));
-  const insufficientMonthly=!inTrial&&subscription.status==='active'&&monthlyMinimum>0&&!monthly.charged;
+  const insufficientMonthly=!inTrial&&subscription.status==='active'&&monthlyMinimum>0&&!monthly.charged&&num(fresh.balance)<monthlyMinimum;
   const emptyBalance=!inTrial&&round2(fresh.balance)<=0;
   const walletPaused=text(fresh.status)!=='active';
   const locked=subscriptionPaused||walletPaused||insufficientMonthly||emptyBalance;
