@@ -27,7 +27,7 @@ function allowedWhileLocked(path,method){
 export async function handleSubscriptionControl({request,env,ctx,delegate}){
   const url=new URL(request.url),path=url.pathname,method=request.method.toUpperCase();
   if(!path.startsWith('/api/'))return null;
-  if(['/api/login','/api/setup','/api/preview-admin-recovery'].includes(path))return null;
+  if(['/api/login','/api/setup','/api/preview-admin-recovery','/api/me','/api/logout'].includes(path))return null;
   try{
     const me=await currentUser(request,env,ctx,delegate);
     if(path==='/api/admin/subscriptions'&&method==='GET'){
