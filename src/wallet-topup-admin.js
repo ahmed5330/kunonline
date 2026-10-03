@@ -23,7 +23,8 @@ export async function approveTopup(env,topupId,actor,note=''){
   }
   const updated=await env.DB.prepare('SELECT balance FROM wallet_accounts WHERE client_id=?').bind(row.client_id).first();
   await mirrorLegacyBalance(env,row.client_id,updated?.balance||0);
-  return {ok:true,id:topupId,clientId:row.client_id,balance:round2(updated?.balance),previousBalance:round2(account.balance)};
+  let access=null;try{access=await (await import('./subscription-billing.js')).reconcileSubscriptionAfterTopup(env,row.client_id);}catch{}
+  return {ok:true,id:topupId,clientId:row.client_id,balance:round2(updated?.balance),previousBalance:round2(account.balance),access};
 }
 
 export async function rejectTopup(env,topupId,actor,note=''){
