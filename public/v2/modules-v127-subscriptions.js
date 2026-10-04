@@ -1,7 +1,7 @@
 /* Kun Online v127.0 — subscriptions, free trial, wallet lock and payment proof workspace */
 (()=>{
   if(window.KunSubscriptionsV127)return;
-  const VERSION='127.10';
+  const VERSION='127.11';
   const $=(s,r=document)=>r?.querySelector?.(s)||null;
   const $$=(s,r=document)=>r?[...r.querySelectorAll(s)]:[];
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -134,9 +134,10 @@
     const nav=$('.nav');if(!nav)return;
     let b=$('button[data-view="subscriptions"]',nav);if(!b){b=document.createElement('button');b.type='button';b.dataset.view='subscriptions';b.className='v27-admin-only';b.textContent='الاشتراكات';const admin=$('button[data-view="admin-clients"]',nav);admin?admin.after(b):nav.appendChild(b);}
     b.hidden=false;b.style.display='';
+    b.onclick=event=>{event?.preventDefault?.();event?.stopPropagation?.();setAdminActive();renderAdmin();};
   }
   function setAdminActive(){
-    $$$('.nav button[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view==='subscriptions'));
+    $('.nav button[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view==='subscriptions'));
   }
   function adminStatus(c){
     const cls=c.trialActive?'trial':c.locked?'locked':c.subscriptionStatus==='unmanaged'?'unmanaged':'';
@@ -286,11 +287,16 @@
     document.addEventListener('click',event=>{
       const nav=event.target.closest?.('.nav button[data-view],[data-go]');
       const target=nav?.dataset?.view||nav?.dataset?.go||'';
-      if(target==='subscriptions'&&state.me?.role==='admin'){setTimeout(renderAdmin,15);return;}
+      if(target==='subscriptions'&&state.me?.role==='admin'){
+        event.preventDefault();event.stopImmediatePropagation();setAdminActive();setTimeout(renderAdmin,0);return;
+      }
       if(state.locked&&target&&target!=='dashboard'){event.preventDefault();event.stopImmediatePropagation();window.showToast?.('الرصيد غير كافٍ. الداشبورد وشحن الرصيد متاحان لحين اعتماد الدفع.');$('.nav button[data-view="dashboard"]')?.click();return;}
       if(target==='dashboard')setTimeout(ensureClientPanel,300);
     },true);
-    const root=$('#root');if(root)new MutationObserver(()=>{if(state.me?.role==='admin'&&$('.nav button.active[data-view="subscriptions"]')&&!root.dataset.sub127Admin)setTimeout(renderAdmin,30);if(state.me?.role!=='admin'){if(state.locked)lockNav();if($('.v33-dashboard')&&!$('[data-sub127-client-panel]'))setTimeout(ensureClientPanel,40);}}).observe(root,{childList:true,subtree:true});
+    const root=$('#root');if(root)new MutationObserver(()=>{
+      if(state.me?.role==='admin'&&$('.nav button.active[data-view="subscriptions"]')&&!$('.sub127-admin',root)&&root.dataset.sub127Admin!=='loading')setTimeout(renderAdmin,0);
+      if(state.me?.role!=='admin'){if(state.locked)lockNav();if($('.v33-dashboard')&&!$('[data-sub127-client-panel]'))setTimeout(ensureClientPanel,40);}
+    }).observe(root,{childList:true,subtree:true});
   }
 
   function installRouteGuard(){
