@@ -1,4 +1,4 @@
-import {ensureWalletAccount,mirrorLegacyBalance,configureWallet,now,rid,round2} from './wallet-core.js';
+import {ensureWalletAccount,mirrorLegacyBalance,configureWallet,migrateLegacyBilling,now,rid,round2} from './wallet-core.js';
 import {effectiveOrderFee} from './feature-entitlements.js';
 
 const text=v=>String(v??'').trim();
@@ -33,6 +33,15 @@ export async function latestSubscription(env,clientId){
     if(/no such table:\s*subscriptions/i.test(String(error?.message||error)))return null;
     throw error;
   }
+}
+
+async function ensureManagedWallet(env,clientId,actor='system'){
+  let account=await ensureWalletAccount(env,clientId);
+  if(account.billing_version!=='v27'){
+    await migrateLegacyBilling(env,clientId,actor);
+    account=await ensureWalletAccount(env,clientId);
+  }
+  return account;
 }
 
 async function ensureSubscriptionRow(env,clientId,{monthlyMinimum=0,currency='EGP'}={}){
@@ -143,14 +152,7 @@ export async function subscriptionOrderFee(env,clientId){
 }
 
 export async function configureSubscription(env,clientId,body={},actor='admin'){
-  let account=await ensureWalletAccount(env,clientId),current=await latestSubscription(env,clientId);
-  // Managed subscriptions always use v27 billing. The migration captures the
-  // current highest order rowid, so no historical order can be charged later.
-  if(account.billing_version!=='v27'){
-    const {migrateLegacyBilling}=await import('./wallet-core.js');
-    await migrateLegacyBilling(env,clientId,actor);
-    account=await ensureWalletAccount(env,clientId);
-  }
+  const account=await ensureManagedWallet(env,clientId,actor),current=await latestSubscription(env,clientId);
   const monthlyMinimum=clampMoney(body.monthlyMinimum??body.amount??current?.amount??0),baseOrderFee=clampMoney(body.baseOrderFee??account.base_order_fee??0);
   let row=current||await ensureSubscriptionRow(env,clientId,{monthlyMinimum});
   const ts=now(),status=['active','paused','suspended'].includes(text(body.status))?text(body.status):row.status;
@@ -169,6 +171,7 @@ export async function configureSubscription(env,clientId,body={},actor='admin'){
 }
 
 export async function startFreeTrial(env,clientId,{days=30,actor='admin'}={}){
+  await ensureManagedWallet(env,clientId,actor);
   const row=await ensureSubscriptionRow(env,clientId),start=cairoYmd(),end=addDays(start,Math.max(1,Math.min(90,Number(days)||30))),ts=now();
   await env.DB.batch([
     env.DB.prepare("UPDATE subscriptions SET status='trialing',period_start=?,period_end=?,provider='kun_wallet',updated_at=? WHERE id=?").bind(start,end,ts,row.id),
@@ -180,6 +183,7 @@ export async function startFreeTrial(env,clientId,{days=30,actor='admin'}={}){
 }
 
 export async function endFreeTrial(env,clientId,{actor='admin'}={}){
+  await ensureManagedWallet(env,clientId,actor);
   const row=await ensureSubscriptionRow(env,clientId),ts=now(),end=cairoYmd();
   await env.DB.batch([
     env.DB.prepare("UPDATE subscriptions SET status='active',period_end=?,updated_at=? WHERE id=?").bind(end,ts,row.id),
