@@ -1,7 +1,7 @@
 /* Kun Online v127.0 — subscriptions, free trial, wallet lock and payment proof workspace */
 (()=>{
   if(window.KunSubscriptionsV127)return;
-  const VERSION='127.0';
+  const VERSION='127.1';
   const $=(s,r=document)=>r?.querySelector?.(s)||null;
   const $$=(s,r=document)=>r?[...r.querySelectorAll(s)]:[];
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -25,6 +25,7 @@
       .sub127-status{display:inline-flex;padding:4px 7px;border-radius:999px;font-size:8px;font-weight:900;background:#eaf8ee;color:#15803d}.sub127-status.locked{background:#fee2e2;color:#b91c1c}.sub127-status.trial{background:#dcfce7;color:#15803d}.sub127-status.unmanaged{background:#f1f5f9;color:#64748b}
       .sub127-payment{display:grid;grid-template-columns:72px minmax(140px,1fr) repeat(3,minmax(100px,.7fr)) auto;gap:9px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line,#e2e8f0)}.sub127-proof{width:68px;height:54px;object-fit:cover;border-radius:8px;border:1px solid var(--line,#e2e8f0);background:#f8fafc}.sub127-actions{display:flex;gap:5px}
       .sub127-modal-back{position:fixed;inset:0;z-index:99999;background:rgba(15,23,42,.48);display:grid;place-items:center;padding:16px}.sub127-modal{width:min(720px,96vw);max-height:92vh;overflow:auto;background:var(--card,#fff);border-radius:18px;padding:18px;box-shadow:0 26px 80px rgba(15,23,42,.28)}.sub127-modal-head{display:flex;align-items:flex-start;gap:10px}.sub127-modal-head h2{margin:0}.sub127-form{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:15px}.sub127-form label{display:grid;gap:5px;font-size:9px;font-weight:800;color:var(--muted,#64748b)}.sub127-modal-actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:15px}
+      html[data-kun-subscription-locked="1"] .nav .nav-group,html[data-kun-subscription-locked="1"] .nav button[data-view]:not([data-view="dashboard"]),html[data-kun-subscription-locked="1"] .nav [data-kun-shortcuts-nav],html[data-kun-subscription-locked="1"] #quickBtn{display:none!important}
       body[data-theme="dark"] .sub127-client-panel,body[data-theme="dark"] .sub127-kpi,body[data-theme="dark"] .sub127-modal{background:var(--card);border-color:var(--line)}body[data-theme="dark"] .sub127-table th{background:#172033}
       @media(max-width:850px){.sub127-kpis,.sub127-summary{grid-template-columns:1fr 1fr}.sub127-topup{grid-template-columns:1fr 1fr}.sub127-topup .btn{grid-column:1/-1}.sub127-payment{grid-template-columns:64px 1fr auto}.sub127-payment>:nth-child(3),.sub127-payment>:nth-child(4),.sub127-payment>:nth-child(5){display:none}}
       @media(max-width:520px){.sub127-kpis,.sub127-summary,.sub127-form,.sub127-topup{grid-template-columns:1fr}.sub127-client-head{flex-wrap:wrap}.sub127-badge{margin-inline-start:0}.sub127-toolbar .input{min-width:0;width:100%}.sub127-payment{grid-template-columns:58px 1fr}.sub127-actions{grid-column:1/-1}.sub127-proof{width:56px;height:50px}}
@@ -36,22 +37,42 @@
 
   async function proofData(file){
     if(!file)throw new Error('ارفع صورة إثبات التحويل');
-    if(!/^image\/(jpeg|png|webp)$/i.test(file.type))throw new Error('الصورة لازم تكون JPG أو PNG أو WebP');
+    if(!String(file.type||'').startsWith('image/'))throw new Error('الملف لازم يكون صورة إثبات تحويل');
     const read=f=>new Promise((resolve,reject)=>{const fr=new FileReader();fr.onload=()=>resolve(String(fr.result||''));fr.onerror=()=>reject(new Error('تعذر قراءة الصورة'));fr.readAsDataURL(f);});
-    let raw=await read(file);if(raw.length<=430000)return raw;
-    const bitmap=await createImageBitmap(file),scale=Math.min(1,1400/Math.max(bitmap.width,bitmap.height)),canvas=document.createElement('canvas');
-    canvas.width=Math.max(1,Math.round(bitmap.width*scale));canvas.height=Math.max(1,Math.round(bitmap.height*scale));canvas.getContext('2d').drawImage(bitmap,0,0,canvas.width,canvas.height);
-    for(const q of [.8,.68,.56,.45]){raw=canvas.toDataURL('image/jpeg',q);if(raw.length<=430000)return raw;}
-    throw new Error('صورة التحويل كبيرة جدًا. استخدم Screenshot أصغر.');
+    const supported=/^image\/(jpeg|png|webp)$/i.test(file.type),raw=await read(file);
+    if(supported&&raw.length<=360000)return raw;
+    let image=null,width=0,height=0,release=()=>{};
+    try{
+      if(typeof createImageBitmap==='function'){
+        image=await createImageBitmap(file);width=image.width;height=image.height;release=()=>image.close?.();
+      }else{
+        image=await new Promise((resolve,reject)=>{const img=new Image();img.onload=()=>resolve(img);img.onerror=()=>reject(new Error('تعذر فتح الصورة على هذا الجهاز'));img.src=raw;});
+        width=image.naturalWidth||image.width;height=image.naturalHeight||image.height;
+      }
+      const maxSide=1100,scale=Math.min(1,maxSide/Math.max(width,height)),canvas=document.createElement('canvas');
+      canvas.width=Math.max(1,Math.round(width*scale));canvas.height=Math.max(1,Math.round(height*scale));
+      const ctx=canvas.getContext('2d');if(!ctx)throw new Error('تعذر تجهيز صورة التحويل');
+      ctx.drawImage(image,0,0,canvas.width,canvas.height);
+      for(const q of [.78,.66,.54,.44,.34]){const out=canvas.toDataURL('image/jpeg',q);if(out.length<=420000){release();return out;}}
+      release();throw new Error('صورة التحويل كبيرة جدًا. التقط Screenshot أصغر ثم حاول مرة أخرى.');
+    }catch(error){
+      release();
+      if(supported&&raw.length<=440000)return raw;
+      throw new Error(error?.message||'تعذر تجهيز صورة التحويل على هذا الجهاز');
+    }
   }
 
   function restoreNav(){
-    $$('[data-sub127-hidden="1"]').forEach(b=>{b.hidden=false;b.style.display='';delete b.dataset.sub127Hidden;});
+    delete document.documentElement.dataset.kunSubscriptionLocked;
+    $('[data-sub127-hidden="1"]').forEach(b=>{b.hidden=false;b.style.display='';delete b.dataset.sub127Hidden;});
     window.KunPermissionNavigationV51?.apply?.();
+    window.KunSidebarGroupsV90?.sync?.();
   }
   function lockNav(){
     if(!state.access?.locked)return restoreNav();
-    $$('.nav button[data-view]').forEach(b=>{if(b.dataset.view==='dashboard')return;b.dataset.sub127Hidden='1';b.hidden=true;b.style.display='none';});
+    document.documentElement.dataset.kunSubscriptionLocked='1';
+    $('.nav button[data-view]').forEach(b=>{if(b.dataset.view==='dashboard')return;b.dataset.sub127Hidden='1';b.hidden=true;b.style.display='none';});
+    window.KunSidebarGroupsV90?.sync?.();
     const active=$('.nav button.active[data-view]');if(active&&active.dataset.view!=='dashboard')$('.nav button[data-view="dashboard"]')?.click();
   }
 
@@ -71,7 +92,7 @@
 
   function clientPanelHtml(a){
     const trial=a?.trialActive,locked=a?.locked,cls=locked?'locked':trial?'trial':'',badge=statusText(a),currency=a?.currency||'EGP';
-    return `<section class="sub127-client-panel ${cls}" data-sub127-client-panel="1"><div class="sub127-client-head"><div><h3>${locked?'استكمال تشغيل Kun Online':'الاشتراك والرصيد'}</h3><p>${locked?`${esc(reasonText(a))}. الداشبورد متاح، وبمجرد اعتماد التحويل سيعود النظام للعمل تلقائيًا.`:trial?`الفترة المجانية فعالة حتى ${esc(a.trialEndsAt||'—')} ولا يتم خلالها خصم رسوم شهرية أو رسوم على الأوردرات.`:'متابعة الرصيد ورسوم التشغيل الحالية.'}</p></div><span class="sub127-badge">${esc(badge)}</span></div><div class="sub127-kpis"><div class="sub127-kpi"><span>الرصيد الحالي</span><b>${money(a?.balance,currency)}</b></div><div class="sub127-kpi"><span>الحد الأدنى الشهري</span><b>${trial?'مجانًا':money(a?.monthlyMinimum,currency)}</b></div><div class="sub127-kpi"><span>رسوم كل أوردر</span><b>${trial?'مجانًا':money(a?.orderFee,currency)}</b></div><div class="sub127-kpi"><span>الحالة</span><b>${esc(badge)}</b></div></div><div class="sub127-topup"><label>المبلغ المحوّل<input class="input" id="sub127Amount" type="number" min="1" step="0.01" placeholder="مثال: 500"></label><label>رقم الهاتف المحوّل منه<input class="input" id="sub127Phone" type="tel" placeholder="01xxxxxxxxx"></label><label>صورة إثبات التحويل<input class="input" id="sub127Proof" type="file" accept="image/jpeg,image/png,image/webp"></label><button class="btn primary" id="sub127Submit" type="button">إرسال طلب الشحن</button></div><div class="sub127-note">بعد الإرسال يظهر الطلب لدى الإدارة في قسم «الاشتراكات». عند اعتماد التحويل يتم شحن الرصيد وفحص الحد الأدنى الشهري وتفعيل الأقسام تلقائيًا إذا أصبح الرصيد كافيًا.</div></section>`;
+    return `<section class="sub127-client-panel ${cls}" data-sub127-client-panel="1"><div class="sub127-client-head"><div><h3>${locked?'استكمال تشغيل Kun Online':'الاشتراك والرصيد'}</h3><p>${locked?`${esc(reasonText(a))}. الداشبورد متاح، وبمجرد اعتماد التحويل سيعود النظام للعمل تلقائيًا.`:trial?`الفترة المجانية فعالة حتى ${esc(a.trialEndsAt||'—')} ولا يتم خلالها خصم رسوم شهرية أو رسوم على الأوردرات.`:'متابعة الرصيد ورسوم التشغيل الحالية.'}</p></div><span class="sub127-badge">${esc(badge)}</span></div><div class="sub127-kpis"><div class="sub127-kpi"><span>الرصيد الحالي</span><b>${money(a?.balance,currency)}</b></div><div class="sub127-kpi"><span>الحد الأدنى الشهري</span><b>${trial?'مجانًا':money(a?.monthlyMinimum,currency)}</b></div><div class="sub127-kpi"><span>رسوم كل أوردر</span><b>${trial?'مجانًا':money(a?.orderFee,currency)}</b></div><div class="sub127-kpi"><span>الحالة</span><b>${esc(badge)}</b></div></div><div class="sub127-topup"><label>المبلغ المحوّل<input class="input" id="sub127Amount" type="number" min="1" step="0.01" placeholder="مثال: 500"></label><label>رقم الهاتف المحوّل منه<input class="input" id="sub127Phone" type="tel" placeholder="01xxxxxxxxx"></label><label>صورة إثبات التحويل<input class="input" id="sub127Proof" type="file" accept="image/*"></label><button class="btn primary" id="sub127Submit" type="button">إرسال طلب الشحن</button></div><div class="sub127-note">بعد الإرسال يظهر الطلب لدى الإدارة في قسم «الاشتراكات». عند اعتماد التحويل يتم شحن الرصيد وفحص الحد الأدنى الشهري وتفعيل الأقسام تلقائيًا إذا أصبح الرصيد كافيًا.</div></section>`;
   }
 
   function ensureClientPanel(){
@@ -152,14 +173,23 @@
 
   function bind(){
     document.addEventListener('click',event=>{
-      const nav=event.target.closest?.('.nav button[data-view]');
-      if(nav?.dataset.view==='subscriptions'&&state.me?.role==='admin'){setTimeout(renderAdmin,15);return;}
-      if(state.locked&&nav&&nav.dataset.view!=='dashboard'){event.preventDefault();event.stopImmediatePropagation();window.showToast?.('الرصيد غير كافٍ. الداشبورد وشحن الرصيد متاحان لحين اعتماد الدفع.');$('.nav button[data-view="dashboard"]')?.click();return;}
-      if(nav?.dataset.view==='dashboard')setTimeout(ensureClientPanel,300);
+      const nav=event.target.closest?.('.nav button[data-view],[data-go]');
+      const target=nav?.dataset?.view||nav?.dataset?.go||'';
+      if(target==='subscriptions'&&state.me?.role==='admin'){setTimeout(renderAdmin,15);return;}
+      if(state.locked&&target&&target!=='dashboard'){event.preventDefault();event.stopImmediatePropagation();window.showToast?.('الرصيد غير كافٍ. الداشبورد وشحن الرصيد متاحان لحين اعتماد الدفع.');$('.nav button[data-view="dashboard"]')?.click();return;}
+      if(target==='dashboard')setTimeout(ensureClientPanel,300);
     },true);
-    const root=$('#root');if(root)new MutationObserver(()=>{if(state.me?.role==='admin'&&$('.nav button.active[data-view="subscriptions"]')&&!root.dataset.sub127Admin)setTimeout(renderAdmin,30);if(state.me?.role!=='admin'&&$('.v33-dashboard')&&!$('[data-sub127-client-panel]'))setTimeout(ensureClientPanel,40);}).observe(root,{childList:true,subtree:true});
+    const root=$('#root');if(root)new MutationObserver(()=>{if(state.me?.role==='admin'&&$('.nav button.active[data-view="subscriptions"]')&&!root.dataset.sub127Admin)setTimeout(renderAdmin,30);if(state.me?.role!=='admin'){if(state.locked)lockNav();if($('.v33-dashboard')&&!$('[data-sub127-client-panel]'))setTimeout(ensureClientPanel,40);}}).observe(root,{childList:true,subtree:true});
   }
 
+  function installRouteGuard(){
+    if(window.__kunSubscriptionRouteGuard127)return;window.__kunSubscriptionRouteGuard127=true;
+    const original=window.setView;
+    if(typeof original==='function')window.setView=function(view,...rest){
+      if(state.locked&&String(view)!=='dashboard'){window.showToast?.('الرصيد غير كافٍ. المتاح حاليًا هو الداشبورد وشحن الرصيد.');return original.call(this,'dashboard',...rest);}
+      return original.call(this,view,...rest);
+    };
+  }
   function installFetchGuard(){
     if(window.__kunSubscriptionFetch127)return;window.__kunSubscriptionFetch127=true;
     window.fetch=async function(...args){
@@ -167,7 +197,9 @@
       try{
         const input=args[0],url=typeof input==='string'?input:input?.url||'',parsed=new URL(url,location.origin),method=String(args[1]?.method||input?.method||'GET').toUpperCase();
         if(response.status===402)response.clone().json().then(data=>{if(data?.code==='SUBSCRIPTION_BALANCE_REQUIRED'&&data.access){state.access=data.access;state.locked=true;lockNav();ensureClientPanel();}}).catch(()=>{});
-        if(method==='POST'&&(parsed.pathname==='/api/orders'||parsed.pathname==='/api/wa-order'||parsed.pathname==='/api/orders/bulk'))setTimeout(()=>refreshAccess(false),900);
+        if(method==='POST'&&(parsed.pathname==='/api/orders'||parsed.pathname==='/api/wa-order'||parsed.pathname==='/api/orders/bulk')){
+          setTimeout(()=>refreshAccess(false),800);setTimeout(()=>refreshAccess(false),2500);
+        }
       }catch{}
       return response;
     };
@@ -176,7 +208,7 @@
     style();bind();
     try{state.me=await api('/api/me');}catch{return;}
     if(state.me.role==='admin'){addAdminNav();return;}
-    if(state.me.clientId){installFetchGuard();await refreshAccess(false);setInterval(()=>refreshAccess(false),60000);}
+    if(state.me.clientId){installRouteGuard();installFetchGuard();await refreshAccess(false);setInterval(()=>refreshAccess(false),60000);}
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();
   window.KunSubscriptionsV127={version:VERSION,refreshAccess,renderAdmin,get access(){return state.access;}};
