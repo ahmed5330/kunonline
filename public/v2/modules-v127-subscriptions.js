@@ -33,7 +33,7 @@
   }
 
   const statusText=a=>a?.trialActive?'تجربة مجانية':a?.locked?'متوقف لعدم كفاية الرصيد':a?.subscriptionStatus==='unmanaged'?'غير مفعّل على نظام الاشتراكات':'نشط';
-  const reasonText=a=>a?.reason==='monthly_minimum_due'?'الرصيد لا يكفي الحد الأدنى الشهري':a?.reason==='balance_empty'?'الرصيد انتهى':a?.reason==='subscription_paused'?'الاشتراك موقوف من الإدارة':a?.reason==='wallet_paused'?'المحفظة موقوفة':'';
+  const reasonText=a=>a?.reason==='monthly_minimum_due'?'الرصيد لا يكفي الحد الأدنى الشهري':a?.reason==='order_fee_insufficient'?'الرصيد المتبقي لا يكفي رسوم الأوردر التالي':a?.reason==='balance_empty'?'الرصيد انتهى':a?.reason==='subscription_paused'?'الاشتراك موقوف من الإدارة':a?.reason==='wallet_paused'?'المحفظة موقوفة':'';
 
   async function proofData(file){
     if(!file)throw new Error('ارفع صورة إثبات التحويل');
