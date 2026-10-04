@@ -1,7 +1,7 @@
 import {
   subscriptionAccess,configureSubscription,startFreeTrial,endFreeTrial,listSubscriptionsAdmin,reconcileMonthlySubscriptions
 } from './subscription-billing.js';
-import {requestTopup,listTopups} from './wallet-billing.js';
+import {requestTopup,listTopups,listPendingTopupsAdmin,getPendingTopupProofAdmin,approveTopup,rejectTopup} from './wallet-billing.js';
 
 const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}});
 const text=v=>String(v??'').trim();
@@ -49,6 +49,18 @@ export async function handleSubscriptionControl({request,env,ctx,delegate}){
     if(path==='/api/admin/subscriptions/reconcile'&&method==='POST'){
       requireAdmin(me);return json({ok:true,results:await reconcileMonthlySubscriptions(env,{limit:1000})});
     }
+    if(path==='/api/admin/wallet/topups'&&method==='GET'){
+      requireAdmin(me);return json(await listPendingTopupsAdmin(env,url.searchParams.get('limit')||200));
+    }
+    match=path.match(/^\/api\/admin\/wallet\/topups\/([^/]+)\/proof$/);
+    if(match&&method==='GET'){
+      requireAdmin(me);return json(await getPendingTopupProofAdmin(env,decodeURIComponent(match[1])));
+    }
+    match=path.match(/^\/api\/admin\/wallet\/topups\/([^/]+)\/(approve|reject)$/);
+    if(match&&method==='POST'){
+      requireAdmin(me);const topupId=decodeURIComponent(match[1]),actor=me.email||me.uid||'admin',body=await bodyOf(request),note=String(body.note||'');
+      return json(match[2]==='approve'?await approveTopup(env,topupId,actor,note):await rejectTopup(env,topupId,actor,note));
+    }
     if(me.role==='admin')return null;
     const clientId=text(me.clientId||me.client_id);if(!clientId)return null;
     if(me.role==='client'&&path==='/api/wallet/topups'&&method==='GET'){
@@ -69,7 +81,7 @@ export async function handleSubscriptionControl({request,env,ctx,delegate}){
     }
     return null;
   }catch(error){
-    if(path.startsWith('/api/admin/subscriptions')||path==='/api/subscription/access'||path==='/api/wallet/topups'){
+    if(path.startsWith('/api/admin/subscriptions')||path.startsWith('/api/admin/wallet/topups')||path==='/api/subscription/access'||path==='/api/wallet/topups'){
       return json({error:error?.message||'تعذر تحميل حالة الاشتراك',code:error?.code||'SUBSCRIPTION_ERROR'},error?.status||500);
     }
     if(error?.code==='AUTH_REQUIRED')return null;

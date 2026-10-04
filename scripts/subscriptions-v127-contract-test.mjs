@@ -34,6 +34,10 @@ assert.ok(billing.includes('order_fee_insufficient'),'balance below the next ord
 assert.ok(billing.includes('managed:false,locked'),'legacy clients without a subscription row must still be balance-locked');
 assert.ok(control.includes("path==='/api/dashboard'"),'dashboard must remain available while locked');
 assert.ok(control.includes("path==='/api/wallet/topups'"),'topup submission must remain available while locked');
+assert.ok(control.includes("path==='/api/admin/wallet/topups'&&method==='GET'"),'production subscription control must own admin topup listing');
+assert.ok(control.includes("getPendingTopupProofAdmin(env,decodeURIComponent(match[1]))"),'production subscription control must own proof loading');
+assert.ok(control.includes("approveTopup(env,topupId,actor,note)"),'production subscription control must own topup approval');
+assert.ok(control.includes("path.startsWith('/api/admin/wallet/topups')"),'admin topup errors must not fall through to a stale delegated worker');
 for(const label of ['الاشتراكات','منح 30 يوم مجانًا لهذا الحساب','الحد الأدنى الشهري','رسوم كل أوردر','صورة إثبات التحويل','اعتماد'])assert.ok(ui.includes(label),`UI contract missing ${label}`);
 assert.ok(ui.includes("data-kun-subscription-locked"),'locked navigation must use a hard CSS lock');
 assert.ok(ui.includes("String(view)!=='dashboard'"),'programmatic routing must also be blocked while locked');
