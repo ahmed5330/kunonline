@@ -16,6 +16,21 @@ export async function billOrder(env,orderId){
       .bind(orderId,order.client_id,order.store_id||null,0,ts,ts,ts).run();
     return {ok:true,status:'waived',fee:0};
   }
+  const startingBalance=round2(account.balance);
+  if(startingBalance<=0){
+    await env.DB.prepare(`INSERT INTO order_billing (order_id,client_id,store_id,fee,status,attempts,last_error,created_at,updated_at)
+      VALUES (?,?,?,?, 'pending_insufficient',1,'INSUFFICIENT_BALANCE',?,?)
+      ON CONFLICT(order_id) DO UPDATE SET fee=excluded.fee,status='pending_insufficient',attempts=order_billing.attempts+1,last_error='INSUFFICIENT_BALANCE',updated_at=excluded.updated_at`)
+      .bind(orderId,order.client_id,order.store_id||null,fee,ts,ts).run();
+    return {ok:false,status:'pending_insufficient',fee,balance:startingBalance,code:'INSUFFICIENT_BALANCE'};
+  }
+  if(startingBalance<fee){
+    const shortage=round2(fee-startingBalance),currentCredit=Math.max(0,Number(account.credit_limit)||0);
+    if(currentCredit<shortage){
+      await env.DB.prepare('UPDATE wallet_accounts SET credit_limit=?,updated_at=? WHERE client_id=? AND credit_limit<?')
+        .bind(shortage,ts,order.client_id,shortage).run();
+    }
+  }
   await env.DB.prepare(`INSERT INTO order_billing (order_id,client_id,store_id,fee,status,attempts,created_at,updated_at)
     VALUES (?,?,?,?, 'pending',0,?,?) ON CONFLICT(order_id) DO UPDATE SET fee=excluded.fee,updated_at=excluded.updated_at`)
     .bind(orderId,order.client_id,order.store_id||null,fee,ts,ts).run();
