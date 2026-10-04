@@ -233,6 +233,14 @@ export async function listSubscriptionsAdmin(env,{limit=500}={}){
       SELECT client_id,COUNT(*) n,COALESCE(SUM(amount),0) amount
       FROM wallet_topup_requests WHERE status='pending' GROUP BY client_id
     ),
+    topup_integrity AS (
+      SELECT r.client_id,
+        SUM(CASE WHEN r.status='approved' AND l.id IS NULL THEN 1 ELSE 0 END) missing_credit_logs
+      FROM wallet_topup_requests r
+      LEFT JOIN wallet_log l
+        ON l.client_id=r.client_id AND l.reference_type='topup_request' AND l.reference_id=r.id
+      GROUP BY r.client_id
+    ),
     module_fees AS (
       SELECT client_id,COALESCE(SUM(CASE WHEN enabled=1 AND per_order_fee_delta>0 THEN per_order_fee_delta ELSE 0 END),0) delta
       FROM tenant_modules GROUP BY client_id
@@ -248,7 +256,9 @@ export async function listSubscriptionsAdmin(env,{limit=500}={}){
       s.id sub_id,s.plan sub_plan,s.status sub_status,s.billing_cycle sub_cycle,s.amount sub_amount,
       s.currency sub_currency,s.period_start sub_period_start,s.period_end sub_period_end,
       w.balance wallet_balance,w.currency wallet_currency,w.base_order_fee,w.status wallet_status,
+      w.billing_version,w.billing_start_rowid,
       COALESCE(p.n,0) pending_n,COALESCE(p.amount,0) pending_amount,
+      COALESCE(ti.missing_credit_logs,0) missing_credit_logs,
       COALESCE(mf.delta,0) module_delta,COALESCE(mp.paid,0) monthly_paid
     FROM client_ids ids
     LEFT JOIN tenant_settings t ON t.client_id=ids.client_id
@@ -256,6 +266,7 @@ export async function listSubscriptionsAdmin(env,{limit=500}={}){
     LEFT JOIN latest_sub s ON s.client_id=ids.client_id
     LEFT JOIN wallet_accounts w ON w.client_id=ids.client_id
     LEFT JOIN pending p ON p.client_id=ids.client_id
+    LEFT JOIN topup_integrity ti ON ti.client_id=ids.client_id
     LEFT JOIN module_fees mf ON mf.client_id=ids.client_id
     LEFT JOIN monthly_paid mp ON mp.client_id=ids.client_id
     ORDER BY ids.client_id
@@ -287,6 +298,8 @@ export async function listSubscriptionsAdmin(env,{limit=500}={}){
         clientId,name:row.display_name||row.owner_name||clientId,ownerName:row.owner_name||'',ownerEmail:row.owner_email||'',
         tenantStatus:row.tenant_status||'active',plan:row.tenant_plan||'legacy',
         pendingTopups:Number(row.pending_n)||0,pendingTopupAmount:round2(row.pending_amount),
+        topupIntegrityIssues:Number(row.missing_credit_logs)||0,
+        billingVersion:row.billing_version||'legacy',billingStartRowid:Number(row.billing_start_rowid)||0,
         managed:false,locked,reason,balance,currency:row.wallet_currency||row.tenant_currency||'EGP',
         monthlyMinimum:0,baseOrderFee,orderFee:configuredFee,trialActive:false,trialEndsAt:null,subscriptionStatus:'unmanaged',
         monthlyCharged:true,monthlyDue:0
@@ -308,6 +321,8 @@ export async function listSubscriptionsAdmin(env,{limit=500}={}){
       clientId,name:row.display_name||row.owner_name||clientId,ownerName:row.owner_name||'',ownerEmail:row.owner_email||'',
       tenantStatus:row.tenant_status||'active',plan:row.tenant_plan||row.sub_plan||'legacy',
       pendingTopups:Number(row.pending_n)||0,pendingTopupAmount:round2(row.pending_amount),
+      topupIntegrityIssues:Number(row.missing_credit_logs)||0,
+      billingVersion:row.billing_version||'legacy',billingStartRowid:Number(row.billing_start_rowid)||0,
       managed:true,locked,reason,balance,currency:row.wallet_currency||row.sub_currency||row.tenant_currency||'EGP',
       monthlyMinimum,monthlyCharged,monthlyDue:monthlyCharged?0:monthlyMinimum,
       baseOrderFee,orderFee:inTrial?0:baseOrderFee,moduleOrderFeeDelta:round2(row.module_delta),trialActive:inTrial,trialStartsAt:row.sub_period_start||null,trialEndsAt:inTrial?row.sub_period_end:null,
