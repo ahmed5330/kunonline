@@ -27,12 +27,12 @@ for(const file of walk(ROOT)){
   const lines=src.split('\n');
   lines.forEach((line,index)=>{
     if(dollarIsSingleSelector){
-      const rx=new RegExp(`(?<!\\$)\\$\\([^;\\n]*?\\)\\.${methods}\\s*\\(`);
+      const rx=new RegExp(`(?<!\\$)\\$\\([^)]*\\)\\.${methods}\\s*\\(`);
       if(rx.test(line))issues.push(`${file}:${index+1}: single-element $() used with collection method: ${line.trim().slice(0,220)}`);
     }
-    const direct=new RegExp(`(?:document\\.)?querySelector\\([^;\\n]*?\\)\\.${methods}\\s*\\(`);
+    const direct=new RegExp(`(?:document\\.)?querySelector\\([^)]*\\)\\.${methods}\\s*\\(`);
     if(direct.test(line))issues.push(`${file}:${index+1}: querySelector used with collection method: ${line.trim().slice(0,220)}`);
-    const byId=new RegExp(`getElementById\\([^;\\n]*?\\)\\.${methods}\\s*\\(`);
+    const byId=new RegExp(`getElementById\\([^)]*\\)\\.${methods}\\s*\\(`);
     if(byId.test(line))issues.push(`${file}:${index+1}: getElementById used with collection method: ${line.trim().slice(0,220)}`);
   });
 }
