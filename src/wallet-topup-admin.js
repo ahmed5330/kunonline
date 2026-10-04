@@ -37,7 +37,7 @@ export async function approveTopup(env,topupId,actor,note='',options={}){
   }
 
   const requestedAmount=round2(row.amount);
-  const requestedCredit=options&&Object.prototype.hasOwnProperty.call(options,'creditAmount')?options.creditAmount:requestedAmount;
+  const requestedCredit=options?.creditAmount===undefined||options?.creditAmount===null||options?.creditAmount===''?requestedAmount:options.creditAmount;
   const creditedAmount=round2(requestedCredit);
   if(!Number.isFinite(Number(requestedCredit))||creditedAmount<=0){
     throw Object.assign(new Error('المبلغ الذي سيتم إضافته لازم يكون أكبر من صفر'),{status:400,code:'TOPUP_CREDIT_AMOUNT_INVALID'});
