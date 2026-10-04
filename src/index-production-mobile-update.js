@@ -99,7 +99,7 @@ async function websiteWithDirectAndroidDownload(request,env){
     html=html.replace('</body>','<script src="/v2/modules-v126-dashboard-finance-top.js?v=126.0" data-kun-dashboard-finance-top-v126="1"></script></body>');
   }
   if(!html.includes('/v2/modules-v127-subscriptions.js')){
-    html=html.replace('</body>','<script src="/v2/modules-v127-subscriptions.js?v=127.7" data-kun-subscriptions-v127="1"></script></body>');
+    html=html.replace('</body>','<script src="/v2/modules-v127-subscriptions.js?v=127.8" data-kun-subscriptions-v127="1"></script></body>');
   }
   const headers=new Headers(asset.headers);
   headers.set('Content-Type','text/html; charset=utf-8');

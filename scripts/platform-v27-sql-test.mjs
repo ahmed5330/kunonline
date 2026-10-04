@@ -45,6 +45,12 @@ let unsafe={clients:[{id:client,walletBalance:999,walletFeePerOrder:5}]};unsafe=
 await env.DB.prepare('UPDATE wallet_accounts SET balance=1,credit_limit=0 WHERE client_id=?').bind(client).run();
 await env.DB.prepare("INSERT INTO orders(id,client_id,store_id,date,created_at) VALUES ('LOW',?,?,?,?)").bind(client,store,day,new Date(Date.now()+2000).toISOString()).run();
 const low=await billOrder(env,'LOW');must(low.status==='charged'&&low.fee===4,'Final order must charge in full while starting balance is still positive');must((await walletSnapshot(env,client)).balance===-3,'Final order may cross balance below zero once, then subscription access locks');
+await env.DB.prepare("INSERT INTO orders(id,client_id,store_id,date,created_at) VALUES ('WAITING',?,?,?,?)").bind(client,store,day,new Date(Date.now()+3000).toISOString()).run();
+const waiting=await billOrder(env,'WAITING');must(waiting.status==='pending_insufficient','Orders arriving after exhaustion must remain pending until the next topup');
+const recovery=await requestTopup(env,client,{amount:20,senderPhone:'01000000000',proofDataUrl:proof},'qa-owner');
+const recoveryApproved=await approveTopup(env,recovery.id,'qa-admin','recover');
+must(recoveryApproved.orderReconcile.chargedOrders===1&&recoveryApproved.orderReconcile.chargedAmount===4,'Approved topup must immediately reconcile pending order charges');
+must(recoveryApproved.balance===13,'Topup response must return final balance after pending-order reconciliation');
 
 // Real marketing metrics must count externally-entered/unattributed orders at account level.
 const c2='C2',s2='S2';
