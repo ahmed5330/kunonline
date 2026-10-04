@@ -38,8 +38,8 @@ await env.DB.prepare("INSERT INTO orders(id,client_id,store_id,date,created_at) 
 let charged=await billOrder(env,'NEW');must(charged.status==='charged'&&charged.fee===4,'New order charge failed');must((await walletSnapshot(env,client)).balance===16,'Wallet balance after charge must be 16');
 charged=await billOrder(env,'NEW');must((await walletSnapshot(env,client)).balance===16,'Duplicate billing changed balance');
 const count=await env.DB.prepare("SELECT COUNT(*) n FROM wallet_log WHERE idempotency_key='order:NEW'").first();must(Number(count.n)===1,'Order ledger must be idempotent');
-const proof='data:image/jpeg;base64,AA==';const top=await requestTopup(env,client,{amount:10,senderPhone:'01000000000',proofDataUrl:proof},'qa-owner');await approveTopup(env,top.id,'qa-admin','ok');must((await walletSnapshot(env,client)).balance===26,'Topup did not credit exactly once');
-let duplicate=false;try{await approveTopup(env,top.id,'qa-admin','again')}catch(e){duplicate=e.code==='TOPUP_NOT_PENDING'}must(duplicate,'Second topup approval must be rejected');
+const proof='data:image/jpeg;base64,AA==';const top=await requestTopup(env,client,{amount:10,senderPhone:'01000000000',proofDataUrl:proof},'qa-owner');const firstApproval=await approveTopup(env,top.id,'qa-admin','ok');must(firstApproval.creditedAmount===10&&(await walletSnapshot(env,client)).balance===26,'Topup did not credit exactly once');
+const duplicate=await approveTopup(env,top.id,'qa-admin','again');must(duplicate.alreadyApproved===true&&(await walletSnapshot(env,client)).balance===26,'Repeated approval must be idempotent and must not double-credit');
 await adminCreditWallet(env,client,4,'qa-admin','legacy admin endpoint compatibility');must((await walletSnapshot(env,client)).balance===30,'Admin direct credit must update v27 ledger');
 let unsafe={clients:[{id:client,walletBalance:999,walletFeePerOrder:5}]};unsafe=await sanitizeLegacyStateBilling(env,unsafe);must(unsafe.clients[0].walletBalance===30&&unsafe.clients[0].walletFeePerOrder===0,'Legacy state write must not re-enable double charging');
 await env.DB.prepare('UPDATE wallet_accounts SET balance=1,credit_limit=0 WHERE client_id=?').bind(client).run();
@@ -48,9 +48,11 @@ const low=await billOrder(env,'LOW');must(low.status==='charged'&&low.fee===4,'F
 await env.DB.prepare("INSERT INTO orders(id,client_id,store_id,date,created_at) VALUES ('WAITING',?,?,?,?)").bind(client,store,day,new Date(Date.now()+3000).toISOString()).run();
 const waiting=await billOrder(env,'WAITING');must(waiting.status==='pending_insufficient','Orders arriving after exhaustion must remain pending until the next topup');
 const recovery=await requestTopup(env,client,{amount:20,senderPhone:'01000000000',proofDataUrl:proof},'qa-owner');
-const recoveryApproved=await approveTopup(env,recovery.id,'qa-admin','recover');
-must(recoveryApproved.orderReconcile.chargedOrders===1&&recoveryApproved.orderReconcile.chargedAmount===4,'Approved topup must immediately reconcile pending order charges');
-must(recoveryApproved.balance===13,'Topup response must return final balance after pending-order reconciliation');
+const recoveryApproved=await approveTopup(env,recovery.id,'qa-admin','recover',{creditAmount:25});
+must(recoveryApproved.requestedAmount===20&&recoveryApproved.creditedAmount===25,'Admin must be able to override the amount credited for a transfer');
+must(recoveryApproved.balanceAfterCredit===22&&recoveryApproved.balance===22,'Approval must add the admin-confirmed credit automatically');
+const pendingAfterApproval=await env.DB.prepare("SELECT status FROM order_billing WHERE order_id='WAITING'").first();must(pendingAfterApproval.status==='pending_insufficient','Approval must not silently consume the new credit against old pending orders');
+const recoveredOrder=await billOrder(env,'WAITING');must(recoveredOrder.status==='charged'&&(await walletSnapshot(env,client)).balance===18,'Pending order can be billed explicitly after the account is funded');
 
 // Real marketing metrics must count externally-entered/unattributed orders at account level.
 const c2='C2',s2='S2';
