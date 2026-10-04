@@ -73,6 +73,10 @@ must(Number(c3MonthlyCount.n)===1&&Number(c3MonthlyCountAgain.n)===1,'Monthly mi
 const c3Top=await requestTopup(env,c3,{amount:500,senderPhone:'01000000000',proofDataUrl:proof},'qa-owner');
 const c3Approved=await approveTopup(env,c3Top.id,'qa-admin','single-ledger recovery');
 must(c3Approved.balance===493&&c3Approved.access?.locked===false,'500 topup after a -7 monthly balance must finish at 493 and unlock immediately');
+const brokenTopup=await requestTopup(env,c3,{amount:10,senderPhone:'01000000000',proofDataUrl:proof},'qa-owner');
+await env.DB.prepare("UPDATE wallet_topup_requests SET status='approved' WHERE id=?").bind(brokenTopup.id).run();
+let integrityCaught=false;try{await approveTopup(env,brokenTopup.id,'qa-admin','integrity check')}catch(error){integrityCaught=error?.code==='TOPUP_APPROVAL_INTEGRITY'}
+must(integrityCaught,'Approved topup without a matching ledger credit must fail integrity validation instead of pretending money was added');
 
 // Real marketing metrics must count externally-entered/unattributed orders at account level.
 const c2='C2',s2='S2';
