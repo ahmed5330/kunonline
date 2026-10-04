@@ -75,7 +75,7 @@ assert.ok(ui.includes('بدون أي إضافات مخفية'),'admin fee input 
 assert.ok(ui.includes('سجل الرصيد والخصومات'),'admin must expose wallet movement history per client');
 assert.ok(ui.includes('إضافة / تصحيح رصيد يدوي'),'admin must expose a manual balance correction control');
 assert.ok(ui.includes('sub127ManualCreditAmount'),'manual credit amount must be editable');
-assert.ok(ui.includes("/credit`" )||ui.includes("/credit\`,"),'manual credit UI must call the admin credit endpoint');
+assert.ok(ui.includes("/api/admin/subscriptions/${encodeURIComponent(clientId)}/credit"),'manual credit UI must call the admin credit endpoint');
 assert.ok(ui.includes('adminLockReason'),'admin subscriptions must expose the actual lock reason');
 assert.ok(ui.includes('الحد الأدنى الشهري غير مغطى'),'monthly minimum lock reason must be explicit');
 assert.ok(ui.includes('/ledger?limit=40'),'admin client ledger must load from the read-only ledger endpoint');
