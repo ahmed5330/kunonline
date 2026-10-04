@@ -1,8 +1,19 @@
 import {now,rid,round2,ensureWalletAccount,mirrorLegacyBalance} from './wallet-core.js';
 
 export async function listPendingTopupsAdmin(env,limit=200){
-  const {results=[]}=await env.DB.prepare("SELECT id,client_id,amount,currency,sender_phone,transfer_method,proof_data_url,proof_url,status,requested_by,requested_at FROM wallet_topup_requests WHERE status='pending' ORDER BY requested_at ASC LIMIT ?").bind(Math.max(1,Math.min(500,Number(limit)||200))).all();
+  const {results=[]}=await env.DB.prepare(`SELECT id,client_id,amount,currency,sender_phone,transfer_method,status,requested_by,requested_at,
+    CASE WHEN COALESCE(proof_data_url,'')<>'' OR COALESCE(proof_url,'')<>'' THEN 1 ELSE 0 END has_proof
+    FROM wallet_topup_requests WHERE status='pending' ORDER BY requested_at ASC LIMIT ?`)
+    .bind(Math.max(1,Math.min(500,Number(limit)||200))).all();
   return results;
+}
+
+export async function getPendingTopupProofAdmin(env,topupId){
+  const row=await env.DB.prepare(`SELECT id,client_id,amount,currency,sender_phone,transfer_method,status,requested_by,requested_at,
+    proof_data_url,proof_url
+    FROM wallet_topup_requests WHERE id=? LIMIT 1`).bind(topupId).first();
+  if(!row)throw Object.assign(new Error('طلب الشحن غير موجود'),{status:404,code:'TOPUP_NOT_FOUND'});
+  return row;
 }
 
 export async function approveTopup(env,topupId,actor,note=''){
