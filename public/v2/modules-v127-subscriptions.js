@@ -1,7 +1,7 @@
 /* Kun Online v127.0 — subscriptions, free trial, wallet lock and payment proof workspace */
 (()=>{
   if(window.KunSubscriptionsV127)return;
-  const VERSION='127.5';
+  const VERSION='127.6';
   const $=(s,r=document)=>r?.querySelector?.(s)||null;
   const $$=(s,r=document)=>r?[...r.querySelectorAll(s)]:[];
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -191,22 +191,28 @@
 
   async function approveTopup(id){
     await api(`/api/admin/wallet/topups/${encodeURIComponent(id)}/approve`,{method:'POST',body:JSON.stringify({note:'Approved from subscriptions center'})});
-    window.showToast?.('تم اعتماد التحويل وشحن الرصيد وفحص التفعيل');await renderAdmin();
+    state.proofCache.delete(String(id));window.showToast?.('تم اعتماد التحويل وشحن الرصيد وفحص التفعيل');await renderAdmin();
   }
   async function rejectTopup(id){
     if(!confirm('رفض طلب الشحن؟'))return;
     await api(`/api/admin/wallet/topups/${encodeURIComponent(id)}/reject`,{method:'POST',body:JSON.stringify({note:'Rejected from subscriptions center'})});
-    window.showToast?.('تم رفض الطلب');await renderAdmin();
+    state.proofCache.delete(String(id));window.showToast?.('تم رفض الطلب');await renderAdmin();
   }
 
   async function renderAdmin(){
     if(state.me?.role!=='admin')return;
-    addAdminNav();setAdminActive();const root=$('#root');if(!root)return;root.dataset.sub127Admin='loading';root.innerHTML='<div class="card empty">جارٍ تحميل الاشتراكات والدفعات الجديدة...</div>';
+    addAdminNav();setAdminActive();const root=$('#root');if(!root)return;
+    if(root.dataset.sub127Admin==='loading')return;
+    root.dataset.sub127Admin='loading';root.innerHTML='<div class="card empty">جارٍ تحميل الاشتراكات والدفعات الجديدة...</div>';
     try{
-      const [subs,topups]=await Promise.all([api('/api/admin/subscriptions'),api('/api/admin/wallet/topups?limit=300')]);
-      state.adminClients=subs.clients||[];state.topups=Array.isArray(topups)?topups:(topups.items||topups.results||[]);
+      const [subsResult,topupsResult]=await Promise.allSettled([api('/api/admin/subscriptions'),api('/api/admin/wallet/topups?limit=300')]);
+      if(subsResult.status!=='fulfilled')throw subsResult.reason;
+      const subs=subsResult.value||{},topups=topupsResult.status==='fulfilled'?topupsResult.value:[];
+      state.adminClients=Array.isArray(subs.clients)?subs.clients:[];
+      state.topups=Array.isArray(topups)?topups:(Array.isArray(topups?.items)?topups.items:(Array.isArray(topups?.results)?topups.results:[]));
+      const topupWarning=topupsResult.status==='rejected'?'<div class="insight warn">تم تحميل العملاء، لكن تعذر تحميل الدفعات المعلقة. اضغط تحديث للمحاولة مرة أخرى.</div>':'';
       const locked=state.adminClients.filter(x=>x.locked).length,trials=state.adminClients.filter(x=>x.trialActive).length,pending=state.topups.length;
-      root.dataset.sub127Admin='ready';root.innerHTML=`<div class="sub127-admin"><div class="page-head sub127-admin-head"><div><div class="title">الاشتراكات</div><div class="sub">إدارة الشهر المجاني، الحد الأدنى الشهري، رسوم الأوردرات، الرصيد، واعتماد تحويلات العملاء.</div></div><div class="spacer"></div><button class="btn soft" id="sub127ReconcileAll">فحص الدورة الشهرية</button></div><div class="grid kpis sub127-summary"><div class="card"><div class="k-label">العملاء</div><div class="k-val small">${num(state.adminClients.length)}</div></div><div class="card"><div class="k-label">متوقفون بسبب الرصيد</div><div class="k-val small">${num(locked)}</div></div><div class="card"><div class="k-label">شهر مجاني فعال</div><div class="k-val small">${num(trials)}</div></div><div class="card"><div class="k-label">دفعات تنتظر المراجعة</div><div class="k-val small">${num(pending)}</div></div></div><section class="card"><div class="sub127-toolbar"><input class="input" id="sub127Search" placeholder="ابحث باسم العميل أو البريد أو Client ID"><span class="meta" id="sub127Count">${num(state.adminClients.length)} عميل</span></div><div class="sub127-table-wrap mt"><table class="sub127-table"><thead><tr><th>العميل</th><th>الحالة</th><th>الرصيد</th><th>الحد الشهري</th><th>رسوم الأوردر</th><th>نهاية المجاني</th><th>دفعات معلقة</th><th></th></tr></thead><tbody>${state.adminClients.map(adminRow).join('')||'<tr><td colspan="8" class="empty">لا يوجد عملاء.</td></tr>'}</tbody></table></div></section><section class="card"><h3>الدفعات الجديدة من العملاء</h3><div class="meta">راجع صورة التحويل ثم اضغط اعتماد؛ الرصيد يُشحن وفحص التفعيل يتم فورًا.</div><div class="mt">${state.topups.map(paymentRow).join('')||'<div class="empty">لا توجد دفعات جديدة تنتظر المراجعة.</div>'}</div></section></div>`;
+      root.dataset.sub127Admin='ready';root.innerHTML=`<div class="sub127-admin">${topupWarning}<div class="page-head sub127-admin-head"><div><div class="title">الاشتراكات</div><div class="sub">إدارة الشهر المجاني، الحد الأدنى الشهري، رسوم الأوردرات، الرصيد، واعتماد تحويلات العملاء.</div></div><div class="spacer"></div><button class="btn soft" id="sub127ReconcileAll">فحص الدورة الشهرية</button></div><div class="grid kpis sub127-summary"><div class="card"><div class="k-label">العملاء</div><div class="k-val small">${num(state.adminClients.length)}</div></div><div class="card"><div class="k-label">متوقفون بسبب الرصيد</div><div class="k-val small">${num(locked)}</div></div><div class="card"><div class="k-label">شهر مجاني فعال</div><div class="k-val small">${num(trials)}</div></div><div class="card"><div class="k-label">دفعات تنتظر المراجعة</div><div class="k-val small">${num(pending)}</div></div></div><section class="card"><div class="sub127-toolbar"><input class="input" id="sub127Search" placeholder="ابحث باسم العميل أو البريد أو Client ID"><span class="meta" id="sub127Count">${num(state.adminClients.length)} عميل</span></div><div class="sub127-table-wrap mt"><table class="sub127-table"><thead><tr><th>العميل</th><th>الحالة</th><th>الرصيد</th><th>الحد الشهري</th><th>رسوم الأوردر</th><th>نهاية المجاني</th><th>دفعات معلقة</th><th></th></tr></thead><tbody>${state.adminClients.map(adminRow).join('')||'<tr><td colspan="8" class="empty">لا يوجد عملاء.</td></tr>'}</tbody></table></div></section><section class="card"><h3>الدفعات الجديدة من العملاء</h3><div class="meta">راجع صورة التحويل ثم اضغط اعتماد؛ الرصيد يُشحن وفحص التفعيل يتم فورًا.</div><div class="mt">${state.topups.map(paymentRow).join('')||'<div class="empty">لا توجد دفعات جديدة تنتظر المراجعة.</div>'}</div></section></div>`;
       $$('[data-sub127-manage]',root).forEach(b=>b.onclick=()=>openManage(b.dataset.sub127Manage));
       $$('[data-sub127-view-payment]',root).forEach(b=>b.onclick=()=>openPaymentProof(b.dataset.sub127ViewPayment));
       $$('[data-sub127-view-client-payment]',root).forEach(b=>b.onclick=()=>openClientPayment(b.dataset.sub127ViewClientPayment));
