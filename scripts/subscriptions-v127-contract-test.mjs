@@ -25,7 +25,8 @@ assert.ok(orders.includes('subscriptionOrderFee'),'orders must waive fee during 
 assert.ok(topups.includes('reconcileSubscriptionAfterTopup'),'topup approval must immediately reconcile access');
 assert.ok(topups.includes('getPendingTopupProofAdmin'),'admin proof endpoint must exist');
 const pendingListBlock=topups.slice(topups.indexOf('export async function listPendingTopupsAdmin'),topups.indexOf('export async function getPendingTopupProofAdmin'));
-assert.ok(!pendingListBlock.includes('proof_data_url'),'pending topup list must not load Base64 screenshots');
+assert.ok(!pendingListBlock.includes('proof_data_url,proof_url,status'),'pending topup list must not select Base64 screenshots');
+assert.ok(pendingListBlock.includes('has_proof'),'pending topup list should expose only a lightweight proof-presence flag');
 assert.ok(commerce27.includes('/api/admin/wallet/topups\\/([^/]+)\\/proof'),'admin proof route must be wired');
 assert.ok(control.includes('SUBSCRIPTION_BALANCE_REQUIRED'),'server must block paid sections when balance is unavailable');
 assert.ok(control.includes("path==='/api/wallet/topups'&&method==='POST'"),'client topup submission must bypass normal feature routing');
