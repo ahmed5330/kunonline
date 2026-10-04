@@ -84,9 +84,9 @@ export async function subscriptionAccess(env,clientId,{applyMonthly=true}={}){
   let subscription=await latestSubscription(env,clientId);
   if(!subscription){
     const orderFee=await effectiveOrderFee(env,clientId),balance=round2(account.balance);
-    const walletPaused=text(account.status)!=='active',emptyBalance=balance<=0,insufficientOrderBalance=orderFee>0&&balance<orderFee;
-    const locked=walletPaused||emptyBalance||insufficientOrderBalance;
-    const reason=walletPaused?'wallet_paused':emptyBalance?'balance_empty':insufficientOrderBalance?'order_fee_insufficient':null;
+    const walletPaused=text(account.status)!=='active',emptyBalance=balance<=0;
+    const locked=walletPaused||emptyBalance;
+    const reason=walletPaused?'wallet_paused':emptyBalance?'balance_empty':null;
     return {
       clientId,managed:false,locked,reason,balance,currency:account.currency||'EGP',
       monthlyMinimum:0,orderFee,trialActive:false,trialEndsAt:null,subscriptionStatus:'unmanaged',
@@ -110,10 +110,9 @@ export async function subscriptionAccess(env,clientId,{applyMonthly=true}={}){
   const subscriptionPaused=['paused','cancelled','suspended'].includes(text(subscription.status));
   const insufficientMonthly=!inTrial&&subscription.status==='active'&&monthlyMinimum>0&&!monthly.charged&&num(fresh.balance)<monthlyMinimum;
   const emptyBalance=!inTrial&&round2(fresh.balance)<=0;
-  const insufficientOrderBalance=!inTrial&&orderFee>0&&round2(fresh.balance)>0&&round2(fresh.balance)<orderFee;
   const walletPaused=text(fresh.status)!=='active';
-  const locked=subscriptionPaused||walletPaused||insufficientMonthly||emptyBalance||insufficientOrderBalance;
-  const reason=subscriptionPaused?'subscription_paused':walletPaused?'wallet_paused':insufficientMonthly?'monthly_minimum_due':emptyBalance?'balance_empty':insufficientOrderBalance?'order_fee_insufficient':null;
+  const locked=subscriptionPaused||walletPaused||insufficientMonthly||emptyBalance;
+  const reason=subscriptionPaused?'subscription_paused':walletPaused?'wallet_paused':insufficientMonthly?'monthly_minimum_due':emptyBalance?'balance_empty':null;
   return {
     clientId,managed:true,locked,reason,balance:round2(fresh.balance),currency:fresh.currency||subscription.currency||'EGP',
     monthlyMinimum,monthlyCharged:monthly.charged,monthlyDue:monthly.charged?0:monthlyMinimum,
@@ -259,9 +258,9 @@ export async function listSubscriptionsAdmin(env,{limit=500}={}){
     const walletStatus=text(hasWallet?row.wallet_status:'active')||'active';
     const managed=Boolean(row.sub_id);
     if(!managed){
-      const emptyBalance=balance<=0,insufficientOrderBalance=configuredFee>0&&balance<configuredFee,walletPaused=walletStatus!=='active';
-      const locked=walletPaused||emptyBalance||insufficientOrderBalance;
-      const reason=walletPaused?'wallet_paused':emptyBalance?'balance_empty':insufficientOrderBalance?'order_fee_insufficient':null;
+      const emptyBalance=balance<=0,walletPaused=walletStatus!=='active';
+      const locked=walletPaused||emptyBalance;
+      const reason=walletPaused?'wallet_paused':emptyBalance?'balance_empty':null;
       return {
         clientId,name:row.display_name||row.owner_name||clientId,ownerName:row.owner_name||'',ownerEmail:row.owner_email||'',
         tenantStatus:row.tenant_status||'active',plan:row.tenant_plan||'legacy',
@@ -281,10 +280,9 @@ export async function listSubscriptionsAdmin(env,{limit=500}={}){
     const subscriptionPaused=['paused','cancelled','suspended'].includes(subscriptionStatus);
     const insufficientMonthly=!inTrial&&subscriptionStatus==='active'&&monthlyMinimum>0&&!monthlyCharged&&balance<monthlyMinimum;
     const emptyBalance=!inTrial&&balance<=0;
-    const insufficientOrderBalance=!inTrial&&orderFee>0&&balance>0&&balance<orderFee;
     const walletPaused=walletStatus!=='active';
-    const locked=subscriptionPaused||walletPaused||insufficientMonthly||emptyBalance||insufficientOrderBalance;
-    const reason=subscriptionPaused?'subscription_paused':walletPaused?'wallet_paused':insufficientMonthly?'monthly_minimum_due':emptyBalance?'balance_empty':insufficientOrderBalance?'order_fee_insufficient':null;
+    const locked=subscriptionPaused||walletPaused||insufficientMonthly||emptyBalance;
+    const reason=subscriptionPaused?'subscription_paused':walletPaused?'wallet_paused':insufficientMonthly?'monthly_minimum_due':emptyBalance?'balance_empty':null;
     return {
       clientId,name:row.display_name||row.owner_name||clientId,ownerName:row.owner_name||'',ownerEmail:row.owner_email||'',
       tenantStatus:row.tenant_status||'active',plan:row.tenant_plan||row.sub_plan||'legacy',

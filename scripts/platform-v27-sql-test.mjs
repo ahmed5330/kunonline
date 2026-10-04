@@ -44,7 +44,7 @@ await adminCreditWallet(env,client,4,'qa-admin','legacy admin endpoint compatibi
 let unsafe={clients:[{id:client,walletBalance:999,walletFeePerOrder:5}]};unsafe=await sanitizeLegacyStateBilling(env,unsafe);must(unsafe.clients[0].walletBalance===30&&unsafe.clients[0].walletFeePerOrder===0,'Legacy state write must not re-enable double charging');
 await env.DB.prepare('UPDATE wallet_accounts SET balance=1,credit_limit=0 WHERE client_id=?').bind(client).run();
 await env.DB.prepare("INSERT INTO orders(id,client_id,store_id,date,created_at) VALUES ('LOW',?,?,?,?)").bind(client,store,day,new Date(Date.now()+2000).toISOString()).run();
-const low=await billOrder(env,'LOW');must(low.status==='pending_insufficient','Insufficient balance must be pending, not negative');must((await walletSnapshot(env,client)).balance===1,'Failed charge must rollback balance');
+const low=await billOrder(env,'LOW');must(low.status==='charged'&&low.fee===4,'Final order must charge in full while starting balance is still positive');must((await walletSnapshot(env,client)).balance===-3,'Final order may cross balance below zero once, then subscription access locks');
 
 // Real marketing metrics must count externally-entered/unattributed orders at account level.
 const c2='C2',s2='S2';
