@@ -30,12 +30,15 @@ CREATE INDEX idx_ai_insights_client ON ai_insight_snapshots(client_id,status,gen
 CREATE INDEX idx_ai_insights_store ON ai_insight_snapshots(client_id,store_id,status);
 `);
 db.exec(await readFile(new URL('../migrations/0014_platform_control_wallet_marketing.sql',import.meta.url),'utf8'));
-const env={DB:new D1(db)},client='C1',store='S1',ts=new Date().toISOString(),day=ts.slice(0,10);
+const env={DB:new D1(db)},client='C1',store='S1',ts=new Date().toISOString(),day=ts.slice(0,10),yesterday=new Date(Date.now()-86400000).toISOString().slice(0,10);
 await env.DB.prepare('INSERT INTO state(id,json,updated_at) VALUES (1,?,?)').bind(JSON.stringify({clients:[{id:client,name:'QA',walletBalance:20,walletFeePerOrder:3}]}),ts).run();
 await env.DB.prepare("INSERT INTO orders(id,client_id,store_id,date,created_at) VALUES ('OLD',?,?,?,?)").bind(client,store,day,ts).run();
 await ensureWalletAccount(env,client);let w=await walletSnapshot(env,client);must(w.balance===20&&w.billingVersion==='legacy','Legacy wallet import failed');
 await migrateLegacyBilling(env,client,'qa-admin');w=await walletSnapshot(env,client);must(w.billingVersion==='v27','v27 migration failed');
-const old=await billOrder(env,'OLD');must(old.skipped==='pre_v27_order','Historical order must never be billed retroactively');
+const old=await billOrder(env,'OLD');must(old.status==='waived'&&old.skipped==='pre_billing_date','Historical order must never be billed retroactively');
+await env.DB.prepare("INSERT INTO orders(id,client_id,store_id,date,created_at) VALUES ('LATE-OLD',?,?,?,?)").bind(client,store,yesterday,new Date(Date.now()+500).toISOString()).run();
+const lateOld=await billOrder(env,'LATE-OLD');must(lateOld.status==='waived'&&lateOld.skipped==='pre_billing_date','Late-synced historical order must be waived even when its rowid is newer than billing_start_rowid');
+must((await walletSnapshot(env,client)).balance===20,'Late-synced historical order must not reduce wallet balance');
 await setTenantModules(env,client,{ai:{enabled:true,feeDelta:1},orders:{enabled:true,feeDelta:0}},'qa-admin');must(await effectiveOrderFee(env,client)===4,'Effective module-based fee should be 4');
 await env.DB.prepare("INSERT INTO orders(id,client_id,store_id,date,created_at) VALUES ('NEW',?,?,?,?)").bind(client,store,day,new Date(Date.now()+1000).toISOString()).run();
 let charged=await billOrder(env,'NEW');must(charged.status==='charged'&&charged.fee===4,'New order charge failed');must((await walletSnapshot(env,client)).balance===16,'Wallet balance after charge must be 16');
