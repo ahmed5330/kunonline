@@ -15,6 +15,8 @@ const topups=fs.readFileSync('src/wallet-topup-admin.js','utf8');
 const ui=fs.readFileSync('public/v2/modules-v127-subscriptions.js','utf8');
 const preview=fs.readFileSync('src/index-commerce-v38.js','utf8');
 const production=fs.readFileSync('src/index-production-mobile-update.js','utf8');
+const admin=fs.readFileSync('src/admin-control.js','utf8');
+const adminUi=fs.readFileSync('public/v2/modules-v23-admin.js','utf8');
 
 for(const token of ['subscription-minimum:','monthlyMinimum','trialing','balance_empty','monthly_minimum_due'])assert.ok(billing.includes(token),`billing contract missing ${token}`);
 assert.ok(orders.includes('subscriptionOrderFee'),'orders must waive fee during approved trial');
@@ -25,15 +27,23 @@ assert.ok(billing.includes('order_fee_insufficient'),'balance below the next ord
 assert.ok(billing.includes('managed:false,locked'),'legacy clients without a subscription row must still be balance-locked');
 assert.ok(control.includes("path==='/api/dashboard'"),'dashboard must remain available while locked');
 assert.ok(control.includes("path==='/api/wallet/topups'"),'topup submission must remain available while locked');
-for(const label of ['الاشتراكات','تفعيل شهر مجاني','الحد الأدنى الشهري','رسوم كل أوردر','صورة إثبات التحويل','اعتماد'])assert.ok(ui.includes(label),`UI contract missing ${label}`);
+for(const label of ['الاشتراكات','منح 30 يوم مجانًا لهذا الحساب','الحد الأدنى الشهري','رسوم كل أوردر','صورة إثبات التحويل','اعتماد'])assert.ok(ui.includes(label),`UI contract missing ${label}`);
 assert.ok(ui.includes("data-kun-subscription-locked"),'locked navigation must use a hard CSS lock');
 assert.ok(ui.includes("String(view)!=='dashboard'"),'programmatic routing must also be blocked while locked');
 assert.ok(ui.includes("accept=\"image/*\""),'payment proof input must support mobile image pickers');
 assert.ok(ui.includes("typeof createImageBitmap==='function'"),'proof compression must include browser capability fallback');
-assert.ok(preview.includes('/v2/modules-v127-subscriptions.js?v=127.1'),'preview must load v127 UI');
-assert.ok(production.includes('/v2/modules-v127-subscriptions.js?v=127.1'),'production must load v127 UI');
+assert.ok(ui.includes("sub127TrialToggle"),'admin must have an explicit free-trial toggle');
+assert.ok(ui.includes("الفترة المجانية اختيارية من الإدارة فقط"),'UI must state that free trial is admin-only and optional');
+assert.ok(ui.includes("$$('[data-sub127-hidden=\"1\"]')"),'restore navigation must iterate all hidden routes');
+assert.ok(ui.includes("$$('.nav button[data-view]')"),'lock navigation must iterate all routes');
+assert.ok(preview.includes('/v2/modules-v127-subscriptions.js?v=127.2'),'preview must load v127 UI');
+assert.ok(production.includes('/v2/modules-v127-subscriptions.js?v=127.2'),'production must load v127 UI');
 assert.ok(preview.includes('handleSubscriptionControl'),'preview must enforce subscription control server-side');
 assert.ok(production.includes('handleSubscriptionControl'),'production wrapper must enforce before production-specific APIs');
+assert.ok(admin.includes("const allowedPlans=new Set(['starter','growth','pro','enterprise'])"),'Trial must not be a billing plan for new accounts');
+assert.ok(admin.includes(":'starter',currency="),'new account plan must default to starter, not trial');
+assert.ok(adminUi.includes('id=\"v23TrialApproved\"'),'new client form must expose an explicit free-trial checkbox');
+assert.ok(!adminUi.includes('<option value=\"trial\">Trial</option>'),'Trial must not appear as a plan option');
 
 for(const file of [billing,control,orders,topups,ui]){
   for(const unsafe of ['DROP TABLE','ALTER TABLE','CREATE TABLE','DELETE FROM subscriptions','DELETE FROM wallet_accounts'])assert.ok(!file.includes(unsafe),`unexpected destructive/migration token: ${unsafe}`);
