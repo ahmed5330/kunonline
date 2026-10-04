@@ -98,7 +98,7 @@ export async function subscriptionAccess(env,clientId,{applyMonthly=true}={}){
     subscription={...subscription,status:'active',updated_at:ts};
   }
   const inTrial=trialActive(subscription,today);
-  const monthlyMinimum=clampMoney(subscription.amount),orderFee=inTrial?0:await effectiveOrderFee(env,clientId);
+  const monthlyMinimum=clampMoney(subscription.amount),orderFee=inTrial?0:clampMoney(account.base_order_fee);
   let monthly={charged:true,amount:0,balance:round2(account.balance),bounds:monthBounds(today)};
   if(!inTrial&&subscription.status==='active'&&applyMonthly){
     monthly=await chargeMonthlyMinimum(env,clientId,subscription,account,{today});
@@ -128,6 +128,11 @@ export async function isFreeTrialActive(env,clientId){
 
 export async function subscriptionOrderFee(env,clientId){
   if(await isFreeTrialActive(env,clientId))return 0;
+  const subscription=await latestSubscription(env,clientId);
+  if(subscription){
+    const account=await ensureWalletAccount(env,clientId);
+    return clampMoney(account.base_order_fee);
+  }
   return effectiveOrderFee(env,clientId);
 }
 
@@ -266,7 +271,7 @@ export async function listSubscriptionsAdmin(env,{limit=500}={}){
         tenantStatus:row.tenant_status||'active',plan:row.tenant_plan||'legacy',
         pendingTopups:Number(row.pending_n)||0,pendingTopupAmount:round2(row.pending_amount),
         managed:false,locked,reason,balance,currency:row.wallet_currency||row.tenant_currency||'EGP',
-        monthlyMinimum:0,orderFee:configuredFee,trialActive:false,trialEndsAt:null,subscriptionStatus:'unmanaged',
+        monthlyMinimum:0,baseOrderFee,orderFee:configuredFee,trialActive:false,trialEndsAt:null,subscriptionStatus:'unmanaged',
         monthlyCharged:true,monthlyDue:0
       };
     }
@@ -289,7 +294,7 @@ export async function listSubscriptionsAdmin(env,{limit=500}={}){
       pendingTopups:Number(row.pending_n)||0,pendingTopupAmount:round2(row.pending_amount),
       managed:true,locked,reason,balance,currency:row.wallet_currency||row.sub_currency||row.tenant_currency||'EGP',
       monthlyMinimum,monthlyCharged,monthlyDue:monthlyCharged?0:monthlyMinimum,
-      orderFee,trialActive:inTrial,trialStartsAt:row.sub_period_start||null,trialEndsAt:inTrial?row.sub_period_end:null,
+      baseOrderFee,orderFee:inTrial?0:baseOrderFee,moduleOrderFeeDelta:round2(row.module_delta),trialActive:inTrial,trialStartsAt:row.sub_period_start||null,trialEndsAt:inTrial?row.sub_period_end:null,
       trialDaysRemaining:inTrial?daysBetween(today,row.sub_period_end):0,subscriptionStatus,
       billingCycle:row.sub_cycle||'monthly',periodStart:row.sub_period_start||bounds.from,periodEnd:row.sub_period_end||bounds.to
     };
