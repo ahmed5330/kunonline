@@ -84,7 +84,7 @@ assert.ok(ui.includes('event.stopImmediatePropagation();setAdminActive();setTime
 assert.ok(ui.includes("!$('.sub127-admin',root)&&root.dataset.sub127Admin!=='loading'"),'subscriptions screen must recover if another renderer replaces it with a placeholder');
 assert.ok(ui.includes("b.onclick=event=>{event?.preventDefault?.();event?.stopPropagation?.();setAdminActive();renderAdmin();}"),'admin subscriptions nav button must directly render the real subscriptions screen');
 assert.ok(ui.includes("$$('[data-sub127-hidden=\"1\"]')"),'restore navigation must iterate all hidden routes');
-assert.ok(ui.includes("$('.nav button[data-view]')"),'lock navigation must iterate all routes');
+assert.ok(ui.includes("$('.nav button[data-view]')"),'navigation state sync must iterate all routes with querySelectorAll semantics');
 assert.equal(/(?<!\$)\$\([^\n;]*\)\.forEach\s*\(/.test(ui),false,'single-element $() helper must never be used with forEach');
 assert.ok(preview.includes('/v2/modules-v127-subscriptions.js?v=127.11'),'preview must load v127 UI');
 assert.ok(production.includes('/v2/modules-v127-subscriptions.js?v=127.11'),'production must load v127 UI');
