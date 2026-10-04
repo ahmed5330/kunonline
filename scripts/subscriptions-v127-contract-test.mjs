@@ -48,6 +48,8 @@ assert.ok(control.includes("getPendingTopupProofAdmin(env,decodeURIComponent(mat
 assert.ok(control.includes("approveTopup(env,topupId,actor,note,{creditAmount:body.creditAmount})"),'production subscription control must pass the admin-confirmed credit amount');
 assert.ok(control.includes("/ledger$/"),'admin wallet ledger route must be owned by subscription control');
 assert.ok(control.includes("listWalletLog(env,clientId"),'admin wallet ledger must read wallet movements');
+assert.ok(control.includes("adminCreditWallet(env,clientId,amount,actor"),'admin subscriptions must support explicit manual balance correction');
+assert.ok(control.includes("/credit$/"),'manual balance correction route must be owned by subscription control');
 assert.ok(control.includes("path.startsWith('/api/admin/wallet/topups')"),'admin topup errors must not fall through to a stale delegated worker');
 for(const label of ['الاشتراكات','منح 30 يوم مجانًا لهذا الحساب','الحد الأدنى الشهري','رسوم كل أوردر','صورة إثبات التحويل','اعتماد'])assert.ok(ui.includes(label),`UI contract missing ${label}`);
 assert.ok(ui.includes("data-kun-subscription-locked"),'locked navigation must use a hard CSS lock');
@@ -71,6 +73,11 @@ assert.ok(ui.includes('الطلب كان معتمدًا بالفعل ولن يت
 assert.ok(ui.includes('رسوم كل أوردر — المبلغ النهائي'),'admin fee input must clearly represent the final charged amount');
 assert.ok(ui.includes('بدون أي إضافات مخفية'),'admin fee input must promise no hidden module surcharge for managed subscriptions');
 assert.ok(ui.includes('سجل الرصيد والخصومات'),'admin must expose wallet movement history per client');
+assert.ok(ui.includes('إضافة / تصحيح رصيد يدوي'),'admin must expose a manual balance correction control');
+assert.ok(ui.includes('sub127ManualCreditAmount'),'manual credit amount must be editable');
+assert.ok(ui.includes("/api/admin/subscriptions/${encodeURIComponent(clientId)}/credit"),'manual credit UI must call the admin credit endpoint');
+assert.ok(ui.includes('adminLockReason'),'admin subscriptions must expose the actual lock reason');
+assert.ok(ui.includes('الحد الأدنى الشهري غير مغطى'),'monthly minimum lock reason must be explicit');
 assert.ok(ui.includes('/ledger?limit=40'),'admin client ledger must load from the read-only ledger endpoint');
 assert.ok(ui.includes('تم شحن الرصيد وتفعيل النظام وكل الأقسام تلقائيًا'),'client should receive automatic reactivation feedback');
 assert.ok(ui.includes('Promise.allSettled'),'admin screen must tolerate a secondary payment API failure');
@@ -93,8 +100,8 @@ assert.ok(ui.includes("b.onclick=event=>{event?.preventDefault?.();event?.stopPr
 assert.ok(ui.includes("$$('[data-sub127-hidden=\"1\"]')"),'restore navigation must iterate all hidden routes');
 assert.ok(ui.includes("$('.nav button[data-view]')"),'navigation state sync must iterate all routes with querySelectorAll semantics');
 assert.equal(/(?<!\$)\$\([^\n;]*\)\.forEach\s*\(/.test(ui),false,'single-element $() helper must never be used with forEach');
-assert.ok(preview.includes('/v2/modules-v127-subscriptions.js?v=127.12'),'preview must load v127 UI');
-assert.ok(production.includes('/v2/modules-v127-subscriptions.js?v=127.12'),'production must load v127 UI');
+assert.ok(preview.includes('/v2/modules-v127-subscriptions.js?v=127.13'),'preview must load v127 UI');
+assert.ok(production.includes('/v2/modules-v127-subscriptions.js?v=127.13'),'production must load v127 UI');
 assert.ok(preview.includes('handleSubscriptionControl'),'preview must enforce subscription control server-side');
 assert.ok(production.includes('handleSubscriptionControl'),'production wrapper must enforce before production-specific APIs');
 assert.ok(admin.includes("const allowedPlans=new Set(['starter','growth','pro','enterprise'])"),'Trial must not be a billing plan for new accounts');
