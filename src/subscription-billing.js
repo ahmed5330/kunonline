@@ -27,7 +27,12 @@ function daysBetween(from,to){
 }
 
 export async function latestSubscription(env,clientId){
-  return env.DB.prepare('SELECT * FROM subscriptions WHERE client_id=? ORDER BY created_at DESC LIMIT 1').bind(clientId).first();
+  try{
+    return await env.DB.prepare('SELECT * FROM subscriptions WHERE client_id=? ORDER BY created_at DESC LIMIT 1').bind(clientId).first();
+  }catch(error){
+    if(/no such table:\s*subscriptions/i.test(String(error?.message||error)))return null;
+    throw error;
+  }
 }
 
 async function ensureSubscriptionRow(env,clientId,{monthlyMinimum=0,currency='EGP'}={}){
