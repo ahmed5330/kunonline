@@ -1,14 +1,14 @@
 /* Kun Online v127.0 — subscriptions, free trial, wallet lock and payment proof workspace */
 (()=>{
   if(window.KunSubscriptionsV127)return;
-  const VERSION='127.4';
+  const VERSION='127.6';
   const $=(s,r=document)=>r?.querySelector?.(s)||null;
   const $$=(s,r=document)=>r?[...r.querySelectorAll(s)]:[];
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const n=v=>Number(v)||0;
   const num=v=>new Intl.NumberFormat('ar-EG',{maximumFractionDigits:2}).format(n(v));
   const money=(v,c='EGP')=>`${num(v)} ${String(c||'EGP').toUpperCase()==='EGP'?'ج.م':esc(c)}`;
-  const state={me:null,access:null,adminClients:[],topups:[],timer:0,locked:false};
+  const state={me:null,access:null,adminClients:[],topups:[],timer:0,locked:false,proofCache:new Map()};
   const nativeFetch=window.fetch.bind(window);
   const api=async(path,options={})=>{const r=await nativeFetch(path,{credentials:'include',headers:{'Content-Type':'application/json',...(options.headers||{})},...options}),d=await r.json().catch(()=>({}));if(!r.ok){const e=new Error(d.error||`HTTP ${r.status}`);e.code=d.code;e.data=d;throw e;}return d;};
 
@@ -139,20 +139,37 @@
     return `<tr data-sub127-search="${esc([c.name,c.ownerName,c.ownerEmail,c.clientId].join(' ').toLowerCase())}"><td class="sub127-client-name"><b>${esc(c.name||c.clientId)}</b><small>${esc(c.ownerName||'')} · ${esc(c.ownerEmail||'')}</small></td><td>${adminStatus(c)}</td><td><b>${money(c.balance,c.currency)}</b></td><td>${money(c.monthlyMinimum,c.currency)}</td><td>${money(c.orderFee,c.currency)}</td><td>${c.trialActive?esc(c.trialEndsAt||'—'):'—'}</td><td>${pendingPaymentCell(c)}</td><td><button class="btn soft" data-sub127-manage="${esc(c.clientId)}">إدارة الاشتراك</button></td></tr>`;
   }
   function paymentRow(p){
-    const proof=p.proof_data_url||p.proof_url||'',img=proof?`<button class="btn soft" type="button" data-sub127-view-payment="${esc(p.id)}"><img class="sub127-proof" src="${esc(proof)}" alt="إثبات التحويل"></button>`:'<div class="sub127-proof"></div>';
+    const hasProof=Boolean(Number(p.has_proof));
+    const proofCell=hasProof?`<button class="btn soft" type="button" data-sub127-view-payment="${esc(p.id)}"><span class="sub127-proof" style="display:grid;place-items:center">عرض<br>الإثبات</span></button>`:'<div class="sub127-proof" style="display:grid;place-items:center"><span class="meta">بدون صورة</span></div>';
     const client=state.adminClients.find(c=>String(c.clientId)===String(p.client_id));
-    return `<div class="sub127-payment">${img}<div><b>${esc(client?.name||p.client_id)}</b><div class="meta">${esc(p.requested_at||'')}</div></div><div><span class="meta">المبلغ</span><b>${money(p.amount,p.currency)}</b></div><div><span class="meta">رقم الهاتف</span><b class="sub127-payment-phone">${esc(p.sender_phone||'—')}</b></div><div><span class="meta">الطريقة</span><b>${esc(p.transfer_method||'تحويل')}</b></div><div class="sub127-actions"><button class="btn soft" type="button" data-sub127-view-payment="${esc(p.id)}">عرض الصورة</button><button class="btn primary" data-sub127-approve="${esc(p.id)}">اعتماد</button><button class="btn soft" data-sub127-reject="${esc(p.id)}">رفض</button></div></div>`;
+    return `<div class="sub127-payment">${proofCell}<div><b>${esc(client?.name||p.client_id)}</b><div class="meta">${esc(p.requested_at||'')}</div></div><div><span class="meta">المبلغ</span><b>${money(p.amount,p.currency)}</b></div><div><span class="meta">رقم الهاتف</span><b class="sub127-payment-phone">${esc(p.sender_phone||'—')}</b></div><div><span class="meta">الطريقة</span><b>${esc(p.transfer_method||'تحويل')}</b></div><div class="sub127-actions">${hasProof?`<button class="btn soft" type="button" data-sub127-view-payment="${esc(p.id)}">عرض الصورة</button>`:''}<button class="btn primary" data-sub127-approve="${esc(p.id)}">اعتماد</button><button class="btn soft" data-sub127-reject="${esc(p.id)}">رفض</button></div></div>`;
   }
 
   function closeModal(){$('.sub127-modal-back')?.remove();}
-  function openPaymentProof(paymentId){
-    const p=state.topups.find(x=>String(x.id)===String(paymentId));if(!p)return;
-    const client=state.adminClients.find(c=>String(c.clientId)===String(p.client_id)),proof=p.proof_data_url||p.proof_url||'';
+  async function paymentProof(paymentId){
+    const key=String(paymentId);
+    if(state.proofCache.has(key))return state.proofCache.get(key);
+    const data=await api(`/api/admin/wallet/topups/${encodeURIComponent(key)}/proof`);
+    state.proofCache.set(key,data);return data;
+  }
+  async function openPaymentProof(paymentId){
+    const summary=state.topups.find(x=>String(x.id)===String(paymentId));if(!summary)return;
+    const client=state.adminClients.find(c=>String(c.clientId)===String(summary.client_id));
     closeModal();const back=document.createElement('div');back.className='sub127-modal-back';
-    back.innerHTML=`<div class="sub127-modal"><div class="sub127-modal-head"><div><h2>تفاصيل التحويل</h2><div class="meta">${esc(client?.name||p.client_id||'')}</div></div><div class="spacer"></div><button class="btn soft" data-sub127-close>إغلاق</button></div><div class="sub127-payment-details"><div class="sub127-payment-detail"><span>المبلغ</span><b>${money(p.amount,p.currency)}</b></div><div class="sub127-payment-detail"><span>رقم الهاتف المحوّل منه</span><b class="sub127-payment-phone">${esc(p.sender_phone||'—')}</b></div><div class="sub127-payment-detail"><span>تاريخ الطلب</span><b>${esc(p.requested_at||'—')}</b></div></div>${proof?`<img class="sub127-proof-large" src="${esc(proof)}" alt="سكرين إثبات التحويل">`:'<div class="empty mt">لا توجد صورة مرفوعة لهذا الطلب.</div>'}<div class="sub127-modal-actions"><button class="btn primary" data-sub127-approve="${esc(p.id)}">اعتماد التحويل</button><button class="btn soft" data-sub127-reject="${esc(p.id)}">رفض</button></div></div>`;
+    back.innerHTML=`<div class="sub127-modal"><div class="sub127-modal-head"><div><h2>تفاصيل التحويل</h2><div class="meta">${esc(client?.name||summary.client_id||'')}</div></div><div class="spacer"></div><button class="btn soft" data-sub127-close>إغلاق</button></div><div class="card empty mt" data-sub127-proof-loading>جارٍ تحميل صورة التحويل...</div></div>`;
     document.body.appendChild(back);back.onclick=e=>{if(e.target===back)closeModal();};$('[data-sub127-close]',back).onclick=closeModal;
-    $('[data-sub127-approve]',back).onclick=()=>approveTopup(p.id).then(closeModal).catch(e=>window.showToast?.(e.message));
-    $('[data-sub127-reject]',back).onclick=()=>rejectTopup(p.id).then(closeModal).catch(e=>window.showToast?.(e.message));
+    try{
+      const p=await paymentProof(paymentId);if(!back.isConnected)return;
+      const proof=p.proof_data_url||p.proof_url||'',modal=$('.sub127-modal',back);if(!modal)return;
+      modal.innerHTML=`<div class="sub127-modal-head"><div><h2>تفاصيل التحويل</h2><div class="meta">${esc(client?.name||p.client_id||'')}</div></div><div class="spacer"></div><button class="btn soft" data-sub127-close>إغلاق</button></div><div class="sub127-payment-details"><div class="sub127-payment-detail"><span>المبلغ</span><b>${money(p.amount,p.currency)}</b></div><div class="sub127-payment-detail"><span>رقم الهاتف المحوّل منه</span><b class="sub127-payment-phone">${esc(p.sender_phone||'—')}</b></div><div class="sub127-payment-detail"><span>تاريخ الطلب</span><b>${esc(p.requested_at||'—')}</b></div></div>${proof?`<img class="sub127-proof-large" src="${esc(proof)}" alt="سكرين إثبات التحويل">`:'<div class="empty mt">لا توجد صورة مرفوعة لهذا الطلب.</div>'}<div class="sub127-modal-actions"><button class="btn primary" data-sub127-approve="${esc(p.id)}">اعتماد التحويل</button><button class="btn soft" data-sub127-reject="${esc(p.id)}">رفض</button></div>`;
+      $('[data-sub127-close]',back).onclick=closeModal;
+      $('[data-sub127-approve]',back).onclick=()=>approveTopup(p.id).then(closeModal).catch(e=>window.showToast?.(e.message));
+      $('[data-sub127-reject]',back).onclick=()=>rejectTopup(p.id).then(closeModal).catch(e=>window.showToast?.(e.message));
+    }catch(error){
+      if(!back.isConnected)return;const loading=$('[data-sub127-proof-loading]',back);
+      if(loading)loading.innerHTML=`<b>تعذر تحميل صورة التحويل</b><div class="meta mt">${esc(error.message)}</div><button class="btn soft mt" data-sub127-proof-retry>إعادة المحاولة</button>`;
+      $('[data-sub127-proof-retry]',back)?.addEventListener('click',()=>{state.proofCache.delete(String(paymentId));closeModal();openPaymentProof(paymentId);},{once:true});
+    }
   }
   function openClientPayment(clientId){
     const items=clientPendingTopups(clientId);if(!items.length){window.showToast?.('لا توجد دفعات معلقة لهذا العميل');return;}
@@ -174,25 +191,31 @@
 
   async function approveTopup(id){
     await api(`/api/admin/wallet/topups/${encodeURIComponent(id)}/approve`,{method:'POST',body:JSON.stringify({note:'Approved from subscriptions center'})});
-    window.showToast?.('تم اعتماد التحويل وشحن الرصيد وفحص التفعيل');await renderAdmin();
+    state.proofCache.delete(String(id));window.showToast?.('تم اعتماد التحويل وشحن الرصيد وفحص التفعيل');await renderAdmin();
   }
   async function rejectTopup(id){
     if(!confirm('رفض طلب الشحن؟'))return;
     await api(`/api/admin/wallet/topups/${encodeURIComponent(id)}/reject`,{method:'POST',body:JSON.stringify({note:'Rejected from subscriptions center'})});
-    window.showToast?.('تم رفض الطلب');await renderAdmin();
+    state.proofCache.delete(String(id));window.showToast?.('تم رفض الطلب');await renderAdmin();
   }
 
   async function renderAdmin(){
     if(state.me?.role!=='admin')return;
-    addAdminNav();setAdminActive();const root=$('#root');if(!root)return;root.dataset.sub127Admin='loading';root.innerHTML='<div class="card empty">جارٍ تحميل الاشتراكات والدفعات الجديدة...</div>';
+    addAdminNav();setAdminActive();const root=$('#root');if(!root)return;
+    if(root.dataset.sub127Admin==='loading')return;
+    root.dataset.sub127Admin='loading';root.innerHTML='<div class="card empty">جارٍ تحميل الاشتراكات والدفعات الجديدة...</div>';
     try{
-      const [subs,topups]=await Promise.all([api('/api/admin/subscriptions'),api('/api/admin/wallet/topups?limit=300')]);
-      state.adminClients=subs.clients||[];state.topups=Array.isArray(topups)?topups:(topups.items||topups.results||[]);
+      const [subsResult,topupsResult]=await Promise.allSettled([api('/api/admin/subscriptions'),api('/api/admin/wallet/topups?limit=300')]);
+      if(subsResult.status!=='fulfilled')throw subsResult.reason;
+      const subs=subsResult.value||{},topups=topupsResult.status==='fulfilled'?topupsResult.value:[];
+      state.adminClients=Array.isArray(subs.clients)?subs.clients:[];
+      state.topups=Array.isArray(topups)?topups:(Array.isArray(topups?.items)?topups.items:(Array.isArray(topups?.results)?topups.results:[]));
+      const topupWarning=topupsResult.status==='rejected'?'<div class="insight warn">تم تحميل العملاء، لكن تعذر تحميل الدفعات المعلقة. اضغط تحديث للمحاولة مرة أخرى.</div>':'';
       const locked=state.adminClients.filter(x=>x.locked).length,trials=state.adminClients.filter(x=>x.trialActive).length,pending=state.topups.length;
-      root.dataset.sub127Admin='ready';root.innerHTML=`<div class="sub127-admin"><div class="page-head sub127-admin-head"><div><div class="title">الاشتراكات</div><div class="sub">إدارة الشهر المجاني، الحد الأدنى الشهري، رسوم الأوردرات، الرصيد، واعتماد تحويلات العملاء.</div></div><div class="spacer"></div><button class="btn soft" id="sub127ReconcileAll">فحص الدورة الشهرية</button></div><div class="grid kpis sub127-summary"><div class="card"><div class="k-label">العملاء</div><div class="k-val small">${num(state.adminClients.length)}</div></div><div class="card"><div class="k-label">متوقفون بسبب الرصيد</div><div class="k-val small">${num(locked)}</div></div><div class="card"><div class="k-label">شهر مجاني فعال</div><div class="k-val small">${num(trials)}</div></div><div class="card"><div class="k-label">دفعات تنتظر المراجعة</div><div class="k-val small">${num(pending)}</div></div></div><section class="card"><div class="sub127-toolbar"><input class="input" id="sub127Search" placeholder="ابحث باسم العميل أو البريد أو Client ID"><span class="meta" id="sub127Count">${num(state.adminClients.length)} عميل</span></div><div class="sub127-table-wrap mt"><table class="sub127-table"><thead><tr><th>العميل</th><th>الحالة</th><th>الرصيد</th><th>الحد الشهري</th><th>رسوم الأوردر</th><th>نهاية المجاني</th><th>دفعات معلقة</th><th></th></tr></thead><tbody>${state.adminClients.map(adminRow).join('')||'<tr><td colspan="8" class="empty">لا يوجد عملاء.</td></tr>'}</tbody></table></div></section><section class="card"><h3>الدفعات الجديدة من العملاء</h3><div class="meta">راجع صورة التحويل ثم اضغط اعتماد؛ الرصيد يُشحن وفحص التفعيل يتم فورًا.</div><div class="mt">${state.topups.map(paymentRow).join('')||'<div class="empty">لا توجد دفعات جديدة تنتظر المراجعة.</div>'}</div></section></div>`;
-      $('[data-sub127-manage]',root).forEach(b=>b.onclick=()=>openManage(b.dataset.sub127Manage));
-      $('[data-sub127-view-payment]',root).forEach(b=>b.onclick=()=>openPaymentProof(b.dataset.sub127ViewPayment));
-      $('[data-sub127-view-client-payment]',root).forEach(b=>b.onclick=()=>openClientPayment(b.dataset.sub127ViewClientPayment));
+      root.dataset.sub127Admin='ready';root.innerHTML=`<div class="sub127-admin">${topupWarning}<div class="page-head sub127-admin-head"><div><div class="title">الاشتراكات</div><div class="sub">إدارة الشهر المجاني، الحد الأدنى الشهري، رسوم الأوردرات، الرصيد، واعتماد تحويلات العملاء.</div></div><div class="spacer"></div><button class="btn soft" id="sub127ReconcileAll">فحص الدورة الشهرية</button></div><div class="grid kpis sub127-summary"><div class="card"><div class="k-label">العملاء</div><div class="k-val small">${num(state.adminClients.length)}</div></div><div class="card"><div class="k-label">متوقفون بسبب الرصيد</div><div class="k-val small">${num(locked)}</div></div><div class="card"><div class="k-label">شهر مجاني فعال</div><div class="k-val small">${num(trials)}</div></div><div class="card"><div class="k-label">دفعات تنتظر المراجعة</div><div class="k-val small">${num(pending)}</div></div></div><section class="card"><div class="sub127-toolbar"><input class="input" id="sub127Search" placeholder="ابحث باسم العميل أو البريد أو Client ID"><span class="meta" id="sub127Count">${num(state.adminClients.length)} عميل</span></div><div class="sub127-table-wrap mt"><table class="sub127-table"><thead><tr><th>العميل</th><th>الحالة</th><th>الرصيد</th><th>الحد الشهري</th><th>رسوم الأوردر</th><th>نهاية المجاني</th><th>دفعات معلقة</th><th></th></tr></thead><tbody>${state.adminClients.map(adminRow).join('')||'<tr><td colspan="8" class="empty">لا يوجد عملاء.</td></tr>'}</tbody></table></div></section><section class="card"><h3>الدفعات الجديدة من العملاء</h3><div class="meta">راجع صورة التحويل ثم اضغط اعتماد؛ الرصيد يُشحن وفحص التفعيل يتم فورًا.</div><div class="mt">${state.topups.map(paymentRow).join('')||'<div class="empty">لا توجد دفعات جديدة تنتظر المراجعة.</div>'}</div></section></div>`;
+      $$('[data-sub127-manage]',root).forEach(b=>b.onclick=()=>openManage(b.dataset.sub127Manage));
+      $$('[data-sub127-view-payment]',root).forEach(b=>b.onclick=()=>openPaymentProof(b.dataset.sub127ViewPayment));
+      $$('[data-sub127-view-client-payment]',root).forEach(b=>b.onclick=()=>openClientPayment(b.dataset.sub127ViewClientPayment));
       $$('[data-sub127-approve]',root).forEach(b=>b.onclick=()=>approveTopup(b.dataset.sub127Approve).catch(e=>window.showToast?.(e.message)));
       $$('[data-sub127-reject]',root).forEach(b=>b.onclick=()=>rejectTopup(b.dataset.sub127Reject).catch(e=>window.showToast?.(e.message)));
       const search=$('#sub127Search',root),rows=$$('[data-sub127-search]',root),count=$('#sub127Count',root);search.oninput=()=>{const q=search.value.trim().toLowerCase();let visible=0;rows.forEach(row=>{const show=!q||row.dataset.sub127Search.includes(q);row.hidden=!show;if(show)visible++;});count.textContent=`${num(visible)} عميل`;};
