@@ -44,6 +44,16 @@ async function ensureManagedWallet(env,clientId,actor='system'){
   return account;
 }
 
+async function ensurePaidBillingStart(env,clientId,subscriptionId,actor='system'){
+  const existing=await env.DB.prepare("SELECT created_at FROM audit_log WHERE client_id=? AND action='subscription.billing.start' ORDER BY created_at ASC LIMIT 1").bind(clientId).first();
+  if(existing?.created_at)return existing.created_at;
+  const ts=now();
+  await env.DB.prepare(`INSERT INTO audit_log (id,client_id,actor_email,action,entity_type,entity_id,metadata_json,created_at)
+    VALUES (?,?,?,?,?,?,?,?)`)
+    .bind(rid('AUD'),clientId,actor,'subscription.billing.start','subscription',subscriptionId||clientId,JSON.stringify({source:'managed_subscription',startedAt:ts}),ts).run();
+  return ts;
+}
+
 async function ensureSubscriptionRow(env,clientId,{monthlyMinimum=0,currency='EGP'}={}){
   let row=await latestSubscription(env,clientId);if(row)return row;
   const tenant=await env.DB.prepare('SELECT plan,currency FROM tenant_settings WHERE client_id=?').bind(clientId).first();
@@ -114,6 +124,8 @@ export async function subscriptionAccess(env,clientId,{applyMonthly=true}={}){
     subscription={...subscription,status:'active',updated_at:ts};
   }
   const inTrial=trialActive(subscription,today);
+  let billingStartedAt=null;
+  if(!inTrial&&subscription.status==='active')billingStartedAt=await ensurePaidBillingStart(env,clientId,subscription.id,'system');
   const monthlyMinimum=clampMoney(subscription.amount),orderFee=inTrial?0:clampMoney(account.base_order_fee);
   let monthly={charged:true,amount:0,balance:round2(account.balance),bounds:monthBounds(today)};
   if(!inTrial&&subscription.status==='active'&&applyMonthly){
@@ -133,7 +145,8 @@ export async function subscriptionAccess(env,clientId,{applyMonthly=true}={}){
     monthlyMinimum,monthlyCharged:monthly.charged,monthlyDue:monthly.charged?0:monthlyMinimum,
     orderFee,trialActive:inTrial,trialStartsAt:subscription.period_start||null,trialEndsAt:inTrial?subscription.period_end:null,
     trialDaysRemaining:inTrial?daysBetween(today,subscription.period_end):0,subscriptionStatus:subscription.status,
-    billingCycle:subscription.billing_cycle||'monthly',periodStart:subscription.period_start||monthly.bounds?.from||null,periodEnd:subscription.period_end||monthly.bounds?.to||null
+    billingCycle:subscription.billing_cycle||'monthly',periodStart:subscription.period_start||monthly.bounds?.from||null,periodEnd:subscription.period_end||monthly.bounds?.to||null,
+    billingStartedAt
   };
 }
 
@@ -255,6 +268,7 @@ export async function listSubscriptionsAdmin(env,{limit=500}={}){
       o.name owner_name,o.email owner_email,
       s.id sub_id,s.plan sub_plan,s.status sub_status,s.billing_cycle sub_cycle,s.amount sub_amount,
       s.currency sub_currency,s.period_start sub_period_start,s.period_end sub_period_end,
+      (SELECT MIN(a.created_at) FROM audit_log a WHERE a.client_id=ids.client_id AND a.action='subscription.billing.start') billing_started_at,
       w.balance wallet_balance,w.currency wallet_currency,w.base_order_fee,w.status wallet_status,
       w.billing_version,w.billing_start_rowid,
       COALESCE(p.n,0) pending_n,COALESCE(p.amount,0) pending_amount,
@@ -322,7 +336,7 @@ export async function listSubscriptionsAdmin(env,{limit=500}={}){
       tenantStatus:row.tenant_status||'active',plan:row.tenant_plan||row.sub_plan||'legacy',
       pendingTopups:Number(row.pending_n)||0,pendingTopupAmount:round2(row.pending_amount),
       topupIntegrityIssues:Number(row.missing_credit_logs)||0,
-      billingVersion:row.billing_version||'legacy',billingStartRowid:Number(row.billing_start_rowid)||0,
+      billingVersion:row.billing_version||'legacy',billingStartRowid:Number(row.billing_start_rowid)||0,billingStartedAt:row.billing_started_at||null,
       managed:true,locked,reason,balance,currency:row.wallet_currency||row.sub_currency||row.tenant_currency||'EGP',
       monthlyMinimum,monthlyCharged,monthlyDue:monthlyCharged?0:monthlyMinimum,
       baseOrderFee,orderFee:inTrial?0:baseOrderFee,moduleOrderFeeDelta:round2(row.module_delta),trialActive:inTrial,trialStartsAt:row.sub_period_start||null,trialEndsAt:inTrial?row.sub_period_end:null,
