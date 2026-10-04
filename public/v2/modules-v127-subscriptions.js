@@ -1,7 +1,7 @@
 /* Kun Online v127.0 — subscriptions, free trial, wallet lock and payment proof workspace */
 (()=>{
   if(window.KunSubscriptionsV127)return;
-  const VERSION='127.7';
+  const VERSION='127.8';
   const $=(s,r=document)=>r?.querySelector?.(s)||null;
   const $$=(s,r=document)=>r?[...r.querySelectorAll(s)]:[];
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -62,16 +62,24 @@
     }
   }
 
-  function restoreNav(){
+  async function restoreNav({reloadPermissions=false}={}){
     delete document.documentElement.dataset.kunSubscriptionLocked;
-    $$('[data-sub127-hidden="1"]').forEach(b=>{b.hidden=false;b.style.display='';delete b.dataset.sub127Hidden;});
-    window.KunPermissionNavigationV51?.apply?.();
+    $('[data-sub127-hidden="1"]').forEach(b=>{b.hidden=false;b.style.display='';delete b.dataset.sub127Hidden;});
+    $('.nav .nav-group').forEach(group=>{group.hidden=false;group.style.removeProperty('display');});
+    try{
+      if(reloadPermissions&&window.KunPermissionNavigationV51?.load)await window.KunPermissionNavigationV51.load();
+      else window.KunPermissionNavigationV51?.apply?.();
+    }catch(error){console.warn('permission navigation restore failed',error);}
     window.KunSidebarGroupsV90?.sync?.();
+    window.KunEcommerceCalculatorShortcutV93?.sync?.();
+    window.KunFinanceCommandCenterV96?.mergeNavigation?.();
+    setTimeout(()=>window.KunSidebarGroupsV90?.sync?.(),60);
+    window.dispatchEvent(new CustomEvent('kun:subscription-access-restored',{detail:{access:state.access}}));
   }
   function lockNav(){
-    if(!state.access?.locked)return restoreNav();
+    if(!state.access?.locked)return;
     document.documentElement.dataset.kunSubscriptionLocked='1';
-    $$('.nav button[data-view]').forEach(b=>{if(b.dataset.view==='dashboard')return;b.dataset.sub127Hidden='1';b.hidden=true;b.style.display='none';});
+    $('.nav button[data-view]').forEach(b=>{if(b.dataset.view==='dashboard')return;b.dataset.sub127Hidden='1';b.hidden=true;b.style.display='none';});
     window.KunSidebarGroupsV90?.sync?.();
     const active=$('.nav button.active[data-view]');if(active&&active.dataset.view!=='dashboard')$('.nav button[data-view="dashboard"]')?.click();
   }
@@ -107,8 +115,11 @@
   async function refreshAccess(force=false){
     if(!state.me?.clientId||state.me.role==='admin')return null;
     try{
-      const wasLocked=state.locked,a=await api('/api/subscription/access');state.access=a;state.locked=Boolean(a.locked);lockNav();ensureClientPanel();
-      if(wasLocked&&!state.locked)window.showToast?.('تم شحن الرصيد وتفعيل النظام تلقائيًا');
+      const wasLocked=state.locked,a=await api('/api/subscription/access');state.access=a;state.locked=Boolean(a.locked);
+      if(state.locked)lockNav();
+      else await restoreNav({reloadPermissions:wasLocked||!window.KunPermissionNavigationV51?.snapshot?.role});
+      ensureClientPanel();
+      if(wasLocked&&!state.locked)window.showToast?.('تم شحن الرصيد وتفعيل النظام وكل الأقسام تلقائيًا');
       else if(force)window.showToast?.(a.locked?'الرصيد ما زال غير كافٍ للتفعيل':'تم تفعيل النظام');
       return a;
     }catch(error){console.warn('subscription access unavailable',error);return null;}
@@ -195,8 +206,13 @@
   }
 
   async function approveTopup(id){
-    await api(`/api/admin/wallet/topups/${encodeURIComponent(id)}/approve`,{method:'POST',body:JSON.stringify({note:'Approved from subscriptions center'})});
-    state.proofCache.delete(String(id));window.showToast?.('تم اعتماد التحويل وشحن الرصيد وفحص التفعيل');await renderAdmin();
+    const result=await api(`/api/admin/wallet/topups/${encodeURIComponent(id)}/approve`,{method:'POST',body:JSON.stringify({note:'Approved from subscriptions center'})});
+    state.proofCache.delete(String(id));
+    const billed=result?.orderReconcile||{},currency=result?.currency||'EGP',parts=[`تم إضافة ${money(result?.creditedAmount,currency)}`];
+    if(Number(billed.chargedOrders)>0)parts.push(`خصم ${money(billed.chargedAmount,currency)} مقابل ${num(billed.chargedOrders)} أوردر`);
+    parts.push(`الرصيد النهائي ${money(result?.balance,currency)}`);
+    parts.push(result?.access?.locked?'الحساب ما زال موقوفًا':'الحساب نشط');
+    window.showToast?.(parts.join(' — '));await renderAdmin();
   }
   async function rejectTopup(id){
     if(!confirm('رفض طلب الشحن؟'))return;
