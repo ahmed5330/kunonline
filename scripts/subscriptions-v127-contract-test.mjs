@@ -60,7 +60,7 @@ assert.ok(ui.includes('KunPermissionNavigationV51?.load'),'unlock must reload na
 assert.ok(ui.includes("kun:subscription-access-restored"),'unlock must broadcast navigation restoration');
 assert.ok(ui.includes("$('.nav .nav-group')")||ui.includes("$('.nav .nav-group')"),'unlock must restore hidden navigation groups');
 assert.ok(ui.includes('chargedOrders'),'admin approval feedback must explain pending-order deductions');
-assert.ok(ui.includes('تم شحن الرصيد وتفعيل النظام تلقائيًا'),'client should receive automatic reactivation feedback');
+assert.ok(ui.includes('تم شحن الرصيد وتفعيل النظام وكل الأقسام تلقائيًا'),'client should receive automatic reactivation feedback');
 assert.ok(ui.includes('Promise.allSettled'),'admin screen must tolerate a secondary payment API failure');
 assert.ok(ui.includes("$$('[data-sub127-manage]',root).forEach"),'admin manage buttons must use querySelectorAll semantics');
 assert.ok(ui.includes("$$('[data-sub127-view-payment]',root).forEach"),'payment proof buttons must use querySelectorAll semantics');
