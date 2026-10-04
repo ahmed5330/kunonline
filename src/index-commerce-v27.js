@@ -70,7 +70,7 @@ async function scopeFor(env,me,clientId,request,body={}){
   if(!clientId)return {clientId:null,storeId:null,unrestricted:true};
   return resolveStoreScope(env,me,clientId,requestedStoreId(request,body),{write:isWrite(request.method)});
 }
-function featureSkip(path){return path==='/api/me'||path==='/api/login'||path==='/api/logout'||path==='/api/setup'||path==='/api/my-store-context'||path==='/api/tenant/features'||path.startsWith('/api/admin/')||path.startsWith('/api/preview/');}
+function featureSkip(path){return path==='/api/me'||path==='/api/login'||path==='/api/logout'||path==='/api/setup'||path==='/api/my-store-context'||path==='/api/tenant/features'||path==='/api/wallet'||path==='/api/wallet/log'||path==='/api/wallet/topups'||path.startsWith('/api/admin/')||path.startsWith('/api/preview/');}
 async function audit(env,me,clientId,storeId,action,entityType,entityId,metadata={}){
   try{await env.DB.prepare(`INSERT INTO audit_log (id,client_id,store_id,actor_user_id,actor_email,action,entity_type,entity_id,metadata_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`).bind(rid('AUD'),clientId||null,storeId||null,me?.uid||null,me?.email||me?.role||'system',action,entityType||null,entityId||null,JSON.stringify(metadata||{}),new Date().toISOString()).run();}catch{}
 }

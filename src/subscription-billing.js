@@ -78,9 +78,13 @@ export async function subscriptionAccess(env,clientId,{applyMonthly=true}={}){
   const today=cairoYmd(),account=await ensureWalletAccount(env,clientId);
   let subscription=await latestSubscription(env,clientId);
   if(!subscription){
+    const orderFee=await effectiveOrderFee(env,clientId),balance=round2(account.balance);
+    const walletPaused=text(account.status)!=='active',emptyBalance=balance<=0,insufficientOrderBalance=orderFee>0&&balance<orderFee;
+    const locked=walletPaused||emptyBalance||insufficientOrderBalance;
+    const reason=walletPaused?'wallet_paused':emptyBalance?'balance_empty':insufficientOrderBalance?'order_fee_insufficient':null;
     return {
-      clientId,managed:false,locked:false,reason:null,balance:round2(account.balance),currency:account.currency||'EGP',
-      monthlyMinimum:0,orderFee:await effectiveOrderFee(env,clientId),trialActive:false,trialEndsAt:null,subscriptionStatus:'unmanaged',
+      clientId,managed:false,locked,reason,balance,currency:account.currency||'EGP',
+      monthlyMinimum:0,orderFee,trialActive:false,trialEndsAt:null,subscriptionStatus:'unmanaged',
       monthlyCharged:true,monthlyDue:0
     };
   }
@@ -101,9 +105,10 @@ export async function subscriptionAccess(env,clientId,{applyMonthly=true}={}){
   const subscriptionPaused=['paused','cancelled','suspended'].includes(text(subscription.status));
   const insufficientMonthly=!inTrial&&subscription.status==='active'&&monthlyMinimum>0&&!monthly.charged&&num(fresh.balance)<monthlyMinimum;
   const emptyBalance=!inTrial&&round2(fresh.balance)<=0;
+  const insufficientOrderBalance=!inTrial&&orderFee>0&&round2(fresh.balance)>0&&round2(fresh.balance)<orderFee;
   const walletPaused=text(fresh.status)!=='active';
-  const locked=subscriptionPaused||walletPaused||insufficientMonthly||emptyBalance;
-  const reason=subscriptionPaused?'subscription_paused':walletPaused?'wallet_paused':insufficientMonthly?'monthly_minimum_due':emptyBalance?'balance_empty':null;
+  const locked=subscriptionPaused||walletPaused||insufficientMonthly||emptyBalance||insufficientOrderBalance;
+  const reason=subscriptionPaused?'subscription_paused':walletPaused?'wallet_paused':insufficientMonthly?'monthly_minimum_due':emptyBalance?'balance_empty':insufficientOrderBalance?'order_fee_insufficient':null;
   return {
     clientId,managed:true,locked,reason,balance:round2(fresh.balance),currency:fresh.currency||subscription.currency||'EGP',
     monthlyMinimum,monthlyCharged:monthly.charged,monthlyDue:monthly.charged?0:monthlyMinimum,
