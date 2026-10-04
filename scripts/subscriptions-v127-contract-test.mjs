@@ -87,6 +87,7 @@ assert.ok(ui.includes("/api/admin/subscriptions/${encodeURIComponent(clientId)}/
 assert.ok(ui.includes('adminLockReason'),'admin subscriptions must expose the actual lock reason');
 assert.ok(ui.includes('المصدر الوحيد: Wallet Ledger'),'admin UI must identify the wallet ledger as the single balance source');
 assert.ok(ui.includes('سلامة الدفعات'),'admin UI must expose approved-payment integrity');
+assert.ok(ui.includes('الحساب ما زال على Billing قديم'),'admin UI must warn before explicitly migrating an older managed billing account');
 assert.ok(ui.includes('اعتماد بدون قيد Ledger'),'admin UI must surface approved payments missing a ledger entry');
 assert.ok(ui.includes('/ledger?limit=40'),'admin client ledger must load from the read-only ledger endpoint');
 assert.ok(ui.includes('تم شحن الرصيد وتفعيل النظام وكل الأقسام تلقائيًا'),'client should receive automatic reactivation feedback');
