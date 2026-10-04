@@ -1,14 +1,14 @@
 /* Kun Online v127.0 — subscriptions, free trial, wallet lock and payment proof workspace */
 (()=>{
   if(window.KunSubscriptionsV127)return;
-  const VERSION='127.11';
+  const VERSION='127.12';
   const $=(s,r=document)=>r?.querySelector?.(s)||null;
   const $$=(s,r=document)=>r?[...r.querySelectorAll(s)]:[];
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const n=v=>Number(v)||0;
   const num=v=>new Intl.NumberFormat('ar-EG',{maximumFractionDigits:2}).format(n(v));
   const money=(v,c='EGP')=>`${num(v)} ${String(c||'EGP').toUpperCase()==='EGP'?'ج.م':esc(c)}`;
-  const state={me:null,access:null,adminClients:[],topups:[],timer:0,locked:false,proofCache:new Map()};
+  const state={me:null,access:null,adminClients:[],topups:[],timer:0,locked:false,proofCache:new Map(),topupDraft:{amount:'',phone:'',file:null,fileName:''}};
   const nativeFetch=window.fetch.bind(window);
   const api=async(path,options={})=>{const r=await nativeFetch(path,{credentials:'include',headers:{'Content-Type':'application/json',...(options.headers||{})},...options}),d=await r.json().catch(()=>({}));if(!r.ok){const e=new Error(d.error||`HTTP ${r.status}`);e.code=d.code;e.data=d;throw e;}return d;};
 
@@ -85,7 +85,11 @@
   }
 
   async function submitTopup(panel){
-    const amount=Number($('#sub127Amount',panel)?.value||0),phone=String($('#sub127Phone',panel)?.value||'').trim(),file=$('#sub127Proof',panel)?.files?.[0],button=$('#sub127Submit',panel);
+    const amountInput=$('#sub127Amount',panel),phoneInput=$('#sub127Phone',panel),proofInput=$('#sub127Proof',panel),button=$('#sub127Submit',panel);
+    const amount=Number(amountInput?.value||state.topupDraft.amount||0),phone=String(phoneInput?.value||state.topupDraft.phone||'').trim(),file=proofInput?.files?.[0]||state.topupDraft.file;
+    state.topupDraft.amount=String(amountInput?.value||state.topupDraft.amount||'');
+    state.topupDraft.phone=phone;
+    if(file){state.topupDraft.file=file;state.topupDraft.fileName=file.name||state.topupDraft.fileName||'صورة مرفوعة';}
     if(!(amount>0))throw new Error('اكتب مبلغ التحويل');
     if(phone.replace(/\s+/g,'').length<8)throw new Error('اكتب رقم الهاتف المحوّل منه');
     button.disabled=true;button.textContent='جاري الإرسال...';
@@ -93,23 +97,55 @@
       const proofDataUrl=await proofData(file);
       await api('/api/wallet/topups',{method:'POST',body:JSON.stringify({amount,senderPhone:phone,proofDataUrl,transferMethod:'wallet_transfer'})});
       window.showToast?.('تم إرسال إثبات التحويل للإدارة للمراجعة');
-      $('#sub127Amount',panel).value='';$('#sub127Proof',panel).value='';
+      state.topupDraft.amount='';state.topupDraft.file=null;state.topupDraft.fileName='';
+      if(amountInput)amountInput.value='';if(proofInput)proofInput.value='';
+      const proofName=$('#sub127ProofName',panel);if(proofName)proofName.textContent='';
       await refreshAccess(true);
     }finally{button.disabled=false;button.textContent='إرسال طلب الشحن';}
   }
 
   function clientPanelHtml(a){
     const trial=a?.trialActive,locked=a?.locked,cls=locked?'locked':trial?'trial':'',badge=statusText(a),currency=a?.currency||'EGP';
-    return `<section class="sub127-client-panel ${cls}" data-sub127-client-panel="1"><div class="sub127-client-head"><div><h3>${locked?'استكمال تشغيل Kun Online':'الاشتراك والرصيد'}</h3><p>${locked?`${esc(reasonText(a))}. الداشبورد متاح، وبمجرد اعتماد التحويل سيعود النظام للعمل تلقائيًا.`:trial?`الفترة المجانية فعالة حتى ${esc(a.trialEndsAt||'—')} ولا يتم خلالها خصم رسوم شهرية أو رسوم على الأوردرات.`:'متابعة الرصيد ورسوم التشغيل الحالية.'}</p></div><span class="sub127-badge">${esc(badge)}</span></div><div class="sub127-kpis"><div class="sub127-kpi"><span>الرصيد الحالي</span><b>${money(a?.balance,currency)}</b></div><div class="sub127-kpi"><span>الحد الأدنى الشهري</span><b>${trial?'مجانًا':money(a?.monthlyMinimum,currency)}</b></div><div class="sub127-kpi"><span>رسوم كل أوردر</span><b>${trial?'مجانًا':money(a?.orderFee,currency)}</b></div><div class="sub127-kpi"><span>الحالة</span><b>${esc(badge)}</b></div></div><div class="sub127-topup"><label>المبلغ المحوّل<input class="input" id="sub127Amount" type="number" min="1" step="0.01" placeholder="مثال: 500"></label><label>رقم الهاتف المحوّل منه<input class="input" id="sub127Phone" type="tel" placeholder="01xxxxxxxxx"></label><label>صورة إثبات التحويل<input class="input" id="sub127Proof" type="file" accept="image/*"></label><button class="btn primary" id="sub127Submit" type="button">إرسال طلب الشحن</button></div><div class="sub127-note">بعد الإرسال يظهر الطلب لدى الإدارة في قسم «الاشتراكات». عند اعتماد التحويل يتم شحن الرصيد وفحص الحد الأدنى الشهري وتفعيل الأقسام تلقائيًا إذا أصبح الرصيد كافيًا.</div></section>`;
+    const description=locked?`${esc(reasonText(a))}. الداشبورد متاح، وبمجرد اعتماد التحويل سيعود النظام للعمل تلقائيًا.`:trial?`الفترة المجانية فعالة حتى ${esc(a.trialEndsAt||'—')} ولا يتم خلالها خصم رسوم شهرية أو رسوم على الأوردرات.`:'متابعة الرصيد ورسوم التشغيل الحالية.';
+    return `<section class="sub127-client-panel ${cls}" data-sub127-client-panel="1"><div class="sub127-client-head"><div><h3 data-sub127-client-title>${locked?'استكمال تشغيل Kun Online':'الاشتراك والرصيد'}</h3><p data-sub127-client-description>${description}</p></div><span class="sub127-badge" data-sub127-client-badge>${esc(badge)}</span></div><div class="sub127-kpis"><div class="sub127-kpi"><span>الرصيد الحالي</span><b data-sub127-client-balance>${money(a?.balance,currency)}</b></div><div class="sub127-kpi"><span>الحد الأدنى الشهري</span><b data-sub127-client-monthly>${trial?'مجانًا':money(a?.monthlyMinimum,currency)}</b></div><div class="sub127-kpi"><span>رسوم كل أوردر</span><b data-sub127-client-order-fee>${trial?'مجانًا':money(a?.orderFee,currency)}</b></div><div class="sub127-kpi"><span>الحالة</span><b data-sub127-client-status>${esc(badge)}</b></div></div><div class="sub127-topup"><label>المبلغ المحوّل<input class="input" id="sub127Amount" type="number" min="1" step="0.01" placeholder="مثال: 500" value="${esc(state.topupDraft.amount)}"></label><label>رقم الهاتف المحوّل منه<input class="input" id="sub127Phone" type="tel" placeholder="01xxxxxxxxx" value="${esc(state.topupDraft.phone)}"></label><label>صورة إثبات التحويل<input class="input" id="sub127Proof" type="file" accept="image/*"><span class="meta" id="sub127ProofName">${esc(state.topupDraft.fileName)}</span></label><button class="btn primary" id="sub127Submit" type="button">إرسال طلب الشحن</button></div><div class="sub127-note">بعد الإرسال يظهر الطلب لدى الإدارة في قسم «الاشتراكات». عند اعتماد التحويل يتم شحن الرصيد وفحص الحد الأدنى الشهري وتفعيل الأقسام تلقائيًا إذا أصبح الرصيد كافيًا.</div></section>`;
+  }
+
+  function patchClientPanel(panel,a){
+    if(!panel||!a)return;
+    const trial=a?.trialActive,locked=a?.locked,badge=statusText(a),currency=a?.currency||'EGP';
+    panel.classList.toggle('locked',Boolean(locked));panel.classList.toggle('trial',Boolean(!locked&&trial));
+    const title=$('[data-sub127-client-title]',panel),description=$('[data-sub127-client-description]',panel),badgeEl=$('[data-sub127-client-badge]',panel);
+    if(title)title.textContent=locked?'استكمال تشغيل Kun Online':'الاشتراك والرصيد';
+    if(description)description.textContent=locked?`${reasonText(a)}. الداشبورد متاح، وبمجرد اعتماد التحويل سيعود النظام للعمل تلقائيًا.`:trial?`الفترة المجانية فعالة حتى ${a.trialEndsAt||'—'} ولا يتم خلالها خصم رسوم شهرية أو رسوم على الأوردرات.`:'متابعة الرصيد ورسوم التشغيل الحالية.';
+    if(badgeEl)badgeEl.textContent=badge;
+    const balance=$('[data-sub127-client-balance]',panel),monthly=$('[data-sub127-client-monthly]',panel),fee=$('[data-sub127-client-order-fee]',panel),status=$('[data-sub127-client-status]',panel);
+    if(balance)balance.textContent=money(a?.balance,currency);
+    if(monthly)monthly.textContent=trial?'مجانًا':money(a?.monthlyMinimum,currency);
+    if(fee)fee.textContent=trial?'مجانًا':money(a?.orderFee,currency);
+    if(status)status.textContent=badge;
+  }
+
+  function bindClientPanel(panel){
+    if(!panel||panel.dataset.sub127Bound==='1')return;
+    panel.dataset.sub127Bound='1';
+    const amount=$('#sub127Amount',panel),phone=$('#sub127Phone',panel),proof=$('#sub127Proof',panel),proofName=$('#sub127ProofName',panel),submit=$('#sub127Submit',panel);
+    if(amount){amount.value=state.topupDraft.amount||amount.value||'';amount.addEventListener('input',()=>{state.topupDraft.amount=amount.value;});}
+    if(phone){phone.value=state.topupDraft.phone||phone.value||'';phone.addEventListener('input',()=>{state.topupDraft.phone=phone.value;});}
+    if(proof)proof.addEventListener('change',()=>{const file=proof.files?.[0]||null;state.topupDraft.file=file;state.topupDraft.fileName=file?.name||'';if(proofName)proofName.textContent=state.topupDraft.fileName;});
+    if(proofName)proofName.textContent=state.topupDraft.fileName||'';
+    if(submit)submit.onclick=()=>submitTopup(panel).catch(e=>window.showToast?.(e.message));
   }
 
   function ensureClientPanel(){
     if(!state.me?.clientId||state.me.role==='admin'||!state.access)return;
     const dashboard=$('.v33-dashboard');if(!dashboard)return;
     let panel=$('[data-sub127-client-panel]',dashboard);
-    const html=clientPanelHtml(state.access);
-    if(panel)panel.outerHTML=html;else{const hero=$('.dash-hero',dashboard);if(hero)hero.insertAdjacentHTML('afterend',html);else dashboard.insertAdjacentHTML('afterbegin',html);}
-    panel=$('[data-sub127-client-panel]',dashboard);const submit=$('#sub127Submit',panel);if(submit)submit.onclick=()=>submitTopup(panel).catch(e=>window.showToast?.(e.message));
+    if(!panel){
+      const html=clientPanelHtml(state.access),hero=$('.dash-hero',dashboard);
+      if(hero)hero.insertAdjacentHTML('afterend',html);else dashboard.insertAdjacentHTML('afterbegin',html);
+      panel=$('[data-sub127-client-panel]',dashboard);
+    }else patchClientPanel(panel,state.access);
+    bindClientPanel(panel);
   }
 
   async function refreshAccess(force=false){
