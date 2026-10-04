@@ -137,7 +137,7 @@
     b.onclick=event=>{event?.preventDefault?.();event?.stopPropagation?.();setAdminActive();renderAdmin();};
   }
   function setAdminActive(){
-    $('.nav button[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view==='subscriptions'));
+    $$('.nav button[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view==='subscriptions'));
   }
   function adminStatus(c){
     const cls=c.trialActive?'trial':c.locked?'locked':c.subscriptionStatus==='unmanaged'?'unmanaged':'';
