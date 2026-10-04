@@ -14,6 +14,7 @@ class D1{constructor(db){this.db=db}prepare(sql){return new Stmt(this.db,sql)}as
 const db=new DatabaseSync(':memory:');
 db.exec(`
 CREATE TABLE state(id INTEGER PRIMARY KEY,json TEXT NOT NULL,updated_at TEXT NOT NULL);
+CREATE TABLE tenant_settings(client_id TEXT PRIMARY KEY,display_name TEXT,plan TEXT,status TEXT DEFAULT 'active',currency TEXT DEFAULT 'EGP');
 CREATE TABLE orders(id TEXT PRIMARY KEY,client_id TEXT NOT NULL,store_id TEXT,date TEXT,created_at TEXT,name TEXT DEFAULT '',phone TEXT DEFAULT '',address TEXT DEFAULT '',gov TEXT DEFAULT '',product TEXT DEFAULT '',state TEXT DEFAULT 'pending',total REAL DEFAULT 0,customer_id TEXT,awb TEXT,source TEXT,history TEXT DEFAULT '[]',contact_log TEXT DEFAULT '[]');
 CREATE TABLE products(id TEXT PRIMARY KEY,client_id TEXT NOT NULL,store_id TEXT,name TEXT,price REAL DEFAULT 0,cost REAL DEFAULT 0,category TEXT,sku TEXT,stock INTEGER DEFAULT 0,low_stock_threshold INTEGER DEFAULT 5,active INTEGER DEFAULT 1);
 CREATE TABLE transactions(id TEXT PRIMARY KEY,client_id TEXT,store_id TEXT,type TEXT,date TEXT,amount REAL DEFAULT 0);
