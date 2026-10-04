@@ -243,7 +243,7 @@
     const client=state.adminClients.find(c=>String(c.clientId)===String(p.client_id));
     closeModal();const back=document.createElement('div');back.className='sub127-modal-back';
     back.innerHTML=`<div class="sub127-modal"><div class="sub127-modal-head"><div><h2>اعتماد التحويل وإضافة الرصيد</h2><div class="meta">${esc(client?.name||p.client_id||'')}</div></div><div class="spacer"></div><button class="btn soft" data-sub127-close>إغلاق</button></div><div class="sub127-payment-details"><div class="sub127-payment-detail"><span>المبلغ الذي أدخله العميل</span><b>${money(p.amount,p.currency)}</b></div><div class="sub127-payment-detail"><span>رقم الهاتف</span><b class="sub127-payment-phone">${esc(p.sender_phone||'—')}</b></div><div class="sub127-payment-detail"><span>رقم الطلب</span><b>${esc(p.id)}</b></div></div><div class="sub127-form"><label>الرصيد الذي سيتم إضافته فعليًا<input class="input" id="sub127ApproveCreditAmount" type="number" min="0.01" step="0.01" value="${esc(p.amount)}"><span class="meta">يمكن تعديله قبل الاعتماد. هذا هو المبلغ الذي سيُضاف لمحفظة العميل.</span></label><label>ملاحظة الإدارة<input class="input" id="sub127ApproveNote" value="اعتماد تحويل العميل"></label></div><div class="sub127-note">الاعتماد آمن ضد التكرار: لو تم الضغط مرتين، لن تتم إضافة الرصيد مرتين لنفس طلب الشحن.</div><div class="sub127-modal-actions"><button class="btn primary" id="sub127ConfirmApprove">تأكيد الاعتماد وإضافة الرصيد</button><button class="btn soft" data-sub127-close>إلغاء</button></div></div>`;
-    document.body.appendChild(back);back.onclick=e=>{if(e.target===back)closeModal();};$('[data-sub127-close]',back).forEach(b=>b.onclick=closeModal);
+    document.body.appendChild(back);back.onclick=e=>{if(e.target===back)closeModal();};$$('[data-sub127-close]',back).forEach(b=>b.onclick=closeModal);
     $('#sub127ConfirmApprove',back).onclick=async()=>{
       const amount=Number($('#sub127ApproveCreditAmount',back)?.value||0),note=$('#sub127ApproveNote',back)?.value||'';
       if(!(amount>0)){window.showToast?.('اكتب مبلغ صحيح سيتم إضافته للرصيد');return;}
@@ -275,7 +275,7 @@
       $$('[data-sub127-manage]',root).forEach(b=>b.onclick=()=>openManage(b.dataset.sub127Manage));
       $$('[data-sub127-view-payment]',root).forEach(b=>b.onclick=()=>openPaymentProof(b.dataset.sub127ViewPayment));
       $$('[data-sub127-view-client-payment]',root).forEach(b=>b.onclick=()=>openClientPayment(b.dataset.sub127ViewClientPayment));
-      $('[data-sub127-approve]',root).forEach(b=>b.onclick=()=>openApproveTopup(b.dataset.sub127Approve));
+      $$('[data-sub127-approve]',root).forEach(b=>b.onclick=()=>openApproveTopup(b.dataset.sub127Approve));
       $$('[data-sub127-reject]',root).forEach(b=>b.onclick=()=>rejectTopup(b.dataset.sub127Reject).catch(e=>window.showToast?.(e.message)));
       const search=$('#sub127Search',root),rows=$$('[data-sub127-search]',root),count=$('#sub127Count',root);search.oninput=()=>{const q=search.value.trim().toLowerCase();let visible=0;rows.forEach(row=>{const show=!q||row.dataset.sub127Search.includes(q);row.hidden=!show;if(show)visible++;});count.textContent=`${num(visible)} عميل`;};
       $('#sub127ReconcileAll',root).onclick=async()=>{try{await api('/api/admin/subscriptions/reconcile',{method:'POST',body:'{}'});window.showToast?.('تم فحص دورة الاشتراكات');renderAdmin();}catch(e){window.showToast?.(e.message)}};
