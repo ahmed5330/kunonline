@@ -1,7 +1,7 @@
 /* Kun Online v127.0 — subscriptions, free trial, wallet lock and payment proof workspace */
 (()=>{
   if(window.KunSubscriptionsV127)return;
-  const VERSION='127.3';
+  const VERSION='127.4';
   const $=(s,r=document)=>r?.querySelector?.(s)||null;
   const $$=(s,r=document)=>r?[...r.querySelectorAll(s)]:[];
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
