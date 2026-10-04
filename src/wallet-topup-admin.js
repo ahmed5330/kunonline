@@ -32,10 +32,38 @@ export async function approveTopup(env,topupId,actor,note=''){
     if(/idx_wallet_log_idempotency|UNIQUE constraint failed/i.test(String(error?.message||error)))throw Object.assign(new Error('تم اعتماد طلب الشحن بالفعل'),{status:409,code:'TOPUP_ALREADY_APPLIED'});
     throw error;
   }
-  const updated=await env.DB.prepare('SELECT balance FROM wallet_accounts WHERE client_id=?').bind(row.client_id).first();
-  await mirrorLegacyBalance(env,row.client_id,updated?.balance||0);
-  let access=null;try{access=await (await import('./subscription-billing.js')).reconcileSubscriptionAfterTopup(env,row.client_id);}catch{}
-  return {ok:true,id:topupId,clientId:row.client_id,balance:round2(updated?.balance),previousBalance:round2(account.balance),access};
+  const credited=await env.DB.prepare('SELECT balance,currency FROM wallet_accounts WHERE client_id=?').bind(row.client_id).first();
+  await mirrorLegacyBalance(env,row.client_id,credited?.balance||0);
+
+  let access=null,orderReconcile={processed:0,chargedOrders:0,chargedAmount:0,pendingOrders:0};
+  try{
+    const billing=await import('./subscription-billing.js');
+    access=await billing.reconcileSubscriptionAfterTopup(env,row.client_id);
+    if(!access?.locked&&Number(access?.balance)>0){
+      const {reconcileUnbilledOrders}=await import('./wallet-orders.js');
+      const outcomes=await reconcileUnbilledOrders(env,{clientId:row.client_id,limit:300});
+      const charged=outcomes.filter(item=>item?.status==='charged');
+      const pending=outcomes.filter(item=>item?.status==='pending_insufficient'||item?.status==='pending'||item?.ok===false);
+      orderReconcile={
+        processed:outcomes.length,
+        chargedOrders:charged.length,
+        chargedAmount:round2(charged.reduce((sum,item)=>sum+(Number(item?.fee)||0),0)),
+        pendingOrders:pending.length
+      };
+      access=await billing.reconcileSubscriptionAfterTopup(env,row.client_id);
+    }
+  }catch(error){
+    orderReconcile={...orderReconcile,error:String(error?.message||error)};
+  }
+
+  const final=await env.DB.prepare('SELECT balance,currency FROM wallet_accounts WHERE client_id=?').bind(row.client_id).first();
+  await mirrorLegacyBalance(env,row.client_id,final?.balance||0);
+  return {
+    ok:true,id:topupId,clientId:row.client_id,
+    creditedAmount:round2(row.amount),previousBalance:round2(account.balance),
+    balanceAfterCredit:round2(credited?.balance),balance:round2(final?.balance),
+    currency:final?.currency||row.currency||'EGP',orderReconcile,access
+  };
 }
 
 export async function rejectTopup(env,topupId,actor,note=''){
