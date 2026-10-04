@@ -1,6 +1,7 @@
 import {
   subscriptionAccess,configureSubscription,startFreeTrial,endFreeTrial,listSubscriptionsAdmin,reconcileMonthlySubscriptions
 } from './subscription-billing.js';
+import {requestTopup,listTopups} from './wallet-billing.js';
 
 const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}});
 const text=v=>String(v??'').trim();
@@ -52,6 +53,13 @@ export async function handleSubscriptionControl({request,env,ctx,delegate}){
     const clientId=text(me.clientId||me.client_id);if(!clientId)return null;
     const access=await subscriptionAccess(env,clientId,{applyMonthly:true});
     if(path==='/api/subscription/access'&&method==='GET')return json({ok:true,...access});
+    if(me.role==='client'&&path==='/api/wallet/topups'&&method==='GET'){
+      return json(await listTopups(env,clientId,{status:url.searchParams.get('status')||null,limit:url.searchParams.get('limit')||100}));
+    }
+    if(me.role==='client'&&path==='/api/wallet/topups'&&method==='POST'){
+      const body=await bodyOf(request);
+      return json(await requestTopup(env,clientId,body,me.email||me.uid||me.role),201);
+    }
     if(access.locked&&!allowedWhileLocked(path,method)){
       return json({
         error:'الرصيد غير كافٍ لتشغيل هذا القسم. يمكنك فتح الداشبورد ورفع إثبات شحن الرصيد.',
