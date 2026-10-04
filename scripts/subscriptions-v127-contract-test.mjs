@@ -78,6 +78,13 @@ assert.ok(ui.includes("$$('[data-sub127-manage]',root).forEach"),'admin manage b
 assert.ok(ui.includes("$$('[data-sub127-view-payment]',root).forEach"),'payment proof buttons must use querySelectorAll semantics');
 assert.ok(ui.includes("$$('[data-sub127-view-client-payment]',root).forEach"),'client payment buttons must use querySelectorAll semantics');
 assert.ok(ui.includes("الفترة المجانية اختيارية من الإدارة فقط"),'UI must state that free trial is admin-only and optional');
+assert.ok(ui.includes("topupDraft:{amount:'',phone:'',file:null,fileName:''}"),'client topup form must keep an in-memory draft');
+assert.equal(ui.includes('panel.outerHTML=html'),false,'access refresh must never replace the client topup form DOM');
+assert.ok(ui.includes('function patchClientPanel'),'access refresh must patch subscription KPIs without rebuilding inputs');
+assert.ok(ui.includes('function bindClientPanel'),'client topup form bindings must be stable and one-time');
+assert.ok(ui.includes("proofInput?.files?.[0]||state.topupDraft.file"),'selected proof file must survive a dashboard rerender');
+assert.ok(ui.includes("state.topupDraft.amount=amount.value"),'amount typing must persist immediately');
+assert.ok(ui.includes("state.topupDraft.phone=phone.value"),'sender phone typing must persist immediately');
 assert.ok(ui.includes("$$('.nav button[data-view]').forEach"),'subscriptions active-route sync must use the defined $$ collection helper');
 assert.ok(ui.includes("target==='subscriptions'&&state.me?.role==='admin'"),'subscriptions route must be explicitly owned by the subscription module');
 assert.ok(ui.includes('event.stopImmediatePropagation();setAdminActive();setTimeout(renderAdmin,0)'),'subscriptions route must block the legacy app placeholder before it renders');
@@ -86,8 +93,8 @@ assert.ok(ui.includes("b.onclick=event=>{event?.preventDefault?.();event?.stopPr
 assert.ok(ui.includes("$$('[data-sub127-hidden=\"1\"]')"),'restore navigation must iterate all hidden routes');
 assert.ok(ui.includes("$('.nav button[data-view]')"),'navigation state sync must iterate all routes with querySelectorAll semantics');
 assert.equal(/(?<!\$)\$\([^\n;]*\)\.forEach\s*\(/.test(ui),false,'single-element $() helper must never be used with forEach');
-assert.ok(preview.includes('/v2/modules-v127-subscriptions.js?v=127.11'),'preview must load v127 UI');
-assert.ok(production.includes('/v2/modules-v127-subscriptions.js?v=127.11'),'production must load v127 UI');
+assert.ok(preview.includes('/v2/modules-v127-subscriptions.js?v=127.12'),'preview must load v127 UI');
+assert.ok(production.includes('/v2/modules-v127-subscriptions.js?v=127.12'),'production must load v127 UI');
 assert.ok(preview.includes('handleSubscriptionControl'),'preview must enforce subscription control server-side');
 assert.ok(production.includes('handleSubscriptionControl'),'production wrapper must enforce before production-specific APIs');
 assert.ok(admin.includes("const allowedPlans=new Set(['starter','growth','pro','enterprise'])"),'Trial must not be a billing plan for new accounts');
