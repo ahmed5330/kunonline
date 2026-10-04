@@ -1,7 +1,7 @@
 /* Kun Online v127.0 — subscriptions, free trial, wallet lock and payment proof workspace */
 (()=>{
   if(window.KunSubscriptionsV127)return;
-  const VERSION='127.6';
+  const VERSION='127.7';
   const $=(s,r=document)=>r?.querySelector?.(s)||null;
   const $$=(s,r=document)=>r?[...r.querySelectorAll(s)]:[];
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -107,10 +107,15 @@
   async function refreshAccess(force=false){
     if(!state.me?.clientId||state.me.role==='admin')return null;
     try{
-      const a=await api('/api/subscription/access');state.access=a;state.locked=Boolean(a.locked);lockNav();ensureClientPanel();
-      if(force)window.showToast?.(a.locked?'الرصيد ما زال غير كافٍ للتفعيل':'تم تفعيل النظام');
+      const wasLocked=state.locked,a=await api('/api/subscription/access');state.access=a;state.locked=Boolean(a.locked);lockNav();ensureClientPanel();
+      if(wasLocked&&!state.locked)window.showToast?.('تم شحن الرصيد وتفعيل النظام تلقائيًا');
+      else if(force)window.showToast?.(a.locked?'الرصيد ما زال غير كافٍ للتفعيل':'تم تفعيل النظام');
       return a;
     }catch(error){console.warn('subscription access unavailable',error);return null;}
+  }
+  function scheduleAccessRefresh(){
+    clearTimeout(state.timer);if(!state.me?.clientId||state.me.role==='admin')return;
+    state.timer=setTimeout(async()=>{await refreshAccess(false);scheduleAccessRefresh();},state.locked?5000:60000);
   }
 
   function addAdminNav(){
@@ -260,7 +265,7 @@
     style();bind();
     try{state.me=await api('/api/me');}catch{return;}
     if(state.me.role==='admin'){addAdminNav();return;}
-    if(state.me.clientId){installRouteGuard();installFetchGuard();await refreshAccess(false);setInterval(()=>refreshAccess(false),60000);}
+    if(state.me.clientId){installRouteGuard();installFetchGuard();await refreshAccess(false);scheduleAccessRefresh();}
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();
   window.KunSubscriptionsV127={version:VERSION,refreshAccess,renderAdmin,get access(){return state.access;}};
