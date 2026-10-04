@@ -78,7 +78,7 @@ assert.ok(ui.includes("$$('[data-sub127-manage]',root).forEach"),'admin manage b
 assert.ok(ui.includes("$$('[data-sub127-view-payment]',root).forEach"),'payment proof buttons must use querySelectorAll semantics');
 assert.ok(ui.includes("$$('[data-sub127-view-client-payment]',root).forEach"),'client payment buttons must use querySelectorAll semantics');
 assert.ok(ui.includes("الفترة المجانية اختيارية من الإدارة فقط"),'UI must state that free trial is admin-only and optional');
-assert.equal(ui.includes('$$('),false,'subscriptions UI must never reference an undefined $$ selector helper');
+assert.ok(ui.includes("$$('.nav button[data-view]').forEach"),'subscriptions active-route sync must use the defined $$ collection helper');
 assert.ok(ui.includes("target==='subscriptions'&&state.me?.role==='admin'"),'subscriptions route must be explicitly owned by the subscription module');
 assert.ok(ui.includes('event.stopImmediatePropagation();setAdminActive();setTimeout(renderAdmin,0)'),'subscriptions route must block the legacy app placeholder before it renders');
 assert.ok(ui.includes("!$('.sub127-admin',root)&&root.dataset.sub127Admin!=='loading'"),'subscriptions screen must recover if another renderer replaces it with a placeholder');
