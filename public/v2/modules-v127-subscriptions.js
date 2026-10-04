@@ -1,7 +1,7 @@
 /* Kun Online v127.0 — subscriptions, free trial, wallet lock and payment proof workspace */
 (()=>{
   if(window.KunSubscriptionsV127)return;
-  const VERSION='127.12';
+  const VERSION='127.13';
   const $=(s,r=document)=>r?.querySelector?.(s)||null;
   const $$=(s,r=document)=>r?[...r.querySelectorAll(s)]:[];
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -175,9 +175,18 @@
   function setAdminActive(){
     $$('.nav button[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view==='subscriptions'));
   }
+  function adminLockReason(c){
+    if(!c?.locked)return '';
+    if(c.reason==='monthly_minimum_due')return `الحد الأدنى الشهري غير مغطى: الرصيد ${money(c.balance,c.currency)} والمطلوب ${money(c.monthlyMinimum,c.currency)}`;
+    if(c.reason==='balance_empty')return 'الرصيد انتهى';
+    if(c.reason==='subscription_paused')return 'الاشتراك موقوف من الإدارة';
+    if(c.reason==='wallet_paused')return 'المحفظة موقوفة';
+    return 'الحساب متوقف ماليًا';
+  }
   function adminStatus(c){
     const cls=c.trialActive?'trial':c.locked?'locked':c.subscriptionStatus==='unmanaged'?'unmanaged':'';
-    return `<span class="sub127-status ${cls}">${esc(c.trialActive?'تجربة مجانية':c.locked?'متوقف':c.subscriptionStatus==='unmanaged'?'غير مُدار':'نشط')}</span>`;
+    const label=c.trialActive?'تجربة مجانية':c.locked?'متوقف':c.subscriptionStatus==='unmanaged'?'غير مُدار':'نشط';
+    return `<span class="sub127-status ${cls}" title="${esc(adminLockReason(c))}">${esc(label)}</span>${c.locked?`<div class="meta mt">${esc(adminLockReason(c))}</div>`:''}`;
   }
   function clientPendingTopups(clientId){
     return state.topups.filter(p=>String(p.client_id)===String(clientId));
@@ -245,7 +254,7 @@
 
   function openManage(clientId){
     const c=state.adminClients.find(x=>String(x.clientId)===String(clientId));if(!c)return;
-    closeModal();const back=document.createElement('div');back.className='sub127-modal-back';back.innerHTML=`<div class="sub127-modal"><div class="sub127-modal-head"><div><h2>اشتراك ${esc(c.name||clientId)}</h2><div class="meta">${esc(c.ownerEmail||clientId)}</div></div><div class="spacer"></div><button class="btn soft" data-sub127-close>إغلاق</button></div><div class="sub127-kpis"><div class="sub127-kpi"><span>الرصيد</span><b>${money(c.balance,c.currency)}</b></div><div class="sub127-kpi"><span>الحالة</span><b>${esc(statusText(c))}</b></div><div class="sub127-kpi"><span>الفترة المجانية</span><b>${c.trialActive?esc(c.trialEndsAt):'غير مفعلة'}</b></div><div class="sub127-kpi"><span>طلبات شحن معلقة</span><b>${num(c.pendingTopups)}</b></div></div><div class="sub127-form"><label>الحد الأدنى الشهري<input class="input" id="sub127Monthly" type="number" min="0" step="1" value="${esc(c.monthlyMinimum)}"></label><label>رسوم كل أوردر — المبلغ النهائي<input class="input" id="sub127OrderFee" type="number" min="0" step="0.25" value="${esc(c.baseOrderFee??c.orderFee)}"><span class="meta">هذا هو نفس المبلغ الذي سيُخصم فعليًا على الأوردر، بدون أي إضافات مخفية.</span></label><label>حالة الاشتراك<select class="select" id="sub127Status"><option value="">بدون تغيير</option><option value="active">نشط</option><option value="paused">موقوف</option></select></label><label><span>الفترة المجانية</span><span><input type="checkbox" id="sub127TrialToggle" ${c.trialActive?'checked':''}> منح 30 يوم مجانًا لهذا الحساب</span></label></div><div class="sub127-modal-actions"><button class="btn primary" id="sub127Save">حفظ إعدادات الاشتراك</button><button class="btn soft" id="sub127Reconcile">فحص وتفعيل الآن</button></div><div class="sub127-note">الفترة المجانية اختيارية من الإدارة فقط وليست مرتبطة بالخطة. إذا لم تكن مفعلة، يطبق الحد الأدنى الشهري ورسوم الأوردرات مباشرة. إلغاء الفترة المجانية يطبق دورة الدفع فورًا.</div><div class="card mt"><h3>سجل الرصيد والخصومات</h3><div class="meta">يوضح الشحن والخصم والرصيد بعد كل حركة، لتتبع أي دفعة مثل تحويل 500 ج.م.</div><div id="sub127Ledger" class="mt"></div></div></div>`;document.body.appendChild(back);back.onclick=e=>{if(e.target===back)closeModal();};$('[data-sub127-close]',back).onclick=closeModal;
+    closeModal();const back=document.createElement('div');back.className='sub127-modal-back';back.innerHTML=`<div class="sub127-modal"><div class="sub127-modal-head"><div><h2>اشتراك ${esc(c.name||clientId)}</h2><div class="meta">${esc(c.ownerEmail||clientId)}</div></div><div class="spacer"></div><button class="btn soft" data-sub127-close>إغلاق</button></div><div class="sub127-kpis"><div class="sub127-kpi"><span>الرصيد</span><b>${money(c.balance,c.currency)}</b></div><div class="sub127-kpi"><span>الحالة</span><b>${esc(statusText(c))}</b><small class="meta">${esc(adminLockReason(c))}</small></div><div class="sub127-kpi"><span>الفترة المجانية</span><b>${c.trialActive?esc(c.trialEndsAt):'غير مفعلة'}</b></div><div class="sub127-kpi"><span>طلبات شحن معلقة</span><b>${num(c.pendingTopups)}</b></div></div><div class="sub127-form"><label>الحد الأدنى الشهري<input class="input" id="sub127Monthly" type="number" min="0" step="1" value="${esc(c.monthlyMinimum)}"></label><label>رسوم كل أوردر — المبلغ النهائي<input class="input" id="sub127OrderFee" type="number" min="0" step="0.25" value="${esc(c.baseOrderFee??c.orderFee)}"><span class="meta">هذا هو نفس المبلغ الذي سيُخصم فعليًا على الأوردر، بدون أي إضافات مخفية.</span></label><label>حالة الاشتراك<select class="select" id="sub127Status"><option value="">بدون تغيير</option><option value="active">نشط</option><option value="paused">موقوف</option></select></label><label><span>الفترة المجانية</span><span><input type="checkbox" id="sub127TrialToggle" ${c.trialActive?'checked':''}> منح 30 يوم مجانًا لهذا الحساب</span></label></div><div class="sub127-modal-actions"><button class="btn primary" id="sub127Save">حفظ إعدادات الاشتراك</button><button class="btn soft" id="sub127Reconcile">فحص وتفعيل الآن</button></div><div class="sub127-note">الفترة المجانية اختيارية من الإدارة فقط وليست مرتبطة بالخطة. إذا لم تكن مفعلة، يطبق الحد الأدنى الشهري ورسوم الأوردرات مباشرة. إلغاء الفترة المجانية يطبق دورة الدفع فورًا.</div><div class="card mt"><h3>إضافة / تصحيح رصيد يدوي</h3><div class="meta">استخدمها لتصحيح رصيد عميل بعد مراجعة سجل الحركة. المبلغ يُضاف لنفس محفظة العميل ثم يعاد فحص التفعيل فورًا.</div><div class="sub127-form mt"><label>المبلغ الذي سيتم إضافته<input class="input" id="sub127ManualCreditAmount" type="number" min="0.01" step="0.01" placeholder="مثال: 500"></label><label>ملاحظة الإدارة<input class="input" id="sub127ManualCreditNote" value="تصحيح رصيد من إدارة الاشتراكات"></label></div><div class="sub127-modal-actions"><button class="btn primary" id="sub127ManualCredit">إضافة الرصيد وتفعيل الحساب</button></div></div><div class="card mt"><h3>سجل الرصيد والخصومات</h3><div class="meta">يوضح الشحن والخصم والرصيد بعد كل حركة، لتتبع أي دفعة مثل تحويل 500 ج.م.</div><div id="sub127Ledger" class="mt"></div></div></div>`;document.body.appendChild(back);back.onclick=e=>{if(e.target===back)closeModal();};$('[data-sub127-close]',back).onclick=closeModal;
     $('#sub127Save',back).onclick=async()=>{try{
       const body={monthlyMinimum:Number($('#sub127Monthly',back).value||0),baseOrderFee:Number($('#sub127OrderFee',back).value||0)},st=$('#sub127Status',back).value,trialWanted=Boolean($('#sub127TrialToggle',back)?.checked);
       if(st)body.status=st;
@@ -255,7 +264,18 @@
       const feeNow=saved?.access?.orderFee;
       window.showToast?.(trialWanted&&!c.trialActive?'تم حفظ الإعدادات ومنح 30 يوم مجانًا':!trialWanted&&c.trialActive?'تم إلغاء الفترة المجانية وتطبيق الدفع':Number.isFinite(Number(feeNow))?`تم حفظ الإعدادات — رسوم الأوردر الآن ${money(feeNow,saved?.access?.currency||c.currency)}`:'تم حفظ إعدادات الاشتراك');closeModal();renderAdmin();
     }catch(e){window.showToast?.(e.message)}};
-    $('#sub127Reconcile',back).onclick=async()=>{try{const d=await api(`/api/admin/subscriptions/${encodeURIComponent(clientId)}/reconcile`,{method:'POST',body:'{}'});window.showToast?.(d.access?.locked?'الرصيد ما زال غير كافٍ':'العميل نشط الآن');closeModal();renderAdmin();}catch(e){window.showToast?.(e.message)}};
+    $('#sub127Reconcile',back).onclick=async()=>{try{const d=await api(`/api/admin/subscriptions/${encodeURIComponent(clientId)}/reconcile`,{method:'POST',body:'{}'});window.showToast?.(d.access?.locked?`الحساب ما زال متوقفًا: ${adminLockReason({...c,...d.access})}`:'العميل نشط الآن');closeModal();renderAdmin();}catch(e){window.showToast?.(e.message)}};
+    $('#sub127ManualCredit',back).onclick=async()=>{
+      const amount=Number($('#sub127ManualCreditAmount',back)?.value||0),note=String($('#sub127ManualCreditNote',back)?.value||'').trim();
+      if(!(amount>0)){window.showToast?.('اكتب مبلغ صحيح لإضافته للرصيد');return;}
+      const btn=$('#sub127ManualCredit',back);btn.disabled=true;btn.textContent='جارٍ إضافة الرصيد...';
+      try{
+        const d=await api(`/api/admin/subscriptions/${encodeURIComponent(clientId)}/credit`,{method:'POST',body:JSON.stringify({amount,note})});
+        const finalBalance=d?.access?.balance??d?.credit?.balance;
+        window.showToast?.(`تم إضافة ${money(amount,c.currency)} — الرصيد الآن ${money(finalBalance,c.currency)} — ${d?.access?.locked?'الحساب ما زال متوقفًا':'الحساب نشط'}`);
+        closeModal();await renderAdmin();
+      }catch(e){btn.disabled=false;btn.textContent='إضافة الرصيد وتفعيل الحساب';window.showToast?.(e.message);}
+    };
     loadAdminLedger(clientId,$('#sub127Ledger',back),c.currency);
   }
 
