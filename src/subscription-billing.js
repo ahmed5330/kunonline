@@ -53,17 +53,24 @@ async function monthlyChargeLog(env,clientId,key){
 async function chargeMonthlyMinimum(env,clientId,row,account,{today=cairoYmd()}={}){
   const minimum=clampMoney(row?.amount),bounds=monthBounds(today),key=`subscription-minimum:${clientId}:${bounds.key}`;
   let existing=await monthlyChargeLog(env,clientId,key);
-  if(existing)return {charged:true,amount:minimum,key,bounds,log:existing,balance:round2(account.balance),alreadyCharged:true};
+  if(existing)return {charged:true,amount:minimum,key,bounds,log:existing,balance:round2(existing.balance_after??account.balance),alreadyCharged:true};
   if(minimum<=0)return {charged:true,amount:0,key,bounds,balance:round2(account.balance),zeroMinimum:true};
-  if(num(account.balance)<minimum)return {charged:false,amount:minimum,key,bounds,balance:round2(account.balance),code:'MONTHLY_MINIMUM_INSUFFICIENT'};
+
+  // The wallet ledger is the single source of truth. The monthly minimum is always
+  // posted once for the month; if funds are insufficient it may take the balance
+  // below zero, and access is then locked by balance <= 0. This avoids a second
+  // hidden "monthly due" state that can disagree with the visible wallet balance.
+  const startingBalance=round2(account.balance),shortage=Math.max(0,round2(minimum-startingBalance));
+  const requiredCredit=Math.max(Number(account.credit_limit)||0,shortage);
   const ts=now(),logId=rid('WLG');
   try{
     await env.DB.batch([
+      env.DB.prepare('UPDATE wallet_accounts SET credit_limit=?,updated_at=? WHERE client_id=?').bind(requiredCredit,ts,clientId),
       env.DB.prepare('UPDATE wallet_accounts SET balance=ROUND(balance-?,2),updated_at=? WHERE client_id=?').bind(minimum,ts,clientId),
       env.DB.prepare(`INSERT INTO wallet_log
         (id,client_id,store_id,type,amount,balance_after,note,created_at,created_by,reference_type,reference_id,idempotency_key,metadata_json)
         SELECT ?,?,NULL,'deduct',?,balance,?,?,?,?,?,?,? FROM wallet_accounts WHERE client_id=?`)
-        .bind(logId,clientId,minimum,`الحد الأدنى الشهري — ${bounds.key}`,ts,'system','subscription_month',bounds.key,key,JSON.stringify({monthlyMinimum:minimum,month:bounds.key}),clientId),
+        .bind(logId,clientId,minimum,`الحد الأدنى الشهري — ${bounds.key}`,ts,'system','subscription_month',bounds.key,key,JSON.stringify({monthlyMinimum:minimum,month:bounds.key,startingBalance,shortage}),clientId),
       env.DB.prepare('UPDATE subscriptions SET period_start=?,period_end=?,updated_at=? WHERE id=?').bind(bounds.from,bounds.to,ts,row.id)
     ]);
   }catch(error){
@@ -108,11 +115,10 @@ export async function subscriptionAccess(env,clientId,{applyMonthly=true}={}){
   }
   const fresh=await env.DB.prepare('SELECT balance,status,currency FROM wallet_accounts WHERE client_id=?').bind(clientId).first()||account;
   const subscriptionPaused=['paused','cancelled','suspended'].includes(text(subscription.status));
-  const insufficientMonthly=!inTrial&&subscription.status==='active'&&monthlyMinimum>0&&!monthly.charged&&num(fresh.balance)<monthlyMinimum;
   const emptyBalance=!inTrial&&round2(fresh.balance)<=0;
   const walletPaused=text(fresh.status)!=='active';
-  const locked=subscriptionPaused||walletPaused||insufficientMonthly||emptyBalance;
-  const reason=subscriptionPaused?'subscription_paused':walletPaused?'wallet_paused':insufficientMonthly?'monthly_minimum_due':emptyBalance?'balance_empty':null;
+  const locked=subscriptionPaused||walletPaused||emptyBalance;
+  const reason=subscriptionPaused?'subscription_paused':walletPaused?'wallet_paused':emptyBalance?'balance_empty':null;
   return {
     clientId,managed:true,locked,reason,balance:round2(fresh.balance),currency:fresh.currency||subscription.currency||'EGP',
     monthlyMinimum,monthlyCharged:monthly.charged,monthlyDue:monthly.charged?0:monthlyMinimum,
@@ -137,7 +143,14 @@ export async function subscriptionOrderFee(env,clientId){
 }
 
 export async function configureSubscription(env,clientId,body={},actor='admin'){
-  const account=await ensureWalletAccount(env,clientId),current=await latestSubscription(env,clientId);
+  let account=await ensureWalletAccount(env,clientId),current=await latestSubscription(env,clientId);
+  // Managed subscriptions always use v27 billing. The migration captures the
+  // current highest order rowid, so no historical order can be charged later.
+  if(account.billing_version!=='v27'){
+    const {migrateLegacyBilling}=await import('./wallet-core.js');
+    await migrateLegacyBilling(env,clientId,actor);
+    account=await ensureWalletAccount(env,clientId);
+  }
   const monthlyMinimum=clampMoney(body.monthlyMinimum??body.amount??current?.amount??0),baseOrderFee=clampMoney(body.baseOrderFee??account.base_order_fee??0);
   let row=current||await ensureSubscriptionRow(env,clientId,{monthlyMinimum});
   const ts=now(),status=['active','paused','suspended'].includes(text(body.status))?text(body.status):row.status;
@@ -152,7 +165,7 @@ export async function configureSubscription(env,clientId,body={},actor='admin'){
     await env.DB.prepare("UPDATE subscriptions SET status='active',period_end=?,updated_at=? WHERE id=?").bind(cairoYmd(),ts,row.id).run();
     await env.DB.prepare("UPDATE wallet_accounts SET status='active',credit_limit=0,updated_at=? WHERE client_id=?").bind(ts,clientId).run();
   }
-  return subscriptionAccess(env,clientId,{applyMonthly:body.endFreeTrial===true||body.applyMonthly===true});
+  return subscriptionAccess(env,clientId,{applyMonthly:body.endFreeTrial===true||body.applyMonthly===true||status==='active'});
 }
 
 export async function startFreeTrial(env,clientId,{days=30,actor='admin'}={}){
@@ -283,11 +296,10 @@ export async function listSubscriptionsAdmin(env,{limit=500}={}){
     const monthlyMinimum=clampMoney(row.sub_amount),orderFee=inTrial?0:configuredFee;
     const monthlyCharged=inTrial||subscriptionStatus!=='active'||monthlyMinimum<=0||Boolean(Number(row.monthly_paid));
     const subscriptionPaused=['paused','cancelled','suspended'].includes(subscriptionStatus);
-    const insufficientMonthly=!inTrial&&subscriptionStatus==='active'&&monthlyMinimum>0&&!monthlyCharged&&balance<monthlyMinimum;
     const emptyBalance=!inTrial&&balance<=0;
     const walletPaused=walletStatus!=='active';
-    const locked=subscriptionPaused||walletPaused||insufficientMonthly||emptyBalance;
-    const reason=subscriptionPaused?'subscription_paused':walletPaused?'wallet_paused':insufficientMonthly?'monthly_minimum_due':emptyBalance?'balance_empty':null;
+    const locked=subscriptionPaused||walletPaused||emptyBalance;
+    const reason=subscriptionPaused?'subscription_paused':walletPaused?'wallet_paused':emptyBalance?'balance_empty':null;
     return {
       clientId,name:row.display_name||row.owner_name||clientId,ownerName:row.owner_name||'',ownerEmail:row.owner_email||'',
       tenantStatus:row.tenant_status||'active',plan:row.tenant_plan||row.sub_plan||'legacy',
