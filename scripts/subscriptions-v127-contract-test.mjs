@@ -26,6 +26,8 @@ assert.equal(billing.includes("monthly_minimum_due"),false,'managed access must 
 assert.ok(billing.includes("const requiredCredit=Math.max(Number(account.credit_limit)||0,shortage)"),'monthly minimum must be able to cross the visible balance below zero safely');
 assert.ok(billing.includes("applyMonthly:body.endFreeTrial===true||body.applyMonthly===true||status==='active'"),'activating a subscription must apply the current monthly charge immediately');
 assert.ok(billing.includes("await migrateLegacyBilling(env,clientId,actor)"),'every managed subscription path must migrate billing at an explicit order cutoff');
+assert.ok(billing.includes("subscription.billing.start"),'paid subscription access must persist an immutable billing start timestamp');
+assert.ok(billing.includes("billingStartedAt"),'subscription access/admin snapshot must expose the paid billing start timestamp');
 assert.ok(orders.includes('subscriptionOrderFee'),'orders must waive fee during approved trial');
 assert.ok(billing.includes("return clampMoney(account.base_order_fee)"),'managed subscriptions must charge exactly the admin base order fee');
 assert.ok(billing.includes("orderFee=inTrial?0:clampMoney(account.base_order_fee)"),'client access must display the exact admin-defined fee');
@@ -48,6 +50,10 @@ assert.ok(control.includes("path==='/api/wallet/topups'&&method==='POST'"),'clie
 assert.ok(!billing.includes("reason=walletPaused?'wallet_paused':emptyBalance?'balance_empty':insufficientOrderBalance"),'positive balance must not lock merely because it is below the next order fee');
 assert.ok(orders.includes('startingBalance<=0'),'order billing must stop only after balance is exhausted');
 assert.ok(orders.includes('const shortage=round2(fee-startingBalance)'),'final order must be allowed to consume the remaining positive balance and cross once below zero');
+assert.ok(orders.includes('orderBeforeBillingStart'),'order billing must compare business order date with the paid billing start');
+assert.ok(orders.includes("PRE_BILLING_DATE"),'late-synced historical orders must be waived instead of charged');
+assert.ok(orders.includes("date,created_at FROM orders"),'billOrder must load the business order date, not rowid only');
+assert.ok(orders.includes("wallet.billing.migrate"),'older managed accounts must fall back to the original migration timestamp when no paid marker exists');
 assert.ok(billing.includes('managed:false,locked'),'legacy clients without a subscription row must still be balance-locked');
 assert.ok(control.includes("path==='/api/dashboard'"),'dashboard must remain available while locked');
 assert.ok(control.includes("path==='/api/wallet/topups'"),'topup submission must remain available while locked');
@@ -86,6 +92,7 @@ assert.ok(ui.includes('sub127ManualCreditAmount'),'manual credit amount must be 
 assert.ok(ui.includes("/api/admin/subscriptions/${encodeURIComponent(clientId)}/credit"),'manual credit UI must call the admin credit endpoint');
 assert.ok(ui.includes('adminLockReason'),'admin subscriptions must expose the actual lock reason');
 assert.ok(ui.includes('المصدر الوحيد: Wallet Ledger'),'admin UI must identify the wallet ledger as the single balance source');
+assert.ok(ui.includes('بدء الفوترة المدفوعة'),'admin UI must expose the billing date cutoff for diagnosis');
 assert.ok(ui.includes('سلامة الدفعات'),'admin UI must expose approved-payment integrity');
 assert.ok(ui.includes('الحساب ما زال على Billing قديم'),'admin UI must warn before explicitly migrating an older managed billing account');
 assert.ok(ui.includes('اعتماد بدون قيد Ledger'),'admin UI must surface approved payments missing a ledger entry');
@@ -111,8 +118,8 @@ assert.ok(ui.includes("b.onclick=event=>{event?.preventDefault?.();event?.stopPr
 assert.ok(ui.includes("$$('[data-sub127-hidden=\"1\"]')"),'restore navigation must iterate all hidden routes');
 assert.ok(ui.includes("$('.nav button[data-view]')"),'navigation state sync must iterate all routes with querySelectorAll semantics');
 assert.equal(/(?<!\$)\$\([^\n;]*\)\.forEach\s*\(/.test(ui),false,'single-element $() helper must never be used with forEach');
-assert.ok(preview.includes('/v2/modules-v127-subscriptions.js?v=127.14'),'preview must load v127 UI');
-assert.ok(production.includes('/v2/modules-v127-subscriptions.js?v=127.14'),'production must load v127 UI');
+assert.ok(preview.includes('/v2/modules-v127-subscriptions.js?v=127.15'),'preview must load v127 UI');
+assert.ok(production.includes('/v2/modules-v127-subscriptions.js?v=127.15'),'production must load v127 UI');
 assert.ok(preview.includes('handleSubscriptionControl'),'preview must enforce subscription control server-side');
 assert.ok(production.includes('handleSubscriptionControl'),'production wrapper must enforce before production-specific APIs');
 assert.ok(admin.includes("const allowedPlans=new Set(['starter','growth','pro','enterprise'])"),'Trial must not be a billing plan for new accounts');
