@@ -1,0 +1,20 @@
+name: V2 UI Static Audit
+
+on:
+  pull_request:
+    paths:
+      - 'public/v2/**'
+      - 'scripts/v2-ui-static-audit.mjs'
+      - '.github/workflows/v2-ui-static-audit.yml'
+  workflow_dispatch:
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Audit V2 JavaScript runtime hazards
+        run: node scripts/v2-ui-static-audit.mjs
