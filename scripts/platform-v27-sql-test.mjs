@@ -2,6 +2,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {readFile} from 'node:fs/promises';
 import {ensureWalletAccount,migrateLegacyBilling,walletSnapshot,billOrder,requestTopup,approveTopup,adminCreditWallet,sanitizeLegacyStateBilling} from '../src/wallet-billing.js';
 import {setTenantModules,effectiveOrderFee} from '../src/feature-entitlements.js';
+import {configureSubscription,subscriptionAccess} from '../src/subscription-billing.js';
 import {saveAttribution,campaignPerformance} from '../src/marketing-intelligence.js';
 import {addOrderNote,logContact,timeline} from '../src/order-events.js';
 import {createAdDraft,generateAdDraft,requestAdAction} from '../src/ad-studio.js';
@@ -53,6 +54,25 @@ must(recoveryApproved.requestedAmount===20&&recoveryApproved.creditedAmount===25
 must(recoveryApproved.balanceAfterCredit===22&&recoveryApproved.balance===22,'Approval must add the admin-confirmed credit automatically');
 const pendingAfterApproval=await env.DB.prepare("SELECT status FROM order_billing WHERE order_id='WAITING'").first();must(pendingAfterApproval.status==='pending_insufficient','Approval must not silently consume the new credit against old pending orders');
 const recoveredOrder=await billOrder(env,'WAITING');must(recoveredOrder.status==='charged'&&(await walletSnapshot(env,client)).balance===18,'Pending order can be billed explicitly after the account is funded');
+
+// Managed subscriptions use one authoritative ledger: the monthly minimum is posted
+// exactly once even when it crosses below zero; a later topup clears that debt and unlocks.
+const c3='C3',s3='S3';
+await env.DB.prepare("INSERT INTO wallet_accounts(client_id,balance,currency,base_order_fee,min_order_fee,max_order_fee,credit_limit,billing_version,billing_start_rowid,status,updated_at) VALUES (?,13,'EGP',2,0,0,0,'legacy',NULL,'active',?)").bind(c3,ts).run();
+await env.DB.prepare("INSERT INTO orders(id,client_id,store_id,date,created_at) VALUES ('C3-OLD',?,?,?,?)").bind(c3,s3,day,new Date(Date.now()+4000).toISOString()).run();
+const c3Access=await configureSubscription(env,c3,{monthlyMinimum:20,baseOrderFee:5,status:'active'},'qa-admin');
+const c3Wallet=await walletSnapshot(env,c3);
+must(c3Wallet.billingVersion==='v27','Managed subscription must migrate legacy wallet to v27');
+must(c3Wallet.balance===-7,'Monthly minimum must be posted to the ledger even when it crosses below zero');
+must(c3Access.locked===true&&c3Access.reason==='balance_empty'&&c3Access.monthlyCharged===true,'Access must be decided only from the posted wallet balance after monthly charge');
+const c3Old=await billOrder(env,'C3-OLD');must(c3Old.skipped==='pre_v27_order','Subscription activation must never back-bill historical orders');
+const c3MonthlyCount=await env.DB.prepare("SELECT COUNT(*) n FROM wallet_log WHERE client_id=? AND reference_type='subscription_month'").bind(c3).first();
+await subscriptionAccess(env,c3,{applyMonthly:true});
+const c3MonthlyCountAgain=await env.DB.prepare("SELECT COUNT(*) n FROM wallet_log WHERE client_id=? AND reference_type='subscription_month'").bind(c3).first();
+must(Number(c3MonthlyCount.n)===1&&Number(c3MonthlyCountAgain.n)===1,'Monthly minimum must be idempotent and charged once per month');
+const c3Top=await requestTopup(env,c3,{amount:500,senderPhone:'01000000000',proofDataUrl:proof},'qa-owner');
+const c3Approved=await approveTopup(env,c3Top.id,'qa-admin','single-ledger recovery');
+must(c3Approved.balance===493&&c3Approved.access?.locked===false,'500 topup after a -7 monthly balance must finish at 493 and unlock immediately');
 
 // Real marketing metrics must count externally-entered/unattributed orders at account level.
 const c2='C2',s2='S2';
