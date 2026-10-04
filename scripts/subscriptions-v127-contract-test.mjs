@@ -26,9 +26,10 @@ assert.ok(billing.includes("return clampMoney(account.base_order_fee)"),'managed
 assert.ok(billing.includes("orderFee=inTrial?0:clampMoney(account.base_order_fee)"),'client access must display the exact admin-defined fee');
 assert.ok(billing.includes("baseOrderFee,orderFee:inTrial?0:baseOrderFee"),'admin subscription list must show the exact base fee for managed clients');
 assert.ok(topups.includes('reconcileSubscriptionAfterTopup'),'topup approval must immediately reconcile access');
-assert.ok(topups.includes("reconcileUnbilledOrders(env,{clientId:row.client_id,limit:300})"),'topup approval must immediately reconcile pending order fees');
-assert.ok(topups.includes('creditedAmount:round2(row.amount)'),'topup approval must return the credited amount');
-assert.ok(topups.includes('chargedOrders:charged.length'),'topup approval must return charged pending-order count');
+assert.ok(topups.includes("String(row.status)==='approved'"),'topup approval must be idempotent for already-approved requests');
+assert.ok(topups.includes('creditedAmount!==requestedAmount'),'topup approval must record whether admin adjusted the credited amount');
+assert.ok(topups.includes("creditAmount")||topups.includes('creditedAmount'),'topup approval must support an admin-confirmed credited amount');
+assert.ok(!topups.includes("reconcileUnbilledOrders(env,{clientId:row.client_id,limit:300})"),'topup approval must not silently consume new credit against old pending orders');
 assert.ok(topups.includes('getPendingTopupProofAdmin'),'admin proof endpoint must exist');
 const pendingListBlock=topups.slice(topups.indexOf('export async function listPendingTopupsAdmin'),topups.indexOf('export async function getPendingTopupProofAdmin'));
 assert.ok(!pendingListBlock.includes('proof_data_url,proof_url,status'),'pending topup list must not select Base64 screenshots');
@@ -44,7 +45,7 @@ assert.ok(control.includes("path==='/api/dashboard'"),'dashboard must remain ava
 assert.ok(control.includes("path==='/api/wallet/topups'"),'topup submission must remain available while locked');
 assert.ok(control.includes("path==='/api/admin/wallet/topups'&&method==='GET'"),'production subscription control must own admin topup listing');
 assert.ok(control.includes("getPendingTopupProofAdmin(env,decodeURIComponent(match[1]))"),'production subscription control must own proof loading');
-assert.ok(control.includes("approveTopup(env,topupId,actor,note)"),'production subscription control must own topup approval');
+assert.ok(control.includes("approveTopup(env,topupId,actor,note,{creditAmount:body.creditAmount})"),'production subscription control must pass the admin-confirmed credit amount');
 assert.ok(control.includes("/ledger$/"),'admin wallet ledger route must be owned by subscription control');
 assert.ok(control.includes("listWalletLog(env,clientId"),'admin wallet ledger must read wallet movements');
 assert.ok(control.includes("path.startsWith('/api/admin/wallet/topups')"),'admin topup errors must not fall through to a stale delegated worker');
@@ -64,7 +65,9 @@ assert.ok(ui.includes('state.locked?5000:60000'),'locked clients must recheck ac
 assert.ok(ui.includes('KunPermissionNavigationV51?.load'),'unlock must reload navigation permissions, not only reapply stale state');
 assert.ok(ui.includes("kun:subscription-access-restored"),'unlock must broadcast navigation restoration');
 assert.ok(ui.includes("$('.nav .nav-group')"),'unlock must restore hidden navigation groups');
-assert.ok(ui.includes('chargedOrders'),'admin approval feedback must explain pending-order deductions');
+assert.ok(ui.includes('الرصيد الذي سيتم إضافته فعليًا'),'approval UI must let admin edit the balance that will be added');
+assert.ok(ui.includes('sub127ApproveCreditAmount'),'approval UI must send an explicit credited amount');
+assert.ok(ui.includes('الطلب كان معتمدًا بالفعل ولن يتم إضافة الرصيد مرة ثانية'),'approval UI must explain idempotent repeated approval');
 assert.ok(ui.includes('رسوم كل أوردر — المبلغ النهائي'),'admin fee input must clearly represent the final charged amount');
 assert.ok(ui.includes('بدون أي إضافات مخفية'),'admin fee input must promise no hidden module surcharge for managed subscriptions');
 assert.ok(ui.includes('سجل الرصيد والخصومات'),'admin must expose wallet movement history per client');
@@ -78,8 +81,8 @@ assert.ok(ui.includes("الفترة المجانية اختيارية من ال�
 assert.ok(ui.includes("$$('[data-sub127-hidden=\"1\"]')"),'restore navigation must iterate all hidden routes');
 assert.ok(ui.includes("$('.nav button[data-view]')"),'lock navigation must iterate all routes');
 assert.equal(/(?<!\$)\$\([^\n;]*\)\.forEach\s*\(/.test(ui),false,'single-element $() helper must never be used with forEach');
-assert.ok(preview.includes('/v2/modules-v127-subscriptions.js?v=127.9'),'preview must load v127 UI');
-assert.ok(production.includes('/v2/modules-v127-subscriptions.js?v=127.9'),'production must load v127 UI');
+assert.ok(preview.includes('/v2/modules-v127-subscriptions.js?v=127.10'),'preview must load v127 UI');
+assert.ok(production.includes('/v2/modules-v127-subscriptions.js?v=127.10'),'production must load v127 UI');
 assert.ok(preview.includes('handleSubscriptionControl'),'preview must enforce subscription control server-side');
 assert.ok(production.includes('handleSubscriptionControl'),'production wrapper must enforce before production-specific APIs');
 assert.ok(admin.includes("const allowedPlans=new Set(['starter','growth','pro','enterprise'])"),'Trial must not be a billing plan for new accounts');
