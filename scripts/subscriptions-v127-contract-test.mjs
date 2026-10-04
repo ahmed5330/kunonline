@@ -33,11 +33,15 @@ assert.ok(ui.includes("String(view)!=='dashboard'"),'programmatic routing must a
 assert.ok(ui.includes("accept=\"image/*\""),'payment proof input must support mobile image pickers');
 assert.ok(ui.includes("typeof createImageBitmap==='function'"),'proof compression must include browser capability fallback');
 assert.ok(ui.includes("sub127TrialToggle"),'admin must have an explicit free-trial toggle');
+assert.ok(ui.includes('data-sub127-view-payment'),'admin must be able to open the payment proof');
+assert.ok(ui.includes('رقم الهاتف المحوّل منه'),'admin payment modal must show sender phone');
+assert.ok(ui.includes('sub127-proof-large'),'admin payment modal must render a large proof image');
+assert.ok(ui.includes('data-sub127-view-client-payment'),'client table must expose pending payment details directly');
 assert.ok(ui.includes("الفترة المجانية اختيارية من الإدارة فقط"),'UI must state that free trial is admin-only and optional');
 assert.ok(ui.includes("$$('[data-sub127-hidden=\"1\"]')"),'restore navigation must iterate all hidden routes');
 assert.ok(ui.includes("$$('.nav button[data-view]')"),'lock navigation must iterate all routes');
-assert.ok(preview.includes('/v2/modules-v127-subscriptions.js?v=127.2'),'preview must load v127 UI');
-assert.ok(production.includes('/v2/modules-v127-subscriptions.js?v=127.2'),'production must load v127 UI');
+assert.ok(preview.includes('/v2/modules-v127-subscriptions.js?v=127.3'),'preview must load v127 UI');
+assert.ok(production.includes('/v2/modules-v127-subscriptions.js?v=127.3'),'production must load v127 UI');
 assert.ok(preview.includes('handleSubscriptionControl'),'preview must enforce subscription control server-side');
 assert.ok(production.includes('handleSubscriptionControl'),'production wrapper must enforce before production-specific APIs');
 assert.ok(admin.includes("const allowedPlans=new Set(['starter','growth','pro','enterprise'])"),'Trial must not be a billing plan for new accounts');
