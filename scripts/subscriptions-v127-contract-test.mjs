@@ -30,7 +30,9 @@ assert.ok(pendingListBlock.includes('has_proof'),'pending topup list should expo
 assert.ok(commerce27.includes("getPendingTopupProofAdmin(env,decodeURIComponent(m[1]))"),'admin proof route must be wired');
 assert.ok(control.includes('SUBSCRIPTION_BALANCE_REQUIRED'),'server must block paid sections when balance is unavailable');
 assert.ok(control.includes("path==='/api/wallet/topups'&&method==='POST'"),'client topup submission must bypass normal feature routing');
-assert.ok(billing.includes('order_fee_insufficient'),'balance below the next order fee must lock the system');
+assert.ok(!billing.includes("reason=walletPaused?'wallet_paused':emptyBalance?'balance_empty':insufficientOrderBalance"),'positive balance must not lock merely because it is below the next order fee');
+assert.ok(orders.includes('startingBalance<=0'),'order billing must stop only after balance is exhausted');
+assert.ok(orders.includes('const shortage=round2(fee-startingBalance)'),'final order must be allowed to consume the remaining positive balance and cross once below zero');
 assert.ok(billing.includes('managed:false,locked'),'legacy clients without a subscription row must still be balance-locked');
 assert.ok(control.includes("path==='/api/dashboard'"),'dashboard must remain available while locked');
 assert.ok(control.includes("path==='/api/wallet/topups'"),'topup submission must remain available while locked');
@@ -50,6 +52,8 @@ assert.ok(ui.includes('sub127-proof-large'),'admin payment modal must render a l
 assert.ok(ui.includes('data-sub127-view-client-payment'),'client table must expose pending payment details directly');
 assert.ok(ui.includes("/api/admin/wallet/topups/${encodeURIComponent(key)}/proof"),'proof image must load lazily on demand');
 assert.ok(ui.includes("root.dataset.sub127Admin==='loading'"),'admin screen must suppress duplicate concurrent loads');
+assert.ok(ui.includes('state.locked?5000:60000'),'locked clients must recheck activation within five seconds');
+assert.ok(ui.includes('تم شحن الرصيد وتفعيل النظام تلقائيًا'),'client should receive automatic reactivation feedback');
 assert.ok(ui.includes('Promise.allSettled'),'admin screen must tolerate a secondary payment API failure');
 assert.ok(ui.includes("$$('[data-sub127-manage]',root).forEach"),'admin manage buttons must use querySelectorAll semantics');
 assert.ok(ui.includes("$$('[data-sub127-view-payment]',root).forEach"),'payment proof buttons must use querySelectorAll semantics');
@@ -58,8 +62,8 @@ assert.ok(ui.includes("الفترة المجانية اختيارية من ال�
 assert.ok(ui.includes("$$('[data-sub127-hidden=\"1\"]')"),'restore navigation must iterate all hidden routes');
 assert.ok(ui.includes("$('.nav button[data-view]')"),'lock navigation must iterate all routes');
 assert.equal(/(?<!\$)\$\([^\n;]*\)\.forEach\s*\(/.test(ui),false,'single-element $() helper must never be used with forEach');
-assert.ok(preview.includes('/v2/modules-v127-subscriptions.js?v=127.6'),'preview must load v127 UI');
-assert.ok(production.includes('/v2/modules-v127-subscriptions.js?v=127.6'),'production must load v127 UI');
+assert.ok(preview.includes('/v2/modules-v127-subscriptions.js?v=127.7'),'preview must load v127 UI');
+assert.ok(production.includes('/v2/modules-v127-subscriptions.js?v=127.7'),'production must load v127 UI');
 assert.ok(preview.includes('handleSubscriptionControl'),'preview must enforce subscription control server-side');
 assert.ok(production.includes('handleSubscriptionControl'),'production wrapper must enforce before production-specific APIs');
 assert.ok(admin.includes("const allowedPlans=new Set(['starter','growth','pro','enterprise'])"),'Trial must not be a billing plan for new accounts');
