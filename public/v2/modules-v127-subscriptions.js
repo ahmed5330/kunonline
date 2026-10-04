@@ -1,7 +1,7 @@
 /* Kun Online v127.0 — subscriptions, free trial, wallet lock and payment proof workspace */
 (()=>{
   if(window.KunSubscriptionsV127)return;
-  const VERSION='127.1';
+  const VERSION='127.2';
   const $=(s,r=document)=>r?.querySelector?.(s)||null;
   const $$=(s,r=document)=>r?[...r.querySelectorAll(s)]:[];
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -64,14 +64,14 @@
 
   function restoreNav(){
     delete document.documentElement.dataset.kunSubscriptionLocked;
-    $('[data-sub127-hidden="1"]').forEach(b=>{b.hidden=false;b.style.display='';delete b.dataset.sub127Hidden;});
+    $$('[data-sub127-hidden="1"]').forEach(b=>{b.hidden=false;b.style.display='';delete b.dataset.sub127Hidden;});
     window.KunPermissionNavigationV51?.apply?.();
     window.KunSidebarGroupsV90?.sync?.();
   }
   function lockNav(){
     if(!state.access?.locked)return restoreNav();
     document.documentElement.dataset.kunSubscriptionLocked='1';
-    $('.nav button[data-view]').forEach(b=>{if(b.dataset.view==='dashboard')return;b.dataset.sub127Hidden='1';b.hidden=true;b.style.display='none';});
+    $$('.nav button[data-view]').forEach(b=>{if(b.dataset.view==='dashboard')return;b.dataset.sub127Hidden='1';b.hidden=true;b.style.display='none';});
     window.KunSidebarGroupsV90?.sync?.();
     const active=$('.nav button.active[data-view]');if(active&&active.dataset.view!=='dashboard')$('.nav button[data-view="dashboard"]')?.click();
   }
@@ -138,10 +138,15 @@
   function closeModal(){$('.sub127-modal-back')?.remove();}
   function openManage(clientId){
     const c=state.adminClients.find(x=>String(x.clientId)===String(clientId));if(!c)return;
-    closeModal();const back=document.createElement('div');back.className='sub127-modal-back';back.innerHTML=`<div class="sub127-modal"><div class="sub127-modal-head"><div><h2>اشتراك ${esc(c.name||clientId)}</h2><div class="meta">${esc(c.ownerEmail||clientId)}</div></div><div class="spacer"></div><button class="btn soft" data-sub127-close>إغلاق</button></div><div class="sub127-kpis"><div class="sub127-kpi"><span>الرصيد</span><b>${money(c.balance,c.currency)}</b></div><div class="sub127-kpi"><span>الحالة</span><b>${esc(statusText(c))}</b></div><div class="sub127-kpi"><span>التجربة</span><b>${c.trialActive?esc(c.trialEndsAt):'غير فعالة'}</b></div><div class="sub127-kpi"><span>طلبات شحن معلقة</span><b>${num(c.pendingTopups)}</b></div></div><div class="sub127-form"><label>الحد الأدنى الشهري<input class="input" id="sub127Monthly" type="number" min="0" step="1" value="${esc(c.monthlyMinimum)}"></label><label>رسوم كل أوردر<input class="input" id="sub127OrderFee" type="number" min="0" step="0.25" value="${esc(c.orderFee)}"></label><label>حالة الاشتراك<select class="select" id="sub127Status"><option value="">بدون تغيير</option><option value="active">نشط</option><option value="paused">موقوف</option></select></label></div><div class="sub127-modal-actions"><button class="btn primary" id="sub127Save">حفظ الأسعار</button><button class="btn soft" id="sub127StartTrial">تفعيل شهر مجاني</button>${c.trialActive?'<button class="btn soft" id="sub127EndTrial">إنهاء التجربة الآن</button>':''}<button class="btn soft" id="sub127Reconcile">فحص وتفعيل الآن</button></div><div class="sub127-note">الحد الأدنى يُخصم مرة واحدة لكل شهر. أثناء الشهر المجاني لا يتم خصم الحد الأدنى ولا رسوم الأوردرات.</div></div>`;document.body.appendChild(back);back.onclick=e=>{if(e.target===back)closeModal();};$('[data-sub127-close]',back).onclick=closeModal;
-    $('#sub127Save',back).onclick=async()=>{try{const body={monthlyMinimum:Number($('#sub127Monthly',back).value||0),baseOrderFee:Number($('#sub127OrderFee',back).value||0)},st=$('#sub127Status',back).value;if(st)body.status=st;await api(`/api/admin/subscriptions/${encodeURIComponent(clientId)}`,{method:'PATCH',body:JSON.stringify(body)});window.showToast?.('تم حفظ إعدادات الاشتراك');closeModal();renderAdmin();}catch(e){window.showToast?.(e.message)}};
-    $('#sub127StartTrial',back).onclick=async()=>{try{await api(`/api/admin/subscriptions/${encodeURIComponent(clientId)}/start-trial`,{method:'POST',body:'{}'});window.showToast?.('تم تفعيل 30 يوم مجانًا');closeModal();renderAdmin();}catch(e){window.showToast?.(e.message)}};
-    const end=$('#sub127EndTrial',back);if(end)end.onclick=async()=>{try{await api(`/api/admin/subscriptions/${encodeURIComponent(clientId)}/end-trial`,{method:'POST',body:'{}'});window.showToast?.('تم إنهاء الفترة المجانية وتطبيق دورة الدفع');closeModal();renderAdmin();}catch(e){window.showToast?.(e.message)}};
+    closeModal();const back=document.createElement('div');back.className='sub127-modal-back';back.innerHTML=`<div class="sub127-modal"><div class="sub127-modal-head"><div><h2>اشتراك ${esc(c.name||clientId)}</h2><div class="meta">${esc(c.ownerEmail||clientId)}</div></div><div class="spacer"></div><button class="btn soft" data-sub127-close>إغلاق</button></div><div class="sub127-kpis"><div class="sub127-kpi"><span>الرصيد</span><b>${money(c.balance,c.currency)}</b></div><div class="sub127-kpi"><span>الحالة</span><b>${esc(statusText(c))}</b></div><div class="sub127-kpi"><span>الفترة المجانية</span><b>${c.trialActive?esc(c.trialEndsAt):'غير مفعلة'}</b></div><div class="sub127-kpi"><span>طلبات شحن معلقة</span><b>${num(c.pendingTopups)}</b></div></div><div class="sub127-form"><label>الحد الأدنى الشهري<input class="input" id="sub127Monthly" type="number" min="0" step="1" value="${esc(c.monthlyMinimum)}"></label><label>رسوم كل أوردر<input class="input" id="sub127OrderFee" type="number" min="0" step="0.25" value="${esc(c.orderFee)}"></label><label>حالة الاشتراك<select class="select" id="sub127Status"><option value="">بدون تغيير</option><option value="active">نشط</option><option value="paused">موقوف</option></select></label><label><span>الفترة المجانية</span><span><input type="checkbox" id="sub127TrialToggle" ${c.trialActive?'checked':''}> منح 30 يوم مجانًا لهذا الحساب</span></label></div><div class="sub127-modal-actions"><button class="btn primary" id="sub127Save">حفظ إعدادات الاشتراك</button><button class="btn soft" id="sub127Reconcile">فحص وتفعيل الآن</button></div><div class="sub127-note">الفترة المجانية اختيارية من الإدارة فقط وليست مرتبطة بالخطة. إذا لم تكن مفعلة، يطبق الحد الأدنى الشهري ورسوم الأوردرات مباشرة. إلغاء الفترة المجانية يطبق دورة الدفع فورًا.</div></div>`;document.body.appendChild(back);back.onclick=e=>{if(e.target===back)closeModal();};$('[data-sub127-close]',back).onclick=closeModal;
+    $('#sub127Save',back).onclick=async()=>{try{
+      const body={monthlyMinimum:Number($('#sub127Monthly',back).value||0),baseOrderFee:Number($('#sub127OrderFee',back).value||0)},st=$('#sub127Status',back).value,trialWanted=Boolean($('#sub127TrialToggle',back)?.checked);
+      if(st)body.status=st;
+      await api(`/api/admin/subscriptions/${encodeURIComponent(clientId)}`,{method:'PATCH',body:JSON.stringify(body)});
+      if(trialWanted&&!c.trialActive)await api(`/api/admin/subscriptions/${encodeURIComponent(clientId)}/start-trial`,{method:'POST',body:'{}'});
+      if(!trialWanted&&c.trialActive)await api(`/api/admin/subscriptions/${encodeURIComponent(clientId)}/end-trial`,{method:'POST',body:'{}'});
+      window.showToast?.(trialWanted&&!c.trialActive?'تم حفظ الإعدادات ومنح 30 يوم مجانًا':!trialWanted&&c.trialActive?'تم إلغاء الفترة المجانية وتطبيق الدفع':'تم حفظ إعدادات الاشتراك');closeModal();renderAdmin();
+    }catch(e){window.showToast?.(e.message)}};
     $('#sub127Reconcile',back).onclick=async()=>{try{const d=await api(`/api/admin/subscriptions/${encodeURIComponent(clientId)}/reconcile`,{method:'POST',body:'{}'});window.showToast?.(d.access?.locked?'الرصيد ما زال غير كافٍ':'العميل نشط الآن');closeModal();renderAdmin();}catch(e){window.showToast?.(e.message)}};
   }
 
