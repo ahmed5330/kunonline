@@ -1,5 +1,10 @@
 import {now,rid,round2,ensureWalletAccount,mirrorLegacyBalance} from './wallet-core.js';
 
+async function appliedTopupCredit(env,clientId,topupId){
+  return env.DB.prepare("SELECT id,amount,balance_after,created_at FROM wallet_log WHERE client_id=? AND reference_type='topup_request' AND reference_id=? ORDER BY created_at DESC LIMIT 1")
+    .bind(clientId,topupId).first();
+}
+
 export async function listPendingTopupsAdmin(env,limit=200){
   const {results=[]}=await env.DB.prepare(`SELECT id,client_id,amount,currency,sender_phone,transfer_method,status,requested_by,requested_at,
     CASE WHEN COALESCE(proof_data_url,'')<>'' OR COALESCE(proof_url,'')<>'' THEN 1 ELSE 0 END has_proof
@@ -21,19 +26,40 @@ export async function approveTopup(env,topupId,actor,note='',options={}){
   if(!row)throw Object.assign(new Error('طلب الشحن غير موجود'),{status:404,code:'TOPUP_NOT_FOUND'});
 
   if(String(row.status)==='approved'){
-    const applied=await env.DB.prepare("SELECT amount,balance_after,created_at FROM wallet_log WHERE client_id=? AND reference_type='topup_request' AND reference_id=? ORDER BY created_at DESC LIMIT 1")
-      .bind(row.client_id,topupId).first();
+    const applied=await appliedTopupCredit(env,row.client_id,topupId);
+    if(!applied){
+      throw Object.assign(new Error('طلب التحويل معلّم كمعتمد لكن لا يوجد قيد رصيد مطابق. يحتاج مراجعة/إصلاح إداري قبل اعتباره مشحونًا.'),{
+        status:409,code:'TOPUP_APPROVAL_INTEGRITY',clientId:row.client_id,topupId
+      });
+    }
     const account=await ensureWalletAccount(env,row.client_id);
     let access=null;try{access=await (await import('./subscription-billing.js')).reconcileSubscriptionAfterTopup(env,row.client_id);}catch{}
     return {
       ok:true,alreadyApproved:true,id:topupId,clientId:row.client_id,status:'approved',
-      requestedAmount:round2(row.amount),creditedAmount:round2(applied?.amount??row.amount),
-      balanceAfterCredit:round2(applied?.balance_after??account.balance),balance:round2(account.balance),
+      requestedAmount:round2(row.amount),creditedAmount:round2(applied.amount),
+      balanceAfterCredit:round2(applied.balance_after),balance:round2(account.balance),
       currency:account.currency||row.currency||'EGP',access
     };
   }
   if(String(row.status)!=='pending'){
     throw Object.assign(new Error(`طلب الشحن حالته الحالية: ${row.status||'غير معروفة'}`),{status:409,code:'TOPUP_NOT_PENDING'});
+  }
+
+  // Legacy/partial-safety guard: if a credit ledger already exists for a still-pending
+  // request, never add the money again. Heal only the request status.
+  const existingCredit=await appliedTopupCredit(env,row.client_id,topupId);
+  if(existingCredit){
+    const ts=now();
+    await env.DB.prepare("UPDATE wallet_topup_requests SET status='approved',reviewed_by=?,reviewed_at=?,review_note=? WHERE id=? AND status='pending'")
+      .bind(actor||'admin',ts,String(note||'Recovered existing wallet credit'),topupId).run();
+    const account=await ensureWalletAccount(env,row.client_id);
+    let access=null;try{access=await (await import('./subscription-billing.js')).reconcileSubscriptionAfterTopup(env,row.client_id);}catch{}
+    return {
+      ok:true,alreadyApproved:true,recoveredRequestState:true,id:topupId,clientId:row.client_id,status:'approved',
+      requestedAmount:round2(row.amount),creditedAmount:round2(existingCredit.amount),
+      balanceAfterCredit:round2(existingCredit.balance_after),balance:round2(account.balance),
+      currency:account.currency||row.currency||'EGP',access
+    };
   }
 
   const requestedAmount=round2(row.amount);
@@ -62,8 +88,7 @@ export async function approveTopup(env,topupId,actor,note='',options={}){
     ]);
   }catch(error){
     if(/idx_wallet_log_idempotency|UNIQUE constraint failed/i.test(String(error?.message||error))){
-      const applied=await env.DB.prepare("SELECT amount,balance_after FROM wallet_log WHERE client_id=? AND reference_type='topup_request' AND reference_id=? ORDER BY created_at DESC LIMIT 1")
-        .bind(row.client_id,topupId).first();
+      const applied=await appliedTopupCredit(env,row.client_id,topupId);
       const current=await ensureWalletAccount(env,row.client_id);
       return {
         ok:true,alreadyApproved:true,id:topupId,clientId:row.client_id,status:'approved',
@@ -75,6 +100,12 @@ export async function approveTopup(env,topupId,actor,note='',options={}){
     throw error;
   }
 
+  const applied=await appliedTopupCredit(env,row.client_id,topupId);
+  if(!applied||round2(applied.amount)!==creditedAmount){
+    throw Object.assign(new Error('تعذر تأكيد قيد الشحن في سجل المحفظة بعد الاعتماد'),{
+      status:500,code:'TOPUP_LEDGER_VERIFY_FAILED',clientId:row.client_id,topupId
+    });
+  }
   const credited=await env.DB.prepare('SELECT balance,currency FROM wallet_accounts WHERE client_id=?').bind(row.client_id).first();
   await mirrorLegacyBalance(env,row.client_id,credited?.balance||0);
 
