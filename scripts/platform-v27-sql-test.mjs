@@ -70,7 +70,7 @@ const c3Wallet=await walletSnapshot(env,c3);
 must(c3Wallet.billingVersion==='v27','Managed subscription must migrate legacy wallet to v27');
 must(c3Wallet.balance===-7,'Monthly minimum must be posted to the ledger even when it crosses below zero');
 must(c3Access.locked===true&&c3Access.reason==='balance_empty'&&c3Access.monthlyCharged===true,'Access must be decided only from the posted wallet balance after monthly charge');
-const c3Old=await billOrder(env,'C3-OLD');must(c3Old.skipped==='pre_v27_order','Subscription activation must never back-bill historical orders');
+const c3Old=await billOrder(env,'C3-OLD');must(c3Old.status==='waived'&&c3Old.skipped==='pre_billing_date','Subscription activation must never back-bill historical orders');
 const c3MonthlyCount=await env.DB.prepare("SELECT COUNT(*) n FROM wallet_log WHERE client_id=? AND reference_type='subscription_month'").bind(c3).first();
 await subscriptionAccess(env,c3,{applyMonthly:true});
 const c3MonthlyCountAgain=await env.DB.prepare("SELECT COUNT(*) n FROM wallet_log WHERE client_id=? AND reference_type='subscription_month'").bind(c3).first();
