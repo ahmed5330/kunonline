@@ -211,7 +211,7 @@
     const billed=result?.orderReconcile||{},currency=result?.currency||'EGP',parts=[`تم إضافة ${money(result?.creditedAmount,currency)}`];
     if(Number(billed.chargedOrders)>0)parts.push(`خصم ${money(billed.chargedAmount,currency)} مقابل ${num(billed.chargedOrders)} أوردر`);
     parts.push(`الرصيد النهائي ${money(result?.balance,currency)}`);
-    parts.push(result?.access?.locked?'الحساب ما زال موقوفًا':'الحساب نشط');
+    parts.push(result?.access?(result.access.locked?'الحساب ما زال موقوفًا':'الحساب نشط'):'تم الشحن ويحتاج فحص حالة الاشتراك');
     window.showToast?.(parts.join(' — '));await renderAdmin();
   }
   async function rejectTopup(id){
