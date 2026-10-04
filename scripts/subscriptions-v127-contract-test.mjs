@@ -20,12 +20,18 @@ for(const token of ['subscription-minimum:','monthlyMinimum','trialing','balance
 assert.ok(orders.includes('subscriptionOrderFee'),'orders must waive fee during approved trial');
 assert.ok(topups.includes('reconcileSubscriptionAfterTopup'),'topup approval must immediately reconcile access');
 assert.ok(control.includes('SUBSCRIPTION_BALANCE_REQUIRED'),'server must block paid sections when balance is unavailable');
+assert.ok(control.includes("path==='/api/wallet/topups'&&method==='POST'"),'client topup submission must bypass normal feature routing');
+assert.ok(billing.includes('order_fee_insufficient'),'balance below the next order fee must lock the system');
+assert.ok(billing.includes('managed:false,locked'),'legacy clients without a subscription row must still be balance-locked');
 assert.ok(control.includes("path==='/api/dashboard'"),'dashboard must remain available while locked');
 assert.ok(control.includes("path==='/api/wallet/topups'"),'topup submission must remain available while locked');
 for(const label of ['الاشتراكات','تفعيل شهر مجاني','الحد الأدنى الشهري','رسوم كل أوردر','صورة إثبات التحويل','اعتماد'])assert.ok(ui.includes(label),`UI contract missing ${label}`);
-assert.ok(ui.includes("b.dataset.view==='dashboard'"),'locked navigation must preserve dashboard');
-assert.ok(preview.includes('/v2/modules-v127-subscriptions.js?v=127.0'),'preview must load v127 UI');
-assert.ok(production.includes('/v2/modules-v127-subscriptions.js?v=127.0'),'production must load v127 UI');
+assert.ok(ui.includes("data-kun-subscription-locked"),'locked navigation must use a hard CSS lock');
+assert.ok(ui.includes("String(view)!=='dashboard'"),'programmatic routing must also be blocked while locked');
+assert.ok(ui.includes("accept=\"image/*\""),'payment proof input must support mobile image pickers');
+assert.ok(ui.includes("typeof createImageBitmap==='function'"),'proof compression must include browser capability fallback');
+assert.ok(preview.includes('/v2/modules-v127-subscriptions.js?v=127.1'),'preview must load v127 UI');
+assert.ok(production.includes('/v2/modules-v127-subscriptions.js?v=127.1'),'production must load v127 UI');
 assert.ok(preview.includes('handleSubscriptionControl'),'preview must enforce subscription control server-side');
 assert.ok(production.includes('handleSubscriptionControl'),'production wrapper must enforce before production-specific APIs');
 
