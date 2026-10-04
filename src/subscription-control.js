@@ -69,7 +69,9 @@ export async function handleSubscriptionControl({request,env,ctx,delegate}){
     match=path.match(/^\/api\/admin\/wallet\/topups\/([^/]+)\/(approve|reject)$/);
     if(match&&method==='POST'){
       requireAdmin(me);const topupId=decodeURIComponent(match[1]),actor=me.email||me.uid||'admin',body=await bodyOf(request),note=String(body.note||'');
-      return json(match[2]==='approve'?await approveTopup(env,topupId,actor,note):await rejectTopup(env,topupId,actor,note));
+      return json(match[2]==='approve'
+        ?await approveTopup(env,topupId,actor,note,{creditAmount:body.creditAmount})
+        :await rejectTopup(env,topupId,actor,note));
     }
     if(me.role==='admin')return null;
     const clientId=text(me.clientId||me.client_id);if(!clientId)return null;
