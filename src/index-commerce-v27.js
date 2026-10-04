@@ -1,7 +1,7 @@
 import commerceV26 from './index-commerce-v26.js';
 import {assertFeatureEnabled,getTenantFeatures} from './feature-entitlements.js';
 import {
-  walletSnapshot,listWalletLog,requestTopup,listTopups,listPendingTopupsAdmin,
+  walletSnapshot,listWalletLog,requestTopup,listTopups,listPendingTopupsAdmin,getPendingTopupProofAdmin,
   approveTopup,rejectTopup,billOrder,reconcileUnbilledOrders,adminCreditWallet,sanitizeLegacyStateBilling,syncLegacyBillingMirrors
 } from './wallet-billing.js';
 import {orderById,recordOrderEvent,recordOrderMutation,addOrderNote,logContact,timeline} from './order-events.js';
@@ -108,6 +108,8 @@ async function routeV27(request,env,ctx,me,url,body){
   m=path.match(/^\/api\/admin\/clients\/([^/]+)\/reset-owner-password$/);
   if(m&&method==='POST'){requireAdmin(me);const clientId=decodeURIComponent(m[1]);return json(await resetClientOwnerPassword(env,clientId,body,me));}
   if(path==='/api/admin/wallet/topups'&&method==='GET'){requireAdmin(me);return json(await listPendingTopupsAdmin(env,url.searchParams.get('limit')||200));}
+  m=path.match(/^\/api\/admin\/wallet\/topups\/([^/]+)\/proof$/);
+  if(m&&method==='GET'){requireAdmin(me);return json(await getPendingTopupProofAdmin(env,decodeURIComponent(m[1])));}
   m=path.match(/^\/api\/admin\/wallet\/topups\/([^/]+)\/(approve|reject)$/);
   if(m&&method==='POST'){
     requireAdmin(me);const topupId=decodeURIComponent(m[1]);
