@@ -183,32 +183,114 @@ export async function reconcileMonthlySubscriptions(env,{limit=500}={}){
 }
 
 export async function listSubscriptionsAdmin(env,{limit=500}={}){
-  const {results:ids=[]}=await env.DB.prepare(`SELECT client_id FROM tenant_settings
-    UNION SELECT client_id FROM wallet_accounts
-    UNION SELECT client_id FROM subscriptions
-    UNION SELECT client_id FROM users WHERE client_id IS NOT NULL
-    ORDER BY client_id LIMIT ?`).bind(Math.max(1,Math.min(2000,Number(limit)||500))).all();
-  const rows=[];
-  for(const item of ids){
-    const clientId=text(item.client_id);if(!clientId)continue;
-    const [tenant,owner,subscription,wallet,pending]=await Promise.all([
-      env.DB.prepare('SELECT display_name,plan,status FROM tenant_settings WHERE client_id=?').bind(clientId).first(),
-      env.DB.prepare("SELECT name,email FROM users WHERE client_id=? AND role='client' ORDER BY created_at LIMIT 1").bind(clientId).first(),
-      latestSubscription(env,clientId),
-      ensureWalletAccount(env,clientId),
-      env.DB.prepare("SELECT COUNT(*) n,COALESCE(SUM(amount),0) amount FROM wallet_topup_requests WHERE client_id=? AND status='pending'").bind(clientId).first()
-    ]);
-    const access=subscription?await subscriptionAccess(env,clientId,{applyMonthly:false}):{
-      managed:false,locked:false,reason:null,balance:round2(wallet.balance),currency:wallet.currency||'EGP',monthlyMinimum:0,
-      orderFee:await effectiveOrderFee(env,clientId),trialActive:false,trialEndsAt:null,subscriptionStatus:'unmanaged',monthlyCharged:true,monthlyDue:0
-    };
-    rows.push({
-      clientId,name:tenant?.display_name||owner?.name||clientId,ownerName:owner?.name||'',ownerEmail:owner?.email||'',
-      tenantStatus:tenant?.status||'active',plan:tenant?.plan||subscription?.plan||'legacy',pendingTopups:Number(pending?.n)||0,pendingTopupAmount:round2(pending?.amount),
-      ...access
-    });
+  const capped=Math.max(1,Math.min(2000,Number(limit)||500)),today=cairoYmd(),bounds=monthBounds(today);
+  const {results=[]}=await env.DB.prepare(`
+    WITH client_ids AS (
+      SELECT client_id FROM tenant_settings
+      UNION SELECT client_id FROM wallet_accounts
+      UNION SELECT client_id FROM subscriptions
+      UNION SELECT client_id FROM users WHERE client_id IS NOT NULL
+    ),
+    latest_sub AS (
+      SELECT * FROM (
+        SELECT s.*,ROW_NUMBER() OVER (PARTITION BY client_id ORDER BY created_at DESC,id DESC) rn
+        FROM subscriptions s
+      ) WHERE rn=1
+    ),
+    owner AS (
+      SELECT client_id,name,email FROM (
+        SELECT u.client_id,u.name,u.email,ROW_NUMBER() OVER (PARTITION BY client_id ORDER BY created_at,id) rn
+        FROM users u WHERE role='client'
+      ) WHERE rn=1
+    ),
+    pending AS (
+      SELECT client_id,COUNT(*) n,COALESCE(SUM(amount),0) amount
+      FROM wallet_topup_requests WHERE status='pending' GROUP BY client_id
+    ),
+    module_fees AS (
+      SELECT client_id,COALESCE(SUM(CASE WHEN enabled=1 AND per_order_fee_delta>0 THEN per_order_fee_delta ELSE 0 END),0) delta
+      FROM tenant_modules GROUP BY client_id
+    ),
+    monthly_paid AS (
+      SELECT client_id,1 paid FROM wallet_log
+      WHERE reference_type='subscription_month' AND reference_id=?
+      GROUP BY client_id
+    )
+    SELECT ids.client_id,
+      t.display_name,t.plan tenant_plan,t.status tenant_status,t.currency tenant_currency,
+      o.name owner_name,o.email owner_email,
+      s.id sub_id,s.plan sub_plan,s.status sub_status,s.billing_cycle sub_cycle,s.amount sub_amount,
+      s.currency sub_currency,s.period_start sub_period_start,s.period_end sub_period_end,
+      w.balance wallet_balance,w.currency wallet_currency,w.base_order_fee,w.status wallet_status,
+      COALESCE(p.n,0) pending_n,COALESCE(p.amount,0) pending_amount,
+      COALESCE(mf.delta,0) module_delta,COALESCE(mp.paid,0) monthly_paid
+    FROM client_ids ids
+    LEFT JOIN tenant_settings t ON t.client_id=ids.client_id
+    LEFT JOIN owner o ON o.client_id=ids.client_id
+    LEFT JOIN latest_sub s ON s.client_id=ids.client_id
+    LEFT JOIN wallet_accounts w ON w.client_id=ids.client_id
+    LEFT JOIN pending p ON p.client_id=ids.client_id
+    LEFT JOIN module_fees mf ON mf.client_id=ids.client_id
+    LEFT JOIN monthly_paid mp ON mp.client_id=ids.client_id
+    ORDER BY ids.client_id
+    LIMIT ?
+  `).bind(bounds.key,capped).all();
+
+  let legacyMap=new Map();
+  if(results.some(row=>row.wallet_balance===null||row.wallet_balance===undefined)){
+    const legacy=await env.DB.prepare('SELECT json FROM state WHERE id=1').first();
+    try{
+      const parsed=JSON.parse(legacy?.json||'{}');
+      legacyMap=new Map((parsed.clients||[]).map(item=>[String(item.id),item]));
+    }catch{}
   }
-  return rows;
+
+  return results.map(row=>{
+    const clientId=text(row.client_id),legacy=legacyMap.get(clientId)||{};
+    const hasWallet=row.wallet_balance!==null&&row.wallet_balance!==undefined;
+    const balance=round2(hasWallet?row.wallet_balance:legacy.walletBalance||0);
+    const baseOrderFee=clampMoney(hasWallet?row.base_order_fee:(Number(legacy.walletFeePerOrder)||2));
+    const configuredFee=round2(baseOrderFee+clampMoney(row.module_delta));
+    const walletStatus=text(hasWallet?row.wallet_status:'active')||'active';
+    const managed=Boolean(row.sub_id);
+    if(!managed){
+      const emptyBalance=balance<=0,insufficientOrderBalance=configuredFee>0&&balance<configuredFee,walletPaused=walletStatus!=='active';
+      const locked=walletPaused||emptyBalance||insufficientOrderBalance;
+      const reason=walletPaused?'wallet_paused':emptyBalance?'balance_empty':insufficientOrderBalance?'order_fee_insufficient':null;
+      return {
+        clientId,name:row.display_name||row.owner_name||clientId,ownerName:row.owner_name||'',ownerEmail:row.owner_email||'',
+        tenantStatus:row.tenant_status||'active',plan:row.tenant_plan||'legacy',
+        pendingTopups:Number(row.pending_n)||0,pendingTopupAmount:round2(row.pending_amount),
+        managed:false,locked,reason,balance,currency:row.wallet_currency||row.tenant_currency||'EGP',
+        monthlyMinimum:0,orderFee:configuredFee,trialActive:false,trialEndsAt:null,subscriptionStatus:'unmanaged',
+        monthlyCharged:true,monthlyDue:0
+      };
+    }
+
+    let subscriptionStatus=text(row.sub_status)||'active';
+    const trialRow={status:subscriptionStatus,period_end:row.sub_period_end};
+    const inTrial=trialActive(trialRow,today);
+    if(subscriptionStatus==='trialing'&&!inTrial)subscriptionStatus='active';
+    const monthlyMinimum=clampMoney(row.sub_amount),orderFee=inTrial?0:configuredFee;
+    const monthlyCharged=inTrial||subscriptionStatus!=='active'||monthlyMinimum<=0||Boolean(Number(row.monthly_paid));
+    const subscriptionPaused=['paused','cancelled','suspended'].includes(subscriptionStatus);
+    const insufficientMonthly=!inTrial&&subscriptionStatus==='active'&&monthlyMinimum>0&&!monthlyCharged&&balance<monthlyMinimum;
+    const emptyBalance=!inTrial&&balance<=0;
+    const insufficientOrderBalance=!inTrial&&orderFee>0&&balance>0&&balance<orderFee;
+    const walletPaused=walletStatus!=='active';
+    const locked=subscriptionPaused||walletPaused||insufficientMonthly||emptyBalance||insufficientOrderBalance;
+    const reason=subscriptionPaused?'subscription_paused':walletPaused?'wallet_paused':insufficientMonthly?'monthly_minimum_due':emptyBalance?'balance_empty':insufficientOrderBalance?'order_fee_insufficient':null;
+    return {
+      clientId,name:row.display_name||row.owner_name||clientId,ownerName:row.owner_name||'',ownerEmail:row.owner_email||'',
+      tenantStatus:row.tenant_status||'active',plan:row.tenant_plan||row.sub_plan||'legacy',
+      pendingTopups:Number(row.pending_n)||0,pendingTopupAmount:round2(row.pending_amount),
+      managed:true,locked,reason,balance,currency:row.wallet_currency||row.sub_currency||row.tenant_currency||'EGP',
+      monthlyMinimum,monthlyCharged,monthlyDue:monthlyCharged?0:monthlyMinimum,
+      orderFee,trialActive:inTrial,trialStartsAt:row.sub_period_start||null,trialEndsAt:inTrial?row.sub_period_end:null,
+      trialDaysRemaining:inTrial?daysBetween(today,row.sub_period_end):0,subscriptionStatus,
+      billingCycle:row.sub_cycle||'monthly',periodStart:row.sub_period_start||bounds.from,periodEnd:row.sub_period_end||bounds.to
+    };
+  });
 }
 
 export const __subscriptionInternals={cairoYmd,addDays,monthBounds,trialActive,daysBetween};
