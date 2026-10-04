@@ -51,8 +51,6 @@ export async function handleSubscriptionControl({request,env,ctx,delegate}){
     }
     if(me.role==='admin')return null;
     const clientId=text(me.clientId||me.client_id);if(!clientId)return null;
-    const access=await subscriptionAccess(env,clientId,{applyMonthly:true});
-    if(path==='/api/subscription/access'&&method==='GET')return json({ok:true,...access});
     if(me.role==='client'&&path==='/api/wallet/topups'&&method==='GET'){
       return json(await listTopups(env,clientId,{status:url.searchParams.get('status')||null,limit:url.searchParams.get('limit')||100}));
     }
@@ -60,6 +58,8 @@ export async function handleSubscriptionControl({request,env,ctx,delegate}){
       const body=await bodyOf(request);
       return json(await requestTopup(env,clientId,body,me.email||me.uid||me.role),201);
     }
+    const access=await subscriptionAccess(env,clientId,{applyMonthly:true});
+    if(path==='/api/subscription/access'&&method==='GET')return json({ok:true,...access});
     if(access.locked&&!allowedWhileLocked(path,method)){
       return json({
         error:'الرصيد غير كافٍ لتشغيل هذا القسم. يمكنك فتح الداشبورد ورفع إثبات شحن الرصيد.',
@@ -69,7 +69,7 @@ export async function handleSubscriptionControl({request,env,ctx,delegate}){
     }
     return null;
   }catch(error){
-    if(path.startsWith('/api/admin/subscriptions')||path==='/api/subscription/access'){
+    if(path.startsWith('/api/admin/subscriptions')||path==='/api/subscription/access'||path==='/api/wallet/topups'){
       return json({error:error?.message||'تعذر تحميل حالة الاشتراك',code:error?.code||'SUBSCRIPTION_ERROR'},error?.status||500);
     }
     if(error?.code==='AUTH_REQUIRED')return null;
