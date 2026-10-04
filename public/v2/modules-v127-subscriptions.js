@@ -64,8 +64,8 @@
 
   async function restoreNav({reloadPermissions=false}={}){
     delete document.documentElement.dataset.kunSubscriptionLocked;
-    $('[data-sub127-hidden="1"]').forEach(b=>{b.hidden=false;b.style.display='';delete b.dataset.sub127Hidden;});
-    $('.nav .nav-group').forEach(group=>{group.hidden=false;group.style.removeProperty('display');});
+    $$('[data-sub127-hidden="1"]').forEach(b=>{b.hidden=false;b.style.display='';delete b.dataset.sub127Hidden;});
+    $$('.nav .nav-group').forEach(group=>{group.hidden=false;group.style.removeProperty('display');});
     try{
       if(reloadPermissions&&window.KunPermissionNavigationV51?.load)await window.KunPermissionNavigationV51.load();
       else window.KunPermissionNavigationV51?.apply?.();
@@ -79,7 +79,7 @@
   function lockNav(){
     if(!state.access?.locked)return;
     document.documentElement.dataset.kunSubscriptionLocked='1';
-    $('.nav button[data-view]').forEach(b=>{if(b.dataset.view==='dashboard')return;b.dataset.sub127Hidden='1';b.hidden=true;b.style.display='none';});
+    $$('.nav button[data-view]').forEach(b=>{if(b.dataset.view==='dashboard')return;b.dataset.sub127Hidden='1';b.hidden=true;b.style.display='none';});
     window.KunSidebarGroupsV90?.sync?.();
     const active=$('.nav button.active[data-view]');if(active&&active.dataset.view!=='dashboard')$('.nav button[data-view="dashboard"]')?.click();
   }
@@ -136,7 +136,7 @@
     b.hidden=false;b.style.display='';
   }
   function setAdminActive(){
-    $$('.nav button[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view==='subscriptions'));
+    $$$('.nav button[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view==='subscriptions'));
   }
   function adminStatus(c){
     const cls=c.trialActive?'trial':c.locked?'locked':c.subscriptionStatus==='unmanaged'?'unmanaged':'';
