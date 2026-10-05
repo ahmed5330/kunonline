@@ -25,9 +25,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 
 /**
- * Kun Online Android v2.7 shell.
- * Keeps the fast native daily workflow and embeds the complete web system for every module.
- * Web-only workflows such as Printing stay on their proven renderer while remaining accessible in-app.
+ * Kun Online Android v2.8 shell.
+ * Keeps the fast native daily workflow and exposes the selected client modules as native Android screens.
+ * Native Printing still calls the governed Kun Online/J&T server workflow for Create Order and official labels.
  */
 @Composable
 fun KunNativeAppV26(activity: MainActivity) {
