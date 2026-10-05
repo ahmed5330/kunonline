@@ -8,12 +8,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.ChatBubbleOutline
-import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -25,7 +22,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 
 /**
- * Kun Online Android v2.8 shell.
+ * Kun Online Android v2.8.1 shell.
  * Keeps the fast native daily workflow and exposes the selected client modules as native Android screens.
  * Native Printing still calls the governed Kun Online/J&T server workflow for Create Order and official labels.
  */
@@ -51,7 +48,11 @@ fun KunNativeAppV26(activity: MainActivity) {
 
     MaterialTheme {
         Box {
-            KunNativeAppV25(activity)
+            KunNativeAppV25(
+                activity = activity,
+                onOpenCollaboration = { showCollaboration = true },
+                onOpenSystemSections = { showSystemSections = true }
+            )
 
             if (hasSession && !showAddOrder && !showCollaboration && !showSystemSections) {
                 Row(
@@ -68,22 +69,6 @@ fun KunNativeAppV26(activity: MainActivity) {
                     ) {
                         Icon(Icons.Outlined.Add, contentDescription = null)
                         Text("إضافة")
-                    }
-                    OutlinedButton(
-                        onClick = { showCollaboration = true },
-                        modifier = Modifier.height(46.dp),
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 0.dp)
-                    ) {
-                        Icon(Icons.Outlined.ChatBubbleOutline, contentDescription = null)
-                        Text("التواصل")
-                    }
-                    OutlinedButton(
-                        onClick = { showSystemSections = true },
-                        modifier = Modifier.height(46.dp),
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 0.dp)
-                    ) {
-                        Icon(Icons.Outlined.GridView, contentDescription = null)
-                        Text("الأقسام")
                     }
                 }
             }

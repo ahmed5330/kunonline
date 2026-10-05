@@ -127,9 +127,10 @@ object NativeSectionsApi {
     }
 
     fun wallet(context: Context): Map<String, NativeSectionResult> = linkedMapOf(
-        "wallet" to get(context, "/api/wallet"),
-        "log" to get(context, "/api/wallet/log?limit=150"),
-        "access" to get(context, "/api/subscription/access")
+        // v127 subscription access is the authoritative client billing source.
+        // Do not mix it with the legacy-compatible /api/wallet fee fields.
+        "access" to get(context, "/api/subscription/access"),
+        "log" to get(context, "/api/wallet/log?limit=150")
     )
 
     fun integrations(context: Context): NativeSectionResult =
@@ -186,7 +187,7 @@ object NativeSectionsApi {
                 setRequestProperty("Accept", "application/json")
                 setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 setRequestProperty("Cookie", cookie)
-                setRequestProperty("X-Kun-Mobile", "native-android/2.8.0")
+                setRequestProperty("X-Kun-Mobile", "native-android/2.8.1")
                 if (body != null) doOutput = true
             }
             if (body != null) {
