@@ -13,6 +13,8 @@ const printingRouting=await readFile(new URL('../public/v2/modules-v116-print-ro
 const trackingUi=await readFile(new URL('../public/v2/modules-v82-jt-tracking-cards.js',import.meta.url),'utf8');
 const v2Index=await readFile(new URL('../public/v2/index.html',import.meta.url),'utf8');
 const androidShell=await readFile(new URL('../android/app/src/main/java/com/kunonline/callerid/KunNativeAppV26.kt',import.meta.url),'utf8');
+const androidMain=await readFile(new URL('../android/app/src/main/java/com/kunonline/callerid/KunNativeAppV25.kt',import.meta.url),'utf8');
+const androidAddOrder=await readFile(new URL('../android/app/src/main/java/com/kunonline/callerid/JtAddOrderDialog.kt',import.meta.url),'utf8');
 const androidDateFilter=await readFile(new URL('../android/app/src/main/java/com/kunonline/callerid/MobileDateFilterV267.kt',import.meta.url),'utf8');
 const androidSystemSections=await readFile(new URL('../android/app/src/main/java/com/kunonline/callerid/KunSystemSections.kt',import.meta.url),'utf8');
 const androidNativeSectionsApi=await readFile(new URL('../android/app/src/main/java/com/kunonline/callerid/NativeSectionsApi.kt',import.meta.url),'utf8');
@@ -68,12 +70,17 @@ const nativeLabels=['الطباعة','المالية','الحسابات والح
 for(const label of nativeLabels)must(androidSystemSections.includes(`("${label}"`)||androidSystemSections.includes(`"${label}"`),`Android native sections missing ${label}`);
 for(const removed of ['الداشبورد','مركز الذكاء','المتاجر والفروع','نقطة البيع POS','متابعة الشحن','المرتجعات والاستبدالات','إدارة العملاء','صندوق الرسائل','المنتجات','الموردون','المشتريات','حسابات الموردين','إعدادات الشحن','تسويات COD','التسويق','AI Ad Studio','Profit Intelligence','التحليلات','الأتمتة','kun AI'])must(!androidSystemSections.includes(`NativeClientSection("${removed}"`),`Removed launcher section leaked back: ${removed}`);
 must(!androidSystemSections.includes('WebView')&&!androidSystemSections.includes('AndroidView')&&!androidSystemSections.includes('android.webkit'),'Selected Android sections must be fully native, not embedded web');
-for(const endpoint of ['/api/printing','/api/jt/shipments/','/api/accounting/overview','/api/accounting/entries','/api/inventory/stock-adjust','/api/integrations/meta-ads/campaign-hub','/api/wallet','/api/integrations/readiness'])must(androidNativeSectionsApi.includes(endpoint),`Native Android system bridge missing ${endpoint}`);
+for(const endpoint of ['/api/printing','/api/jt/shipments/','/api/accounting/overview','/api/accounting/entries','/api/inventory/stock-adjust','/api/integrations/meta-ads/campaign-hub','/api/subscription/access','/api/wallet/log','/api/integrations/readiness'])must(androidNativeSectionsApi.includes(endpoint),`Native Android system bridge missing ${endpoint}`);
+must(!androidNativeSectionsApi.includes('"wallet" to get(context, "/api/wallet")'),'Native wallet must not mix legacy-compatible /api/wallet fee calculations into v127 billing');
+must(androidSystemSections.includes('نفس إعدادات الخصم الحالية في السيستم')&&androidSystemSections.includes('firstNumber(access, "orderFee")')&&androidSystemSections.includes('firstNumber(access, "monthlyMinimum")'),'Native wallet must render current v127 order fee and monthly minimum directly from subscription access');
+must(androidMain.includes('label = { Text("التواصل") }')&&androidMain.includes('label = { Text("الأقسام") }'),'Communication and system sections must live in the Android bottom navigation');
+must(!androidShell.includes('Text("التواصل")')&&!androidShell.includes('Text("الأقسام")'),'Communication and sections must not remain as floating screen buttons');
+must(androidAddOrder.includes('Text("عنوان العميل — محافظة ← مدينة/حي ← منطقة"')&&androidAddOrder.includes('Text("عنوان العميل", style = MaterialTheme.typography.titleMedium'),'Add Order must name the J&T-backed address section عنوان العميل');
 must(androidNativeSectionsApi.includes('/print')&&androidSystemSections.includes('CallerJntOrderEditActivity'),'Native Printing must use governed J&T create/print and the native J&T editor');
 must(androidNativeSectionsApi.includes('/api/integration-secrets/')&&androidSystemSections.includes('حفظ واختبار'),'Native Integrations must write encrypted secrets and validate connections');
 for(const label of ['اليوم','أمس','هذا الأسبوع','الأسبوع الماضي','الشهر الحالي','الشهر الماضي','مدة معينة'])must(androidDateFilter.includes(`"${label}"`),`Android period selector missing ${label}`);
 must(androidDateFilter.includes('DatePickerDialog')&&androidDateFilter.includes('selectCustom'),'Android custom period must allow a start/end date');
-must(androidGradle.includes('versionCode = 121')&&androidGradle.includes('versionName = "2.8.0"'),'Android current release must be v2.8.0 code 121');
+must(androidGradle.includes('versionCode = 122')&&androidGradle.includes('versionName = "2.8.1"'),'Android current release must be v2.8.1 code 122');
 
 must(trackingUi.includes('PULL_INTERVAL=300000')&&trackingUi.includes('/track?clientId='),'J&T live tracking fallback must remain protected');
 must(jtWorker.includes("PRINT_ORDER_PATH='/webopenplatformapi/api/order/printOrder'"),'Legacy print route remains only for rollback compatibility behind v38 interception');
