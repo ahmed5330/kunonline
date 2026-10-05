@@ -61,7 +61,8 @@ const pendingAfterApproval=await env.DB.prepare("SELECT status FROM order_billin
 const recoveredOrder=await billOrder(env,'WAITING');must(recoveredOrder.status==='charged'&&(await walletSnapshot(env,client)).balance===18,'Pending order can be billed explicitly after the account is funded');
 
 // Managed subscriptions use one authoritative ledger: the monthly minimum is posted
-// exactly once even when it crosses below zero; a later topup clears that debt and unlocks.
+// exactly once even when it crosses below zero. Empty balance is visible as billing
+// state but must not globally lock the client application.
 const c3='C3',s3='S3';
 await env.DB.prepare("INSERT INTO wallet_accounts(client_id,balance,currency,base_order_fee,min_order_fee,max_order_fee,credit_limit,billing_version,billing_start_rowid,status,updated_at) VALUES (?,13,'EGP',2,0,0,0,'legacy',NULL,'active',?)").bind(c3,ts).run();
 await env.DB.prepare("INSERT INTO orders(id,client_id,store_id,date,created_at) VALUES ('C3-OLD',?,?,?,?)").bind(c3,s3,day,new Date(Date.now()+4000).toISOString()).run();
@@ -69,7 +70,7 @@ const c3Access=await configureSubscription(env,c3,{monthlyMinimum:20,baseOrderFe
 const c3Wallet=await walletSnapshot(env,c3);
 must(c3Wallet.billingVersion==='v27','Managed subscription must migrate legacy wallet to v27');
 must(c3Wallet.balance===-7,'Monthly minimum must be posted to the ledger even when it crosses below zero');
-must(c3Access.locked===true&&c3Access.reason==='balance_empty'&&c3Access.monthlyCharged===true,'Access must be decided only from the posted wallet balance after monthly charge');
+must(c3Access.locked===false&&c3Access.reason===null&&c3Access.balanceEmpty===true&&c3Access.monthlyCharged===true,'Posted negative balance must remain visible without globally locking application access');
 const c3Old=await billOrder(env,'C3-OLD');must(c3Old.status==='waived'&&c3Old.skipped==='pre_billing_date','Subscription activation must never back-bill historical orders');
 const c3MonthlyCount=await env.DB.prepare("SELECT COUNT(*) n FROM wallet_log WHERE client_id=? AND reference_type='subscription_month'").bind(c3).first();
 await subscriptionAccess(env,c3,{applyMonthly:true});
@@ -77,7 +78,7 @@ const c3MonthlyCountAgain=await env.DB.prepare("SELECT COUNT(*) n FROM wallet_lo
 must(Number(c3MonthlyCount.n)===1&&Number(c3MonthlyCountAgain.n)===1,'Monthly minimum must be idempotent and charged once per month');
 const c3Top=await requestTopup(env,c3,{amount:500,senderPhone:'01000000000',proofDataUrl:proof},'qa-owner');
 const c3Approved=await approveTopup(env,c3Top.id,'qa-admin','single-ledger recovery');
-must(c3Approved.balance===493&&c3Approved.access?.locked===false,'500 topup after a -7 monthly balance must finish at 493 and unlock immediately');
+must(c3Approved.balance===493&&c3Approved.access?.locked===false&&c3Approved.access?.balanceEmpty===false,'500 topup after a -7 monthly balance must finish at 493 and clear the empty-balance state');
 const brokenTopup=await requestTopup(env,c3,{amount:10,senderPhone:'01000000000',proofDataUrl:proof},'qa-owner');
 await env.DB.prepare("UPDATE wallet_topup_requests SET status='approved' WHERE id=?").bind(brokenTopup.id).run();
 let integrityCaught=false;try{await approveTopup(env,brokenTopup.id,'qa-admin','integrity check')}catch(error){integrityCaught=error?.code==='TOPUP_APPROVAL_INTEGRITY'}
