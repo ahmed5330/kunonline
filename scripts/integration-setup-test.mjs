@@ -15,6 +15,7 @@ const v2Index=await readFile(new URL('../public/v2/index.html',import.meta.url),
 const androidShell=await readFile(new URL('../android/app/src/main/java/com/kunonline/callerid/KunNativeAppV26.kt',import.meta.url),'utf8');
 const androidDateFilter=await readFile(new URL('../android/app/src/main/java/com/kunonline/callerid/MobileDateFilterV267.kt',import.meta.url),'utf8');
 const androidSystemSections=await readFile(new URL('../android/app/src/main/java/com/kunonline/callerid/KunSystemSections.kt',import.meta.url),'utf8');
+const androidNativeSectionsApi=await readFile(new URL('../android/app/src/main/java/com/kunonline/callerid/NativeSectionsApi.kt',import.meta.url),'utf8');
 const androidGradle=await readFile(new URL('../android/app/build.gradle.kts',import.meta.url),'utf8');
 const must=(ok,msg)=>{if(!ok)throw new Error(msg)};
 
@@ -63,16 +64,18 @@ must(printingUi.includes('/api/jt/shipments/${encodeURIComponent(o.id)}')&&print
 must(printingUi.includes("version:'79.8'"),'Printing runtime must identify v79.8');
 must(printingRouting.includes("new Set(['confirmed','preparing'])")&&printingRouting.includes('تم تأكيد الأوردر ونقله تلقائيًا إلى قسم الطباعة'),'Customer Service UI must immediately remove confirmed orders');
 
-must(!androidShell.includes('PrintingMobileV26'),'Android must not duplicate Printing as a separate native workflow');
-for(const marker of ['dashboard','stores','orders','customer-service','printing','post-shipping','returns-exchanges','customers','products','inventory','shipping','finance','accounting','analytics','automation','integrations','wallet','settings'])must(androidSystemSections.includes(`ClientSystemSection("${marker}"`),`Android client launcher missing ${marker}`);
-for(const marker of ['onboarding','readiness','store-access','access','approvals','ops','audit','admin-clients','control'])must(!androidSystemSections.includes(`ClientSystemSection("${marker}"`),`Android client launcher must exclude admin/internal route ${marker}`);
-must(androidSystemSections.includes("permissionNavigation==='ready'")&&androidSystemSections.includes('cookies.setCookie(')&&androidSystemSections.includes('post { authenticatedLoad() }'),'Embedded client routing must wait for permissions and establish auth before first load');
-must(androidSystemSections.includes('onShowFileChooser')&&androidSystemSections.includes('setDownloadListener'),'Embedded client system must support upload/download workflows');
+const nativeLabels=['الطباعة','المالية','الحسابات والحركات','الحملات','المخزون','المحفظة','مركز التكاملات','الإعدادات'];
+for(const label of nativeLabels)must(androidSystemSections.includes(`("${label}"`)||androidSystemSections.includes(`"${label}"`),`Android native sections missing ${label}`);
+for(const removed of ['الداشبورد','مركز الذكاء','المتاجر والفروع','نقطة البيع POS','متابعة الشحن','المرتجعات والاستبدالات','إدارة العملاء','صندوق الرسائل','المنتجات','الموردون','المشتريات','حسابات الموردين','إعدادات الشحن','تسويات COD','التسويق','AI Ad Studio','Profit Intelligence','التحليلات','الأتمتة','kun AI'])must(!androidSystemSections.includes(`NativeClientSection("${removed}"`),`Removed launcher section leaked back: ${removed}`);
+must(!androidSystemSections.includes('WebView')&&!androidSystemSections.includes('AndroidView')&&!androidSystemSections.includes('android.webkit'),'Selected Android sections must be fully native, not embedded web');
+for(const endpoint of ['/api/printing','/api/jt/shipments/','/api/accounting/overview','/api/accounting/entries','/api/inventory/stock-adjust','/api/integrations/meta-ads/campaign-hub','/api/wallet','/api/integrations/readiness'])must(androidNativeSectionsApi.includes(endpoint),`Native Android system bridge missing ${endpoint}`);
+must(androidNativeSectionsApi.includes('/print')&&androidSystemSections.includes('CallerJntOrderEditActivity'),'Native Printing must use governed J&T create/print and the native J&T editor');
+must(androidNativeSectionsApi.includes('/api/integration-secrets/')&&androidSystemSections.includes('حفظ واختبار'),'Native Integrations must write encrypted secrets and validate connections');
 for(const label of ['اليوم','أمس','هذا الأسبوع','الأسبوع الماضي','الشهر الحالي','الشهر الماضي','مدة معينة'])must(androidDateFilter.includes(`"${label}"`),`Android period selector missing ${label}`);
 must(androidDateFilter.includes('DatePickerDialog')&&androidDateFilter.includes('selectCustom'),'Android custom period must allow a start/end date');
-must(androidGradle.includes('versionCode = 120')&&androidGradle.includes('versionName = "2.7.1"'),'Android current release must be v2.7.1 code 120');
+must(androidGradle.includes('versionCode = 121')&&androidGradle.includes('versionName = "2.8.0"'),'Android current release must be v2.8.0 code 121');
 
 must(trackingUi.includes('PULL_INTERVAL=300000')&&trackingUi.includes('/track?clientId='),'J&T live tracking fallback must remain protected');
 must(jtWorker.includes("PRINT_ORDER_PATH='/webopenplatformapi/api/order/printOrder'"),'Legacy print route remains only for rollback compatibility behind v38 interception');
-console.log('Integration setup checks passed: web Printing remains governed; Android exposes client-only modules, waits for permission routing, and keeps shared auth.');
+console.log('Integration setup checks passed: Android exposes exactly eight native client modules backed by governed Kun Online APIs, including native J&T Printing.');
 await import('./jt-live-shipping-test.mjs');
