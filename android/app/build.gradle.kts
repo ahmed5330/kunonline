@@ -12,9 +12,9 @@ android {
         applicationId = "com.kunonline.callerid.stable"
         minSdk = 29
         targetSdk = 35
-        // v2.7.1 fixes client-only section routing and removes admin/internal modules.
-        versionCode = 120
-        versionName = "2.7.1"
+        // v2.8.0 replaces the web section launcher with eight native client modules.
+        versionCode = 121
+        versionName = "2.8.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
