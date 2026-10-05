@@ -80,7 +80,7 @@ must(androidNativeSectionsApi.includes('/print')&&androidSystemSections.includes
 must(androidNativeSectionsApi.includes('/api/integration-secrets/')&&androidSystemSections.includes('حفظ واختبار'),'Native Integrations must write encrypted secrets and validate connections');
 for(const label of ['اليوم','أمس','هذا الأسبوع','الأسبوع الماضي','الشهر الحالي','الشهر الماضي','مدة معينة'])must(androidDateFilter.includes(`"${label}"`),`Android period selector missing ${label}`);
 must(androidDateFilter.includes('DatePickerDialog')&&androidDateFilter.includes('selectCustom'),'Android custom period must allow a start/end date');
-must(androidGradle.includes('versionCode = 122')&&androidGradle.includes('versionName = "2.8.1"'),'Android current release must be v2.8.1 code 122');
+must(androidGradle.includes('versionCode = 123')&&androidGradle.includes('versionName = "2.8.2"'),'Android current release must be v2.8.2 code 123');
 
 must(trackingUi.includes('PULL_INTERVAL=300000')&&trackingUi.includes('/track?clientId='),'J&T live tracking fallback must remain protected');
 must(jtWorker.includes("PRINT_ORDER_PATH='/webopenplatformapi/api/order/printOrder'"),'Legacy print route remains only for rollback compatibility behind v38 interception');
