@@ -25,7 +25,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -58,7 +57,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -70,64 +68,63 @@ import org.json.JSONObject
 private const val SYSTEM_URL = "https://app.kun-online.com/v2/"
 private const val SYSTEM_ORIGIN = "https://app.kun-online.com"
 
-private data class SystemSection(
+private data class ClientSystemSection(
     val view: String,
     val label: String,
     val group: String
 )
 
-private val SYSTEM_SECTIONS = listOf(
-    SystemSection("dashboard", "الداشبورد", "الرئيسية والتحكم"),
-    SystemSection("intelligence", "مركز الذكاء", "الرئيسية والتحكم"),
-    SystemSection("onboarding", "بدء الاستخدام", "الرئيسية والتحكم"),
-    SystemSection("readiness", "جاهزية النظام", "الرئيسية والتحكم"),
-    SystemSection("stores", "المتاجر والفروع", "الرئيسية والتحكم"),
-    SystemSection("store-access", "صلاحيات الفروع", "الرئيسية والتحكم"),
-    SystemSection("control", "الحساب والتكاملات", "الرئيسية والتحكم"),
-    SystemSection("settings", "الإعدادات", "الرئيسية والتحكم"),
+/**
+ * Client-facing operational modules only.
+ *
+ * Deliberately excluded from the Android client app:
+ * onboarding, readiness, store-access, access, approvals, ops, audit,
+ * admin-clients and control. Those are owner/admin/internal-governance surfaces.
+ */
+private val CLIENT_SYSTEM_SECTIONS = listOf(
+    ClientSystemSection("dashboard", "الداشبورد", "الرئيسية"),
+    ClientSystemSection("intelligence", "مركز الذكاء", "الرئيسية"),
+    ClientSystemSection("stores", "المتاجر والفروع", "الرئيسية"),
 
-    SystemSection("pos", "نقطة البيع POS", "المبيعات والعملاء"),
-    SystemSection("orders", "الطلبات", "المبيعات والعملاء"),
-    SystemSection("customer-service", "خدمة العملاء", "المبيعات والعملاء"),
-    SystemSection("customers", "إدارة العملاء", "المبيعات والعملاء"),
-    SystemSection("inbox", "صندوق الرسائل", "المبيعات والعملاء"),
+    ClientSystemSection("pos", "نقطة البيع POS", "المبيعات والعملاء"),
+    ClientSystemSection("orders", "الطلبات", "المبيعات والعملاء"),
+    ClientSystemSection("customer-service", "خدمة العملاء", "المبيعات والعملاء"),
+    ClientSystemSection("printing", "الطباعة", "المبيعات والعملاء"),
+    ClientSystemSection("post-shipping", "متابعة الشحن", "المبيعات والعملاء"),
+    ClientSystemSection("returns-exchanges", "المرتجعات والاستبدالات", "المبيعات والعملاء"),
+    ClientSystemSection("customers", "إدارة العملاء", "المبيعات والعملاء"),
+    ClientSystemSection("inbox", "صندوق الرسائل", "المبيعات والعملاء"),
 
-    SystemSection("products", "المنتجات", "المنتجات والمخزون"),
-    SystemSection("inventory", "المخزون", "المنتجات والمخزون"),
-    SystemSection("suppliers", "الموردون", "المنتجات والمخزون"),
-    SystemSection("procurement", "المشتريات", "المنتجات والمخزون"),
-    SystemSection("supplier-finance", "حسابات الموردين", "المنتجات والمخزون"),
+    ClientSystemSection("products", "المنتجات", "المنتجات والمخزون"),
+    ClientSystemSection("inventory", "المخزون", "المنتجات والمخزون"),
+    ClientSystemSection("suppliers", "الموردون", "المنتجات والمخزون"),
+    ClientSystemSection("procurement", "المشتريات", "المنتجات والمخزون"),
+    ClientSystemSection("supplier-finance", "حسابات الموردين", "المنتجات والمخزون"),
 
-    SystemSection("printing", "الطباعة", "الشحن والمرتجعات"),
-    SystemSection("post-shipping", "متابعة الشحن", "الشحن والمرتجعات"),
-    SystemSection("shipping", "إعدادات الشحن", "الشحن والمرتجعات"),
-    SystemSection("returns-exchanges", "المرتجعات والاستبدالات", "الشحن والمرتجعات"),
-    SystemSection("cod", "تسويات COD", "الشحن والمرتجعات"),
+    ClientSystemSection("shipping", "إعدادات الشحن", "الشحن والتحصيل"),
+    ClientSystemSection("cod", "تسويات COD", "الشحن والتحصيل"),
 
-    SystemSection("campaigns", "الحملات", "التسويق والذكاء"),
-    SystemSection("marketing", "التسويق", "التسويق والذكاء"),
-    SystemSection("ad-studio", "AI Ad Studio", "التسويق والذكاء"),
-    SystemSection("analytics", "التحليلات", "التسويق والذكاء"),
-    SystemSection("automation", "الأتمتة", "التسويق والذكاء"),
-    SystemSection("ai", "kun AI", "التسويق والذكاء"),
+    ClientSystemSection("campaigns", "الحملات", "التسويق"),
+    ClientSystemSection("marketing", "التسويق", "التسويق"),
+    ClientSystemSection("ad-studio", "AI Ad Studio", "التسويق"),
 
-    SystemSection("finance", "المالية", "المالية والحسابات"),
-    SystemSection("accounting", "الحسابات والحركات", "المالية والحسابات"),
-    SystemSection("profit", "Profit Intelligence", "المالية والحسابات"),
-    SystemSection("wallet", "المحفظة", "المالية والحسابات"),
+    ClientSystemSection("finance", "المالية", "المالية والتحليلات"),
+    ClientSystemSection("accounting", "الحسابات والحركات", "المالية والتحليلات"),
+    ClientSystemSection("profit", "Profit Intelligence", "المالية والتحليلات"),
+    ClientSystemSection("analytics", "التحليلات", "المالية والتحليلات"),
 
-    SystemSection("integrations", "مركز التكاملات", "التشغيل والإدارة"),
-    SystemSection("access", "الفريق والصلاحيات", "التشغيل والإدارة"),
-    SystemSection("approvals", "مركز الموافقات", "التشغيل والإدارة"),
-    SystemSection("ops", "مركز التشغيل", "التشغيل والإدارة"),
-    SystemSection("audit", "سجل النشاط", "التشغيل والإدارة"),
-    SystemSection("admin-clients", "Kun Admin", "التشغيل والإدارة")
+    ClientSystemSection("automation", "الأتمتة", "الذكاء والتكاملات"),
+    ClientSystemSection("ai", "kun AI", "الذكاء والتكاملات"),
+    ClientSystemSection("integrations", "مركز التكاملات", "الذكاء والتكاملات"),
+
+    ClientSystemSection("wallet", "المحفظة", "الحساب"),
+    ClientSystemSection("settings", "الإعدادات", "الحساب")
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MobileSystemSectionsDialog(onDismiss: () -> Unit) {
-    var selected by remember { mutableStateOf<SystemSection?>(null) }
+    var selected by remember { mutableStateOf<ClientSystemSection?>(null) }
     var query by remember { mutableStateOf("") }
 
     BackHandler {
@@ -147,9 +144,9 @@ fun MobileSystemSectionsDialog(onDismiss: () -> Unit) {
                     TopAppBar(
                         title = {
                             Column {
-                                Text("كل أقسام كن أونلاين", fontWeight = FontWeight.ExtraBold)
+                                Text("أقسام حساب العميل", fontWeight = FontWeight.ExtraBold)
                                 Text(
-                                    "${SYSTEM_SECTIONS.size} قسمًا من النظام الكامل",
+                                    "${CLIENT_SYSTEM_SECTIONS.size} قسم تشغيل متاح للعميل",
                                     style = MaterialTheme.typography.labelMedium,
                                     color = Color.White.copy(alpha = .72f)
                                 )
@@ -181,11 +178,10 @@ fun MobileSystemSectionsDialog(onDismiss: () -> Unit) {
 
                     val normalized = query.trim()
                     val filtered = remember(normalized) {
-                        if (normalized.isBlank()) SYSTEM_SECTIONS
-                        else SYSTEM_SECTIONS.filter {
+                        if (normalized.isBlank()) CLIENT_SYSTEM_SECTIONS
+                        else CLIENT_SYSTEM_SECTIONS.filter {
                             it.label.contains(normalized, ignoreCase = true) ||
-                                it.group.contains(normalized, ignoreCase = true) ||
-                                it.view.contains(normalized, ignoreCase = true)
+                                it.group.contains(normalized, ignoreCase = true)
                         }
                     }
 
@@ -223,32 +219,17 @@ fun MobileSystemSectionsDialog(onDismiss: () -> Unit) {
                                     }
                                     Spacer(Modifier.width(12.dp))
                                     Column(Modifier.weight(1f)) {
-                                        Text(
-                                            section.label,
-                                            fontWeight = FontWeight.Bold,
-                                            color = KunColors.Ink
-                                        )
-                                        Text(
-                                            section.group,
-                                            style = MaterialTheme.typography.labelMedium,
-                                            color = KunColors.Ink2
-                                        )
+                                        Text(section.label, fontWeight = FontWeight.Bold, color = KunColors.Ink)
+                                        Text(section.group, style = MaterialTheme.typography.labelMedium, color = KunColors.Ink2)
                                     }
-                                    Icon(
-                                        Icons.Outlined.OpenInNew,
-                                        contentDescription = null,
-                                        tint = KunColors.Ink3
-                                    )
+                                    Icon(Icons.Outlined.OpenInNew, contentDescription = null, tint = KunColors.Ink3)
                                 }
                             }
                         }
                     }
                 }
             } else {
-                SystemSectionWebView(
-                    section = selected!!,
-                    onBack = { selected = null }
-                )
+                ClientSectionWebView(section = selected!!, onBack = { selected = null })
             }
         }
     }
@@ -256,8 +237,8 @@ fun MobileSystemSectionsDialog(onDismiss: () -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SystemSectionWebView(section: SystemSection, onBack: () -> Unit) {
-    val context = LocalContext.current
+private fun ClientSectionWebView(section: ClientSystemSection, onBack: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val sessionCookie = remember { KunApi.sessionCookie(context).orEmpty() }
     var webView by remember { mutableStateOf<WebView?>(null) }
     var fileCallback by remember { mutableStateOf<ValueCallback<Array<Uri>>?>(null) }
@@ -285,7 +266,7 @@ private fun SystemSectionWebView(section: SystemSection, onBack: () -> Unit) {
                 Column {
                     Text(section.label, fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(
-                        "نسخة النظام الكاملة داخل التطبيق",
+                        "حساب العميل",
                         style = MaterialTheme.typography.labelSmall,
                         color = Color.White.copy(alpha = .72f)
                     )
@@ -324,18 +305,11 @@ private fun SystemSectionWebView(section: SystemSection, onBack: () -> Unit) {
                     settings.builtInZoomControls = false
                     settings.displayZoomControls = false
                     settings.mediaPlaybackRequiresUserGesture = true
-                    settings.userAgentString = settings.userAgentString + " KunOnlineNative/2.7.0"
+                    settings.userAgentString = settings.userAgentString + " KunOnlineNative/2.7.1"
 
                     val cookies = CookieManager.getInstance()
                     cookies.setAcceptCookie(true)
                     cookies.setAcceptThirdPartyCookies(this, true)
-                    if (sessionCookie.isNotBlank()) {
-                        cookies.setCookie(
-                            SYSTEM_ORIGIN,
-                            "$sessionCookie; Path=/; Secure; SameSite=Lax"
-                        )
-                        cookies.flush()
-                    }
 
                     webChromeClient = object : WebChromeClient() {
                         override fun onShowFileChooser(
@@ -369,7 +343,9 @@ private fun SystemSectionWebView(section: SystemSection, onBack: () -> Unit) {
 
                         override fun onPageFinished(view: WebView, url: String?) {
                             super.onPageFinished(view, url)
-                            view.evaluateJavascript(openSectionScript(section.view), null)
+                            if (url?.startsWith(SYSTEM_ORIGIN) == true) {
+                                view.evaluateJavascript(openClientSectionScript(section.view), null)
+                            }
                         }
                     }
 
@@ -397,34 +373,94 @@ private fun SystemSectionWebView(section: SystemSection, onBack: () -> Unit) {
                         ).show()
                     }
 
-                    loadUrl(SYSTEM_URL)
+                    fun authenticatedLoad() {
+                        val headers = if (sessionCookie.isBlank()) emptyMap() else mapOf("Cookie" to sessionCookie)
+                        loadUrl(SYSTEM_URL, headers)
+                    }
+
+                    if (sessionCookie.isBlank()) {
+                        authenticatedLoad()
+                    } else {
+                        cookies.setCookie(
+                            SYSTEM_ORIGIN,
+                            "$sessionCookie; Path=/; Secure; SameSite=Lax"
+                        ) {
+                            cookies.flush()
+                            post { authenticatedLoad() }
+                        }
+                    }
                 }
             },
-            update = { current ->
-                webView = current
-            }
+            update = { current -> webView = current }
         )
     }
 }
 
-private fun openSectionScript(viewKey: String): String {
+private fun openClientSectionScript(viewKey: String): String {
     val key = JSONObject.quote(viewKey)
     return """
         (function(){
           var key=$key;
-          var tries=0;
-          function openSection(){
-            var btn=document.querySelector('[data-view="'+key+'"]');
+          var attempts=0;
+          var blocked=['onboarding','readiness','store-access','access','approvals','ops','audit','admin-clients','control'];
+
+          function hardenClientShell(){
+            var style=document.getElementById('kunNativeClientShellStyle');
+            if(!style){
+              style=document.createElement('style');
+              style.id='kunNativeClientShellStyle';
+              style.textContent='.side{display:none!important}.app{grid-template-columns:minmax(0,1fr)!important}.main{width:100%!important;max-width:none!important}.android-download{display:none!important}';
+              document.head.appendChild(style);
+            }
+            blocked.forEach(function(name){
+              document.querySelectorAll('[data-view="'+name+'"],[data-go="'+name+'"]').forEach(function(el){
+                el.style.display='none';
+                el.hidden=true;
+                el.setAttribute('aria-hidden','true');
+              });
+            });
             var download=document.getElementById('androidDownload');
             if(download) download.style.display='none';
-            if(!btn) return false;
+          }
+
+          function tryOpen(){
+            hardenClientShell();
+
+            var permissionReady=document.documentElement.dataset.permissionNavigation==='ready';
+            var btn=document.querySelector('.nav button[data-view="'+key+'"]');
+
+            if(!permissionReady || !btn){
+              return false;
+            }
+
+            var permission=window.KunPermissionNavigationV51;
+            if(permission && Array.isArray(permission.allowed) && permission.allowed.indexOf(key)===-1){
+              var root=document.getElementById('root');
+              if(root) root.innerHTML='<div class="card empty"><h2>القسم غير متاح لهذا الحساب</h2><p>القسم موجود في تطبيق العميل لكنه غير مفعّل ضمن صلاحيات الحساب الحالي.</p></div>';
+              return true;
+            }
+
             btn.click();
+            setTimeout(function(){
+              hardenClientShell();
+              var active=document.querySelector('.nav button.active[data-view]');
+              if(!active || active.dataset.view!==key){
+                try{ if(typeof btn.onclick==='function') btn.onclick(); }catch(_){}
+              }
+            },80);
             return true;
           }
-          if(!openSection()){
+
+          if(!tryOpen()){
             var timer=setInterval(function(){
-              tries++;
-              if(openSection() || tries>=24) clearInterval(timer);
+              attempts++;
+              if(tryOpen() || attempts>=120){
+                clearInterval(timer);
+                if(attempts>=120){
+                  var root=document.getElementById('root');
+                  if(root) root.innerHTML='<div class="card empty"><h2>تعذر فتح القسم</h2><p>أعد المحاولة من زر التحديث أعلى الشاشة.</p></div>';
+                }
+              }
             },250);
           }
         })();
