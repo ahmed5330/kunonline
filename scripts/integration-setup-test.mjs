@@ -13,7 +13,8 @@ const printingRouting=await readFile(new URL('../public/v2/modules-v116-print-ro
 const trackingUi=await readFile(new URL('../public/v2/modules-v82-jt-tracking-cards.js',import.meta.url),'utf8');
 const v2Index=await readFile(new URL('../public/v2/index.html',import.meta.url),'utf8');
 const androidShell=await readFile(new URL('../android/app/src/main/java/com/kunonline/callerid/KunNativeAppV26.kt',import.meta.url),'utf8');
-const androidDateFilter=await readFile(new URL('../android/app/src/main/java/com/kunonline/callerid/MobileDateFilterV267.kt',import.meta.url),'utf8');\nconst androidSystemSections=await readFile(new URL('../android/app/src/main/java/com/kunonline/callerid/KunSystemSections.kt',import.meta.url),'utf8');
+const androidDateFilter=await readFile(new URL('../android/app/src/main/java/com/kunonline/callerid/MobileDateFilterV267.kt',import.meta.url),'utf8');
+const androidSystemSections=await readFile(new URL('../android/app/src/main/java/com/kunonline/callerid/KunSystemSections.kt',import.meta.url),'utf8');
 const androidGradle=await readFile(new URL('../android/app/build.gradle.kts',import.meta.url),'utf8');
 const must=(ok,msg)=>{if(!ok)throw new Error(msg)};
 
@@ -62,7 +63,9 @@ must(printingUi.includes('/api/jt/shipments/${encodeURIComponent(o.id)}')&&print
 must(printingUi.includes("version:'79.8'"),'Printing runtime must identify v79.8');
 must(printingRouting.includes("new Set(['confirmed','preparing'])")&&printingRouting.includes('تم تأكيد الأوردر ونقله تلقائيًا إلى قسم الطباعة'),'Customer Service UI must immediately remove confirmed orders');
 
-must(!androidShell.includes('PrintingMobileV26'),'Android must not duplicate Printing as a separate native workflow');\nfor(const marker of ['dashboard','orders','customer-service','printing','products','inventory','finance','accounting','automation','integrations','settings'])must(androidSystemSections.includes(`SystemSection("${marker}"`),`Android complete-system launcher missing ${marker}`);\nmust(androidSystemSections.includes('CookieManager.getInstance()')&&androidSystemSections.includes('onShowFileChooser')&&androidSystemSections.includes('setDownloadListener'),'Embedded system must share auth and support upload/download workflows');
+must(!androidShell.includes('PrintingMobileV26'),'Android must not duplicate Printing as a separate native workflow');
+for(const marker of ['dashboard','orders','customer-service','printing','products','inventory','finance','accounting','automation','integrations','settings'])must(androidSystemSections.includes(`SystemSection("${marker}"`),`Android complete-system launcher missing ${marker}`);
+must(androidSystemSections.includes('CookieManager.getInstance()')&&androidSystemSections.includes('onShowFileChooser')&&androidSystemSections.includes('setDownloadListener'),'Embedded system must share auth and support upload/download workflows');
 for(const label of ['اليوم','أمس','هذا الأسبوع','الأسبوع الماضي','الشهر الحالي','الشهر الماضي','مدة معينة'])must(androidDateFilter.includes(`"${label}"`),`Android period selector missing ${label}`);
 must(androidDateFilter.includes('DatePickerDialog')&&androidDateFilter.includes('selectCustom'),'Android custom period must allow a start/end date');
 must(androidGradle.includes('versionCode = 119')&&androidGradle.includes('versionName = "2.7.0"'),'Android current release must be v2.7.0 code 119');
