@@ -878,53 +878,103 @@ private fun NativeWalletScreen(onBack: () -> Unit) {
     fun load() { refresh++ }
     LaunchedEffect(refresh) {
         loading = true
+        error = ""
         data = withContext(Dispatchers.IO) { NativeSectionsApi.wallet(context) }
-        error = data["wallet"]?.takeIf { !it.ok }?.message.orEmpty()
+        error = data["access"]?.takeIf { !it.ok }?.message
+            .orEmpty()
+            .ifBlank { data["log"]?.takeIf { !it.ok }?.message.orEmpty() }
         loading = false
     }
 
-    NativeSectionScaffold("المحفظة", "Native · الرصيد والخصومات", onBack, ::load) { padding ->
+    NativeSectionScaffold("المحفظة", "Native · نفس إعدادات الخصم الحالية في السيستم", onBack, ::load) { padding ->
         when {
             loading -> NativeBusy(padding)
-            error.isNotBlank() -> NativeError(padding, error, ::load)
+            error.isNotBlank() && data["access"]?.ok != true -> NativeError(padding, error, ::load)
             else -> {
-                val wallet = data["wallet"]?.obj ?: JSONObject()
+                // /api/subscription/access is the single source of truth used by v127.
+                // Never calculate the client fee from the legacy-compatible /api/wallet fields.
                 val access = data["access"]?.obj ?: JSONObject()
                 val rows = data["log"].rows("log", "entries")
-                val currency = wallet.str("currency").ifBlank { access.str("currency").ifBlank { "EGP" } }
+                val currency = access.str("currency").ifBlank { "EGP" }
+                val trial = access.optBoolean("trialActive", false)
+                val locked = access.optBoolean("locked", false)
+                val balanceEmpty = access.optBoolean("balanceEmpty", false)
+                val orderFee = firstNumber(access, "orderFee")
+                val monthlyMinimum = firstNumber(access, "monthlyMinimum")
+                val balance = firstNumber(access, "balance")
+                val status = when {
+                    trial -> "فترة مجانية"
+                    locked -> "موقوف"
+                    balanceEmpty -> "يحتاج شحن رصيد"
+                    else -> "نشط"
+                }
+                val period = listOf(access.str("periodStart"), access.str("periodEnd"))
+                    .filter { it.isNotBlank() }
+                    .joinToString(" ← ")
+
                 LazyColumn(
                     Modifier.fillMaxSize().padding(padding),
                     contentPadding = PaddingValues(14.dp),
                     verticalArrangement = Arrangement.spacedBy(9.dp)
                 ) {
                     item {
-                        NativeMetricRow(listOf(
-                            "الرصيد الحالي" to money(firstNumber(wallet, "balance"), currency),
-                            "رسوم الأوردر" to money(firstNumber(wallet, "effectiveOrderFee", "baseOrderFee") ?: firstNumber(access, "orderFee"), currency),
-                            "طلبات شحن معلقة" to moneyPlain(firstNumber(wallet, "pendingTopups")),
-                            "أوردرات خصم معلقة" to moneyPlain(firstNumber(wallet, "unbilledOrders"))
-                        ))
+                        NativeMetricRow(
+                            listOf(
+                                "الرصيد الحالي" to money(balance, currency),
+                                "رسوم كل أوردر" to if (trial) "مجانًا" else money(orderFee, currency),
+                                "الحد الأدنى الشهري" to if (trial) "مجانًا" else money(monthlyMinimum, currency),
+                                "الحالة" to status
+                            )
+                        )
                     }
                     item {
                         KunSectionCard {
-                            Text("حالة الحساب", fontWeight = FontWeight.Bold)
+                            Text("إعدادات الخصم الحالية", fontWeight = FontWeight.Bold)
                             Text(
-                                when {
-                                    access.optBoolean("locked", false) -> "الحساب موقوف من إعدادات الاشتراك أو المحفظة."
-                                    access.optBoolean("balanceEmpty", false) -> "الرصيد يحتاج شحن، لكن أقسام النظام متاحة."
-                                    else -> "الحساب نشط."
+                                if (trial) {
+                                    "الفترة المجانية فعالة حتى ${access.str("trialEndsAt").ifBlank { "—" }}؛ لا يتم خلالها خصم رسوم شهرية أو رسوم على الأوردرات."
+                                } else {
+                                    "يتم احتساب خصم الأوردر من قيمة «رسوم كل أوردر» الظاهرة هنا، والحد الأدنى الشهري من إعداد الاشتراك الحالي في السيستم."
                                 },
                                 color = KunColors.Ink2
                             )
+                            if (period.isNotBlank()) {
+                                Text("فترة الحساب الحالية: $period", style = MaterialTheme.typography.bodySmall, color = KunColors.Ink2)
+                            }
                         }
                     }
-                    item { Text("سجل المحفظة", style = MaterialTheme.typography.titleMedium) }
-                    if (rows.isEmpty()) item { KunSectionCard { Text("لا توجد حركات محفظة.", color = KunColors.Ink2) } }
+                    if (balanceEmpty || locked) {
+                        item {
+                            KunSectionCard {
+                                Text("حالة الرصيد", fontWeight = FontWeight.Bold, color = if (locked) KunColors.Brick else KunColors.Ink)
+                                Text(
+                                    when {
+                                        locked -> "الحساب موقوف من إعدادات الاشتراك أو المحفظة."
+                                        else -> "الرصيد يحتاج شحن، لكن أقسام النظام تظل متاحة. العمليات التي تحتاج خصمًا قد تنتظر حتى يتم شحن الرصيد."
+                                    },
+                                    color = KunColors.Ink2
+                                )
+                            }
+                        }
+                    }
+                    item { Text("سجل الرصيد والخصومات", style = MaterialTheme.typography.titleMedium) }
+                    if (rows.isEmpty()) {
+                        item { KunSectionCard { Text("لا توجد حركات محفظة.", color = KunColors.Ink2) } }
+                    }
                     items(rows, key = { it.str("id").ifBlank { it.toString() } }) { row ->
+                        val type = row.str("type")
+                        val amount = firstNumber(row, "amount")
                         NativeSimpleRow(
-                            title = row.str("note").ifBlank { row.str("type").ifBlank { "حركة محفظة" } },
-                            subtitle = row.str("created_at"),
-                            trailing = money(firstNumber(row, "amount"), currency)
+                            title = row.str("note").ifBlank { if (type == "deduct") "خصم" else if (type == "credit") "إضافة رصيد" else "حركة محفظة" },
+                            subtitle = listOf(
+                                row.str("created_at"),
+                                firstNumber(row, "balance_after")?.let { "الرصيد بعدها ${money(it, currency)}" }.orEmpty()
+                            ).filter { it.isNotBlank() }.joinToString(" · "),
+                            trailing = when {
+                                amount == null -> "—"
+                                type == "deduct" -> "− ${money(amount, currency)}"
+                                else -> "+ ${money(amount, currency)}"
+                            }
                         )
                     }
                 }
