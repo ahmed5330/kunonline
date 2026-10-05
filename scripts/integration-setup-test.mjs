@@ -64,13 +64,13 @@ must(printingUi.includes("version:'79.8'"),'Printing runtime must identify v79.8
 must(printingRouting.includes("new Set(['confirmed','preparing'])")&&printingRouting.includes('تم تأكيد الأوردر ونقله تلقائيًا إلى قسم الطباعة'),'Customer Service UI must immediately remove confirmed orders');
 
 must(!androidShell.includes('PrintingMobileV26'),'Android must not duplicate Printing as a separate native workflow');
-for(const marker of ['dashboard','orders','customer-service','printing','products','inventory','finance','accounting','automation','integrations','settings'])must(androidSystemSections.includes(`SystemSection("${marker}"`),`Android complete-system launcher missing ${marker}`);
-must(androidSystemSections.includes('CookieManager.getInstance()')&&androidSystemSections.includes('onShowFileChooser')&&androidSystemSections.includes('setDownloadListener'),'Embedded system must share auth and support upload/download workflows');
+for(const marker of ['dashboard','stores','orders','customer-service','printing','post-shipping','returns-exchanges','customers','products','inventory','shipping','finance','accounting','analytics','automation','integrations','wallet','settings'])must(androidSystemSections.includes(`ClientSystemSection("${marker}"`),`Android client launcher missing ${marker}`);
+for(const marker of ['onboarding','readiness','store-access','access','approvals','ops','audit','admin-clients','control'])must(!androidSystemSections.includes(`ClientSystemSection("${marker}"`),`Android client launcher must exclude admin/internal route ${marker}`);\nmust(androidSystemSections.includes("permissionNavigation==='ready'")&&androidSystemSections.includes('cookies.setCookie(')&&androidSystemSections.includes('post { authenticatedLoad() }'),'Embedded client routing must wait for permissions and establish auth before first load');\nmust(androidSystemSections.includes('onShowFileChooser')&&androidSystemSections.includes('setDownloadListener'),'Embedded client system must support upload/download workflows');
 for(const label of ['اليوم','أمس','هذا الأسبوع','الأسبوع الماضي','الشهر الحالي','الشهر الماضي','مدة معينة'])must(androidDateFilter.includes(`"${label}"`),`Android period selector missing ${label}`);
 must(androidDateFilter.includes('DatePickerDialog')&&androidDateFilter.includes('selectCustom'),'Android custom period must allow a start/end date');
-must(androidGradle.includes('versionCode = 119')&&androidGradle.includes('versionName = "2.7.0"'),'Android current release must be v2.7.0 code 119');
+must(androidGradle.includes('versionCode = 120')&&androidGradle.includes('versionName = "2.7.1"'),'Android current release must be v2.7.1 code 120');
 
 must(trackingUi.includes('PULL_INTERVAL=300000')&&trackingUi.includes('/track?clientId='),'J&T live tracking fallback must remain protected');
 must(jtWorker.includes("PRINT_ORDER_PATH='/webopenplatformapi/api/order/printOrder'"),'Legacy print route remains only for rollback compatibility behind v38 interception');
-console.log('Integration setup checks passed: confirmation routes to web Printing; direct v2 stays in production parity; Android exposes the complete web system with shared auth and keeps the native period selector.');
+console.log('Integration setup checks passed: web Printing remains governed; Android exposes client-only modules, waits for permission routing, and keeps shared auth.');
 await import('./jt-live-shipping-test.mjs');
