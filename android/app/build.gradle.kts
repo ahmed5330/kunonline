@@ -12,9 +12,9 @@ android {
         applicationId = "com.kunonline.callerid.stable"
         minSdk = 29
         targetSdk = 35
-        // v2.6.8 restores resilient order sync and exposes native team communication.
-        versionCode = 118
-        versionName = "2.6.8"
+        // v2.7.0 exposes the complete Kun Online system inside the Android app.
+        versionCode = 119
+        versionName = "2.7.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

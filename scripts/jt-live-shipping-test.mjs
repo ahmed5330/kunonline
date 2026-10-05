@@ -101,11 +101,11 @@ assert.ok(!printingUi.includes('window.print')&&!printingUi.includes('fallbackPr
 assert.ok(!androidShell.includes('PrintingMobileV26')&&!androidShell.includes('Text("الطباعة")'),'Android app must keep Printing in the main web system only');
 for(const label of ['اليوم','أمس','هذا الأسبوع','الأسبوع الماضي','الشهر الحالي','الشهر الماضي','مدة معينة'])assert.ok(androidDateFilter.includes(`"${label}"`),`Android period selector missing ${label}`);
 assert.ok(androidDateFilter.includes('DatePickerDialog')&&androidDateFilter.includes('selectCustom'),'Android custom period must provide a start/end date selection');
-assert.ok(androidGradle.includes('versionCode = 118')&&androidGradle.includes('versionName = "2.6.8"'),'Android current release must be v2.6.8 code 118');
+assert.ok(androidGradle.includes('versionCode = 119')&&androidGradle.includes('versionName = "2.7.0"'),'Android current release must be v2.7.0 code 119');
 
 assert.ok(index.includes('/v2/modules-v81-jt-live-setup.js?v=81.3'));assert.ok(index.includes('/v2/modules-v82-jt-tracking-cards.js?v=82.1'));assert.ok(index.includes('/v2/modules-v83-order-recency.js?v=83.1'));assert.ok(index.includes('/v2/modules-v84-jt-create-setup.js?v=84.5'));
 for(const marker of ['post-shipping','returns-exchanges','jt82-badge','jt_tracking_update','jt_shipment_created','60000','PULL_INTERVAL=300000','MAX_PULL=6','/track?clientId='])assert.ok(trackingUi.includes(marker),`J&T tracking UI missing ${marker}`);
 assert.ok(trackingUi.includes("window.KunPostShippingV47?.render?.()"));
 for(const marker of ['sender_name','sender_mobile','sender_prov','sender_city','sender_area','sender_street','Bill Code','markBusinessRequired','Business Info','Customer Password / API Password','لا تستخدم Private Key'])assert.ok(createSetupUi.includes(marker),`J&T Create Order setup missing ${marker}`);
 for(const marker of ['/api/customer-service','/api/post-shipping','/api/returns-exchanges','history.at(-1)','patchOrder','touch(orderId)','sorted.every'])assert.ok(recencyUi.includes(marker),`Operational recency layer missing ${marker}`);
-console.log('J&T live shipping checks passed: confirmation routes to web Printing; Android has no Printing action; official carrier label still moves the order to shipping in the web system.');
+console.log('J&T live shipping checks passed: confirmation routes to web Printing; Android keeps Printing on the web renderer; official carrier label still moves the order to shipping in the web system.');
