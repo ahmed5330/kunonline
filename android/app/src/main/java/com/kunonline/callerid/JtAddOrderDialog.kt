@@ -161,7 +161,7 @@ fun JntAddOrderDialog(
                 ) {
                     Column {
                         Text("إضافة أوردر", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                        Text("عنوان J&T الرسمي — محافظة ← مدينة/حي ← منطقة", style = MaterialTheme.typography.bodySmall)
+                        Text("عنوان العميل — محافظة ← مدينة/حي ← منطقة", style = MaterialTheme.typography.bodySmall)
                     }
                     TextButton(onClick = onDismiss, enabled = !saving) { Text("إغلاق") }
                 }
@@ -188,7 +188,7 @@ fun JntAddOrderDialog(
                     )
 
                     Spacer(Modifier.height(2.dp))
-                    Text("عنوان J&T", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text("عنوان العميل", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     if (loadingAddresses) LinearProgressIndicator(Modifier.fillMaxWidth())
                     if (addressError.isNotBlank()) Text(addressError, color = MaterialTheme.colorScheme.error)
 
