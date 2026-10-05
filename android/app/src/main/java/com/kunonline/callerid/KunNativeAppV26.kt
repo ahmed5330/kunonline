@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -24,9 +25,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 
 /**
- * Kun Online Android v2.6 shell.
- * Keeps the proven v2.5 experience and adds native J&T order creation and team chat.
- * Printing stays in the main Kun Online system, not in the Android app.
+ * Kun Online Android v2.7 shell.
+ * Keeps the fast native daily workflow and embeds the complete web system for every module.
+ * Web-only workflows such as Printing stay on their proven renderer while remaining accessible in-app.
  */
 @Composable
 fun KunNativeAppV26(activity: MainActivity) {
@@ -34,6 +35,7 @@ fun KunNativeAppV26(activity: MainActivity) {
     var hasSession by remember { mutableStateOf(KunApi.hasSession(context)) }
     var showAddOrder by remember { mutableStateOf(false) }
     var showCollaboration by remember { mutableStateOf(false) }
+    var showSystemSections by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         while (isActive) {
@@ -41,6 +43,7 @@ fun KunNativeAppV26(activity: MainActivity) {
             if (!hasSession) {
                 showAddOrder = false
                 showCollaboration = false
+                showSystemSections = false
             }
             delay(800)
         }
@@ -50,29 +53,37 @@ fun KunNativeAppV26(activity: MainActivity) {
         Box {
             KunNativeAppV25(activity)
 
-            if (hasSession && !showAddOrder && !showCollaboration) {
+            if (hasSession && !showAddOrder && !showCollaboration && !showSystemSections) {
                 Row(
                     modifier = Modifier
                         .align(Alignment.BottomStart)
                         .padding(start = 12.dp, bottom = 86.dp)
                         .zIndex(20f),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     FilledTonalButton(
                         onClick = { showAddOrder = true },
                         modifier = Modifier.height(46.dp),
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 13.dp, vertical = 0.dp)
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 0.dp)
                     ) {
                         Icon(Icons.Outlined.Add, contentDescription = null)
-                        Text("إضافة أوردر")
+                        Text("إضافة")
                     }
                     OutlinedButton(
                         onClick = { showCollaboration = true },
                         modifier = Modifier.height(46.dp),
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 0.dp)
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 0.dp)
                     ) {
                         Icon(Icons.Outlined.ChatBubbleOutline, contentDescription = null)
                         Text("التواصل")
+                    }
+                    OutlinedButton(
+                        onClick = { showSystemSections = true },
+                        modifier = Modifier.height(46.dp),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 0.dp)
+                    ) {
+                        Icon(Icons.Outlined.GridView, contentDescription = null)
+                        Text("الأقسام")
                     }
                 }
             }
@@ -90,6 +101,10 @@ fun KunNativeAppV26(activity: MainActivity) {
 
             if (showCollaboration) {
                 MobileCollaborationDialog(onDismiss = { showCollaboration = false })
+            }
+
+            if (showSystemSections) {
+                MobileSystemSectionsDialog(onDismiss = { showSystemSections = false })
             }
         }
     }
