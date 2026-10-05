@@ -66,7 +66,11 @@ private enum class V25OrderFilter(val label: String, val states: Set<String>) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun KunNativeAppV25(activity: MainActivity) {
+fun KunNativeAppV25(
+    activity: MainActivity,
+    onOpenCollaboration: () -> Unit = {},
+    onOpenSystemSections: () -> Unit = {}
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var loggedIn by remember { mutableStateOf(KunApi.hasSession(context)) }
@@ -226,6 +230,20 @@ fun KunNativeAppV25(activity: MainActivity) {
                                 onClick = { selected = MobileV25Tab.CUSTOMER_SERVICE },
                                 icon = { Icon(Icons.Outlined.SupportAgent, null) },
                                 label = { Text("خدمة العملاء") },
+                                colors = colors
+                            )
+                            NavigationBarItem(
+                                selected = false,
+                                onClick = onOpenCollaboration,
+                                icon = { Icon(Icons.Outlined.ChatBubbleOutline, null) },
+                                label = { Text("التواصل") },
+                                colors = colors
+                            )
+                            NavigationBarItem(
+                                selected = false,
+                                onClick = onOpenSystemSections,
+                                icon = { Icon(Icons.Outlined.GridView, null) },
+                                label = { Text("الأقسام") },
                                 colors = colors
                             )
                             NavigationBarItem(
