@@ -93,8 +93,8 @@ export async function handleSubscriptionControl({request,env,ctx,delegate}){
     if(path==='/api/subscription/access'&&method==='GET')return json({ok:true,...access});
     if(access.locked&&!allowedWhileLocked(path,method)){
       return json({
-        error:'الرصيد غير كافٍ لتشغيل هذا القسم. يمكنك فتح الداشبورد ورفع إثبات شحن الرصيد.',
-        code:'SUBSCRIPTION_BALANCE_REQUIRED',
+        error:'الحساب موقوف حاليًا من إعدادات الاشتراك أو المحفظة. راجع إدارة الحساب.',
+        code:'SUBSCRIPTION_ACCESS_PAUSED',
         access
       },402);
     }
