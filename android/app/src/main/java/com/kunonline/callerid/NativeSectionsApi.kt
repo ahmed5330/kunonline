@@ -6,6 +6,8 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
+import java.time.LocalDate
+import java.time.ZoneId
 
 data class NativeSectionResult(
     val ok: Boolean,
@@ -108,8 +110,16 @@ object NativeSectionsApi {
         return post(context, "/api/inventory/stock-adjust", body)
     }
 
-    fun campaigns(context: Context): NativeSectionResult =
-        get(context, "/api/integrations/meta-ads/campaign-hub", scoped = true)
+    fun campaigns(context: Context, days: Int = 30): NativeSectionResult {
+        val safeDays = days.coerceIn(7, 90)
+        val to = LocalDate.now(ZoneId.of("Africa/Cairo"))
+        val from = to.minusDays((safeDays - 1).toLong())
+        return get(
+            context,
+            "/api/integrations/meta-ads/campaign-hub?from=${from}&to=${to}",
+            scoped = true
+        )
+    }
 
     fun syncCampaigns(context: Context, days: Int = 30): NativeSectionResult {
         val body = JSONObject().put("days", days.coerceIn(7, 90))
@@ -133,6 +143,12 @@ object NativeSectionsApi {
 
     fun validateIntegration(context: Context, connectionId: String, payload: JSONObject = JSONObject()): NativeSectionResult =
         post(context, "/api/integrations/connections/${enc(connectionId)}/validate", payload)
+
+    fun validateJt(context: Context): NativeSectionResult {
+        val scope = scope(context)
+        if (scope.clientId.isBlank()) return NativeSectionResult(false, "تعذر تحديد حساب العميل")
+        return post(context, "/api/jt/validate-auth", JSONObject().put("clientId", scope.clientId))
+    }
 
     fun removeIntegration(context: Context, connectionId: String): NativeSectionResult =
         delete(context, "/api/integrations/connections/${enc(connectionId)}")
