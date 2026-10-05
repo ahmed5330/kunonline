@@ -310,7 +310,49 @@ fun V23CustomerService(snapshot: CommerceSnapshot, onGlobalRefresh: () -> Unit) 
         } else {
             LazyColumn(contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 items(filtered, key = { it.id }) { order ->
-                    V23CustomerServiceCard(order) { selectedOrder = order }
+                    V23CustomerServiceCard(
+                        order = order,
+                        onOpen = { selectedOrder = order },
+                        onCall = {
+                            if (order.phone.isNotBlank()) {
+                                scope.launch {
+                                    val result = withContext(Dispatchers.IO) {
+                                        KunCustomerServiceApi.logContact(context, order.id, "phone", "call")
+                                    }
+                                    if (result.ok) {
+                                        CallActivityStore.mark(context, order.id, order.phone, false)
+                                        runCatching {
+                                            context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:${order.phone}")))
+                                        }
+                                        refreshBoard(order.id)
+                                        onGlobalRefresh()
+                                    } else {
+                                        Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
+                                    }
+                                }
+                            }
+                        },
+                        onWhatsApp = {
+                            if (order.phone.isNotBlank()) {
+                                scope.launch {
+                                    val result = withContext(Dispatchers.IO) {
+                                        val contact = KunCustomerServiceApi.logContact(context, order.id, "whatsapp", "contact")
+                                        if (contact.ok) KunCustomerServiceApi.logWhatsapp(context, order.id) else contact
+                                    }
+                                    if (result.ok) {
+                                        val number = v23WhatsappPhone(order.phone)
+                                        runCatching {
+                                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://wa.me/$number")))
+                                        }
+                                        refreshBoard(order.id)
+                                        onGlobalRefresh()
+                                    } else {
+                                        Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
+                                    }
+                                }
+                            }
+                        }
+                    )
                 }
             }
         }
@@ -351,33 +393,168 @@ fun V23CustomerService(snapshot: CommerceSnapshot, onGlobalRefresh: () -> Unit) 
 }
 
 @Composable
-private fun V23CustomerServiceCard(order: CsOrderUi, onOpen: () -> Unit) {
-    ElevatedCard(modifier = Modifier.fillMaxWidth().clickable(onClick = onOpen)) {
-        Column(Modifier.padding(14.dp)) {
+private fun V23CustomerServiceCard(
+    order: CsOrderUi,
+    onOpen: () -> Unit,
+    onCall: () -> Unit,
+    onWhatsApp: () -> Unit
+) {
+    ElevatedCard(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onOpen),
+        colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(
+            Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
             if (order.returnedFromDeferredToday) {
-                Text("رجع من التأجيل اليوم — يحتاج متابعة", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.height(6.dp))
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(order.name.ifBlank { "عميل بدون اسم" }, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
-                    Text("#${order.ref} • ${v23StateLabel(order.state)}", style = MaterialTheme.typography.bodySmall)
+                Surface(
+                    color = MaterialTheme.colorScheme.errorContainer,
+                    contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                    shape = MaterialTheme.shapes.small
+                ) {
+                    Text(
+                        "رجع من التأجيل اليوم — يحتاج متابعة",
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.labelMedium
+                    )
                 }
-                Text(v23Money(order.total), fontWeight = FontWeight.Bold)
             }
-            if (order.storeName.isNotBlank()) Text(order.storeName, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-            if (order.phone.isNotBlank()) Text(order.phone)
-            if (order.gov.isNotBlank() || order.address.isNotBlank()) Text(listOf(order.gov, order.address).filter { it.isNotBlank() }.joinToString(" — "), style = MaterialTheme.typography.bodySmall)
-            if (order.product.isNotBlank()) Text("${order.product} × ${order.qty}", modifier = Modifier.padding(top = 6.dp))
-            if (order.latestInternalNote.isNotBlank()) Text("آخر ملاحظة: ${order.latestInternalNote}", modifier = Modifier.padding(top = 6.dp), style = MaterialTheme.typography.bodySmall)
-            Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("محاولات التواصل: ${order.contactCount}", style = MaterialTheme.typography.labelMedium)
-                Text("عرض التفاصيل والتعديل", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+
+            Row(verticalAlignment = Alignment.Top) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text(
+                        order.name.ifBlank { "عميل بدون اسم" },
+                        fontWeight = FontWeight.ExtraBold,
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Text(
+                        "#${order.ref}",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Text(
+                        v23Money(order.total),
+                        fontWeight = FontWeight.ExtraBold,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Surface(
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        shape = MaterialTheme.shapes.small
+                    ) {
+                        Text(
+                            v23StateLabel(order.state),
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    }
+                }
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+            if (order.phone.isNotBlank()) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(Icons.Outlined.Call, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                    Text(order.phone, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyLarge)
+                }
+            }
+
+            if (order.gov.isNotBlank() || order.address.isNotBlank()) {
+                Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(Icons.Outlined.LocationOn, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        listOf(order.gov, order.address).filter { it.isNotBlank() }.joinToString(" — "),
+                        modifier = Modifier.weight(1f),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+
+            if (order.product.isNotBlank()) {
+                Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(Icons.Outlined.Inbox, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        "${order.product} × ${order.qty}",
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            }
+
+            if (order.storeName.isNotBlank()) {
+                Text(
+                    order.storeName,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.labelMedium
+                )
+            }
+
+            if (order.latestInternalNote.isNotBlank()) {
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .55f),
+                    shape = MaterialTheme.shapes.small
+                ) {
+                    Text(
+                        "آخر ملاحظة: ${order.latestInternalNote}",
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Surface(
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                    shape = MaterialTheme.shapes.small
+                ) {
+                    Text(
+                        "محاولات التواصل: ${order.contactCount}",
+                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                }
+                Spacer(Modifier.weight(1f))
+                TextButton(onClick = onOpen) {
+                    Text("التفاصيل والتعديل")
+                    Spacer(Modifier.width(4.dp))
+                    Icon(Icons.Outlined.Edit, contentDescription = null, modifier = Modifier.size(17.dp))
+                }
+            }
+
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = onCall,
+                    enabled = order.phone.isNotBlank(),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Outlined.Call, contentDescription = null)
+                    Spacer(Modifier.width(6.dp))
+                    Text("اتصال")
+                }
+                OutlinedButton(
+                    onClick = onWhatsApp,
+                    enabled = order.phone.isNotBlank(),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("واتساب")
+                }
             }
         }
     }
 }
-
 @Composable
 private fun V23OrderDetailDialog(
     order: CsOrderUi,

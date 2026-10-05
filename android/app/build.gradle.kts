@@ -13,8 +13,8 @@ android {
         minSdk = 29
         targetSdk = 35
         // v2.8.1 aligns wallet billing, bottom navigation and customer-address naming.
-        versionCode = 122
-        versionName = "2.8.1"
+        versionCode = 123
+        versionName = "2.8.2"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

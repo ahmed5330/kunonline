@@ -529,7 +529,7 @@ private fun V25Orders(snapshot: CommerceSnapshot, onRefresh: () -> Unit) {
 
 @Composable
 private fun V25CustomerServiceHub(snapshot: CommerceSnapshot, onGlobalRefresh: () -> Unit) {
-    var contacting by remember { mutableStateOf(true) }
+    var contacting by remember { mutableStateOf(false) }
     val dateRevision = MobileDateFilterState.revision
     Column(Modifier.fillMaxSize()) {
         Row(
@@ -537,18 +537,18 @@ private fun V25CustomerServiceHub(snapshot: CommerceSnapshot, onGlobalRefresh: (
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             FilterChip(
-                selected = contacting,
-                onClick = { contacting = true },
-                label = { Text("جاري التواصل") },
-                leadingIcon = { Icon(Icons.Outlined.PhoneInTalk, null, Modifier.size(18.dp)) },
-                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = KunColors.GoldSoft, selectedLabelColor = KunColors.Gold)
-            )
-            FilterChip(
                 selected = !contacting,
                 onClick = { contacting = false },
                 label = { Text("لوحة خدمة العملاء") },
                 leadingIcon = { Icon(Icons.Outlined.SupportAgent, null, Modifier.size(18.dp)) },
                 colors = FilterChipDefaults.filterChipColors(selectedContainerColor = KunColors.PineSoft, selectedLabelColor = KunColors.Pine)
+            )
+            FilterChip(
+                selected = contacting,
+                onClick = { contacting = true },
+                label = { Text("جاري التواصل") },
+                leadingIcon = { Icon(Icons.Outlined.PhoneInTalk, null, Modifier.size(18.dp)) },
+                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = KunColors.GoldSoft, selectedLabelColor = KunColors.Gold)
             )
         }
         key(dateRevision) {
