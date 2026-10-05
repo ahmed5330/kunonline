@@ -12,9 +12,9 @@ android {
         applicationId = "com.kunonline.callerid.stable"
         minSdk = 29
         targetSdk = 35
-        // v2.8.0 replaces the web section launcher with eight native client modules.
-        versionCode = 121
-        versionName = "2.8.0"
+        // v2.8.1 aligns wallet billing, bottom navigation and customer-address naming.
+        versionCode = 122
+        versionName = "2.8.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
