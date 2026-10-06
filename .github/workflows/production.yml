@@ -33,6 +33,9 @@ jobs:
           node --check src/production-caller-jnt-edit.js
           node --check src/production-printing-queue.js
           node --check src/jt-print-workflow-v2.js
+          node --check src/inventory-unit-tracking.js
+          node --check public/v2/modules-v128-unit-tracking.js
+          node scripts/unit-tracking-contract-test.mjs
           node --check src/internal-collaboration-schema.js
           node --check src/index-production-mobile-update.js
           node --check src/index-production-sync.js
