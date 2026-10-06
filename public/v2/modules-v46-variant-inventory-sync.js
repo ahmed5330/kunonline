@@ -9,6 +9,10 @@
   const threshold=(variant,product)=>Math.max(0,num(variant?.lowStockThreshold??product?.lowStockThreshold??5));
 
   async function scope(){return K.scope();}
+  if(typeof K.refresh==='function'){
+    const refresh=K.refresh;
+    K.refresh=function(...args){catalogPromise=null;return refresh.apply(this,args);};
+  }
   async function catalog(force=false){
     const {cid,sid}=await scope(),key=JSON.stringify([cid,sid||'']);
     if(force||catalogScope!==key){catalogPromise=null;catalogScope=key;}

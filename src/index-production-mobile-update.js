@@ -62,7 +62,8 @@ async function websiteWithDirectAndroidDownload(request,env){
 
   let html=await asset.text();
   html=html
-    .replace(/\/v2\/modules-v46-variant-inventory-sync\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v46-variant-inventory-sync.js?v=46.4')
+    .replace(/\/v2\/modules-v46-variant-inventory-sync\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v46-variant-inventory-sync.js?v=46.5')
+    .replace(/\/v2\/modules-v43-product-catalog\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v43-product-catalog.js?v=43.1')
     .replace(/\/v2\/app-v3\.js(?:\?v=[\d.]+)?/g,'/v2/app-v3.js?v=3.3')
     .replace(/\/v2\/modules-v19\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v19.js?v=20.3')
     .replace(/\/v2\/modules-v22\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v22.js?v=22.1')
