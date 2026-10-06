@@ -13,7 +13,7 @@ import {handleProductionEasyOrdersHealth} from './production-easyorders-health.j
 import {reconcileFinancePresentation} from './production-finance-presentation.js';
 import {reconcileMonthlySubscriptions} from './subscription-billing.js';
 import {handleSubscriptionControl} from './subscription-control.js';
-import {handleInventoryUnitTracking,syncInventoryTrackingAfterResponse} from './inventory-unit-tracking.js';
+import {handleInventoryUnitTracking,syncInventoryTrackingAfterResponse,reconcileTrackedOrderLifecycles} from './inventory-unit-tracking.js';
 
 const LEGACY_APK_URL='https://github.com/ahmed5330/kunonline/releases/download/android-latest/Kun-Online-Mobile.apk';
 const DIRECT_APK_PATH='/api/mobile/app-update/apk';
@@ -197,5 +197,10 @@ export default {
 
     return app.fetch(request,env,ctx);
   },
-  scheduled(event,env,ctx){const dataEnv=previewRuntimeEnv(env);ctx?.waitUntil?.(reconcileMonthlySubscriptions(dataEnv,{limit:1000}).catch(()=>[]));return app.scheduled?.(event,env,ctx);}
+  scheduled(event,env,ctx){
+    const dataEnv=previewRuntimeEnv(env);
+    ctx?.waitUntil?.(reconcileMonthlySubscriptions(dataEnv,{limit:1000}).catch(()=>[]));
+    ctx?.waitUntil?.(reconcileTrackedOrderLifecycles(dataEnv,{limit:1000,actor:'scheduled'}).catch(()=>({ok:false})));
+    return app.scheduled?.(event,env,ctx);
+  }
 };
