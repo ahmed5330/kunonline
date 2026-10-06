@@ -10,6 +10,9 @@
         android:label="Kun Online"
         android:allowBackup="false"
         android:usesCleartextTraffic="false">
+        <meta-data
+            android:name="com.google.mlkit.vision.DEPENDENCIES"
+            android:value="barcode_ui" />
         <activity
             android:name=".CallerCardActivity"
             android:exported="false"
