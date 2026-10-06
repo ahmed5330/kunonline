@@ -42,7 +42,7 @@ for(const path of [
   '/api/inventory/unit-tracking/units',
   '/api/inventory/unit-tracking/qr'
 ]) assert.ok(backend.includes(path)||production.includes(path),`Unit tracking integration missing ${path}`);
-assert.ok(backend.includes('api\\/jt\\/shipments\\/')&&backend.includes('\\/print
+assert.ok(backend.includes(String.raw`api\/jt\/shipments\/`)&&backend.includes(String.raw`\/print$`),'J&T official print route must be a unit lifecycle boundary');
 
 assert.ok(backend.includes("status IN ('legacy_outbound','in_stock','returned_in_stock')"),'Historical outbound pieces must remain claimable by pre-existing live allocations');
 assert.ok(backend.includes('desiredAvailable')&&backend.includes('remaining_qty'),'Historical batch backfill must respect remaining physical stock, not initial quantity');
