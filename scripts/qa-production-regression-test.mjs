@@ -58,4 +58,7 @@ assert.equal(vm.runInContext("orderFilters.source='web';filteredOrders().map(o=>
 assert.equal(vm.runInContext("orderFilters.payment='__unknown__';filteredOrders().map(o=>o.id).join(',')",appContext),'c');
 assert.equal(vm.runInContext("orderFilters.payment='cash';orderFilters.carrier='J&T';filteredOrders().map(o=>o.id).join(',')",appContext),'a');
 assert.match(vm.runInContext("orderFilter('source','قنوات البيع')",appContext),/value="chat"/);
+let readinessLoads=0;appContext.window.KunReadinessV19={render:()=>{readinessLoads++;}};
+vm.runInContext("view='readiness';render();render();",appContext);
+assert.equal(readinessLoads,2,'Restoring or refreshing readiness must invoke its renderer without a sidebar click');
 console.log('QA Production regression tests passed: catalog scope, phone validation, expense reconciliation, v27 date filtering.');

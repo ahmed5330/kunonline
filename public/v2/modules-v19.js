@@ -19,6 +19,6 @@
     };
     root.querySelector('#rrReload')?.addEventListener('click',load);load();
   }
-  function hook(){document.addEventListener('click',e=>{const b=e.target.closest('.nav button');if(b?.dataset.view==='readiness')setTimeout(()=>render(document.getElementById('root')),0);});}
-  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',hook);else hook();
+  window.KunReadinessV19={render};
+  if(typeof view!=='undefined'&&view==='readiness')render(document.getElementById('root'));
 })();
