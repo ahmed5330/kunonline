@@ -9,7 +9,7 @@ import {handleMobileAppUpdate} from './mobile-app-update.js';
 import {handleCustomerServicePeriodV111} from './customer-service-period-v111.js';
 import {handleSubscriptionControl} from './subscription-control.js';
 import {reconcileMonthlySubscriptions} from './subscription-billing.js';
-import {handleInventoryUnitTracking,syncInventoryTrackingAfterResponse} from './inventory-unit-tracking.js';
+import {handleInventoryUnitTracking,syncInventoryTrackingAfterResponse,reconcileTrackedOrderLifecycles} from './inventory-unit-tracking.js';
 
 const V2_UI_SCRIPTS=[
   '<script src="/v2/modules-v105-customer-service-claim.js?v=105.2" data-kun-customer-service-claim="1"></script>',
@@ -109,7 +109,11 @@ export default {
     if(handled)return finish(handled);
     return injectV2Ui(request,await finish(await app.fetch(request,env,ctx)));
   },
-  scheduled(event,env,ctx){ctx?.waitUntil?.(reconcileMonthlySubscriptions(env,{limit:1000}).catch(()=>[]));return app.scheduled?.(event,env,ctx);}
+  scheduled(event,env,ctx){
+    ctx?.waitUntil?.(reconcileMonthlySubscriptions(env,{limit:1000}).catch(()=>[]));
+    ctx?.waitUntil?.(reconcileTrackedOrderLifecycles(env,{limit:1000,actor:'scheduled'}).catch(()=>({ok:false})));
+    return app.scheduled?.(event,env,ctx);
+  }
 };
 
 export {SyncEntrypoint} from './index-commerce-v38-base.js';
