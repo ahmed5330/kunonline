@@ -107,7 +107,7 @@ async function productInfo(env,{clientId,productId,variantId=null}){
 }
 
 async function reconcileBatchItem(env,item,{actor='system'}={}){
-  const target=Math.max(0,Math.floor(num(item.initial_qty))),desiredAvailable=Math.max(0,Math.min(target,Math.floor(num(item.remaining_qty)))),row=await env.DB.prepare('SELECT COUNT(*) n FROM inventory_units WHERE client_id=? AND batch_item_id=?').bind(item.client_id,item.id).first(),have=num(row?.n);
+  const target=Math.max(0,Math.floor(num(item.initial_qty))),remaining=item.remaining_qty===undefined||item.remaining_qty===null?target:Math.floor(num(item.remaining_qty)),desiredAvailable=Math.max(0,Math.min(target,remaining)),row=await env.DB.prepare('SELECT COUNT(*) n FROM inventory_units WHERE client_id=? AND batch_item_id=?').bind(item.client_id,item.id).first(),have=num(row?.n);
   const p=await productInfo(env,{clientId:item.client_id,productId:item.product_id,variantId:item.variant_id||null});
   let created=0;
   for(let i=have;i<target;i++){
@@ -185,7 +185,8 @@ async function stockAllocations(env,clientId,orderId){
 async function ensureOrderUnitAssignments(env,{clientId,orderId,actor='system'}){
   const allocations=await stockAllocations(env,clientId,orderId);let assigned=0;
   for(const a of allocations){
-    await reconcileBatchItem(env,{id:a.batch_item_id,batch_id:a.batch_id,client_id:a.client_id,store_id:a.store_id,product_id:a.product_id,variant_id:a.variant_id,product_name:a.product_name,initial_qty:(await env.DB.prepare('SELECT initial_qty FROM inventory_batch_items WHERE id=?').bind(a.batch_item_id).first())?.initial_qty||0,batch_name:a.batch_name,created_at:a.created_at},{actor});
+    const batchState=await env.DB.prepare('SELECT i.initial_qty,i.remaining_qty,b.created_at batch_created_at,b.name batch_name FROM inventory_batch_items i JOIN inventory_batches b ON b.id=i.batch_id AND b.client_id=i.client_id WHERE i.id=? AND i.client_id=?').bind(a.batch_item_id,clientId).first();
+    await reconcileBatchItem(env,{id:a.batch_item_id,batch_id:a.batch_id,client_id:a.client_id,store_id:a.store_id,product_id:a.product_id,variant_id:a.variant_id,product_name:a.product_name,initial_qty:batchState?.initial_qty||0,remaining_qty:batchState?.remaining_qty,batch_name:batchState?.batch_name||a.batch_name,batch_created_at:batchState?.batch_created_at},{actor});
     const needed=Math.max(0,Math.floor(num(a.qty))),existing=num((await env.DB.prepare('SELECT COUNT(*) n FROM order_unit_allocations WHERE client_id=? AND order_id=? AND stock_allocation_id=?').bind(clientId,orderId,a.id||a.stock_allocation_id||orderId).first())?.n),left=needed-existing;if(left<=0)continue;
     const {results:units=[]}=await env.DB.prepare("SELECT * FROM inventory_units WHERE client_id=? AND batch_item_id=? AND status IN ('legacy_outbound','in_stock','returned_in_stock') AND current_order_id IS NULL ORDER BY CASE status WHEN 'legacy_outbound' THEN 0 ELSE 1 END,received_at,created_at,id LIMIT ?").bind(clientId,a.batch_item_id,left).all();
     if(units.length<left)fail(`لا توجد أكواد قطع كافية لتغطية أوردر ${orderId}. المطلوب ${left} والمتاح ${units.length}.`,409,'UNIT_TRACKING_COVERAGE_MISMATCH');
@@ -215,16 +216,19 @@ export async function syncOrderUnitTracking(env,{clientId,orderId,actor='system'
 
 export async function reconcileTrackedOrderLifecycles(env,{clientId=null,limit=500,actor='system'}={}){
   await ensureInventoryUnitSchema(env);
-  const binds=[];let where='';
-  if(clientId){where='WHERE a.client_id=?';binds.push(clientId);}
-  binds.push(Math.max(1,Math.min(2000,Number(limit)||500)));
-  const {results=[]}=await env.DB.prepare(`SELECT DISTINCT a.client_id,a.order_id FROM order_unit_allocations a ${where} ORDER BY a.updated_at DESC LIMIT ?`).bind(...binds).all();
-  const outcomes=[];
-  for(const row of results){
+  const cap=Math.max(1,Math.min(2000,Number(limit)||500)),seen=new Map(),add=rows=>{for(const row of rows||[]){if(!row?.client_id||!row?.order_id)continue;if(clientId&&String(row.client_id)!==String(clientId))continue;seen.set(`${row.client_id}:${row.order_id}`,row);}};
+  const own=await env.DB.prepare(`SELECT DISTINCT client_id,order_id FROM order_unit_allocations ${clientId?'WHERE client_id=?':''} ORDER BY updated_at DESC LIMIT ?`).bind(...(clientId?[clientId,cap]:[cap])).all().catch(()=>({results:[]}));
+  add(own.results);
+  const modern=await env.DB.prepare(`SELECT DISTINCT a.client_id,a.order_id FROM order_item_stock_allocations a JOIN orders o ON o.id=a.order_id AND o.client_id=a.client_id WHERE a.status='allocated' ${clientId?'AND a.client_id=?':''} ORDER BY a.created_at DESC LIMIT ?`).bind(...(clientId?[clientId,cap]:[cap])).all().catch(()=>({results:[]}));
+  add(modern.results);
+  const legacy=await env.DB.prepare(`SELECT DISTINCT a.client_id,a.order_id FROM order_stock_allocations a JOIN orders o ON o.id=a.order_id AND o.client_id=a.client_id WHERE a.status='allocated' ${clientId?'AND a.client_id=?':''} ORDER BY a.created_at DESC LIMIT ?`).bind(...(clientId?[clientId,cap]:[cap])).all().catch(()=>({results:[]}));
+  add(legacy.results);
+  const rows=[...seen.values()].slice(0,cap),outcomes=[];
+  for(const row of rows){
     try{outcomes.push(await syncOrderUnitTracking(env,{clientId:row.client_id,orderId:row.order_id,actor,source:'lifecycle_reconcile'}));}
     catch(error){outcomes.push({ok:false,clientId:row.client_id,orderId:row.order_id,error:String(error?.message||error)});}
   }
-  return {ok:true,checked:results.length,changed:outcomes.reduce((sum,x)=>sum+num(x?.changed),0),outcomes};
+  return {ok:true,checked:rows.length,changed:outcomes.reduce((sum,x)=>sum+num(x?.changed),0),outcomes};
 }
 
 export async function reconcileAllClientsUnitCoverage(env,{limit=500,actor='scheduled'}={}){
