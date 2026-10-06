@@ -60,21 +60,21 @@
   function nodesFor(view,page){if(view==='customer-service')return [...page.querySelectorAll('[data-cs-order]')];if(view==='printing')return [...page.querySelectorAll('[data-print79-order]')];if(view==='post-shipping')return [...page.querySelectorAll('[data-v47-order]')];if(view==='returns-exchanges')return [...page.querySelectorAll('[data-v56-order]')];if(view==='orders')return [...page.querySelectorAll('tbody tr')].filter(row=>row.querySelector('[data-order],[data-order-v27]'));return [];}
   function refreshCounts(view,page){
     if(view==='customer-service'){
-      page.querySelectorAll('.cs-column').forEach(col=>{const n=[...col.querySelectorAll(':scope .cs-list > [data-cs-order]')].filter(x=>!x.classList.contains('kun-op-date-hidden')).length,chip=col.querySelector('.cs-count');if(chip)chip.textContent=String(n);});
-      const deferred=page.querySelector('.cs-deferred-grid');if(deferred){const n=[...deferred.querySelectorAll(':scope > [data-cs-order]')].filter(x=>!x.classList.contains('kun-op-date-hidden')).length,chip=page.querySelector('.cs-deferred-head .cs-count');if(chip)chip.textContent=String(n);}
+      page.querySelectorAll('.cs-column').forEach(col=>{const n=[...col.querySelectorAll(':scope .cs-list > [data-cs-order]')].filter(x=>!x.classList.contains('kun-op-date-hidden')).length,chip=col.querySelector('.cs-count');if(chip&&chip.textContent!==String(n))chip.textContent=String(n);});
+      const deferred=page.querySelector('.cs-deferred-grid');if(deferred){const n=[...deferred.querySelectorAll(':scope > [data-cs-order]')].filter(x=>!x.classList.contains('kun-op-date-hidden')).length,chip=page.querySelector('.cs-deferred-head .cs-count');if(chip&&chip.textContent!==String(n))chip.textContent=String(n);}
     }
-    if(view==='post-shipping')page.querySelectorAll('.ps-column').forEach(col=>{const n=[...col.querySelectorAll('[data-v47-order]')].filter(x=>!x.classList.contains('kun-op-date-hidden')).length,chip=col.querySelector('.cs-count');if(chip)chip.textContent=String(n);});
-    if(view==='returns-exchanges')page.querySelectorAll('.rx-column').forEach(col=>{const n=[...col.querySelectorAll('[data-v56-order]')].filter(x=>!x.classList.contains('kun-op-date-hidden')).length,chip=col.querySelector('.cs-count');if(chip)chip.textContent=String(n);});
+    if(view==='post-shipping')page.querySelectorAll('.ps-column').forEach(col=>{const n=[...col.querySelectorAll('[data-v47-order]')].filter(x=>!x.classList.contains('kun-op-date-hidden')).length,chip=col.querySelector('.cs-count');if(chip&&chip.textContent!==String(n))chip.textContent=String(n);});
+    if(view==='returns-exchanges')page.querySelectorAll('.rx-column').forEach(col=>{const n=[...col.querySelectorAll('[data-v56-order]')].filter(x=>!x.classList.contains('kun-op-date-hidden')).length,chip=col.querySelector('.cs-count');if(chip&&chip.textContent!==String(n))chip.textContent=String(n);});
   }
   async function apply(view=activeView()){
     if(!VIEWS.has(view))return;const page=currentPage(view);if(!page)return;ensureStyle();const bar=toolbar(view,page),state=stateFor(view),[from,to]=rangeFor(state.period,state.from,state.to),nodes=nodesFor(view,page);let visible=0;
     if(view==='customer-service'){
       for(const node of nodes){node.classList.remove('kun-op-date-hidden');visible++;}
     }else{
-      const map=await orderMap();
-      for(const node of nodes){const id=orderIdFor(node),date=dateFromNode(node)||map.get(id)||'';if(date)node.dataset.orderDate=date;const show=!date||(date>=from&&date<=to);node.classList.toggle('kun-op-date-hidden',!show);if(show)visible++;}
+      const map=await orderMap();if(activeView()!==view||currentPage(view)!==page)return;
+      for(const node of nodesFor(view,page)){const id=orderIdFor(node),date=dateFromNode(node)||map.get(id)||'';if(date)node.dataset.orderDate=date;const show=!date||(date>=from&&date<=to);node.classList.toggle('kun-op-date-hidden',!show);if(show)visible++;}
     }
-    refreshCounts(view,page);const counter=bar.querySelector('.kun-op-date-count');if(counter)counter.textContent=`${visible} أوردر · ${from}${to!==from?` ← ${to}`:''}`;
+    refreshCounts(view,page);const counter=bar.querySelector('.kun-op-date-count');const text=`${visible} أوردر · ${from}${to!==from?` ← ${to}`:''}`;if(counter&&counter.textContent!==text)counter.textContent=text;
   }
   async function release(orderId){if(!orderId)return;const client=await cid();if(!client)return;try{const response=await fetch(`/api/customer-service/orders/${encodeURIComponent(orderId)}/release-contact?clientId=${encodeURIComponent(client)}`,{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({clientId:client})}),data=await response.json().catch(()=>({}));if(!response.ok&&response.status!==409)throw new Error(data.error||`HTTP ${response.status}`);claimNames.delete(String(orderId));window.dispatchEvent(new CustomEvent('kun:customer-service-contact-released',{detail:{orderId,state:data.state||'',releasedAt:Date.now()}}));window.KunCustomerServiceClaimV105?.refresh?.();}catch(error){console.warn('Temporary Customer Service claim release failed',error);}}
   function scheduleRelease(orderId,delay){clearTimeout(releaseTimers.get(String(orderId)));releaseTimers.set(String(orderId),setTimeout(()=>{releaseTimers.delete(String(orderId));release(orderId);},delay));}
