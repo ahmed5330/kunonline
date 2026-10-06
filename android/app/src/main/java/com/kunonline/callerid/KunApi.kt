@@ -37,7 +37,7 @@ object KunApi {
             readTimeout = 15000
             setRequestProperty("Accept", "application/json")
             setRequestProperty("Content-Type", "application/json; charset=utf-8")
-            setRequestProperty("X-Kun-Mobile", "native-android/2.8.1")
+            setRequestProperty("X-Kun-Mobile", "native-android/2.8.3")
             if (!cookie.isNullOrBlank()) setRequestProperty("Cookie", cookie)
             if (body != null) doOutput = true
         }
