@@ -10,6 +10,7 @@ import {handleCollaborationOrderSearch} from './internal-collaboration-order-sea
 import {ensureInternalCollaborationSchema} from './internal-collaboration-schema.js';
 import {handleProductionPreviewParity} from './production-preview-parity.js';
 import {handleProductionEasyOrdersHealth} from './production-easyorders-health.js';
+import {reconcileFinancePresentation} from './production-finance-presentation.js';
 import {reconcileMonthlySubscriptions} from './subscription-billing.js';
 import {handleSubscriptionControl} from './subscription-control.js';
 
@@ -61,6 +62,9 @@ async function websiteWithDirectAndroidDownload(request,env){
 
   let html=await asset.text();
   html=html
+    .replace(/\/v2\/app-v3\.js(?:\?v=[\d.]+)?/g,'/v2/app-v3.js?v=3.1')
+    .replace(/\/v2\/modules-v22\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v22.js?v=22.1')
+    .replace(/\/v2\/modules-v80-jnt-address-cascade-v805\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v80-jnt-address-cascade-v805.js?v=80.6')
     .replace(/\/v2\/modules-v121-dashboard-sync-guard\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v121-dashboard-sync-guard.js?v=121.1')
     .replaceAll(LEGACY_APK_URL,DIRECT_APK_PATH)
     .replaceAll('/v2/modules-v51-permission-navigation.js?v=51.10','/v2/modules-v51-permission-navigation.js?v=51.15')
@@ -172,7 +176,7 @@ export default {
 
     if(shouldUsePreviewBackend(request)){
       const preview=await previewFetch(request,env);
-      if(preview)return preview;
+      if(preview)return reconcileFinancePresentation(request,preview,dataEnv);
     }
 
     return app.fetch(request,env,ctx);

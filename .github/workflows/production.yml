@@ -42,6 +42,8 @@ jobs:
           node scripts/integration-setup-test.mjs
       - name: Dashboard Easy Orders Preview regression
         run: node scripts/dashboard-sync-guard-test.mjs
+      - name: QA catalog, dates, phones and accounting presentation regression
+        run: node scripts/qa-production-regression-test.mjs
       - name: Validate Production composition and sync policy
         run: node scripts/verify-production-config.mjs
       - name: Verify Worker builds without touching Production
