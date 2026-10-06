@@ -227,6 +227,17 @@ export async function reconcileTrackedOrderLifecycles(env,{clientId=null,limit=5
   return {ok:true,checked:results.length,changed:outcomes.reduce((sum,x)=>sum+num(x?.changed),0),outcomes};
 }
 
+export async function reconcileAllClientsUnitCoverage(env,{limit=500,actor='scheduled'}={}){
+  await ensureInventoryUnitSchema(env);
+  const {results=[]}=await env.DB.prepare('SELECT DISTINCT client_id FROM products WHERE client_id IS NOT NULL ORDER BY client_id LIMIT ?').bind(Math.max(1,Math.min(2000,Number(limit)||500))).all();
+  const outcomes=[];
+  for(const row of results){
+    try{outcomes.push({clientId:row.client_id,...await reconcileAllUnitCoverage(env,{clientId:row.client_id,actor})});}
+    catch(error){outcomes.push({clientId:row.client_id,ok:false,error:String(error?.message||error)});}
+  }
+  return {ok:true,checked:results.length,created:outcomes.reduce((sum,x)=>sum+num(x?.created),0),outcomes};
+}
+
 async function retireUnits(env,{clientId,storeId,productId,variantId=null,qty,actor='system',note='تسوية مخزون سالبة'}){
   const count=Math.max(0,Math.floor(qty));if(!count)return 0;await reconcileEntityStock(env,{clientId,storeId,productId,variantId,actor});
   const {results=[]}=await env.DB.prepare("SELECT * FROM inventory_units WHERE client_id=? AND store_id IS ? AND product_id=? AND COALESCE(variant_id,'')=COALESCE(?,'') AND status IN ('in_stock','returned_in_stock') AND current_order_id IS NULL ORDER BY received_at,created_at,id LIMIT ?").bind(clientId,storeId||null,productId,variantId,count).all();
