@@ -1,8 +1,8 @@
 /* Kun Online v128 — unit-level product coding, QR scanning and lineage. */
 (function(){
   const K=window.KunActionsV23;if(!K)return;
-  const STATUS={in_stock:'في المخزون',returned_in_stock:'مرتجع وعاد للمخزون',reserved:'محجوز لأوردر',shipped:'مع شركة الشحن',delivered:'تم تسليمه للعميل',retired:'خرج من المخزون'};
-  const EVENT={received_into_inventory:'دخول القطعة للمخزون',reserved_for_order:'حجز القطعة للأوردر',handed_to_shipping:'تسليم القطعة للشحن',delivered_to_customer:'تسليم القطعة للعميل',returned_to_inventory:'استرجاع القطعة للمخزون',reservation_released:'فك حجز القطعة',manual_stock_out:'خروج يدوي من المخزون',order_state_synced:'مزامنة حالة الأوردر'};
+  const STATUS={in_stock:'في المخزون',returned_in_stock:'مرتجع وعاد للمخزون',reserved:'محجوز لأوردر',shipped:'مع شركة الشحن',delivered:'تم تسليمه للعميل',retired:'خرج من المخزون',legacy_outbound:'حركة تاريخية خارج المخزون'};
+  const EVENT={received_into_inventory:'دخول القطعة للمخزون',reserved_for_order:'حجز القطعة للأوردر',handed_to_shipping:'تسليم القطعة للشحن',delivered_to_customer:'تسليم القطعة للعميل',returned_to_inventory:'استرجاع القطعة للمخزون',reservation_released:'فك حجز القطعة',manual_stock_out:'خروج يدوي من المخزون',legacy_backfill_outbound:'حركة تاريخية قبل التتبع',legacy_backfill_recovered:'مطابقة تاريخية مع المخزون',order_state_synced:'مزامنة حالة الأوردر'};
   let busy=false,scanStop=null;
   const esc=v=>K.esc(String(v??''));
   const dt=v=>{if(!v)return '—';try{return new Intl.DateTimeFormat('ar-EG',{timeZone:'Africa/Cairo',dateStyle:'medium',timeStyle:'short'}).format(new Date(v));}catch{return String(v)}};
