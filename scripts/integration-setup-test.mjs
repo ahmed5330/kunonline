@@ -78,6 +78,8 @@ must(!androidShell.includes('Text("التواصل")')&&!androidShell.includes('T
 must(androidAddOrder.includes('Text("عنوان العميل — محافظة ← مدينة/حي ← منطقة"')&&androidAddOrder.includes('Text("عنوان العميل", style = MaterialTheme.typography.titleMedium'),'Add Order must name the J&T-backed address section عنوان العميل');
 must(androidNativeSectionsApi.includes('/print')&&androidSystemSections.includes('CallerJntOrderEditActivity'),'Native Printing must use governed J&T create/print and the native J&T editor');
 must(androidNativeSectionsApi.includes('/api/integration-secrets/')&&androidSystemSections.includes('حفظ واختبار'),'Native Integrations must write encrypted secrets and validate connections');
+must(androidNativeSectionsApi.includes('/api/inventory/unit-tracking/lookup')&&androidSystemSections.includes('GmsBarcodeScanning.getClient')&&androidSystemSections.includes('قراءة QR'),'Native Inventory must expose the per-piece QR scanner and history lookup');
+must(androidGradle.includes('play-services-code-scanner:16.1.0'),'Android QR scanner dependency must stay pinned to the validated Google Code Scanner release');
 for(const label of ['اليوم','أمس','هذا الأسبوع','الأسبوع الماضي','الشهر الحالي','الشهر الماضي','مدة معينة'])must(androidDateFilter.includes(`"${label}"`),`Android period selector missing ${label}`);
 must(androidDateFilter.includes('DatePickerDialog')&&androidDateFilter.includes('selectCustom'),'Android custom period must allow a start/end date');
 must(androidGradle.includes('versionCode = 123')&&androidGradle.includes('versionName = "2.8.2"'),'Android current release must be v2.8.2 code 123');
