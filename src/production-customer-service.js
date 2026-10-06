@@ -111,7 +111,9 @@ async function details(env,clientId,orderId){
   return {ok:true,order:{id:o.id,ref:o.ref,clientId:o.clientId,storeId:'',state:o.state,couponCode:r.coupon_code||'',customerNote:o.customerNote,awb:o.awb},customer:{id:r.customer_id||'',name:o.name,phone:o.phone,government:o.gov,address:o.address},address:{government:o.gov,address:o.address},items:[item],summary:{total:o.total,qty:o.qty,discountAmount:n(r.discount_amount)},raw:o};
 }
 async function catalog(delegate,request,env,ctx,clientId){
-  const u=new URL(request.url);u.pathname='/api/products';u.search='';u.searchParams.set('clientId',clientId);
+  // Keep the detailed catalog route and store scope. The basic products route
+  // omits variants, so inventory would silently report zero for variant stock.
+  const u=new URL(request.url);u.pathname='/api/catalog/products';u.searchParams.set('clientId',clientId);
   const r=await delegate.fetch(new Request(u,{method:'GET',headers:request.headers}),env,ctx),d=await r.clone().json().catch(()=>[]);
   if(!r.ok)return r;
   const products=Array.isArray(d)?d:(Array.isArray(d?.products)?d.products:[]);
