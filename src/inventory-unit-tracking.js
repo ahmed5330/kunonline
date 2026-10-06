@@ -291,7 +291,7 @@ async function unitDetails(env,{clientId,code}){
     env.DB.prepare('SELECT id,order_id,status,created_at,updated_at,released_at FROM order_unit_allocations WHERE client_id=? AND unit_id=? ORDER BY created_at DESC').bind(clientId,unit.id).all()
   ]);
   const orderIds=[...new Set(allocations.map(x=>x.order_id).filter(Boolean))];let orders=[];
-  if(orderIds.length){const r=await env.DB.prepare(`SELECT id,ref,state,awb,name,phone,date,created_at,return_type FROM orders WHERE client_id=? AND id IN (${orderIds.map(()=>'?').join(',')})`).bind(clientId,...orderIds).all();orders=r.results||[];}
+  if(orderIds.length){const r=await env.DB.prepare(`SELECT id,ref,state,awb,date,created_at,return_type FROM orders WHERE client_id=? AND id IN (${orderIds.map(()=>'?').join(',')})`).bind(clientId,...orderIds).all();orders=r.results||[];}
   return {unit:{...unit,metadata:JSON.parse(unit.metadata_json||'{}'),qrValue:qrValue(unit.unit_code)},events:events.map(x=>({...x,metadata:(()=>{try{return JSON.parse(x.metadata_json||'{}')}catch{return {}}})()})),allocations,orders};
 }
 
