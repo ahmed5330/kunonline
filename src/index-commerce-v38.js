@@ -96,18 +96,18 @@ export default {
     if(subscription)return subscription;
     const unitTracking=await handleInventoryUnitTracking({request,env,ctx,delegate:app});
     if(unitTracking)return unitTracking;
-    const finish=response=>syncInventoryTrackingAfterResponse({request,response,env,actor:'system'});
     const periodBoard=await handleCustomerServicePeriodV111({request,env,ctx,delegate:app});
-    if(periodBoard)return finish(periodBoard);
+    if(periodBoard)return periodBoard;
     const operational=await handleOperationalWorkflowV110({request,env,ctx,delegate:app});
-    if(operational)return finish(operational);
+    if(operational)return operational;
     const automation=await handleAutomationWorkflowsV104({request,env,ctx,delegate:app});
-    if(automation)return finish(automation);
+    if(automation)return automation;
     const monthly=await handleAccountingMonthly({request,env,ctx,delegate:app});
-    if(monthly)return finish(monthly);
+    if(monthly)return monthly;
     const handled=await handleJtHistoryReconcile({request,env,ctx,delegate:app});
-    if(handled)return finish(handled);
-    return injectV2Ui(request,await finish(await app.fetch(request,env,ctx)));
+    if(handled)return handled;
+    const response=await app.fetch(request,env,ctx);
+    return injectV2Ui(request,await syncInventoryTrackingAfterResponse({request,response,env,actor:'system'}));
   },
   scheduled(event,env,ctx){
     ctx?.waitUntil?.(reconcileMonthlySubscriptions(env,{limit:1000}).catch(()=>[]));
