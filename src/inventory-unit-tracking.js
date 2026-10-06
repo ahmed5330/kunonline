@@ -213,6 +213,20 @@ export async function syncOrderUnitTracking(env,{clientId,orderId,actor='system'
   return {ok:true,orderId,state:order.state,units:rows.length,changed};
 }
 
+export async function reconcileTrackedOrderLifecycles(env,{clientId=null,limit=500,actor='system'}={}){
+  await ensureInventoryUnitSchema(env);
+  const binds=[];let where='';
+  if(clientId){where='WHERE a.client_id=?';binds.push(clientId);}
+  binds.push(Math.max(1,Math.min(2000,Number(limit)||500)));
+  const {results=[]}=await env.DB.prepare(`SELECT DISTINCT a.client_id,a.order_id FROM order_unit_allocations a ${where} ORDER BY a.updated_at DESC LIMIT ?`).bind(...binds).all();
+  const outcomes=[];
+  for(const row of results){
+    try{outcomes.push(await syncOrderUnitTracking(env,{clientId:row.client_id,orderId:row.order_id,actor,source:'lifecycle_reconcile'}));}
+    catch(error){outcomes.push({ok:false,clientId:row.client_id,orderId:row.order_id,error:String(error?.message||error)});}
+  }
+  return {ok:true,checked:results.length,changed:outcomes.reduce((sum,x)=>sum+num(x?.changed),0),outcomes};
+}
+
 async function retireUnits(env,{clientId,storeId,productId,variantId=null,qty,actor='system',note='تسوية مخزون سالبة'}){
   const count=Math.max(0,Math.floor(qty));if(!count)return 0;await reconcileEntityStock(env,{clientId,storeId,productId,variantId,actor});
   const {results=[]}=await env.DB.prepare("SELECT * FROM inventory_units WHERE client_id=? AND store_id IS ? AND product_id=? AND COALESCE(variant_id,'')=COALESCE(?,'') AND status IN ('in_stock','returned_in_stock') AND current_order_id IS NULL ORDER BY received_at,created_at,id LIMIT ?").bind(clientId,storeId||null,productId,variantId,count).all();
@@ -253,7 +267,14 @@ async function afterMutation(env,{kind,body,responseData,clientId,storeId,actor}
 }
 
 async function unitDetails(env,{clientId,code}){
-  const unit=await env.DB.prepare('SELECT u.*,p.code product_tracking_code,b.name batch_name FROM inventory_units u LEFT JOIN product_tracking_codes p ON p.client_id=u.client_id AND p.product_id=u.product_id AND COALESCE(p.variant_id,\'\')=COALESCE(u.variant_id,\'\') LEFT JOIN inventory_batches b ON b.id=u.batch_id WHERE u.client_id=? AND u.unit_code=?').bind(clientId,code).first();if(!unit)fail('كود القطعة غير موجود',404,'UNIT_NOT_FOUND');
+  let unit=await env.DB.prepare('SELECT u.*,p.code product_tracking_code,b.name batch_name FROM inventory_units u LEFT JOIN product_tracking_codes p ON p.client_id=u.client_id AND p.product_id=u.product_id AND COALESCE(p.variant_id,\'\')=COALESCE(u.variant_id,\'\') LEFT JOIN inventory_batches b ON b.id=u.batch_id WHERE u.client_id=? AND u.unit_code=?').bind(clientId,code).first();if(!unit)fail('كود القطعة غير موجود',404,'UNIT_NOT_FOUND');
+  // A scan is also a freshness boundary: if the carrier/order changed in the
+  // background, synchronize the linked order before returning the history.
+  const linkedOrder=clean(unit.current_order_id||unit.last_order_id);
+  if(linkedOrder){
+    await syncOrderUnitTracking(env,{clientId,orderId:linkedOrder,actor:'scan-reconcile',source:'qr_lookup'}).catch(()=>{});
+    unit=await env.DB.prepare('SELECT u.*,p.code product_tracking_code,b.name batch_name FROM inventory_units u LEFT JOIN product_tracking_codes p ON p.client_id=u.client_id AND p.product_id=u.product_id AND COALESCE(p.variant_id,\'\')=COALESCE(u.variant_id,\'\') LEFT JOIN inventory_batches b ON b.id=u.batch_id WHERE u.client_id=? AND u.unit_code=?').bind(clientId,code).first();
+  }
   const [{results:events=[]},{results:allocations=[]}]=await Promise.all([
     env.DB.prepare('SELECT id,event_type,from_status,to_status,order_id,note,source,actor,metadata_json,created_at FROM inventory_unit_events WHERE client_id=? AND unit_id=? ORDER BY created_at DESC,id DESC LIMIT 500').bind(clientId,unit.id).all(),
     env.DB.prepare('SELECT id,order_id,status,created_at,updated_at,released_at FROM order_unit_allocations WHERE client_id=? AND unit_id=? ORDER BY created_at DESC').bind(clientId,unit.id).all()
@@ -290,7 +311,9 @@ export async function handleInventoryUnitTracking({request,env,ctx,delegate}){
   try{
     await ensureInventoryUnitSchema(env);
     const me=await currentUser(request,env,ctx,delegate),requested=url.searchParams.get('clientId'),clientId=resolveTenant(me,requested||(me.role==='client'?me.clientId:null)),write=method!=='GET';
-    requirePermission(me,'inventory',write?'update':'read');
+    // Existing product/stock mutations keep their original permission contract in
+    // the delegated route. Tracking-only APIs require Inventory permission here.
+    if(isApi)requirePermission(me,'inventory',write?'update':'read');
     const body=write?await request.clone().json().catch(()=>({})):{};
     const storeId=await scoped(request,env,me,clientId,{write,storeId:body.storeId||body.store_id||null}),actor=actorName(me);
 
@@ -309,14 +332,20 @@ export async function handleInventoryUnitTracking({request,env,ctx,delegate}){
     }
 
     if(path==='/api/inventory/unit-tracking/summary'&&method==='GET'){
-      const reconciled=await reconcileAllUnitCoverage(env,{clientId,storeId,actor}),binds=[clientId],storeSql=storeId?' AND store_id=?':'';if(storeId)binds.push(storeId);
+      const reconciled=await reconcileAllUnitCoverage(env,{clientId,storeId,actor});
+      const lifecycle=await reconcileTrackedOrderLifecycles(env,{clientId,limit:500,actor});
+      const binds=[clientId],storeSql=storeId?' AND store_id=?':'';if(storeId)binds.push(storeId);
       const [counts,products]=await Promise.all([
         env.DB.prepare(`SELECT status,COUNT(*) n FROM inventory_units WHERE client_id=?${storeSql} GROUP BY status ORDER BY status`).bind(...binds).all(),
         env.DB.prepare(`SELECT t.code,t.product_id,t.variant_id,COALESCE(v.name,p.name) item_name,COUNT(u.id) unit_count,SUM(CASE WHEN u.status IN ('in_stock','returned_in_stock') AND u.current_order_id IS NULL THEN 1 ELSE 0 END) available_count FROM product_tracking_codes t JOIN products p ON p.id=t.product_id AND p.client_id=t.client_id LEFT JOIN product_variants v ON v.id=t.variant_id AND v.client_id=t.client_id LEFT JOIN inventory_units u ON u.client_id=t.client_id AND u.product_id=t.product_id AND COALESCE(u.variant_id,'')=COALESCE(t.variant_id,'') WHERE t.client_id=?${storeId?' AND t.store_id=?':''} GROUP BY t.id ORDER BY item_name`).bind(...binds).all()
       ]);
-      return json({ok:true,reconciled,counts:counts.results||[],products:products.results||[]});
+      return json({ok:true,reconciled,lifecycle,counts:counts.results||[],products:products.results||[]});
     }
-    if(path==='/api/inventory/unit-tracking/reconcile'&&method==='POST')return json(await reconcileAllUnitCoverage(env,{clientId,storeId,actor}));
+    if(path==='/api/inventory/unit-tracking/reconcile'&&method==='POST'){
+      const coverage=await reconcileAllUnitCoverage(env,{clientId,storeId,actor});
+      const lifecycle=await reconcileTrackedOrderLifecycles(env,{clientId,limit:1000,actor});
+      return json({ok:true,created:coverage.created||0,coverage,lifecycle});
+    }
     if(path==='/api/inventory/unit-tracking/lookup'&&method==='GET'){
       const code=scanCode(url.searchParams.get('code'));if(!code)fail('اكتب أو امسح كود القطعة',400,'UNIT_CODE_REQUIRED');return json({ok:true,...await unitDetails(env,{clientId,code})});
     }
