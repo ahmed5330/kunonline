@@ -61,4 +61,12 @@ assert.match(vm.runInContext("orderFilter('source','قنوات البيع')",app
 let readinessLoads=0;appContext.window.KunReadinessV19={render:()=>{readinessLoads++;}};
 vm.runInContext("view='readiness';render();render();",appContext);
 assert.equal(readinessLoads,2,'Restoring or refreshing readiness must invoke its renderer without a sidebar click');
+let inventoryStore='A';const inventoryTasks=[],inventoryValues=Array.from({length:4},()=>({textContent:''}));
+const inventorySplit={dataset:{},innerHTML:'',querySelectorAll:()=>[]};
+const inventoryRoot={querySelector:selector=>selector==='.grid.split'?inventorySplit:null,querySelectorAll:()=>inventoryValues};
+const inventoryWindow={KunActionsV23:{scope:async()=>({cid:'client',sid:inventoryStore}),api:async url=>({products:[{id:'p',name:new URL(url,'https://test').searchParams.get('storeId'),stock:1,cost:2}]})}};
+const inventoryContext=vm.createContext({window:inventoryWindow,view:'inventory',inventory:()=>'',queueMicrotask:fn=>inventoryTasks.push(fn),document:{getElementById:id=>id==='root'?inventoryRoot:null,addEventListener(){},documentElement:{dataset:{}}},Intl,Map,Number,JSON,Promise});
+vm.runInContext(await readFile(new URL('../public/v2/modules-v46-variant-inventory-sync.js',import.meta.url),'utf8'),inventoryContext);
+inventoryContext.inventory();await inventoryTasks.shift()();assert.match(inventorySplit.innerHTML,/>A</);
+inventoryStore='B';inventoryContext.inventory();await inventoryTasks.shift()();assert.match(inventorySplit.innerHTML,/>B</);assert.doesNotMatch(inventorySplit.innerHTML,/>A</);
 console.log('QA Production regression tests passed: catalog scope, phone validation, expense reconciliation, v27 date filtering.');

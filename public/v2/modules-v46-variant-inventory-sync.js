@@ -1,7 +1,7 @@
 /* Kun Online v46.3 — variant-first inventory + governed Easy Orders cost review + inline selling-price and cost edit. */
 (function(){
   const K=window.KunActionsV23;if(!K)return;
-  let catalogPromise=null;
+  let catalogPromise=null,catalogScope='',inventoryRequest=0;
   const esc=value=>K.esc?K.esc(value):String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
   const num=value=>Number.isFinite(Number(value))?Number(value):0;
   const money=value=>new Intl.NumberFormat('ar-EG',{maximumFractionDigits:2}).format(num(value));
@@ -10,13 +10,14 @@
 
   async function scope(){return K.scope();}
   async function catalog(force=false){
-    if(force)catalogPromise=null;
+    const {cid,sid}=await scope(),key=JSON.stringify([cid,sid||'']);
+    if(force||catalogScope!==key){catalogPromise=null;catalogScope=key;}
     if(catalogPromise)return catalogPromise;
     catalogPromise=(async()=>{
-      const {cid,sid}=await scope(),q=`clientId=${encodeURIComponent(cid)}${sid?`&storeId=${encodeURIComponent(sid)}`:''}`;
+      const q=`clientId=${encodeURIComponent(cid)}${sid?`&storeId=${encodeURIComponent(sid)}`:''}`;
       const data=await K.api(`/api/catalog/products?${q}`);
       return data.products||[];
-    })().catch(error=>{catalogPromise=null;throw error;});
+    })().catch(error=>{if(catalogScope===key)catalogPromise=null;throw error;});
     return catalogPromise;
   }
   function inventoryRows(products){
@@ -105,6 +106,7 @@
   }
   async function enhanceInventory(force=false){
     if(typeof view!=='undefined'&&view!=='inventory')return;
+    const request=++inventoryRequest;
     const root=document.getElementById('root');if(!root)return;
     document.getElementById('pcVariantInventory')?.remove();
     await ensureSyncButton(root);
@@ -112,13 +114,13 @@
     if(force||!split.dataset.v46Loading){split.dataset.v46Loading='1';split.innerHTML='<div class="card empty">جارٍ تحميل مخزون المتغيرات...</div>';}
     try{
       const products=await catalog(force),rows=inventoryRows(products);
-      if(typeof view!=='undefined'&&view!=='inventory')return;
+      if(request!==inventoryRequest||(typeof view!=='undefined'&&view!=='inventory'))return;
       updateKpis(root,rows);split.innerHTML=renderTable(rows);split.dataset.v46Ready='1';
       split.querySelectorAll('[data-v46-adjust]').forEach(button=>button.onclick=()=>K.openStockAdjust?.({productId:button.dataset.productId,variantId:button.dataset.variantId||null}));
       split.querySelectorAll('[data-v46-price-edit]').forEach(button=>button.onclick=()=>savePrice(button));
       split.querySelectorAll('[data-v46-cost-edit]').forEach(button=>button.onclick=()=>saveCost(button));
       document.getElementById('pcVariantInventory')?.remove();
-    }catch(error){split.innerHTML=`<div class="card empty"><b>تعذر تحميل مخزون المتغيرات</b><div class="sub">${esc(error.message)}</div></div>`;}
+    }catch(error){if(request!==inventoryRequest)return;split.innerHTML=`<div class="card empty"><b>تعذر تحميل مخزون المتغيرات</b><div class="sub">${esc(error.message)}</div></div>`;}
   }
 
   if(typeof inventory==='function'){
