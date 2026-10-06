@@ -107,12 +107,31 @@ async function productInfo(env,{clientId,productId,variantId=null}){
 }
 
 async function reconcileBatchItem(env,item,{actor='system'}={}){
-  const target=Math.max(0,Math.floor(num(item.initial_qty))),row=await env.DB.prepare('SELECT COUNT(*) n FROM inventory_units WHERE client_id=? AND batch_item_id=?').bind(item.client_id,item.id).first(),have=num(row?.n);
-  if(have>=target)return {created:0,target,have};
+  const target=Math.max(0,Math.floor(num(item.initial_qty))),desiredAvailable=Math.max(0,Math.min(target,Math.floor(num(item.remaining_qty)))),row=await env.DB.prepare('SELECT COUNT(*) n FROM inventory_units WHERE client_id=? AND batch_item_id=?').bind(item.client_id,item.id).first(),have=num(row?.n);
   const p=await productInfo(env,{clientId:item.client_id,productId:item.product_id,variantId:item.variant_id||null});
   let created=0;
-  for(let i=have;i<target;i++){await createUnit(env,{clientId:item.client_id,storeId:item.store_id,productId:item.product_id,variantId:item.variant_id||null,batchId:item.batch_id,batchItemId:item.id,productName:item.product_name||p?.product_name||'',sku:p?.sku||'',source:'inventory_batch',receivedAt:item.batch_created_at||item.created_at,createdBy:actor,metadata:{batchName:item.batch_name||'',legacyBackfill:have>0||Boolean(item.existing_batch)}});created++;}
-  return {created,target,have:target};
+  for(let i=have;i<target;i++){
+    await createUnit(env,{clientId:item.client_id,storeId:item.store_id,productId:item.product_id,variantId:item.variant_id||null,batchId:item.batch_id,batchItemId:item.id,productName:item.product_name||p?.product_name||'',sku:p?.sku||'',source:'inventory_batch',receivedAt:item.batch_created_at||item.created_at,createdBy:actor,metadata:{batchName:item.batch_name||'',legacyBackfill:Boolean(item.existing_batch)}});
+    created++;
+  }
+
+  // Historical lots can have initial_qty > remaining_qty because pieces already left stock
+  // before unit tracking existed. Keep only remaining_qty as physically available; the
+  // difference becomes legacy_outbound until a live allocation claims it.
+  const {results:available=[]}=await env.DB.prepare("SELECT * FROM inventory_units WHERE client_id=? AND batch_item_id=? AND status IN ('in_stock','returned_in_stock') AND current_order_id IS NULL ORDER BY created_at,id").bind(item.client_id,item.id).all();
+  if(available.length>desiredAvailable){
+    const surplus=available.length-desiredAvailable;
+    for(const unit of available.slice(0,surplus)){
+      await setStatus(env,unit,'legacy_outbound',{eventType:'legacy_backfill_outbound',note:'قطعة تاريخية خرجت من المخزون قبل تفعيل تتبع الوحدات',source:'unit_tracking_backfill',actor,metadata:{batchId:item.batch_id,batchName:item.batch_name||'',initialQty:target,remainingQty:desiredAvailable}});
+    }
+  }else if(available.length<desiredAvailable){
+    const need=desiredAvailable-available.length;
+    const {results:recoverable=[]}=await env.DB.prepare("SELECT * FROM inventory_units WHERE client_id=? AND batch_item_id=? AND status='legacy_outbound' AND current_order_id IS NULL ORDER BY created_at,id LIMIT ?").bind(item.client_id,item.id,need).all();
+    for(const unit of recoverable){
+      await setStatus(env,unit,'in_stock',{eventType:'legacy_backfill_recovered',note:'تمت مطابقة القطعة مع الرصيد الحالي وإعادتها كقطعة متاحة',source:'unit_tracking_backfill',actor,metadata:{batchId:item.batch_id,batchName:item.batch_name||'',remainingQty:desiredAvailable}});
+    }
+  }
+  return {created,target,available:desiredAvailable};
 }
 
 async function reconcileBatch(env,{clientId,batchId,actor='system'}){
@@ -150,7 +169,7 @@ async function setStatus(env,unit,status,{orderId=null,eventType='status_changed
   if(unit.status===status&&String(unit.current_order_id||'')===String((['in_stock','returned_in_stock','retired'].includes(status)?null:orderId)||''))return unit;
   const from=unit.status,at=stamp(),fields={reserved_at:null,shipped_at:null,delivered_at:null,returned_at:null,retired_at:null};
   if(status==='reserved')fields.reserved_at=at;if(status==='shipped')fields.shipped_at=at;if(status==='delivered')fields.delivered_at=at;if(status==='returned_in_stock')fields.returned_at=at;if(status==='retired')fields.retired_at=at;
-  const clear=['in_stock','returned_in_stock','retired'].includes(status),current=clear?null:(orderId||unit.current_order_id||null),last=orderId||unit.current_order_id||unit.last_order_id||null;
+  const clear=['in_stock','returned_in_stock','retired','legacy_outbound'].includes(status),current=clear?null:(orderId||unit.current_order_id||null),last=orderId||unit.current_order_id||unit.last_order_id||null;
   await env.DB.prepare(`UPDATE inventory_units SET status=?,current_order_id=?,last_order_id=?,reserved_at=COALESCE(?,reserved_at),shipped_at=COALESCE(?,shipped_at),delivered_at=COALESCE(?,delivered_at),returned_at=COALESCE(?,returned_at),retired_at=COALESCE(?,retired_at),updated_at=? WHERE id=?`).bind(status,current,last,fields.reserved_at,fields.shipped_at,fields.delivered_at,fields.returned_at,fields.retired_at,at,unit.id).run();
   await event(env,unit,{eventType,fromStatus:from,toStatus:status,orderId:last,note,source,actor,metadata});
   return {...unit,status,current_order_id:current,last_order_id:last};
@@ -168,7 +187,7 @@ async function ensureOrderUnitAssignments(env,{clientId,orderId,actor='system'})
   for(const a of allocations){
     await reconcileBatchItem(env,{id:a.batch_item_id,batch_id:a.batch_id,client_id:a.client_id,store_id:a.store_id,product_id:a.product_id,variant_id:a.variant_id,product_name:a.product_name,initial_qty:(await env.DB.prepare('SELECT initial_qty FROM inventory_batch_items WHERE id=?').bind(a.batch_item_id).first())?.initial_qty||0,batch_name:a.batch_name,created_at:a.created_at},{actor});
     const needed=Math.max(0,Math.floor(num(a.qty))),existing=num((await env.DB.prepare('SELECT COUNT(*) n FROM order_unit_allocations WHERE client_id=? AND order_id=? AND stock_allocation_id=?').bind(clientId,orderId,a.id||a.stock_allocation_id||orderId).first())?.n),left=needed-existing;if(left<=0)continue;
-    const {results:units=[]}=await env.DB.prepare("SELECT * FROM inventory_units WHERE client_id=? AND batch_item_id=? AND status IN ('in_stock','returned_in_stock') AND current_order_id IS NULL ORDER BY received_at,created_at,id LIMIT ?").bind(clientId,a.batch_item_id,left).all();
+    const {results:units=[]}=await env.DB.prepare("SELECT * FROM inventory_units WHERE client_id=? AND batch_item_id=? AND status IN ('legacy_outbound','in_stock','returned_in_stock') AND current_order_id IS NULL ORDER BY CASE status WHEN 'legacy_outbound' THEN 0 ELSE 1 END,received_at,created_at,id LIMIT ?").bind(clientId,a.batch_item_id,left).all();
     if(units.length<left)fail(`لا توجد أكواد قطع كافية لتغطية أوردر ${orderId}. المطلوب ${left} والمتاح ${units.length}.`,409,'UNIT_TRACKING_COVERAGE_MISMATCH');
     for(const unit of units){
       const at=stamp(),allocId=rid('OUA');await env.DB.prepare(`INSERT INTO order_unit_allocations (id,client_id,store_id,order_id,order_item_id,stock_allocation_id,unit_id,unit_code,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(order_id,unit_id) DO UPDATE SET stock_allocation_id=excluded.stock_allocation_id,status='reserved',updated_at=excluded.updated_at,released_at=NULL`).bind(allocId,clientId,a.store_id||null,orderId,a.order_item_id||null,a.id||a.stock_allocation_id||orderId,unit.id,unit.unit_code,'reserved',at,at).run();
@@ -276,10 +295,14 @@ export async function handleInventoryUnitTracking({request,env,ctx,delegate}){
     const storeId=await scoped(request,env,me,clientId,{write,storeId:body.storeId||body.store_id||null}),actor=actorName(me);
 
     if(kind){
-      if(kind==='stock_adjust'&&Number(body.delta)<0){
+      if(kind==='stock_adjust'){
+        // Reconcile the pre-mutation stock first so a positive delta creates exactly the
+        // newly-added units and a negative delta retires exact existing units.
         await reconcileAllUnitCoverage(env,{clientId,storeId,actor});
-        const productId=clean(body.productId||body.product_id),variantId=clean(body.variantId||body.variant_id)||null,needed=Math.max(0,Math.floor(Math.abs(Number(body.delta))));
-        const have=await availableCount(env,{clientId,storeId,productId,variantId});if(have<needed)fail(`لا توجد أكواد قطع كافية للتسوية. المطلوب ${needed} والمتاح ${have}.`,409,'UNIT_TRACKING_NEGATIVE_STOCK_MISMATCH');
+        if(Number(body.delta)<0){
+          const productId=clean(body.productId||body.product_id),variantId=clean(body.variantId||body.variant_id)||null,needed=Math.max(0,Math.floor(Math.abs(Number(body.delta))));
+          const have=await availableCount(env,{clientId,storeId,productId,variantId});if(have<needed)fail(`لا توجد أكواد قطع كافية للتسوية. المطلوب ${needed} والمتاح ${have}.`,409,'UNIT_TRACKING_NEGATIVE_STOCK_MISMATCH');
+        }
       }
       const response=await delegate.fetch(request,env,ctx);if(!response.ok)return response;
       const data=await response.clone().json().catch(()=>({}));await afterMutation(env,{kind,body,responseData:data,clientId,storeId,actor});return response;
