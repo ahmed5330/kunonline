@@ -85,6 +85,7 @@ private enum class NativeClientSection(val label: String, val description: Strin
     ACCOUNTING("الحسابات والحركات", "قراءة وتسجيل الحركات المحاسبية"),
     CAMPAIGNS("الحملات", "Meta Ads والتحليل الفعلي"),
     INVENTORY("المخزون", "الرصيد وحركات الإضافة والتسوية"),
+    RETURNS("المرتجعات", "Scan وفحص القطعة: مخزون أو حجر أو هالك"),
     WALLET("المحفظة", "الرصيد والخصومات وسجل المحفظة"),
     INTEGRATIONS("مركز التكاملات", "حالة وربط واختبار المزودين"),
     SETTINGS("الإعدادات", "مزامنة التطبيق وإعداداته")
@@ -115,7 +116,7 @@ fun MobileSystemSectionsDialog(onDismiss: () -> Unit) {
                                 Column {
                                     Text("أقسام التطبيق", fontWeight = FontWeight.ExtraBold)
                                     Text(
-                                        "8 أقسام Native مرتبطة مباشرة بالسيستم",
+                                        "9 أقسام Native مرتبطة مباشرة بالسيستم",
                                         style = MaterialTheme.typography.labelMedium,
                                         color = Color.White.copy(alpha = .76f)
                                     )
@@ -187,6 +188,7 @@ private fun NativeClientSectionScreen(
         NativeClientSection.ACCOUNTING -> NativeAccountingScreen(onBack)
         NativeClientSection.CAMPAIGNS -> NativeCampaignsScreen(onBack)
         NativeClientSection.INVENTORY -> NativeInventoryScreen(onBack)
+        NativeClientSection.RETURNS -> NativeReturnsScreen(onBack)
         NativeClientSection.WALLET -> NativeWalletScreen(onBack)
         NativeClientSection.INTEGRATIONS -> NativeIntegrationsScreen(onBack)
         NativeClientSection.SETTINGS -> NativeSettingsScreen(onBack, onClose)
@@ -304,12 +306,23 @@ private fun NativeSimpleRow(
 private fun NativePrintingScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val scannerOptions = remember {
+        GmsBarcodeScannerOptions.Builder()
+            .setBarcodeFormats(Barcode.FORMAT_QR_CODE, Barcode.FORMAT_CODE_128)
+            .enableAutoZoom()
+            .build()
+    }
+    val scanner = remember(context, scannerOptions) { GmsBarcodeScanning.getClient(context, scannerOptions) }
+
     var refresh by remember { mutableIntStateOf(0) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf("") }
     var orders by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
     var sendingId by remember { mutableStateOf("") }
-    var confirmOrder by remember { mutableStateOf<JSONObject?>(null) }
+    var scanData by remember { mutableStateOf<JSONObject?>(null) }
+    var scanContext by remember { mutableStateOf("packing") }
+    var scanBusy by remember { mutableStateOf(false) }
+    var scanMessage by remember { mutableStateOf("") }
 
     fun load() { refresh++ }
 
@@ -323,9 +336,9 @@ private fun NativePrintingScreen(onBack: () -> Unit) {
         loading = false
     }
 
-    fun send(order: JSONObject) {
-        val orderId = order.str("id")
+    fun send(orderId: String) {
         if (orderId.isBlank() || sendingId.isNotBlank()) return
+        val order = orders.firstOrNull { it.str("id") == orderId } ?: JSONObject().put("id", orderId)
         sendingId = orderId
         scope.launch {
             val result = withContext(Dispatchers.IO) {
@@ -336,32 +349,108 @@ private fun NativePrintingScreen(onBack: () -> Unit) {
             if (result.ok) {
                 val url = result.obj?.optString("url").orEmpty()
                 val awb = result.obj?.optString("awb").orEmpty()
+                scanData = null
                 Toast.makeText(context, if (awb.isBlank()) "تم إرسال الأوردر إلى J&T" else "تم إنشاء AWB: $awb", Toast.LENGTH_LONG).show()
                 if (url.isNotBlank()) runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
                 load()
             } else {
-                Toast.makeText(context, result.message.ifBlank { "تعذر الإرسال إلى J&T" }, Toast.LENGTH_LONG).show()
+                scanMessage = result.message.ifBlank { "تعذر الإرسال إلى J&T" }
+                Toast.makeText(context, scanMessage, Toast.LENGTH_LONG).show()
             }
         }
     }
 
-    if (confirmOrder != null) {
-        AlertDialog(
-            onDismissRequest = { confirmOrder = null },
-            title = { Text("إرسال إلى J&T") },
-            text = { Text("سيتم إنشاء الشحنة فعليًا لدى J&T ثم طلب البوليصة الرسمية ونقل الأوردر إلى جاري الشحن بعد النجاح.") },
-            confirmButton = {
-                Button(onClick = {
-                    val order = confirmOrder
-                    confirmOrder = null
-                    if (order != null) send(order)
-                }) { Text("إرسال وطباعة") }
-            },
-            dismissButton = { TextButton(onClick = { confirmOrder = null }) { Text("إلغاء") } }
+    fun openPackingById(orderId: String) {
+        if (scanBusy) return
+        scanBusy = true
+        scanMessage = ""
+        scope.launch {
+            val result = withContext(Dispatchers.IO) { NativeSectionsApi.orderScanStatus(context, orderId, "packing") }
+            scanBusy = false
+            if (result.ok) {
+                scanContext = "packing"
+                scanData = result.obj
+            } else scanMessage = result.message
+        }
+    }
+
+    fun scanOrderForPacking() {
+        scanner.startScan()
+            .addOnSuccessListener { barcode ->
+                val raw = barcode.rawValue.orEmpty()
+                if (raw.isBlank()) return@addOnSuccessListener
+                scanBusy = true
+                scope.launch {
+                    val result = withContext(Dispatchers.IO) { NativeSectionsApi.openOrderScan(context, raw, "packing") }
+                    scanBusy = false
+                    if (result.ok) {
+                        scanContext = "packing"
+                        scanData = result.obj
+                        scanMessage = ""
+                    } else scanMessage = result.message
+                }
+            }
+            .addOnFailureListener { scanMessage = it.message ?: "تعذر قراءة كود الطلب" }
+    }
+
+    fun scanAwbForDispatch(expectedOrderId: String? = null) {
+        scanner.startScan()
+            .addOnSuccessListener { barcode ->
+                val raw = barcode.rawValue.orEmpty()
+                if (raw.isBlank()) return@addOnSuccessListener
+                scanBusy = true
+                scope.launch {
+                    val result = withContext(Dispatchers.IO) { NativeSectionsApi.openOrderScan(context, raw, "dispatch") }
+                    scanBusy = false
+                    val foundId = result.obj?.optJSONObject("order")?.optString("id").orEmpty()
+                    if (result.ok && (expectedOrderId.isNullOrBlank() || expectedOrderId == foundId)) {
+                        scanContext = "dispatch"
+                        scanData = result.obj
+                        scanMessage = ""
+                    } else if (result.ok) {
+                        scanMessage = "البوليصة التي تم مسحها تخص أوردرًا آخر"
+                    } else scanMessage = result.message
+                }
+            }
+            .addOnFailureListener { scanMessage = it.message ?: "تعذر قراءة باركود البوليصة" }
+    }
+
+    fun scanActiveUnit() {
+        val data = scanData ?: return
+        val orderId = data.optJSONObject("order")?.optString("id").orEmpty()
+        if (orderId.isBlank() || scanBusy) return
+        scanner.startScan()
+            .addOnSuccessListener { barcode ->
+                val raw = barcode.rawValue.orEmpty()
+                if (raw.isBlank()) return@addOnSuccessListener
+                scanBusy = true
+                scope.launch {
+                    val result = withContext(Dispatchers.IO) {
+                        NativeSectionsApi.scanOrderUnit(context, orderId, raw, scanContext)
+                    }
+                    scanBusy = false
+                    if (result.ok) {
+                        scanData = result.obj
+                        scanMessage = if (result.obj?.optBoolean("duplicate") == true) "القطعة ممسوحة بالفعل" else "تم قبول القطعة"
+                    } else scanMessage = result.message
+                }
+            }
+            .addOnFailureListener { scanMessage = it.message ?: "تعذر قراءة باركود القطعة" }
+    }
+
+    if (scanData != null) {
+        OrderUnitScanDialog(
+            data = scanData!!,
+            scanContext = scanContext,
+            busy = scanBusy || sendingId.isNotBlank(),
+            message = scanMessage,
+            onDismiss = { scanData = null; scanMessage = "" },
+            onScanUnit = ::scanActiveUnit,
+            onShip = { id -> send(id) }
         )
     }
 
-    NativeSectionScaffold("الطباعة", "Native · J&T Create Order + Print", onBack, ::load) { padding ->
+    NativeSectionScaffold("الطباعة والشحن", "Native · Scan-to-Pack + J&T + Scan-to-Dispatch", onBack, ::load) { padding ->
         when {
             loading -> NativeBusy(padding)
             error.isNotBlank() -> NativeError(padding, error, ::load)
@@ -375,14 +464,20 @@ private fun NativePrintingScreen(onBack: () -> Unit) {
                 ) {
                     item {
                         NativeMetricRow(listOf(
-                            "في انتظار الإرسال" to waiting.size.toString(),
-                            "تم الإرسال" to printed.size.toString()
+                            "في انتظار التجهيز" to waiting.size.toString(),
+                            "بوليصات جاهزة" to printed.size.toString()
                         ))
                     }
                     item {
-                        Text("في انتظار الطباعة", style = MaterialTheme.typography.titleMedium, color = KunColors.Ink)
+                        Button(
+                            onClick = ::scanOrderForPacking,
+                            enabled = !scanBusy,
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("📷 مسح كود الطلب وبدء التجهيز") }
                     }
-                    if (waiting.isEmpty()) item { KunSectionCard { Text("لا توجد أوردرات مؤكدة في انتظار الطباعة.", color = KunColors.Ink2) } }
+                    if (scanMessage.isNotBlank()) item { Text(scanMessage, color = KunColors.Brick) }
+                    item { Text("في انتظار الطباعة", style = MaterialTheme.typography.titleMedium, color = KunColors.Ink) }
+                    if (waiting.isEmpty()) item { KunSectionCard { Text("لا توجد أوردرات مؤكدة في انتظار التجهيز.", color = KunColors.Ink2) } }
                     items(waiting, key = { it.str("id") }) { order ->
                         KunSectionCard {
                             Text(order.str("name").ifBlank { "بدون اسم" }, fontWeight = FontWeight.Bold)
@@ -400,24 +495,267 @@ private fun NativePrintingScreen(onBack: () -> Unit) {
                                     modifier = Modifier.weight(1f)
                                 ) { Text("بيانات J&T") }
                                 Button(
-                                    onClick = { confirmOrder = order },
-                                    enabled = sendingId.isBlank(),
+                                    onClick = { openPackingById(order.str("id")) },
+                                    enabled = !scanBusy && sendingId.isBlank(),
                                     modifier = Modifier.weight(1f)
-                                ) { Text(if (sendingId == order.str("id")) "جاري الإرسال..." else "إرسال وطباعة") }
+                                ) { Text("تجهيز بالمسح") }
                             }
                         }
                     }
                     if (printed.isNotEmpty()) {
-                        item { Text("تم الإرسال والطباعة", style = MaterialTheme.typography.titleMedium, color = KunColors.Ink) }
+                        item { Text("تم إصدار البوليصة — تسليم للمندوب", style = MaterialTheme.typography.titleMedium, color = KunColors.Ink) }
                         items(printed, key = { "printed-" + it.str("id") }) { order ->
-                            NativeSimpleRow(
-                                title = order.str("name").ifBlank { order.str("ref", "id") },
-                                subtitle = order.str("product"),
-                                trailing = order.str("awb").ifBlank { "تم" }
-                            )
+                            KunSectionCard {
+                                NativeSimpleRow(
+                                    title = order.str("name").ifBlank { order.str("ref", "id") },
+                                    subtitle = order.str("product"),
+                                    trailing = order.str("awb").ifBlank { "تم" }
+                                )
+                                FilledTonalButton(
+                                    onClick = { scanAwbForDispatch(order.str("id")) },
+                                    enabled = !scanBusy,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) { Text("📷 Scan AWB ثم تسليم القطع للشحن") }
+                            }
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun OrderUnitScanDialog(
+    data: JSONObject,
+    scanContext: String,
+    busy: Boolean,
+    message: String,
+    onDismiss: () -> Unit,
+    onScanUnit: () -> Unit,
+    onShip: (String) -> Unit
+) {
+    val order = data.optJSONObject("order") ?: JSONObject()
+    val expected = data.optInt("expectedCount", 0)
+    val scanned = data.optInt("scannedCount", 0)
+    val remaining = data.optInt("remainingCount", (expected - scanned).coerceAtLeast(0))
+    val complete = data.optBoolean("complete", false)
+    val units = data.optJSONArray("units")?.objects().orEmpty()
+    val packing = scanContext == "packing"
+
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(shape = RoundedCornerShape(20.dp), color = KunColors.Surface) {
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth().heightIn(max = 680.dp),
+                contentPadding = PaddingValues(18.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                item {
+                    Text(if (packing) "تجهيز الأوردر بالمسح" else "تسليم الأوردر لشركة الشحن", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
+                    Text("#${order.str("ref", "id")} ${order.str("awb").takeIf { it.isNotBlank() }?.let { "· AWB $it" }.orEmpty()}", color = KunColors.Ink2)
+                }
+                item {
+                    NativeMetricRow(listOf(
+                        "المطلوب" to expected.toString(),
+                        "تم مسحه" to scanned.toString(),
+                        "متبقي" to remaining.toString(),
+                        "الحالة" to if (expected == 0) "Legacy" else if (complete) "مكتمل ✓" else "غير مكتمل"
+                    ))
+                }
+                item {
+                    Button(onClick = onScanUnit, enabled = !busy && expected > 0 && !complete, modifier = Modifier.fillMaxWidth()) {
+                        Text(if (busy) "جاري التحقق..." else "📷 مسح باركود قطعة")
+                    }
+                }
+                if (message.isNotBlank()) item {
+                    Text(message, color = if (message.contains("تم") || message.contains("بالفعل")) KunColors.Pine else KunColors.Brick)
+                }
+                if (expected == 0 && packing) item {
+                    Text("هذا أوردر قديم غير مرتبط بقطع متسلسلة؛ لا يطبق عليه شرط Scan-to-Pack.", color = KunColors.Ink2)
+                }
+                if (units.isNotEmpty()) {
+                    item { Text("القطع", fontWeight = FontWeight.Bold) }
+                    items(units, key = { it.str("unitCode") }) { unit ->
+                        NativeSimpleRow(
+                            title = unit.str("productName").ifBlank { unit.str("unitCode") },
+                            subtitle = unit.str("unitCode"),
+                            trailing = if (unit.optBoolean("scanned", false)) "✓ تم" else "مطلوب"
+                        )
+                    }
+                }
+                item {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("إغلاق") }
+                        if (packing) {
+                            Button(
+                                onClick = { onShip(order.str("id")) },
+                                enabled = !busy && (complete || expected == 0),
+                                modifier = Modifier.weight(1f)
+                            ) { Text("إرسال J&T وطباعة") }
+                        } else {
+                            FilledTonalButton(
+                                onClick = onDismiss,
+                                enabled = complete,
+                                modifier = Modifier.weight(1f)
+                            ) { Text(if (complete) "تم التسليم ✓" else "أكمل المسح") }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun NativeReturnsScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val scannerOptions = remember {
+        GmsBarcodeScannerOptions.Builder()
+            .setBarcodeFormats(Barcode.FORMAT_QR_CODE, Barcode.FORMAT_CODE_128)
+            .enableAutoZoom()
+            .build()
+    }
+    val scanner = remember(context, scannerOptions) { GmsBarcodeScanning.getClient(context, scannerOptions) }
+    var refresh by remember { mutableIntStateOf(0) }
+    var loading by remember { mutableStateOf(true) }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf("") }
+    var units by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
+    var details by remember { mutableStateOf<JSONObject?>(null) }
+
+    fun load() { refresh++ }
+    LaunchedEffect(refresh) {
+        loading = true
+        val result = withContext(Dispatchers.IO) { NativeSectionsApi.returnedInventoryUnits(context) }
+        if (result.ok) {
+            units = result.obj?.optJSONArray("units")?.objects().orEmpty()
+            error = ""
+        } else error = result.message
+        loading = false
+    }
+
+    fun lookup(raw: String) {
+        if (raw.isBlank() || busy) return
+        busy = true
+        scope.launch {
+            val result = withContext(Dispatchers.IO) { NativeSectionsApi.lookupInventoryUnit(context, raw) }
+            busy = false
+            if (result.ok) details = result.obj else error = result.message
+        }
+    }
+
+    fun scanReturn() {
+        scanner.startScan()
+            .addOnSuccessListener { barcode -> lookup(barcode.rawValue.orEmpty()) }
+            .addOnFailureListener { error = it.message ?: "تعذر قراءة باركود المرتجع" }
+    }
+
+    if (details != null) {
+        ReturnDispositionDialog(
+            data = details!!,
+            busy = busy,
+            onDismiss = { details = null },
+            onDisposition = { code, disposition, reason ->
+                busy = true
+                scope.launch {
+                    val result = withContext(Dispatchers.IO) {
+                        NativeSectionsApi.dispositionReturnedUnit(context, code, disposition, reason)
+                    }
+                    busy = false
+                    if (result.ok) {
+                        Toast.makeText(
+                            context,
+                            when (disposition) {
+                                "restock" -> "تم إرجاع القطعة للمخزون"
+                                "damaged" -> "تم تسجيل القطعة كهالك / تالفة"
+                                else -> "تم وضع القطعة في الحجر"
+                            },
+                            Toast.LENGTH_LONG
+                        ).show()
+                        details = null
+                        load()
+                    } else error = result.message
+                }
+            }
+        )
+    }
+
+    NativeSectionScaffold("المرتجعات", "Native · فحص كل قطعة قبل رجوعها للبيع", onBack, ::load) { padding ->
+        when {
+            loading -> NativeBusy(padding)
+            else -> LazyColumn(
+                Modifier.fillMaxSize().padding(padding),
+                contentPadding = PaddingValues(14.dp),
+                verticalArrangement = Arrangement.spacedBy(9.dp)
+            ) {
+                item {
+                    NativeMetricRow(listOf(
+                        "تنتظر الفحص" to units.count { it.str("status") == "returned_pending_inspection" }.toString(),
+                        "حجر" to units.count { it.str("status") == "quarantined" }.toString(),
+                        "هالك" to units.count { it.str("status") == "damaged" }.toString(),
+                        "الإجمالي" to units.size.toString()
+                    ))
+                }
+                item {
+                    Button(onClick = ::scanReturn, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+                        Text(if (busy) "جاري الفحص..." else "📷 مسح باركود القطعة المرتجعة")
+                    }
+                }
+                if (error.isNotBlank()) item { Text(error, color = KunColors.Brick) }
+                item { Text("القطع المرتجعة", style = MaterialTheme.typography.titleMedium) }
+                if (units.isEmpty()) item { KunSectionCard { Text("لا توجد قطع في انتظار قرار مرتجع.", color = KunColors.Ink2) } }
+                items(units, key = { it.str("unit_code") }) { unit ->
+                    NativeSimpleRow(
+                        title = unit.str("product_name").ifBlank { unit.str("unit_code") },
+                        subtitle = listOf(unit.str("unit_code"), unit.str("order_ref"), unit.str("awb")).filter { it.isNotBlank() }.joinToString(" · "),
+                        trailing = unitTrackingStatusLabel(unit.str("status")),
+                        onClick = { lookup(unit.str("unit_code")) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReturnDispositionDialog(
+    data: JSONObject,
+    busy: Boolean,
+    onDismiss: () -> Unit,
+    onDisposition: (String, String, String) -> Unit
+) {
+    val unit = data.optJSONObject("unit") ?: JSONObject()
+    var reason by remember(unit.str("unit_code")) { mutableStateOf("") }
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(shape = RoundedCornerShape(20.dp), color = KunColors.Surface) {
+            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("فحص المرتجع", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
+                Text(unit.str("product_name").ifBlank { "قطعة" }, fontWeight = FontWeight.Bold)
+                Text(unit.str("unit_code"), color = KunColors.Pine, fontWeight = FontWeight.Bold)
+                Text("الحالة الحالية: ${unitTrackingStatusLabel(unit.str("status"))}", color = KunColors.Ink2)
+                OutlinedTextField(
+                    value = reason,
+                    onValueChange = { reason = it },
+                    label = { Text("ملاحظة الفحص (اختياري)") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Button(
+                    onClick = { onDisposition(unit.str("unit_code"), "restock", reason) },
+                    enabled = !busy,
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("✓ صالح — إرجاع للمخزون") }
+                FilledTonalButton(
+                    onClick = { onDisposition(unit.str("unit_code"), "quarantine", reason) },
+                    enabled = !busy,
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("حجر / فحص إضافي") }
+                OutlinedButton(
+                    onClick = { onDisposition(unit.str("unit_code"), "damaged", reason) },
+                    enabled = !busy,
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("هالك / تالف — لا يرجع للبيع") }
+                TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text("إلغاء") }
             }
         }
     }
@@ -908,6 +1246,9 @@ private fun UnitTrackingDialog(data: JSONObject, onDismiss: () -> Unit) {
 private fun unitTrackingStatusLabel(value: String): String = when (value) {
     "in_stock" -> "في المخزون"
     "returned_in_stock" -> "مرتجع بالمخزون"
+    "returned_pending_inspection" -> "ينتظر الفحص"
+    "quarantined" -> "حجر"
+    "damaged" -> "هالك / تالف"
     "reserved" -> "محجوز"
     "shipped" -> "مع الشحن"
     "delivered" -> "تم التسليم"
@@ -921,7 +1262,14 @@ private fun unitTrackingEventLabel(value: String): String = when (value) {
     "reserved_for_order" -> "حجز القطعة للأوردر"
     "handed_to_shipping" -> "تسليم القطعة للشحن"
     "delivered_to_customer" -> "تسليم القطعة للعميل"
-    "returned_to_inventory" -> "استرجاع القطعة للمخزون"
+    "return_received_pending_inspection" -> "مرتجع في انتظار الفحص"
+    "return_restocked_after_inspection" -> "مرتجع صالح وعاد للمخزون"
+    "return_quarantined" -> "وضع المرتجع في الحجر"
+    "return_marked_damaged" -> "تصنيف المرتجع هالك / تالف"
+    "picked_and_packed_scan" -> "تم التحقق بالمسح أثناء التجهيز"
+    "dispatch_scan_verified" -> "تم التحقق عند التسليم للشحن"
+    "packing_scan_claimed" -> "ربط القطعة بالأوردر بالمسح"
+    "packing_scan_placeholder_released" -> "تحرير حجز القطعة الافتراضية"
     "reservation_released" -> "فك حجز القطعة"
     "manual_stock_out" -> "خروج يدوي من المخزون"
     "legacy_backfill_outbound" -> "حركة تاريخية قبل التتبع"
