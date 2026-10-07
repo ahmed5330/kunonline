@@ -40,7 +40,6 @@ for(const marker of [
   'reserved_for_order',
   'handed_to_shipping',
   'delivered_to_customer',
-  'returned_to_inventory',
   'reservation_released',
   'manual_stock_out',
   'legacy_backfill_outbound',
