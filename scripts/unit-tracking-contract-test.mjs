@@ -44,7 +44,7 @@ for(const marker of [
   'manual_stock_out',
   'legacy_backfill_outbound',
   'legacy_backfill_recovered'
-]) assert.ok(backend.includes(marker),`Unit lifecycle missing ${marker}`);
+]) assert.ok((backend+await readFile(new URL('../src/inventory-warehouse-operations.js',import.meta.url),'utf8')).includes(marker),`Unit lifecycle missing ${marker}`);
 
 for(const path of [
   '/api/inventory/stock-adjust',
@@ -74,7 +74,7 @@ assert.ok(backend.includes("return 'product_import'")&&backend.includes("actor:'
 assert.ok(backend.includes('UNIT_TRACKING_STOCK_COVERAGE_MISMATCH')&&backend.includes('const target=Math.max(0,Math.floor(num(p.stock)))'),'Stock adjustments must reconcile idempotently against the final physical stock balance before returning');
 assert.ok(backend.includes("source:'qr_lookup'"),'Scanning a unit must refresh its linked order before returning history');
 
-assert.ok(jtPrint.includes('assertOrderScanReady')&&jtPrint.indexOf('assertOrderScanReady')<jtPrint.indexOf('createJtShipment({shipment,secrets})'),'Packing scan must gate J&T createOrder before any carrier shipment is created');
+assert.ok(!jtPrint.includes('await assertOrderScanReady'),'Official waybill creation must remain separate from physical packing/handover');
 assert.ok(backend.includes("target='returned_pending_inspection'"),'Returned orders must enter pending inspection, never sellable stock directly');
 assert.ok(backend.includes("['restock','quarantine','damaged']"),'Return disposition must support restock, quarantine and damaged');
 assert.ok(backend.includes("scope==='warehouse'")&&backend.includes("'reserved','returned_pending_inspection','quarantined','damaged'")&&backend.includes('Math.min(10000'),'Bulk label printing must include every physical warehouse unit, including reserved and return-inspection pieces');
@@ -91,7 +91,7 @@ for(const marker of ['BarcodeDetector','getUserMedia','code_128','/api/inventory
 assert.ok(ui.includes("legacy_outbound:'حركة تاريخية خارج المخزون'"),'Historical outbound units need a visible non-stock status');
 
 for(const source of [preview,production,v2Index]){
-  assert.ok(source.includes('/v2/modules-v128-unit-tracking.js?v=128.2'),'v128 tracking UI must be loaded by every canonical app shell');
+  assert.ok(source.includes('/v2/modules-v128-unit-tracking.js?v=128.3'),'v128 tracking UI must be loaded by every canonical app shell');
 }
 for(const source of [preview,production]){
   assert.ok(source.includes('handleInventoryUnitTracking'),'Tracking APIs/mutations must be intercepted');
@@ -102,5 +102,5 @@ for(const source of [preview,production]){
 
 assert.ok(ui.includes("new URL(location.href).searchParams.get('unit')"),'Opening a printed QR URL must automatically resolve its unit history');
 
-assert.ok(ui.includes("version:'128.2'")&&ui.includes('طباعة باركود كل القطع الموجودة بالمخزن')&&ui.includes("scope:'warehouse'"),'Unit tracking UI must identify v128.2 and bulk-print current stock');
-console.log('Unit tracking v128.2 contract passed: bulk labels, scan-to-pack/dispatch, AWB linkage and inspected return disposition are enforced.');
+assert.ok(ui.includes("version:'128.3'")&&ui.includes('طباعة باركود كل القطع الموجودة بالمخزن')&&ui.includes("scope:'warehouse'"),'Unit tracking UI must identify v128.3 and bulk-print current stock');
+console.log('Unit tracking v128.3 contract passed: bulk labels, scan-to-pack/dispatch, AWB linkage and inspected return disposition are enforced.');

@@ -1,0 +1,103 @@
+import assert from 'node:assert/strict';
+import {DatabaseSync} from 'node:sqlite';
+import {readFileSync} from 'node:fs';
+import {ensureInventoryUnitSchema,handleInventoryUnitTracking,syncOrderUnitTracking,reconcileAllUnitCoverage,serializedReceiptStatements} from '../src/inventory-unit-tracking.js';
+import {warehouseOperation} from '../src/inventory-warehouse-operations.js';
+const sqlite=new DatabaseSync(':memory:');
+function prepare(sql){let bindings=[];return {bind(...args){bindings=args;return this;},async run(){const r=sqlite.prepare(sql).run(...bindings);return {meta:{changes:Number(r.changes)}};},async first(){return sqlite.prepare(sql).get(...bindings)||null;},async all(){return {results:sqlite.prepare(sql).all(...bindings)};},sql,get bindings(){return bindings;}};}
+const env={DB:{prepare,async batch(steps){sqlite.exec('BEGIN IMMEDIATE');try{const results=[];for(const step of steps){const r=sqlite.prepare(step.sql).run(...step.bindings);results.push({meta:{changes:Number(r.changes)}});}sqlite.exec('COMMIT');return results;}catch(e){sqlite.exec('ROLLBACK');throw e;}}}};
+await ensureInventoryUnitSchema(env);
+sqlite.exec(`CREATE TABLE orders(id TEXT PRIMARY KEY,client_id TEXT,store_id TEXT,awb TEXT,state TEXT,ref TEXT,return_type TEXT,restocked INTEGER); CREATE TABLE products(id TEXT PRIMARY KEY,client_id TEXT,store_id TEXT,name TEXT,sku TEXT,stock INTEGER,active INTEGER); CREATE TABLE product_variants(id TEXT PRIMARY KEY,client_id TEXT,product_id TEXT,name TEXT,sku TEXT,stock INTEGER,active INTEGER); CREATE TABLE inventory_batches(id TEXT PRIMARY KEY,client_id TEXT,name TEXT,status TEXT,created_at TEXT); CREATE TABLE inventory_batch_items(id TEXT PRIMARY KEY,client_id TEXT,batch_id TEXT,product_id TEXT,variant_id TEXT,store_id TEXT,initial_qty INTEGER,remaining_qty INTEGER,created_at TEXT,product_name TEXT);`);
+const owner={role:'client',clientId:'t'},base='/api/inventory/unit-tracking';
+async function call(path,body={},me=owner,storeId='s',method='POST'){return warehouseOperation({env,clientId:'t',storeId,me,actor:me.email||me.role,path:base+path,method,body,url:new URL('https://test'+base+path+'?id='+encodeURIComponent(body.id||''))});}
+function addUnit(n,{store='s',tenant='t',status='reserved',order='o'}={}){sqlite.prepare(`INSERT INTO inventory_units(id,unit_code,client_id,store_id,product_id,status,current_order_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)`).run(n,n.toUpperCase(),tenant,store,'p',status,order,'2026-10-07','2026-10-07');}
+sqlite.prepare('INSERT INTO orders VALUES(?,?,?,?,?,?,?,?)').run('o','t','s','JT-123','shipped','ref',null,0);
+sqlite.exec("ALTER TABLE orders ADD COLUMN history TEXT DEFAULT '[]'");
+sqlite.prepare('UPDATE orders SET history=? WHERE id=?').run(JSON.stringify([{type:'jt_shipment_created',awb:'JT-123'},{type:'jt_label_printed',awb:'JT-123',official:true}]),'o');
+addUnit('u1');addUnit('u2');addUnit('foreign',{store:'s2',order:null,status:'in_stock'});
+sqlite.prepare('INSERT INTO products VALUES(?,?,?,?,?,?,?)').run('p','t','s','product','SKU',0,1);
+for(const u of ['u1','u2'])sqlite.prepare(`INSERT INTO order_unit_allocations(id,client_id,store_id,order_id,unit_id,unit_code,status,created_at,updated_at) VALUES(?,?,?,?,?,?,'reserved',?,?)`).run('a'+u,'t','s','o',u,u,'2026-10-07','2026-10-07');
+await assert.rejects(call('/labels/jobs',{codes:['foreign']}),e=>e.status===404);
+await assert.rejects(call('/labels/jobs',{codes:['u1']},{role:'viewer'}),e=>e.status===403);
+const before=sqlite.prepare('SELECT COUNT(*) n FROM inventory_units').get().n;
+await call('/labels/jobs',{codes:['u1','u2']});await assert.rejects(call('/labels/jobs',{codes:['u1']}),e=>e.code==='REPRINT_REASON_REQUIRED');await call('/labels/jobs',{codes:['u1'],reason:'damaged sticker'});assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM inventory_units').get().n,before);assert.equal(sqlite.prepare('SELECT SUM(is_reprint) n FROM inventory_label_job_units').get().n,1);
+await syncOrderUnitTracking(env,{clientId:'t',orderId:'o'});assert.equal(sqlite.prepare("SELECT status FROM inventory_units WHERE id='u1'").get().status,'reserved','waybill must not dispatch units');
+const h=await call('/handover',{});await assert.rejects(call('/handover/scan',{batchId:h.batchId,code:'JT-123'}),e=>e.code==='SHIPMENT_NOT_READY');
+sqlite.prepare(`INSERT INTO inventory_scan_sessions(id,client_id,store_id,order_id,scan_context,status,expected_units,scanned_units,created_at,updated_at) VALUES('pack','t','s','o','packing','completed',2,2,'now','now')`).run();
+sqlite.exec("UPDATE inventory_units SET status='packed' WHERE id IN ('u1','u2')" );await call('/handover/scan',{batchId:h.batchId,code:'JT-123'});await assert.rejects(call('/handover/scan',{batchId:h.batchId,code:'JT-123'}),e=>e.code==='INVENTORY_CONCURRENT_CHANGE');
+await call('/handover/complete',{batchId:h.batchId});assert.equal(sqlite.prepare("SELECT COUNT(*) n FROM inventory_units WHERE status='shipped'").get().n,2);await call('/handover/complete',{batchId:h.batchId});assert.equal(sqlite.prepare("SELECT COUNT(*) n FROM inventory_unit_events WHERE event_type='handed_to_shipping'").get().n,2);
+await syncOrderUnitTracking(env,{clientId:'t',orderId:'o'});assert.equal(sqlite.prepare("SELECT status FROM inventory_units WHERE id='u1'").get().status,'shipped');
+addUnit('u3',{status:'in_stock',order:null});addUnit('u4',{status:'in_stock',order:null});
+sqlite.prepare("UPDATE products SET stock=2 WHERE id='p'").run();
+const st=await call('/operations',{kind:'stocktake'});await call('/operations/scan',{sessionId:st.sessionId,code:'u3'});await call('/operations/complete',{sessionId:st.sessionId});const report=await call('/operations/status',{id:st.sessionId},owner,'s','GET');assert.equal(report.missing,1);assert.equal(sqlite.prepare("SELECT status FROM inventory_units WHERE id='u4'").get().status,'in_stock','stocktake must not adjust inventory');await assert.rejects(call('/operations/scan',{sessionId:st.sessionId,code:'u4'}),e=>e.code==='SESSION_CLOSED');
+const tr=await call('/operations',{kind:'transfer',targetWarehouse:'Other'});await call('/operations/scan',{sessionId:tr.sessionId,code:'u3'});await call('/operations/scan',{sessionId:tr.sessionId,code:'u4'});await call('/operations/complete',{sessionId:tr.sessionId});await call('/operations/scan',{sessionId:tr.sessionId,code:'u3',receive:true});await assert.rejects(call('/operations/complete',{sessionId:tr.sessionId}),e=>e.code==='TRANSFER_INCOMPLETE');await assert.rejects(call('/operations/scan',{sessionId:tr.sessionId,code:'u3',receive:true}),e=>e.code==='INVENTORY_CONCURRENT_CHANGE');await call('/operations/scan',{sessionId:tr.sessionId,code:'u4',receive:true});await call('/operations/complete',{sessionId:tr.sessionId});assert.equal(sqlite.prepare("SELECT warehouse FROM inventory_unit_locations WHERE unit_id='u3'").get().warehouse,'Other');
+addUnit('bad',{status:'damaged',order:null});const sc=await call('/scrap',{code:'bad',reason:'broken'}, {...owner,email:'requester'});await assert.rejects(call('/scrap/approve',{requestId:sc.requestId},{...owner,email:'requester'}),e=>e.code==='SCRAP_SEPARATE_APPROVER_REQUIRED');await call('/scrap/approve',{requestId:sc.requestId},{...owner,email:'approver'});assert.equal(sqlite.prepare("SELECT status FROM inventory_units WHERE id='bad'").get().status,'scrapped');
+// Requests for another store are denied before unitDetails can reconcile it.
+sqlite.exec(`CREATE TABLE stores(id TEXT,client_id TEXT,status TEXT,name TEXT); INSERT INTO stores VALUES('s','t','active','Main');`);
+const denied=await handleInventoryUnitTracking({env,request:new Request('https://test'+base+'/lookup?clientId=t&storeId=s&code=foreign'),ctx:{},delegate:{fetch:async()=>Response.json(owner)}});assert.equal(denied.status,404);
+console.log('Warehouse integration passed: store isolation, print/reprint, physical handover, stocktake variance, partial transfer, scrap approval and idempotency.');
+sqlite.prepare('INSERT INTO products VALUES(?,?,?,?,?,?,?)').run('back-p','back',null,'100 physical pieces','SKU100',100,1);
+const attempts=await Promise.allSettled([reconcileAllUnitCoverage(env,{clientId:'back'}),reconcileAllUnitCoverage(env,{clientId:'back'})]);assert.ok(attempts.some(r=>r.status==='fulfilled'));
+assert.equal(sqlite.prepare("SELECT COUNT(*) n FROM inventory_units WHERE client_id='back'").get().n,100);assert.equal(sqlite.prepare("SELECT COUNT(DISTINCT unit_code) n FROM inventory_units WHERE client_id='back'").get().n,100);assert.equal(sqlite.prepare("SELECT stock FROM products WHERE id='back-p'").get().stock,100);assert.equal((await reconcileAllUnitCoverage(env,{clientId:'back'})).created,0);
+console.log('Concurrent/backfill integration passed: 100 stock => 100 unique units, stock unchanged, repeat creates zero.');
+const backDelegate={fetch:async()=>Response.json({role:'client',clientId:'back'})};
+async function backRequest(path,body){return handleInventoryUnitTracking({env,ctx:{},delegate:backDelegate,request:new Request('https://test'+path+'?clientId=back',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})});}
+const activation=await backRequest(base+'/serialize',{productId:'back-p'});assert.equal(activation.status,200);assert.equal((await activation.json()).afterQty,100);
+const replay=await backRequest(base+'/serialize',{productId:'back-p'});assert.equal((await replay.json()).idempotent,true);
+const adjustment=await backRequest('/api/inventory/stock-adjust',{productId:'back-p',delta:1});assert.equal(adjustment.status,409);assert.equal((await adjustment.json()).code,'SERIALIZED_MANUAL_STOCK_EDIT_BLOCKED');
+const migration=readFileSync(new URL('../migrations/0094_warehouse_unit_operations.sql',import.meta.url),'utf8');sqlite.exec(migration);sqlite.exec(migration);assert.equal(sqlite.prepare("SELECT stock FROM products WHERE id='back-p'").get().stock,100);
+console.log('Serialization activation/snapshot, manual adjustment block and idempotent migration passed.');
+sqlite.exec('CREATE TABLE stock_log(id TEXT PRIMARY KEY,client_id TEXT,store_id TEXT,product_id TEXT,variant_id TEXT,product_name TEXT,delta INTEGER,new_stock INTEGER,note TEXT,stock_date TEXT,batch_id TEXT,created_at TEXT,created_by TEXT)');
+await assert.rejects(call('/operations/approve',{sessionId:st.sessionId,reason:'count variance',adjustMissing:true},{...owner,email:'manager'}),e=>e.code==='STOCKTAKE_STALE');
+addUnit('lost',{status:'in_stock',order:null});sqlite.prepare("UPDATE products SET stock=stock+1 WHERE id='p'").run();
+const count=await call('/operations',{kind:'stocktake',warehouse:'Main'}, {...owner,email:'counter'});await call('/operations/complete',{sessionId:count.sessionId},{...owner,email:'counter'});
+await assert.rejects(call('/operations/approve',{sessionId:count.sessionId,reason:'missing',adjustMissing:true},{...owner,email:'counter'}),e=>e.code==='STOCKTAKE_SEPARATE_APPROVER_REQUIRED');
+const qty=sqlite.prepare("SELECT stock FROM products WHERE id='p'").get().stock;
+const approved=await call('/operations/approve',{sessionId:count.sessionId,reason:'verified missing',adjustMissing:true},{...owner,email:'manager'});assert.equal(approved.missingAdjusted,1);assert.equal(sqlite.prepare("SELECT stock FROM products WHERE id='p'").get().stock,qty-1);assert.equal(sqlite.prepare("SELECT status FROM inventory_units WHERE id='lost'").get().status,'missing');
+await call('/operations/approve',{sessionId:count.sessionId,reason:'retry',adjustMissing:true},{...owner,email:'manager'});assert.equal(sqlite.prepare("SELECT stock FROM products WHERE id='p'").get().stock,qty-1);assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM stock_log').get().n,1);
+console.log('Approved stocktake passed: separate approver, stale snapshot rejection, exact one-time stock decrement and audit ledger.');
+sqlite.exec('ALTER TABLE orders ADD COLUMN date TEXT; ALTER TABLE orders ADD COLUMN created_at TEXT;');
+const preReturn=sqlite.prepare("SELECT stock FROM products WHERE id='p'").get().stock;
+await assert.rejects(call('/returns/receive',{code:'u1',orderId:'wrong',reason:'size'}),e=>e.code==='RETURN_WRONG_ORDER');
+const partial=await call('/returns/receive',{code:'u1',reason:'size'});assert.equal(partial.originalOrder.id,'o');assert.equal(sqlite.prepare("SELECT status FROM inventory_units WHERE id='u2'").get().status,'shipped');assert.equal(sqlite.prepare("SELECT stock FROM products WHERE id='p'").get().stock,preReturn);assert.equal(sqlite.prepare("SELECT state FROM orders WHERE id='o'").get().state,'shipped');
+assert.equal((await call('/returns/receive',{code:'u1',reason:'retry'})).idempotent,true);
+async function returnDisposition(){return handleInventoryUnitTracking({env,ctx:{},delegate:{fetch:async()=>Response.json(owner)},request:new Request('https://test'+base+'/returns/disposition?clientId=t&storeId=s',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:'u1',disposition:'restock',reason:'inspection passed'})})});}
+const inspect=await returnDisposition();assert.equal(inspect.status,200,await inspect.text());assert.equal(sqlite.prepare("SELECT stock FROM products WHERE id='p'").get().stock,preReturn+1);await returnDisposition();assert.equal(sqlite.prepare("SELECT stock FROM products WHERE id='p'").get().stock,preReturn+1);
+sqlite.prepare("UPDATE orders SET state='signed' WHERE id='o'").run();await syncOrderUnitTracking(env,{clientId:'t',orderId:'o'});assert.equal(sqlite.prepare("SELECT status FROM inventory_units WHERE id='u1'").get().status,'returned_in_stock');assert.equal(sqlite.prepare("SELECT status FROM inventory_units WHERE id='u2'").get().status,'delivered');
+const caseData=sqlite.prepare('SELECT commercial_reason,inspection_reason FROM inventory_return_cases WHERE id=?').get(partial.returnCaseId);assert.equal(caseData.commercial_reason,'size');assert.equal(caseData.inspection_reason,'inspection passed');
+console.log('Partial returns passed: original-order linkage, sibling still shipped, no stock before inspection, single restock and background lifecycle protection.');
+sqlite.exec('ALTER TABLE orders ADD COLUMN product TEXT; ALTER TABLE orders ADD COLUMN qty INTEGER DEFAULT 1;');
+sqlite.prepare('INSERT INTO orders(id,client_id,store_id,ref,state,qty) VALUES(?,?,?,?,?,?)').run('pack-o','t','s','PACK-1','confirmed',1);
+addUnit('original',{order:'pack-o'});addUnit('alternative',{status:'in_stock',order:null});addUnit('wrong-variant',{status:'in_stock',order:null});sqlite.prepare("UPDATE inventory_units SET variant_id='other-variant' WHERE id='wrong-variant'").run();
+sqlite.prepare("INSERT INTO order_unit_allocations(id,client_id,store_id,order_id,unit_id,unit_code,status,created_at,updated_at) VALUES('pack-a','t','s','pack-o','original','ORIGINAL','reserved','now','now')").run();
+async function packRequest(path,body){return handleInventoryUnitTracking({env,ctx:{},delegate:{fetch:async()=>Response.json(owner)},request:new Request('https://test'+base+path+'?clientId=t&storeId=s',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})});}
+assert.equal((await packRequest('/order-scan/open',{code:'PACK-1',context:'packing'})).status,200);
+assert.equal((await packRequest('/order-scan/unit',{orderId:'pack-o',code:'wrong-variant',context:'packing'})).status,409);
+sqlite.exec("CREATE TRIGGER simulate_scan_audit_failure BEFORE INSERT ON inventory_unit_events WHEN NEW.event_type='picked_and_packed_scan' BEGIN SELECT RAISE(ABORT,'SIMULATED_AUDIT_FAILURE'); END");
+assert.equal((await packRequest('/order-scan/unit',{orderId:'pack-o',code:'alternative',context:'packing'})).status,500);assert.equal(sqlite.prepare("SELECT status FROM inventory_units WHERE id='original'").get().status,'reserved');assert.equal(sqlite.prepare("SELECT status FROM inventory_units WHERE id='alternative'").get().status,'in_stock');assert.equal(sqlite.prepare("SELECT unit_id FROM order_unit_allocations WHERE id='pack-a'").get().unit_id,'original');
+sqlite.exec('DROP TRIGGER simulate_scan_audit_failure');
+const racing=await Promise.all([packRequest('/order-scan/unit',{orderId:'pack-o',code:'alternative',context:'packing'}),packRequest('/order-scan/unit',{orderId:'pack-o',code:'alternative',context:'packing'})]);assert.deepEqual(racing.map(r=>r.status).sort(),[200,409]);
+assert.equal(sqlite.prepare("SELECT unit_id FROM order_unit_allocations WHERE id='pack-a'").get().unit_id,'alternative');assert.equal(sqlite.prepare("SELECT status FROM inventory_units WHERE id='original'").get().status,'in_stock');
+await call('/order-scan/complete',{orderId:'pack-o'});await call('/order-scan/undo',{orderId:'pack-o',code:'alternative'});assert.equal(sqlite.prepare("SELECT status FROM inventory_units WHERE id='alternative'").get().status,'reserved');assert.equal((await packRequest('/order-scan/unit',{orderId:'pack-o',code:'alternative',context:'packing'})).status,200);await call('/order-scan/complete',{orderId:'pack-o'});assert.equal(sqlite.prepare("SELECT status FROM inventory_units WHERE id='alternative'").get().status,'packed');
+console.log('Atomic packing passed: wrong variant, simultaneous scans, full rollback on audit failure, substitution, completion and audited undo/rescan.');
+const exchange=await call('/exchanges',{returnCaseId:partial.returnCaseId,replacementOrderId:'pack-o',reason:'replacement size'});assert.ok(exchange.exchangeId);
+assert.throws(()=>sqlite.prepare("UPDATE inventory_units SET current_order_id='pack-o',status='reserved' WHERE id='u1'").run(),/EXCHANGE_REPLACEMENT_SAME_UNIT/);
+sqlite.prepare("UPDATE orders SET awb='JT-EX',state='shipped' WHERE id='pack-o'").run();const exchBatch=await call('/handover');await assert.rejects(call('/handover/scan',{batchId:exchBatch.batchId,code:'JT-EX'}),e=>e.code==='JNT_OFFICIAL_WAYBILL_REQUIRED');
+sqlite.prepare("UPDATE orders SET history=? WHERE id='pack-o'").run(JSON.stringify([{type:'jt_shipment_created',awb:'JT-EX'},{type:'jt_label_printed',awb:'JT-EX',official:true}]));
+await call('/handover/scan',{batchId:exchBatch.batchId,code:'JT-EX'});await call('/handover/complete',{batchId:exchBatch.batchId});const exch=sqlite.prepare('SELECT * FROM inventory_exchange_cases WHERE id=?').get(exchange.exchangeId);assert.equal(exch.status,'completed');assert.equal(exch.original_unit_id,'u1');assert.equal(exch.replacement_unit_id,'alternative');assert.equal(sqlite.prepare("SELECT status FROM inventory_units WHERE id='u1'").get().status,'returned_in_stock');
+console.log('Exchange and carrier ownership passed: original/replacement histories preserved, original unit blocked, only official printed J&T waybill accepted.');
+
+// Stock and received identities must roll back together when the audit cannot be saved.
+const receiptBefore=sqlite.prepare("SELECT stock FROM products WHERE id='back-p'").get().stock;
+await assert.rejects(serializedReceiptStatements(env,{clientId:'back',storeId:null,productId:'back-p',qty:1.5}),e=>e.code==='SERIALIZED_RECEIPT_QUANTITY_INVALID');
+const receiptSteps=await serializedReceiptStatements(env,{clientId:'back',storeId:null,productId:'back-p',qty:3,batchId:'receipt',batchItemId:'receipt-item'});
+const stockStep=env.DB.prepare("UPDATE products SET stock=stock+3 WHERE id='back-p'");
+sqlite.exec("CREATE TRIGGER simulate_receipt_audit_failure BEFORE INSERT ON inventory_unit_events WHEN NEW.source='serialized_receipt' BEGIN SELECT RAISE(ABORT,'RECEIPT_AUDIT_FAILURE'); END");
+await assert.rejects(env.DB.batch([stockStep,...receiptSteps]),/RECEIPT_AUDIT_FAILURE/);
+assert.equal(sqlite.prepare("SELECT stock FROM products WHERE id='back-p'").get().stock,receiptBefore);
+assert.equal(sqlite.prepare("SELECT COUNT(*) n FROM inventory_units WHERE batch_id='receipt'").get().n,0);
+sqlite.exec('DROP TRIGGER simulate_receipt_audit_failure');
+await env.DB.batch([stockStep,...receiptSteps]);
+assert.equal(sqlite.prepare("SELECT stock FROM products WHERE id='back-p'").get().stock,receiptBefore+3);
+assert.equal(sqlite.prepare("SELECT COUNT(*) n FROM inventory_units WHERE batch_id='receipt'").get().n,3);
+console.log('Serialized receipt passed: integer quantity validation, stock/unit/audit atomic rollback and exact receipt identities.');
