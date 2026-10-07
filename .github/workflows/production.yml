@@ -180,7 +180,7 @@ jobs:
               && grep -Fq '/v2/modules-v128-unit-tracking.js?v=128.2' <<< "$page" \
               && grep -Fq 'code_128' <<< "$units" \
               && grep -Fq '/api/inventory/unit-tracking/barcode' <<< "$units" \
-              && grep -Fq 'طباعة باركود كل قطع المخزون' <<< "$units" \
+              && grep -Fq 'طباعة باركود كل القطع الموجودة بالمخزن' <<< "$units" \
               && grep -Fq "version:'128.2'" <<< "$units" \
               && grep -Fq 'إرسال إلى J&T وطباعة البوليصة' <<< "$printing" \
               && grep -Fq 'تم تأكيد الأوردر ونقله تلقائيًا إلى قسم الطباعة' <<< "$routing"; then ui_verified=1; break; fi
