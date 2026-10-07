@@ -37,4 +37,20 @@ export const UNIT_SAFETY_SCHEMA=[
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_scrap_pending ON inventory_scrap_requests(client_id,unit_id) WHERE status='pending'`
   ,`CREATE TRIGGER IF NOT EXISTS unit_active_allocation_insert BEFORE INSERT ON order_unit_allocations WHEN NEW.status IN ('reserved','packed','shipped','delivered','return_pending') AND EXISTS(SELECT 1 FROM order_unit_allocations WHERE client_id=NEW.client_id AND unit_id=NEW.unit_id AND status IN ('reserved','packed','shipped','delivered','return_pending') AND id<>NEW.id) BEGIN SELECT RAISE(ABORT,'UNIT_ACTIVE_ALLOCATION_CONFLICT'); END`
   ,`CREATE TRIGGER IF NOT EXISTS unit_active_allocation_update BEFORE UPDATE OF unit_id,status ON order_unit_allocations WHEN NEW.status IN ('reserved','packed','shipped','delivered','return_pending') AND EXISTS(SELECT 1 FROM order_unit_allocations WHERE client_id=NEW.client_id AND unit_id=NEW.unit_id AND status IN ('reserved','packed','shipped','delivered','return_pending') AND id<>NEW.id) BEGIN SELECT RAISE(ABORT,'UNIT_ACTIVE_ALLOCATION_CONFLICT'); END`
+,
+  `CREATE TABLE IF NOT EXISTS inventory_shipments(id TEXT PRIMARY KEY,client_id TEXT NOT NULL,store_id TEXT,order_id TEXT NOT NULL,idempotency_key TEXT NOT NULL,request_json TEXT NOT NULL,shipment_json TEXT NOT NULL,cod_minor INTEGER NOT NULL CHECK(cod_minor>=0),status TEXT NOT NULL DEFAULT 'planned',awb TEXT,sorting_code TEXT,txlogistic_id TEXT NOT NULL,label_url TEXT,packing_session_id TEXT,handover_batch_id TEXT,actor TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,printed_at TEXT,handed_over_at TEXT,lock_token TEXT,lock_until TEXT)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS inventory_shipment_request ON inventory_shipments(client_id,order_id,idempotency_key)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS inventory_shipment_awb ON inventory_shipments(client_id,awb) WHERE awb IS NOT NULL AND awb<>''`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS inventory_shipment_remote_id ON inventory_shipments(client_id,txlogistic_id)`,
+  `CREATE TABLE IF NOT EXISTS inventory_shipment_units(shipment_id TEXT NOT NULL,client_id TEXT NOT NULL,unit_id TEXT NOT NULL,allocation_id TEXT NOT NULL,product_id TEXT NOT NULL,variant_id TEXT,unit_code TEXT NOT NULL,scanned_at TEXT,cancelled_at TEXT,PRIMARY KEY(shipment_id,unit_id))`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS inventory_unit_one_shipment ON inventory_shipment_units(client_id,unit_id) WHERE cancelled_at IS NULL`,
+  `CREATE TABLE IF NOT EXISTS inventory_shipment_events(id TEXT PRIMARY KEY,shipment_id TEXT NOT NULL,client_id TEXT NOT NULL,event_type TEXT NOT NULL,actor TEXT NOT NULL,metadata_json TEXT NOT NULL,created_at TEXT NOT NULL)`
+,
+  `CREATE TRIGGER IF NOT EXISTS inventory_unit_event_immutable_update BEFORE UPDATE ON inventory_unit_events BEGIN SELECT RAISE(ABORT,'UNIT_AUDIT_IMMUTABLE'); END`,
+  `CREATE TRIGGER IF NOT EXISTS inventory_unit_event_immutable_delete BEFORE DELETE ON inventory_unit_events BEGIN SELECT RAISE(ABORT,'UNIT_AUDIT_IMMUTABLE'); END`,
+  `CREATE TRIGGER IF NOT EXISTS inventory_shipment_event_immutable_update BEFORE UPDATE ON inventory_shipment_events BEGIN SELECT RAISE(ABORT,'SHIPMENT_AUDIT_IMMUTABLE'); END`,
+  `CREATE TRIGGER IF NOT EXISTS inventory_shipment_event_immutable_delete BEFORE DELETE ON inventory_shipment_events BEGIN SELECT RAISE(ABORT,'SHIPMENT_AUDIT_IMMUTABLE'); END`
+,
+  `CREATE INDEX IF NOT EXISTS inventory_label_unit_history ON inventory_label_job_units(client_id,unit_id)`,
+  `CREATE TABLE IF NOT EXISTS inventory_schema_v128_4_ready(marker TEXT)`
 ];

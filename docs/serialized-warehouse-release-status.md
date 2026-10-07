@@ -1,24 +1,11 @@
-# Serialized warehouse implementation — draft, not deployable
+# Serialized warehouse release status
 
-This branch extends the existing unit ledger and keeps official J&T waybill printing separate from physical handover.
+Implemented: unit identities, scoped unique codes, counted/backfill guards, SERIALIZED activation snapshots, atomic receipts and unreserve, label/reprint audit, context scanners, packing sessions, independent official J&T partial waybills, signed printing/cancellation with retry recovery, physical handover manifests, partial returns/inspection, exchanges, approved scrap and stocktake, partial transfers, search/timeline and backend permissions.
 
-Implemented and locally verified:
+Migrations: 0092, 0093 and 0094 are additive and replay-safe. The release applies only these files to the canonical Preview D1 store used by Production. It never targets the historical Production D1 database and does not change stock quantities. Serialization/backfill is an explicit scoped operation, not a global automatic rewrite. The direct schema runner does not mark the D1 migration ledger; future replay remains safe.
 
-- Idempotent migration 0094, additive schema only. Counted/concurrent backfill gives 100 identities for 100 current pieces, without modifying stock.
-- Explicit SERIALIZED activation snapshots, variant checks, and legacy stock/POS/import/clear mutation guards.
-- Named-batch receipts combine stock, generated unit identities and audit entries in one transaction, with integer quantity and transaction-size validation.
-- Atomic allocation claims, packing scan substitution, duplicate/wrong-variant rejection, completion and audited undo. Injected audit failures roll back the whole operation.
-- Bulk/single print jobs and reasoned reprint audits using existing unit barcodes.
-- Official J&T carrier-record verification, packed-unit manifest batches and physical dispatch only at batch closure.
-- Partial unit returns preserving original order/AWB and sibling units; condition inspection adds sellable stock once. Exchanges link a separate replacement order and record replacement handover while blocking reuse of the returned original unit.
-- Stocktake baseline, variance report, separate-approver adjustments, stale snapshot rejection and ledger entries. Transfers support partial receipt. Scrap requires a separate approver.
-- Tenant/store-scoped serial/order/tracking search and unit history; Arabic warehouse workbench for keyboard scanners and supported BarcodeDetector cameras.
+Validation: complete npm regression, SQLite transaction/rollback/concurrency suites and isolated Chrome scanner/workbench fixtures; 1000-piece identity/label/reprint regression. J&T uses the existing signed integration; carrier tests are mocked to avoid live customer shipments. Preview and Production dry builds are required before release.
 
-Remaining release gates:
+Release: source review is PR #89 on codex/serialized-warehouse-operations. Live schema application and deployment are not yet verified. Preview deployment must precede the matching Production runtime because commerce mutations are delegated there.
 
-- Multiple real J&T waybills per order and line-specific partial shipping/packing.
-- Full transactional integration and regression of existing FIFO quantity reservations, whole-order cancellation/unreserve and partial-return interactions across every order/import path.
-- Authenticated deployed end-to-end verification, native Android compatibility, real camera/hardware scanner and thermal label checks.
-- Live safe migration/backfill, merge and deployment. None have occurred.
-
-Validation: the complete existing npm test suite passed with Windows Chrome support. Focused SQLite warehouse integrations passed, including concurrent backfill, migration replay, stocktake, returns, exchanges, atomic packing and receipt rollback. An isolated Chrome warehouse fixture passed waybill-first form scanning, wrong-scan feedback, tenant/store scoping and context switching. Production Worker dry build passed. Browser fixtures use fake APIs and do not replace authenticated end-to-end acceptance.
+Remaining acceptance: authenticated live warehouse validation, real camera/hardware scanner/thermal printer, native Android and actual J&T shipment lifecycle. No real shipment or financial transaction has been created for tests.

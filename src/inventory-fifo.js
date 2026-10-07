@@ -1,3 +1,4 @@
+import {releaseSerializedAllocations} from './inventory-serialized-release.js';
 const HOLDING_STATES=new Set(['confirmed','preparing','shipped','signed','collected']);
 const RELEASE_STATES=new Set(['pending','deferred','cancelled']);
 const clean=value=>String(value??'').trim();
@@ -114,13 +115,13 @@ async function restoreGeneralForAllocation(env,allocation,{clientId,storeId,orde
   await stockLog(env,{clientId,storeId,productId,variantId,productName:allocation.product_name||'',delta:qty,newStock,lot:{batch_id:allocation.batch_id,batch_name:allocation.batch_name},orderId,actor,note:`فك حجز مخزون أوردر ${orderId} بعد رجوعه من مسار التنفيذ`});
 }
 async function releaseActive(env,{clientId,orderId,toState,actor,restoreGeneral}){
-  const active=await activeAllocations(env,orderId,clientId);if(!active.length)return null;let qty=0;const batchIds=[],status=toState==='returned'?'returned':'released';
+  const active=await activeAllocations(env,orderId,clientId);if(!active.length)return null;const unitRelease=await releaseSerializedAllocations(env,{clientId,orderId,allocations:active,actor});if(unitRelease)return unitRelease;let qty=0;const batchIds=[],status=toState==='returned'?'returned':'released';
   for(const allocation of active){const amount=num(allocation.qty);if(amount<=0)continue;await env.DB.prepare('UPDATE inventory_batch_items SET remaining_qty=remaining_qty+? WHERE id=?').bind(amount,allocation.batch_item_id).run();if(restoreGeneral)await restoreGeneralForAllocation(env,allocation,{clientId,storeId:allocation.store_id,orderId,actor});await env.DB.prepare('UPDATE order_item_stock_allocations SET status=?,updated_at=? WHERE id=?').bind(status,stamp(),allocation.id).run();await env.DB.prepare("UPDATE inventory_batches SET status='active' WHERE id=?").bind(allocation.batch_id).run();qty+=amount;if(!batchIds.includes(allocation.batch_id))batchIds.push(allocation.batch_id);}
   await env.DB.prepare('UPDATE order_stock_allocations SET status=?,updated_at=? WHERE order_id=? AND client_id=?').bind(status,stamp(),orderId,clientId).run().catch(()=>{});
   return {kind:status,fifo:true,batchId:batchIds[0]||null,batchIds,qty};
 }
 async function releaseLegacy(env,{clientId,orderId,toState,actor,restoreGeneral}){
-  const legacy=await legacyAllocation(env,orderId,clientId);if(!legacy||legacy.status!=='allocated')return null;const amount=num(legacy.qty),status=toState==='returned'?'returned':'released';
+  const legacy=await legacyAllocation(env,orderId,clientId);if(!legacy||legacy.status!=='allocated')return null;const unitRelease=await releaseSerializedAllocations(env,{clientId,orderId,allocations:[legacy],legacy:true,actor});if(unitRelease)return unitRelease;const amount=num(legacy.qty),status=toState==='returned'?'returned':'released';
   await env.DB.prepare('UPDATE inventory_batch_items SET remaining_qty=remaining_qty+? WHERE id=?').bind(amount,legacy.batch_item_id).run();
   if(restoreGeneral)await restoreGeneralForAllocation(env,{...legacy,product_name:''},{clientId,storeId:legacy.store_id,orderId,actor});
   await env.DB.prepare('UPDATE order_stock_allocations SET status=?,updated_at=? WHERE order_id=? AND client_id=?').bind(status,stamp(),orderId,clientId).run();await env.DB.prepare("UPDATE inventory_batches SET status='active' WHERE id=?").bind(legacy.batch_id).run();

@@ -91,7 +91,7 @@ for(const marker of ['BarcodeDetector','getUserMedia','code_128','/api/inventory
 assert.ok(ui.includes("legacy_outbound:'حركة تاريخية خارج المخزون'"),'Historical outbound units need a visible non-stock status');
 
 for(const source of [preview,production,v2Index]){
-  assert.ok(source.includes('/v2/modules-v128-unit-tracking.js?v=128.3'),'v128 tracking UI must be loaded by every canonical app shell');
+  assert.ok(source.includes('/v2/modules-v128-unit-tracking.js?v=128.4'),'v128 tracking UI must be loaded by every canonical app shell');
 }
 for(const source of [preview,production]){
   assert.ok(source.includes('handleInventoryUnitTracking'),'Tracking APIs/mutations must be intercepted');
@@ -102,5 +102,5 @@ for(const source of [preview,production]){
 
 assert.ok(ui.includes("new URL(location.href).searchParams.get('unit')"),'Opening a printed QR URL must automatically resolve its unit history');
 
-assert.ok(ui.includes("version:'128.3'")&&ui.includes('طباعة باركود كل القطع الموجودة بالمخزن')&&ui.includes("scope:'warehouse'"),'Unit tracking UI must identify v128.3 and bulk-print current stock');
-console.log('Unit tracking v128.3 contract passed: bulk labels, scan-to-pack/dispatch, AWB linkage and inspected return disposition are enforced.');
+assert.ok(ui.includes("version:'128.4'")&&ui.includes('طباعة باركود كل القطع الموجودة بالمخزن')&&ui.includes("scope:'warehouse'"),'Unit tracking UI must identify v128.4 and bulk-print current stock');
+console.log('Unit tracking v128.4 contract passed: bulk labels, scan-to-pack/dispatch, AWB linkage and inspected return disposition are enforced.');

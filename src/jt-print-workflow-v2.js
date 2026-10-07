@@ -1,3 +1,4 @@
+import {cancelJtShipment} from './jt-express-eg-cancel.js';
 import {requirePermission} from './access-control.js';
 import {listMyStores} from './store-scope.js';
 import {readConnectionSecrets} from './integration-provider-validation.js';
@@ -78,6 +79,7 @@ function buildShipment(row,body={}){
 
 async function queueForPrint(request,env,ctx,delegate,me,orderId){
   const body=await request.clone().json().catch(()=>({})),clientId=clientIdFor(me,request,body),row=await assertOrderAccess(env,me,clientId,orderId,{write:true});
+  await assertNoPartialShipments(env,clientId,row.id);
   if(body.storeId&&String(body.storeId)!==String(row.store_id||''))throw Object.assign(new Error('المتجر لا يطابق متجر الأوردر'),{status:409,code:'STORE_MISMATCH'});
   const existingQueue=queueEvent(row),created=shipmentEvent(row),existingAwb=clean(row.awb||created?.awb,160);
   if(existingQueue||existingAwb){
@@ -97,6 +99,7 @@ function findPrintUrl(payload){for(const object of walkObjects(payload))for(cons
 
 async function createAndPrint(request,env,ctx,delegate,me,orderId){
   const body=await request.clone().json().catch(()=>({})),clientId=clientIdFor(me,request,body);let row=await assertOrderAccess(env,me,clientId,orderId,{write:true});
+  await assertNoPartialShipments(env,clientId,row.id);
   if(!PRINTING_STATES.has(row.state))throw Object.assign(new Error('لا يمكن إرسال الأوردر إلى J&T إلا من قسم الطباعة بعد التأكيد'),{status:409,code:'JT_PRINT_STATE_REQUIRED'});
   // Official carrier waybill creation/printing precedes packing. Physical unit
   // validation is enforced at packing completion and warehouse handover.
@@ -131,4 +134,15 @@ export async function handleJtPrintWorkflowV2({request,env,ctx,delegate,me}){
   const print=url.pathname.match(/^\/api\/jt\/shipments\/([^/]+)\/print$/);if(print&&method==='POST')return createAndPrint(request,env,ctx,delegate,me,decodeURIComponent(print[1]));
   const shipment=url.pathname.match(/^\/api\/jt\/shipments\/([^/]+)$/);if(shipment&&method==='POST')return queueForPrint(request,env,ctx,delegate,me,decodeURIComponent(shipment[1]));
   return null;
+}
+
+export const jtWarehouseCarrier={
+ async cancel(env,clientId,txlogisticId,reason){const {secrets}=await connectionFor(env,clientId);return cancelJtShipment({txlogisticId,reason,secrets});},
+ async prepare(env,clientId,order,body){const {secrets,cred}=await connectionFor(env,clientId);const shipment=buildShipment(order,body);buildJtCreatePayload(shipment,secrets,{requireBusiness:true});return minimalShipment(shipment,cred);},
+ async create(env,clientId,shipment){const {secrets}=await connectionFor(env,clientId);return createJtShipment({shipment,secrets});},
+ async print(env,clientId,awb){const {secrets,cred}=await connectionFor(env,clientId),payload=__jtApiInternals.withEnterprise({billCode:awb,printSize:'2',printCode:1},cred.fields),r=await __jtApiInternals.signedPost(PRINT_ORDER_PATH,payload,secrets,{fetcher:fetch});if(!__jtApiInternals.success(r))throw Object.assign(new Error('J&T رفضت طباعة البوليصة الرسمية'),{status:502,code:'JT_PRINT_REJECTED'});const url=findPrintUrl(r.data);if(!url)throw Object.assign(new Error('J&T لم ترجع رابط البوليصة بعد؛ أعد المحاولة بنفس الشحنة'),{status:502,code:'JT_PRINT_URL_MISSING'});return {url,official:true};}
+};
+async function assertNoPartialShipments(env,clientId,orderId){
+ let row;try{row=await env.DB.prepare("SELECT 1 n FROM inventory_shipments WHERE client_id=? AND order_id=? AND status<>'cancelled' LIMIT 1").bind(clientId,orderId).first();}catch(e){if(!/no such table.*inventory_shipments/i.test(e.message))throw e;}
+ if(row)throw Object.assign(new Error('الطلب له شحنات جزئية؛ أنشئ واطبع بوليصة كل شحنة من تشغيل المخزن'),{status:409,code:'PARTIAL_SHIPMENT_WORKFLOW_REQUIRED'});
 }

@@ -1,3 +1,6 @@
+import {serializedReceiptStatements} from './inventory-unit-tracking.js';
+import {isSerializedProduct} from './inventory-tracking-mode.js';
+import {operationGuard} from './inventory-unit-safety.js';
 import baseWorker from './index.js';
 
 const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8'}});
@@ -77,8 +80,16 @@ async function receivePO(request,env,me,poId){
     if(r.variant_id) stmts.push(env.DB.prepare('UPDATE product_variants SET stock=stock+? WHERE id=? AND client_id=?').bind(x.qty,r.variant_id,clientId));
     else stmts.push(env.DB.prepare('UPDATE products SET stock=stock+? WHERE id=? AND client_id=?').bind(x.qty,r.product_id,clientId));
   }
+  for(const x of incoming){const r=x.row,table=r.variant_id?'product_variants':'products',entity=r.variant_id||r.product_id;
+    const unitSteps=await serializedReceiptStatements(env,{clientId,storeId:po.store_id||storeId||null,productId:r.product_id,variantId:r.variant_id||null,qty:x.qty,productName:r.product_name,receiptRef:receiptId,createdBy:me.email||me.uid||'',receivedAt:ts});
+    if(unitSteps.length)stmts.unshift(operationGuard(env,'EXISTS(SELECT 1 FROM purchase_order_items WHERE id=? AND qty_received=? AND qty_received+?<=qty_ordered)',[r.id,r.qty_received,x.qty]));
+    stmts.push(...unitSteps);
+    stmts.push(env.DB.prepare('INSERT INTO stock_log(id,client_id,store_id,product_id,variant_id,product_name,delta,new_stock,note,supplier_id,supplier_name,created_at,created_by) SELECT ?,?,?,?,?,?,?,stock,?,?,?,?,? FROM '+table+' WHERE id=? AND client_id=?').bind(id('STK'),clientId,po.store_id||storeId||null,r.product_id,r.variant_id||null,r.product_name,x.qty,'استلام أمر شراء '+poId,po.supplier_id,po.supplier_name||null,ts,me.email||me.uid||'',entity,clientId));
+  }
+  if(stmts.length>900)return json({error:'قسّم الاستلام إلى دفعات أصغر لاستلام القطع بأمان'},400);
+  // Guards are present only for serialized receipts; their table already exists.
+  if(await Promise.all(incoming.map(x=>isSerializedProduct(env,clientId,x.row.product_id,x.row.variant_id||null))).then(m=>m.some(Boolean)))stmts.push(env.DB.prepare('DELETE FROM inventory_operation_guards'));
   await env.DB.batch(stmts);
-  for(const x of incoming){const r=x.row;const stockRow=r.variant_id?await env.DB.prepare('SELECT stock FROM product_variants WHERE id=?').bind(r.variant_id).first():await env.DB.prepare('SELECT stock FROM products WHERE id=?').bind(r.product_id).first();await env.DB.prepare(`INSERT INTO stock_log (id,client_id,store_id,product_id,variant_id,product_name,delta,new_stock,note,supplier_id,supplier_name,created_at,created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id('STK'),clientId,po.store_id||storeId||null,r.product_id,r.variant_id||null,r.product_name,x.qty,num(stockRow?.stock),`استلام أمر شراء ${poId}`,po.supplier_id,po.supplier_name||null,ts,me.email||me.uid||'').run();}
   const remaining=await env.DB.prepare(`SELECT SUM(qty_ordered-qty_received) remaining FROM purchase_order_items WHERE purchase_order_id=?`).bind(poId).first();const status=num(remaining?.remaining)<=0?'received':'partial';await env.DB.prepare('UPDATE purchase_orders SET status=?,updated_at=? WHERE id=?').bind(status,ts,poId).run();
   await audit(env,me,clientId,po.store_id||storeId,'purchase_order.receive','purchase_order',poId,{status:po.status},{status,receiptId,items:incoming.map(x=>({itemId:x.row.id,qty:x.qty}))});
   return json({ok:true,receiptId,status,purchaseOrder:await poDetail(env,poId,clientId,storeId)});

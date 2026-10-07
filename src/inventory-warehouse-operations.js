@@ -1,5 +1,6 @@
+import {shipmentOperation,partialHandoverScan,partialHandoverSteps,partialManifest} from './inventory-partial-shipments.js';
 import {assertUnitStore,operationGuard,decodeUnitCode} from './inventory-unit-safety.js';
-import {requirePermission} from './access-control.js';
+import {requirePermission,can} from './access-control.js';
 import {approveStocktake} from './inventory-stocktake-approval.js';
 import {receivePartialReturn} from './inventory-partial-returns.js';
 import {openExchange,exchangeHandoverStatements} from './inventory-exchange.js';
@@ -25,15 +26,16 @@ async function unit(env,clientId,storeId,code){return assertUnitStore(await stat
 async function batch(env,clientId,storeId,batchId){return assertUnitStore(await statement(env,'SELECT * FROM inventory_handover_batches WHERE client_id=? AND id=?',clientId,batchId).first(),storeId);}
 async function session(env,clientId,storeId,sessionId){return assertUnitStore(await statement(env,'SELECT * FROM inventory_operation_sessions WHERE client_id=? AND id=?',clientId,sessionId).first(),storeId);}
 function observation(env,s,u){return statement(env,"INSERT OR IGNORE INTO inventory_count_baselines(session_id,unit_id,status,updated_at,warehouse,location) SELECT ?,u.id,u.status,u.updated_at,COALESCE(l.warehouse,'Main'),COALESCE(l.location,'') FROM inventory_units u LEFT JOIN inventory_unit_locations l ON l.unit_id=u.id AND l.client_id=u.client_id WHERE u.id=? AND u.client_id=?",s.id,u.id,u.client_id);}
-async function manifest(env,b){const {results:orders=[]}=await statement(env,'SELECT order_id,awb FROM inventory_handover_orders WHERE client_id=? AND batch_id=?',b.client_id,b.id).all();const {results:units=[]}=await statement(env,'SELECT h.order_id,h.awb,u.unit_code,u.product_name,u.sku FROM inventory_handover_units h JOIN inventory_units u ON u.id=h.unit_id AND u.client_id=h.client_id WHERE h.client_id=? AND h.batch_id=?',b.client_id,b.id).all();return {batch:b,orders,units};}
+async function manifest(env,b){const {results:orders=[]}=await statement(env,'SELECT order_id,awb FROM inventory_handover_orders WHERE client_id=? AND batch_id=?',b.client_id,b.id).all();const {results:units=[]}=await statement(env,'SELECT h.order_id,h.awb,u.unit_code,u.product_name,u.sku FROM inventory_handover_units h JOIN inventory_units u ON u.id=h.unit_id AND u.client_id=h.client_id WHERE h.client_id=? AND h.batch_id=?',b.client_id,b.id).all();const partial=await partialManifest(env,b);return {batch:b,orders:[...orders,...partial.shipments],units:[...units,...partial.units],shipments:partial.shipments};}
 export async function warehouseOperation({env,clientId,storeId,me,actor,path,method,body,url}){
   const base='/api/inventory/unit-tracking';
+  if(path.startsWith(base+'/shipments'))return shipmentOperation({env,clientId,storeId,me,actor,path,method,body,url});
   if(path===base+'/operations/approve'&&method==='POST')return approveStocktake({env,clientId,storeId,me,actor,body});
   if(path===base+'/returns/receive'&&method==='POST')return receivePartialReturn({env,clientId,storeId,me,actor,body});
   if(path===base+'/exchanges'&&method==='POST')return openExchange({env,clientId,storeId,me,actor,body});
   if(path===base+'/search'&&method==='GET'){
     const q=String(url.searchParams.get('q')||'').trim();if(!q)reject('SEARCH_REQUIRED','اكتب الرقم أو امسح الكود',400);const code=decodeUnitCode(q);
-    const {results:units=[]}=await statement(env,"SELECT u.unit_code,u.product_name,u.sku,u.status,u.current_order_id,u.last_order_id FROM inventory_units u WHERE u.client_id=? AND (? IS NULL OR u.store_id=?) AND (u.unit_code=? OR u.sku=? OR u.current_order_id=? OR u.last_order_id=? OR EXISTS(SELECT 1 FROM orders o WHERE o.client_id=u.client_id AND o.store_id IS u.store_id AND (o.id=u.current_order_id OR o.id=u.last_order_id) AND (o.awb=? OR o.ref=?))) LIMIT 100",clientId,storeId,storeId,code,q,q,q,q,q).all();return {ok:true,units};
+    const {results:units=[]}=await statement(env,"SELECT u.unit_code,u.product_name,u.sku,u.status,u.current_order_id,u.last_order_id FROM inventory_units u WHERE u.client_id=? AND (? IS NULL OR u.store_id=?) AND (u.unit_code=? OR u.sku=? OR u.current_order_id=? OR u.last_order_id=? OR EXISTS(SELECT 1 FROM orders o WHERE o.client_id=u.client_id AND o.store_id IS u.store_id AND (o.id=u.current_order_id OR o.id=u.last_order_id) AND (o.awb=? OR o.ref=?)) OR EXISTS(SELECT 1 FROM inventory_shipment_units x JOIN inventory_shipments sp ON sp.id=x.shipment_id AND sp.client_id=x.client_id WHERE x.client_id=u.client_id AND x.unit_id=u.id AND sp.store_id IS u.store_id AND sp.awb=?)) LIMIT 100",clientId,storeId,storeId,code,q,q,q,q,q,q).all();return {ok:true,units};
   }
   if(path===base+'/order-scan/undo'&&method==='POST'){
     requirePermission(me,'orders','update');const u=await unit(env,clientId,storeId,body.code);if(String(u.current_order_id||'')!==String(body.orderId)||!['reserved','packed'].includes(u.status))reject('UNDO_NOT_ALLOWED','لا يمكن التراجع عن قطعة خرجت أو تخص طلبًا آخر');
@@ -51,12 +53,13 @@ export async function warehouseOperation({env,clientId,storeId,me,actor,path,met
     await atomic(env,steps);return {ok:true,status:'READY_FOR_HANDOVER'};
   }
   if(path===base+'/labels/jobs'&&method==='POST'){
-    requirePermission(me,'inventory','print');
-    const codes=[...new Set(body.codes||[])];if(!codes.length||codes.length>1000)reject('LABEL_LIMIT','اختر من 1 إلى 1000 قطعة',400);
-    const rows=[];for(const code of codes)rows.push(await unit(env,clientId,storeId,code));
-    const reason=String(body.reason||'').trim();const jobId=id('PRINT'),steps=[];
-    for(const u of rows){const previous=await statement(env,'SELECT 1 n FROM inventory_label_job_units WHERE client_id=? AND unit_id=? LIMIT 1',clientId,u.id).first();if(previous){requirePermission(me,'inventory','reprint');if(!reason)reject('REPRINT_REASON_REQUIRED','سبب إعادة الطباعة مطلوب',400);}steps.push(operationGuard(env,'NOT EXISTS(SELECT 1 FROM inventory_label_job_units WHERE client_id=? AND unit_id=?) OR ?<>\'\'',[clientId,u.id,reason]),statement(env,'INSERT INTO inventory_label_job_units(job_id,client_id,unit_id,unit_code,is_reprint) SELECT ?,?,?,?,CASE WHEN EXISTS(SELECT 1 FROM inventory_label_job_units WHERE client_id=? AND unit_id=?) THEN 1 ELSE 0 END',jobId,clientId,u.id,u.unit_code,clientId,u.id),audit(env,u,previous?'label_reprint_requested':'label_print_requested',actor,{jobId,reason}));}
-    await atomic(env,[statement(env,'INSERT INTO inventory_label_jobs(id,client_id,store_id,actor,reason,created_at) VALUES(?,?,?,?,?,?)',jobId,clientId,storeId,actor,reason,at()),...steps]);return {ok:true,jobId,count:rows.length};
+    requirePermission(me,'inventory','print');const codes=[...new Set((body.codes||[]).map(decodeUnitCode))];if(!codes.length||codes.length>1000)reject('LABEL_LIMIT','اختر من 1 إلى 1000 قطعة',400);
+    const selection=JSON.stringify(codes),filter="u.client_id=? AND (? IS NULL OR u.store_id=?) AND u.unit_code IN (SELECT value FROM json_each(?))",bindings=[clientId,storeId,storeId,selection];
+    const {results:rows=[]}=await statement(env,'SELECT u.*,CASE WHEN EXISTS(SELECT 1 FROM inventory_label_job_units j WHERE j.client_id=u.client_id AND j.unit_id=u.id) THEN 1 ELSE 0 END prior_print FROM inventory_units u WHERE '+filter,...bindings).all();
+    if(rows.length!==codes.length)reject('UNIT_NOT_FOUND','إحدى القطع غير موجودة في المتجر الحالي',404);
+    const reason=String(body.reason||'').trim();if(rows.some(u=>u.prior_print)){requirePermission(me,'inventory','reprint');if(!reason)reject('REPRINT_REASON_REQUIRED','سبب إعادة الطباعة مطلوب',400);}
+    const jobId=id('PRINT'),metadata=JSON.stringify({jobId,reason}),steps=[operationGuard(env,'(SELECT COUNT(*) FROM inventory_units u WHERE '+filter+')=? AND (NOT EXISTS(SELECT 1 FROM inventory_label_job_units j JOIN inventory_units u ON u.id=j.unit_id AND u.client_id=j.client_id WHERE '+filter+") OR (?<>'' AND ?=1))",[...bindings,codes.length,...bindings,reason,can(me,'inventory','reprint')?1:0]),statement(env,'INSERT INTO inventory_label_jobs(id,client_id,store_id,actor,reason,created_at) VALUES(?,?,?,?,?,?)',jobId,clientId,storeId,actor,reason,at()),statement(env,'INSERT INTO inventory_label_job_units(job_id,client_id,unit_id,unit_code,is_reprint) SELECT ?,u.client_id,u.id,u.unit_code,CASE WHEN EXISTS(SELECT 1 FROM inventory_label_job_units old WHERE old.client_id=u.client_id AND old.unit_id=u.id) THEN 1 ELSE 0 END FROM inventory_units u WHERE '+filter,jobId,...bindings),statement(env,"INSERT INTO inventory_unit_events(id,unit_id,unit_code,client_id,store_id,order_id,event_type,from_status,to_status,source,actor,metadata_json,created_at) SELECT ?||':'||u.id,u.id,u.unit_code,u.client_id,u.store_id,COALESCE(u.current_order_id,u.last_order_id),CASE WHEN j.is_reprint=1 THEN 'label_reprint_requested' ELSE 'label_print_requested' END,u.status,u.status,'warehouse_operations',?,?,? FROM inventory_label_job_units j JOIN inventory_units u ON u.id=j.unit_id AND u.client_id=j.client_id WHERE j.job_id=? AND j.client_id=?",jobId,actor,metadata,at(),jobId,clientId)];
+    await atomic(env,steps);return {ok:true,jobId,count:rows.length};
   }
   if(path===base+'/handover'&&method==='POST'){
     requirePermission(me,'shipping','handover');
@@ -66,6 +69,7 @@ export async function warehouseOperation({env,clientId,storeId,me,actor,path,met
   if(path===base+'/handover/manifest'&&method==='GET')return {ok:true,...await manifest(env,await batch(env,clientId,storeId,url.searchParams.get('id')))};
   if(path===base+'/handover/scan'&&method==='POST'){
     requirePermission(me,'shipping','handover');const b=await batch(env,clientId,storeId,body.batchId);if(b.status!=='open')reject('HANDOVER_CLOSED','دفعة التسليم مغلقة');
+    const partial=await partialHandoverScan(env,{clientId,storeId,batchId:b.id,code:body.code,actor});if(partial)return partial;
     const o=assertUnitStore(await statement(env,'SELECT id,client_id,store_id,awb,state,history FROM orders WHERE client_id=? AND awb=?',clientId,String(body.code||'').trim()).first(),storeId);
     if(!o.awb)reject('WAYBILL_REQUIRED','البوليصة الرسمية مطلوبة');
     let carrierEvents=[];try{const parsed=JSON.parse(o.history||'[]');if(Array.isArray(parsed))carrierEvents=parsed;}catch{}
@@ -77,10 +81,10 @@ export async function warehouseOperation({env,clientId,storeId,me,actor,path,met
   }
   if(path===base+'/handover/complete'&&method==='POST'){
     requirePermission(me,'shipping','handover');const b=await batch(env,clientId,storeId,body.batchId);if(b.status==='completed')return {ok:true,idempotent:true,...await manifest(env,b)};
-    const {results:units=[]}=await statement(env,'SELECT u.*,h.awb,h.order_id FROM inventory_handover_units h JOIN inventory_units u ON u.id=h.unit_id AND u.client_id=h.client_id WHERE h.client_id=? AND h.batch_id=?',clientId,b.id).all();if(!units.length)reject('HANDOVER_EMPTY','دفعة التسليم فارغة');
+    const {results:units=[]}=await statement(env,'SELECT u.*,h.awb,h.order_id FROM inventory_handover_units h JOIN inventory_units u ON u.id=h.unit_id AND u.client_id=h.client_id WHERE h.client_id=? AND h.batch_id=?',clientId,b.id).all();const partial=await partialHandoverSteps(env,b,actor);if(!units.length&&!partial.count)reject('HANDOVER_EMPTY','دفعة التسليم فارغة');
     const steps=[operationGuard(env,"EXISTS(SELECT 1 FROM inventory_handover_batches WHERE id=? AND status='open')",[b.id])];
     for(const u of units){steps.push(operationGuard(env,"EXISTS(SELECT 1 FROM inventory_units WHERE id=? AND client_id=? AND current_order_id=? AND status='packed')",[u.id,clientId,u.order_id]),statement(env,"UPDATE inventory_units SET status='shipped',shipped_at=?,updated_at=? WHERE id=? AND client_id=?",at(),at(),u.id,clientId),statement(env,"UPDATE order_unit_allocations SET status='shipped',updated_at=? WHERE client_id=? AND order_id=? AND unit_id=?",at(),clientId,u.order_id,u.id),audit(env,u,'handed_to_shipping',actor,{batchId:b.id,awb:u.awb,carrier:b.carrier,courier:b.courier},'shipped'));}
-    steps.push(...await exchangeHandoverStatements(env,clientId,units,actor),statement(env,"UPDATE inventory_handover_batches SET status='completed',completed_at=? WHERE id=?",at(),b.id));await atomic(env,steps);return {ok:true,...await manifest(env,{...b,status:'completed'})};
+    steps.push(...partial.steps,...await exchangeHandoverStatements(env,clientId,[...units,...(await partialManifest(env,b)).units],actor),statement(env,"UPDATE inventory_handover_batches SET status='completed',completed_at=? WHERE id=?",at(),b.id));await atomic(env,steps);return {ok:true,...await manifest(env,{...b,status:'completed'})};
   }
   if(path===base+'/operations'&&method==='POST'){
     const kind=body.kind;if(!['stocktake','transfer'].includes(kind))reject('OPERATION_INVALID','عملية غير صحيحة',400);requirePermission(me,'inventory',kind);

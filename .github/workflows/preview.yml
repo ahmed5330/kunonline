@@ -11,6 +11,7 @@ permissions:
   contents: write
 jobs:
   test-build-deploy:
+    if: github.ref_name != 'codex/serialized-warehouse-operations'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment:
@@ -334,3 +335,59 @@ jobs:
         run: |
           echo "Preview Worker changed during QA; validation result is not attributable to this run and rollback was intentionally suppressed."
           exit 1
+
+  serialized-warehouse-release:
+    if: github.event_name == 'workflow_dispatch' && github.ref_name == 'codex/serialized-warehouse-operations'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment:
+      name: preview
+      url: https://kunonline-preview.mr-a-mnaa.workers.dev/v2/
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: npm install --ignore-scripts
+      - name: Warehouse release regression and config validation
+        run: |
+          npm test
+          npm run check:preview-config
+          npm run check:production-config
+          npx wrangler deploy --dry-run --config wrangler.preview.toml
+      - name: Verify exact authorized branch head before canonical data mutation
+        run: |
+          set -euo pipefail
+          latest="$(git ls-remote origin refs/heads/codex/serialized-warehouse-operations | awk '{print $1}')"
+          test "$latest" = "$GITHUB_SHA"
+      - name: Capture current Preview Worker for owned rollback
+        id: warehouse_baseline
+        run: echo "version=$(node scripts/warehouse-worker-version.mjs)" >> "$GITHUB_OUTPUT"
+      - name: Apply only additive inventory schema to canonical data store
+        run: node scripts/warehouse-schema-apply.mjs
+      - name: Deploy the same warehouse data runtime
+        id: warehouse_deploy
+        run: |
+          npx wrangler deploy --config wrangler.preview.toml
+          echo "version=$(node scripts/warehouse-worker-version.mjs)" >> "$GITHUB_OUTPUT"
+      - name: Verify protected warehouse API and exact UI version
+        id: warehouse_smoke
+        run: |
+          set -euo pipefail
+          response="$(curl -s -o /tmp/warehouse-auth.json -w '%{http_code}' 'https://kunonline-preview.mr-a-mnaa.workers.dev/api/inventory/unit-tracking/shipments?orderId=nonexistent')"
+          test "$response" = 401
+          curl -fsS 'https://kunonline-preview.mr-a-mnaa.workers.dev/v2/modules-v128-unit-tracking.js?v=128.4' | grep -Fq "version:'128.4'"
+
+      - name: Restore only this run's Worker after failed smoke
+        if: failure() && steps.warehouse_smoke.outcome == 'failure' && steps.warehouse_deploy.outputs.version != ''
+        run: |
+          set -euo pipefail
+          current="$(node scripts/warehouse-worker-version.mjs)"
+          latest="$(git ls-remote origin refs/heads/codex/serialized-warehouse-operations | awk '{print $1}')"
+          if [ "$current" = "${{ steps.warehouse_deploy.outputs.version }}" ] && [ "$latest" = "$GITHUB_SHA" ]; then
+            npx wrangler versions deploy "${{ steps.warehouse_baseline.outputs.version }}@100%" --yes --config wrangler.preview.toml --message "Restore warehouse baseline after failed smoke"
+          fi
