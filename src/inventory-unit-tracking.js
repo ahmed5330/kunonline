@@ -257,6 +257,7 @@ function mutationPath(path,method){
   if(method==='POST'&&path==='/api/inventory/stock-adjust')return 'stock_adjust';
   if(method==='POST'&&path==='/api/inventory/batches')return 'batch_create';
   if(method==='POST'&&path==='/api/products')return 'product_create';
+  if(method==='POST'&&path==='/api/commerce/product-import')return 'product_import';
   if(method==='PATCH'&&/^\/api\/products\/[^/]+$/.test(path))return 'product_edit';
   if(method==='POST'&&/^\/api\/purchase-orders\/[^/]+\/receive$/.test(path))return 'purchase_receive';
   return null;
