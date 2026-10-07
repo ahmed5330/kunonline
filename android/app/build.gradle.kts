@@ -12,9 +12,9 @@ android {
         applicationId = "com.kunonline.callerid.stable"
         minSdk = 29
         targetSdk = 35
-        // v2.8.4 adds automatic per-piece QR + Code 128 inventory tracking.
-        versionCode = 125
-        versionName = "2.8.4"
+        // v2.8.5 adds scan-to-pack/dispatch and inspected per-piece returns.
+        versionCode = 126
+        versionName = "2.8.5"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
