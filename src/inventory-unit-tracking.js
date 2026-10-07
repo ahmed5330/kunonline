@@ -378,6 +378,18 @@ export async function handleInventoryUnitTracking({request,env,ctx,delegate}){
     if(path==='/api/inventory/unit-tracking/qr'&&method==='GET'){
       const code=scanCode(url.searchParams.get('code'));if(!code)fail('كود القطعة مطلوب',400,'UNIT_CODE_REQUIRED');await unitDetails(env,{clientId,code});const target=qrValue(code),qr=`https://quickchart.io/qr?text=${encodeURIComponent(target)}&size=240&margin=2&ecLevel=M&format=png`;return Response.redirect(qr,302);
     }
+    if(path==='/api/inventory/unit-tracking/barcode'&&method==='GET'){
+      const code=scanCode(url.searchParams.get('code'));if(!code)fail('كود القطعة مطلوب',400,'UNIT_CODE_REQUIRED');
+      await unitDetails(env,{clientId,code});
+      const barcodeUrl=new URL('https://quickchart.io/barcode');
+      barcodeUrl.searchParams.set('type','code128');
+      barcodeUrl.searchParams.set('text',barcodeValue(code));
+      barcodeUrl.searchParams.set('format','png');
+      barcodeUrl.searchParams.set('width','420');
+      barcodeUrl.searchParams.set('height','110');
+      barcodeUrl.searchParams.set('includeText','true');
+      return Response.redirect(barcodeUrl.toString(),302);
+    }
     return json({error:'مسار تتبع القطع غير معروف',code:'UNIT_TRACKING_ROUTE_NOT_FOUND'},404);
   }catch(error){return json({error:error?.message||'تعذر تنفيذ تتبع القطعة',code:error?.code||'UNIT_TRACKING_ERROR'},error?.status||500);}
 }
