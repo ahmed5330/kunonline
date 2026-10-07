@@ -29,3 +29,4 @@ jobs:
           name: kun-online-caller-id-debug-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+          retention-days: 1

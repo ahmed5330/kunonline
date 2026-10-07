@@ -41,7 +41,7 @@ jobs:
           name: kun-online-android-debug
           path: android-app/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 1
       - name: Prepare stable APK download
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/develop/ux-system-upgrade'
         run: cp android-app/app/build/outputs/apk/debug/app-debug.apk Kun-Online-Mobile.apk

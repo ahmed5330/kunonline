@@ -232,7 +232,7 @@ jobs:
           name: kun-online-stable-signed-apk-${{ steps.signed.outputs.version }}
           path: /tmp/Kun-Online-Mobile.apk
           if-no-files-found: error
-          retention-days: 90
+          retention-days: 1
 
       - name: Remove decrypted signing material
         if: always()
