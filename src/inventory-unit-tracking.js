@@ -278,6 +278,7 @@ async function afterMutation(env,{kind,body,responseData,clientId,storeId,actor}
     const {results:variants=[]}=await env.DB.prepare('SELECT id FROM product_variants WHERE product_id=? AND client_id=? AND active=1').bind(productId,clientId).all();
     let created=0;if(variants.length){for(const v of variants)created+=(await reconcileEntityStock(env,{clientId,storeId:product.store_id||storeId,productId,variantId:v.id,actor,source:'product_stock'})).created;}else created+=(await reconcileEntityStock(env,{clientId,storeId:product.store_id||storeId,productId,actor,source:'product_stock'})).created;return {created};
   }
+  if(kind==='product_import')return reconcileAllUnitCoverage(env,{clientId,storeId,actor:'product-import:'+actor});
   if(kind==='purchase_receive')return reconcileAllUnitCoverage(env,{clientId,storeId,actor});
   return null;
 }
