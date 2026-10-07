@@ -110,7 +110,7 @@ async function websiteWithDirectAndroidDownload(request,env){
     html=html.replace('</body>','<script src="/v2/modules-v127-subscriptions.js?v=127.16" data-kun-subscriptions-v127="1"></script></body>');
   }
   if(!html.includes('/v2/modules-v128-unit-tracking.js')){
-    html=html.replace('</body>','<script src="/v2/modules-v128-unit-tracking.js?v=128.0" data-kun-unit-tracking-v128="1"></script></body>');
+    html=html.replace('</body>','<script src="/v2/modules-v128-unit-tracking.js?v=128.1" data-kun-unit-tracking-v128="1"></script></body>');
   }
   const headers=new Headers(asset.headers);
   headers.set('Content-Type','text/html; charset=utf-8');
