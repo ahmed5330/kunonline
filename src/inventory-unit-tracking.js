@@ -270,12 +270,14 @@ async function afterMutation(env,{kind,body,responseData,clientId,storeId,actor}
   }
   if(kind==='stock_adjust'){
     const productId=clean(body.productId||body.product_id),variantId=clean(body.variantId||body.variant_id)||null,delta=Number(body.delta);if(!productId||!Number.isFinite(delta)||delta===0)return null;
-    if(delta>0){
-      const direct=await createAdjustmentUnits(env,{clientId,storeId,productId,variantId,qty:delta,actor,note:body.note||'',stockDate:body.stockDate||body.stock_date||null});
-      const coverage=await reconcileEntityStock(env,{clientId,storeId,productId,variantId,actor,source:'stock_adjust_verify'});
-      return {created:direct+(coverage.created||0),coverage};
-    }
-    return {retired:await retireUnits(env,{clientId,storeId,productId,variantId,qty:Math.abs(delta),actor,note:body.note||'تسوية مخزون سالبة'})};
+    const p=await productInfo(env,{clientId,productId,variantId});if(!p)fail('المنتج غير موجود بعد تعديل المخزون',404,'TRACKING_PRODUCT_NOT_FOUND');
+    const target=Math.max(0,Math.floor(num(p.stock))),before=await availableCount(env,{clientId,storeId,productId,variantId});
+    let created=0,retired=0;
+    if(before<target)created=await createAdjustmentUnits(env,{clientId,storeId,productId,variantId,qty:target-before,actor,note:body.note||'',stockDate:body.stockDate||body.stock_date||null});
+    else if(before>target)retired=await retireUnits(env,{clientId,storeId,productId,variantId,qty:before-target,actor,note:body.note||'تسوية مخزون سالبة'});
+    const after=await availableCount(env,{clientId,storeId,productId,variantId});
+    if(after!==target)fail(`رصيد المنتج ${target} لكن عدد القطع المكودة المتاحة ${after}`,409,'UNIT_TRACKING_STOCK_COVERAGE_MISMATCH');
+    return {created,retired,target,available:after};
   }
   if(kind==='product_create'||kind==='product_edit'){
     const productId=clean(responseData?.product?.id||responseData?.id);if(!productId)return null;
