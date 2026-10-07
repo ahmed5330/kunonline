@@ -176,7 +176,8 @@ export async function reconcileAllUnitCoverage(env,{clientId,storeId=null,actor=
 }
 
 async function setStatus(env,unit,status,{orderId=null,eventType='status_changed',note='',source='order_lifecycle',actor='system',metadata={}}={}){
-  if(unit.status===status&&String(unit.current_order_id||'')===String((['in_stock','returned_in_stock','retired'].includes(status)?null:orderId)||''))return unit;
+  const clearsCurrentOrder=['in_stock','returned_in_stock','retired','legacy_outbound',...RETURN_HOLD].includes(status);
+  if(unit.status===status&&String(unit.current_order_id||'')===String((clearsCurrentOrder?null:orderId)||''))return unit;
   const from=unit.status,at=stamp(),fields={reserved_at:null,shipped_at:null,delivered_at:null,returned_at:null,retired_at:null};
   if(status==='reserved')fields.reserved_at=at;if(status==='shipped')fields.shipped_at=at;if(status==='delivered')fields.delivered_at=at;if(status==='returned_in_stock'||RETURN_HOLD.has(status))fields.returned_at=at;if(status==='retired')fields.retired_at=at;
   const clear=['in_stock','returned_in_stock','retired','legacy_outbound',...RETURN_HOLD].includes(status),current=clear?null:(orderId||unit.current_order_id||null),last=orderId||unit.current_order_id||unit.last_order_id||null;
