@@ -145,9 +145,17 @@ jobs:
           check_guarded_route '/api/orders/TEST/details?clientId=probe'
           check_guarded_route '/api/customer-service/orders/TEST/history?clientId=probe'
           check_guarded_route '/api/collaboration/bootstrap?clientId=probe&storeId=probe'
-          check_guarded_route '/api/inventory/unit-tracking/summary?clientId=probe'
-          check_guarded_route '/api/inventory/unit-tracking/lookup?clientId=probe&code=TEST'
-          check_guarded_route '/api/inventory/unit-tracking/barcode?clientId=probe&code=TEST'
+          check_tracking_route() {
+            local path="$1" body code
+            body="$(mktemp)"
+            code="$(curl -sS -o "$body" -w '%{http_code}' "https://app.kun-online.com${path}")"
+            if ! grep -Fq '"code":"AUTH_REQUIRED"' "$body"; then echo "Expected unit-tracking route to reject anonymous access: ${path}; got HTTP ${code}"; cat "$body"; exit 1; fi
+            if grep -Fq 'مسار تتبع القطع غير معروف' "$body"; then echo "Unit-tracking route is missing: ${path}"; cat "$body"; exit 1; fi
+            echo "Protected unit-tracking route verified: ${path} -> HTTP ${code} / AUTH_REQUIRED"
+          }
+          check_tracking_route '/api/inventory/unit-tracking/summary?clientId=probe'
+          check_tracking_route '/api/inventory/unit-tracking/lookup?clientId=probe&code=TEST'
+          check_tracking_route '/api/inventory/unit-tracking/barcode?clientId=probe&code=TEST'
           caller_body="$(mktemp)"
           caller_code="$(curl -sS -X PATCH -H 'Content-Type: application/json' -d '{}' -o "$caller_body" -w '%{http_code}' 'https://app.kun-online.com/api/caller-jnt/orders/TEST')"
           if [ "$caller_code" != "401" ]; then echo "Expected protected caller J&T edit route to return 401 without a session; got HTTP ${caller_code}"; cat "$caller_body"; exit 1; fi
