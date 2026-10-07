@@ -2,6 +2,7 @@ import {requirePermission} from './access-control.js';
 import {listMyStores} from './store-scope.js';
 import {readConnectionSecrets} from './integration-provider-validation.js';
 import {buildJtCreatePayload,createJtShipment,jtCredentials,__jtApiInternals} from './jt-express-eg-api.js';
+import {assertOrderScanReady} from './inventory-unit-tracking.js';
 
 const PRINT_ORDER_PATH='/webopenplatformapi/api/order/printOrder';
 const ALLOWED_ROLES=new Set(['admin','client','ops','support']);
@@ -98,6 +99,9 @@ function findPrintUrl(payload){for(const object of walkObjects(payload))for(cons
 async function createAndPrint(request,env,ctx,delegate,me,orderId){
   const body=await request.clone().json().catch(()=>({})),clientId=clientIdFor(me,request,body);let row=await assertOrderAccess(env,me,clientId,orderId,{write:true});
   if(!PRINTING_STATES.has(row.state))throw Object.assign(new Error('لا يمكن إرسال الأوردر إلى J&T إلا من قسم الطباعة بعد التأكيد'),{status:409,code:'JT_PRINT_STATE_REQUIRED'});
+  // Serialized inventory orders must be physically scanned before any carrier-side createOrder call.
+  // Orders without unit allocations keep the legacy path for backwards compatibility.
+  await assertOrderScanReady(env,{clientId,orderId,actor:me?.email||me?.name||me?.role||'printing'});
   const {row:connection,secrets,cred}=await connectionFor(env,clientId);if(!cred.enterpriseReady)throw Object.assign(new Error('إصدار البوليصة الرسمية يحتاج Business Info الخاصة بحساب J&T'),{status:409,code:'JT_BUSINESS_CREDENTIALS_MISSING',enterpriseCredentialsRequired:true});
   let createdEvent=shipmentEvent(row),awb=clean(row.awb||createdEvent?.awb,160),sortingCode=clean(createdEvent?.sortingCode,160),txlogisticId=clean(createdEvent?.txlogisticId,160),shipmentCreatedNow=false;
   const alreadyPrinted=parseArray(row.history).some(event=>event?.type==='jt_label_printed'&&(!awb||clean(event?.awb,160)===awb));

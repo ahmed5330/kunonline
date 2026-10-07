@@ -11,6 +11,8 @@ const HOLDING=new Set(['confirmed','preparing']);
 const SHIPPED=new Set(['shipped']);
 const DELIVERED=new Set(['signed','collected']);
 const RELEASED=new Set(['pending','deferred','cancelled']);
+const RETURN_HOLD=new Set(['returned_pending_inspection','quarantined','damaged']);
+const SCAN_CONTEXTS=new Set(['packing','dispatch']);
 const fail=(message,status=400,code='UNIT_TRACKING_ERROR')=>{throw Object.assign(new Error(message),{status,code});};
 
 const SCHEMA=[
@@ -29,7 +31,14 @@ const SCHEMA=[
   `CREATE TABLE IF NOT EXISTS order_unit_allocations (id TEXT PRIMARY KEY,client_id TEXT NOT NULL,store_id TEXT,order_id TEXT NOT NULL,order_item_id TEXT,stock_allocation_id TEXT,unit_id TEXT NOT NULL,unit_code TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'reserved',created_at TEXT NOT NULL,updated_at TEXT NOT NULL,released_at TEXT)`,
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_order_unit_unique ON order_unit_allocations(order_id,unit_id)`,
   `CREATE INDEX IF NOT EXISTS idx_order_unit_order ON order_unit_allocations(client_id,order_id,status)`,
-  `CREATE INDEX IF NOT EXISTS idx_order_unit_unit ON order_unit_allocations(client_id,unit_id,created_at)`
+  `CREATE INDEX IF NOT EXISTS idx_order_unit_unit ON order_unit_allocations(client_id,unit_id,created_at)`,
+  `CREATE TABLE IF NOT EXISTS inventory_scan_sessions (id TEXT PRIMARY KEY,client_id TEXT NOT NULL,store_id TEXT,order_id TEXT NOT NULL,scan_context TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'open',order_scan_code TEXT,expected_units INTEGER NOT NULL DEFAULT 0,scanned_units INTEGER NOT NULL DEFAULT 0,awb TEXT,actor TEXT,actor_user_id TEXT,device_id TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,completed_at TEXT)`,
+  `CREATE INDEX IF NOT EXISTS idx_inventory_scan_sessions_order ON inventory_scan_sessions(client_id,order_id,scan_context,status,updated_at)`,
+  `CREATE TABLE IF NOT EXISTS inventory_scan_events (id TEXT PRIMARY KEY,session_id TEXT,client_id TEXT NOT NULL,store_id TEXT,order_id TEXT,unit_id TEXT,unit_code TEXT,scan_context TEXT NOT NULL,scan_kind TEXT NOT NULL,result TEXT NOT NULL,awb TEXT,actor TEXT,actor_user_id TEXT,device_id TEXT,metadata_json TEXT DEFAULT '{}',created_at TEXT NOT NULL)`,
+  `CREATE INDEX IF NOT EXISTS idx_inventory_scan_events_order ON inventory_scan_events(client_id,order_id,scan_context,created_at)`,
+  `CREATE INDEX IF NOT EXISTS idx_inventory_scan_events_unit ON inventory_scan_events(client_id,unit_id,created_at)`,
+  `CREATE INDEX IF NOT EXISTS idx_inventory_scan_events_session ON inventory_scan_events(session_id,created_at)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_inventory_scan_unit_accept_unique ON inventory_scan_events(session_id,unit_id,scan_kind) WHERE unit_id IS NOT NULL AND result='accepted'`
 ];
 
 let schemaReady=false;
@@ -167,10 +176,11 @@ export async function reconcileAllUnitCoverage(env,{clientId,storeId=null,actor=
 }
 
 async function setStatus(env,unit,status,{orderId=null,eventType='status_changed',note='',source='order_lifecycle',actor='system',metadata={}}={}){
-  if(unit.status===status&&String(unit.current_order_id||'')===String((['in_stock','returned_in_stock','retired'].includes(status)?null:orderId)||''))return unit;
+  const clearsCurrentOrder=['in_stock','returned_in_stock','retired','legacy_outbound',...RETURN_HOLD].includes(status);
+  if(unit.status===status&&String(unit.current_order_id||'')===String((clearsCurrentOrder?null:orderId)||''))return unit;
   const from=unit.status,at=stamp(),fields={reserved_at:null,shipped_at:null,delivered_at:null,returned_at:null,retired_at:null};
-  if(status==='reserved')fields.reserved_at=at;if(status==='shipped')fields.shipped_at=at;if(status==='delivered')fields.delivered_at=at;if(status==='returned_in_stock')fields.returned_at=at;if(status==='retired')fields.retired_at=at;
-  const clear=['in_stock','returned_in_stock','retired','legacy_outbound'].includes(status),current=clear?null:(orderId||unit.current_order_id||null),last=orderId||unit.current_order_id||unit.last_order_id||null;
+  if(status==='reserved')fields.reserved_at=at;if(status==='shipped')fields.shipped_at=at;if(status==='delivered')fields.delivered_at=at;if(status==='returned_in_stock'||RETURN_HOLD.has(status))fields.returned_at=at;if(status==='retired')fields.retired_at=at;
+  const clear=['in_stock','returned_in_stock','retired','legacy_outbound',...RETURN_HOLD].includes(status),current=clear?null:(orderId||unit.current_order_id||null),last=orderId||unit.current_order_id||unit.last_order_id||null;
   await env.DB.prepare(`UPDATE inventory_units SET status=?,current_order_id=?,last_order_id=?,reserved_at=COALESCE(?,reserved_at),shipped_at=COALESCE(?,shipped_at),delivered_at=COALESCE(?,delivered_at),returned_at=COALESCE(?,returned_at),retired_at=COALESCE(?,retired_at),updated_at=? WHERE id=?`).bind(status,current,last,fields.reserved_at,fields.shipped_at,fields.delivered_at,fields.returned_at,fields.retired_at,at,unit.id).run();
   await event(env,unit,{eventType,fromStatus:from,toStatus:status,orderId:last,note,source,actor,metadata});
   return {...unit,status,current_order_id:current,last_order_id:last};
@@ -208,10 +218,17 @@ export async function syncOrderUnitTracking(env,{clientId,orderId,actor='system'
   if(HOLDING.has(order.state)){target='reserved';eventType='reserved_for_order';note='القطعة محجوزة للأوردر بعد التأكيد';}
   else if(SHIPPED.has(order.state)){target='shipped';eventType='handed_to_shipping';note=order.awb?`تم تسليم القطعة للشحن — AWB ${order.awb}`:'تم تسليم القطعة للشحن';}
   else if(DELIVERED.has(order.state)){target='delivered';eventType='delivered_to_customer';note='تم تسليم القطعة للعميل';}
-  else if(order.state==='returned'){target='returned_in_stock';eventType='returned_to_inventory';note='تم استرجاع القطعة كمرتجع وإعادتها للمخزون';}
+  else if(order.state==='returned'){target='returned_pending_inspection';eventType='return_received_pending_inspection';note='تم استلام المرتجع وهو في انتظار الفحص؛ لم يعد متاحًا للبيع بعد';}
   else if(RELEASED.has(order.state)){target='in_stock';eventType='reservation_released';note='تم فك حجز القطعة وإعادتها للمخزون';}
   if(!target)return {ok:true,orderId,state:order.state,units:rows.length,changed:0};
-  let changed=0;for(const row of rows){const before=row.status;await setStatus(env,row,target,{orderId,eventType,note,source,actor,metadata:{orderState:order.state,awb:order.awb||null,returnType:order.return_type||null}});if(before!==target)changed++;await env.DB.prepare('UPDATE order_unit_allocations SET status=?,updated_at=?,released_at=? WHERE id=?').bind(target==='returned_in_stock'?'returned':target==='in_stock'?'released':target,stamp(),['returned_in_stock','in_stock'].includes(target)?stamp():null,row.allocation_id).run();}
+  let changed=0;for(const row of rows){
+    if(order.state==='returned'&&(['returned_in_stock','quarantined','damaged'].includes(row.status)))continue;
+    const before=row.status;await setStatus(env,row,target,{orderId,eventType,note,source,actor,metadata:{orderState:order.state,awb:order.awb||null,returnType:order.return_type||null}});if(before!==target)changed++;await env.DB.prepare('UPDATE order_unit_allocations SET status=?,updated_at=?,released_at=? WHERE id=?').bind(target==='returned_pending_inspection'?'return_pending':target==='returned_in_stock'?'returned':target==='in_stock'?'released':target,stamp(),['returned_in_stock','in_stock'].includes(target)?stamp():null,row.allocation_id).run();
+  }
+  if(order.awb){
+    await env.DB.prepare("UPDATE inventory_scan_sessions SET awb=COALESCE(NULLIF(awb,''),?),updated_at=? WHERE client_id=? AND order_id=?").bind(order.awb,stamp(),clientId,orderId).run().catch(()=>{});
+    await env.DB.prepare("UPDATE inventory_scan_events SET awb=COALESCE(NULLIF(awb,''),?) WHERE client_id=? AND order_id=?").bind(order.awb,clientId,orderId).run().catch(()=>{});
+  }
   return {ok:true,orderId,state:order.state,units:rows.length,changed};
 }
 
@@ -308,6 +325,163 @@ async function unitDetails(env,{clientId,code}){
   return {unit:{...unit,metadata:JSON.parse(unit.metadata_json||'{}'),qrValue:qrValue(unit.unit_code),barcodeValue:barcodeValue(unit.unit_code)},events:events.map(x=>({...x,metadata:(()=>{try{return JSON.parse(x.metadata_json||'{}')}catch{return {}}})()})),allocations,orders};
 }
 
+
+function orderScanCode(value){
+  let v=clean(value,1000);
+  try{const u=new URL(v);v=u.searchParams.get('order')||u.searchParams.get('awb')||u.searchParams.get('ref')||u.searchParams.get('code')||v;}catch{}
+  return clean(v.replace(/^KUN:(?:ORDER|AWB):/i,''),180);
+}
+function scanContext(value){const v=clean(value,40).toLowerCase();if(!SCAN_CONTEXTS.has(v))fail('سياق المسح غير صحيح',400,'SCAN_CONTEXT_INVALID');return v;}
+async function findOrderByScan(env,{clientId,code}){
+  const raw=orderScanCode(code);if(!raw)fail('امسح كود الطلب أو البوليصة',400,'ORDER_SCAN_CODE_REQUIRED');
+  const row=await env.DB.prepare("SELECT id,client_id,store_id,ref,state,awb,product,qty,date,return_type,restocked FROM orders WHERE client_id=? AND (UPPER(id)=UPPER(?) OR UPPER(COALESCE(ref,''))=UPPER(?) OR UPPER(COALESCE(awb,''))=UPPER(?)) ORDER BY CASE WHEN UPPER(COALESCE(awb,''))=UPPER(?) THEN 0 WHEN UPPER(COALESCE(ref,''))=UPPER(?) THEN 1 ELSE 2 END LIMIT 1").bind(clientId,raw,raw,raw,raw,raw).first();
+  if(!row)fail('لم يتم العثور على طلب أو بوليصة بهذا الكود',404,'ORDER_SCAN_NOT_FOUND');
+  const matchedBy=String(row.awb||'').toUpperCase()===raw.toUpperCase()?'awb':String(row.ref||'').toUpperCase()===raw.toUpperCase()?'ref':'order_id';
+  return {row,raw,matchedBy};
+}
+async function orderUnits(env,{clientId,orderId,actor='system'}){
+  const order=await env.DB.prepare('SELECT id,client_id,store_id,ref,state,awb,product,qty,return_type,restocked FROM orders WHERE id=? AND client_id=?').bind(orderId,clientId).first();
+  if(!order)fail('الأوردر غير موجود',404,'ORDER_NOT_FOUND');
+  if(['confirmed','preparing','shipped','signed','collected','returned'].includes(clean(order.state)))await ensureOrderUnitAssignments(env,{clientId,orderId,actor});
+  const {results=[]}=await env.DB.prepare("SELECT a.id allocation_id,a.order_item_id,a.stock_allocation_id,a.status allocation_status,u.* FROM order_unit_allocations a JOIN inventory_units u ON u.id=a.unit_id AND u.client_id=a.client_id WHERE a.client_id=? AND a.order_id=? ORDER BY a.created_at,a.id").bind(clientId,orderId).all();
+  return {order,units:results};
+}
+async function sessionFor(env,{clientId,orderId,context,actor='system',actorUserId=null,deviceId='',orderScanCodeValue=''}){
+  const ctx=scanContext(context),loaded=await orderUnits(env,{clientId,orderId,actor}),expected=loaded.units.length;
+  let session=await env.DB.prepare("SELECT * FROM inventory_scan_sessions WHERE client_id=? AND order_id=? AND scan_context=? ORDER BY CASE status WHEN 'open' THEN 0 ELSE 1 END,updated_at DESC LIMIT 1").bind(clientId,orderId,ctx).first();
+  if(!session||Number(session.expected_units)!==expected){
+    const at=stamp(),id=rid('SCN');
+    await env.DB.prepare("INSERT INTO inventory_scan_sessions (id,client_id,store_id,order_id,scan_context,status,order_scan_code,expected_units,scanned_units,awb,actor,actor_user_id,device_id,created_at,updated_at) VALUES (?,?,?,?,?,'open',?,?,0,?,?,?,?,?,?)").bind(id,clientId,loaded.order.store_id||null,orderId,ctx,clean(orderScanCodeValue,180)||null,expected,loaded.order.awb||null,actor,actorUserId||null,clean(deviceId,180)||null,at,at).run();
+    session=await env.DB.prepare('SELECT * FROM inventory_scan_sessions WHERE id=?').bind(id).first();
+  }else if(orderScanCodeValue||deviceId){
+    await env.DB.prepare('UPDATE inventory_scan_sessions SET order_scan_code=COALESCE(?,order_scan_code),device_id=COALESCE(?,device_id),actor=?,actor_user_id=COALESCE(?,actor_user_id),updated_at=? WHERE id=?').bind(clean(orderScanCodeValue,180)||null,clean(deviceId,180)||null,actor,actorUserId||null,stamp(),session.id).run();
+    session={...session,order_scan_code:clean(orderScanCodeValue,180)||session.order_scan_code,device_id:clean(deviceId,180)||session.device_id};
+  }
+  return {session,order:loaded.order,units:loaded.units};
+}
+async function scanEvent(env,{session,order,unit=null,kind,result,actor='system',actorUserId=null,deviceId='',metadata={}}){
+  const id=rid('SEV'),at=stamp();
+  try{
+    await env.DB.prepare('INSERT INTO inventory_scan_events (id,session_id,client_id,store_id,order_id,unit_id,unit_code,scan_context,scan_kind,result,awb,actor,actor_user_id,device_id,metadata_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(id,session?.id||null,order.client_id,order.store_id||null,order.id,unit?.id||null,unit?.unit_code||null,session?.scan_context||clean(metadata.context)||'packing',kind,result,order.awb||session?.awb||null,actor,actorUserId||null,clean(deviceId,180)||null,JSON.stringify(metadata||{}),at).run();
+  }catch(error){
+    if(!(result==='accepted'&&/UNIQUE/i.test(String(error?.message||error))))throw error;
+  }
+  return id;
+}
+async function scanSnapshot(env,{clientId,orderId,context,actor='system'}){
+  const ctx=scanContext(context),state=await sessionFor(env,{clientId,orderId,context:ctx,actor}),session=state.session,order=state.order,units=state.units;
+  const {results:accepted=[]}=await env.DB.prepare("SELECT DISTINCT unit_id FROM inventory_scan_events WHERE session_id=? AND scan_kind='unit' AND result='accepted' AND unit_id IS NOT NULL").bind(session.id).all();
+  const scanned=new Set(accepted.map(x=>String(x.unit_id))),count=scanned.size,expected=units.length,complete=expected>0&&count===expected;
+  if(Number(session.scanned_units)!==count||session.status!==(complete?'completed':'open')){
+    await env.DB.prepare("UPDATE inventory_scan_sessions SET scanned_units=?,status=?,completed_at=?,awb=COALESCE(NULLIF(awb,''),?),updated_at=? WHERE id=?").bind(count,complete?'completed':'open',complete?(session.completed_at||stamp()):null,order.awb||null,stamp(),session.id).run();
+  }
+  return {session:{...session,scanned_units:count,status:complete?'completed':'open',awb:order.awb||session.awb||null},order:{id:order.id,ref:order.ref||null,state:order.state,awb:order.awb||null,product:order.product||'',qty:num(order.qty),returnType:order.return_type||null},expectedCount:expected,scannedCount:count,remainingCount:Math.max(0,expected-count),complete,units:units.map(u=>({unitCode:u.unit_code,productName:u.product_name||'',sku:u.sku||'',productId:u.product_id,variantId:u.variant_id||null,batchId:u.batch_id||null,batchItemId:u.batch_item_id||null,status:u.status,scanned:scanned.has(String(u.id))}))};
+}
+async function openOrderScan(env,{clientId,code,context,actor='system',actorUserId=null,deviceId=''}){
+  const ctx=scanContext(context),found=await findOrderByScan(env,{clientId,code}),order=found.row;
+  if(ctx==='packing'&&!['confirmed','preparing'].includes(clean(order.state)))fail('تجهيز القطع بالمسح متاح للأوردر الموجود في قسم الطباعة قبل الشحن',409,'PACKING_ORDER_STATE_INVALID');
+  if(ctx==='dispatch'&&(clean(order.state)!=='shipped'||!clean(order.awb)))fail('مسح التسليم لشركة الشحن متاح بعد إنشاء AWB والبوليصة الرسمية',409,'DISPATCH_ORDER_STATE_INVALID');
+  const state=await sessionFor(env,{clientId,orderId:order.id,context:ctx,actor,actorUserId,deviceId,orderScanCodeValue:found.raw});
+  await scanEvent(env,{session:state.session,order,kind:found.matchedBy==='awb'?'awb':'order',result:'accepted',actor,actorUserId,deviceId,metadata:{matchedBy:found.matchedBy,scannedCode:found.raw,context:ctx}});
+  return {...await scanSnapshot(env,{clientId,orderId:order.id,context:ctx,actor}),matchedBy:found.matchedBy};
+}
+async function scanUnitForOrder(env,{clientId,orderId,code,context,actor='system',actorUserId=null,deviceId=''}){
+  const ctx=scanContext(context),state=await sessionFor(env,{clientId,orderId,context:ctx,actor,actorUserId,deviceId}),session=state.session,order=state.order;
+  if(ctx==='packing'&&!['confirmed','preparing'].includes(clean(order.state)))fail('الأوردر خرج من مرحلة التجهيز',409,'PACKING_ORDER_STATE_INVALID');
+  if(ctx==='dispatch'&&(clean(order.state)!=='shipped'||!clean(order.awb)))fail('لا يمكن تأكيد التسليم للشحن قبل إنشاء AWB',409,'DISPATCH_ORDER_STATE_INVALID');
+  const unitCode=scanCode(code);if(!unitCode)fail('امسح باركود القطعة',400,'UNIT_CODE_REQUIRED');
+  let unit=await env.DB.prepare('SELECT * FROM inventory_units WHERE client_id=? AND unit_code=?').bind(clientId,unitCode).first();
+  if(!unit)fail('كود القطعة غير موجود',404,'UNIT_NOT_FOUND');
+  const duplicate=await env.DB.prepare("SELECT id FROM inventory_scan_events WHERE session_id=? AND unit_id=? AND scan_kind='unit' AND result='accepted' LIMIT 1").bind(session.id,unit.id).first();
+  if(duplicate)return {...await scanSnapshot(env,{clientId,orderId,context:ctx,actor}),duplicate:true,acceptedUnit:unit.unit_code};
+  let allocation=await env.DB.prepare('SELECT * FROM order_unit_allocations WHERE client_id=? AND order_id=? AND unit_id=? LIMIT 1').bind(clientId,orderId,unit.id).first();
+  if(!allocation&&ctx==='packing'){
+    if(unit.current_order_id&&String(unit.current_order_id)!==String(orderId)){
+      await scanEvent(env,{session,order,unit,kind:'unit',result:'rejected',actor,actorUserId,deviceId,metadata:{reason:'reserved_for_other_order'}});
+      fail('القطعة محجوزة لأوردر آخر',409,'UNIT_RESERVED_FOR_OTHER_ORDER');
+    }
+    if(!AVAILABLE.has(unit.status)||unit.current_order_id){
+      await scanEvent(env,{session,order,unit,kind:'unit',result:'rejected',actor,actorUserId,deviceId,metadata:{reason:'unit_not_available',status:unit.status}});
+      fail('القطعة غير متاحة للتجهيز',409,'UNIT_NOT_AVAILABLE_FOR_PACKING');
+    }
+    const snap=await scanSnapshot(env,{clientId,orderId,context:ctx,actor}),acceptedCodes=new Set(snap.units.filter(x=>x.scanned).map(x=>x.unitCode));
+    const candidate=state.units.find(x=>!acceptedCodes.has(x.unit_code)&&String(x.product_id)===String(unit.product_id)&&String(x.variant_id||'')===String(unit.variant_id||'')&&String(x.batch_item_id||'')===String(unit.batch_item_id||''));
+    if(!candidate){
+      await scanEvent(env,{session,order,unit,kind:'unit',result:'rejected',actor,actorUserId,deviceId,metadata:{reason:'wrong_product_variant_or_batch'}});
+      fail('هذه القطعة لا تطابق القطع المطلوبة للأوردر أو دفعة FIFO المخصصة له',409,'UNIT_ORDER_MISMATCH');
+    }
+    await setStatus(env,candidate,'in_stock',{orderId,eventType:'packing_scan_placeholder_released',note:'تم استبدال القطعة المحجوزة بقطعة ممسوحة من نفس المنتج والدفعة',source:'packing_scan',actor,metadata:{sessionId:session.id,replacedBy:unit.unit_code,deviceId}});
+    await env.DB.prepare('UPDATE order_unit_allocations SET unit_id=?,unit_code=?,updated_at=? WHERE id=?').bind(unit.id,unit.unit_code,stamp(),candidate.allocation_id).run();
+    unit=await setStatus(env,unit,'reserved',{orderId,eventType:'packing_scan_claimed',note:'تم ربط القطعة فعليًا بالأوردر '+orderId+' عن طريق المسح',source:'packing_scan',actor,metadata:{sessionId:session.id,replacedUnit:candidate.unit_code,deviceId}});
+    allocation={...candidate,unit_id:unit.id,unit_code:unit.unit_code};
+  }
+  if(!allocation){
+    await scanEvent(env,{session,order,unit,kind:'unit',result:'rejected',actor,actorUserId,deviceId,metadata:{reason:'not_allocated_to_order'}});
+    fail('هذه القطعة ليست ضمن القطع التي تم تجهيزها لهذا الأوردر',409,'UNIT_NOT_IN_ORDER');
+  }
+  await scanEvent(env,{session,order,unit,kind:'unit',result:'accepted',actor,actorUserId,deviceId,metadata:{allocationId:allocation.id,stockAllocationId:allocation.stock_allocation_id||null,context:ctx}});
+  await event(env,unit,{eventType:ctx==='packing'?'picked_and_packed_scan':'dispatch_scan_verified',fromStatus:unit.status,toStatus:unit.status,orderId,source:ctx+'_scan',actor,note:ctx==='packing'?'تم التحقق من القطعة بالمسح أثناء التجهيز والتعبئة':'تم التحقق من القطعة بالمسح عند التسليم لشركة الشحن',metadata:{scanSessionId:session.id,deviceId,awb:order.awb||null}});
+  return {...await scanSnapshot(env,{clientId,orderId,context:ctx,actor}),acceptedUnit:unit.unit_code};
+}
+export async function assertOrderScanReady(env,{clientId,orderId,actor='system'}={}){
+  const loaded=await orderUnits(env,{clientId,orderId,actor});
+  if(!loaded.units.length)return {ok:true,required:false,expectedCount:0,scannedCount:0,complete:true};
+  const snap=await scanSnapshot(env,{clientId,orderId,context:'packing',actor});
+  if(!snap.complete)fail('لا يمكن إنشاء البوليصة قبل مسح كل قطع الأوردر. تم مسح '+snap.scannedCount+' من '+snap.expectedCount+'.',409,'UNIT_PACKING_SCAN_REQUIRED');
+  return {ok:true,required:true,...snap};
+}
+async function closeAllocationIfInspected(env,{clientId,orderId,stockAllocationId}){
+  if(!stockAllocationId)return;
+  const row=await env.DB.prepare("SELECT COUNT(*) n FROM order_unit_allocations WHERE client_id=? AND order_id=? AND stock_allocation_id=? AND status IN ('reserved','shipped','delivered','return_pending')").bind(clientId,orderId,stockAllocationId).first();
+  if(num(row?.n)===0){
+    await env.DB.prepare("UPDATE order_item_stock_allocations SET status='returned',updated_at=? WHERE id=? AND client_id=?").bind(stamp(),stockAllocationId,clientId).run().catch(()=>{});
+    await env.DB.prepare("UPDATE order_stock_allocations SET status='returned',updated_at=? WHERE id=? AND client_id=?").bind(stamp(),stockAllocationId,clientId).run().catch(()=>{});
+  }
+}
+async function dispositionReturnedUnit(env,{clientId,code,disposition,reason='',actor='system',actorUserId=null,deviceId=''}){
+  const unitCode=scanCode(code);if(!unitCode)fail('امسح باركود القطعة المرتجعة',400,'UNIT_CODE_REQUIRED');
+  let unit=await env.DB.prepare('SELECT * FROM inventory_units WHERE client_id=? AND unit_code=?').bind(clientId,unitCode).first();if(!unit)fail('كود القطعة غير موجود',404,'UNIT_NOT_FOUND');
+  const orderId=clean(unit.last_order_id||unit.current_order_id),order=orderId?await env.DB.prepare('SELECT id,client_id,store_id,ref,state,awb,return_type,restocked FROM orders WHERE id=? AND client_id=?').bind(orderId,clientId).first():null;
+  if(!order||clean(order.state)!=='returned')fail('القطعة ليست مرتبطة بأوردر مرتجع حاليًا',409,'UNIT_RETURN_ORDER_REQUIRED');
+  if(!['returned_pending_inspection','quarantined','damaged','returned_in_stock'].includes(unit.status)){
+    await syncOrderUnitTracking(env,{clientId,orderId,actor,source:'return_scan'});
+    unit=await env.DB.prepare('SELECT * FROM inventory_units WHERE id=?').bind(unit.id).first();
+  }
+  const action=clean(disposition,40).toLowerCase();if(!['restock','quarantine','damaged'].includes(action))fail('اختر إرجاع للمخزون أو حجر للفحص أو هالك',400,'RETURN_DISPOSITION_INVALID');
+  if(action==='restock'&&unit.status==='returned_in_stock')return {ok:true,idempotent:true,disposition:'restock',...await unitDetails(env,{clientId,code:unit.unit_code})};
+  if(action==='damaged'&&unit.status==='damaged')return {ok:true,idempotent:true,disposition:'damaged',...await unitDetails(env,{clientId,code:unit.unit_code})};
+  if(action==='quarantine'&&unit.status==='quarantined')return {ok:true,idempotent:true,disposition:'quarantine',...await unitDetails(env,{clientId,code:unit.unit_code})};
+  const allocation=await env.DB.prepare('SELECT * FROM order_unit_allocations WHERE client_id=? AND order_id=? AND unit_id=? ORDER BY created_at DESC LIMIT 1').bind(clientId,orderId,unit.id).first();
+  if(action==='restock'){
+    const p=await productInfo(env,{clientId,productId:unit.product_id,variantId:unit.variant_id||null});if(!p)fail('تعذر العثور على المنتج لإرجاع القطعة للمخزون',409,'RETURN_PRODUCT_NOT_FOUND');
+    if(unit.batch_item_id){
+      await env.DB.prepare('UPDATE inventory_batch_items SET remaining_qty=MIN(initial_qty,COALESCE(remaining_qty,0)+1) WHERE id=? AND client_id=?').bind(unit.batch_item_id,clientId).run();
+      if(unit.batch_id)await env.DB.prepare("UPDATE inventory_batches SET status='active' WHERE id=? AND client_id=?").bind(unit.batch_id,clientId).run().catch(()=>{});
+    }
+    let newStock=0;if(unit.variant_id){await env.DB.prepare('UPDATE product_variants SET stock=COALESCE(stock,0)+1 WHERE id=? AND client_id=?').bind(unit.variant_id,clientId).run();newStock=num((await env.DB.prepare('SELECT stock FROM product_variants WHERE id=? AND client_id=?').bind(unit.variant_id,clientId).first())?.stock);}
+    else{await env.DB.prepare('UPDATE products SET stock=COALESCE(stock,0)+1 WHERE id=? AND client_id=?').bind(unit.product_id,clientId).run();newStock=num((await env.DB.prepare('SELECT stock FROM products WHERE id=? AND client_id=?').bind(unit.product_id,clientId).first())?.stock);}
+    const stockNote='مرتجع مفحوص — Unit '+unit.unit_code+' — Order '+orderId+(reason?' — '+clean(reason,300):'');
+    await env.DB.prepare('INSERT INTO stock_log (id,client_id,store_id,product_id,variant_id,product_name,delta,new_stock,note,supplier_id,supplier_name,stock_date,batch_id,batch_name,created_at,created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(rid('STK'),clientId,unit.store_id||null,unit.product_id,unit.variant_id||null,unit.product_name||p.product_name||'',1,newStock,stockNote,null,null,stamp().slice(0,10),unit.batch_id||null,null,stamp(),actor).run().catch(()=>{});
+    unit=await setStatus(env,unit,'returned_in_stock',{orderId,eventType:'return_restocked_after_inspection',note:'تم فحص المرتجع وإرجاع القطعة للمخزون كقطعة صالحة للبيع',source:'return_scan',actor,metadata:{deviceId,reason:clean(reason,600),awb:order.awb||null}});
+    if(allocation)await env.DB.prepare("UPDATE order_unit_allocations SET status='returned',updated_at=?,released_at=? WHERE id=?").bind(stamp(),stamp(),allocation.id).run();
+  }else{
+    const status=action==='quarantine'?'quarantined':'damaged',eventType=action==='quarantine'?'return_quarantined':'return_marked_damaged',note=action==='quarantine'?'تم وضع القطعة المرتجعة في الحجر لحين فحص إضافي':'تم تصنيف القطعة المرتجعة كهالك / تالفة';
+    unit=await setStatus(env,unit,status,{orderId,eventType,note,source:'return_scan',actor,metadata:{deviceId,reason:clean(reason,600),awb:order.awb||null}});
+    if(allocation)await env.DB.prepare('UPDATE order_unit_allocations SET status=?,updated_at=?,released_at=? WHERE id=?').bind(status,stamp(),stamp(),allocation.id).run();
+  }
+  await scanEvent(env,{session:{id:null,scan_context:'returns',awb:order.awb||null},order,unit,kind:'return_disposition',result:'accepted',actor,actorUserId,deviceId,metadata:{disposition:action,reason:clean(reason,600)}});
+  if(allocation)await closeAllocationIfInspected(env,{clientId,orderId,stockAllocationId:allocation.stock_allocation_id});
+  const check=await env.DB.prepare("SELECT COUNT(*) total,SUM(CASE WHEN u.status='returned_in_stock' THEN 1 ELSE 0 END) restocked FROM order_unit_allocations a JOIN inventory_units u ON u.id=a.unit_id WHERE a.client_id=? AND a.order_id=?").bind(clientId,orderId).first();
+  const allRestocked=num(check?.total)>0&&num(check?.total)===num(check?.restocked);await env.DB.prepare('UPDATE orders SET restocked=? WHERE id=? AND client_id=?').bind(allRestocked?1:0,orderId,clientId).run().catch(()=>{});
+  return {ok:true,disposition:action,...await unitDetails(env,{clientId,code:unit.unit_code})};
+}
+async function pendingReturns(env,{clientId,storeId=null,limit=300}){
+  const where=["u.client_id=?","u.status IN ('returned_pending_inspection','quarantined','damaged')"],binds=[clientId];if(storeId){where.push('u.store_id=?');binds.push(storeId);}binds.push(Math.max(1,Math.min(1000,Number(limit)||300)));
+  const sql="SELECT u.unit_code,u.product_name,u.sku,u.status,u.returned_at,u.last_order_id,o.ref order_ref,o.awb,o.return_type FROM inventory_units u LEFT JOIN orders o ON o.id=u.last_order_id AND o.client_id=u.client_id WHERE "+where.join(' AND ')+" ORDER BY COALESCE(u.returned_at,u.updated_at) DESC LIMIT ?";
+  const {results=[]}=await env.DB.prepare(sql).bind(...binds).all();
+  return results;
+}
+
 function lifecycleOrderId(path){
   const patterns=[
     /^\/api\/customer-service\/orders\/([^/]+)\/state$/,
@@ -337,7 +511,11 @@ export async function handleInventoryUnitTracking({request,env,ctx,delegate}){
     const me=await currentUser(request,env,ctx,delegate),requested=url.searchParams.get('clientId'),clientId=resolveTenant(me,requested||(me.role==='client'?me.clientId:null)),write=method!=='GET';
     // Existing product/stock mutations keep their original permission contract in
     // the delegated route. Tracking-only APIs require Inventory permission here.
-    if(isApi)requirePermission(me,'inventory',write?'update':'read');
+    if(isApi){
+      const orderScanApi=path.startsWith('/api/inventory/unit-tracking/order-scan');
+      if(orderScanApi)requirePermission(me,'orders',write?'update':'read');
+      else requirePermission(me,'inventory',write?'update':'read');
+    }
     const body=write?await request.clone().json().catch(()=>({})):{};
     const storeId=await scoped(request,env,me,clientId,{write,storeId:body.storeId||body.store_id||null}),actor=actorName(me);
 
@@ -355,6 +533,25 @@ export async function handleInventoryUnitTracking({request,env,ctx,delegate}){
       const data=await response.clone().json().catch(()=>({}));await afterMutation(env,{kind,body,responseData:data,clientId,storeId,actor});return response;
     }
 
+
+    if(path==='/api/inventory/unit-tracking/order-scan/open'&&method==='POST'){
+      const context=scanContext(body.context||body.scanContext||'packing'),code=body.code||body.orderCode||body.awb;
+      return json({ok:true,...await openOrderScan(env,{clientId,code,context,actor,actorUserId:me?.uid||me?.id||null,deviceId:body.deviceId||body.device_id||''})});
+    }
+    if(path==='/api/inventory/unit-tracking/order-scan/status'&&method==='GET'){
+      const orderId=clean(url.searchParams.get('orderId')),context=scanContext(url.searchParams.get('context')||'packing');if(!orderId)fail('orderId مطلوب',400,'ORDER_ID_REQUIRED');
+      return json({ok:true,...await scanSnapshot(env,{clientId,orderId,context,actor})});
+    }
+    if(path==='/api/inventory/unit-tracking/order-scan/unit'&&method==='POST'){
+      const orderId=clean(body.orderId||body.order_id),context=scanContext(body.context||body.scanContext||'packing');if(!orderId)fail('orderId مطلوب',400,'ORDER_ID_REQUIRED');
+      return json({ok:true,...await scanUnitForOrder(env,{clientId,orderId,code:body.code||body.unitCode,context,actor,actorUserId:me?.uid||me?.id||null,deviceId:body.deviceId||body.device_id||''})});
+    }
+    if(path==='/api/inventory/unit-tracking/returns'&&method==='GET'){
+      return json({ok:true,units:await pendingReturns(env,{clientId,storeId,limit:url.searchParams.get('limit')})});
+    }
+    if(path==='/api/inventory/unit-tracking/returns/disposition'&&method==='POST'){
+      return json(await dispositionReturnedUnit(env,{clientId,code:body.code||body.unitCode,disposition:body.disposition,reason:body.reason||'',actor,actorUserId:me?.uid||me?.id||null,deviceId:body.deviceId||body.device_id||''}));
+    }
     if(path==='/api/inventory/unit-tracking/summary'&&method==='GET'){
       const reconciled=await reconcileAllUnitCoverage(env,{clientId,storeId,actor});
       const lifecycle=await reconcileTrackedOrderLifecycles(env,{clientId,limit:500,actor});
@@ -374,7 +571,7 @@ export async function handleInventoryUnitTracking({request,env,ctx,delegate}){
       const code=scanCode(url.searchParams.get('code'));if(!code)fail('اكتب أو امسح كود القطعة',400,'UNIT_CODE_REQUIRED');return json({ok:true,...await unitDetails(env,{clientId,code})});
     }
     if(path==='/api/inventory/unit-tracking/units'&&method==='GET'){
-      await reconcileAllUnitCoverage(env,{clientId,storeId,actor});const where=['u.client_id=?'],binds=[clientId];if(storeId){where.push('u.store_id=?');binds.push(storeId);}const productId=clean(url.searchParams.get('productId')),status=clean(url.searchParams.get('status')),q=clean(url.searchParams.get('q'));if(productId){where.push('u.product_id=?');binds.push(productId);}if(status){where.push('u.status=?');binds.push(status);}if(q){where.push('(u.unit_code LIKE ? OR u.product_name LIKE ? OR u.sku LIKE ?)');binds.push(`%${q}%`,`%${q}%`,`%${q}%`);}const limit=Math.max(1,Math.min(500,Number(url.searchParams.get('limit'))||200));binds.push(limit);
+      await reconcileAllUnitCoverage(env,{clientId,storeId,actor});const where=['u.client_id=?'],binds=[clientId];if(storeId){where.push('u.store_id=?');binds.push(storeId);}const productId=clean(url.searchParams.get('productId')),status=clean(url.searchParams.get('status')),scope=clean(url.searchParams.get('scope')),q=clean(url.searchParams.get('q'));if(productId){where.push('u.product_id=?');binds.push(productId);}if(status){where.push('u.status=?');binds.push(status);}if(scope==='available')where.push("u.status IN ('in_stock','returned_in_stock') AND u.current_order_id IS NULL");if(scope==='warehouse')where.push("u.status IN ('in_stock','returned_in_stock','reserved','returned_pending_inspection','quarantined','damaged')");if(q){where.push('(u.unit_code LIKE ? OR u.product_name LIKE ? OR u.sku LIKE ?)');binds.push(`%${q}%`,`%${q}%`,`%${q}%`);}const limit=Math.max(1,Math.min(10000,Number(url.searchParams.get('limit'))||200));binds.push(limit);
       const {results=[]}=await env.DB.prepare(`SELECT u.*,t.code product_tracking_code,b.name batch_name FROM inventory_units u LEFT JOIN product_tracking_codes t ON t.client_id=u.client_id AND t.product_id=u.product_id AND COALESCE(t.variant_id,'')=COALESCE(u.variant_id,'') LEFT JOIN inventory_batches b ON b.id=u.batch_id WHERE ${where.join(' AND ')} ORDER BY u.created_at DESC LIMIT ?`).bind(...binds).all();return json({ok:true,units:results.map(x=>({...x,qrValue:qrValue(x.unit_code),barcodeValue:barcodeValue(x.unit_code)}))});
     }
     if(path==='/api/inventory/unit-tracking/qr'&&method==='GET'){

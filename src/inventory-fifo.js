@@ -128,11 +128,11 @@ async function releaseLegacy(env,{clientId,orderId,toState,actor,restoreGeneral}
 }
 export async function finalizeOrderStockTransition(env,{clientId,orderId,fromState,toState,actor}={}){
   if(HOLDING_STATES.has(toState))return {kind:'none'};
-  const shouldRelease=toState==='returned'||RELEASE_STATES.has(toState);if(!shouldRelease)return {kind:'none'};
-  // The legacy order PATCH already restores general product stock for a real return.
-  // For cancellation/back-to-pending/deferred we restore both FIFO lots and the general stock here.
-  const restoreGeneral=toState!=='returned';
-  return await releaseActive(env,{clientId,orderId,toState,actor,restoreGeneral})||await releaseLegacy(env,{clientId,orderId,toState,actor,restoreGeneral})||{kind:'none'};
+  // v129: a returned shipment stays outside sellable FIFO stock until every physical
+  // unit is scanned and given an inspection disposition (restock/quarantine/damaged).
+  if(toState==='returned')return {kind:'return_pending_inspection',pendingInspection:true,orderId};
+  if(!RELEASE_STATES.has(toState))return {kind:'none'};
+  return await releaseActive(env,{clientId,orderId,toState,actor,restoreGeneral:true})||await releaseLegacy(env,{clientId,orderId,toState,actor,restoreGeneral:true})||{kind:'none'};
 }
 
 // Shipping-sheet reconciliation can encounter legacy orders that were moved forward without a complete FIFO allocation.

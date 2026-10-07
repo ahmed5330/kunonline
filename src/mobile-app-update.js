@@ -5,9 +5,9 @@ const RELEASE_MANIFEST_URL='https://github.com/ahmed5330/kunonline/releases/down
 const RELEASE_DOWNLOAD_ROOT='https://github.com/ahmed5330/kunonline/releases/download/android-latest';
 const APK_ENDPOINT='https://app.kun-online.com/api/mobile/app-update/apk';
 const FALLBACK_RELEASE={
-  versionCode:125,
-  versionName:'2.8.4',
-  downloadUrl:`${RELEASE_DOWNLOAD_ROOT}/Kun-Online-Mobile-v2.8.4-c125.apk`,
+  versionCode:126,
+  versionName:'2.8.5',
+  downloadUrl:`${RELEASE_DOWNLOAD_ROOT}/Kun-Online-Mobile-v2.8.5-c126.apk`,
   sha256:''
 };
 const MIN_SUPPORTED_VERSION_CODE=106;

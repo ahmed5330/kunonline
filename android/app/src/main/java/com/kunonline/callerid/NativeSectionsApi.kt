@@ -1,6 +1,7 @@
 package com.kunonline.callerid
 
 import android.content.Context
+import android.provider.Settings
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
@@ -96,6 +97,56 @@ object NativeSectionsApi {
 
     fun reconcileInventoryUnits(context: Context): NativeSectionResult =
         post(context, "/api/inventory/unit-tracking/reconcile", JSONObject(), scoped = true)
+
+    fun openOrderScan(context: Context, code: String, scanContext: String): NativeSectionResult =
+        post(
+            context,
+            "/api/inventory/unit-tracking/order-scan/open",
+            JSONObject()
+                .put("code", code)
+                .put("context", scanContext)
+                .put("deviceId", deviceId(context)),
+            scoped = true
+        )
+
+    fun orderScanStatus(context: Context, orderId: String, scanContext: String): NativeSectionResult =
+        get(
+            context,
+            "/api/inventory/unit-tracking/order-scan/status?orderId=${enc(orderId)}&context=${enc(scanContext)}",
+            scoped = true
+        )
+
+    fun scanOrderUnit(context: Context, orderId: String, code: String, scanContext: String): NativeSectionResult =
+        post(
+            context,
+            "/api/inventory/unit-tracking/order-scan/unit",
+            JSONObject()
+                .put("orderId", orderId)
+                .put("code", code)
+                .put("context", scanContext)
+                .put("deviceId", deviceId(context)),
+            scoped = true
+        )
+
+    fun returnedInventoryUnits(context: Context): NativeSectionResult =
+        get(context, "/api/inventory/unit-tracking/returns?limit=500", scoped = true)
+
+    fun dispositionReturnedUnit(
+        context: Context,
+        code: String,
+        disposition: String,
+        reason: String = ""
+    ): NativeSectionResult =
+        post(
+            context,
+            "/api/inventory/unit-tracking/returns/disposition",
+            JSONObject()
+                .put("code", code)
+                .put("disposition", disposition)
+                .put("reason", reason)
+                .put("deviceId", deviceId(context)),
+            scoped = true
+        )
 
     fun adjustInventory(
         context: Context,
@@ -194,7 +245,7 @@ object NativeSectionsApi {
                 setRequestProperty("Accept", "application/json")
                 setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 setRequestProperty("Cookie", cookie)
-                setRequestProperty("X-Kun-Mobile", "native-android/2.8.4")
+                setRequestProperty("X-Kun-Mobile", "native-android/2.8.5")
                 if (body != null) doOutput = true
             }
             if (body != null) {
@@ -217,6 +268,10 @@ object NativeSectionsApi {
             NativeSectionResult(false, "تعذر الاتصال بكن أونلاين")
         }
     }
+
+    private fun deviceId(context: Context): String =
+        runCatching { Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID).orEmpty() }
+            .getOrDefault("")
 
     private fun enc(value: String): String =
         URLEncoder.encode(value, Charsets.UTF_8.name()).replace("+", "%20")
