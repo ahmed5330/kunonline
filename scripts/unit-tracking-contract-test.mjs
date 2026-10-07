@@ -35,12 +35,14 @@ for(const path of [
   '/api/inventory/stock-adjust',
   '/api/inventory/batches',
   '/api/products',
+  '/api/commerce/product-import',
   '/receive',
   '/api/inventory/unit-tracking/summary',
   '/api/inventory/unit-tracking/reconcile',
   '/api/inventory/unit-tracking/lookup',
   '/api/inventory/unit-tracking/units',
-  '/api/inventory/unit-tracking/qr'
+  '/api/inventory/unit-tracking/qr',
+  '/api/inventory/unit-tracking/barcode'
 ]) assert.ok(backend.includes(path)||production.includes(path),`Unit tracking integration missing ${path}`);
 
 assert.ok(backend.includes('api\\/jt\\/shipments\\/')&&backend.includes('\\/print$'),'J&T official print route must be a unit lifecycle boundary');
@@ -48,18 +50,21 @@ assert.ok(backend.includes("status IN ('legacy_outbound','in_stock','returned_in
 assert.ok(backend.includes('desiredAvailable')&&backend.includes('remaining_qty'),'Historical batch backfill must respect remaining physical stock, not initial quantity');
 assert.ok(production.includes("if(String(event?.cron||'')==='0 */2 * * *'"),'Periodic uncoded-stock reconciliation must be protected by the two-hour cron');
 assert.ok(backend.includes('reconcileTrackedOrderLifecycles'),'Background carrier/order changes must reconcile unit status');
+assert.ok(backend.includes("return 'product_import'")&&backend.includes("actor:'product-import:'+actor"),'Imported stock must be unit-coded in the same successful request');
+assert.ok(backend.includes("source:'stock_adjust_verify'"),'Positive stock adjustments must verify unit coverage before returning');
 assert.ok(backend.includes("source:'qr_lookup'"),'Scanning a unit must refresh its linked order before returning history');
 
 assert.ok(backend.includes('https://app.kun-online.com/v2/?unit='),'QR payload must point to the authenticated Kun Online unit-history route');
+assert.ok(backend.includes("barcodeValue:barcodeValue")&&backend.includes("type','code128'"),'Every unit must expose a Code 128 barcode using the same Unit Code');
 assert.ok(!backend.includes('name,phone,date,created_at,return_type FROM orders'),'Unit lookup must not expose customer name/phone merely to render tracking history');
 
-for(const marker of ['BarcodeDetector','getUserMedia','/api/inventory/unit-tracking/lookup','/api/inventory/unit-tracking/qr','data-unit-code','طباعة QR','History / خط السير']){
+for(const marker of ['BarcodeDetector','getUserMedia','code_128','/api/inventory/unit-tracking/lookup','/api/inventory/unit-tracking/qr','/api/inventory/unit-tracking/barcode','data-unit-code','طباعة QR + باركود','History / خط السير']){
   assert.ok(ui.includes(marker),`Unit tracking UI missing ${marker}`);
 }
 assert.ok(ui.includes("legacy_outbound:'حركة تاريخية خارج المخزون'"),'Historical outbound units need a visible non-stock status');
 
 for(const source of [preview,production,v2Index]){
-  assert.ok(source.includes('/v2/modules-v128-unit-tracking.js?v=128.0'),'v128 tracking UI must be loaded by every canonical app shell');
+  assert.ok(source.includes('/v2/modules-v128-unit-tracking.js?v=128.1'),'v128 tracking UI must be loaded by every canonical app shell');
 }
 for(const source of [preview,production]){
   assert.ok(source.includes('handleInventoryUnitTracking'),'Tracking APIs/mutations must be intercepted');
@@ -70,4 +75,5 @@ for(const source of [preview,production]){
 
 assert.ok(ui.includes("new URL(location.href).searchParams.get('unit')"),'Opening a printed QR URL must automatically resolve its unit history');
 
-console.log('Unit tracking v128 contract passed: every physical unit has a unique code/QR, lifecycle lineage, scan history and stock coverage reconciliation.');
+assert.ok(ui.includes("version:'128.1'"),'Unit tracking UI must identify v128.1');
+console.log('Unit tracking v128.1 contract passed: new stock is automatically unit-coded with QR + Code 128, searchable history and lifecycle lineage.');
