@@ -433,7 +433,10 @@ export async function assertOrderScanReady(env,{clientId,orderId,actor='system'}
 async function closeAllocationIfInspected(env,{clientId,orderId,stockAllocationId}){
   if(!stockAllocationId)return;
   const row=await env.DB.prepare("SELECT COUNT(*) n FROM order_unit_allocations WHERE client_id=? AND order_id=? AND stock_allocation_id=? AND status IN ('reserved','shipped','delivered','return_pending')").bind(clientId,orderId,stockAllocationId).first();
-  if(num(row?.n)===0)await env.DB.prepare("UPDATE order_item_stock_allocations SET status='returned',updated_at=? WHERE id=? AND client_id=?").bind(stamp(),stockAllocationId,clientId).run().catch(()=>{});
+  if(num(row?.n)===0){
+    await env.DB.prepare("UPDATE order_item_stock_allocations SET status='returned',updated_at=? WHERE id=? AND client_id=?").bind(stamp(),stockAllocationId,clientId).run().catch(()=>{});
+    await env.DB.prepare("UPDATE order_stock_allocations SET status='returned',updated_at=? WHERE id=? AND client_id=?").bind(stamp(),stockAllocationId,clientId).run().catch(()=>{});
+  }
 }
 async function dispositionReturnedUnit(env,{clientId,code,disposition,reason='',actor='system',actorUserId=null,deviceId=''}){
   const unitCode=scanCode(code);if(!unitCode)fail('امسح باركود القطعة المرتجعة',400,'UNIT_CODE_REQUIRED');
@@ -568,7 +571,7 @@ export async function handleInventoryUnitTracking({request,env,ctx,delegate}){
       const code=scanCode(url.searchParams.get('code'));if(!code)fail('اكتب أو امسح كود القطعة',400,'UNIT_CODE_REQUIRED');return json({ok:true,...await unitDetails(env,{clientId,code})});
     }
     if(path==='/api/inventory/unit-tracking/units'&&method==='GET'){
-      await reconcileAllUnitCoverage(env,{clientId,storeId,actor});const where=['u.client_id=?'],binds=[clientId];if(storeId){where.push('u.store_id=?');binds.push(storeId);}const productId=clean(url.searchParams.get('productId')),status=clean(url.searchParams.get('status')),scope=clean(url.searchParams.get('scope')),q=clean(url.searchParams.get('q'));if(productId){where.push('u.product_id=?');binds.push(productId);}if(status){where.push('u.status=?');binds.push(status);}if(scope==='available')where.push("u.status IN ('in_stock','returned_in_stock') AND u.current_order_id IS NULL");if(q){where.push('(u.unit_code LIKE ? OR u.product_name LIKE ? OR u.sku LIKE ?)');binds.push(`%${q}%`,`%${q}%`,`%${q}%`);}const limit=Math.max(1,Math.min(10000,Number(url.searchParams.get('limit'))||200));binds.push(limit);
+      await reconcileAllUnitCoverage(env,{clientId,storeId,actor});const where=['u.client_id=?'],binds=[clientId];if(storeId){where.push('u.store_id=?');binds.push(storeId);}const productId=clean(url.searchParams.get('productId')),status=clean(url.searchParams.get('status')),scope=clean(url.searchParams.get('scope')),q=clean(url.searchParams.get('q'));if(productId){where.push('u.product_id=?');binds.push(productId);}if(status){where.push('u.status=?');binds.push(status);}if(scope==='available')where.push("u.status IN ('in_stock','returned_in_stock') AND u.current_order_id IS NULL");if(scope==='warehouse')where.push("u.status IN ('in_stock','returned_in_stock','reserved','returned_pending_inspection','quarantined','damaged')");if(q){where.push('(u.unit_code LIKE ? OR u.product_name LIKE ? OR u.sku LIKE ?)');binds.push(`%${q}%`,`%${q}%`,`%${q}%`);}const limit=Math.max(1,Math.min(10000,Number(url.searchParams.get('limit'))||200));binds.push(limit);
       const {results=[]}=await env.DB.prepare(`SELECT u.*,t.code product_tracking_code,b.name batch_name FROM inventory_units u LEFT JOIN product_tracking_codes t ON t.client_id=u.client_id AND t.product_id=u.product_id AND COALESCE(t.variant_id,'')=COALESCE(u.variant_id,'') LEFT JOIN inventory_batches b ON b.id=u.batch_id WHERE ${where.join(' AND ')} ORDER BY u.created_at DESC LIMIT ?`).bind(...binds).all();return json({ok:true,units:results.map(x=>({...x,qrValue:qrValue(x.unit_code),barcodeValue:barcodeValue(x.unit_code)}))});
     }
     if(path==='/api/inventory/unit-tracking/qr'&&method==='GET'){
