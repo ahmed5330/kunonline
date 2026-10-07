@@ -417,8 +417,8 @@ r=await call('/api/orders/'+varOrder.order.id,{method:'PATCH',body:JSON.stringif
 check('مرتجع على أوردر فيه متغير بينجح', r.status===200);
 r=await call('/api/products/'+shirtProd.id+'/variants',{},clientCookie);
 let [,varListAfterReturn]=await j(r);
-check('الكمية رجعت للمتغير الصح (مش للمنتج الأب)',
-  varListAfterReturn.find(v=>v.id===varRed.id).stock===17 && products.get(shirtProd.id).stock===0);
+check('تسجيل المرتجع لا يعيد المتغير للبيع قبل فحص القطعة',
+  varListAfterReturn.find(v=>v.id===varRed.id).stock===15 && products.get(shirtProd.id).stock===0);
 
 r=await call('/api/variants/'+varBlue.id,{method:'DELETE'},clientCookie);
 check('العميل يقدر يحذف متغير', r.status===200 && !variants.has(varBlue.id));
@@ -567,7 +567,7 @@ check('العميل ممنوع يعدّل الأوردر',
 await call('/webhooks/tracking',{method:'POST',body:JSON.stringify({trackNo:'JT123EG',latestEvent:'تم التسليم للعميل'})});
 check('تتبع J&T حدّث الحالة', orders.get('EO-1').state==='signed');
 
-head('المرتجعات — رجوع المخزون تلقائي + نوع المرتجع + قيمة الاسترداد');
+head('المرتجعات — انتظار الفحص قبل رجوع المخزون + نوع المرتجع + قيمة الاسترداد');
 const stockBeforeReturn = products.get(stockProd.id).stock;
 let [,retOrder]=await j(await call('/api/orders',{method:'POST',body:JSON.stringify({
   name:'عميل هيرجع الأوردر', phone:'01033322211', productId:stockProd.id, qty:3, total:900, date:'2026-08-18'
@@ -587,20 +587,20 @@ let [,retRes]=await j(r);
 check('مرتجع كامل (من غير تحديد نوع) بيتسجل بنجاح', r.status===200);
 check('نوع المرتجع الافتراضي = كامل', retRes.returnType==='full');
 check('قيمة الاسترداد الافتراضية = إجمالي الأوردر', retRes.refundAmount===900);
-check('المخزون رجع بالكمية (٣ قطع)', products.get(stockProd.id).stock===stockBeforeReturn+3);
-check('الأوردر اتعلّم إنه اترجّع مخزونه', orders.get(retId).restocked===1);
-check('حركة المخزون اتسجّلت باسم الأوردر',
-  [...stockLog.values()].some(s=>s.product_id===stockProd.id && s.delta===3 && s.note.includes(retId)));
+check('تسجيل المرتجع وحده لا يعيد الـ٣ قطع للمخزون القابل للبيع', products.get(stockProd.id).stock===stockBeforeReturn);
+check('الأوردر يظل غير restocked لحين فحص القطع', orders.get(retId).restocked===0);
+check('لا تسجل حركة زيادة مخزون قبل قرار الفحص',
+  ![...stockLog.values()].some(s=>s.product_id===stockProd.id && s.delta===3 && s.note.includes(retId)));
 
 r=await call('/api/orders/'+retId,{method:'PATCH',body:JSON.stringify({state:'returned',returnType:'partial',refundAmount:400})},adminCookie);
 check('تعديل بيانات مرتجع موجود (نوع/قيمة) من غير إعادة إضافة للمخزون تاني', r.status===200);
-check('المخزون ما اتزودش تاني (لسه نفس القيمة)', products.get(stockProd.id).stock===stockBeforeReturn+3);
+check('تعديل بيانات المرتجع لا يغير المخزون قبل الفحص', products.get(stockProd.id).stock===stockBeforeReturn);
 check('قيمة الاسترداد اتحدّثت للجزئي الجديد', orders.get(retId).refund_amount===400);
 check('نوع المرتجع اتحدّث لجزئي', orders.get(retId).return_type==='partial');
 
 r=await call('/api/orders/'+retId,{method:'PATCH',body:JSON.stringify({state:'confirmed'})},adminCookie);
 check('تصحيح غلطة: رجّعنا الأوردر من مرتجع لحالة تانية', r.status===200);
-check('المخزون اتخصم تاني (رجع لأصله قبل المرتجع)', products.get(stockProd.id).stock===stockBeforeReturn);
+check('تصحيح حالة المرتجع لا يحتاج خصمًا عكسيًا لأن المخزون لم يزد أصلًا', products.get(stockProd.id).stock===stockBeforeReturn);
 check('علامة restocked اتصفّرت', orders.get(retId).restocked===0);
 check('قيمة الاسترداد ونوع المرتجع اتمسحوا بعد التصحيح',
   orders.get(retId).refund_amount==null && orders.get(retId).return_type==null);
@@ -611,7 +611,7 @@ let [,exchOrder]=await j(await call('/api/orders',{method:'POST',body:JSON.strin
 r=await call('/api/orders/'+exchOrder.order.id,{method:'PATCH',body:JSON.stringify({state:'returned',returnType:'exchange'})},adminCookie);
 let [,exchRes]=await j(r);
 check('استبدال بيتسجل كنوع مرتجع صحيح', r.status===200 && exchRes.returnType==='exchange');
-check('المخزون رجع بقطعة الاستبدال', products.get(stockProd.id).stock===stockBeforeReturn+1);
+check('الاستبدال أيضًا لا يعيد القطعة للبيع قبل الفحص', products.get(stockProd.id).stock===stockBeforeReturn);
 
 head('التوكن والـ API + ضريبة الـ 14%');
 check('العميل يقدر يقرا التكاملات بتاعته',
