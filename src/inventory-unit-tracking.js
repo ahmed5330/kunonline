@@ -269,7 +269,11 @@ async function afterMutation(env,{kind,body,responseData,clientId,storeId,actor}
   }
   if(kind==='stock_adjust'){
     const productId=clean(body.productId||body.product_id),variantId=clean(body.variantId||body.variant_id)||null,delta=Number(body.delta);if(!productId||!Number.isFinite(delta)||delta===0)return null;
-    if(delta>0)return {created:await createAdjustmentUnits(env,{clientId,storeId,productId,variantId,qty:delta,actor,note:body.note||'',stockDate:body.stockDate||body.stock_date||null})};
+    if(delta>0){
+      const direct=await createAdjustmentUnits(env,{clientId,storeId,productId,variantId,qty:delta,actor,note:body.note||'',stockDate:body.stockDate||body.stock_date||null});
+      const coverage=await reconcileEntityStock(env,{clientId,storeId,productId,variantId,actor,source:'stock_adjust_verify'});
+      return {created:direct+(coverage.created||0),coverage};
+    }
     return {retired:await retireUnits(env,{clientId,storeId,productId,variantId,qty:Math.abs(delta),actor,note:body.note||'تسوية مخزون سالبة'})};
   }
   if(kind==='product_create'||kind==='product_edit'){
