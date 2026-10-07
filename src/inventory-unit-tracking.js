@@ -59,6 +59,7 @@ function scanCode(value){
   return safeCode(v);
 }
 function qrValue(unitCode){return `https://app.kun-online.com/v2/?unit=${encodeURIComponent(unitCode)}`;}
+function barcodeValue(unitCode){return clean(unitCode,100);}
 
 async function trackingCode(env,{clientId,storeId,productId,variantId=null,createdBy='system'}){
   const existing=await env.DB.prepare('SELECT code FROM product_tracking_codes WHERE client_id=? AND product_id=? AND COALESCE(variant_id,\'\')=COALESCE(?,\'\') LIMIT 1').bind(clientId,productId,variantId).first();
