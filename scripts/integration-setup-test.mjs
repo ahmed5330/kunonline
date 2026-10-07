@@ -78,11 +78,11 @@ must(!androidShell.includes('Text("التواصل")')&&!androidShell.includes('T
 must(androidAddOrder.includes('Text("عنوان العميل — محافظة ← مدينة/حي ← منطقة"')&&androidAddOrder.includes('Text("عنوان العميل", style = MaterialTheme.typography.titleMedium'),'Add Order must name the J&T-backed address section عنوان العميل');
 must(androidNativeSectionsApi.includes('/print')&&androidSystemSections.includes('CallerJntOrderEditActivity'),'Native Printing must use governed J&T create/print and the native J&T editor');
 must(androidNativeSectionsApi.includes('/api/integration-secrets/')&&androidSystemSections.includes('حفظ واختبار'),'Native Integrations must write encrypted secrets and validate connections');
-must(androidNativeSectionsApi.includes('/api/inventory/unit-tracking/lookup')&&androidSystemSections.includes('GmsBarcodeScanning.getClient')&&androidSystemSections.includes('قراءة QR'),'Native Inventory must expose the per-piece QR scanner and history lookup');
+must(androidNativeSectionsApi.includes('/api/inventory/unit-tracking/lookup')&&androidSystemSections.includes('GmsBarcodeScanning.getClient')&&androidSystemSections.includes('Barcode.FORMAT_CODE_128')&&androidSystemSections.includes('قراءة QR / باركود'),'Native Inventory must scan both QR and Code 128 into the same piece history lookup');
 must(androidGradle.includes('play-services-code-scanner:16.1.0'),'Android QR scanner dependency must stay pinned to the validated Google Code Scanner release');
 for(const label of ['اليوم','أمس','هذا الأسبوع','الأسبوع الماضي','الشهر الحالي','الشهر الماضي','مدة معينة'])must(androidDateFilter.includes(`"${label}"`),`Android period selector missing ${label}`);
 must(androidDateFilter.includes('DatePickerDialog')&&androidDateFilter.includes('selectCustom'),'Android custom period must allow a start/end date');
-must(androidGradle.includes('versionCode = 124')&&androidGradle.includes('versionName = "2.8.3"'),'Android current release must be v2.8.3 code 124');
+must(androidGradle.includes('versionCode = 125')&&androidGradle.includes('versionName = "2.8.4"'),'Android current release must be v2.8.4 code 125');
 
 must(trackingUi.includes('PULL_INTERVAL=300000')&&trackingUi.includes('/track?clientId='),'J&T live tracking fallback must remain protected');
 must(jtWorker.includes("PRINT_ORDER_PATH='/webopenplatformapi/api/order/printOrder'"),'Legacy print route remains only for rollback compatibility behind v38 interception');
