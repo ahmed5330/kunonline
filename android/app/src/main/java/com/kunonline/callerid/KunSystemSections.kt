@@ -663,7 +663,7 @@ private fun NativeInventoryScreen(onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     val scannerOptions = remember {
         GmsBarcodeScannerOptions.Builder()
-            .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
+            .setBarcodeFormats(Barcode.FORMAT_QR_CODE, Barcode.FORMAT_CODE_128)
             .enableAutoZoom()
             .build()
     }
@@ -724,7 +724,7 @@ private fun NativeInventoryScreen(onBack: () -> Unit) {
         UnitTrackingDialog(data = unitDetails!!, onDismiss = { unitDetails = null })
     }
 
-    NativeSectionScaffold("المخزون", "Native · مخزون + كود وQR لكل قطعة", onBack, ::load) { padding ->
+    NativeSectionScaffold("المخزون", "Native · مخزون + كود + QR/Barcode لكل قطعة", onBack, ::load) { padding ->
         when {
             loading -> NativeBusy(padding)
             error.isNotBlank() -> NativeError(padding, error, ::load)
@@ -746,15 +746,15 @@ private fun NativeInventoryScreen(onBack: () -> Unit) {
                     }
                     item {
                         KunSectionCard {
-                            Text("تتبع قطعة بالـ QR", fontWeight = FontWeight.Bold, color = KunColors.Ink)
+                            Text("تتبع قطعة بالـ QR أو Barcode", fontWeight = FontWeight.Bold, color = KunColors.Ink)
                             Text(
-                                "امسح QR أو اكتب Unit Code لاستدعاء خط سير القطعة من دخول المخزون حتى التسليم أو المرتجع.",
+                                "امسح QR أو Code 128 Barcode أو اكتب Unit Code لاستدعاء خط سير القطعة بالكامل.",
                                 color = KunColors.Ink2
                             )
                             OutlinedTextField(
                                 value = unitCode,
                                 onValueChange = { unitCode = it; unitError = "" },
-                                label = { Text("Unit Code / محتوى QR") },
+                                label = { Text("Unit Code / QR / Barcode") },
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth()
                             )
@@ -773,16 +773,16 @@ private fun NativeInventoryScreen(onBack: () -> Unit) {
                                                     unitCode = raw
                                                     lookupUnit(raw)
                                                 } else {
-                                                    unitError = "تعذر قراءة قيمة QR"
+                                                    unitError = "تعذر قراءة QR / Barcode"
                                                 }
                                             }
                                             .addOnFailureListener { failure ->
-                                                unitError = failure.message ?: "تعذر تشغيل قارئ QR"
+                                                unitError = failure.message ?: "تعذر تشغيل قارئ QR / Barcode"
                                             }
                                     },
                                     enabled = !unitBusy,
                                     modifier = Modifier.weight(1f)
-                                ) { Text("قراءة QR") }
+                                ) { Text("قراءة QR / باركود") }
                             }
                             if (unitError.isNotBlank()) Text(unitError, color = KunColors.Brick)
                             val trackingFailure = data["tracking"]?.takeIf { !it.ok }?.message.orEmpty()

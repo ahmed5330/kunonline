@@ -194,7 +194,7 @@ object NativeSectionsApi {
                 setRequestProperty("Accept", "application/json")
                 setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 setRequestProperty("Cookie", cookie)
-                setRequestProperty("X-Kun-Mobile", "native-android/2.8.3")
+                setRequestProperty("X-Kun-Mobile", "native-android/2.8.4")
                 if (body != null) doOutput = true
             }
             if (body != null) {

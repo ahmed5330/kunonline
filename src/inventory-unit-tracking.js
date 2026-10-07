@@ -59,6 +59,7 @@ function scanCode(value){
   return safeCode(v);
 }
 function qrValue(unitCode){return `https://app.kun-online.com/v2/?unit=${encodeURIComponent(unitCode)}`;}
+function barcodeValue(unitCode){return clean(unitCode,100);}
 
 async function trackingCode(env,{clientId,storeId,productId,variantId=null,createdBy='system'}){
   const existing=await env.DB.prepare('SELECT code FROM product_tracking_codes WHERE client_id=? AND product_id=? AND COALESCE(variant_id,\'\')=COALESCE(?,\'\') LIMIT 1').bind(clientId,productId,variantId).first();
@@ -257,6 +258,7 @@ function mutationPath(path,method){
   if(method==='POST'&&path==='/api/inventory/stock-adjust')return 'stock_adjust';
   if(method==='POST'&&path==='/api/inventory/batches')return 'batch_create';
   if(method==='POST'&&path==='/api/products')return 'product_create';
+  if(method==='POST'&&path==='/api/commerce/product-import')return 'product_import';
   if(method==='PATCH'&&/^\/api\/products\/[^/]+$/.test(path))return 'product_edit';
   if(method==='POST'&&/^\/api\/purchase-orders\/[^/]+\/receive$/.test(path))return 'purchase_receive';
   return null;
@@ -268,8 +270,14 @@ async function afterMutation(env,{kind,body,responseData,clientId,storeId,actor}
   }
   if(kind==='stock_adjust'){
     const productId=clean(body.productId||body.product_id),variantId=clean(body.variantId||body.variant_id)||null,delta=Number(body.delta);if(!productId||!Number.isFinite(delta)||delta===0)return null;
-    if(delta>0)return {created:await createAdjustmentUnits(env,{clientId,storeId,productId,variantId,qty:delta,actor,note:body.note||'',stockDate:body.stockDate||body.stock_date||null})};
-    return {retired:await retireUnits(env,{clientId,storeId,productId,variantId,qty:Math.abs(delta),actor,note:body.note||'تسوية مخزون سالبة'})};
+    const p=await productInfo(env,{clientId,productId,variantId});if(!p)fail('المنتج غير موجود بعد تعديل المخزون',404,'TRACKING_PRODUCT_NOT_FOUND');
+    const target=Math.max(0,Math.floor(num(p.stock))),before=await availableCount(env,{clientId,storeId,productId,variantId});
+    let created=0,retired=0;
+    if(before<target)created=await createAdjustmentUnits(env,{clientId,storeId,productId,variantId,qty:target-before,actor,note:body.note||'',stockDate:body.stockDate||body.stock_date||null});
+    else if(before>target)retired=await retireUnits(env,{clientId,storeId,productId,variantId,qty:before-target,actor,note:body.note||'تسوية مخزون سالبة'});
+    const after=await availableCount(env,{clientId,storeId,productId,variantId});
+    if(after!==target)fail(`رصيد المنتج ${target} لكن عدد القطع المكودة المتاحة ${after}`,409,'UNIT_TRACKING_STOCK_COVERAGE_MISMATCH');
+    return {created,retired,target,available:after};
   }
   if(kind==='product_create'||kind==='product_edit'){
     const productId=clean(responseData?.product?.id||responseData?.id);if(!productId)return null;
@@ -277,6 +285,7 @@ async function afterMutation(env,{kind,body,responseData,clientId,storeId,actor}
     const {results:variants=[]}=await env.DB.prepare('SELECT id FROM product_variants WHERE product_id=? AND client_id=? AND active=1').bind(productId,clientId).all();
     let created=0;if(variants.length){for(const v of variants)created+=(await reconcileEntityStock(env,{clientId,storeId:product.store_id||storeId,productId,variantId:v.id,actor,source:'product_stock'})).created;}else created+=(await reconcileEntityStock(env,{clientId,storeId:product.store_id||storeId,productId,actor,source:'product_stock'})).created;return {created};
   }
+  if(kind==='product_import')return reconcileAllUnitCoverage(env,{clientId,storeId,actor:'product-import:'+actor});
   if(kind==='purchase_receive')return reconcileAllUnitCoverage(env,{clientId,storeId,actor});
   return null;
 }
@@ -296,7 +305,7 @@ async function unitDetails(env,{clientId,code}){
   ]);
   const orderIds=[...new Set(allocations.map(x=>x.order_id).filter(Boolean))];let orders=[];
   if(orderIds.length){const r=await env.DB.prepare(`SELECT id,ref,state,awb,date,created_at,return_type FROM orders WHERE client_id=? AND id IN (${orderIds.map(()=>'?').join(',')})`).bind(clientId,...orderIds).all();orders=r.results||[];}
-  return {unit:{...unit,metadata:JSON.parse(unit.metadata_json||'{}'),qrValue:qrValue(unit.unit_code)},events:events.map(x=>({...x,metadata:(()=>{try{return JSON.parse(x.metadata_json||'{}')}catch{return {}}})()})),allocations,orders};
+  return {unit:{...unit,metadata:JSON.parse(unit.metadata_json||'{}'),qrValue:qrValue(unit.unit_code),barcodeValue:barcodeValue(unit.unit_code)},events:events.map(x=>({...x,metadata:(()=>{try{return JSON.parse(x.metadata_json||'{}')}catch{return {}}})()})),allocations,orders};
 }
 
 function lifecycleOrderId(path){
@@ -366,10 +375,22 @@ export async function handleInventoryUnitTracking({request,env,ctx,delegate}){
     }
     if(path==='/api/inventory/unit-tracking/units'&&method==='GET'){
       await reconcileAllUnitCoverage(env,{clientId,storeId,actor});const where=['u.client_id=?'],binds=[clientId];if(storeId){where.push('u.store_id=?');binds.push(storeId);}const productId=clean(url.searchParams.get('productId')),status=clean(url.searchParams.get('status')),q=clean(url.searchParams.get('q'));if(productId){where.push('u.product_id=?');binds.push(productId);}if(status){where.push('u.status=?');binds.push(status);}if(q){where.push('(u.unit_code LIKE ? OR u.product_name LIKE ? OR u.sku LIKE ?)');binds.push(`%${q}%`,`%${q}%`,`%${q}%`);}const limit=Math.max(1,Math.min(500,Number(url.searchParams.get('limit'))||200));binds.push(limit);
-      const {results=[]}=await env.DB.prepare(`SELECT u.*,t.code product_tracking_code,b.name batch_name FROM inventory_units u LEFT JOIN product_tracking_codes t ON t.client_id=u.client_id AND t.product_id=u.product_id AND COALESCE(t.variant_id,'')=COALESCE(u.variant_id,'') LEFT JOIN inventory_batches b ON b.id=u.batch_id WHERE ${where.join(' AND ')} ORDER BY u.created_at DESC LIMIT ?`).bind(...binds).all();return json({ok:true,units:results.map(x=>({...x,qrValue:qrValue(x.unit_code)}))});
+      const {results=[]}=await env.DB.prepare(`SELECT u.*,t.code product_tracking_code,b.name batch_name FROM inventory_units u LEFT JOIN product_tracking_codes t ON t.client_id=u.client_id AND t.product_id=u.product_id AND COALESCE(t.variant_id,'')=COALESCE(u.variant_id,'') LEFT JOIN inventory_batches b ON b.id=u.batch_id WHERE ${where.join(' AND ')} ORDER BY u.created_at DESC LIMIT ?`).bind(...binds).all();return json({ok:true,units:results.map(x=>({...x,qrValue:qrValue(x.unit_code),barcodeValue:barcodeValue(x.unit_code)}))});
     }
     if(path==='/api/inventory/unit-tracking/qr'&&method==='GET'){
       const code=scanCode(url.searchParams.get('code'));if(!code)fail('كود القطعة مطلوب',400,'UNIT_CODE_REQUIRED');await unitDetails(env,{clientId,code});const target=qrValue(code),qr=`https://quickchart.io/qr?text=${encodeURIComponent(target)}&size=240&margin=2&ecLevel=M&format=png`;return Response.redirect(qr,302);
+    }
+    if(path==='/api/inventory/unit-tracking/barcode'&&method==='GET'){
+      const code=scanCode(url.searchParams.get('code'));if(!code)fail('كود القطعة مطلوب',400,'UNIT_CODE_REQUIRED');
+      await unitDetails(env,{clientId,code});
+      const barcodeUrl=new URL('https://quickchart.io/barcode');
+      barcodeUrl.searchParams.set('type','code128');
+      barcodeUrl.searchParams.set('text',barcodeValue(code));
+      barcodeUrl.searchParams.set('format','png');
+      barcodeUrl.searchParams.set('width','420');
+      barcodeUrl.searchParams.set('height','110');
+      barcodeUrl.searchParams.set('includeText','true');
+      return Response.redirect(barcodeUrl.toString(),302);
     }
     return json({error:'مسار تتبع القطع غير معروف',code:'UNIT_TRACKING_ROUTE_NOT_FOUND'},404);
   }catch(error){return json({error:error?.message||'تعذر تنفيذ تتبع القطعة',code:error?.code||'UNIT_TRACKING_ERROR'},error?.status||500);}
