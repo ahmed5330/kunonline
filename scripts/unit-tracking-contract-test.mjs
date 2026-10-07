@@ -51,7 +51,7 @@ assert.ok(backend.includes('desiredAvailable')&&backend.includes('remaining_qty'
 assert.ok(production.includes("if(String(event?.cron||'')==='0 */2 * * *'"),'Periodic uncoded-stock reconciliation must be protected by the two-hour cron');
 assert.ok(backend.includes('reconcileTrackedOrderLifecycles'),'Background carrier/order changes must reconcile unit status');
 assert.ok(backend.includes("return 'product_import'")&&backend.includes("actor:'product-import:'+actor"),'Imported stock must be unit-coded in the same successful request');
-assert.ok(backend.includes("source:'stock_adjust_verify'"),'Positive stock adjustments must verify unit coverage before returning');
+assert.ok(backend.includes('UNIT_TRACKING_STOCK_COVERAGE_MISMATCH')&&backend.includes('const target=Math.max(0,Math.floor(num(p.stock)))'),'Stock adjustments must reconcile idempotently against the final physical stock balance before returning');
 assert.ok(backend.includes("source:'qr_lookup'"),'Scanning a unit must refresh its linked order before returning history');
 
 assert.ok(backend.includes('https://app.kun-online.com/v2/?unit='),'QR payload must point to the authenticated Kun Online unit-history route');
