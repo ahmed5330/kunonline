@@ -77,7 +77,7 @@ assert.ok(backend.includes("source:'qr_lookup'"),'Scanning a unit must refresh i
 assert.ok(jtPrint.includes('assertOrderScanReady')&&jtPrint.indexOf('assertOrderScanReady')<jtPrint.indexOf('createJtShipment({shipment,secrets})'),'Packing scan must gate J&T createOrder before any carrier shipment is created');
 assert.ok(backend.includes("target='returned_pending_inspection'"),'Returned orders must enter pending inspection, never sellable stock directly');
 assert.ok(backend.includes("['restock','quarantine','damaged']"),'Return disposition must support restock, quarantine and damaged');
-assert.ok(backend.includes("scope==='available'")&&backend.includes('Math.min(10000'),'Available-stock bulk label printing must support the full current stock set');
+assert.ok(backend.includes("scope==='warehouse'")&&backend.includes("'reserved','returned_pending_inspection','quarantined','damaged'")&&backend.includes('Math.min(10000'),'Bulk label printing must include every physical warehouse unit, including reserved and return-inspection pieces');
 assert.ok(legacyIndex.includes('is now the only path that restores stock for new returns'),'Legacy order return transition must no longer auto-restock new returns');
 assert.ok(fifo.includes("if(toState==='returned')return {kind:'return_pending_inspection'"),'FIFO must keep returned stock outside sellable lots until inspection');
 
@@ -102,5 +102,5 @@ for(const source of [preview,production]){
 
 assert.ok(ui.includes("new URL(location.href).searchParams.get('unit')"),'Opening a printed QR URL must automatically resolve its unit history');
 
-assert.ok(ui.includes("version:'128.2'")&&ui.includes('طباعة باركود كل قطع المخزون')&&ui.includes("scope:'available'"),'Unit tracking UI must identify v128.2 and bulk-print current stock');
+assert.ok(ui.includes("version:'128.2'")&&ui.includes('طباعة باركود كل القطع الموجودة بالمخزن')&&ui.includes("scope:'warehouse'"),'Unit tracking UI must identify v128.2 and bulk-print current stock');
 console.log('Unit tracking v128.2 contract passed: bulk labels, scan-to-pack/dispatch, AWB linkage and inspected return disposition are enforced.');
