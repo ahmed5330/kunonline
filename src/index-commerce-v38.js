@@ -9,6 +9,7 @@ import {handleMobileAppUpdate} from './mobile-app-update.js';
 import {handleCustomerServicePeriodV111} from './customer-service-period-v111.js';
 import {handleSubscriptionControl} from './subscription-control.js';
 import {reconcileMonthlySubscriptions} from './subscription-billing.js';
+import {handleInventoryUnitTracking,syncInventoryTrackingAfterResponse,reconcileTrackedOrderLifecycles,reconcileAllClientsUnitCoverage} from './inventory-unit-tracking.js';
 
 const V2_UI_SCRIPTS=[
   '<script src="/v2/modules-v105-customer-service-claim.js?v=105.2" data-kun-customer-service-claim="1"></script>',
@@ -21,7 +22,8 @@ const V2_UI_SCRIPTS=[
   '<script src="/v2/modules-v124-dashboard-periods-province.js?v=124.0" data-kun-dashboard-periods-v124="1"></script>',
   '<script src="/v2/modules-v125-dashboard-section-periods.js?v=125.0" data-kun-dashboard-section-periods-v125="1"></script>',
   '<script src="/v2/modules-v126-dashboard-finance-top.js?v=126.0" data-kun-dashboard-finance-top-v126="1"></script>',
-  '<script src="/v2/modules-v127-subscriptions.js?v=127.16" data-kun-subscriptions-v127="1"></script>'
+  '<script src="/v2/modules-v127-subscriptions.js?v=127.16" data-kun-subscriptions-v127="1"></script>',
+  '<script src="/v2/modules-v128-unit-tracking.js?v=128.0" data-kun-unit-tracking-v128="1"></script>'
 ].join('');
 const LIVE_TEAM_ASSET_FROM='/v2/modules-v117-team-collaboration.js?v=117.0';
 const LIVE_TEAM_ASSET_TO='/v2/modules-v117-team-collaboration.js?v=117.1';
@@ -92,6 +94,8 @@ export default {
     if(mobileUpdate)return mobileUpdate;
     const subscription=await handleSubscriptionControl({request,env,ctx,delegate:app});
     if(subscription)return subscription;
+    const unitTracking=await handleInventoryUnitTracking({request,env,ctx,delegate:app});
+    if(unitTracking)return unitTracking;
     const periodBoard=await handleCustomerServicePeriodV111({request,env,ctx,delegate:app});
     if(periodBoard)return periodBoard;
     const operational=await handleOperationalWorkflowV110({request,env,ctx,delegate:app});
@@ -102,9 +106,17 @@ export default {
     if(monthly)return monthly;
     const handled=await handleJtHistoryReconcile({request,env,ctx,delegate:app});
     if(handled)return handled;
-    return injectV2Ui(request,await app.fetch(request,env,ctx));
+    const response=await app.fetch(request,env,ctx);
+    return injectV2Ui(request,await syncInventoryTrackingAfterResponse({request,response,env,actor:'system'}));
   },
-  scheduled(event,env,ctx){ctx?.waitUntil?.(reconcileMonthlySubscriptions(env,{limit:1000}).catch(()=>[]));return app.scheduled?.(event,env,ctx);}
+  scheduled(event,env,ctx){
+    ctx?.waitUntil?.(reconcileMonthlySubscriptions(env,{limit:1000}).catch(()=>[]));
+    ctx?.waitUntil?.(reconcileTrackedOrderLifecycles(env,{limit:1000,actor:'scheduled'}).catch(()=>({ok:false})));
+    if(String(event?.cron||'')==='0 */2 * * *'){
+      ctx?.waitUntil?.(reconcileAllClientsUnitCoverage(env,{limit:1000,actor:'scheduled'}).catch(()=>({ok:false})));
+    }
+    return app.scheduled?.(event,env,ctx);
+  }
 };
 
 export {SyncEntrypoint} from './index-commerce-v38-base.js';

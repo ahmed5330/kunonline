@@ -87,8 +87,15 @@ object NativeSectionsApi {
     fun inventory(context: Context): Map<String, NativeSectionResult> = linkedMapOf(
         "state" to get(context, "/api/state", scoped = true),
         "log" to get(context, "/api/inventory/stock-log?limit=200", scoped = true),
-        "suppliers" to get(context, "/api/suppliers", scoped = true)
+        "suppliers" to get(context, "/api/suppliers", scoped = true),
+        "tracking" to get(context, "/api/inventory/unit-tracking/summary", scoped = true)
     )
+
+    fun lookupInventoryUnit(context: Context, code: String): NativeSectionResult =
+        get(context, "/api/inventory/unit-tracking/lookup?code=${enc(code)}", scoped = true)
+
+    fun reconcileInventoryUnits(context: Context): NativeSectionResult =
+        post(context, "/api/inventory/unit-tracking/reconcile", JSONObject(), scoped = true)
 
     fun adjustInventory(
         context: Context,
@@ -187,7 +194,7 @@ object NativeSectionsApi {
                 setRequestProperty("Accept", "application/json")
                 setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 setRequestProperty("Cookie", cookie)
-                setRequestProperty("X-Kun-Mobile", "native-android/2.8.1")
+                setRequestProperty("X-Kun-Mobile", "native-android/2.8.3")
                 if (body != null) doOutput = true
             }
             if (body != null) {

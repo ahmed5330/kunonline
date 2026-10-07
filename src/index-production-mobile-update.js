@@ -13,6 +13,7 @@ import {handleProductionEasyOrdersHealth} from './production-easyorders-health.j
 import {reconcileFinancePresentation} from './production-finance-presentation.js';
 import {reconcileMonthlySubscriptions} from './subscription-billing.js';
 import {handleSubscriptionControl} from './subscription-control.js';
+import {handleInventoryUnitTracking,syncInventoryTrackingAfterResponse,reconcileTrackedOrderLifecycles,reconcileAllClientsUnitCoverage} from './inventory-unit-tracking.js';
 
 const LEGACY_APK_URL='https://github.com/ahmed5330/kunonline/releases/download/android-latest/Kun-Online-Mobile.apk';
 const DIRECT_APK_PATH='/api/mobile/app-update/apk';
@@ -108,6 +109,9 @@ async function websiteWithDirectAndroidDownload(request,env){
   if(!html.includes('/v2/modules-v127-subscriptions.js')){
     html=html.replace('</body>','<script src="/v2/modules-v127-subscriptions.js?v=127.16" data-kun-subscriptions-v127="1"></script></body>');
   }
+  if(!html.includes('/v2/modules-v128-unit-tracking.js')){
+    html=html.replace('</body>','<script src="/v2/modules-v128-unit-tracking.js?v=128.0" data-kun-unit-tracking-v128="1"></script></body>');
+  }
   const headers=new Headers(asset.headers);
   headers.set('Content-Type','text/html; charset=utf-8');
   headers.set('Cache-Control','no-cache, no-store, must-revalidate');
@@ -147,6 +151,9 @@ export default {
     const subscription=await handleSubscriptionControl({request,env:dataEnv,ctx,delegate});
     if(subscription)return subscription;
 
+    const unitTracking=await handleInventoryUnitTracking({request,env:dataEnv,ctx,delegate});
+    if(unitTracking)return unitTracking;
+
     const mobileSync=await handleMobileSync({request,load:async sourceRequest=>{
       const board=await handleProductionCustomerService({request:sourceRequest,env:dataEnv,ctx,delegate});
       return board?routeConfirmedOrdersToPrinting(sourceRequest,board):delegate.fetch(sourceRequest);
@@ -160,10 +167,13 @@ export default {
     if(callerJntEdit)return callerJntEdit;
 
     const printing=await handleProductionPrintingQueue({request,env:dataEnv,ctx,delegate});
-    if(printing)return printing;
+    if(printing)return syncInventoryTrackingAfterResponse({request,response:printing,env:dataEnv,actor:'production'});
 
     const customerService=await handleProductionCustomerService({request,env:dataEnv,ctx,delegate});
-    if(customerService)return routeConfirmedOrdersToPrinting(request,customerService);
+    if(customerService){
+      const routed=await routeConfirmedOrdersToPrinting(request,customerService);
+      return syncInventoryTrackingAfterResponse({request,response:routed,env:dataEnv,actor:'production'});
+    }
 
     const collaborationOrderSearch=await handleCollaborationOrderSearch({request,env:dataEnv,ctx,delegate});
     if(collaborationOrderSearch)return collaborationOrderSearch;
@@ -179,10 +189,21 @@ export default {
 
     if(shouldUsePreviewBackend(request)){
       const preview=await previewFetch(request,env);
-      if(preview)return reconcileFinancePresentation(request,preview,dataEnv);
+      if(preview){
+        const tracked=await syncInventoryTrackingAfterResponse({request,response:preview,env:dataEnv,actor:'production'});
+        return reconcileFinancePresentation(request,tracked,dataEnv);
+      }
     }
 
     return app.fetch(request,env,ctx);
   },
-  scheduled(event,env,ctx){const dataEnv=previewRuntimeEnv(env);ctx?.waitUntil?.(reconcileMonthlySubscriptions(dataEnv,{limit:1000}).catch(()=>[]));return app.scheduled?.(event,env,ctx);}
+  scheduled(event,env,ctx){
+    const dataEnv=previewRuntimeEnv(env);
+    ctx?.waitUntil?.(reconcileMonthlySubscriptions(dataEnv,{limit:1000}).catch(()=>[]));
+    ctx?.waitUntil?.(reconcileTrackedOrderLifecycles(dataEnv,{limit:1000,actor:'scheduled'}).catch(()=>({ok:false})));
+    if(String(event?.cron||'')==='0 */2 * * *'){
+      ctx?.waitUntil?.(reconcileAllClientsUnitCoverage(dataEnv,{limit:1000,actor:'scheduled'}).catch(()=>({ok:false})));
+    }
+    return app.scheduled?.(event,env,ctx);
+  }
 };

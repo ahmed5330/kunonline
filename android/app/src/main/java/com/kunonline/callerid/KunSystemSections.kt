@@ -70,6 +70,9 @@ import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.google.mlkit.vision.barcode.common.Barcode
+import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
+import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
 import org.json.JSONArray
 import org.json.JSONObject
 import java.text.NumberFormat
@@ -657,22 +660,59 @@ private fun AccountingEntryDialog(
 @Composable
 private fun NativeInventoryScreen(onBack: () -> Unit) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val scannerOptions = remember {
+        GmsBarcodeScannerOptions.Builder()
+            .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
+            .enableAutoZoom()
+            .build()
+    }
+    val scanner = remember(context, scannerOptions) { GmsBarcodeScanning.getClient(context, scannerOptions) }
+
     var refresh by remember { mutableIntStateOf(0) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf("") }
     var data by remember { mutableStateOf<Map<String, NativeSectionResult>>(emptyMap()) }
     var showAdjust by remember { mutableStateOf(false) }
+    var unitCode by remember { mutableStateOf("") }
+    var unitBusy by remember { mutableStateOf(false) }
+    var unitError by remember { mutableStateOf("") }
+    var unitDetails by remember { mutableStateOf<JSONObject?>(null) }
 
     fun load() { refresh++ }
+
+    fun lookupUnit(raw: String) {
+        val code = raw.trim()
+        if (code.isBlank() || unitBusy) return
+        unitBusy = true
+        unitError = ""
+        scope.launch {
+            val result = withContext(Dispatchers.IO) { NativeSectionsApi.lookupInventoryUnit(context, code) }
+            unitBusy = false
+            if (result.ok) {
+                unitDetails = result.obj ?: JSONObject()
+                unitCode = result.obj?.optJSONObject("unit")?.optString("unit_code").orEmpty().ifBlank { code }
+            } else {
+                unitError = result.message.ifBlank { "كود القطعة غير موجود" }
+            }
+        }
+    }
+
     LaunchedEffect(refresh) {
         loading = true
         data = withContext(Dispatchers.IO) { NativeSectionsApi.inventory(context) }
-        error = data.values.firstOrNull { !it.ok }?.message.orEmpty()
+        error = data["state"]?.takeIf { !it.ok }?.message.orEmpty()
         loading = false
     }
 
     val products = data["state"]?.obj?.optJSONArray("products")?.objects().orEmpty()
     val suppliers = data["suppliers"].rows()
+    val tracking = data["tracking"]?.obj ?: JSONObject()
+    val trackingCounts = tracking.optJSONArray("counts")?.objects().orEmpty()
+        .associate { it.str("status") to ((firstNumber(it, "n") ?: 0.0).toInt()) }
+    val codedTotal = trackingCounts.values.sum()
+    val codedAvailable = (trackingCounts["in_stock"] ?: 0) + (trackingCounts["returned_in_stock"] ?: 0)
+
     if (showAdjust) {
         InventoryAdjustDialog(products, suppliers, onDismiss = { showAdjust = false }, onSaved = {
             showAdjust = false
@@ -680,10 +720,14 @@ private fun NativeInventoryScreen(onBack: () -> Unit) {
         })
     }
 
-    NativeSectionScaffold("المخزون", "Native · المنتجات وحركات المخزون", onBack, ::load) { padding ->
+    if (unitDetails != null) {
+        UnitTrackingDialog(data = unitDetails!!, onDismiss = { unitDetails = null })
+    }
+
+    NativeSectionScaffold("المخزون", "Native · مخزون + كود وQR لكل قطعة", onBack, ::load) { padding ->
         when {
             loading -> NativeBusy(padding)
-            error.isNotBlank() && data["state"]?.ok != true -> NativeError(padding, error, ::load)
+            error.isNotBlank() -> NativeError(padding, error, ::load)
             else -> {
                 val log = data["log"].rows("entries")
                 val low = products.count { (firstNumber(it, "stock") ?: 0.0) <= (firstNumber(it, "lowStockThreshold", "low_stock_threshold") ?: 5.0) }
@@ -695,10 +739,83 @@ private fun NativeInventoryScreen(onBack: () -> Unit) {
                     item {
                         NativeMetricRow(listOf(
                             "المنتجات" to products.size.toString(),
-                            "مخزون منخفض" to low.toString()
+                            "مخزون منخفض" to low.toString(),
+                            "إجمالي القطع المكودة" to codedTotal.toString(),
+                            "قطع متاحة بكود" to codedAvailable.toString()
                         ))
                     }
-                    item { Button(onClick = { showAdjust = true }, modifier = Modifier.fillMaxWidth()) { Text("+ إضافة / تسوية مخزون") } }
+                    item {
+                        KunSectionCard {
+                            Text("تتبع قطعة بالـ QR", fontWeight = FontWeight.Bold, color = KunColors.Ink)
+                            Text(
+                                "امسح QR أو اكتب Unit Code لاستدعاء خط سير القطعة من دخول المخزون حتى التسليم أو المرتجع.",
+                                color = KunColors.Ink2
+                            )
+                            OutlinedTextField(
+                                value = unitCode,
+                                onValueChange = { unitCode = it; unitError = "" },
+                                label = { Text("Unit Code / محتوى QR") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(
+                                    onClick = { lookupUnit(unitCode) },
+                                    enabled = unitCode.isNotBlank() && !unitBusy,
+                                    modifier = Modifier.weight(1f)
+                                ) { Text(if (unitBusy) "جاري الاستدعاء..." else "استدعاء التاريخ") }
+                                FilledTonalButton(
+                                    onClick = {
+                                        scanner.startScan()
+                                            .addOnSuccessListener { barcode ->
+                                                val raw = barcode.rawValue.orEmpty()
+                                                if (raw.isNotBlank()) {
+                                                    unitCode = raw
+                                                    lookupUnit(raw)
+                                                } else {
+                                                    unitError = "تعذر قراءة قيمة QR"
+                                                }
+                                            }
+                                            .addOnFailureListener { failure ->
+                                                unitError = failure.message ?: "تعذر تشغيل قارئ QR"
+                                            }
+                                    },
+                                    enabled = !unitBusy,
+                                    modifier = Modifier.weight(1f)
+                                ) { Text("قراءة QR") }
+                            }
+                            if (unitError.isNotBlank()) Text(unitError, color = KunColors.Brick)
+                            val trackingFailure = data["tracking"]?.takeIf { !it.ok }?.message.orEmpty()
+                            if (trackingFailure.isNotBlank()) {
+                                Text("تعذر تحديث أكواد القطع: $trackingFailure", color = KunColors.Brick)
+                            }
+                        }
+                    }
+                    item {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(onClick = { showAdjust = true }, modifier = Modifier.weight(1f)) {
+                                Text("+ إضافة / تسوية مخزون")
+                            }
+                            OutlinedButton(
+                                onClick = {
+                                    if (unitBusy) return@OutlinedButton
+                                    unitBusy = true
+                                    scope.launch {
+                                        val result = withContext(Dispatchers.IO) { NativeSectionsApi.reconcileInventoryUnits(context) }
+                                        unitBusy = false
+                                        Toast.makeText(
+                                            context,
+                                            if (result.ok) "تمت مراجعة أكواد المخزون" else result.message,
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                        if (result.ok) load()
+                                    }
+                                },
+                                enabled = !unitBusy,
+                                modifier = Modifier.weight(1f)
+                            ) { Text("مراجعة الأكواد") }
+                        }
+                    }
                     item { Text("المنتجات", style = MaterialTheme.typography.titleMedium) }
                     items(products, key = { it.str("id").ifBlank { it.toString() } }) { product ->
                         NativeSimpleRow(
@@ -719,6 +836,97 @@ private fun NativeInventoryScreen(onBack: () -> Unit) {
             }
         }
     }
+}
+
+@Composable
+private fun UnitTrackingDialog(data: JSONObject, onDismiss: () -> Unit) {
+    val unit = data.optJSONObject("unit") ?: JSONObject()
+    val events = data.optJSONArray("events")?.objects().orEmpty()
+    val orders = data.optJSONArray("orders")?.objects().orEmpty().associateBy { it.str("id") }
+
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(0.94f).heightIn(max = 720.dp),
+            shape = RoundedCornerShape(22.dp),
+            color = KunColors.Surface
+        ) {
+            LazyColumn(
+                contentPadding = PaddingValues(18.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                item {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("خط سير القطعة", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
+                            Text(unit.str("unit_code"), fontWeight = FontWeight.Bold, color = KunColors.Pine)
+                        }
+                        TextButton(onClick = onDismiss) { Text("إغلاق") }
+                    }
+                }
+                item {
+                    NativeMetricRow(listOf(
+                        "الحالة" to unitTrackingStatusLabel(unit.str("status")),
+                        "Product Code" to unit.str("product_tracking_code").ifBlank { "—" },
+                        "المنتج" to unit.str("product_name").ifBlank { "—" },
+                        "الدفعة" to unit.str("batch_name").ifBlank { "—" }
+                    ))
+                }
+                item {
+                    KunSectionCard {
+                        Text("الارتباط الحالي", fontWeight = FontWeight.Bold)
+                        Text(
+                            "آخر أوردر: " + unit.str("current_order_id", "last_order_id").ifBlank { "—" },
+                            color = KunColors.Ink2
+                        )
+                        if (unit.str("received_at").isNotBlank()) {
+                            Text("دخول المخزون: ${unit.str("received_at")}", color = KunColors.Ink2)
+                        }
+                    }
+                }
+                item { Text("History", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) }
+                if (events.isEmpty()) {
+                    item { KunSectionCard { Text("لا يوجد تاريخ مسجل لهذه القطعة.", color = KunColors.Ink2) } }
+                }
+                items(events, key = { it.str("id").ifBlank { it.toString() } }) { event ->
+                    val order = orders[event.str("order_id")]
+                    NativeSimpleRow(
+                        title = unitTrackingEventLabel(event.str("event_type")),
+                        subtitle = listOf(
+                            event.str("note"),
+                            event.str("created_at"),
+                            event.str("order_id").takeIf { it.isNotBlank() }?.let { "Order $it" }.orEmpty(),
+                            order?.str("awb")?.takeIf { it.isNotBlank() }?.let { "AWB $it" }.orEmpty()
+                        ).filter { it.isNotBlank() }.joinToString(" · "),
+                        trailing = unitTrackingStatusLabel(event.str("to_status"))
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun unitTrackingStatusLabel(value: String): String = when (value) {
+    "in_stock" -> "في المخزون"
+    "returned_in_stock" -> "مرتجع بالمخزون"
+    "reserved" -> "محجوز"
+    "shipped" -> "مع الشحن"
+    "delivered" -> "تم التسليم"
+    "retired" -> "خرج من المخزون"
+    "legacy_outbound" -> "حركة تاريخية"
+    else -> value.ifBlank { "—" }
+}
+
+private fun unitTrackingEventLabel(value: String): String = when (value) {
+    "received_into_inventory" -> "دخول القطعة للمخزون"
+    "reserved_for_order" -> "حجز القطعة للأوردر"
+    "handed_to_shipping" -> "تسليم القطعة للشحن"
+    "delivered_to_customer" -> "تسليم القطعة للعميل"
+    "returned_to_inventory" -> "استرجاع القطعة للمخزون"
+    "reservation_released" -> "فك حجز القطعة"
+    "manual_stock_out" -> "خروج يدوي من المخزون"
+    "legacy_backfill_outbound" -> "حركة تاريخية قبل التتبع"
+    "legacy_backfill_recovered" -> "مطابقة تاريخية مع المخزون"
+    else -> value.ifBlank { "حركة" }
 }
 
 @Composable

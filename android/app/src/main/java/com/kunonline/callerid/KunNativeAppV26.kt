@@ -22,7 +22,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 
 /**
- * Kun Online Android v2.8.1 shell.
+ * Kun Online Android v2.8.3 shell.
  * Keeps the fast native daily workflow and exposes the selected client modules as native Android screens.
  * Native Printing still calls the governed Kun Online/J&T server workflow for Create Order and official labels.
  */
