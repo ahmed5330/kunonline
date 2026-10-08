@@ -51,13 +51,13 @@ let chrome,cdp,profile;
 async function evalJs(expression){const r=await cdp.send('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true,userGesture:true});if(r.exceptionDetails)throw Error(r.exceptionDetails.exception?.description||r.exceptionDetails.text);return r.result.value;}
 async function waitFor(expression,label){for(let i=0;i<75;i++){try{if(await evalJs(expression))return;}catch{}await sleep(75);}throw Error('Could not reach '+label+': '+expression);}
 const active=()=>evalJs('document.querySelector(".nav button[data-view].active")?.dataset.view');
-const groupOpen=id=>evalJs('document.querySelector(".nav-group[data-nav-group='+JSON.stringify(id)+']")?.classList.contains("is-open")');
+const groupOpen=id=>evalJs('document.querySelector('+JSON.stringify('.nav-group[data-nav-group="'+id+'"]')+')?.classList.contains("is-open")');
 const openGroup=async id=>{
- await evalJs('document.querySelector(".nav-group[data-nav-group='+JSON.stringify(id)+'] > .nav-group-toggle").click()');
+ await evalJs('document.querySelector('+JSON.stringify('.nav-group[data-nav-group="'+id+'"] > .nav-group-toggle')+').click()');
  await sleep(180);assert.equal(await groupOpen(id),true,'Group '+id+' must stay expanded, including while another group holds the active route');
 };
 const routeClick=async route=>{
- await evalJs('document.querySelector(".nav button[data-view='+JSON.stringify(route)+']").click()');
+ await evalJs('document.querySelector('+JSON.stringify('.nav button[data-view="'+route+'"]')+').click()');
  await waitFor('document.querySelector(".nav button[data-view].active")?.dataset.view==='+JSON.stringify(route),'active route '+route);
 };
 try{
@@ -95,7 +95,7 @@ try{
   for(const route of item.routes){
    await routeClick(route);await sleep(22);
    assert.equal(await groupOpen(item.id),true,'Active child group must remain expanded for '+route);
-   assert.equal(await evalJs('document.querySelector(".nav button[data-view='+JSON.stringify(route)+']").getAttribute("aria-hidden")'),'false','Route visible '+route);
+   assert.equal(await evalJs('document.querySelector('+JSON.stringify('.nav button[data-view="'+route+'"]')+').getAttribute("aria-hidden")'),'false','Route visible '+route);
    examined++;
   }
   // Moving to another parent must not reopen this group's active item on a class observer tick.
