@@ -161,7 +161,7 @@ async function fromRemote(fetcher,key,resource,id,externalStoreId){
   return apiCall(fetcher,key,source[resource],{externalStoreId});
 }
 const lastWrite=new Map();
-export async function runEasyOrdersStoreControl({request,env,delegate,ctx,fetcher=fetch}){
+export async function runEasyOrdersStoreControl({request,env,delegate,ctx,fetcher=fetch,secretReader=readConnectionSecrets}){
   const url=new URL(request.url);
   if(!url.pathname.startsWith('/api/integrations/easyorders/store-control'))return null;
   const method=request.method.toUpperCase();
@@ -186,7 +186,7 @@ export async function runEasyOrdersStoreControl({request,env,delegate,ctx,fetche
       return json(result);
     }
     const found=await findBoundEasyOrdersConnection(env,{clientId,storeId,connectionId:body.connectionId||url.searchParams.get('connectionId')});
-    const secrets=await readConnectionSecrets(env,clientId,found.row.id);
+    const secrets=await secretReader(env,clientId,found.row.id);
     const key=clean(secrets.api_key);
     if(!key)throw problem('مفتاح API غير متاح لهذا الربط',409,'EASYORDERS_API_KEY_MISSING');
     if(method==='GET'){
