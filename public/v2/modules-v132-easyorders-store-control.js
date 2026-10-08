@@ -41,8 +41,8 @@ function summary(){
  rows.map(([name,desc,key])=>'<div class="eoc-row"><div><strong>'+esc(name)+'</strong><div class="eoc-small">'+esc(desc)+'</div></div><button class="btn soft" data-eoc-tab="'+esc(key)+'">فتح</button></div>').join('')+'</div>';
 }
 function products(){return '<div class="eoc-card"><h3 class="eoc-title">المنتجات من Easy Orders</h3><button class="btn soft" data-eoc-read="products">قراءة قائمة المنتجات</button><div id="eoList"></div></div>'+
- form('إنشاء منتج','product.create',input('اسم المنتج','name')+input('السعر الأساسي','price','number')+input('سعر العرض الاختياري','sale_price','number')+input('كود SKU','sku')+input('الوصف','description','textarea'),'عملية الإنشاء ستنشر منتجًا جديدًا على Easy Orders، ولن تنشئ نسخة تلقائيًا في مخزون كن أونلاين.')+
- form('تعديل منتج موجود','product.update',input('Product ID','entityId')+input('اسم جديد (اختياري)','name')+input('السعر الأساسي الجديد','price','number')+input('سعر العرض الجديد','sale_price','number')+input('الوصف الجديد','description','textarea'));
+ form('إنشاء منتج','product.create',input('اسم المنتج','name')+input('السعر الأساسي','price','number')+input('سعر العرض الاختياري','sale_price','number')+input('كود SKU','sku')+input('رابط المنتج (Slug)','slug')+input('رابط الصورة الرئيسية HTTPS','thumb')+input('روابط الصور الإضافية (رابط في كل سطر)','images','textarea')+input('معرفات التصنيفات (معرف في كل سطر)','categories','textarea')+input('الوصف','description','textarea'),'عملية الإنشاء تنشر منتجًا جديدًا في Easy Orders فقط. لازم تستورده إلى كن أونلاين قبل ربط المخزون الفعلي.')+
+ form('تعديل منتج موجود','product.update',input('Product ID','entityId')+input('اسم جديد (اختياري)','name')+input('السعر الأساسي الجديد','price','number')+input('سعر العرض الجديد','sale_price','number')+input('الرابط المختصر الجديد','slug')+input('رابط الصورة الرئيسية HTTPS','thumb')+input('روابط الصور الإضافية (رابط لكل سطر)','images','textarea')+input('معرفات التصنيفات المطلوبة','categories','textarea')+input('الوصف الجديد','description','textarea'));
 }
 function categories(){return '<div class="eoc-card"><h3 class="eoc-title">تصنيفات Easy Orders</h3><button class="btn soft" data-eoc-read="categories">قراءة التصنيفات</button><div id="eoList"></div></div>'+
  form('إنشاء تصنيف','category.create',input('اسم التصنيف','name')+input('Slug (اختياري)','slug'))+
@@ -98,6 +98,8 @@ function build(op,formEl){
  const payload={};
  for(const [k,v] of Object.entries(values)){if(k==='entityId'||v==='')continue;
   if(['price','sale_price','quantity','position'].includes(k)){const n=Number(v);if(!Number.isFinite(n)||n<0)throw new Error('قيمة '+k+' غير صالحة');payload[k]=n;}
+  else if(k==='images'){payload.images=v.split(/[\r\n,]+/).map(x=>x.trim()).filter(Boolean);}
+  else if(k==='categories'){payload.categories=v.split(/[\r\n,]+/).map(x=>x.trim()).filter(Boolean).map(id=>({id}));}
   else if(k==='cities'){payload.cities=v.split(/\r?\n/).map(t=>t.trim()).filter(Boolean).map(t=>{const i=t.lastIndexOf(':');if(i<1||!Number.isFinite(Number(t.slice(i+1))))throw new Error('صيغة الشحن غير صحيحة: '+t);return{name:t.slice(0,i).trim(),shipping_cost:Number(t.slice(i+1).trim())};});}
   else payload[k]=v;
  }
