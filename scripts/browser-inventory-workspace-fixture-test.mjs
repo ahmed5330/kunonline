@@ -59,7 +59,7 @@ try{
  assert.equal(await evaluate('document.querySelectorAll(".ki130-stat").length'),5);
  assert.equal(await evaluate('document.querySelectorAll("#ki130Workspace [data-ki130-tab]").length'),6);
  assert.equal(await evaluate('getComputedStyle(document.querySelector("#root>.page-head")).display'),'none');
- assert.equal(await evaluate('getComputedStyle(document.getElementById("unit128Panel")).display'),'none');
+ assert.equal(await evaluate('document.getElementById("unit128Panel").getClientRects().length'),0);
  assert.equal(await evaluate('document.querySelectorAll("#ki130Alerts .ki130-alert-row").length'),2);
  assert.equal(await evaluate('document.querySelector("#ki130-panel-units").contains(document.getElementById("unit128Panel"))'),true);
  assert.equal(await evaluate('document.querySelector("#ki130-panel-batches").contains(document.getElementById("v39BatchList"))'),true);
@@ -74,13 +74,13 @@ try{
  await evaluate('document.querySelector("[data-ki130-units=A]").click();document.querySelector("[data-ki130-print=A]").click();');
  assert.deepEqual(await evaluate('__events.slice(-2)'),['data-unit-open-product','data-unit-print-product']);
  await evaluate('document.querySelector("[data-ki130-tab=units]").click()');
- assert.notEqual(await evaluate('getComputedStyle(document.getElementById("unit128Panel")).display'),'none');
+ assert.ok(await evaluate('document.getElementById("unit128Panel").getClientRects().length > 0'));
  await evaluate('document.querySelector("[data-ki130-tab=batches]").click()');
- assert.notEqual(await evaluate('getComputedStyle(document.getElementById("v39BatchList")).display'),'none');
+ assert.ok(await evaluate('document.getElementById("v39BatchList").getClientRects().length > 0'));
  await evaluate('document.querySelector("[data-ki130-action=batch]").click()');
  assert.equal(await evaluate('__events.includes("v39NewBatch")'),true);
  await evaluate('document.querySelector("[data-ki130-tab=history]").click()');
- assert.notEqual(await evaluate('getComputedStyle(document.getElementById("v37InventoryHistory")).display'),'none');
+ assert.ok(await evaluate('document.getElementById("v37InventoryHistory").getClientRects().length > 0'));
  assert.equal(await evaluate('document.querySelectorAll("#ki131HistoryTools select").length'),1);
  await evaluate('const select=document.querySelector("#ki131HistoryTools select");select.value="minus";select.dispatchEvent(new Event("change",{bubbles:true}));');
  assert.equal(await evaluate('document.querySelectorAll("#v37InventoryHistory tbody tr:not([hidden])").length'),1);
