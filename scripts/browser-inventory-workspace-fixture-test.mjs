@@ -57,7 +57,7 @@ try{
  await cdp.send('Page.navigate',{url:'http://127.0.0.1:'+server.address().port+'/'});
  await ready('!!document.getElementById("ki130Workspace")');
  assert.equal(await evaluate('document.querySelectorAll(".ki130-stat").length'),5);
- assert.equal(await evaluate('document.querySelectorAll("[data-ki130-tab]").length'),6);
+ assert.equal(await evaluate('document.querySelectorAll("#ki130Workspace [data-ki130-tab]").length'),6);
  assert.equal(await evaluate('getComputedStyle(document.querySelector("#root>.page-head")).display'),'none');
  assert.equal(await evaluate('getComputedStyle(document.getElementById("unit128Panel")).display'),'none');
  assert.equal(await evaluate('document.querySelectorAll("#ki130Alerts .ki130-alert-row").length'),2);
