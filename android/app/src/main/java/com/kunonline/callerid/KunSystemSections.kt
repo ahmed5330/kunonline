@@ -308,7 +308,7 @@ private fun NativePrintingScreen(onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     val scannerOptions = remember {
         GmsBarcodeScannerOptions.Builder()
-            .setBarcodeFormats(Barcode.FORMAT_QR_CODE, Barcode.FORMAT_CODE_128)
+            .setBarcodeFormats(Barcode.FORMAT_QR_CODE, Barcode.FORMAT_CODE_128, Barcode.FORMAT_CODE_39, Barcode.FORMAT_ITF, Barcode.FORMAT_EAN_13)
             .enableAutoZoom()
             .build()
     }
@@ -612,7 +612,7 @@ private fun NativeReturnsScreen(onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     val scannerOptions = remember {
         GmsBarcodeScannerOptions.Builder()
-            .setBarcodeFormats(Barcode.FORMAT_QR_CODE, Barcode.FORMAT_CODE_128)
+            .setBarcodeFormats(Barcode.FORMAT_QR_CODE, Barcode.FORMAT_CODE_128, Barcode.FORMAT_CODE_39, Barcode.FORMAT_ITF, Barcode.FORMAT_EAN_13)
             .enableAutoZoom()
             .build()
     }
@@ -1001,7 +1001,7 @@ private fun NativeInventoryScreen(onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     val scannerOptions = remember {
         GmsBarcodeScannerOptions.Builder()
-            .setBarcodeFormats(Barcode.FORMAT_QR_CODE, Barcode.FORMAT_CODE_128)
+            .setBarcodeFormats(Barcode.FORMAT_QR_CODE, Barcode.FORMAT_CODE_128, Barcode.FORMAT_CODE_39, Barcode.FORMAT_ITF, Barcode.FORMAT_EAN_13)
             .enableAutoZoom()
             .build()
     }
@@ -1084,9 +1084,9 @@ private fun NativeInventoryScreen(onBack: () -> Unit) {
                     }
                     item {
                         KunSectionCard {
-                            Text("تتبع قطعة بالـ QR أو Barcode", fontWeight = FontWeight.Bold, color = KunColors.Ink)
+                            Text("قارئ باركود المخزن بالكاميرا", fontWeight = FontWeight.Bold, color = KunColors.Ink)
                             Text(
-                                "امسح QR أو Code 128 Barcode أو اكتب Unit Code لاستدعاء خط سير القطعة بالكامل.",
+                                "اضغط مسح بالكاميرا واقرأ الملصق المطبوع لعرض القطعة والطلب وخط السير. لتجهيز الطلبات افتح الطباعة والشحن وامسح البوليصة ثم القطع.",
                                 color = KunColors.Ink2
                             )
                             OutlinedTextField(
@@ -1104,8 +1104,12 @@ private fun NativeInventoryScreen(onBack: () -> Unit) {
                                 ) { Text(if (unitBusy) "جاري الاستدعاء..." else "استدعاء التاريخ") }
                                 FilledTonalButton(
                                     onClick = {
+                                        if (unitBusy) return@FilledTonalButton
+                                        unitBusy = true
+                                        unitError = ""
                                         scanner.startScan()
                                             .addOnSuccessListener { barcode ->
+                                                unitBusy = false
                                                 val raw = barcode.rawValue.orEmpty()
                                                 if (raw.isNotBlank()) {
                                                     unitCode = raw
@@ -1115,12 +1119,14 @@ private fun NativeInventoryScreen(onBack: () -> Unit) {
                                                 }
                                             }
                                             .addOnFailureListener { failure ->
+                                                unitBusy = false
                                                 unitError = failure.message ?: "تعذر تشغيل قارئ QR / Barcode"
                                             }
+                                            .addOnCanceledListener { unitBusy = false }
                                     },
                                     enabled = !unitBusy,
                                     modifier = Modifier.weight(1f)
-                                ) { Text("قراءة QR / باركود") }
+                                ) { Text("📷 مسح بالكاميرا") }
                             }
                             if (unitError.isNotBlank()) Text(unitError, color = KunColors.Brick)
                             val trackingFailure = data["tracking"]?.takeIf { !it.ok }?.message.orEmpty()

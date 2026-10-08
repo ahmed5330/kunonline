@@ -13,8 +13,8 @@ android {
         minSdk = 29
         targetSdk = 35
         // v2.8.5 adds scan-to-pack/dispatch and inspected per-piece returns.
-        versionCode = 126
-        versionName = "2.8.5"
+        versionCode = 127
+        versionName = "2.8.6"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
