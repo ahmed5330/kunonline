@@ -108,7 +108,7 @@ assert.ok(!printBlock.includes('await assertOrderScanReady'),'Official J&T waybi
 assert.ok(androidNativeSectionsApi.includes('/api/inventory/unit-tracking/order-scan/open')&&androidNativeSections.includes('Scan AWB'),'Android dispatch must scan the carrier AWB through Kun Online, never directly against J&T');
 for(const label of ['اليوم','أمس','هذا الأسبوع','الأسبوع الماضي','الشهر الحالي','الشهر الماضي','مدة معينة'])assert.ok(androidDateFilter.includes(`"${label}"`),`Android period selector missing ${label}`);
 assert.ok(androidDateFilter.includes('DatePickerDialog')&&androidDateFilter.includes('selectCustom'),'Android custom period must provide a start/end date selection');
-assert.ok(androidGradle.includes('versionCode = 126')&&androidGradle.includes('versionName = "2.8.5"'),'Android current release must be v2.8.5 code 126');
+assert.ok(androidGradle.includes('versionCode = 127')&&androidGradle.includes('versionName = "2.8.6"'),'Android current release must be v2.8.6 code 127');
 
 assert.ok(index.includes('/v2/modules-v81-jt-live-setup.js?v=81.3'));assert.ok(index.includes('/v2/modules-v82-jt-tracking-cards.js?v=82.1'));assert.ok(index.includes('/v2/modules-v83-order-recency.js?v=83.1'));assert.ok(index.includes('/v2/modules-v84-jt-create-setup.js?v=84.5'));
 for(const marker of ['post-shipping','returns-exchanges','jt82-badge','jt_tracking_update','jt_shipment_created','60000','PULL_INTERVAL=300000','MAX_PULL=6','/track?clientId='])assert.ok(trackingUi.includes(marker),`J&T tracking UI missing ${marker}`);
