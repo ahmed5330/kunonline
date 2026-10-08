@@ -56,7 +56,7 @@ async function currentUser(request,env,ctx,delegate){
   const u=new URL(request.url);u.pathname='/api/me';u.search='';
   const response=await delegate.fetch(new Request(u.toString(),{method:'GET',headers:request.headers}),env,ctx);
   const me=await response.json().catch(()=>({}));
-  if(!response.ok||!me?.role)fail(me?.error||'محتاج تسجّل دخول',response.status||401,'AUTH_REQUIRED');
+  if(!response.ok||!me?.role)fail(me?.error||'محتاج تسجّل دخول',response.ok?401:(response.status||401),'AUTH_REQUIRED');
   return me;
 }
 async function scoped(request,env,me,clientId,{write=false,storeId=null}={}){
