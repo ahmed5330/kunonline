@@ -210,6 +210,7 @@ export async function importCommerceProducts(env,args){
   for(const p of items){
     try{
       const productId=p.existingId||p.id;
+      if(await isSerializedProduct(env,args.clientId,productId))rejectQuantityMutation();
       await env.DB.prepare(`INSERT INTO products (${PRODUCT_COLS}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,sku=excluded.sku,category=excluded.category,price=excluded.price,compare_at_price=excluded.compare_at_price,cost=excluded.cost,active=excluded.active,stock=excluded.stock`).bind(productId,args.clientId,args.storeId||null,p.name,p.sku,p.category,p.price,p.compareAtPrice,p.importCost,p.active?1:0,p.stock,5,ts).run();
       for(const [i,v] of p.variants.entries()){
         const variantId=await stableId('IMV',args.clientId,args.storeId||'',args.providerId,p.externalId||p.sku,v.externalId||v.sku||i),match=await env.DB.prepare("SELECT id FROM product_variants WHERE client_id=? AND store_id IS ? AND product_id=? AND (id=? OR (?<>'' AND LOWER(sku)=LOWER(?))) LIMIT 1").bind(args.clientId,args.storeId||null,productId,variantId,v.sku,v.sku).first();
@@ -224,3 +225,4 @@ export async function importCommerceProducts(env,args){
 }
 export const normalizeCommerceProduct=normalizeProduct;
 export const commerceProductImportAdapters=Object.freeze(Object.keys(ADAPTERS));
+import {isSerializedProduct,rejectQuantityMutation} from './inventory-tracking-mode.js';

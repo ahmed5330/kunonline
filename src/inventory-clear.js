@@ -1,3 +1,4 @@
+import {isSerializedProduct,rejectQuantityMutation} from './inventory-tracking-mode.js';
 const clean=value=>String(value??'').trim();
 const now=()=>new Date().toISOString();
 const actorName=actor=>clean(actor?.email||actor?.name||actor?.role||actor?.id||actor?.uid)||'system';
@@ -11,6 +12,7 @@ async function loadProductInventory(env,{clientId,storeId=null,productId}={}){
   if(storeId){where.push('store_id=?');binds.push(storeId);}
   const product=await env.DB.prepare(`SELECT id,client_id,store_id,name,stock FROM products WHERE ${where.join(' AND ')} LIMIT 1`).bind(...binds).first();
   if(!product)fail('المنتج غير موجود في المتجر الحالي',404,'PRODUCT_NOT_FOUND');
+  if(await isSerializedProduct(env,clientId,productId))rejectQuantityMutation();
   const effectiveStore=clean(product.store_id)||storeId||null;
   const variantWhere=['product_id=?','client_id=?'],variantBinds=[productId,clientId];
   if(effectiveStore){variantWhere.push('store_id=?');variantBinds.push(effectiveStore);}
