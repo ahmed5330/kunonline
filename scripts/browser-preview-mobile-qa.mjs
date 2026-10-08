@@ -82,7 +82,18 @@ try{
   const jtStable=await evalJs(`(()=>{const panel=document.getElementById('intSetupPanel');return {senderCount:panel?.querySelectorAll('[data-jt84-sender]').length||0,timerResponsive:Boolean(window.__kunJtSetupTimer)};})()`);if(jtStable.senderCount!==1||!jtStable.timerResponsive)throw new Error(`J&T setup scan is not idempotent/responsive: ${JSON.stringify(jtStable)}`);
 
   clientId=await evalJs(`window.kunClientId?.()`);if(!clientId)throw new Error('Mobile call QA could not resolve client context');
-  const store=(await d1("SELECT id FROM stores WHERE client_id=? AND status='active' ORDER BY is_default DESC LIMIT 1",[clientId]))[0]?.id||null;if(!store)throw new Error('Mobile call QA could not resolve an active store');
+  // Admin Preview sessions default to the "all branches" context. A card seeded
+  // into the default store can be absent from Customer Service unless the browser
+  // and fixture intentionally target the SAME store. This is a scope setup check,
+  // not a relaxation of the mobile call/card assertions.
+  const activeStore=String(await evalJs(`window.kunStoreId?.()`)||'');
+  const matching=activeStore?(await d1("SELECT id FROM stores WHERE id=? AND client_id=? AND status='active'",[activeStore,clientId]))[0]?.id:null;
+  const store=matching||(await d1("SELECT id FROM stores WHERE client_id=? AND status='active' ORDER BY is_default DESC LIMIT 1",[clientId]))[0]?.id||null;
+  if(!store)throw new Error('Mobile call QA could not resolve an active store');
+  await evalJs(`localStorage.setItem(${JSON.stringify('kunActiveStore:'+clientId)},${JSON.stringify(store)})`);
+  await navigate(`${base}/v2/`);
+  await waitFor(`window.kunStoreId?.().then(id=>id===${JSON.stringify(store)})`,'mobile call QA selected correct tenant store',20000);
+  await sleep(450);
   await d1("INSERT INTO orders (id,client_id,store_id,name,phone,product,qty,total,state,date,created_at,history,contact_log,note) VALUES (?,?,?,?,?,?,1,25,'pending',?,?, '[]','[]',?)",[orderId,clientId,store,'Mobile Call QA','01012345678','Mobile QA product',createdAt.slice(0,10),createdAt,'mobile call persistence']);
   await evalJs(`document.querySelector('.nav button[data-view="customer-service"]').click()`);const selector=`.cs-order[data-cs-order="${orderId}"]`;await waitFor(`document.querySelector(${JSON.stringify(selector)})?.querySelector('[data-cs-action="call"]')`,'mobile call card',15000);
   const callMeta=await evalJs(`(()=>{const a=document.querySelector(${JSON.stringify(selector)}).querySelector('[data-cs-action="call"]');return {href:a.getAttribute('href'),safe:a.dataset.mobileSafeCall};})()`);if(callMeta.href!=='tel:01012345678'||callMeta.safe!=='1')throw new Error(`Call link is not native/resume-safe on mobile: ${JSON.stringify(callMeta)}`);
