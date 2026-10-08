@@ -151,8 +151,15 @@ jobs:
         id: worker_ownership
         if: steps.deploy.outcome == 'success'
         run: |
-          status="$(npx wrangler deployments status --config wrangler.preview.toml --json)"
-          current="$(printf '%s' "$status" | node -e '
+          set -euo pipefail
+          expected="${{ steps.deploy.outputs.version_id }}"
+          test -n "$expected"
+          # Cloudflare deployments status can briefly report the previous 100% owner
+          # immediately after a successful Wrangler deploy. Never claim success
+          # before the exact candidate version owns live traffic.
+          for attempt in $(seq 1 18); do
+            status="$(npx wrangler deployments status --config wrangler.preview.toml --json 2>/dev/null || true)"
+            current="$(printf '%s' "$status" | node -e '
             let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{
               const root=JSON.parse(raw),hits=[];
               const walk=x=>{if(Array.isArray(x)){for(const v of x)walk(v);return;}if(!x||typeof x!=="object")return;
@@ -164,22 +171,44 @@ jobs:
               const unique=[...new Map(hits.map(x=>[x.id,x])).values()];
               const full=unique.find(x=>x.pct===100||x.pct===1)||(unique.length===1?unique[0]:null);
               if(!full)process.exit(2);process.stdout.write(full.id);
-            });')"
-          expected="${{ steps.deploy.outputs.version_id }}"
-          if [ "$current" = "$expected" ]; then
-            echo "is_current=true" >> "$GITHUB_OUTPUT"
-            echo "Preview Worker ownership confirmed: $current"
-          else
-            echo "is_current=false" >> "$GITHUB_OUTPUT"
-            echo "Preview Worker ownership lost immediately after deploy. Expected=$expected Current=$current"
-            exit 1
-          fi
+            });' 2>/dev/null || true)"
+
+            echo "Preview ownership check $attempt/18: expected=$expected live=${current:-unknown}"
+            if [ "$current" = "$expected" ]; then
+              echo "is_current=true" >> "$GITHUB_OUTPUT"
+              echo "Preview Worker ownership confirmed: $current"
+              exit 0
+            fi
+            if [ "$attempt" -lt 18 ]; then sleep 4; fi
+          done
+          echo "is_current=false" >> "$GITHUB_OUTPUT"
+          echo "Preview Worker never became 100% owner after 72s. Expected=$expected Current=${current:-unknown}; validation cannot proceed."
+          exit 1
 
       - name: Smoke test deployed preview
         id: smoke
         if: steps.worker_ownership.outputs.is_current == 'true'
         continue-on-error: true
-        run: npm run smoke:preview
+        run: |
+          npm run smoke:preview
+          # Ensure Preview is serving the new backend, not a previous healthy build.
+          verified=0
+          for i in $(seq 1 10); do
+            code="$(curl -sS -o /tmp/kun-easyorders-anon.json -w '%{http_code}' 'https://kunonline-preview.mr-a-mnaa.workers.dev/api/integrations/easyorders/store-control?resource=capabilities' || true)"
+            if [ "$code" = "401" ] && node -e '
+              const d=require("/tmp/kun-easyorders-anon.json");
+              if(d?.code!=="AUTH_REQUIRED" || d?.error!=="يجب تسجيل الدخول")process.exit(1);
+            ' >/dev/null 2>&1; then
+              verified=1
+              break
+            fi
+            sleep 3
+          done
+          if [ "$verified" -ne 1 ]; then
+            echo "Easy Orders store-control authentication marker was not available from the live Preview Worker."
+            exit 1
+          fi
+          echo "Live Preview Easy Orders store-control auth route verified."
 
       - name: Live authenticated Store B regression
         id: live
