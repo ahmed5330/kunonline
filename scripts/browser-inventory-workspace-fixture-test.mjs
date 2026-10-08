@@ -21,7 +21,7 @@ const sourceHtml='<!doctype html><html lang="ar" dir="rtl"><head><meta charset="
  '<div id="root"><div class="page-head"><div class="title">المخزون القديم</div><button id="stockAdjust">تسوية</button><button id="v39NewBatch">دفعة</button></div>'+
  '<div class="grid kpis four">ملخص قديم</div><div class="grid split"><div class="card">جدول قديم</div></div>'+
  '<section id="unit128Panel"><button data-warehouse-ops>تشغيل</button><button data-unit-open-product="A">قطع</button><button data-unit-print-product="A">ملصقات</button></section>'+
- '<section id="v39BatchList">دفعات النظام الأصلية</section><section id="v37InventoryHistory">حركات النظام الأصلية</section></div>'+
+ '<section id="v39BatchList">دفعات النظام الأصلية</section><section id="v37InventoryHistory"><div class="table-wrap"><table><thead><tr><th>التاريخ</th><th>المنتج</th><th>الكمية</th><th>الرصيد</th></tr></thead><tbody><tr><td>2026-10-08</td><td>منتج متوفر</td><td>+5</td><td>15</td></tr><tr><td>2026-10-07</td><td>منتج منخفض</td><td>-2</td><td>3</td></tr></tbody></table></div></section></div>'+
  '<script>window.__events=[];window.state={products:[{id:"A",name:"منتج متوفر",sku:"SKU-A",barcode:"BA",stock:15,lowStockThreshold:5,cost:10,category:"نظارات"},{id:"B",name:"منتج منخفض",sku:"SKU-B",stock:3,lowStockThreshold:5,cost:20,category:"ملابس"},{id:"C",name:"منتج نافد",sku:"SKU-C",stock:0,lowStockThreshold:5,cost:30,category:"ملابس"}]};'+
  'window.KunActionsV23={notify:x=>__events.push("notify:"+x)};window.KunUnitTrackingV128={scan:()=>__events.push("camera")};window.openProduct=id=>__events.push("product:"+id);'+
  'for(const id of ["stockAdjust","v39NewBatch"])document.getElementById(id).onclick=()=>__events.push(id);'+
@@ -59,8 +59,12 @@ try{
  assert.equal(await evaluate('document.querySelectorAll(".ki130-stat").length'),5);
  assert.equal(await evaluate('document.querySelectorAll("#ki130Workspace [data-ki130-tab]").length'),6);
  assert.equal(await evaluate('getComputedStyle(document.querySelector("#root>.page-head")).display'),'none');
- assert.equal(await evaluate('getComputedStyle(document.getElementById("unit128Panel")).display'),'none');
+ assert.equal(await evaluate('document.getElementById("unit128Panel").getClientRects().length'),0);
  assert.equal(await evaluate('document.querySelectorAll("#ki130Alerts .ki130-alert-row").length'),2);
+ assert.equal(await evaluate('document.querySelector("#ki130-panel-units").contains(document.getElementById("unit128Panel"))'),true);
+ assert.equal(await evaluate('document.querySelector("#ki130-panel-batches").contains(document.getElementById("v39BatchList"))'),true);
+ assert.equal(await evaluate('document.querySelector("#ki130-panel-history").contains(document.getElementById("v37InventoryHistory"))'),true);
+ assert.equal(await evaluate('document.querySelectorAll("#root > #unit128Panel,#root > #v39BatchList,#root > #v37InventoryHistory").length'),0);
  await evaluate('document.querySelector("[data-ki130-filterjump=low]").click()');
  assert.equal(await evaluate('document.getElementById("root").dataset.ki130Tab'),'products');
  assert.equal(await evaluate('document.querySelectorAll("#ki130Rows tr").length'),1);
@@ -70,17 +74,30 @@ try{
  await evaluate('document.querySelector("[data-ki130-units=A]").click();document.querySelector("[data-ki130-print=A]").click();');
  assert.deepEqual(await evaluate('__events.slice(-2)'),['data-unit-open-product','data-unit-print-product']);
  await evaluate('document.querySelector("[data-ki130-tab=units]").click()');
- assert.notEqual(await evaluate('getComputedStyle(document.getElementById("unit128Panel")).display'),'none');
+ assert.ok(await evaluate('document.getElementById("unit128Panel").getClientRects().length > 0'));
  await evaluate('document.querySelector("[data-ki130-tab=batches]").click()');
- assert.notEqual(await evaluate('getComputedStyle(document.getElementById("v39BatchList")).display'),'none');
+ assert.ok(await evaluate('document.getElementById("v39BatchList").getClientRects().length > 0'));
  await evaluate('document.querySelector("[data-ki130-action=batch]").click()');
  assert.equal(await evaluate('__events.includes("v39NewBatch")'),true);
  await evaluate('document.querySelector("[data-ki130-tab=history]").click()');
- assert.notEqual(await evaluate('getComputedStyle(document.getElementById("v37InventoryHistory")).display'),'none');
+ assert.ok(await evaluate('document.getElementById("v37InventoryHistory").getClientRects().length > 0'));
+ assert.equal(await evaluate('document.querySelectorAll("#ki131HistoryTools select").length'),1);
+ await evaluate('const select=document.querySelector("#ki131HistoryTools select");select.value="minus";select.dispatchEvent(new Event("change",{bubbles:true}));');
+ assert.equal(await evaluate('document.querySelectorAll("#v37InventoryHistory tbody tr:not([hidden])").length'),1);
+ await evaluate('const field=document.querySelector("#ki131HistoryTools input");field.value="منتج منخفض";field.dispatchEvent(new Event("input",{bubbles:true}));');
+ assert.equal(await evaluate('document.querySelectorAll("#v37InventoryHistory tbody tr:not([hidden])").length'),1);
+ await evaluate('document.querySelector("#ki131HistoryTools input").value="غير موجود";document.querySelector("#ki131HistoryTools input").dispatchEvent(new Event("input",{bubbles:true}));');
+ assert.equal(await evaluate('document.querySelectorAll("#v37InventoryHistory tbody tr:not([hidden])").length'),0);
+ await evaluate('document.getElementById("v37InventoryHistory").innerHTML="<div class=\\\"table-wrap\\\"><table><tbody><tr><td>2026-10-08</td><td>مخزون مجدد</td><td>+2</td></tr></tbody></table></div>"');
+ await ready('!!document.getElementById("ki131HistoryTools")');
+ assert.equal(await evaluate('document.querySelectorAll("#v37InventoryHistory tbody tr:not([hidden])").length'),1);
  await evaluate('document.querySelector("[data-ki130-tab=operations]").click();document.querySelector("[data-ki130-action=warehouse]").click();');
  assert.equal(await evaluate('__events.includes("data-warehouse-ops")'),true);
  await evaluate('document.querySelector("[data-ki130-action=camera]").click()');
  assert.equal(await evaluate('__events.includes("camera")'),true);
+ await evaluate('document.getElementById("unit128Panel").remove();const replacement=document.createElement("section");replacement.id="unit128Panel";replacement.textContent="لوحة القطع بعد تحديث المصدر";document.getElementById("root").appendChild(replacement);');
+ await ready('document.querySelector("#ki130-panel-units").contains(document.getElementById("unit128Panel"))');
+ assert.equal(await evaluate('document.querySelectorAll("#unit128Panel").length'),1);
  await cdp.send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
  await evaluate('document.querySelector("[data-ki130-tab=products]").click()');
  assert.equal(await evaluate('getComputedStyle(document.querySelector(".ki130-mobile-list")).display'),'block');
@@ -90,7 +107,7 @@ try{
   {id:'B',name:'منتج منخفض',sku:'SKU-B',stock:3,lowStockThreshold:5,cost:20,category:'ملابس'},
   {id:'C',name:'منتج نافد',sku:'SKU-C',stock:0,lowStockThreshold:5,cost:30,category:'ملابس'}
  ]));
- console.log('Inventory v130 Chrome fixture PASSED: 6 tabs, single workspace, KPI drilldown, filters/search, barcode/warehouse shortcuts, original stock panels, mobile cards, no data mutation.');
+ console.log('Inventory v131 Chrome fixture PASSED: 6 tabs, single workspace, KPI drilldown, filters/search, barcode/warehouse shortcuts, original stock panels, mobile cards, no data mutation.');
 }finally{
  try{cdp?.close();}catch{}
  if(chrome&&!chrome.killed)chrome.kill('SIGTERM');

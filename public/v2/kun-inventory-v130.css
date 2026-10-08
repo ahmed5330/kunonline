@@ -128,3 +128,11 @@ body[data-theme="dark"] .ki130-warning{background:#213047;color:#d7e4ef}
  .ki130-rowactions{flex-wrap:wrap}
 }
 @media(prefers-reduced-motion:reduce){.ki130 *{scroll-behavior:auto!important;transition:none!important}}
+
+/* v131: source modules live inside their tab panels, not as stacked root sections. */
+#ki130-panel-units #unit128Panel,#ki130-panel-batches #v39BatchList,#ki130-panel-history #v37InventoryHistory{margin:0;max-width:100%;min-width:0;display:block;}
+#ki130-panel-units #unit128Panel{display:grid;}
+.ki131-history-tools{display:grid;grid-template-columns:minmax(220px,2fr) minmax(155px,1fr) auto;gap:10px;align-items:end;padding:12px;background:var(--ki-card);border:1px solid var(--ki-border);border-radius:13px;margin:14px 0;}
+.ki131-history-tools .ki131-history-count{font-size:11px;color:var(--ki-muted);align-self:center;min-width:100px;text-align:left;}
+#ki130-panel-history .table tbody tr[hidden]{display:none!important;}
+@media(max-width:760px){.ki131-history-tools{grid-template-columns:1fr}.ki131-history-tools .ki131-history-count{text-align:right}}
