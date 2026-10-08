@@ -1,9 +1,9 @@
-/* Kun Online v130 — consolidated inventory workspace. Existing APIs/workflows stay authoritative. */
+/* Kun Online v131 — integrated inventory workspace with native panels and searchable movement log. */
 (function(){
   'use strict';
   const root=document.getElementById('root');
   if(!root)return;
-  const version='130.0';
+  const version='131.0';
   const tabs=[
     ['overview','نظرة عامة'],['products','المنتجات'],['units','القطع والباركود'],
     ['batches','الدفعات'],['history','حركات المخزون'],['operations','التجهيز والجرد']
@@ -20,7 +20,8 @@
   }
   function toRecords(){
     return currentProducts().map((p,index)=>{
-      const stock=number(p.stock),threshold=Number(p.lowStockThreshold??p.low_stock_threshold)||5;
+      const stock=number(p.stock),rawThreshold=Number(p.lowStockThreshold??p.low_stock_threshold??5);
+      const threshold=Number.isFinite(rawThreshold)&&rawThreshold>=0?rawThreshold:5;
       const sku=String(p.sku||'').trim(),barcode=String(p.barcode||p.product_tracking_code||'').trim();
       const category=String(p.category||'').trim();
       const variants=Array.isArray(p.variants)?p.variants.map(v=>[v.name,v.sku,v.barcode].join(' ')).join(' '):'';
@@ -93,12 +94,48 @@
       '<button type="button" class="btn soft" data-ki130-product="'+esc(r.id)+'">عرض</button></div>').join(''):
       '<div class="ki130-empty">المعروض حاليًا لا يحتوي على أصناف منخفضة أو نافدة.</div>';
   }
+  // Existing feature modules still own their API calls, mutations and event handlers.
+  // We only relocate their live DOM nodes into matching tabs, including after async loads.
+  function enhanceHistory(section){
+    const table=section.querySelector('.table-wrap table');
+    if(!table?.tBodies?.[0]||section.querySelector('#ki131HistoryTools'))return;
+    const toolbar=document.createElement('div');
+    toolbar.id='ki131HistoryTools';toolbar.className='ki131-history-tools';
+    toolbar.innerHTML='<label><span class="ki130-label">بحث في حركات المخزون</span><input class="input" type="search" placeholder="المنتج، المورد، السبب، المستخدم..." aria-label="بحث في سجل الحركات"></label>'+
+      '<label><span class="ki130-label">نوع الحركة</span><select class="select" aria-label="فلترة حركة المخزون"><option value="all">كل الحركات</option><option value="plus">إضافة (+)</option><option value="minus">خصم (-)</option></select></label>'+
+      '<span id="ki131HistoryCount" class="ki131-history-count" role="status" aria-live="polite"></span>';
+    table.closest('.table-wrap')?.before(toolbar);
+    const input=toolbar.querySelector('input'),select=toolbar.querySelector('select'),rows=[...table.tBodies[0].rows];
+    const apply=()=>{
+      const q=input.value.trim().toLocaleLowerCase('ar-EG'),kind=select.value;
+      let shown=0;
+      for(const tr of rows){
+        const full=tr.textContent.toLocaleLowerCase('ar-EG');
+        // Stock delta is the third column of the existing v37 history table.
+        const delta=tr.cells[2]?.textContent?.trim()||'';
+        const matches=(!q||full.includes(q))&&(kind==='all'||(kind==='plus'?delta.startsWith('+'):delta.startsWith('-')));
+        tr.hidden=!matches;if(matches)shown++;
+      }
+      toolbar.querySelector('#ki131HistoryCount').textContent='عرض '+count(shown)+' من '+count(rows.length)+' حركة';
+    };
+    input.addEventListener('input',apply);select.addEventListener('change',apply);apply();
+  }
   function integrationState(){
     const shell=document.getElementById('ki130Workspace');if(!shell)return;
-    const messages={units:['unit128Panel','وحدة الباركود وتتبّع القطع'],batches:['v39BatchList','سجل الدفعات'],history:['v37InventoryHistory','سجل الحركات']};
-    Object.entries(messages).forEach(([key,[id,title]])=>{
-      const notice=shell.querySelector('[data-ki130-wait="'+key+'"]');
-      if(notice)notice.hidden=!!document.getElementById(id);
+    const mapping={units:'unit128Panel',batches:'v39BatchList',history:'v37InventoryHistory'};
+    Object.entries(mapping).forEach(([key,id])=>{
+      const slot=shell.querySelector('#ki130-panel-'+key),node=document.getElementById(id);
+      if(!slot)return;
+      if(node&&!slot.contains(node))slot.appendChild(node);
+      const notice=slot.querySelector('[data-ki130-wait="'+key+'"]');
+      if(notice)notice.hidden=!!node;
+      if(key==='history'&&node){
+        if(!node.dataset.ki131Watched){
+          node.dataset.ki131Watched='1';
+          new MutationObserver(()=>enhanceHistory(node)).observe(node,{childList:true,subtree:true});
+        }
+        enhanceHistory(node);
+      }
     });
   }
   function setTab(tab,focus=false){
