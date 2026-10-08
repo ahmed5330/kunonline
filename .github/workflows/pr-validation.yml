@@ -24,6 +24,12 @@ jobs:
         run: node scripts/browser-inventory-workspace-fixture-test.mjs
       - name: Sidebar cross-group navigation browser regression
         run: node scripts/browser-sidebar-navigation-regression-test.mjs
+      - name: Easy Orders store-control contract and syntax
+        run: |
+          node --check src/easyorders-store-control.js
+          node --check public/v2/modules-v132-easyorders-store-control.js
+          node scripts/easyorders-store-control-test.mjs
+          node scripts/browser-easyorders-store-control-fixture-test.mjs
       - name: Verify Preview isolation
         run: npm run check:preview-config
       - name: Verify Production remains migration-free

@@ -49,6 +49,13 @@ jobs:
           node scripts/browser-warehouse-operations-fixture-test.mjs
           node scripts/browser-inventory-workspace-fixture-test.mjs
           node scripts/browser-sidebar-navigation-regression-test.mjs
+      - name: Easy Orders control release gate
+        run: |
+          node --check src/index-production-mobile-update.js
+          node --check src/easyorders-store-control.js
+          node --check public/v2/modules-v132-easyorders-store-control.js
+          node scripts/easyorders-store-control-test.mjs
+          node scripts/browser-easyorders-store-control-fixture-test.mjs
       - name: Dashboard Easy Orders Preview regression
         run: node scripts/dashboard-sync-guard-test.mjs
       - name: QA catalog, dates, phones and accounting presentation regression
