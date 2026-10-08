@@ -189,7 +189,26 @@ jobs:
         id: smoke
         if: steps.worker_ownership.outputs.is_current == 'true'
         continue-on-error: true
-        run: npm run smoke:preview
+        run: |
+          npm run smoke:preview
+          # Ensure Preview is serving the new backend, not a previous healthy build.
+          verified=0
+          for i in $(seq 1 10); do
+            code="$(curl -sS -o /tmp/kun-easyorders-anon.json -w '%{http_code}' 'https://kunonline-preview.mr-a-mnaa.workers.dev/api/integrations/easyorders/store-control?resource=capabilities' || true)"
+            if [ "$code" = "401" ] && node -e '
+              const d=require("/tmp/kun-easyorders-anon.json");
+              if(d?.code!=="AUTH_REQUIRED" || d?.error!=="يجب تسجيل الدخول")process.exit(1);
+            ' >/dev/null 2>&1; then
+              verified=1
+              break
+            fi
+            sleep 3
+          done
+          if [ "$verified" -ne 1 ]; then
+            echo "Easy Orders store-control authentication marker was not available from the live Preview Worker."
+            exit 1
+          fi
+          echo "Live Preview Easy Orders store-control auth route verified."
 
       - name: Live authenticated Store B regression
         id: live
