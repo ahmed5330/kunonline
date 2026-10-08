@@ -13,6 +13,7 @@ import {handleProductionEasyOrdersHealth} from './production-easyorders-health.j
 import {reconcileFinancePresentation} from './production-finance-presentation.js';
 import {reconcileMonthlySubscriptions} from './subscription-billing.js';
 import {handleSubscriptionControl} from './subscription-control.js';
+import {runEasyOrdersStoreControl} from './easyorders-store-control.js';
 import {handleInventoryUnitTracking,syncInventoryTrackingAfterResponse,reconcileTrackedOrderLifecycles,reconcileAllClientsUnitCoverage} from './inventory-unit-tracking.js';
 
 const LEGACY_APK_URL='https://github.com/ahmed5330/kunonline/releases/download/android-latest/Kun-Online-Mobile.apk';
@@ -148,6 +149,8 @@ export default {
 
     const dataEnv=previewRuntimeEnv(env);
     const delegate=previewDelegate(env,dataEnv,ctx);
+    const easyOrdersStoreControl=await runEasyOrdersStoreControl({request,env:dataEnv,ctx,delegate});
+    if(easyOrdersStoreControl)return easyOrdersStoreControl;
     const subscription=await handleSubscriptionControl({request,env:dataEnv,ctx,delegate});
     if(subscription)return subscription;
 
