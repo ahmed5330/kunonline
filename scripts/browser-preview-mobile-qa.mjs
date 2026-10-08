@@ -24,7 +24,24 @@ async function launch(executable){userDir=await mkdtemp(join(tmpdir(),'kun-mobil
 class CDP{constructor(ws){this.ws=ws;this.id=0;this.pending=new Map();this.listeners=new Map();ws.addEventListener('message',e=>this.message(e));}message(e){let m;try{m=JSON.parse(String(e.data));}catch{return;}if(m.id){const p=this.pending.get(m.id);if(!p)return;this.pending.delete(m.id);clearTimeout(p.timer);m.error?p.reject(new Error(`${p.method}: ${m.error.message}`)):p.resolve(m.result);return;}for(const fn of this.listeners.get(m.method)||[])fn(m.params||{});}send(method,params={}){const id=++this.id;return new Promise((resolve,reject)=>{const timer=setTimeout(()=>{this.pending.delete(id);reject(new Error(`CDP timeout: ${method}`));},15000);this.pending.set(id,{resolve,reject,timer,method});this.ws.send(JSON.stringify({id,method,params}));});}on(method,fn){if(!this.listeners.has(method))this.listeners.set(method,new Set());this.listeners.get(method).add(fn);}close(){try{this.ws.close();}catch{}}}
 async function connect(url){const ws=new WebSocket(url);await new Promise((resolve,reject)=>{const t=setTimeout(()=>reject(new Error('CDP connect timeout')),8000);ws.addEventListener('open',()=>{clearTimeout(t);resolve();},{once:true});ws.addEventListener('error',()=>{clearTimeout(t);reject(new Error('CDP connect failed'));},{once:true});});return new CDP(ws);}
 async function evalJs(expression){const out=await cdp.send('Runtime.evaluate',{expression,awaitPromise:true,returnByValue:true,userGesture:true});if(out.exceptionDetails)throw new Error(`Browser evaluate exception: ${out.exceptionDetails.exception?.description||out.exceptionDetails.text||'unknown'}`);return out.result?.value;}
-async function waitFor(expression,label,timeout=12000){const start=Date.now();let last;while(Date.now()-start<timeout){try{const v=await evalJs(expression);if(v)return v;}catch(e){last=e;}await sleep(160);}throw new Error(`Mobile QA wait failed: ${label}${last?` (${last.message})`:''}`);}
+async function waitFor(expression,label,timeout=12000){
+  const start=Date.now();let last;
+  while(Date.now()-start<timeout){try{const v=await evalJs(expression);if(v)return v;}catch(e){last=e;}await sleep(160);}
+  if(label==='mobile call card'){
+    let details={};
+    try{
+      details=await evalJs(`(async()=>{
+        const r=await fetch('/api/customer-service?clientId=${encodeURIComponent(clientId)}',{credentials:'include'});
+        const d=await r.json().catch(()=>({}));
+        const active=document.querySelector('.nav button.active[data-view]')?.dataset.view||'';
+        const page=document.getElementById('root');
+        return {apiStatus:r.status,fixtureInResponse:Array.isArray(d.orders)&&d.orders.some(x=>x.id===${JSON.stringify(orderId)}),activeView:active,customerServiceRendered:Boolean(page?.querySelector('.cs-page')),loading:Boolean(page?.querySelector('.cs-loading')),errorCard:Boolean(page?.querySelector('.card.empty')),routeReady:typeof document.querySelector('.nav button[data-view="customer-service"]')?.onclick==='function'};
+      })()`);
+    }catch(e){details={diagnosticError:String(e.message).slice(0,200)};}
+    throw new Error('Mobile QA wait failed: mobile call card (safe diagnostic: '+JSON.stringify(details)+')');
+  }
+  throw new Error(`Mobile QA wait failed: ${label}${last?` (${last.message})`:''}`);
+}
 async function navigate(url){await cdp.send('Page.navigate',{url});await waitFor(`document.readyState==='complete'`,'document ready');}
 function sameOrigin(url){try{return new URL(url).origin===origin;}catch{return false;}}
 async function setViewport(width,height){await cdp.send('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:true,screenWidth:width,screenHeight:height});await cdp.send('Emulation.setTouchEmulationEnabled',{enabled:true,maxTouchPoints:5});await sleep(180);}
@@ -95,6 +112,15 @@ try{
   await waitFor(`window.kunStoreId?.().then(id=>id===${JSON.stringify(store)})`,'mobile call QA selected correct tenant store',20000);
   await sleep(450);
   await d1("INSERT INTO orders (id,client_id,store_id,name,phone,product,qty,total,state,date,created_at,history,contact_log,note) VALUES (?,?,?,?,?,?,1,25,'pending',?,?, '[]','[]',?)",[orderId,clientId,store,'Mobile Call QA','01012345678','Mobile QA product',createdAt.slice(0,10),createdAt,'mobile call persistence']);
+  // Prove the authorized, store-filtered API can see the exact fixture before
+  // blaming or interacting with mobile navigation. This never relaxes the
+  // browser's real card/tel:/trusted-tap/persistence requirements.
+  await waitFor(`(async()=>{
+    const r=await fetch('/api/customer-service?clientId=${encodeURIComponent(clientId)}&storeId=${encodeURIComponent(store)}',{credentials:'include'});
+    if(!r.ok)return false;
+    const d=await r.json();
+    return Array.isArray(d.orders)&&d.orders.some(o=>String(o.id)===${JSON.stringify(orderId)}&&o.state==='pending'&&String(o.storeId)===${JSON.stringify(store)});
+  })()`,'newly seeded mobile order visible in scoped Customer Service API',25000);
   await evalJs(`document.querySelector('.nav button[data-view="customer-service"]').click()`);const selector=`.cs-order[data-cs-order="${orderId}"]`;await waitFor(`document.querySelector(${JSON.stringify(selector)})?.querySelector('[data-cs-action="call"]')`,'mobile call card',15000);
   const callMeta=await evalJs(`(()=>{const a=document.querySelector(${JSON.stringify(selector)}).querySelector('[data-cs-action="call"]');return {href:a.getAttribute('href'),safe:a.dataset.mobileSafeCall};})()`);if(callMeta.href!=='tel:01012345678'||callMeta.safe!=='1')throw new Error(`Call link is not native/resume-safe on mobile: ${JSON.stringify(callMeta)}`);
   const callPoint=await evalJs(`(async()=>{const a=document.querySelector(${JSON.stringify(selector)}).querySelector('[data-cs-action="call"]');a.scrollIntoView({block:'center',inline:'center',behavior:'auto'});await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));window.__kunQaCallHit=0;window.__kunQaCallTrusted=false;window.addEventListener('click',event=>{const call=event.target.closest?.('a[data-cs-action="call"]');if(call){window.__kunQaCallHit++;window.__kunQaCallTrusted=event.isTrusted===true;event.preventDefault();}},{capture:true,once:true});const r=a.getBoundingClientRect(),x=r.left+r.width/2,y=r.top+r.height/2,hit=document.elementFromPoint(x,y);return {x,y,width:r.width,height:r.height,vw:innerWidth,vh:innerHeight,hitTag:hit?.tagName||'',hitAction:hit?.closest?.('[data-cs-action]')?.dataset?.csAction||'',hitOrder:hit?.closest?.('[data-cs-order]')?.dataset?.csOrder||''};})()`);
