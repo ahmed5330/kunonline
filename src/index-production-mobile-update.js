@@ -149,8 +149,13 @@ export default {
 
     const dataEnv=previewRuntimeEnv(env);
     const delegate=previewDelegate(env,dataEnv,ctx);
-    const easyOrdersStoreControl=await runEasyOrdersStoreControl({request,env:dataEnv,ctx,delegate});
-    if(easyOrdersStoreControl)return easyOrdersStoreControl;
+    if(new URL(request.url).pathname.startsWith('/api/integrations/easyorders/store-control')){
+      // The Preview Worker owns encrypted integration credentials. Prefer its
+      // authenticated implementation; fallback only while a version rolls out.
+      const previewControl=await previewFetch(request,env);
+      if(previewControl&&previewControl.status!==404&&previewControl.status!==405)return previewControl;
+      return runEasyOrdersStoreControl({request,env:dataEnv,ctx,delegate});
+    }
     const subscription=await handleSubscriptionControl({request,env:dataEnv,ctx,delegate});
     if(subscription)return subscription;
 
