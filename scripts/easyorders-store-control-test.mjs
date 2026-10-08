@@ -72,7 +72,7 @@ assert.equal(result.status,403,'Cross-tenant write denied');
 assert.equal(outbound.length,3);
 const originalBound=row.config_json;row.config_json=JSON.stringify({kunStoreId:'another-store'});
 result=await perform();assert.equal(result.data.connected,false,'Wrong-store binding cannot enable management');
-assert.rejects(findBoundEasyOrdersConnection(env,{clientId:'tenant-A',storeId:'store-A'}),/اربط Easy Orders/);
+await assert.rejects(findBoundEasyOrdersConnection(env,{clientId:'tenant-A',storeId:'store-A'}),/اربط Easy Orders/);
 row.config_json=originalBound;
 result=await perform({resource:'product',body:{},path:'/api/integrations/easyorders/store-control',fetcher:async()=>new Response(JSON.stringify({store_id:'easy-B'}),{status:200})});
 assert.equal(result.status,400,'Product lookup without product id must be rejected');
