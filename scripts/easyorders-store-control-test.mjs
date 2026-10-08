@@ -79,6 +79,7 @@ assert.equal(result.status,400,'Product lookup without product id must be reject
 const url=new URL('https://app.kun-online.com/api/integrations/easyorders/store-control?clientId=tenant-A&storeId=store-A&resource=products');
 const bad=await runEasyOrdersStoreControl({request:new Request(url),env,delegate,fetcher:async()=>new Response(JSON.stringify([{store_id:'easy-B'}]),{status:200}),secretReader});
 assert.equal(bad.status,409,'Reject provider response from another linked store');
+await new Promise(resolve=>setTimeout(resolve,2600));
 failAudit=true;
 const attempted=await perform({method:'POST',body:{operation:'product.create',payload:{name:'Test',price:200},confirm:'CONFIRM_PUBLISH_EASYORDERS'}});
 assert.equal(attempted.status,503,'Audit outage prevents provider write');
