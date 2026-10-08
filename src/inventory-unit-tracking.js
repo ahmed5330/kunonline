@@ -154,6 +154,7 @@ async function reconcileBatchItem(env,item,{actor='system'}={}){
   const active=await env.DB.prepare("SELECT COALESCE(SUM(qty),0) n FROM order_item_stock_allocations WHERE client_id=? AND batch_item_id=? AND status='allocated'").bind(item.client_id,item.id).first().catch(()=>({n:0}));
   const target=desiredAvailable+num(active?.n),row=await env.DB.prepare('SELECT COUNT(*) n FROM inventory_units WHERE client_id=? AND batch_item_id=?').bind(item.client_id,item.id).first(),have=num(row?.n);
   const p=await productInfo(env,{clientId:item.client_id,productId:item.product_id,variantId:item.variant_id||null});
+  if(!p)return {created:0,target,available:desiredAvailable,missingCatalogEntity:true};
   const created=await createBackfillUnits(env,{clientId:item.client_id,storeId:item.store_id,productId:item.product_id,variantId:item.variant_id||null,batchId:item.batch_id,batchItemId:item.id,productName:item.product_name||p?.product_name||'',sku:p?.sku||'',source:'inventory_batch',receivedAt:item.batch_created_at||item.created_at,actor,metadata:{batchName:item.batch_name||'',legacyBackfill:Boolean(item.existing_batch)},have,target,stock:remaining});
 
   // Historical lots can have initial_qty > remaining_qty because pieces already left stock
