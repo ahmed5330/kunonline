@@ -26,6 +26,11 @@ jobs:
           node-version: 22
           package-manager-cache: false
       - run: npm install --ignore-scripts
+      - name: Easy Orders store-control authorization, isolation and publish contract
+        run: |
+          node --check src/easyorders-store-control.js
+          node --check src/index-commerce-v38.js
+          node scripts/easyorders-store-control-test.mjs
       - run: npm test
       - run: npm run check:deploy
       - name: Verify Production remains migration-free
