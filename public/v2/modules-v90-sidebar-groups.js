@@ -1,4 +1,4 @@
-/* Kun Online v99.1 — icon-led, color-coded, collapsible sidebar navigation. */
+/* Kun Online v99.2 — reliable route-aware collapsible sidebar navigation. */
 (function(){
   'use strict';
 
@@ -81,7 +81,24 @@
   }
 
   function syncVisibility(){const nav=document.querySelector('.nav.kun-nav-grouped');if(!nav)return;adoptLateRoutes(nav);nav.querySelectorAll('.nav-group').forEach(group=>{const routes=[...group.querySelectorAll('.nav-group-items>button[data-view]')],hasVisible=routes.some(isRouteVisible);group.hidden=!hasVisible;if(!hasVisible)setOpen(group,false,false);});}
-  function syncActive(){const nav=document.querySelector('.nav.kun-nav-grouped');if(!nav)return;const active=nav.querySelector('button[data-view].active');nav.querySelectorAll('.nav-group').forEach(group=>group.classList.remove('has-active'));if(!active)return;const group=active.closest('.nav-group');if(group){group.classList.add('has-active');setOpen(group,true,true);}}
+  // Only auto-expand when the active route changes. The old implementation reopened
+  // the active route's group on every class/visibility mutation, immediately closing
+  // any *other* group a user tried to expand. Dashboard appeared to "fix" navigation
+  // because it is outside the groups.
+  let lastActiveRoute=null;
+  function syncActive(){
+    const nav=document.querySelector('.nav.kun-nav-grouped');if(!nav)return;
+    const active=nav.querySelector('button[data-view].active');
+    const current=active?.dataset.view||'';
+    const changed=lastActiveRoute!==current;
+    lastActiveRoute=current;
+    nav.querySelectorAll('.nav-group').forEach(group=>group.classList.remove('has-active'));
+    const group=active?.closest('.nav-group');
+    if(group){
+      group.classList.add('has-active');
+      if(changed)setOpen(group,true,true);
+    }
+  }
 
   function init(){
     const nav=document.querySelector('.nav');if(!nav||nav.dataset.groupedNavigation==='v99')return;
@@ -95,7 +112,7 @@
     const observer=new MutationObserver(records=>{if(records.some(record=>record.type==='childList'||record.target?.matches?.('button[data-view]')))queueSync();});observer.observe(nav,{subtree:true,childList:true,attributes:true,attributeFilter:['hidden','style','class','aria-hidden']});
     nav.addEventListener('click',event=>{if(event.target.closest('button[data-view]'))setTimeout(queueSync,0);});
     syncVisibility();const current=nav.querySelector('button[data-view].active');if(current)syncActive();else{try{const saved=localStorage.getItem(STORAGE_KEY),group=saved?nav.querySelector(`.nav-group[data-nav-group="${CSS.escape(saved)}"]`):null;if(group&&!group.hidden)setOpen(group,true,true);}catch(_){ }}
-    window.KunSidebarGroupsV90={groups:GROUPS,sync:queueSync,open:id=>{const group=nav.querySelector(`.nav-group[data-nav-group="${CSS.escape(String(id||''))}"]`);if(group)setOpen(group,true,true);},version:'99.1'};
+    window.KunSidebarGroupsV90={groups:GROUPS,sync:queueSync,open:id=>{const group=nav.querySelector(`.nav-group[data-nav-group="${CSS.escape(String(id||''))}"]`);if(group)setOpen(group,true,true);},version:'99.2'};
   }
 
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
