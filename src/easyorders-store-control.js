@@ -156,9 +156,9 @@ async function writeAudit(env,{clientId,storeId,actor,operation,entityId,metadat
     .bind('AUD-'+crypto.randomUUID().slice(0,12).toUpperCase(),clientId,storeId,actor?.uid||null,actor?.email||actor?.role||'user',operation,'easyorders_store',entityId||null,JSON.stringify(metadata),new Date().toISOString()).run();
 }
 async function fromRemote(fetcher,key,resource,id,externalStoreId){
-  const source={products:'products',categories:'categories',product:'products/'+safeId(id,'معرف المنتج'),category:'categories/'+safeId(id,'معرف التصنيف'),order:'orders/'+safeId(id,'معرف الطلب')};
-  if(!Object.hasOwn(source,resource))throw problem('هذا القسم غير متاح عبر API الرسمي',501,'EASYORDERS_UNSUPPORTED');
-  return apiCall(fetcher,key,source[resource],{externalStoreId});
+  const source=resource==='products'?'products':resource==='categories'?'categories':resource==='product'?'products/'+safeId(id,'معرف المنتج'):resource==='category'?'categories/'+safeId(id,'معرف التصنيف'):resource==='order'?'orders/'+safeId(id,'معرف الطلب'):null;
+  if(!source)throw problem('هذا القسم غير متاح عبر API الرسمي',501,'EASYORDERS_UNSUPPORTED');
+  return apiCall(fetcher,key,source,{externalStoreId});
 }
 const lastWrite=new Map();
 export async function runEasyOrdersStoreControl({request,env,delegate,ctx,fetcher=fetch,secretReader=readConnectionSecrets}){
