@@ -181,8 +181,13 @@ export async function runEasyOrdersStoreControl({request,env,delegate,ctx,fetche
     const resource=clean(url.searchParams.get('resource')||'capabilities');
     if(method==='GET'&&resource==='capabilities'){
       const result={ok:true,capabilities:PROFILES,operations:Object.keys(OP),documentation:'https://public-api-docs.easy-orders.net/',connected:false,connection:null,writeRequiresOwner:true};
-      try{const found=await findBoundEasyOrdersConnection(env,{clientId,storeId});result.connected=true;result.connection={id:found.row.id,name:found.name,externalStoreId:found.externalStoreId||null,writeReady:Boolean(found.externalStoreId),lastUpdated:found.row.updated_at||null};}
-      catch(e){result.connectionError={code:e.code||'NOT_CONNECTED',message:e.message};}
+      try{
+        const found=await findBoundEasyOrdersConnection(env,{clientId,storeId});
+        const verifiedSecrets=await secretReader(env,clientId,found.row.id);
+        if(!clean(verifiedSecrets.api_key))throw problem('مفتاح الربط لهذا المتجر غير متاح',409,'EASYORDERS_API_KEY_MISSING');
+        result.connected=true;
+        result.connection={id:found.row.id,name:found.name,externalStoreId:found.externalStoreId||null,writeReady:Boolean(found.externalStoreId),lastUpdated:found.row.updated_at||null};
+      }catch(e){result.connectionError={code:e.code||'CONNECTION_UNAVAILABLE',message:e?.code==='INTEGRATION_KEY_MISSING'?'مفتاح تشفير التكامل غير متاح في بيئة التشغيل':e.message};}
       return json(result);
     }
     const found=await findBoundEasyOrdersConnection(env,{clientId,storeId,connectionId:body.connectionId||url.searchParams.get('connectionId')});
