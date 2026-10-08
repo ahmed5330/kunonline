@@ -26,7 +26,7 @@
       card.querySelector('#unit128Reconcile').onclick=async e=>{const b=e.currentTarget;b.disabled=true;try{const x=await api(await qp('/api/inventory/unit-tracking/reconcile'),{method:'POST',body:'{}'});notify(x.created?'تم إنشاء '+x.created+' كود قطعة ناقص':'كل المخزون مغطى بأكواد');card.remove();load(true);}catch(x){notify(x.message);b.disabled=false;}};
       card.querySelectorAll('[data-unit-open-product]').forEach(b=>b.onclick=()=>showUnits(b.dataset.unitOpenProduct).catch(e=>notify(e.message)));
       card.querySelectorAll('[data-unit-print-product]').forEach(b=>b.onclick=()=>printProduct(b.dataset.unitPrintProduct).catch(e=>notify(e.message)));
-    }catch(e){card.innerHTML='<div class="title">تكويد وتتبع القطع</div><div class="sub">'+esc(e.message)+'</div>';}finally{busy=false;}
+    }catch(e){card.innerHTML='<div class="title">تكويد وتتبع القطع</div><div class="sub">'+esc(e.message)+'</div>';}finally{busy=false;if(!card.isConnected&&active())setTimeout(()=>load(false),80);}
   }
   async function showUnits(productId){
     const d=await api(await qp('/api/inventory/unit-tracking/units',{productId,limit:500})),rows=d.units||[];
