@@ -1,0 +1,80 @@
+name: Easy Orders control Preview bridge (no migrations)
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/easyorders-store-control.js'
+      - 'src/index-commerce-v38.js'
+      - 'src/index-production-mobile-update.js'
+      - 'public/v2/modules-v132-easyorders-store-control.js'
+      - '.github/workflows/easyorders-store-control-preview-release.yml'
+  workflow_dispatch:
+concurrency:
+  group: kunonline-preview
+  cancel-in-progress: false
+permissions:
+  contents: read
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    environment:
+      name: preview
+      url: https://kunonline-preview.mr-a-mnaa.workers.dev/v2/
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: npm install --ignore-scripts
+      - name: Validate Easy Orders management and safe routing
+        run: |
+          node --check src/index-commerce-v38.js
+          node --check src/easyorders-store-control.js
+          node scripts/easyorders-store-control-test.mjs
+          node scripts/browser-easyorders-store-control-fixture-test.mjs
+          npm run check:production-config
+      - name: Verify Preview Worker build without migrations
+        run: npx wrangler deploy --dry-run --config wrangler.preview.toml
+      - name: Capture existing Preview Worker for rollback
+        id: baseline
+        shell: bash
+        run: |
+          status="$(npx wrangler deployments status --config wrangler.preview.toml --json)"
+          version="$(printf '%s' "$status" | node -e '
+            let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{
+              const root=JSON.parse(raw),hits=[];
+              const walk=x=>{if(Array.isArray(x)){for(const y of x)walk(y);return;}
+                if(!x||typeof x!=="object")return;
+                const id=x.version_id||x.versionId,pct=x.percentage??x.traffic_percentage??x.trafficPercentage;
+                if(id)hits.push({id:String(id),pct:pct==null?null:Number(pct)});
+                for(const y of Object.values(x))walk(y);
+              };walk(root);
+              const unique=[...new Map(hits.map(x=>[x.id,x])).values()];
+              const live=unique.find(x=>x.pct===100||x.pct===1)||(unique.length===1?unique[0]:null);
+              if(!live)process.exit(2);process.stdout.write(live.id);
+            });')"
+          echo "version_id=$version" >> "$GITHUB_OUTPUT"
+      - name: Deploy Preview API Worker only — no DB migrations
+        id: deploy
+        run: npx wrangler deploy --config wrangler.preview.toml
+      - name: Health and authentication smoke on Preview
+        id: smoke
+        run: |
+          set -euo pipefail
+          node scripts/preview-health-check.mjs https://kunonline-preview.mr-a-mnaa.workers.dev
+          ok=0
+          for i in {1..10}; do
+            code="$(curl -sS -o /tmp/easyorders-control-anon.json -w '%{http_code}' 'https://kunonline-preview.mr-a-mnaa.workers.dev/api/integrations/easyorders/store-control?resource=capabilities&clientId=x&storeId=y' || true)"
+            if [ "$code" = "401" ]; then ok=1;break;fi
+            sleep 3
+          done
+          test "$ok" = "1"
+          echo "Preview Easy Orders management endpoint correctly rejects unauthenticated access."
+      - name: Roll back Preview Worker if post-deploy smoke fails
+        if: failure() && steps.deploy.outcome == 'success' && steps.baseline.outputs.version_id != ''
+        run: npx wrangler versions deploy "${{ steps.baseline.outputs.version_id }}@100%" --yes --config wrangler.preview.toml --message "Automatic Easy Orders management Preview rollback"
