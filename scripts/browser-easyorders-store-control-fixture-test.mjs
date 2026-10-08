@@ -12,7 +12,7 @@ const html='<!doctype html><html dir="rtl" lang="ar"><head><meta charset="utf-8"
 '<aside id="drawer"></aside><div id="drawerBack"></div><div id="toast"></div>'+
 '<script>window.__posts=[];window.__toasts=[];window.__store="kun-A";'+
 'window.showToast=x=>__toasts.push(x);'+
-'window.KunActionsV23={esc:x=>String(x??"").replace(/[&<>"\\u0027]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",\\u0027:"&#39;",\\u0022:"&quot;"}[c]||c)),'+
+'window.KunActionsV23={esc:x=>String(x??""),'+
 'scope:async()=>({cid:"tenant-A",sid:__store}),notify:x=>__toasts.push(x),drawer:(title,content)=>{document.getElementById("drawer").innerHTML=content;document.getElementById("drawer").className="open";},close:()=>{document.getElementById("drawer").innerHTML="";},'+
 'api:async path=>path.includes("resource=capabilities")?{ok:true,connected:true,connection:{id:"conn-A",name:"متجر الأمل",externalStoreId:"easy-A"}}:'+
 'path.includes("resource=products")?{ok:true,data:[{id:"P1",name:"منتج تجريبي",sku:"TEST1",price:100}]}:'+
