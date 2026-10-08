@@ -16,7 +16,7 @@ const executable=async()=>{
  }
  throw new Error('Headless Chrome required for inventory UX browser regression');
 };
-const sourceHtml='<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><style>'+css+'</style></head><body>'+
+const sourceHtml='<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>'+css+'</style></head><body>'+
  '<nav class="nav"><button class="active" data-view="inventory">المخزون</button><button data-view="products">المنتجات</button></nav>'+
  '<div id="root"><div class="page-head"><div class="title">المخزون القديم</div><button id="stockAdjust">تسوية</button><button id="v39NewBatch">دفعة</button></div>'+
  '<div class="grid kpis four">ملخص قديم</div><div class="grid split"><div class="card">جدول قديم</div></div>'+
