@@ -171,7 +171,7 @@ jobs:
               const unique=[...new Map(hits.map(x=>[x.id,x])).values()];
               const full=unique.find(x=>x.pct===100||x.pct===1)||(unique.length===1?unique[0]:null);
               if(!full)process.exit(2);process.stdout.write(full.id);
-            });')"
+            });' 2>/dev/null || true)"
 
             echo "Preview ownership check $attempt/18: expected=$expected live=${current:-unknown}"
             if [ "$current" = "$expected" ]; then
