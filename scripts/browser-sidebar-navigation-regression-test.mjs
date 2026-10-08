@@ -53,6 +53,7 @@ async function waitFor(expression,label){for(let i=0;i<75;i++){try{if(await eval
 const active=()=>evalJs('document.querySelector(".nav button[data-view].active")?.dataset.view');
 const groupOpen=id=>evalJs('document.querySelector('+JSON.stringify('.nav-group[data-nav-group="'+id+'"]')+')?.classList.contains("is-open")');
 const openGroup=async id=>{
+ if(await groupOpen(id))return;
  await evalJs('document.querySelector('+JSON.stringify('.nav-group[data-nav-group="'+id+'"] > .nav-group-toggle')+').click()');
  await sleep(180);assert.equal(await groupOpen(id),true,'Group '+id+' must stay expanded, including while another group holds the active route');
 };
