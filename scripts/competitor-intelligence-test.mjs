@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {adLibraryLink,normalizeCompetitor,parseCompetitorReport,allowedOfficialSearch,handleCompetitorIntelligence} from '../src/competitor-intelligence.js';
+import {adLibraryLink,normalizeCompetitor,parseCompetitorReport,allowedOfficialSearch,handleCompetitorIntelligence,COMPETITOR_REPORT_SCHEMA} from '../src/competitor-intelligence.js';
 assert.equal(adLibraryLink('https://www.facebook.com/ads/library/?id=123456789&test=1'),'https://www.facebook.com/ads/library/?id=123456789');
 assert.throws(()=>adLibraryLink('https://example.com/ads/library/?id=12345'),/Meta Ad Library/);
 assert.equal(allowedOfficialSearch('DE'),true);
@@ -13,8 +13,15 @@ assert.equal(ad.source,'merchant_supplied');
 assert.throws(()=>normalizeCompetitor({name:'test',country:'EG',adCopy:'short'}),/25/);
 const example={summary:'ملخص',positioning:'منافس',angles:[{angle:'السعر',evidence:'خصم',confidence:'high'}],hooks:['تسوق'],offerAnalysis:'عرض',gaps:'فرصة',comparison:'لا توجد بيانات',tests:[{idea:'اختبار',change:'عنوان',metric:'CTR',risk:'لا تزود الميزانية'}],caveats:['الأداء غير معروف']};
 assert.equal(parseCompetitorReport(JSON.stringify(example)).angles[0].confidence,'high');
-assert.throws(()=>parseCompetitorReport('invalid'),/غير صالحة/);
-assert.throws(()=>parseCompetitorReport('{"summary":"x"}'),/ناقص/);
+assert.equal(parseCompetitorReport({response:example}).tests[0].metric,'CTR');
+assert.equal(parseCompetitorReport({result:{response:example}}).summary,'ملخص');
+assert.equal(parseCompetitorReport(' ```json\n'+JSON.stringify(example)+'\n```').summary,'ملخص');
+assert.equal(COMPETITOR_REPORT_SCHEMA.properties.angles.minItems,1);
+assert.ok(COMPETITOR_REPORT_SCHEMA.required.includes('tests'));
+assert.throws(()=>parseCompetitorReport({response:{...example,angles:[]}}),/غير مكتمل/);
+
+assert.throws(()=>parseCompetitorReport('invalid'),{code:'COMPETITOR_AI_INVALID'});
+assert.throws(()=>parseCompetitorReport('{"summary":"x"}'),{code:'COMPETITOR_AI_INVALID'});
 const denied=await handleCompetitorIntelligence({request:new Request('https://kun.test/api/competitors/status?storeId=s1'),env:{},ctx:{},delegate:{fetch:async()=>new Response('{"error":"login"}',{status:401})}});
 assert.equal(denied.status,401);
 assert.equal((await denied.json()).code,'AUTH_REQUIRED');
