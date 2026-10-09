@@ -32,7 +32,7 @@ async function waitFor(expression,label,timeout=12000){
     let details={};
     try{
       details=await evalJs(`(async()=>{
-        const r=await fetch('/api/customer-service?clientId=${encodeURIComponent(clientId)}',{credentials:'include'});
+        const r=await fetch('/api/customer-service?clientId=${encodeURIComponent(clientId)}&storeId=${encodeURIComponent(store)}',{credentials:'include'});
         const d=await r.json().catch(()=>({}));
         const active=document.querySelector('.nav button.active[data-view]')?.dataset.view||'';
         const page=document.getElementById('root');
