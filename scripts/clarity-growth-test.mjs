@@ -5,16 +5,16 @@ import {reportFromCapture,segmentTraffic,segmentMetric,mergeMetaWithClarity,METR
 const traffic=(information)=>({name:'Traffic',information});
 const campaign=[
   traffic([
-    {Campaign:'Paid Alpha',Source:'facebook',Device:'Mobile',totalSessionCount:'20',totalBotSessionCount:'2'},
-    {Campaign:'Paid Alpha',Source:'instagram',Device:'Desktop',totalSessionCount:'10',totalBotSessionCount:'1'},
-    {Campaign:'Organic',Source:'google',Device:'Mobile',totalSessionCount:'5',totalBotSessionCount:'0'}
+    {Campaign:'Paid Alpha',Source:'facebook',Device:'Mobile',URL:'https://test.example/products/red?email=test@example.com',totalSessionCount:'20',totalBotSessionCount:'2'},
+    {Campaign:'Paid Alpha',Source:'instagram',Device:'Desktop',URL:'https://test.example/products/red?phone=01234',totalSessionCount:'10',totalBotSessionCount:'1'},
+    {Campaign:'Organic',Source:'google',Device:'Mobile',URL:'https://test.example/about',totalSessionCount:'5',totalBotSessionCount:'0'}
   ]),
   {name:'RageClickCount',information:[{Campaign:'Paid Alpha',sessionsCount:'20',sessionsWithMetricPercentage:'40'},{Campaign:'Paid Alpha',sessionsCount:'10',sessionsWithMetricPercentage:'10'}]},
   {name:'DeadClickCount',information:[{Campaign:'Paid Alpha',sessionsCount:'30',sessionsWithMetricPercentage:'20'}]},
   {name:'ScriptErrorCount',information:[{Campaign:'Paid Alpha',sessionsCount:'30',sessionsWithMetricPercentage:'6'}]}
 ];
 const pages=[
-  traffic([{URL:'https://test.example/products/red?email=test@example.com&phone=01234',Medium:'paid',Channel:'Social',totalSessionCount:'25',totalBotSessionCount:'1'}]),
+  traffic([{Device:'Mobile',Medium:'paid',Channel:'Social',totalSessionCount:'25',totalBotSessionCount:'1'}]),
   {name:'ScrollDepth',information:[{URL:'https://test.example/products/red?secret=123',averageScrollDepth:'46'}]}
 ];
 const technology=[
@@ -40,6 +40,8 @@ assert.ok(!JSON.stringify(report).includes('secret='));
 assert.equal(report.campaigns[0].RageClickCount,30);
 assert.equal(report.campaigns[0].DeadClickCount,20);
 assert.equal(report.campaigns[0].paidSessions,30);
+assert.equal(report.campaigns[0].landingPages[0].url,'test.example/products/red');
+assert.equal(report.campaigns[0].landingPages[0].sessions,30);
 assert.equal(report.campaigns[0].unknownSourceSessions,0);
 assert.ok(report.catalog.some(x=>x.metric==='EngagementTime'));
 assert.equal(METRIC_LABELS.ScrollDepth,'عمق التمرير');
@@ -54,6 +56,7 @@ const joined=mergeMetaWithClarity(report,meta);
 assert.equal(joined.campaigns.length,2);
 assert.equal(joined.campaigns[0].metaSourceSessions,30);
 assert.equal(joined.campaigns[0].rageRate,30);
+assert.equal(joined.campaigns[0].landingPages[0].sessions,30);
 assert.equal(joined.campaigns[0].realRoas,1.4);
 assert.equal(joined.campaigns[1].sourceStatus,'utm_missing');
 assert.equal(joined.campaigns[1].claritySessions,null);
