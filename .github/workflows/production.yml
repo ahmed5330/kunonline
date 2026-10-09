@@ -175,13 +175,13 @@ jobs:
           for i in {1..10}; do
             nonce="${GITHUB_RUN_ID}-${i}"
             page="$(curl -fsSL -H 'Cache-Control: no-cache' "https://app.kun-online.com/v2/index.html?deploy=${nonce}" 2>/dev/null || true)"
-            printing="$(curl -fsS -H 'Cache-Control: no-cache' "https://app.kun-online.com/v2/modules-v79-printing.js?v=79.8&deploy=${nonce}" 2>/dev/null || true)"
+            printing="$(curl -fsS -H 'Cache-Control: no-cache' "https://app.kun-online.com/v2/modules-v79-printing.js?v=79.9&deploy=${nonce}" 2>/dev/null || true)"
             routing="$(curl -fsS -H 'Cache-Control: no-cache' "https://app.kun-online.com/v2/modules-v116-print-routing.js?v=116.0&deploy=${nonce}" 2>/dev/null || true)"
             units="$(curl -fsS -H 'Cache-Control: no-cache' "https://app.kun-online.com/v2/modules-v128-unit-tracking.js?v=128.4&deploy=${nonce}" 2>/dev/null || true)"
             if [ -n "$page" ] \
               && grep -Fq '/v2/modules-v51-permission-navigation.js?v=51.15' <<< "$page" \
               && grep -Fq '/v2/modules-v78-jt-shipping-order.js?v=78.5' <<< "$page" \
-              && grep -Fq '/v2/modules-v79-printing.js?v=79.8' <<< "$page" \
+              && grep -Fq '/v2/modules-v79-printing.js?v=79.9' <<< "$page" \
               && grep -Fq '/v2/modules-v116-print-routing.js?v=116.0' <<< "$page" \
               && grep -Fq '/v2/modules-v128-unit-tracking.js?v=128.4' <<< "$page" \
               && grep -Fq 'code_128' <<< "$units" \
