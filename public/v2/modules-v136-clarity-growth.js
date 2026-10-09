@@ -1,11 +1,11 @@
 /* Kun Online V136 — Arabic, tenant-scoped Clarity / Meta Growth Analytics */
 (function(){
 'use strict';
-const ROOT=()=>document.getElementById('root'),V={active:false,tab:'overview',data:null,search:'',request:0,busy:false};
+const ROOT=()=>document.getElementById('root'),V={active:false,tab:'overview',data:null,search:'',request:0,busy:false,days:1};
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const tx=v=>String(v??'').trim(),n=v=>v==null||v===''?'—':Number(v).toLocaleString('ar-EG',{maximumFractionDigits:2}),pct=v=>v==null?'—':n(v)+'%';
 const view=()=>document.querySelector('.nav button.active[data-view]')?.dataset.view||'';
-const tabs={overview:'نظرة عامة',growth:'تحليل الإعلانات والنمو',pages:'الصفحات وتجربة الشراء',audience:'الزوار والأجهزة',friction:'النقرات والمشكلات',metrics:'كل المقاييس'};
+const tabs={overview:'نظرة عامة',growth:'تحليل الإعلانات والنمو',pages:'الصفحات وتجربة الشراء',audience:'الزوار والأجهزة',friction:'النقرات والمشكلات',health:'جودة التتبع والربط',metrics:'كل المقاييس'};
 const dims={Campaign:'الحملات',Source:'مصادر الزيارات',Device:'الأجهزة',URL:'صفحات المتجر',Medium:'UTM Medium',Channel:'قنوات الزيارة',Browser:'المتصفحات',OS:'أنظمة التشغيل','Country/Region':'الدول والمناطق'};
 const issues={RageClickCount:'Rage Clicks',DeadClickCount:'Dead Clicks',QuickbackClick:'Quickback',ScriptErrorCount:'Script Errors',ErrorClickCount:'Error Clicks',ExcessiveScroll:'Excessive Scroll'};
 const status={meta_source_detected:'مصدر Meta مؤكد من UTM',utm_missing:'اسم الحملة غير ظاهر في Clarity',source_missing:'المصدر غير محدد',source_not_meta:'المصدر ليس Meta'};
@@ -30,7 +30,7 @@ function style(){
  '.cl136 .head{background:linear-gradient(125deg,#271747,#7945b2);color:#fff;border-radius:20px;padding:21px;display:flex;gap:14px;flex-wrap:wrap;align-items:center}',
  '.cl136 .head h2{font-size:25px;margin:0 0 6px;font-weight:900}.cl136 .head p{font-size:12px;opacity:.85;line-height:1.9;margin:0}.cl136 .space{flex:1}',
  '.cl136 button,.cl136 a.action{border:1px solid var(--line,#d6cde3);background:var(--surface,#fff);color:var(--ink,#1b2636);font-family:inherit;font-size:12px;border-radius:11px;padding:9px 13px;font-weight:800;cursor:pointer;text-decoration:none}',
- '.cl136 button:disabled{opacity:.5}.cl136 .tabs{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}.cl136 .tabs .sel{background:#713aac;color:#fff;border-color:#713aac}',
+ '.cl136 select{border-radius:9px;background:#fff;color:#261b39;font:inherit;font-size:12px;padding:9px;border:1px solid #cfc3df}.cl136 button:disabled{opacity:.5}.cl136 .tabs{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}.cl136 .tabs .sel{background:#713aac;color:#fff;border-color:#713aac}',
  '.cl136 .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin:12px 0}',
  '.cl136 .metric,.cl136 .box{border:1px solid var(--line,#dcd9e7);background:var(--surface,#fff);border-radius:15px;padding:17px;margin:11px 0}',
  '.cl136 .metric{margin:0}.cl136 .metric span{font-size:12px;opacity:.7;display:block}.cl136 .metric strong{font-size:24px;font-weight:900;display:block;margin:8px 0}',
@@ -58,7 +58,7 @@ function breakdown(dim,rows,limit=25){
 }
 function summary(d){
  const m=d.latest?.metrics||{},g=d.growth||{},paid=(m.campaigns||[]).reduce((total,x)=>total+(Number(x.paidSessions)||0),0);
- return '<div class="cards">'+metric('جلسات Clarity',n(m.totals?.sessions),'آخر 24 ساعة UTC')+
+ return '<div class="cards">'+metric('جلسات Clarity',n(m.totals?.sessions),'آخر '+(m.snapshotHours||24)+' ساعة UTC')+
  metric('جلسات البوت',n(m.totals?.botSessions),'وفق تصنيف Clarity')+
  metric('جلسات مصدر Meta',n(paid),'مصدر facebook/instagram ضمن UTM')+
  metric('الحملات',n(m.dimensions?.Campaign?.length),'الأسماء الظاهرة بالتقسيم')+
@@ -109,6 +109,26 @@ function friction(d){
  table(['الحملة','حجم العينة','النسبة الموزونة'],(b.segments||[]).slice(0,30).map(r=>'<tr><td>'+esc(r.name)+'</td><td>'+n(r.sessions)+'</td><td>'+pct(r.rate)+'</td></tr>'))+'</section>').join('')+'</div>'+
  '<section class="box"><h3>أولوية مشكلات الحملات</h3>'+table(['الحملة','الجلسات','Rage','Dead','Quickback','Script Errors'],
  (m.campaigns||[]).slice(0,70).map(r=>'<tr><td>'+esc(r.name)+'</td><td>'+n(r.sessions)+'</td><td>'+pct(r.RageClickCount)+'</td><td>'+pct(r.DeadClickCount)+'</td><td>'+pct(r.QuickbackClick)+'</td><td>'+pct(r.ScriptErrorCount)+'</td></tr>'))+'</section>';
+}
+function health(d){
+ const c=d.latest.metrics?.coverage||{},sample=d.latest.sampleCoverage||{},info=d.status||{};
+ const age=info.lastSyncAt?Math.max(0,(Date.now()-Date.parse(info.lastSyncAt))/3600000):null;
+ const flags=[];
+ if((c.metaWithoutCampaignSessions||0)>0)flags.push('يوجد '+n(c.metaWithoutCampaignSessions)+' جلسات مصدرها Meta من غير utm_campaign؛ راجع Parameter URLs للإعلانات.');
+ if((sample.campaignRows||0)>=1000||(sample.pagesRows||0)>=1000||(sample.technologyRows||0)>=1000)flags.push('هناك نتيجة وصلت 1000 صف؛ بعض التقسيمات مقطوعة حسب سقف Data Export API.');
+ if(age!=null&&age>24)flags.push('البيانات المخزنة أقدم من 24 ساعة؛ اختبر التوكن وحد المزامنة.');
+ if((c.metaSourceSessions||0)===0&&(c.sessions||0)>0)flags.push('لم يرصد Clarity مصدر Facebook أو Instagram في النافذة المختارة. تأكد من UTM Source أولًا.');
+ return '<div class="cards">'+metric('جلسات مصدر Meta',n(c.metaSourceSessions),'من utm_source')+
+ metric('Meta بلا اسم حملة',n(c.metaWithoutCampaignSessions),'تحتاج utm_campaign')+
+ metric('نسبة تسمية كل الجلسات',pct(c.taggedRate),'Organic قد يكون غير موسوم طبيعيًا')+
+ metric('زيارات بلا مصدر',n(c.unknownSourceSessions),'ليس بالضرورة فقدان التتبع')+
+ metric('جودة تسمية Meta',c.metaUntaggedRate==null?'—':pct(100-c.metaUntaggedRate),'وجود utm_campaign بمصدر Meta')+
+ metric('عمر آخر مزامنة',age==null?'—':n(age)+' ساعة','آخر نجاح، وليس آخر زيارة')+'</div>'+
+ '<section class="box"><h3>فحص دقة التقارير</h3>'+
+ (flags.length?flags.map(m=>'<div class="note warning">'+esc(m)+'</div>').join(''):'<div class="note">لا توجد إشارات خلل مؤكدة بالبيانات المتاحة؛ راجع Live Sessions داخل Clarity.</div>')+
+ '<div class="note">حد API عشرة طلبات للمشروع يوميًا. يحتفظ كن أونلاين بطلبين كاحتياطي؛ كل مزامنة موسعة تستخدم 3 طلبات.</div></section>'+
+ '<section class="box"><h3>حجم العينات المتاحة</h3>'+table(['التقسيم','الصفوف','التغطية'],
+ [['الحملات والمصادر',sample.campaignRows],['الصفحات',sample.pagesRows],['التقنية',sample.technologyRows]].map(x=>'<tr><td>'+esc(x[0])+'</td><td>'+n(x[1])+'</td><td>'+(Number(x[1])>=1000?'ربما ناقصة (حد API)':'حسب استجابة Clarity')+'</td></tr>'))+'</section>'+caveats(d);
 }
 function metrics(d){
  const catalog=d.latest.metrics?.catalog||[];
