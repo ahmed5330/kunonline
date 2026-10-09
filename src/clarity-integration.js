@@ -40,11 +40,7 @@ export function clarityMetrics(raw){
   if(!Array.isArray(raw))return [];
   return raw.map(x=>({name:String(x?.metricName||'').slice(0,80),information:(Array.isArray(x?.information)?x.information:[]).slice(0,1000)})).slice(0,30);
 }
-async function schema(env){
-  await env.DB.prepare("CREATE TABLE IF NOT EXISTS clarity_connections (client_id TEXT NOT NULL,store_id TEXT NOT NULL,project_id TEXT NOT NULL,token_ciphertext_b64 TEXT,token_iv_b64 TEXT,status TEXT NOT NULL DEFAULT 'configured',last_sync_at TEXT,last_error TEXT,quota_day TEXT,quota_count INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,PRIMARY KEY(client_id,store_id))").run();
-  await env.DB.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_clarity_project_unique ON clarity_connections(project_id)").run();
-  await env.DB.prepare("CREATE TABLE IF NOT EXISTS clarity_snapshots (client_id TEXT NOT NULL,store_id TEXT NOT NULL,synced_at TEXT NOT NULL,project_id TEXT NOT NULL,campaign_json TEXT NOT NULL,device_json TEXT NOT NULL,PRIMARY KEY(client_id,store_id,synced_at))").run();
-}
+// Tables are created by migration 0095, not at request time.
 async function rowFor(env,clientId,storeId){
   return env.DB.prepare("SELECT * FROM clarity_connections WHERE client_id=? AND store_id=?").bind(clientId,storeId).first();
 }
@@ -81,7 +77,6 @@ async function clarityGet(token,dimension1,dimension2){
   return clarityMetrics(data);
 }
 async function syncOne(env,clientId,storeId,{force=false}={}){
-  await schema(env);
   const row=await rowFor(env,clientId,storeId);
   if(!row)throw err('اربط Clarity بهذا المتجر أولاً',404,'CLARITY_NOT_CONNECTED');
   if(!row.token_ciphertext_b64||!row.token_iv_b64)throw err('أضف Data Export API Token لتفعيل التحليلات',409,'CLARITY_TOKEN_REQUIRED');
@@ -89,7 +84,8 @@ async function syncOne(env,clientId,storeId,{force=false}={}){
   const age=Date.now()-Date.parse(row.last_sync_at||'1970-01-01T00:00:00Z');
   if(!force&&Number.isFinite(age)&&age<4*60*60*1000)return {ok:true,skipped:true,reason:'fresh_cache',...publicStatus(row)};
   const day=today();
-  const reserved=await env.DB.prepare("UPDATE clarity_connections SET quota_count=CASE WHEN quota_day=? THEN quota_count+2 ELSE 2 END,quota_day=?,updated_at=? WHERE client_id=? AND store_id=? AND (quota_day IS NULL OR quota_day<>? OR quota_count<=6)").bind(day,day,new Date().toISOString(),clientId,storeId,day).run();
+  const attemptAt=new Date().toISOString();
+  const reserved=await env.DB.prepare("UPDATE clarity_connections SET quota_count=CASE WHEN quota_day=? THEN quota_count+2 ELSE 2 END,quota_day=?,last_attempt_at=?,updated_at=? WHERE client_id=? AND store_id=? AND (quota_day IS NULL OR quota_day<>? OR quota_count<=6)").bind(day,day,attemptAt,attemptAt,clientId,storeId,day).run();
   if(!reserved?.meta?.changes)throw err('تم بلوغ الحد الآمن للمزامنة اليوم. أعد المحاولة غدًا.',429,'CLARITY_DAILY_BUDGET');
   let token;
   try{token=await decryptSecret(env,row.token_ciphertext_b64,row.token_iv_b64);}
@@ -119,7 +115,7 @@ async function saveConnection(env,clientId,storeId,body){
   if(token)encrypted=await encryptSecret(env,token);
   const now=new Date().toISOString();
   if(existing){
-    await env.DB.prepare("UPDATE clarity_connections SET project_id=?,token_ciphertext_b64=?,token_iv_b64=?,status='configured',last_sync_at=NULL,last_error=NULL,quota_day=CASE WHEN project_id<>? THEN NULL ELSE quota_day END,quota_count=CASE WHEN project_id<>? THEN 0 ELSE quota_count END,updated_at=? WHERE client_id=? AND store_id=?").bind(projectId,encrypted?.ciphertextB64||(projectChanged?null:existing.token_ciphertext_b64),encrypted?.ivB64||(projectChanged?null:existing.token_iv_b64),projectId,projectId,now,clientId,storeId).run();
+    await env.DB.prepare("UPDATE clarity_connections SET project_id=?,token_ciphertext_b64=?,token_iv_b64=?,status='configured',last_sync_at=NULL,last_attempt_at=NULL,last_error=NULL,quota_day=CASE WHEN project_id<>? THEN NULL ELSE quota_day END,quota_count=CASE WHEN project_id<>? THEN 0 ELSE quota_count END,updated_at=? WHERE client_id=? AND store_id=?").bind(projectId,encrypted?.ciphertextB64||(projectChanged?null:existing.token_ciphertext_b64),encrypted?.ivB64||(projectChanged?null:existing.token_iv_b64),projectId,projectId,now,clientId,storeId).run();
     if(projectChanged)await env.DB.prepare("DELETE FROM clarity_snapshots WHERE client_id=? AND store_id=?").bind(clientId,storeId).run();
   }else{
     await env.DB.prepare("INSERT INTO clarity_connections (client_id,store_id,project_id,token_ciphertext_b64,token_iv_b64,created_at,updated_at) VALUES (?,?,?,?,?,?,?)").bind(clientId,storeId,projectId,encrypted?.ciphertextB64||null,encrypted?.ivB64||null,now,now).run();
@@ -145,8 +141,7 @@ export async function handleClarityApi({request,env,ctx,delegate}){
     const action=path.slice('/api/clarity/'.length);
     const write=(action==='connect'||action==='sync'||action==='disconnect');
     const {clientId,storeId}=await userScope(request,env,ctx,delegate,body,write,action==='insights'?'analytics':'integrations');
-    await schema(env);
-    if(action==='status'&&method==='GET')return json({ok:true,...publicStatus(await rowFor(env,clientId,storeId))});
+      if(action==='status'&&method==='GET')return json({ok:true,...publicStatus(await rowFor(env,clientId,storeId))});
     if(action==='connect'&&method==='POST')return json({ok:true,...await saveConnection(env,clientId,storeId,body)});
     if(action==='sync'&&method==='POST')return json(await syncOne(env,clientId,storeId,{}));
     if(action==='insights'&&method==='GET')return json(await insights(env,clientId,storeId));
@@ -159,8 +154,8 @@ export async function handleClarityApi({request,env,ctx,delegate}){
   }catch(e){return json({error:e.message||'Clarity failed',code:e.code||'CLARITY_ERROR'},e.status||500);}
 }
 export async function syncClarityScheduled(env,{limit=30}={}){
-  await schema(env);
-  const rs=await env.DB.prepare("SELECT client_id,store_id FROM clarity_connections WHERE token_ciphertext_b64 IS NOT NULL AND (last_sync_at IS NULL OR last_sync_at < ?) ORDER BY COALESCE(last_sync_at,'') ASC LIMIT ?").bind(new Date(Date.now()-12*3600000).toISOString(),Math.max(1,Math.min(50,limit))).all();
+  const threshold=new Date(Date.now()-12*3600000).toISOString();
+  const rs=await env.DB.prepare("SELECT client_id,store_id FROM clarity_connections WHERE token_ciphertext_b64 IS NOT NULL AND (last_attempt_at IS NULL OR last_attempt_at < ?) ORDER BY COALESCE(last_attempt_at,'') ASC LIMIT ?").bind(threshold,Math.max(1,Math.min(50,limit))).all();
   const outcome=[];
   for(const r of rs.results||[]){
     try{const d=await syncOne(env,r.client_id,r.store_id);outcome.push({storeId:r.store_id,ok:true,skipped:!!d.skipped});}
