@@ -122,7 +122,7 @@ export function reportFromCapture({campaign=[],pages=[],technology=[],legacyDevi
   const limitations=[];
   if(Object.values(capture).some(metricLimited))limitations.push('بعض نتائج التقسيم وصلت إلى حد 1000 صف في Clarity، وقد تكون المجاميع أقل من الواقع.');
   if(legacy.length&&!capture.pages.length)limitations.push('العينات القديمة لا تحتوي على تصنيف الصفحات والبلدان والمتصفحات؛ سيظهر ذلك بعد أول مزامنة موسّعة.');
-  limitations.push('كل عينة تمثل 24 ساعة متحركة بتوقيت UTC، ولا يمكن جمع العينات التاريخية لإنتاج إجمالي شهري دقيق.');
+  limitations.push('كل عينة تمثل 24 ساعة متحركة بتوقيت UTC؛ نوافذ العينات التاريخية قد تكون متداخلة، ولا يمكن جمعها لإنتاج إجمالي شهري دقيق.');
   limitations.push('التسجيلات والخرائط الحرارية والفانل التفصيلي غير متاحة من Data Export API؛ تُفتح مباشرة في Clarity.');
   return {totals,dimensions,pagesDetail,campaigns,diagnostics:FRICTION.map(name=>({metric:name,label:METRIC_LABELS[name],segments:segmentMetric(capture.campaign,'Campaign',name)})),catalog:catalog(capture),
     limitations,snapshotHours:24,source:'clarity_export',rawDimensions:Object.keys(TAXONOMY)};
