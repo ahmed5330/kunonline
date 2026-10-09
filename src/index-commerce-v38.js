@@ -1,6 +1,7 @@
 import app,{SyncEntrypoint as BaseSyncEntrypoint} from './index-commerce-v38-base.js';
 import {handleClarityApi,syncClarityScheduled} from './clarity-integration.js';
 import {handleAIMarketing} from './ai-marketing-analyst.js';
+import {handleCompetitorIntelligence} from './competitor-intelligence.js';
 import safety from './index-commerce-v38-safety.js';
 import core from './index-commerce-v38-core.js';
 import {handleJtHistoryReconcile} from './jt-history-reconcile.js';
@@ -92,6 +93,8 @@ export default {
   async fetch(request,env,ctx){
     const rootRedirect=redirectLegacyRoot(request);
     if(rootRedirect)return rootRedirect;
+    const competitors=await handleCompetitorIntelligence({request,env,ctx,delegate:app});
+    if(competitors)return competitors;
     const aiMarketing=await handleAIMarketing({request,env,ctx,delegate:app});
     if(aiMarketing)return aiMarketing;
     const clarity=await handleClarityApi({request,env,ctx,delegate:app});
