@@ -96,7 +96,7 @@
       try{const d=await api('/api/clarity/sync',{method:'POST',body:'{}'});toast(d.skipped?'التحليلات حديثة بالفعل، تم استخدام النسخة المحفوظة':'نجح اختبار API ومزامنة Clarity');await loadCard(card);}
       catch(e){toast(e.message);await loadCard(card);}finally{busy(b,false,original);}
     };
-    card.querySelector('#cl135-report').onclick=()=>window.KunClarityGrowthV136?.open('overview')||renderReport();
+    card.querySelector('#cl135-report').onclick=()=>{if(typeof window.KunClarityGrowthV136?.open==='function'){window.KunClarityGrowthV136.open('overview');return;}renderReport();};
     card.querySelector('#cl135-copy').onclick=()=>copySnippet(card).catch(e=>toast(e.message));
     card.querySelector('#cl135-remove').onclick=async()=>{
       if(!confirm('فصل Clarity وحذف التحليلات المحفوظة لهذا المتجر فقط؟ كود التتبع المثبت خارجيًا يجب حذفه من المتجر بصورة مستقلة.'))return;
