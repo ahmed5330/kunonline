@@ -187,6 +187,12 @@ jobs:
         run: |
           npm run smoke:preview
 
+      - name: Live real Workers AI competitor analysis (synthetic QA store only)
+        id: competitor_ai_live
+        if: steps.worker_ownership.outputs.is_current == 'true' && steps.smoke.outcome == 'success'
+        continue-on-error: true
+        run: node scripts/live-preview-competitor-ai-test.mjs https://kunonline-preview.mr-a-mnaa.workers.dev
+
       - name: Live authenticated Store B regression
         id: live
         if: steps.worker_ownership.outputs.is_current == 'true' && steps.smoke.outcome == 'success'
@@ -234,10 +240,11 @@ jobs:
           EASYORDERS_OUTCOME: ${{ steps.easyorders_live.outcome }}
           DASHBOARD_OUTCOME: ${{ steps.dashboard_live.outcome }}
           BROWSER_OUTCOME: ${{ steps.browser.outcome }}
+          COMPETITOR_AI_OUTCOME: ${{ steps.competitor_ai_live.outcome }}
         run: |
           set -euo pipefail
           failed=0
-          for gate in SMOKE_OUTCOME STORE_B_OUTCOME TEAM_OUTCOME CUSTOMER_SERVICE_OUTCOME EASYORDERS_OUTCOME DASHBOARD_OUTCOME BROWSER_OUTCOME; do
+          for gate in SMOKE_OUTCOME COMPETITOR_AI_OUTCOME STORE_B_OUTCOME TEAM_OUTCOME CUSTOMER_SERVICE_OUTCOME EASYORDERS_OUTCOME DASHBOARD_OUTCOME BROWSER_OUTCOME; do
             outcome="${!gate:-missing}"
             echo "$gate=$outcome"
             if [ "$outcome" != "success" ]; then failed=1; fi
