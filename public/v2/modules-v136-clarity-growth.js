@@ -152,9 +152,14 @@ function render(){
 async function reload(){
  const rid=++V.request;const d=await api('/api/clarity/growth');if(rid!==V.request)return;V.data=d;render();
 }
-function open(which='overview'){
+function open(which='overview',depth=0){
+ if(view()!=='analytics'){
+   if(depth>3){toast('تعذر فتح قسم التحليلات؛ افتح التحليلات من القائمة أولًا');return;}
+   document.querySelector('.nav button[data-view="analytics"]')?.click();
+   setTimeout(()=>open(which,depth+1),140);
+   return;
+ }
  V.active=true;V.tab=tabs[which]?which:'overview';
- if(view()!=='analytics')document.querySelector('.nav button[data-view="analytics"]')?.click();
  const r=ROOT();if(r)r.innerHTML='<section class="cl136"><div class="box">جاري تجهيز تقارير Clarity مع Meta والطلبات...</div></section>';
  reload().catch(e=>{if(!V.active||view()!=='analytics')return;ROOT().innerHTML='<div class="cl136"><div class="box"><h3>تعذر تحميل البيانات</h3><p>'+esc(e.message)+'</p><button id="cl136-retry">إعادة المحاولة</button></div></div>';ROOT().querySelector('#cl136-retry').onclick=()=>open(which);});
 }
