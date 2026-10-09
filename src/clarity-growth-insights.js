@@ -5,7 +5,7 @@ const safe=(v)=>String(v??'').trim();
 const num=v=>{if(v===null||v===undefined||v==='')return null;const x=Number(v);return Number.isFinite(x)?x:null;};
 const number=v=>num(v)??0;
 const key=s=>safe(s).normalize('NFKC').toLocaleLowerCase('en').replace(/\s+/g,' ');
-const META_SOURCE=/(facebook|instagram|(?:^|[.\s])fb(?:$|[.\s])|(?:^|[.\s])ig(?:$|[.\s])|(^|[^a-z])meta([^a-z]|$))/i;
+const META_SOURCE=/(facebook|instagram|(^|[^a-z])(?:fb|ig|meta)([^a-z]|$))/i;
 const TAXONOMY=Object.freeze({
   Campaign:{label:'الحملات',bucket:'campaign'},
   Source:{label:'المصادر',bucket:'campaign'},
