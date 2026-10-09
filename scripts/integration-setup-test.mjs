@@ -52,9 +52,9 @@ must(printBlock.indexOf('jt_label_printed')<printBlock.indexOf("UPDATE orders SE
 must(printingRoute.includes("url.pathname!=='/api/printing'")&&printingRoute.includes("['confirmed','preparing','shipped']"),'Production must expose a dedicated Printing queue containing confirmed orders and legacy queued shipments');
 must(printingRoute.includes("order.state!=='shipped'||order.queuedForPrint||order.printed"),'Unrelated shipped orders must not leak into Printing');
 must(production.includes('routeConfirmedOrdersToPrinting')&&production.includes("new Set(['confirmed','preparing'])"),'Confirmed orders must disappear from Customer Service and route to Printing');
-for(const marker of ['modules-v51-permission-navigation.js?v=51.15','modules-v78-jt-shipping-order.js?v=78.5','modules-v79-printing.js?v=79.8','modules-v116-print-routing.js?v=116.0'])must(production.includes(marker),`Production HTML must cache-bust/load ${marker}`);
+for(const marker of ['modules-v51-permission-navigation.js?v=51.15','modules-v78-jt-shipping-order.js?v=78.5','modules-v79-printing.js?v=79.9','modules-v116-print-routing.js?v=116.0'])must(production.includes(marker),`Production HTML must cache-bust/load ${marker}`);
 
-for(const marker of ['/v2/modules-v51-permission-navigation.js?v=51.15','/v2/modules-v78-jt-shipping-order.js?v=78.5','/v2/modules-v79-printing.js?v=79.8','/v2/modules-v116-print-routing.js?v=116.0','/v2/modules-v117-team-collaboration.js?v=117.0'])must(v2Index.includes(marker),`Direct v2 index must load ${marker}`);
+for(const marker of ['/v2/modules-v51-permission-navigation.js?v=51.15','/v2/modules-v78-jt-shipping-order.js?v=78.5','/v2/modules-v79-printing.js?v=79.9','/v2/modules-v116-print-routing.js?v=116.0','/v2/modules-v117-team-collaboration.js?v=117.0'])must(v2Index.includes(marker),`Direct v2 index must load ${marker}`);
 must(v2Index.includes('href="/api/mobile/app-update/apk"'),'Direct v2 index must use the Kun Online Android download route');
 must(!v2Index.includes('https://github.com/ahmed5330/kunonline/releases/download/android-latest/Kun-Online-Mobile.apk'),'Direct v2 index must not expose the legacy GitHub APK URL');
 
@@ -63,7 +63,7 @@ must(shippingUi.includes("version:'78.5'"),'J&T editor runtime must identify v78
 must(!shippingUi.includes("moveState?.(orderId,'shipped')"),'Editing/preparing J&T data must not move the order to shipping');
 must(printingUi.includes('/api/printing?clientId=')&&printingUi.includes('إرسال إلى J&T وطباعة البوليصة'),'Printing UI must own the external handoff action');
 must(printingUi.includes('/api/jt/shipments/${encodeURIComponent(o.id)}')&&printingUi.includes('/api/jt/shipments/${encodeURIComponent(id)}/print'),'Printing must stage locally then call J&T create/print');
-must(printingUi.includes("version:'79.8'"),'Printing runtime must identify v79.8');
+must(printingUi.includes("version:'79.9'"),'Printing runtime must identify v79.9');
 must(printingRouting.includes("new Set(['confirmed','preparing'])")&&printingRouting.includes('تم تأكيد الأوردر ونقله تلقائيًا إلى قسم الطباعة'),'Customer Service UI must immediately remove confirmed orders');
 
 const nativeLabels=['الطباعة','المالية','الحسابات والحركات','الحملات','المخزون','المحفظة','مركز التكاملات','الإعدادات'];
