@@ -9,8 +9,8 @@ const META_SOURCE=/(facebook|instagram|(?:^|[.\s])fb(?:$|[.\s])|(?:^|[.\s])ig(?:
 const TAXONOMY=Object.freeze({
   Campaign:{label:'الحملات',bucket:'campaign'},
   Source:{label:'المصادر',bucket:'campaign'},
-  Device:{label:'الأجهزة',bucket:'pages'},
-  URL:{label:'الصفحات',bucket:'campaign'},
+  Device:{label:'الأجهزة',bucket:'campaign'},
+  URL:{label:'الصفحات',bucket:'pages'},
   Medium:{label:'وسيط UTM',bucket:'pages'},
   Channel:{label:'قنوات الزيارات',bucket:'pages'},
   Browser:{label:'المتصفحات',bucket:'technology'},
@@ -103,25 +103,23 @@ export function reportFromCapture({campaign=[],pages=[],technology=[],legacyDevi
   const primary=items(capture.campaign,'Traffic'),legacyPrimary=legacy.length?items(legacy,'Traffic'):[];
   const count=primary.length?primary:legacyPrimary;
   const totals={sessions:count.reduce((a,b)=>a+number(b.totalSessionCount),0),botSessions:count.reduce((a,b)=>a+number(b.totalBotSessionCount),0),rowCount:count.length};
-  const depth=new Map(segmentAverage(capture.campaign,'URL','ScrollDepth','averageScrollDepth').map(r=>[r.name,r.average]));
-  const engagement=new Map(segmentAverage(capture.campaign,'URL','EngagementTime','averageEngagementTime').map(r=>[r.name,r.average]));
-  const pageRage=new Map(segmentMetric(capture.campaign,'URL','RageClickCount').map(r=>[r.name,r.rate]));
-  const pageDead=new Map(segmentMetric(capture.campaign,'URL','DeadClickCount').map(r=>[r.name,r.rate]));
+  const depth=new Map(segmentAverage(capture.pages,'URL','ScrollDepth','averageScrollDepth').map(r=>[r.name,r.average]));
+  const engagement=new Map(segmentAverage(capture.pages,'URL','EngagementTime','averageEngagementTime').map(r=>[r.name,r.average]));
+  const pageRage=new Map(segmentMetric(capture.pages,'URL','RageClickCount').map(r=>[r.name,r.rate]));
+  const pageDead=new Map(segmentMetric(capture.pages,'URL','DeadClickCount').map(r=>[r.name,r.rate]));
   const pagesDetail=dimensions.URL.map(r=>({...r,scrollDepth:depth.get(r.name)??null,engagementTime:engagement.get(r.name)??null,rageRate:pageRage.get(r.name)??null,deadRate:pageDead.get(r.name)??null}));
   const campaigns=dimensions.Campaign.map(row=>{
     const metrics={};
     for(const m of FRICTION)metrics[m]=segmentMetric(capture.campaign,'Campaign',m).find(x=>x.name===row.name)?.rate??null;
     const matching=items(capture.campaign,'Traffic').filter(r=>safe(r.Campaign)===row.name);
-    const landingMap=new Map();
-    for(const detail of matching){if(!safe(detail.URL))continue;const label=urlLabel(detail.URL);landingMap.set(label,(landingMap.get(label)||0)+number(detail.totalSessionCount));}
-    const landingPages=[...landingMap.entries()].map(([url,sessions])=>({url,sessions})).sort((a,b)=>b.sessions-a.sessions).slice(0,12);
     const paidSessions=matching.filter(r=>META_SOURCE.test(safe(r.Source))).reduce((n,r)=>n+number(r.totalSessionCount),0);
     const unknownSourceSessions=matching.filter(r=>!safe(r.Source)).reduce((n,r)=>n+number(r.totalSessionCount),0);
-    return {...row,paidSessions,unknownSourceSessions,landingPages,...metrics};
+    return {...row,paidSessions,unknownSourceSessions,...metrics};
   });
   const limitations=[];
   if(Object.values(capture).some(metricLimited))limitations.push('بعض نتائج التقسيم وصلت إلى حد 1000 صف في Clarity، وقد تكون المجاميع أقل من الواقع.');
   if(legacy.length&&!capture.pages.length)limitations.push('العينات القديمة لا تحتوي على تصنيف الصفحات والبلدان والمتصفحات؛ سيظهر ذلك بعد أول مزامنة موسّعة.');
+  limitations.push('جلسات كل صفحة URL تمثل الجلسات التي شاهدت الصفحة؛ الجلسة الواحدة قد تزور عدة صفحات، فلا تُجمع الصفحات كزوار فريدين.');
   limitations.push('كل عينة تمثل 24 ساعة متحركة بتوقيت UTC؛ نوافذ العينات التاريخية قد تكون متداخلة، ولا يمكن جمعها لإنتاج إجمالي شهري دقيق.');
   limitations.push('التسجيلات والخرائط الحرارية والفانل التفصيلي غير متاحة من Data Export API؛ تُفتح مباشرة في Clarity.');
   return {totals,dimensions,pagesDetail,campaigns,diagnostics:FRICTION.map(name=>({metric:name,label:METRIC_LABELS[name],segments:segmentMetric(capture.campaign,'Campaign',name)})),catalog:catalog(capture),
@@ -137,7 +135,7 @@ export function mergeMetaWithClarity(report,meta){
     if(c)matchedNames.add(key(name));
     const label=!c?'utm_missing':c.paidSessions>0?'meta_source_detected':c.unknownSourceSessions>0?'source_missing':'source_not_meta';
     return {name,campaignId:safe(m.id),spend:round(m.spend),impressions:round(m.impressions),ctr:round(m.ctr),cpc:round(m.cpc),platformPurchases:round(m.platformPurchases),platformRoas:round(m.platformRoas),realOrders:round(m.realOrders),deliveredOrders:round(m.deliveredOrders),realRoas:round(m.realRoas),sourceStatus:label,
-      claritySessions:c?.sessions??null,metaSourceSessions:c?.paidSessions??null,landingPages:c?.landingPages||[],rageRate:c?.RageClickCount??null,deadRate:c?.DeadClickCount??null,scriptErrorRate:c?.ScriptErrorCount??null,quickbackRate:c?.QuickbackClick??null};
+      claritySessions:c?.sessions??null,metaSourceSessions:c?.paidSessions??null,rageRate:c?.RageClickCount??null,deadRate:c?.DeadClickCount??null,scriptErrorRate:c?.ScriptErrorCount??null,quickbackRate:c?.QuickbackClick??null};
   });
   const recommendations=[];
   const significant=rows.filter(r=>r.spend>0).sort((a,b)=>b.spend-a.spend);
