@@ -176,7 +176,7 @@ export async function insights(env,clientId,storeId,days=1){
     const pages=extended&&Array.isArray(second.pages)?second.pages:[];
     const technology=extended&&Array.isArray(second.technology)?second.technology:[];
     const legacy=Array.isArray(second)?second:[];
-    const report=reportFromCapture({campaign,pages,technology,legacyDevice:legacy});
+    const report=reportFromCapture({campaign,pages,technology,legacyDevice:legacy,days});
     const {dimensions,totals,diagnostics,catalog,limitations,campaigns,pagesDetail}=report;
     return {syncedAt:entry.synced_at,projectId:entry.project_id,
       // Legacy contract kept for existing Clarity integrations:
