@@ -40,6 +40,37 @@ export function clarityMetrics(raw){
   if(!Array.isArray(raw))return [];
   return raw.map(x=>({name:String(x?.metricName||'').slice(0,80),information:(Array.isArray(x?.information)?x.information:[]).slice(0,1000)})).slice(0,30);
 }
+
+// Weighted session percentages from campaign x source segments; never add percentages.
+export function clarityCampaignFriction(metrics){
+  if(!Array.isArray(metrics))return [];
+  const names=['RageClickCount','DeadClickCount','ScriptErrorCount','ErrorClickCount','QuickbackClick','ExcessiveScroll'];
+  const results=new Map();
+  for(const metric of metrics){
+    if(!names.includes(metric?.name||metric?.metricName))continue;
+    const name=metric.name||metric.metricName;
+    for(const row of metric.information||[]){
+      const campaign=clean(row.Campaign)||'غير محدد';
+      const sessions=Number(row.sessionsCount);
+      const rate=Number(row.sessionsWithMetricPercentage);
+      if(!Number.isFinite(sessions)||sessions<=0||!Number.isFinite(rate)||rate<0||rate>100)continue;
+      const data=results.get(campaign)||{campaign};
+      const current=data[name]||{weightedTotal:0,sessions:0};
+      current.weightedTotal+=rate*sessions;
+      current.sessions+=sessions;
+      data[name]=current;
+      results.set(campaign,data);
+    }
+  }
+  return [...results.values()].map(item=>{
+    const entry={campaign:item.campaign};
+    for(const name of names){
+      const x=item[name];
+      entry[name]=x?.sessions?Number((x.weightedTotal/x.sessions).toFixed(2)):null;
+    }
+    return entry;
+  });
+}
 // Tables are created by migration 0095, not at request time.
 async function rowFor(env,clientId,storeId){
   return env.DB.prepare("SELECT * FROM clarity_connections WHERE client_id=? AND store_id=?").bind(clientId,storeId).first();
@@ -129,7 +160,7 @@ async function insights(env,clientId,storeId){
   const snapshots=rs.results||[];
   const latest=snapshots[0]||null;
   const parse=s=>{try{return JSON.parse(s||'[]')}catch{return [];}};
-  return {ok:true,status:publicStatus(row),latest:latest?{syncedAt:latest.synced_at,campaignMetrics:parse(latest.campaign_json),deviceMetrics:parse(latest.device_json),campaigns:clarityTraffic(parse(latest.campaign_json),'Campaign'),sources:clarityTraffic(parse(latest.campaign_json),'Source'),devices:clarityTraffic(parse(latest.device_json),'Device')}:null,history:snapshots.map(s=>({syncedAt:s.synced_at,campaignSessions:clarityTraffic(parse(s.campaign_json),'Campaign').reduce((sum,r)=>sum+r.sessions,0)})),historyNote:'كل عينة تمثل 24 ساعة متحركة وقد تتداخل الفترات؛ لا تجمع العينات كأنها أيام مستقلة.'};
+  return {ok:true,status:publicStatus(row),latest:latest?{syncedAt:latest.synced_at,campaignMetrics:parse(latest.campaign_json),deviceMetrics:parse(latest.device_json),campaigns:clarityTraffic(parse(latest.campaign_json),'Campaign'),campaignFriction:clarityCampaignFriction(parse(latest.campaign_json)),sources:clarityTraffic(parse(latest.campaign_json),'Source'),devices:clarityTraffic(parse(latest.device_json),'Device')}:null,history:snapshots.map(s=>({syncedAt:s.synced_at,campaignSessions:clarityTraffic(parse(s.campaign_json),'Campaign').reduce((sum,r)=>sum+r.sessions,0)})),historyNote:'كل عينة تمثل 24 ساعة متحركة وقد تتداخل الفترات؛ لا تجمع العينات كأنها أيام مستقلة.'};
 }
 export async function handleClarityApi({request,env,ctx,delegate}){
   const url=new URL(request.url),path=url.pathname;
