@@ -17,6 +17,9 @@ const bodyOf=async request=>['POST','PUT','PATCH','DELETE'].includes(request.met
 
 function allowedWhileLocked(path,method){
   if(['/api/me','/api/logout','/api/navigation-access','/api/subscription/access','/api/tenant/features'].includes(path))return true;
+  // The legacy V2 dashboard must hydrate through /api/state even when a paid
+  // wallet is exhausted. Only reads are allowed; state mutations stay blocked.
+  if(path==='/api/state')return method==='GET';
   if(path==='/api/dashboard'||path.startsWith('/api/system/dashboard/')||path==='/api/accounting/collected-profit')return method==='GET';
   if(path==='/api/stores'||path==='/api/store-access')return method==='GET';
   if(path==='/api/integrations/meta-ads/expert-analysis')return method==='GET';

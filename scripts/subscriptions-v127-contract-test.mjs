@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
 import {__subscriptionInternals,subscriptionAccess} from '../src/subscription-billing.js';
+import {handleSubscriptionControl} from '../src/subscription-control.js';
 
 const {monthBounds,trialActive,daysBetween}=__subscriptionInternals;
 assert.deepEqual(monthBounds('2026-10-04'),{key:'2026-10',from:'2026-10-01',to:'2026-10-31'});
@@ -154,6 +155,7 @@ const makeBillingEnv=({balance=0,walletStatus='active',subscriptionStatus='activ
         if(sql.includes('SELECT * FROM subscriptions'))return sub;
         if(sql.includes('SELECT created_at FROM audit_log'))return {created_at:'2026-01-01T00:00:00.000Z'};
         if(sql.includes('SELECT balance,status,currency FROM wallet_accounts'))return wallet;
+        if(sql.includes('FROM wallet_log WHERE client_id=? AND idempotency_key=?'))return null;
         throw new Error('Unexpected billing query: '+sql);
       }
     }}};
@@ -173,5 +175,34 @@ assert.equal(freeTrial.trialActive,true);
 assert.equal(freeTrial.locked,false,'approved free trial must stay usable at zero balance');
 const adminPause=await subscriptionAccess(makeBillingEnv({balance:50,subscriptionStatus:'paused'}),'billing-test',{applyMonthly:false});
 assert.equal(adminPause.reason,'subscription_paused');
+
+
+const guardedRequest=async({path,method='GET',balance=0,subscriptionStatus='active',role='client'}={})=>{
+  const delegate={fetch:async request=>{
+    assert.equal(new URL(request.url).pathname,'/api/me','billing middleware should only delegate identity checks');
+    return Response.json({role,clientId:'billing-test'});
+  }};
+  return handleSubscriptionControl({
+    request:new Request('https://kun.example.test'+path,{method,headers:{Cookie:'qa_session=stub'},...(method==='GET'?{}:{body:'{}'})}),
+    env:makeBillingEnv({balance,subscriptionStatus}),ctx:{},delegate
+  });
+};
+const bootstrap=await guardedRequest({path:'/api/state'});
+assert.equal(bootstrap,null,'GET /api/state must remain readable so the dashboard and recharge form can boot at zero balance');
+const stateWrite=await guardedRequest({path:'/api/state',method:'PUT'});
+assert.equal(stateWrite.status,402,'all state writes must remain blocked at zero balance');
+assert.equal((await stateWrite.json()).code,'SUBSCRIPTION_BALANCE_REQUIRED','state write should provide precise billing status');
+const printing=await guardedRequest({path:'/api/printing?clientId=billing-test'});
+assert.equal(printing.status,402,'printing remains inaccessible at zero balance');
+const jnt=await guardedRequest({path:'/api/jt/shipments/ORDER-1/print',method:'POST'});
+assert.equal(jnt.status,402,'J&T dispatch must not bypass the zero-balance restriction');
+assert.equal(await guardedRequest({path:'/api/dashboard'}),null,'read-only dashboard must remain accessible');
+assert.equal(await guardedRequest({path:'/api/wallet/log'}),null,'wallet transaction history must remain accessible');
+const accessResponse=await guardedRequest({path:'/api/subscription/access'});
+assert.equal(accessResponse.status,200,'access status must be readable for reactivation');
+assert.equal((await accessResponse.json()).reason,'balance_empty');
+assert.equal(await guardedRequest({path:'/api/state',method:'PUT',balance:50}),null,'replenished wallets should regain operations');
+assert.equal(await guardedRequest({path:'/api/state',method:'PUT',subscriptionStatus:'trialing'}),null,'approved trial must not require credit');
+assert.equal((await guardedRequest({path:'/api/printing',role:'staff'})).status,402,'store staff must respect the same server wallet gate');
 
 console.log('subscriptions v127.17 billing contract: ok');
