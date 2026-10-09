@@ -22,5 +22,8 @@ APP_ENV = "preview"
 TRACKING_PROVIDER = "track123"
 META_GRAPH_API_VERSION = "v25.0"
 
+[ai]
+binding = "AI"
+
 [observability]
 enabled = true
