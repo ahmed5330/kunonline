@@ -30,7 +30,14 @@ async function navigate(url){await cdp.send('Page.navigate',{url});await waitFor
 
 let primaryError=null;
 try{
-  await cleanup();await d1('INSERT INTO users (id,email,name,password,role,client_id,status,created_at,last_login) VALUES (?,?,?,?,?,NULL,?,?,NULL)',[userId,email,'CI Breakdown Browser',await hashPassword(password),'admin','active',createdAt]);
+  await cleanup();
+  // The browser fixture needs a real, authorized client context. Admin users without
+  // a client_id can legitimately have no selected client, which made the test wait on
+  // a ready flag that never appears and fail unrelated deployments.
+  const existingClients=await d1('SELECT id FROM clients ORDER BY id LIMIT 1');
+  const fixtureClientId=String(existingClients?.[0]?.id||'');
+  if(!fixtureClientId)throw new Error('Breakdown browser QA needs an existing Preview client');
+  await d1('INSERT INTO users (id,email,name,password,role,client_id,status,created_at,last_login) VALUES (?,?,?,?,?,?,?,?,NULL)',[userId,email,'CI Breakdown Browser',await hashPassword(password),'admin',fixtureClientId,'active',createdAt]);
   cdp=await connect(await launch(await findChrome()));const exceptions=[],consoleErrors=[],serverErrors=[];
   cdp.on('Runtime.exceptionThrown',p=>exceptions.push(p.exceptionDetails?.exception?.description||p.exceptionDetails?.text||'uncaught exception'));
   cdp.on('Runtime.consoleAPICalled',p=>{if(p.type==='error')consoleErrors.push((p.args||[]).map(x=>x.value??x.description??'').join(' '));});
@@ -44,7 +51,7 @@ try{
   await waitFor(`!!window.KunCampaignHubV66&&!!window.KunBreakdownAnalysisV68&&!!window.KunBreakdownMeasurementsV70&&!!window.KunBreakdownControlsV71&&!!document.querySelector('.campaign66')`,'Campaign Hub v66 + Breakdown v68/v70/v71');
   // Wait for the shell's authoritative ready flag rather than awaiting kunClientId() inside CDP polling;
   // the latter can leave Runtime.evaluate pending and stall Chrome's remote debugging connection.
-  await waitFor(`document.documentElement.dataset.clientContext==='ready'`,'Campaign client context');
+  await waitFor(`document.documentElement.dataset.clientContext==='ready' && !!window.KunClientContextV24?.cachedClientId`,'Campaign client context',30000);
 
   const adClicked=await evalJs(`(()=>{const b=document.querySelector('.campaign66 [data-campaign-section="ad"]');if(!b)return false;b.click();return true})()`);if(!adClicked)throw new Error('Ad workspace button missing');
   await waitFor(`!!document.getElementById('campaign66Breakdown')&&!!document.getElementById('campaign66BreakdownLoad')`,'Breakdown controls',30000);
