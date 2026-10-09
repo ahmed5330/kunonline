@@ -61,6 +61,7 @@
   window.KunMetaAdsLive={renderCampaigns,renderMarketing,sync};
 })();
 {
-  const module=document.createElement('script');module.src='/v2/modules-v29-product-import.js?v=29.0';document.head.appendChild(module);
+  // V2 index loads product import statically. Keep the legacy fallback only if missing.
+  setTimeout(()=>{if(document.querySelector('script[src*="modules-v29-product-import.js"]'))return;const module=document.createElement('script');module.src='/v2/modules-v29-product-import.js?v=29.4';document.head.appendChild(module);},0);
 }
 
