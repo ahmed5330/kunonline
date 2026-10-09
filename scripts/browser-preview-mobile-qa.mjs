@@ -36,7 +36,7 @@ async function waitFor(expression,label,timeout=12000){
         const d=await r.json().catch(()=>({}));
         const active=document.querySelector('.nav button.active[data-view]')?.dataset.view||'';
         const page=document.getElementById('root');
-        return {apiStatus:r.status,fixtureInResponse:Array.isArray(d.orders)&&d.orders.some(x=>x.id===${JSON.stringify(orderId)}),activeView:active,customerServiceRendered:Boolean(page?.querySelector('.cs-page')),loading:Boolean(page?.querySelector('.cs-loading')),errorCard:Boolean(page?.querySelector('.card.empty')),routeReady:typeof document.querySelector('.nav button[data-view="customer-service"]')?.onclick==='function'};
+        return {apiStatus:r.status,fixtureInResponse:Array.isArray(d.orders)&&d.orders.some(x=>x.id===${JSON.stringify(orderId)}),apiOrderCount:Array.isArray(d.orders)?d.orders.length:null,selectedStore:await window.kunStoreId?.(),selectedClient:await window.kunClientId?.(),activeView:active,customerServiceRendered:Boolean(page?.querySelector('.cs-page')),loading:Boolean(page?.querySelector('.cs-loading')),errorCard:Boolean(page?.querySelector('.card.empty')),routeReady:typeof document.querySelector('.nav button[data-view="customer-service"]')?.onclick==='function'};
       })()`);
     }catch(e){details={diagnosticError:String(e.message).slice(0,200)};}
     throw new Error('Mobile QA wait failed: mobile call card (safe diagnostic: '+JSON.stringify(details)+')');
