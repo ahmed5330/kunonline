@@ -1,5 +1,6 @@
 import {readConnectionSecrets} from './integration-provider-validation.js';
 import {providerById} from './provider-registry.js';
+import {normalizeBundleChanges,validateBundleChanges,saveBundleChange} from './commerce-bundle-mapping.js';
 
 const PRODUCT_COLS='id,client_id,store_id,name,sku,category,price,compare_at_price,cost,active,stock,low_stock_threshold,created_at';
 const text=v=>String(v??'').trim();
@@ -206,7 +207,8 @@ export async function previewCommerceImport(env,args){
   return {provider:pulled.item.provider,name:pulled.item.name,total:items.length,created:items.filter(x=>x.action==='created').length,updated:items.filter(x=>x.action==='updated').length,skipped:0,errors:[],priceRule:pulled.item.provider==='easyorders'?'discounted_price':'provider_price',items:items.map(x=>({externalId:x.externalId,name:x.name,sku:x.sku,price:x.price,compareAtPrice:x.compareAtPrice,stock:x.stock,category:x.category,action:x.action,variants:x.variants.length,images:x.images.length}))};
 }
 export async function importCommerceProducts(env,args){
-  const pulled=await pullCommerceProducts(env,args),selectionMode=requireSelectionMode(args),chosen=selectedProducts(pulled.products,{...args,selectionMode}),costs=requiredProductCosts(chosen,args),costed=chosen.map(p=>({...p,importCost:costs.get(text(p.externalId))})),items=await classify(env,{...args,products:costed}),summary={provider:pulled.item.provider,name:pulled.item.name,selectionMode,total:items.length,created:0,updated:0,skipped:0,errors:[],costsCaptured:items.length},ts=new Date().toISOString();
+  const pulled=await pullCommerceProducts(env,args),selectionMode=requireSelectionMode(args),chosen=selectedProducts(pulled.products,{...args,selectionMode}),costs=requiredProductCosts(chosen,args),costed=chosen.map(p=>({...p,importCost:costs.get(text(p.externalId))})),items=await classify(env,{...args,products:costed}),bundleChanges=normalizeBundleChanges(args.bundleComponents,{selectedExternalIds:items.map(p=>p.externalId),providerId:args.providerId,storeId:args.storeId}),summary={provider:pulled.item.provider,name:pulled.item.name,selectionMode,total:items.length,created:0,updated:0,skipped:0,errors:[],costsCaptured:items.length,bundleLinked:0,bundleCleared:0},ts=new Date().toISOString();
+  await validateBundleChanges(env,{clientId:args.clientId,storeId:args.storeId,providerId:args.providerId,changes:bundleChanges,items});
   for(const p of items){
     try{
       const productId=p.existingId||p.id;
@@ -215,6 +217,10 @@ export async function importCommerceProducts(env,args){
       for(const [i,v] of p.variants.entries()){
         const variantId=await stableId('IMV',args.clientId,args.storeId||'',args.providerId,p.externalId||p.sku,v.externalId||v.sku||i),match=await env.DB.prepare("SELECT id FROM product_variants WHERE client_id=? AND store_id IS ? AND product_id=? AND (id=? OR (?<>'' AND LOWER(sku)=LOWER(?))) LIMIT 1").bind(args.clientId,args.storeId||null,productId,variantId,v.sku,v.sku).first();
         await env.DB.prepare('INSERT INTO product_variants (id,product_id,client_id,store_id,name,sku,stock,price,compare_at_price,cost,active,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,sku=excluded.sku,stock=excluded.stock,price=excluded.price,compare_at_price=excluded.compare_at_price,cost=excluded.cost,active=excluded.active').bind(match?.id||variantId,productId,args.clientId,args.storeId||null,v.name,v.sku,v.stock,v.price,v.compareAtPrice,p.importCost,v.active?1:0,ts).run();
+      }
+      if(Object.prototype.hasOwnProperty.call(bundleChanges,p.externalId)){
+        await saveBundleChange(env,{clientId:args.clientId,storeId:args.storeId,providerId:args.providerId,externalId:p.externalId,productId,components:bundleChanges[p.externalId]});
+        if(bundleChanges[p.externalId].length)summary.bundleLinked++;else summary.bundleCleared++;
       }
       summary[p.action]++;
     }catch(error){summary.errors.push({externalId:p.externalId,sku:p.sku,name:p.name,message:error?.message||String(error)});}
