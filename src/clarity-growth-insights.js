@@ -131,5 +131,5 @@ export function mergeMetaWithClarity(report,meta){
     recommendations:[...recommendations,...metaRecommendations].slice(0,75),
     adsets:(meta?.adsets?.rows||[]).slice(0,100).map(x=>({name:x.name,campaignName:x.campaignName,spend:round(x.spend),purchases:round(x.purchases),cpp:round(x.cpp),roas:round(x.roas),ctr:round(x.ctr),diagnostics:x.flags||[]})),
     ads:(meta?.ads?.rows||[]).slice(0,100).map(x=>({name:x.name,campaignName:x.campaignName,adsetName:x.adsetName,spend:round(x.spend),purchases:round(x.purchases),cpp:round(x.cpp),roas:round(x.roas),ctr:round(x.ctr),diagnostics:x.flags||[]})),
-    attributionWarning:'المقارنة بالاسم والإشارات UTM فقط. Clarity يقدم آخر 24 ساعة UTC بينما Meta يستخدم أيامًا تقويمية وفترات Attribution مختلفة؛ لا توجد مطابقة جلسة إلى طلب أو Creative.');
+    attributionWarning:'المقارنة بالاسم والإشارات UTM فقط. Clarity يقدم آخر 24 ساعة UTC بينما Meta يستخدم أيامًا تقويمية وفترات Attribution مختلفة؛ لا توجد مطابقة جلسة إلى طلب أو Creative.'};
 }
