@@ -29,7 +29,7 @@ const skipped=await handleCompetitorIntelligence({request:new Request('https://k
 assert.equal(skipped,null);
 const html=readFileSync(new URL('../public/v2/index.html',import.meta.url),'utf8');
 const ui=readFileSync(new URL('../public/v2/modules-v139-competitors.js',import.meta.url),'utf8');
-assert.ok(html.includes('modules-v139-competitors.js?v=139.0'));
+assert.ok(html.includes('modules-v139-competitors.js?v=141.0'));
 assert.ok(ui.includes('تحليل إعلانات المنافسين'));
 assert.ok(ui.includes('/api/competitors/library-search'));
 assert.ok(readFileSync(new URL('../src/index-commerce-v38.js',import.meta.url),'utf8').includes('handleCompetitorIntelligence'));
@@ -45,4 +45,4 @@ assert.ok(ui.includes('country:val(\'country\')'), 'preserve country across sear
 assert.ok(!ui.includes('id="kc-page"'), 'remove extraneous Page ID from initial interface');
 assert.ok(html.includes('modules-v139-competitors.js?v=141.0'), 'bump web cache for redesigned UI');
 new Function(ui);
-console.log('Competitor Intelligence v139 contract tests passed');
+console.log('Competitor Intelligence v141 search-first contract tests passed');
