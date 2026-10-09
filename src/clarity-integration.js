@@ -120,7 +120,7 @@ async function syncOne(env,clientId,storeId,{force=false,days=1}={}){
   // Cached windows must match exactly: a 72-hour export is not a substitute for 24-hour data.
   const cached=await env.DB.prepare('SELECT synced_at,device_json FROM clarity_snapshots WHERE client_id=? AND store_id=? AND project_id=? ORDER BY synced_at DESC LIMIT 30').bind(clientId,storeId,row.project_id).all();
   const usable=(cached.results||[]).find(x=>snapshotDays(x.device_json)===days&&Number.isFinite(Date.parse(x.synced_at))&&Date.now()-Date.parse(x.synced_at)<4*3600000);
-  if(!force&&usable)return {ok:true,skipped:true,reason:'fresh_cache',days,syncedAt:usable.synced_at,...publicStatus(row)};
+  if(!force&&row.last_sync_at&&usable)return {ok:true,skipped:true,reason:'fresh_cache',days,syncedAt:usable.synced_at,...publicStatus(row)};
   const day=today();
   const attemptAt=new Date().toISOString();
   const reserved=await env.DB.prepare("UPDATE clarity_connections SET quota_count=CASE WHEN quota_day=? THEN quota_count+3 ELSE 3 END,quota_day=?,last_attempt_at=?,updated_at=? WHERE client_id=? AND store_id=? AND (quota_day IS NULL OR quota_day<>? OR quota_count<=5)").bind(day,day,attemptAt,attemptAt,clientId,storeId,day).run();
