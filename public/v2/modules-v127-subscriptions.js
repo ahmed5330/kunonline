@@ -1,14 +1,14 @@
-/* Kun Online v127.16 — subscriptions, free trial, non-blocking wallet balance and payment proof workspace */
+/* Kun Online v127.17 — enforce paid-wallet access, low-credit notices and transparent topup status. */
 (()=>{
   if(window.KunSubscriptionsV127)return;
-  const VERSION='127.16';
+  const VERSION='127.17';
   const $=(s,r=document)=>r?.querySelector?.(s)||null;
   const $$=(s,r=document)=>r?[...r.querySelectorAll(s)]:[];
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const n=v=>Number(v)||0;
   const num=v=>new Intl.NumberFormat('ar-EG',{maximumFractionDigits:2}).format(n(v));
   const money=(v,c='EGP')=>`${num(v)} ${String(c||'EGP').toUpperCase()==='EGP'?'ج.م':esc(c)}`;
-  const state={me:null,access:null,adminClients:[],topups:[],timer:0,locked:false,proofCache:new Map(),topupDraft:{amount:'',phone:'',file:null,fileName:''}};
+  const state={me:null,access:null,adminClients:[],topups:[],timer:0,locked:false,proofCache:new Map(),topupDraft:{amount:'',phone:'',file:null,fileName:''},topupHistory:[],topupHistoryAt:0,lastNotice:''};
   const nativeFetch=window.fetch.bind(window);
   const api=async(path,options={})=>{const r=await nativeFetch(path,{credentials:'include',headers:{'Content-Type':'application/json',...(options.headers||{})},...options}),d=await r.json().catch(()=>({}));if(!r.ok){const e=new Error(d.error||`HTTP ${r.status}`);e.code=d.code;e.data=d;throw e;}return d;};
 
@@ -16,6 +16,7 @@
     if($('#kunSubscriptions127Style'))return;
     const el=document.createElement('style');el.id='kunSubscriptions127Style';el.textContent=`
       .sub127-client-panel{margin:0 0 12px;padding:16px;border:1px solid var(--line,#e2e8f0);border-radius:18px;background:linear-gradient(145deg,#fff,#f8fbff);box-shadow:0 10px 28px rgba(15,23,42,.05)}
+      .sub127-access-banner{padding:11px 14px;margin:8px 12px;border:1px solid #f59e0b;border-radius:12px;background:#fffbeb;color:#78350f;font-size:12px;font-weight:800;line-height:1.8;cursor:pointer}.sub127-access-banner.critical{background:#fef2f2;border-color:#fca5a5;color:#991b1b}.sub127-pay-status{margin-top:9px;font-size:11px;line-height:1.8;color:var(--ink-2,#475569)}
       .sub127-client-panel.locked{border-color:rgba(220,38,38,.25);background:linear-gradient(145deg,#fff7f7,#fff)}.sub127-client-panel.trial{border-color:rgba(22,163,74,.24);background:linear-gradient(145deg,#f3fff7,#fff)}
       .sub127-client-head{display:flex;align-items:flex-start;gap:12px}.sub127-client-head h3{margin:0;font-size:16px}.sub127-client-head p{margin:5px 0 0;color:var(--muted,#64748b);font-size:10px;line-height:1.7}.sub127-badge{margin-inline-start:auto;padding:6px 9px;border-radius:999px;background:#eef6ff;color:#0d47a1;font-size:9px;font-weight:900;white-space:nowrap}.locked .sub127-badge{background:#fee2e2;color:#b91c1c}.trial .sub127-badge{background:#dcfce7;color:#15803d}
       .sub127-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:13px}.sub127-kpi{padding:10px;border:1px solid var(--line,#e2e8f0);border-radius:11px;background:var(--card,#fff)}.sub127-kpi span{display:block;color:var(--muted,#64748b);font-size:8.5px}.sub127-kpi b{display:block;margin-top:5px;font-size:14px}
@@ -32,8 +33,8 @@
     `;document.head.appendChild(el);
   }
 
-  const statusText=a=>a?.trialActive?'تجربة مجانية':a?.reason==='subscription_paused'?'الاشتراك موقوف':a?.reason==='wallet_paused'?'المحفظة موقوفة':a?.balanceEmpty?'الرصيد يحتاج شحن — النظام متاح':a?.subscriptionStatus==='unmanaged'?'غير مفعّل على نظام الاشتراكات':'نشط';
-  const reasonText=a=>a?.reason==='subscription_paused'?'الاشتراك موقوف من الإدارة':a?.reason==='wallet_paused'?'المحفظة موقوفة':'';
+  const statusText=a=>a?.trialActive?'تجربة مجانية':a?.reason==='subscription_paused'?'الاشتراك موقوف':a?.reason==='wallet_paused'?'المحفظة موقوفة':a?.reason==='balance_empty'?'الرصيد انتهى — التشغيل متوقف':a?.balanceEmpty?'الرصيد يحتاج شحن':a?.subscriptionStatus==='unmanaged'?'غير مفعّل على نظام الاشتراكات':'نشط';
+  const reasonText=a=>a?.reason==='subscription_paused'?'الاشتراك موقوف من الإدارة':a?.reason==='wallet_paused'?'المحفظة موقوفة':a?.reason==='balance_empty'?'رصيدك انتهى وتم إيقاف العمليات مؤقتًا حتى شحن المحفظة واعتماد التحويل':'';
 
   async function proofData(file){
     if(!file)throw new Error('ارفع صورة إثبات التحويل');
@@ -84,6 +85,28 @@
     const active=$('.nav button.active[data-view]');if(active&&active.dataset.view!=='dashboard')$('.nav button[data-view="dashboard"]')?.click();
   }
 
+  function topupHistoryHtml(){
+    const rows=state.topupHistory.slice(0,5);
+    const labels={pending:'قيد مراجعة الإدارة',approved:'تم اعتماد الشحن',rejected:'مرفوض — راجع الإدارة'};
+    return rows.length?'<b>آخر طلبات الشحن</b>'+rows.map(r=>'<div>'+esc(r.requested_at||'')+' · '+money(r.amount,r.currency)+' · '+esc(labels[r.status]||r.status)+'</div>').join(''):'لا توجد طلبات شحن سابقة.';
+  }
+  async function refreshTopupHistory(force=false){
+    if(!force&&Date.now()-state.topupHistoryAt<30000)return;
+    try{const rows=await api('/api/wallet/topups?limit=5');state.topupHistory=Array.isArray(rows)?rows:[];state.topupHistoryAt=Date.now();}
+    catch(e){console.warn('wallet topup status unavailable',e);}
+    const target=$('#sub127PaymentHistory');if(target)target.innerHTML=topupHistoryHtml();
+  }
+  function updateBalanceBanner(a){
+    let banner=$('#sub127BalanceBanner'),top=$('.top');
+    const balance=Number(a?.balance)||0,limit=Math.max(100,(Number(a?.orderFee)||0)*10);
+    const exhausted=Boolean(a?.locked&&a?.reason==='balance_empty');
+    const low=Boolean(!a?.trialActive&&!a?.locked&&balance>0&&balance<=limit&&a?.subscriptionStatus!=='unmanaged');
+    if(!exhausted&&!low){banner?.remove();return;}
+    if(!top)return;
+    if(!banner){banner=document.createElement('div');banner.id='sub127BalanceBanner';banner.className='sub127-access-banner';banner.setAttribute('role','alert');banner.onclick=()=>$('.nav button[data-view="dashboard"]')?.click();top.insertAdjacentElement('afterend',banner);}
+    banner.classList.toggle('critical',exhausted);
+    banner.textContent=exhausted?'الرصيد انتهى — تم إيقاف العمليات. افتح الداشبورد وأرسل إثبات تحويل لشحن المحفظة.':'تنبيه: رصيدك قرب يخلص ('+money(balance,a.currency)+'). اشحن المحفظة قبل توقف العمليات.';
+  }
   async function submitTopup(panel){
     const amountInput=$('#sub127Amount',panel),phoneInput=$('#sub127Phone',panel),proofInput=$('#sub127Proof',panel),button=$('#sub127Submit',panel);
     const amount=Number(amountInput?.value||state.topupDraft.amount||0),phone=String(phoneInput?.value||state.topupDraft.phone||'').trim(),file=proofInput?.files?.[0]||state.topupDraft.file;
@@ -101,13 +124,14 @@
       if(amountInput)amountInput.value='';if(proofInput)proofInput.value='';
       const proofName=$('#sub127ProofName',panel);if(proofName)proofName.textContent='';
       await refreshAccess(true);
+      await refreshTopupHistory(true);
     }finally{button.disabled=false;button.textContent='إرسال طلب الشحن';}
   }
 
   function clientPanelHtml(a){
     const trial=a?.trialActive,locked=a?.locked,cls=locked?'locked':trial?'trial':'',badge=statusText(a),currency=a?.currency||'EGP';
-    const description=locked?`${esc(reasonText(a))}. راجع إدارة الحساب لإعادة التفعيل.`:trial?`الفترة المجانية فعالة حتى ${esc(a.trialEndsAt||'—')} ولا يتم خلالها خصم رسوم شهرية أو رسوم على الأوردرات.`:a?.balanceEmpty?'الرصيد يحتاج شحن، لكن كل أقسام النظام تظل متاحة. العمليات التي تتطلب خصمًا قد تنتظر حتى يتم شحن الرصيد.':'متابعة الرصيد ورسوم التشغيل الحالية.';
-    return `<section class="sub127-client-panel ${cls}" data-sub127-client-panel="1"><div class="sub127-client-head"><div><h3 data-sub127-client-title>${locked?'استكمال تشغيل Kun Online':'الاشتراك والرصيد'}</h3><p data-sub127-client-description>${description}</p></div><span class="sub127-badge" data-sub127-client-badge>${esc(badge)}</span></div><div class="sub127-kpis"><div class="sub127-kpi"><span>الرصيد الحالي</span><b data-sub127-client-balance>${money(a?.balance,currency)}</b></div><div class="sub127-kpi"><span>الحد الأدنى الشهري</span><b data-sub127-client-monthly>${trial?'مجانًا':money(a?.monthlyMinimum,currency)}</b></div><div class="sub127-kpi"><span>رسوم كل أوردر</span><b data-sub127-client-order-fee>${trial?'مجانًا':money(a?.orderFee,currency)}</b></div><div class="sub127-kpi"><span>الحالة</span><b data-sub127-client-status>${esc(badge)}</b></div></div><div class="sub127-topup"><label>المبلغ المحوّل<input class="input" id="sub127Amount" type="number" min="1" step="0.01" placeholder="مثال: 500" value="${esc(state.topupDraft.amount)}"></label><label>رقم الهاتف المحوّل منه<input class="input" id="sub127Phone" type="tel" placeholder="01xxxxxxxxx" value="${esc(state.topupDraft.phone)}"></label><label>صورة إثبات التحويل<input class="input" id="sub127Proof" type="file" accept="image/*"><span class="meta" id="sub127ProofName">${esc(state.topupDraft.fileName)}</span></label><button class="btn primary" id="sub127Submit" type="button">إرسال طلب الشحن</button></div><div class="sub127-note">بعد الإرسال يظهر الطلب لدى الإدارة في قسم «الاشتراكات». عند اعتماد التحويل يُضاف الرصيد فورًا، بينما تظل أقسام النظام متاحة أثناء انتظار الشحن.</div></section>`;
+    const description=locked?`${esc(reasonText(a))}${a.reason==='balance_empty'?' أرسل إثبات التحويل من النموذج التالي.':' راجع إدارة الحساب لإعادة التفعيل.'}`:trial?`الفترة المجانية فعالة حتى ${esc(a.trialEndsAt||'—')} ولا يتم خلالها خصم رسوم شهرية أو رسوم على الأوردرات.`:a?.balanceEmpty?'الرصيد يحتاج شحن. تأكد من متابعة حالة المحفظة من الإدارة.':'متابعة الرصيد ورسوم التشغيل الحالية.';
+    return `<section class="sub127-client-panel ${cls}" data-sub127-client-panel="1"><div class="sub127-client-head"><div><h3 data-sub127-client-title>${locked?'استكمال تشغيل Kun Online':'الاشتراك والرصيد'}</h3><p data-sub127-client-description>${description}</p></div><span class="sub127-badge" data-sub127-client-badge>${esc(badge)}</span></div><div class="sub127-kpis"><div class="sub127-kpi"><span>الرصيد الحالي</span><b data-sub127-client-balance>${money(a?.balance,currency)}</b></div><div class="sub127-kpi"><span>الحد الأدنى الشهري</span><b data-sub127-client-monthly>${trial?'مجانًا':money(a?.monthlyMinimum,currency)}</b></div><div class="sub127-kpi"><span>رسوم كل أوردر</span><b data-sub127-client-order-fee>${trial?'مجانًا':money(a?.orderFee,currency)}</b></div><div class="sub127-kpi"><span>الحالة</span><b data-sub127-client-status>${esc(badge)}</b></div></div><div class="sub127-topup"><label>المبلغ المحوّل<input class="input" id="sub127Amount" type="number" min="1" step="0.01" placeholder="مثال: 500" value="${esc(state.topupDraft.amount)}"></label><label>رقم الهاتف المحوّل منه<input class="input" id="sub127Phone" type="tel" placeholder="01xxxxxxxxx" value="${esc(state.topupDraft.phone)}"></label><label>صورة إثبات التحويل<input class="input" id="sub127Proof" type="file" accept="image/*"><span class="meta" id="sub127ProofName">${esc(state.topupDraft.fileName)}</span></label><button class="btn primary" id="sub127Submit" type="button">إرسال طلب الشحن</button></div><div class="sub127-note">بعد الإرسال يظهر الطلب لدى الإدارة في قسم «الاشتراكات». عند اعتماد التحويل يُضاف الرصيد فورًا، والعمليات المدفوعة تظل موقوفة حتى يصبح الرصيد موجبًا.</div><div id="sub127PaymentHistory" class="sub127-pay-status">${topupHistoryHtml()}</div></section>`;
   }
 
   function patchClientPanel(panel,a){
@@ -116,13 +140,14 @@
     panel.classList.toggle('locked',Boolean(locked));panel.classList.toggle('trial',Boolean(!locked&&trial));
     const title=$('[data-sub127-client-title]',panel),description=$('[data-sub127-client-description]',panel),badgeEl=$('[data-sub127-client-badge]',panel);
     if(title)title.textContent=locked?'استكمال تشغيل Kun Online':'الاشتراك والرصيد';
-    if(description)description.textContent=locked?`${reasonText(a)}. راجع إدارة الحساب لإعادة التفعيل.`:trial?`الفترة المجانية فعالة حتى ${a.trialEndsAt||'—'} ولا يتم خلالها خصم رسوم شهرية أو رسوم على الأوردرات.`:a?.balanceEmpty?'الرصيد يحتاج شحن، لكن كل أقسام النظام تظل متاحة. العمليات التي تتطلب خصمًا قد تنتظر حتى يتم شحن الرصيد.':'متابعة الرصيد ورسوم التشغيل الحالية.';
+    if(description)description.textContent=locked?`${reasonText(a)}${a.reason==='balance_empty'?' أرسل إثبات التحويل من النموذج التالي.':' راجع إدارة الحساب لإعادة التفعيل.'}`:trial?`الفترة المجانية فعالة حتى ${a.trialEndsAt||'—'} ولا يتم خلالها خصم رسوم شهرية أو رسوم على الأوردرات.`:a?.balanceEmpty?'الرصيد يحتاج شحن. تأكد من متابعة حالة المحفظة من الإدارة.':'متابعة الرصيد ورسوم التشغيل الحالية.';
     if(badgeEl)badgeEl.textContent=badge;
     const balance=$('[data-sub127-client-balance]',panel),monthly=$('[data-sub127-client-monthly]',panel),fee=$('[data-sub127-client-order-fee]',panel),status=$('[data-sub127-client-status]',panel);
     if(balance)balance.textContent=money(a?.balance,currency);
     if(monthly)monthly.textContent=trial?'مجانًا':money(a?.monthlyMinimum,currency);
     if(fee)fee.textContent=trial?'مجانًا':money(a?.orderFee,currency);
     if(status)status.textContent=badge;
+    const history=$('#sub127PaymentHistory',panel);if(history)history.innerHTML=topupHistoryHtml();
   }
 
   function bindClientPanel(panel){
@@ -138,7 +163,7 @@
 
   function ensureClientPanel(){
     if(!state.me?.clientId||state.me.role==='admin'||!state.access)return;
-    const dashboard=$('.v33-dashboard');if(!dashboard)return;
+    const dashboard=$('.v33-dashboard')||($('.nav button.active[data-view="dashboard"]')?$('#root'):null);if(!dashboard)return;
     let panel=$('[data-sub127-client-panel]',dashboard);
     if(!panel){
       const html=clientPanelHtml(state.access),hero=$('.dash-hero',dashboard);
@@ -154,9 +179,13 @@
       const wasLocked=state.locked,a=await api('/api/subscription/access');state.access=a;state.locked=Boolean(a.locked);
       if(state.locked)lockNav();
       else await restoreNav({reloadPermissions:wasLocked||!window.KunPermissionNavigationV51?.snapshot?.role});
-      ensureClientPanel();
+      ensureClientPanel();updateBalanceBanner(a);
+      if(force||Date.now()-state.topupHistoryAt>=30000)await refreshTopupHistory(force);
+      const limit=Math.max(100,(Number(a.orderFee)||0)*10),notice=a.reason==='balance_empty'?'empty':!a.locked&&!a.trialActive&&a.subscriptionStatus!=='unmanaged'&&a.balance>0&&a.balance<=limit?'low':'';
+      if(notice&&notice!==state.lastNotice)window.showToast?.(notice==='empty'?'الرصيد انتهى — العمليات موقوفة حتى شحن المحفظة':'تنبيه: رصيد المحفظة قرب يخلص');
+      state.lastNotice=notice;
       if(wasLocked&&!state.locked)window.showToast?.('تم إعادة تفعيل الحساب وكل الأقسام تلقائيًا');
-      else if(force)window.showToast?.(a.locked?'الحساب ما زال موقوفًا':a.balanceEmpty?'الرصيد ما زال يحتاج شحن — الأقسام متاحة':'تم تحديث حالة الرصيد');
+      else if(force)window.showToast?.(a.locked?'الحساب ما زال موقوفًا':a.balanceEmpty?'الرصيد انتهى — اشحن المحفظة لإعادة التفعيل':'تم تحديث حالة الرصيد');
       return a;
     }catch(error){console.warn('subscription access unavailable',error);return null;}
   }
@@ -327,7 +356,7 @@
       state.adminClients=Array.isArray(subs.clients)?subs.clients:[];
       state.topups=Array.isArray(topups)?topups:(Array.isArray(topups?.items)?topups.items:(Array.isArray(topups?.results)?topups.results:[]));
       const topupWarning=topupsResult.status==='rejected'?'<div class="insight warn">تم تحميل العملاء، لكن تعذر تحميل الدفعات المعلقة. اضغط تحديث للمحاولة مرة أخرى.</div>':'';
-      const locked=state.adminClients.filter(x=>x.locked).length,trials=state.adminClients.filter(x=>x.trialActive).length,pending=state.topups.length;
+      const locked=state.adminClients.filter(x=>x.reason==='balance_empty').length,trials=state.adminClients.filter(x=>x.trialActive).length,pending=state.topups.length;
       root.dataset.sub127Admin='ready';root.innerHTML=`<div class="sub127-admin">${topupWarning}<div class="page-head sub127-admin-head"><div><div class="title">الاشتراكات</div><div class="sub">إدارة الشهر المجاني، الحد الأدنى الشهري، رسوم الأوردرات، الرصيد، واعتماد تحويلات العملاء.</div></div><div class="spacer"></div><button class="btn soft" id="sub127ReconcileAll">فحص الدورة الشهرية</button></div><div class="grid kpis sub127-summary"><div class="card"><div class="k-label">العملاء</div><div class="k-val small">${num(state.adminClients.length)}</div></div><div class="card"><div class="k-label">متوقفون بسبب الرصيد</div><div class="k-val small">${num(locked)}</div></div><div class="card"><div class="k-label">شهر مجاني فعال</div><div class="k-val small">${num(trials)}</div></div><div class="card"><div class="k-label">دفعات تنتظر المراجعة</div><div class="k-val small">${num(pending)}</div></div></div><section class="card"><div class="sub127-toolbar"><input class="input" id="sub127Search" placeholder="ابحث باسم العميل أو البريد أو Client ID"><span class="meta" id="sub127Count">${num(state.adminClients.length)} عميل</span></div><div class="sub127-table-wrap mt"><table class="sub127-table"><thead><tr><th>العميل</th><th>الحالة</th><th>الرصيد</th><th>الحد الشهري</th><th>رسوم الأوردر</th><th>نهاية المجاني</th><th>دفعات معلقة</th><th></th></tr></thead><tbody>${state.adminClients.map(adminRow).join('')||'<tr><td colspan="8" class="empty">لا يوجد عملاء.</td></tr>'}</tbody></table></div></section><section class="card"><h3>الدفعات الجديدة من العملاء</h3><div class="meta">راجع صورة التحويل ثم اضغط اعتماد؛ يمكنك تعديل المبلغ الذي سيُضاف للرصيد قبل التأكيد، ويُشحن حساب العميل فورًا.</div><div class="mt">${state.topups.map(paymentRow).join('')||'<div class="empty">لا توجد دفعات جديدة تنتظر المراجعة.</div>'}</div></section></div>`;
       $$('[data-sub127-manage]',root).forEach(b=>b.onclick=()=>openManage(b.dataset.sub127Manage));
       $$('[data-sub127-view-payment]',root).forEach(b=>b.onclick=()=>openPaymentProof(b.dataset.sub127ViewPayment));
@@ -369,7 +398,7 @@
       const response=await nativeFetch(...args);
       try{
         const input=args[0],url=typeof input==='string'?input:input?.url||'',parsed=new URL(url,location.origin),method=String(args[1]?.method||input?.method||'GET').toUpperCase();
-        if(response.status===402)response.clone().json().then(data=>{if(['SUBSCRIPTION_ACCESS_PAUSED','SUBSCRIPTION_BALANCE_REQUIRED'].includes(data?.code)&&data.access){state.access=data.access;state.locked=true;lockNav();ensureClientPanel();}}).catch(()=>{});
+        if(response.status===402)response.clone().json().then(data=>{if(['SUBSCRIPTION_ACCESS_PAUSED','SUBSCRIPTION_BALANCE_REQUIRED'].includes(data?.code)&&data.access){state.access=data.access;state.locked=true;lockNav();ensureClientPanel();updateBalanceBanner(data.access);}}).catch(()=>{});
         if(method==='POST'&&(parsed.pathname==='/api/orders'||parsed.pathname==='/api/wa-order'||parsed.pathname==='/api/orders/bulk')){
           setTimeout(()=>refreshAccess(false),800);setTimeout(()=>refreshAccess(false),2500);
         }
