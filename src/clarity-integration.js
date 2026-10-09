@@ -187,7 +187,7 @@ export async function insights(env,clientId,storeId){
   };
   const latest=snapshots[0]?unpack(snapshots[0]):null;
   return {ok:true,status:publicStatus(row),latest,
-    history:snapshots.map(s=>({syncedAt:s.synced_at,campaignSessions:unpack(s).metrics.totals.sessions})),
+    history:snapshots.map(s=>{const metric=parse(s.campaign_json).find(x=>String(x.name||x.metricName).toLowerCase()==='traffic');return {syncedAt:s.synced_at,campaignSessions:(metric?.information||[]).reduce((sum,r)=>sum+(Number(r.totalSessionCount)||0),0)};}),
     historyNote:'عينات 24 ساعة متحركة ومتداخلة بتوقيت UTC؛ لا تُجمع عينات التاريخ كأيام مستقلة.'};
 }
 async function growthReport(env,clientId,storeId){
