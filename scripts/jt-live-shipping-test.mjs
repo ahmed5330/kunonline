@@ -88,7 +88,7 @@ assert.ok(printBlock.includes("if(!awb){"),'Existing AWB must skip shipment crea
 assert.ok(printingRoute.includes("url.pathname!=='/api/printing'")&&printingRoute.includes("const states=['confirmed','preparing','shipped']"),'Production must expose confirmed orders through the dedicated Printing queue');
 assert.ok(printingRoute.includes("order.state!=='shipped'||order.queuedForPrint||order.printed"),'Unrelated shipped orders must stay out of Printing');
 assert.ok(production.includes("const PRINTING_STATES=new Set(['confirmed','preparing'])")&&production.includes('routeConfirmedOrdersToPrinting'),'Confirmed orders must be removed from Customer Service responses and routed to Printing');
-for(const marker of ['modules-v78-jt-shipping-order.js?v=78.5','modules-v79-printing.js?v=79.8','modules-v116-print-routing.js?v=116.0'])assert.ok(production.includes(marker),`Production must load/cache-bust ${marker}`);
+for(const marker of ['modules-v78-jt-shipping-order.js?v=78.5','modules-v79-printing.js?v=79.9','modules-v116-print-routing.js?v=116.0'])assert.ok(production.includes(marker),`Production must load/cache-bust ${marker}`);
 
 assert.ok(ui.includes('الإرسال الحقيقي وإنشاء AWB يتمان فقط')&&ui.includes('قسم الطباعة'),'J&T editor must explain that external sending belongs to Printing');
 assert.ok(ui.includes("version:'78.5'"),'J&T editor runtime must be v78.5');
@@ -96,7 +96,7 @@ assert.ok(!ui.includes("moveState?.(orderId,'shipped')"),'J&T data preparation m
 assert.ok(printingUi.includes('/api/printing?clientId='),'Printing UI must load the dedicated queue');
 assert.ok(printingUi.includes('إرسال إلى J&T وطباعة البوليصة'),'Printing UI must own the external carrier handoff');
 assert.ok(printingUi.includes('/api/jt/shipments/${encodeURIComponent(o.id)}')&&printingUi.includes('/api/jt/shipments/${encodeURIComponent(id)}/print'),'Printing must stage local data then perform governed J&T create/print');
-assert.ok(printingUi.includes("version:'79.8'"),'Printing runtime must be v79.8');
+assert.ok(printingUi.includes("version:'79.9'"),'Printing runtime must be v79.9');
 assert.ok(printingRouting.includes("new Set(['confirmed','preparing'])")&&printingRouting.includes('تم تأكيد الأوردر ونقله تلقائيًا إلى قسم الطباعة'),'Web Customer Service must immediately hand confirmed orders to Printing');
 assert.ok(!printingUi.includes('window.print')&&!printingUi.includes('fallbackPrint'),'Official carrier label must have no browser-generated fallback');
 
