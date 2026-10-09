@@ -189,7 +189,8 @@ jobs:
 
       - name: Live real Workers AI competitor analysis (synthetic QA store only)
         id: competitor_ai_live
-        if: steps.worker_ownership.outputs.is_current == 'true' && steps.smoke.outcome == 'success'
+        # Independent of the unrelated UI smoke outcome; both gates remain mandatory in qa_summary.
+        if: steps.worker_ownership.outputs.is_current == 'true'
         continue-on-error: true
         run: node scripts/live-preview-competitor-ai-test.mjs https://kunonline-preview.mr-a-mnaa.workers.dev
 
