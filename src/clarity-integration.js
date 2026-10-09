@@ -42,6 +42,7 @@ export function clarityMetrics(raw){
 }
 async function schema(env){
   await env.DB.prepare("CREATE TABLE IF NOT EXISTS clarity_connections (client_id TEXT NOT NULL,store_id TEXT NOT NULL,project_id TEXT NOT NULL,token_ciphertext_b64 TEXT,token_iv_b64 TEXT,status TEXT NOT NULL DEFAULT 'configured',last_sync_at TEXT,last_error TEXT,quota_day TEXT,quota_count INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,PRIMARY KEY(client_id,store_id))").run();
+  await env.DB.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_clarity_project_unique ON clarity_connections(project_id)").run();
   await env.DB.prepare("CREATE TABLE IF NOT EXISTS clarity_snapshots (client_id TEXT NOT NULL,store_id TEXT NOT NULL,synced_at TEXT NOT NULL,project_id TEXT NOT NULL,campaign_json TEXT NOT NULL,device_json TEXT NOT NULL,PRIMARY KEY(client_id,store_id,synced_at))").run();
 }
 async function rowFor(env,clientId,storeId){
@@ -50,12 +51,12 @@ async function rowFor(env,clientId,storeId){
 function publicStatus(row){
   return {configured:!!row,projectId:row?.project_id||null,hasApiToken:!!row?.token_ciphertext_b64,status:row?.status||'disconnected',lastSyncAt:row?.last_sync_at||null,lastError:row?.last_error||null,quotaUsedToday:row?.quota_day===today()?Number(row?.quota_count||0):0,quotaBudget:8,trackingVerified:false,trackingNote:'التحقق من API لا يثبت تثبيت كود التتبع على المتجر. راجع Live Sessions من لوحة Clarity.'};
 }
-async function userScope(request,env,ctx,delegate,body,write=false){
+async function userScope(request,env,ctx,delegate,body,write=false,resource='integrations'){
   const url=new URL(request.url);url.pathname='/api/me';url.search='';
   const meRes=await delegate.fetch(new Request(url,{method:'GET',headers:request.headers}),env,ctx);
   const me=await meRes.json().catch(()=>({}));
   if(!meRes.ok||!me?.role)throw err('سجل دخولك أولاً',401,'AUTH_REQUIRED');
-  requirePermission(me,write?'integrations':'analytics',write?'write':'read');
+  requirePermission(me,resource,write?'write':'read');
   const params=new URL(request.url).searchParams;
   const clientId=resolveTenant(me,body?.clientId||params.get('clientId')||null);
   const storeId=clean(body?.storeId||params.get('storeId'));
@@ -110,6 +111,8 @@ async function saveConnection(env,clientId,storeId,body){
   const projectId=clarityProjectId(body.projectId||body.script||'');
   const existing=await rowFor(env,clientId,storeId);
   const projectChanged=!!existing&&existing.project_id!==projectId;
+  const claimed=await env.DB.prepare("SELECT client_id,store_id FROM clarity_connections WHERE project_id=? AND NOT (client_id=? AND store_id=?) LIMIT 1").bind(projectId,clientId,storeId).first();
+  if(claimed)throw err('مشروع Clarity ده مربوط بمتجر آخر؛ أنشئ مشروعًا مستقلاً لكل متجر',409,'CLARITY_PROJECT_IN_USE');
   const token=clean(body.apiToken);
   if(token.length>4096)throw err('API Token طويل بصورة غير معتادة');
   let encrypted=null;
@@ -141,7 +144,7 @@ export async function handleClarityApi({request,env,ctx,delegate}){
     const body=method==='POST'?await request.clone().json().catch(()=>({})):{};
     const action=path.slice('/api/clarity/'.length);
     const write=(action==='connect'||action==='sync'||action==='disconnect');
-    const {clientId,storeId}=await userScope(request,env,ctx,delegate,body,write);
+    const {clientId,storeId}=await userScope(request,env,ctx,delegate,body,write,action==='insights'?'analytics':'integrations');
     await schema(env);
     if(action==='status'&&method==='GET')return json({ok:true,...publicStatus(await rowFor(env,clientId,storeId))});
     if(action==='connect'&&method==='POST')return json({ok:true,...await saveConnection(env,clientId,storeId,body)});
