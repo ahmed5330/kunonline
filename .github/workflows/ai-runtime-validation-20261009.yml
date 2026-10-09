@@ -8,6 +8,7 @@ permissions:
 jobs:
   model-inference:
     runs-on: ubuntu-latest
+    environment: preview
     timeout-minutes: 5
     env:
       CF_ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
