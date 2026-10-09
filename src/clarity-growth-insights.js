@@ -127,7 +127,8 @@ export function reportFromCapture({campaign=[],pages=[],technology=[],legacyDevi
   const untagged=count.filter(x=>!safe(x.Campaign)||/^(غير محدد|\(not set\)|not set|undefined)$/i.test(safe(x.Campaign))).reduce((n,x)=>n+number(x.totalSessionCount),0);
   const facebook=count.filter(x=>META_SOURCE.test(safe(x.Source))).reduce((n,x)=>n+number(x.totalSessionCount),0);
   const unknownSource=count.filter(x=>!safe(x.Source)||/^(غير محدد|\(not set\)|not set|undefined)$/i.test(safe(x.Source))).reduce((n,x)=>n+number(x.totalSessionCount),0);
-  const coverage={sessions:totals.sessions,untaggedSessions:untagged,taggedSessions:Math.max(0,totals.sessions-untagged),metaSourceSessions:facebook,unknownSourceSessions:unknownSource,taggedRate:totals.sessions?Number((100*(totals.sessions-untagged)/totals.sessions).toFixed(2)):null,unknownSourceRate:totals.sessions?Number((100*unknownSource/totals.sessions).toFixed(2)):null};
+  const metaWithoutCampaign=count.filter(x=>META_SOURCE.test(safe(x.Source))&&(!safe(x.Campaign)||/^(غير محدد|\(not set\)|not set|undefined)$/i.test(safe(x.Campaign)))).reduce((n,x)=>n+number(x.totalSessionCount),0);
+  const coverage={sessions:totals.sessions,untaggedSessions:untagged,taggedSessions:Math.max(0,totals.sessions-untagged),metaSourceSessions:facebook,metaWithoutCampaignSessions:metaWithoutCampaign,unknownSourceSessions:unknownSource,taggedRate:totals.sessions?Number((100*(totals.sessions-untagged)/totals.sessions).toFixed(2)):null,unknownSourceRate:totals.sessions?Number((100*unknownSource/totals.sessions).toFixed(2)):null,metaUntaggedRate:facebook?Number((100*metaWithoutCampaign/facebook).toFixed(2)):null};
   const depth=new Map(segmentAverage(capture.pages,'URL','ScrollDepth','averageScrollDepth').map(r=>[r.name,r.average]));
   const engagement=new Map(segmentAverage(capture.pages,'URL','EngagementTime','averageEngagementTime').map(r=>[r.name,r.average]));
   const pageRage=new Map(segmentMetric(capture.pages,'URL','RageClickCount').map(r=>[r.name,r.rate]));
@@ -163,6 +164,8 @@ export function mergeMetaWithClarity(report,meta){
       claritySessions:c?.sessions??null,metaSourceSessions:c?.paidSessions??null,rageRate:c?.RageClickCount??null,deadRate:c?.DeadClickCount??null,scriptErrorRate:c?.ScriptErrorCount??null,quickbackRate:c?.QuickbackClick??null};
   });
   const recommendations=[];
+  const cov=report?.coverage||{};
+  if(cov.metaWithoutCampaignSessions>0)recommendations.push({priority:'high',category:'utm_health',title:'زيارات إعلانات Meta بلا اسم حملة واضح',detail:'ظهر '+cov.metaWithoutCampaignSessions+' جلسات من مصدر Facebook/Instagram دون utm_campaign محدد داخل Clarity. أصلح روابط الإعلان والتتبع قبل تفسير انخفاض جودة هذه الحملات.'});
   const significant=rows.filter(r=>r.spend>0).sort((a,b)=>b.spend-a.spend);
   if(!meta?.connected){recommendations.push({priority:'info',category:'connections',title:'إعلانات Meta غير متصلة',detail:'ربط Meta Ads في التكاملات يضيف الإنفاق وأداء الحملة إلى إشارات Clarity.'});}
   for(const r of significant.slice(0,25)){
