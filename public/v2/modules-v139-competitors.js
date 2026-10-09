@@ -101,7 +101,7 @@ async function search(){
  try{const d=await api('/api/competitors/library-search',{country:value('country'),query:value('query'),pageId:value('page')});
  el('search-results').innerHTML=d.ads?.length?d.ads.map((a,i)=>'<div class="kc-item"><b>'+esc(a.name)+'</b>'+para(a.headline)+para(a.adCopy)+'<button data-kc-use="'+i+'">استخدم هذا الإعلان</button></div>').join(''):'لا توجد إعلانات في تغطية Meta الرسمية.';
  el('search-results').querySelectorAll('[data-kc-use]').forEach(b=>b.onclick=()=>{const a=d.ads[Number(b.dataset.kcUse)];el('name').value=a.name;el('url').value=a.adUrl||'';el('copy').value=a.adCopy;el('headline').value=a.headline;el('offer').value=a.offer;el('start').value=a.startDate||'';msg('تم إدراج نص الإعلان؛ أضف وصف الصورة أو الفيديو لو متاح.')});
- }catch(e){el('search-results').textContent=e.message;msg(e.message,true)}finally{searchAvailability()}
+ }catch(e){el('search-results').textContent=e.message;msg(e.message,true)}finally{el('search').disabled=false}
 }
 function open(){const root=form();refresh();el('name')?.focus();return root}
 function shortcut(){
