@@ -140,26 +140,28 @@
     return '<div class="cl135 cl135-section"><h3>مؤشرات تجربة العميل والأخطاء</h3><p class="cl135-small">قيم Clarity الأصلية بحسب الجهاز، بدون تحويل وحدات أو جمع نسب قد يكون غير صحيح. انتقل إلى لوحة Clarity لفهم الجلسات والصفحات التي سببت المشكلة.</p>'+
       table(rows.length?rows:['<tr><td colspan="3">لم يوفّر التصدير مقاييس تفصيلية للتفاعل بعد.</td></tr>'],['المؤشر','الجهاز','حقول Clarity المتاحة'])+'</div>';
   }
-  function campaignGrid(clarityRows,metaData){
+  function campaignGrid(clarityRows,metaData,friction=[]){
     const meta=Array.isArray(metaData?.campaigns)?metaData.campaigns:[];
     const byName=new Map(clarityRows.filter(r=>normalize(r.name)!=='غير محدد').map(r=>[normalize(r.name),r]));
+    const byFriction=new Map((friction||[]).map(x=>[normalize(x.campaign),x]));
     const seen=new Set();
     const list=meta.map(m=>{
       const key=normalize(m.name||m.campaignName);
       seen.add(key);
       const c=byName.get(key);
-      return {name:m.name||m.campaignName||'حملة بدون اسم',sessions:c?.sessions??null,spend:m.spend,metaOrders:m.platformPurchases,realOrders:m.realOrders,delivered:m.deliveredOrders,matched:!!c};
+      return {name:m.name||m.campaignName||'حملة بدون اسم',sessions:c?.sessions??null,spend:m.spend,metaOrders:m.platformPurchases,realOrders:m.realOrders,delivered:m.deliveredOrders,matched:!!c,friction:byFriction.get(key)||null};
     });
     for(const c of clarityRows){
       const key=normalize(c.name);
       if(seen.has(key))continue;
-      list.push({name:c.name,sessions:c.sessions,spend:null,metaOrders:null,realOrders:null,delivered:null,matched:false});
+      list.push({name:c.name,sessions:c.sessions,spend:null,metaOrders:null,realOrders:null,delivered:null,matched:false,friction:byFriction.get(key)||null});
     }
     list.sort((a,b)=>(Number(b.spend)||0)-(Number(a.spend)||0));
-    const cells=list.slice(0,50).map(x=>'<tr><td><b>'+esc(x.name)+'</b></td><td>'+esc(x.sessions===null?'—':number(x.sessions))+'</td><td>'+esc(x.spend==null?'—':money(x.spend))+'</td><td>'+esc(x.metaOrders==null?'—':number(x.metaOrders))+'</td><td>'+esc(x.realOrders==null?'—':number(x.realOrders))+'</td><td>'+esc(x.delivered==null?'—':number(x.delivered))+'</td><td>'+ (x.matched?'اسم الحملة مطابق':'غير مطابق / غير موجود')+'</td></tr>');
+    const rate=v=>v==null?'—':number(v)+'%';
+    const cells=list.slice(0,50).map(x=>'<tr><td><b>'+esc(x.name)+'</b></td><td>'+esc(x.sessions===null?'—':number(x.sessions))+'</td><td>'+esc(x.spend==null?'—':money(x.spend))+'</td><td>'+esc(x.metaOrders==null?'—':number(x.metaOrders))+'</td><td>'+esc(x.realOrders==null?'—':number(x.realOrders))+'</td><td>'+esc(x.delivered==null?'—':number(x.delivered))+'</td><td>'+rate(x.friction?.RageClickCount)+'</td><td>'+rate(x.friction?.DeadClickCount)+'</td><td>'+ (x.matched?'اسم الحملة مطابق':'غير مطابق / غير موجود')+'</td></tr>');
     return '<div class="cl135 cl135-section"><h3>مقارنة Meta Ads × Clarity × طلبات كن أونلاين</h3>'+
       '<div class="cl135-small">المطابقة بالاسم الدقيق فقط مع UTM Campaign؛ نوافذ Clarity (آخر 24 ساعة) وMeta (أيام تقويمية) مختلفة. الطلبات طبقًا لتقرير Meta/كن أونلاين ولا تعني إسناد طلب إلى جلسة Clarity. لا تُحسب ROAS من جلسات Clarity.</div>'+
-      table(cells.length?cells:['<tr><td colspan="7">لا توجد بيانات قابلة للمقارنة بعد.</td></tr>'],['الحملة','جلسات Clarity','إنفاق Meta','Meta Purchases','طلبات النظام','تم التسليم','المطابقة'])+'</div>';
+      table(cells.length?cells:['<tr><td colspan="9">لا توجد بيانات قابلة للمقارنة بعد.</td></tr>'],['الحملة','جلسات Clarity','إنفاق Meta','Meta Purchases','طلبات النظام','تم التسليم','Rage Click %','Dead Click %','المطابقة'])+'</div>';
   }
   function recommendations(info,meta){
     const rows=info?.latest?.campaigns||[];
@@ -200,7 +202,7 @@
       '<div class="cl135-kpis"><div class="cl135-kpi"><span>جلسات آخر 24 ساعة من Clarity</span><strong>'+number(sessions||totalCampaign)+'</strong></div><div class="cl135-kpi"><span>جلسات البوت</span><strong>'+number(bot)+'</strong></div><div class="cl135-kpi"><span>الحملات التي ظهر اسمها</span><strong>'+number(campaigns.filter(x=>x.name!=='غير محدد').length)+'</strong></div><div class="cl135-kpi"><span>حالة API</span><strong style="font-size:15px">'+esc(statusName(st))+'</strong></div></div>'+
       (!latest?'<div class="cl135 cl135-error">لم تُجلب بيانات بعد؛ ثبّت التتبع على المتجر واحفظ API Token في التكاملات، ثم اختبر الاتصال.</div>':'')+
       (meta.error?'<div class="cl135-small">Meta: '+esc(meta.error)+'</div>':'')+
-      campaignGrid(campaigns,meta)+trafficSection('مصادر الزيارات',sources)+trafficSection('أجهزة العملاء',devices)+behaviorSection(latest?.deviceMetrics||[])+
+      campaignGrid(campaigns,meta,latest?.campaignFriction||[])+trafficSection('مصادر الزيارات',sources)+trafficSection('أجهزة العملاء',devices)+behaviorSection(latest?.deviceMetrics||[])+
       '<div class="cl135 cl135-section"><h3>تاريخ عينات التحليلات</h3><div class="cl135-small">'+esc(info.historyNote||'')+'</div>'+
       table((info.history||[]).slice(0,15).map(h=>'<tr><td>'+esc(new Date(h.syncedAt).toLocaleString('ar-EG'))+'</td><td>'+number(h.campaignSessions)+'</td></tr>'),['وقت سحب عينة 24 ساعة','الجلسات في العينة'])+'</div>'+
       recommendations(info,meta)+
