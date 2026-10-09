@@ -123,6 +123,23 @@
     const items=rows.slice(0,15).map(r=>'<tr><td>'+esc(r.name)+'</td><td>'+number(r.sessions)+'<div class="cl135-bar"><span style="width:'+Math.max(1,Math.round(r.sessions/max*100))+'%"></span></div></td><td>'+number(r.botSessions)+'</td></tr>');
     return '<div class="cl135 cl135-section"><h3>'+esc(title)+'</h3>'+table(items.length?items:['<tr><td colspan="3">لا توجد بيانات مصنّفة حتى الآن.</td></tr>'],['التقسيم','الجلسات','جلسات البوت'])+'</div>';
   }
+  function behaviorSection(metrics){
+    const names={DeadClickCount:'النقرات غير الفعالة',RageClickCount:'النقرات المتكررة بغضب',ScrollDepth:'عمق التمرير',EngagementTime:'وقت التفاعل',QuickbackClick:'الرجوع السريع',ScriptErrorCount:'أخطاء السكربت',ErrorClickCount:'نقرات الأخطاء',ExcessiveScroll:'التمرير المفرط'};
+    const wanted=Object.keys(names);
+    const rows=[];
+    for(const metric of metrics||[]){
+      if(!wanted.includes(metric.name))continue;
+      for(const detail of (metric.information||[]).slice(0,20)){
+        const dimension=txt(detail.Device)||'عام';
+        const fields=['subTotal','sessionsWithMetricPercentage','averageScrollDepth','averageEngagementTime','averageScrollDepthPercentage','averageEngagementTimeInSeconds','sessionsCount'];
+        const values=fields.filter(k=>detail[k]!==undefined&&detail[k]!==null).map(k=>k+': '+detail[k]);
+        if(!values.length)continue;
+        rows.push('<tr><td>'+esc(names[metric.name])+'</td><td>'+esc(dimension)+'</td><td style="direction:ltr;text-align:left">'+esc(values.join(' · '))+'</td></tr>');
+      }
+    }
+    return '<div class="cl135 cl135-section"><h3>مؤشرات تجربة العميل والأخطاء</h3><p class="cl135-small">قيم Clarity الأصلية بحسب الجهاز، بدون تحويل وحدات أو جمع نسب قد يكون غير صحيح. انتقل إلى لوحة Clarity لفهم الجلسات والصفحات التي سببت المشكلة.</p>'+
+      table(rows.length?rows:['<tr><td colspan="3">لم يوفّر التصدير مقاييس تفصيلية للتفاعل بعد.</td></tr>'],['المؤشر','الجهاز','حقول Clarity المتاحة'])+'</div>';
+  }
   function campaignGrid(clarityRows,metaData){
     const meta=Array.isArray(metaData?.campaigns)?metaData.campaigns:[];
     const byName=new Map(clarityRows.filter(r=>normalize(r.name)!=='غير محدد').map(r=>[normalize(r.name),r]));
@@ -183,7 +200,7 @@
       '<div class="cl135-kpis"><div class="cl135-kpi"><span>جلسات آخر 24 ساعة من Clarity</span><strong>'+number(sessions||totalCampaign)+'</strong></div><div class="cl135-kpi"><span>جلسات البوت</span><strong>'+number(bot)+'</strong></div><div class="cl135-kpi"><span>الحملات التي ظهر اسمها</span><strong>'+number(campaigns.filter(x=>x.name!=='غير محدد').length)+'</strong></div><div class="cl135-kpi"><span>حالة API</span><strong style="font-size:15px">'+esc(statusName(st))+'</strong></div></div>'+
       (!latest?'<div class="cl135 cl135-error">لم تُجلب بيانات بعد؛ ثبّت التتبع على المتجر واحفظ API Token في التكاملات، ثم اختبر الاتصال.</div>':'')+
       (meta.error?'<div class="cl135-small">Meta: '+esc(meta.error)+'</div>':'')+
-      campaignGrid(campaigns,meta)+trafficSection('مصادر الزيارات',sources)+trafficSection('أجهزة العملاء',devices)+
+      campaignGrid(campaigns,meta)+trafficSection('مصادر الزيارات',sources)+trafficSection('أجهزة العملاء',devices)+behaviorSection(latest?.deviceMetrics||[])+
       '<div class="cl135 cl135-section"><h3>تاريخ عينات التحليلات</h3><div class="cl135-small">'+esc(info.historyNote||'')+'</div>'+
       table((info.history||[]).slice(0,15).map(h=>'<tr><td>'+esc(new Date(h.syncedAt).toLocaleString('ar-EG'))+'</td><td>'+number(h.campaignSessions)+'</td></tr>'),['وقت سحب عينة 24 ساعة','الجلسات في العينة'])+'</div>'+
       recommendations(info,meta)+
