@@ -1,4 +1,5 @@
-import app from './index-commerce-v38-base.js';
+import app,{SyncEntrypoint as BaseSyncEntrypoint} from './index-commerce-v38-base.js';
+import {handleClarityApi,syncClarityScheduled} from './clarity-integration.js';
 import safety from './index-commerce-v38-safety.js';
 import core from './index-commerce-v38-core.js';
 import {handleJtHistoryReconcile} from './jt-history-reconcile.js';
@@ -90,6 +91,8 @@ export default {
   async fetch(request,env,ctx){
     const rootRedirect=redirectLegacyRoot(request);
     if(rootRedirect)return rootRedirect;
+    const clarity=await handleClarityApi({request,env,ctx,delegate:app});
+    if(clarity)return clarity;
     const mobileUpdate=await handleMobileAppUpdate(request);
     if(mobileUpdate)return mobileUpdate;
     const subscription=await handleSubscriptionControl({request,env,ctx,delegate:app});
@@ -119,4 +122,14 @@ export default {
   }
 };
 
-export {SyncEntrypoint} from './index-commerce-v38-base.js';
+export class SyncEntrypoint extends BaseSyncEntrypoint {
+  async runCron(cron){
+    const upstream=await super.runCron(cron);
+    if(String(cron||'')==='0 */2 * * *'){
+      const clarity=await syncClarityScheduled(this.env,{limit:30}).catch(error=>({ok:false,code:error?.code||'CLARITY_SCHEDULED_FAILED'}));
+      return {...(upstream&&typeof upstream==='object'?upstream:{upstream}),clarity};
+    }
+    return upstream;
+  }
+  async health(){return {...await super.health(),clarity:'connected-store-snapshots-every-12h'};}
+}
