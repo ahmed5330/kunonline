@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {reportFromCapture,segmentTraffic,segmentMetric,mergeMetaWithClarity,METRIC_LABELS} from '../src/clarity-growth-insights.js';
+import {reportFromCapture,segmentTraffic,segmentMetric,mergeMetaWithClarity,METRIC_LABELS,sanitizeClarityExport} from '../src/clarity-growth-insights.js';
 
 const traffic=(information)=>({name:'Traffic',information});
 const campaign=[
@@ -24,7 +24,12 @@ const technology=[
 assert.equal(segmentTraffic(campaign,'Campaign')[0].sessions,30);
 assert.equal(segmentMetric(campaign,'Campaign','RageClickCount')[0].rate,30);
 assert.equal(segmentMetric(campaign,'Campaign','not-real').length,0);
-const report=reportFromCapture({campaign,pages,technology});
+const report=reportFromCapture({campaign,pages,technology,days:3});
+assert.equal(report.snapshotHours,72);
+assert.ok(report.limitations.some(x=>x.includes('72 ساعة')));
+assert.equal(report.coverage.metaSourceSessions,30);
+assert.equal(report.coverage.taggedRate,100);
+assert.equal(report.coverage.metaWithoutCampaignSessions,0);
 assert.equal(report.totals.sessions,35);
 assert.equal(report.totals.botSessions,3);
 assert.equal(report.dimensions.Campaign[0].name,'Paid Alpha');
@@ -38,6 +43,14 @@ assert.equal(report.dimensions.Channel[0].name,'Social');
 assert.equal(report.dimensions.URL[0].name,'test.example/products/red');
 assert.ok(!JSON.stringify(report).includes('test@example.com'));
 assert.ok(!JSON.stringify(report).includes('secret='));
+const scrubbed=sanitizeClarityExport([{name:'Traffic',information:[{URL:'https://example.test/checkout?phone=0101111&order=hidden#x',ReferrerURL:'https://ads.test/?token=secret',Source:'facebook',totalSessionCount:'1'}]}]);
+assert.equal(scrubbed[0].information[0].URL,'https://example.test/checkout');
+assert.equal(scrubbed[0].information[0].ReferrerURL,'https://ads.test/');
+assert.equal(scrubbed[0].information[0].Source,'facebook');
+assert.ok(!JSON.stringify(scrubbed).includes('hidden'));
+const missingTags=reportFromCapture({campaign:[traffic([{Campaign:'',Source:'fb_ads',totalSessionCount:8},{Campaign:'Other',Source:'google',totalSessionCount:2}])],days:2});
+assert.equal(missingTags.coverage.metaWithoutCampaignSessions,8);
+assert.equal(missingTags.coverage.metaUntaggedRate,100);
 assert.equal(report.campaigns[0].RageClickCount,30);
 assert.equal(report.campaigns[0].DeadClickCount,20);
 assert.equal(report.campaigns[0].paidSessions,30);
@@ -63,7 +76,7 @@ assert.equal(joined.campaigns[1].sourceStatus,'utm_missing');
 assert.equal(joined.campaigns[1].claritySessions,null);
 assert.ok(joined.recommendations.some(x=>x.category==='landing'&&x.title.includes('احتكاك'))===true);
 assert.ok(joined.recommendations.some(x=>x.category==='attribution'&&x.campaign==='Paid Beta'));
-assert.ok(joined.attributionWarning.includes('24 ساعة'));
+assert.ok(joined.attributionWarning.includes('72 ساعة'));
 assert.ok(report.limitations.some(x=>x.includes('متداخلة')));
 
 const frontend=readFileSync(new URL('../public/v2/modules-v136-clarity-growth.js',import.meta.url),'utf8');
@@ -73,10 +86,17 @@ const v135=readFileSync(new URL('../public/v2/modules-v135-clarity.js',import.me
 assert.ok(v135.includes('window.KunClarityGrowthV136'));
 assert.ok(!v135.includes("?.open('overview')||renderReport()"),'legacy report must not overwrite V136');
 const html=readFileSync(new URL('../public/v2/index.html',import.meta.url),'utf8');
-assert.ok(html.includes('modules-v136-clarity-growth.js'));
+assert.ok(html.includes('modules-v136-clarity-growth.js?v=137.0'));
+assert.ok(frontend.includes('cl136-days'));
+assert.ok(frontend.includes('جودة التتبع والربط'));
+assert.ok(frontend.includes('body:JSON.stringify({days:V.days})'));
+assert.ok(frontend.includes('growth?days='));
 const server=readFileSync(new URL('../src/clarity-integration.js',import.meta.url),'utf8');
 for(const d of ['Campaign','Source','Device','URL','Medium','Channel','Browser','OS','Country/Region'])assert.ok(server.includes("'"+d+"'"),d);
 assert.ok(server.includes('action===\'growth\''));
 assert.ok(server.includes('quota_count<=5'));
+assert.ok(server.includes('snapshotDays'));
+assert.ok(server.includes('sanitizeClarityExport'));
+assert.ok(server.includes("clarityGet(token,['URL','Medium','Channel'],days)"));
 assert.ok(server.includes('last_attempt_at'));
 console.log('Clarity V136 growth analytics contract tests passed');
