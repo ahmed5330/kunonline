@@ -22,10 +22,10 @@ export async function commerceBundleOptions(env,{clientId,storeId,providerId='ea
 }
 export function normalizeBundleChanges(raw,{selectedExternalIds,providerId,storeId}){
   if(raw===undefined||raw===null)return {};
-  assertScope({clientId:'validated-by-import-route',storeId,providerId});
   if(typeof raw!=='object'||Array.isArray(raw))fail('BUNDLE_INVALID_MAPPING','تنسيق مكونات الباندل غير صحيح');
   const entries=Object.entries(raw);
   if(!entries.length)return {};
+  assertScope({clientId:'validated-by-import-route',storeId,providerId});
   if(entries.length>60)fail('BUNDLE_TOO_MANY_CHANGES','حد أقصى 60 تعديلًا لمكونات الباندلز في العملية');
   const selected=new Set(selectedExternalIds.map(clean));
   const output=Object.create(null);
