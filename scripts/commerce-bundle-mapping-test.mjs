@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {normalizeBundleChanges,validateBundleChanges,saveBundleChange,commerceBundleOptions} from '../src/commerce-bundle-mapping.js';
 const products=new Map([['SKU-1',{id:'SKU-1',name:'نظارة',stock:15}],['SKU-2',{id:'SKU-2',name:'جراب',stock:8}],['BND-ID',{id:'BND-ID',name:'باكدج',stock:2}]]);
 const rows=new Map(),sqlLog=[];
-const env={DB:{prepare(sql){return{bind(...args){
+const env={DB:{prepare(sql){return{run(){sqlLog.push([sql,[]]);return Promise.resolve({success:true});},bind(...args){
  return {
    async run(){sqlLog.push([sql,args]);if(sql.startsWith('INSERT INTO commerce_bundle_mappings'))rows.set(args[3],{external_id:args[3],product_id:args[4],components_json:args[5],updated_at:args[6]});if(sql.startsWith('DELETE FROM commerce_bundle_mappings'))rows.delete(args[3]);return{success:true};},
    async first(){
