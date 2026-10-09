@@ -25,7 +25,7 @@ const V2_UI_SCRIPTS=[
   '<script src="/v2/modules-v124-dashboard-periods-province.js?v=124.0" data-kun-dashboard-periods-v124="1"></script>',
   '<script src="/v2/modules-v125-dashboard-section-periods.js?v=125.0" data-kun-dashboard-section-periods-v125="1"></script>',
   '<script src="/v2/modules-v126-dashboard-finance-top.js?v=126.0" data-kun-dashboard-finance-top-v126="1"></script>',
-  '<script src="/v2/modules-v127-subscriptions.js?v=127.16" data-kun-subscriptions-v127="1"></script>',
+  '<script src="/v2/modules-v127-subscriptions.js?v=127.17" data-kun-subscriptions-v127="1"></script>',
   '<script src="/v2/modules-v128-unit-tracking.js?v=128.4" data-kun-unit-tracking-v128="1"></script>'
 ].join('');
 const LIVE_TEAM_ASSET_FROM='/v2/modules-v117-team-collaboration.js?v=117.0';
@@ -93,16 +93,18 @@ export default {
   async fetch(request,env,ctx){
     const rootRedirect=redirectLegacyRoot(request);
     if(rootRedirect)return rootRedirect;
+    const mobileUpdate=await handleMobileAppUpdate(request);
+    if(mobileUpdate)return mobileUpdate;
+    // Billing enforcement must run before add-on APIs (AI, Clarity, competitors)
+    // so a paused/empty paid wallet cannot bypass the central 402 gate.
+    const subscription=await handleSubscriptionControl({request,env,ctx,delegate:app});
+    if(subscription)return subscription;
     const competitors=await handleCompetitorIntelligence({request,env,ctx,delegate:app});
     if(competitors)return competitors;
     const aiMarketing=await handleAIMarketing({request,env,ctx,delegate:app});
     if(aiMarketing)return aiMarketing;
     const clarity=await handleClarityApi({request,env,ctx,delegate:app});
     if(clarity)return clarity;
-    const mobileUpdate=await handleMobileAppUpdate(request);
-    if(mobileUpdate)return mobileUpdate;
-    const subscription=await handleSubscriptionControl({request,env,ctx,delegate:app});
-    if(subscription)return subscription;
     const unitTracking=await handleInventoryUnitTracking({request,env,ctx,delegate:app});
     if(unitTracking)return unitTracking;
     const periodBoard=await handleCustomerServicePeriodV111({request,env,ctx,delegate:app});
