@@ -155,6 +155,7 @@ const makeBillingEnv=({balance=0,walletStatus='active',subscriptionStatus='activ
         if(sql.includes('SELECT * FROM subscriptions'))return sub;
         if(sql.includes('SELECT created_at FROM audit_log'))return {created_at:'2026-01-01T00:00:00.000Z'};
         if(sql.includes('SELECT balance,status,currency FROM wallet_accounts'))return wallet;
+        if(sql.includes('FROM wallet_log WHERE client_id=? AND idempotency_key=?'))return null;
         throw new Error('Unexpected billing query: '+sql);
       }
     }}};
