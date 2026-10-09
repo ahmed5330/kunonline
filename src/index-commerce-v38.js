@@ -10,7 +10,6 @@ import {handleMobileAppUpdate} from './mobile-app-update.js';
 import {handleCustomerServicePeriodV111} from './customer-service-period-v111.js';
 import {handleInternalCollaborationV117} from './internal-collaboration-v117.js';
 import {handleCollaborationOrderInputV119} from './internal-collaboration-order-input-v119.js';
-import {runEasyOrdersStoreControl} from './easyorders-store-control.js';
 
 const V2_UI_SCRIPTS=[
   '<script src="/v2/modules-v105-customer-service-claim.js?v=105.2" data-kun-customer-service-claim="1"></script>',
@@ -101,8 +100,6 @@ void safety;
 void core;
 export default {
   async fetch(request,env,ctx){
-    const storeControl=await runEasyOrdersStoreControl({request,env,ctx,delegate:app});
-    if(storeControl)return storeControl;
     const rootRedirect=redirectLegacyRoot(request);
     if(rootRedirect)return rootRedirect;
     const mobileUpdate=await handleMobileAppUpdate(request);
