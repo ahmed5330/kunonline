@@ -111,11 +111,11 @@ export async function subscriptionAccess(env,clientId,{applyMonthly=true}={}){
   if(!subscription){
     const orderFee=await effectiveOrderFee(env,clientId),balance=round2(account.balance);
     const walletPaused=text(account.status)!=='active',emptyBalance=balance<=0;
-    // An empty wallet is a billing condition, not an application-access condition.
-    // Keep the client app readable/usable so customers can work, inspect data and
-    // recharge without being trapped behind a global 402 wall.
-    const locked=walletPaused;
-    const reason=walletPaused?'wallet_paused':null;
+    // Avoid locking legacy accounts whose unconfigured wallet starts at zero.
+    // An explicit v27 billed wallet must enforce its zero-balance restriction.
+    const billed=text(account.billing_version)==='v27';
+    const locked=walletPaused||(billed&&emptyBalance);
+    const reason=walletPaused?'wallet_paused':billed&&emptyBalance?'balance_empty':null;
     return {
       clientId,managed:false,locked,reason,balanceEmpty:emptyBalance,balance,currency:account.currency||'EGP',
       monthlyMinimum:0,orderFee,trialActive:false,trialEndsAt:null,subscriptionStatus:'unmanaged',
@@ -141,11 +141,9 @@ export async function subscriptionAccess(env,clientId,{applyMonthly=true}={}){
   const subscriptionPaused=['paused','cancelled','suspended'].includes(text(subscription.status));
   const emptyBalance=!inTrial&&round2(fresh.balance)<=0;
   const walletPaused=text(fresh.status)!=='active';
-  // Balance exhaustion must not lock the whole client application. Explicit
-  // administrative/subscription pauses remain access locks; per-order billing
-  // continues to enforce its own insufficient-balance rules.
-  const locked=subscriptionPaused||walletPaused;
-  const reason=subscriptionPaused?'subscription_paused':walletPaused?'wallet_paused':null;
+  // Enforce paid-wallet access at the server boundary. The free trial is exempt.
+  const locked=subscriptionPaused||walletPaused||emptyBalance;
+  const reason=subscriptionPaused?'subscription_paused':walletPaused?'wallet_paused':emptyBalance?'balance_empty':null;
   return {
     clientId,managed:true,locked,reason,balanceEmpty:emptyBalance,balance:round2(fresh.balance),currency:fresh.currency||subscription.currency||'EGP',
     monthlyMinimum,monthlyCharged:monthly.charged,monthlyDue:monthly.charged?0:monthlyMinimum,
@@ -312,8 +310,9 @@ export async function listSubscriptionsAdmin(env,{limit=500}={}){
     const managed=Boolean(row.sub_id);
     if(!managed){
       const emptyBalance=balance<=0,walletPaused=walletStatus!=='active';
-      const locked=walletPaused;
-      const reason=walletPaused?'wallet_paused':null;
+      const billed=text(row.billing_version)==='v27';
+      const locked=walletPaused||(billed&&emptyBalance);
+      const reason=walletPaused?'wallet_paused':billed&&emptyBalance?'balance_empty':null;
       return {
         clientId,name:row.display_name||row.owner_name||clientId,ownerName:row.owner_name||'',ownerEmail:row.owner_email||'',
         tenantStatus:row.tenant_status||'active',plan:row.tenant_plan||'legacy',
@@ -335,8 +334,8 @@ export async function listSubscriptionsAdmin(env,{limit=500}={}){
     const subscriptionPaused=['paused','cancelled','suspended'].includes(subscriptionStatus);
     const emptyBalance=!inTrial&&balance<=0;
     const walletPaused=walletStatus!=='active';
-    const locked=subscriptionPaused||walletPaused;
-    const reason=subscriptionPaused?'subscription_paused':walletPaused?'wallet_paused':null;
+    const locked=subscriptionPaused||walletPaused||emptyBalance;
+    const reason=subscriptionPaused?'subscription_paused':walletPaused?'wallet_paused':emptyBalance?'balance_empty':null;
     return {
       clientId,name:row.display_name||row.owner_name||clientId,ownerName:row.owner_name||'',ownerEmail:row.owner_email||'',
       tenantStatus:row.tenant_status||'active',plan:row.tenant_plan||row.sub_plan||'legacy',
