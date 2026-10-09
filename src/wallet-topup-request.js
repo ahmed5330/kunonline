@@ -21,7 +21,7 @@ export async function requestTopup(env,clientId,body,actor){
 }
 
 export async function listTopups(env,clientId,{status=null,limit=100}={}){
-  let sql='SELECT id,client_id,amount,currency,sender_phone,transfer_method,CASE WHEN COALESCE(proof_data_url,'')<>'' OR COALESCE(proof_url,'')<>'' THEN 1 ELSE 0 END has_proof,status,requested_by,requested_at,reviewed_by,reviewed_at,review_note FROM wallet_topup_requests WHERE client_id=?',binds=[clientId];
+  let sql=`SELECT id,client_id,amount,currency,sender_phone,transfer_method,CASE WHEN COALESCE(proof_data_url,'')<>'' OR COALESCE(proof_url,'')<>'' THEN 1 ELSE 0 END has_proof,status,requested_by,requested_at,reviewed_by,reviewed_at,review_note FROM wallet_topup_requests WHERE client_id=?`,binds=[clientId];
   if(status){sql+=' AND status=?';binds.push(status)}sql+=' ORDER BY requested_at DESC LIMIT ?';binds.push(Math.max(1,Math.min(300,Number(limit)||100)));
   const {results=[]}=await env.DB.prepare(sql).bind(...binds).all();return results;
 }
