@@ -91,11 +91,11 @@ function pages(d){
  const m=d.latest.metrics||{},dim=m.dimensions||{},details=m.pagesDetail||[];
  const cells=details.slice(0,100).map(p=>'<tr><td><b>'+esc(p.name)+'</b></td>'+
  '<td>'+n(p.sessions)+'</td><td>'+n(p.botSessions)+'</td><td>'+pct(p.scrollDepth)+'</td><td>'+n(p.engagementTime)+'</td><td>'+pct(p.rageRate)+'</td><td>'+pct(p.deadRate)+'</td></tr>');
- return '<div class="note warning">جلسات الصفحة ليست Funnel تحويلًا ولا زوارًا فريدين. أرقام متوسط التمرير والتفاعل تظهر فقط إن وفر Clarity القيم والأوزان اللازمة. لو المصدر غير كافٍ يظهر «—».</div>'+
+ return '<div class="note warning">لا تتوفر مطابقة مؤكدة بين حملة وصفحة URL من تجميعات التصدير الحالية؛ جلسات الصفحة ليست Funnel تحويلًا ولا زوارًا فريدين. أرقام متوسط التمرير والتفاعل تظهر فقط إن وفر Clarity القيم والأوزان اللازمة. لو المصدر غير كافٍ يظهر «—».</div>'+
  '<section class="box"><h3>تحليل صفحات الوصول وتجربة الشراء</h3>'+
  table(['صفحة URL','جلسات','بوت','Scroll Depth','Engagement Time','Rage %','Dead %'],cells)+'</section>'+
  '<div class="grid">'+breakdown('Medium',dim.Medium,45)+breakdown('Channel',dim.Channel,45)+'</div>'+
- '<section class="box"><h3>تحسين صفحة المنتج والـ Checkout</h3><p>راجع النقرات غير الفعالة والتمرير والتفاعل وأخطاء التحميل في صفحة وصول كل حملة، خاصة على الجوال. استخدم Funnel حقيقي من Clarity أو حدث شراء موثق؛ لا تستنتج نسبة تحويل من مشاهدات الصفحات.</p>'+
+ '<section class="box"><h3>تحسين صفحة المنتج والـ Checkout</h3><p>راجع النقرات غير الفعالة والتمرير والتفاعل وأخطاء التحميل في صفحات المنتج والشراء الأكثر زيارةً، خاصة على الجوال. استخدم Funnel حقيقي من Clarity أو حدث شراء موثق؛ لا تستنتج نسبة تحويل من مشاهدات الصفحات.</p>'+
  '<a class="action" href="https://clarity.microsoft.com/" target="_blank" rel="noopener noreferrer">التسجيلات والـ Heatmaps والـ Funnels ↗</a></section>';
 }
 function audience(d){
