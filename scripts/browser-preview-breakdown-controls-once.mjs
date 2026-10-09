@@ -42,7 +42,9 @@ try{
   await navigate(`${base}/v2/`);await waitFor(`document.querySelector('[data-view="campaigns"]')`,'Campaign navigation');
   const clicked=await evalJs(`(()=>{const b=document.querySelector('[data-view="campaigns"]');if(!b)return false;b.click();return true})()`);if(!clicked)throw new Error('Campaign navigation click failed');
   await waitFor(`!!window.KunCampaignHubV66&&!!window.KunBreakdownAnalysisV68&&!!window.KunBreakdownMeasurementsV70&&!!window.KunBreakdownControlsV71&&!!document.querySelector('.campaign66')`,'Campaign Hub v66 + Breakdown v68/v70/v71');
-  await waitFor(`(async()=>Boolean(await window.kunClientId?.()))()`,'Campaign client context');
+  // Wait for the shell's authoritative ready flag rather than awaiting kunClientId() inside CDP polling;
+  // the latter can leave Runtime.evaluate pending and stall Chrome's remote debugging connection.
+  await waitFor(`document.documentElement.dataset.clientContext==='ready'`,'Campaign client context');
 
   const adClicked=await evalJs(`(()=>{const b=document.querySelector('.campaign66 [data-campaign-section="ad"]');if(!b)return false;b.click();return true})()`);if(!adClicked)throw new Error('Ad workspace button missing');
   await waitFor(`!!document.getElementById('campaign66Breakdown')&&!!document.getElementById('campaign66BreakdownLoad')`,'Breakdown controls',30000);
