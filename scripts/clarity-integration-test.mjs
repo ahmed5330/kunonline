@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {clarityProjectId,clarityTraffic,clarityMetrics,handleClarityApi} from '../src/clarity-integration.js';
+import {clarityProjectId,clarityTraffic,clarityMetrics,clarityCampaignFriction,handleClarityApi} from '../src/clarity-integration.js';
 
 const tagId='pqr45ABC89';
 assert.equal(clarityProjectId(tagId),tagId);
@@ -19,6 +19,10 @@ assert.deepEqual(campaign.map(x=>[x.name,x.sessions,x.botSessions]),[['Launch A'
 assert.deepEqual(clarityTraffic(sample,'Source').map(x=>[x.name,x.sessions]),[['facebook',45],['instagram',5]]);
 assert.deepEqual(clarityTraffic(sample,'Device').map(x=>x.sessions),[35,15]);
 assert.equal(clarityMetrics(sample)[1].name,'RageClickCount');
+const friction=clarityCampaignFriction([{name:'RageClickCount',information:[{Campaign:'Launch A',sessionsCount:'10',sessionsWithMetricPercentage:60},{Campaign:'Launch A',sessionsCount:'30',sessionsWithMetricPercentage:20}]},{name:'DeadClickCount',information:[{Campaign:'Launch A',sessionsCount:'40',sessionsWithMetricPercentage:0}]}]);
+assert.equal(friction[0].RageClickCount,30);
+assert.equal(friction[0].DeadClickCount,0);
+assert.equal(friction[0].ScriptErrorCount,null);
 
 const unauthorized=await handleClarityApi({
   request:new Request('https://example.test/api/clarity/status?clientId=other&storeId=test'),
