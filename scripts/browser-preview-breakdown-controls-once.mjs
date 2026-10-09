@@ -34,8 +34,8 @@ try{
   // The browser fixture needs a real, authorized client context. Admin users without
   // a client_id can legitimately have no selected client, which made the test wait on
   // a ready flag that never appears and fail unrelated deployments.
-  const existingClients=await d1('SELECT id FROM clients ORDER BY id LIMIT 1');
-  const fixtureClientId=String(existingClients?.[0]?.id||'');
+  const existingClients=await d1('SELECT client_id FROM stores WHERE client_id IS NOT NULL AND status=? ORDER BY client_id LIMIT 1',['active']);
+  const fixtureClientId=String(existingClients?.[0]?.client_id||'');
   if(!fixtureClientId)throw new Error('Breakdown browser QA needs an existing Preview client');
   await d1('INSERT INTO users (id,email,name,password,role,client_id,status,created_at,last_login) VALUES (?,?,?,?,?,?,?,?,NULL)',[userId,email,'CI Breakdown Browser',await hashPassword(password),'admin',fixtureClientId,'active',createdAt]);
   cdp=await connect(await launch(await findChrome()));const exceptions=[],consoleErrors=[],serverErrors=[];
