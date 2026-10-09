@@ -4,7 +4,7 @@ import {resolveStoreScope} from './store-scope.js';
 import {growthReport} from './clarity-integration.js';
 import {safeMarketingFacts} from './ai-marketing-analyst.js';
 
-const MODEL='@cf/meta/llama-3.1-8b-instruct-fp8',MAX_REPORTS=3,MAX_SEARCHES=20;
+const MODEL='@cf/meta/llama-3.1-8b-instruct',MAX_REPORTS=3,MAX_SEARCHES=20;
 const EU_UK=new Set('AT BE BG HR CY CZ DK EE FI FR DE GR HU IE IT LV LT LU MT NL PL PT RO SK SI ES SE GB'.split(' '));
 const COUNTRIES=new Set(['EG','SA',...EU_UK]);
 const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
@@ -36,10 +36,41 @@ export function normalizeCompetitor(v){
     throw fail('أضف نص الإعلان أو وصف الكرياتيف أو العرض (25 حرف على الأقل). الرابط وحده لا يكشف المحتوى.',400,'COMPETITOR_EVIDENCE_REQUIRED');
   return x;
 }
+
+/* Official Cloudflare Workers AI JSON mode (the non-FP8 Llama 3.1 8B variant is supported).
+ * Small schema deliberately avoids requiring long freeform content from an 8B model.
+ */
+export const COMPETITOR_REPORT_SCHEMA={
+  type:'object',
+  properties:{
+    summary:{type:'string'},positioning:{type:'string'},
+    angles:{type:'array',minItems:1,maxItems:3,items:{type:'object',
+      properties:{angle:{type:'string'},evidence:{type:'string'},confidence:{type:'string',enum:['low','medium','high']}},
+      required:['angle','evidence','confidence']}},
+    hooks:{type:'array',maxItems:3,items:{type:'string'}},
+    offerAnalysis:{type:'string'},gaps:{type:'string'},comparison:{type:'string'},
+    tests:{type:'array',minItems:1,maxItems:2,items:{type:'object',
+      properties:{idea:{type:'string'},change:{type:'string'},metric:{type:'string'},risk:{type:'string'}},
+      required:['idea','change','metric','risk']}},
+    caveats:{type:'array',maxItems:3,items:{type:'string'}}
+  },
+  required:['summary','positioning','angles','hooks','offerAnalysis','gaps','comparison','tests','caveats']
+};
+
 export function parseCompetitorReport(raw){
-  const t=String(raw??'').trim();
-  let r;try{r=JSON.parse(t)}catch{const a=t.indexOf('{'),b=t.lastIndexOf('}');try{r=JSON.parse(t.slice(a,b+1))}catch{throw fail('استجابة AI غير صالحة',502,'COMPETITOR_AI_INVALID')}}
-  if(!r||!Array.isArray(r.angles)||!Array.isArray(r.tests)||!Array.isArray(r.caveats))throw fail('رد AI ناقص',502,'COMPETITOR_AI_INVALID');
+  // JSON mode can return a parsed object in Cloudflare's "response", not a text string.
+  const v=raw?.response??raw?.result?.response??raw;
+  let r=(v&&typeof v==='object'&&!Array.isArray(v))?v:null;
+  if(!r){
+    const t=String(v??'').trim();
+    try{r=JSON.parse(t)}catch{
+      const a=t.indexOf('{'),b=t.lastIndexOf('}');
+      if(a<0||b<=a)throw fail('رد نموذج AI ليس JSON صالحًا',502,'COMPETITOR_AI_INVALID');
+      try{r=JSON.parse(t.slice(a,b+1))}catch{throw fail('رد نموذج AI غير مكتمل',502,'COMPETITOR_AI_INVALID')}
+    }
+  }
+  if(!r||!Array.isArray(r.angles)||r.angles.length<1||!Array.isArray(r.tests)||r.tests.length<1)
+    throw fail('تقرير AI غير مكتمل',502,'COMPETITOR_AI_INVALID');
   const confidence=v=>['low','medium','high'].includes(v)?v:'low';
   return {summary:redact(r.summary,1400),positioning:redact(r.positioning,800),
     angles:part(r.angles,5).map(x=>({angle:redact(x.angle,240),evidence:redact(x.evidence,500),confidence:confidence(x.confidence)})),
@@ -77,13 +108,25 @@ async function auth(request,env,ctx,delegate,body={}){
 const used=async(env,c,s)=>Number((await env.DB.prepare('SELECT COUNT(*) n FROM competitor_analysis_reports WHERE client_id=? AND store_id=? AND usage_day=?').bind(c,s,today()).first())?.n||0);
 async function infer(env,competitor,mine){
   if(typeof env?.AI?.run!=='function')throw fail('Cloudflare Workers AI غير مفعل',503,'AI_NOT_CONFIGURED');
-  let response;
-  try{response=await env.AI.run(MODEL,{messages:[{role:'system',content:instructions},
-    {role:'user',content:JSON.stringify({competitor,ownStoreAggregates:mine,evidenceLimit:'Only merchant submitted text and description; no visual inspection.'}).slice(0,12500)}],temperature:0.2,max_tokens:1900})}
-  catch{throw fail('تعذر تشغيل نموذج AI الحقيقي',503,'COMPETITOR_AI_PROVIDER_ERROR')}
-  const output=typeof response==='string'?response:response?.response||response?.result?.response;
-  if(!output)throw fail('النموذج لم يرجع محتوى',502,'COMPETITOR_AI_EMPTY');
-  return parseCompetitorReport(output);
+  const evidence=JSON.stringify({competitor,ownStoreAggregates:mine,evidenceLimit:'Merchant-provided ad text/description only; no actual image or video inspection.'}).slice(0,11500);
+  let failure=null;
+  for(let attempt=0;attempt<2;attempt++){
+    try{
+      const format=attempt===0
+        ?{type:'json_schema',json_schema:COMPETITOR_REPORT_SCHEMA}
+        :{type:'json_object'};
+      const messages=[{role:'system',content:instructions+(attempt?'\nردّ ببنية JSON قصيرة جدًا لا تتجاوز زاويتين واختبارين، كل النصوص قصيرة ولا تستخدم تنسيق Markdown.':'')},
+        {role:'user',content:evidence}];
+      const response=await env.AI.run(MODEL,{messages,response_format:format,temperature:0.1,max_tokens:attempt?1600:2400});
+      const result=parseCompetitorReport(response);
+      if(!result.summary||!result.angles.some(x=>x.angle)||!result.tests.some(x=>x.idea))
+        throw fail('تقرير الذكاء الاصطناعي ناقص بيانات أساسية',502,'COMPETITOR_AI_INVALID');
+      return result;
+    }catch(error){failure=error;}
+  }
+  // Never present a template or rule output as a successful model result.
+  if(failure?.code==='COMPETITOR_AI_INVALID')throw failure;
+  throw fail('نموذج الذكاء الاصطناعي لم يرجع تقريرًا صالحًا بعد محاولتين',503,'COMPETITOR_AI_PROVIDER_ERROR');
 }
 async function ownFacts(env,c,s){
   try{const data=await growthReport(env,c,s,1);if(!data?.latest?.metrics)return null;
