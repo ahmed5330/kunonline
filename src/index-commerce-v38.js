@@ -1,5 +1,6 @@
 import app,{SyncEntrypoint as BaseSyncEntrypoint} from './index-commerce-v38-base.js';
 import {handleClarityApi,syncClarityScheduled} from './clarity-integration.js';
+import {handleAIMarketing} from './ai-marketing-analyst.js';
 import safety from './index-commerce-v38-safety.js';
 import core from './index-commerce-v38-core.js';
 import {requirePermission} from './access-control.js';
@@ -103,6 +104,8 @@ export default {
   async fetch(request,env,ctx){
     const rootRedirect=redirectLegacyRoot(request);
     if(rootRedirect)return rootRedirect;
+    const aiMarketing=await handleAIMarketing({request,env,ctx,delegate:app});
+    if(aiMarketing)return aiMarketing;
     const clarity=await handleClarityApi({request,env,ctx,delegate:app});
     if(clarity)return clarity;
     const mobileUpdate=await handleMobileAppUpdate(request);
