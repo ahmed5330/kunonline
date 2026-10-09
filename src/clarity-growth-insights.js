@@ -61,6 +61,22 @@ export function segmentMetric(raw,dim,metric){
   }
   return [...map.values()].map(r=>({name:r.name,sessions:r.count,rate:Number((r.weighted/r.count).toFixed(2))})).sort((a,b)=>b.sessions-a.sessions).slice(0,100);
 }
+export function segmentAverage(raw,dim,metric,field){
+  const map=new Map();
+  for(const row of items(raw,metric)){
+    const label=dim==='URL'?urlLabel(row.URL):(safe(row[dim])||'غير محدد');
+    const value=num(row[field]);
+    if(value===null)continue;
+    const sessions=num(row.sessionsCount);
+    const weight=sessions!==null&&sessions>0?sessions:1;
+    const state=map.get(label)||{name:label,total:0,weight:0,unweighted:0};
+    state.total+=value*weight;
+    state.weight+=weight;
+    if(sessions===null)state.unweighted++;
+    map.set(label,state);
+  }
+  return [...map.values()].map(r=>({name:r.name,average:r.unweighted>1?null:Math.round(r.total/r.weight*100)/100}));
+}
 const metricLimited=raw=>items(raw,'Traffic').length>=1000;
 function catalog(capture){
   const result=[];
@@ -87,6 +103,11 @@ export function reportFromCapture({campaign=[],pages=[],technology=[],legacyDevi
   const primary=items(capture.campaign,'Traffic'),legacyPrimary=legacy.length?items(legacy,'Traffic'):[];
   const count=primary.length?primary:legacyPrimary;
   const totals={sessions:count.reduce((a,b)=>a+number(b.totalSessionCount),0),botSessions:count.reduce((a,b)=>a+number(b.totalBotSessionCount),0),rowCount:count.length};
+  const depth=new Map(segmentAverage(capture.campaign,'URL','ScrollDepth','averageScrollDepth').map(r=>[r.name,r.average]));
+  const engagement=new Map(segmentAverage(capture.campaign,'URL','EngagementTime','averageEngagementTime').map(r=>[r.name,r.average]));
+  const pageRage=new Map(segmentMetric(capture.campaign,'URL','RageClickCount').map(r=>[r.name,r.rate]));
+  const pageDead=new Map(segmentMetric(capture.campaign,'URL','DeadClickCount').map(r=>[r.name,r.rate]));
+  const pagesDetail=dimensions.URL.map(r=>({...r,scrollDepth:depth.get(r.name)??null,engagementTime:engagement.get(r.name)??null,rageRate:pageRage.get(r.name)??null,deadRate:pageDead.get(r.name)??null}));
   const campaigns=dimensions.Campaign.map(row=>{
     const metrics={};
     for(const m of FRICTION)metrics[m]=segmentMetric(capture.campaign,'Campaign',m).find(x=>x.name===row.name)?.rate??null;
@@ -103,7 +124,7 @@ export function reportFromCapture({campaign=[],pages=[],technology=[],legacyDevi
   if(legacy.length&&!capture.pages.length)limitations.push('العينات القديمة لا تحتوي على تصنيف الصفحات والبلدان والمتصفحات؛ سيظهر ذلك بعد أول مزامنة موسّعة.');
   limitations.push('كل عينة تمثل 24 ساعة متحركة بتوقيت UTC، ولا يمكن جمع العينات التاريخية لإنتاج إجمالي شهري دقيق.');
   limitations.push('التسجيلات والخرائط الحرارية والفانل التفصيلي غير متاحة من Data Export API؛ تُفتح مباشرة في Clarity.');
-  return {totals,dimensions,campaigns,diagnostics:FRICTION.map(name=>({metric:name,label:METRIC_LABELS[name],segments:segmentMetric(capture.campaign,'Campaign',name)})),catalog:catalog(capture),
+  return {totals,dimensions,pagesDetail,campaigns,diagnostics:FRICTION.map(name=>({metric:name,label:METRIC_LABELS[name],segments:segmentMetric(capture.campaign,'Campaign',name)})),catalog:catalog(capture),
     limitations,snapshotHours:24,source:'clarity_export',rawDimensions:Object.keys(TAXONOMY)};
 }
 const round=v=>Number(number(v).toFixed(2));
