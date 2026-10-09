@@ -21,7 +21,7 @@ const scope={clientId:'C1',storeId:'S1',providerId:'easyorders'};
 const imported=[{externalId:'EXT1',id:'BND-ID',existingId:'BND-ID'}];
 assert.deepEqual(normalizeBundleChanges(undefined,{selectedExternalIds:['EXT1']}),{},'Omitted mapping must preserve all existing links');
 assert.deepEqual(normalizeBundleChanges({},{selectedExternalIds:['EXT1']}),{},'Empty mapping must preserve legacy import even without store');
-assert.deepEqual(normalizeBundleChanges({EXT1:[]},{providerId:'easyorders',storeId:'S1',selectedExternalIds:['EXT1']}),{EXT1:[]},'Explicit [] clears existing mapping');
+assert.equal(JSON.stringify(normalizeBundleChanges({EXT1:[]},{providerId:'easyorders',storeId:'S1',selectedExternalIds:['EXT1']})),JSON.stringify({EXT1:[]}),'Explicit [] clears existing mapping');
 let change=normalizeBundleChanges({EXT1:[{productId:'SKU-1',quantity:1},{productId:'SKU-2',quantity:2}]},{providerId:'easyorders',storeId:'S1',selectedExternalIds:['EXT1']});
 assert.equal(change.EXT1.length,2);
 await validateBundleChanges(env,{...scope,changes:change,items:imported});
