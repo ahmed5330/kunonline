@@ -1,8 +1,12 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {clarityProjectId,clarityTraffic,clarityMetrics,clarityCampaignFriction,handleClarityApi} from '../src/clarity-integration.js';
+import {clarityProjectId,clarityTraffic,clarityMetrics,clarityCampaignFriction,clarityDays,handleClarityApi} from '../src/clarity-integration.js';
 
 const tagId='pqr45ABC89';
+assert.equal(clarityDays(),1);
+assert.equal(clarityDays('2'),2);
+assert.equal(clarityDays(3),3);
+for(const v of ['0','4','1.1','1;3','no'])assert.throws(()=>clarityDays(v));
 assert.equal(clarityProjectId(tagId),tagId);
 assert.equal(clarityProjectId('https://www.clarity.ms/tag/'+tagId),tagId);
 assert.equal(clarityProjectId('(window,document,"clarity","script","'+tagId+'");'),tagId);
