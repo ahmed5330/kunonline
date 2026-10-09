@@ -13,7 +13,6 @@ import {handleProductionEasyOrdersHealth} from './production-easyorders-health.j
 import {reconcileFinancePresentation} from './production-finance-presentation.js';
 import {reconcileMonthlySubscriptions} from './subscription-billing.js';
 import {handleSubscriptionControl} from './subscription-control.js';
-import {runEasyOrdersStoreControl} from './easyorders-store-control.js';
 import {handleInventoryUnitTracking,syncInventoryTrackingAfterResponse,reconcileTrackedOrderLifecycles,reconcileAllClientsUnitCoverage} from './inventory-unit-tracking.js';
 
 const LEGACY_APK_URL='https://github.com/ahmed5330/kunonline/releases/download/android-latest/Kun-Online-Mobile.apk';
@@ -149,13 +148,6 @@ export default {
 
     const dataEnv=previewRuntimeEnv(env);
     const delegate=previewDelegate(env,dataEnv,ctx);
-    if(new URL(request.url).pathname.startsWith('/api/integrations/easyorders/store-control')){
-      // The Preview Worker owns encrypted integration credentials. Prefer its
-      // authenticated implementation; fallback only while a version rolls out.
-      const previewControl=await previewFetch(request,env);
-      if(previewControl&&previewControl.status!==404&&previewControl.status!==405)return previewControl;
-      return runEasyOrdersStoreControl({request,env:dataEnv,ctx,delegate});
-    }
     const subscription=await handleSubscriptionControl({request,env:dataEnv,ctx,delegate});
     if(subscription)return subscription;
 
