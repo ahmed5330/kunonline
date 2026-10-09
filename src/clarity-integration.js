@@ -127,8 +127,9 @@ async function syncOne(env,clientId,storeId,{force=false}={}){
   try{token=await decryptSecret(env,row.token_ciphertext_b64,row.token_iv_b64);}
   catch{throw err('تعذر قراءة توكن Clarity المشفر',503,'CLARITY_SECRET_DECRYPT_FAILED');}
   try{
-    const campaign=await clarityGet(token,['Campaign','Source','Device']);
-    const pages=await clarityGet(token,['URL','Medium','Channel']);
+    const campaign=await clarityGet(token,['Campaign','Source','URL']);
+    // Second view covers device and campaign-medium/channel summaries without duplicating sessions from first view.
+    const pages=await clarityGet(token,['Device','Medium','Channel']);
     const technology=await clarityGet(token,['Browser','OS','Country/Region']);
     const device={version:2,pages,technology};
     const syncedAt=new Date().toISOString();
