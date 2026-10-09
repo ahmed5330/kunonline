@@ -53,6 +53,11 @@ assert.ok(billing.includes("const locked=subscriptionPaused||walletPaused||empty
 assert.ok(billing.includes("emptyBalance?'balance_empty':null"),'client and admin must expose the precise balance-empty reason');
 assert.ok(ui.includes('الرصيد انتهى — التشغيل متوقف'),'client UI must communicate the balance-based lock');
 assert.ok(ui.includes('refreshTopupHistory'),'client should see approval/pending/rejection status');
+const topupRequest=fs.readFileSync('src/wallet-topup-request.js','utf8');
+const listTopupSql=topupRequest.slice(topupRequest.indexOf('export async function listTopups'));
+assert.ok(listTopupSql.includes('has_proof'),'client topup list should only receive proof presence');
+assert.ok(!listTopupSql.includes('transfer_method,proof_data_url,proof_url,status'),'client status updates must not download entire payment screenshot');
+assert.ok(preview.indexOf('const subscription=await handleSubscriptionControl')<preview.indexOf('const competitors=await handleCompetitorIntelligence'),'preview must enforce billing before add-on AI and competitors routes');
 assert.ok(ui.includes('updateBalanceBanner'),'client must receive a proactive balance alert');
 assert.ok(ui.includes("state.adminClients.filter(x=>x.reason==='balance_empty')"),'admin exhausted-balance count must reflect true billing locks');
 assert.ok(fs.readFileSync('public/v2/modules-v79-printing.js','utf8').includes("try{await render();if(window.KunSubscriptionsV127?.access?.locked"),'J&T sending state must unwind after billing/refresh errors');
