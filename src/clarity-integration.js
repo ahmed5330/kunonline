@@ -174,13 +174,13 @@ export async function insights(env,clientId,storeId){
     const technology=extended&&Array.isArray(second.technology)?second.technology:[];
     const legacy=Array.isArray(second)?second:[];
     const report=reportFromCapture({campaign,pages,technology,legacyDevice:legacy});
-    const {dimensions,totals,diagnostics,catalog,limitations,campaigns}=report;
+    const {dimensions,totals,diagnostics,catalog,limitations,campaigns,pagesDetail}=report;
     return {syncedAt:entry.synced_at,projectId:entry.project_id,
       // Legacy contract kept for existing Clarity integrations:
       campaignMetrics:campaign,deviceMetrics:legacy.length?legacy:technology,
       campaigns:dimensions.Campaign,campaignFriction:campaigns,sources:dimensions.Source,devices:dimensions.Device,
       // Detailed analytics for the dedicated new dashboard.
-      metrics:{totals,dimensions,campaigns,diagnostics,catalog,limitations,snapshotHours:24,projectId:entry.project_id},
+      metrics:{totals,dimensions,campaigns,pagesDetail,diagnostics,catalog,limitations,snapshotHours:24,projectId:entry.project_id},
       sampleCoverage:{campaignRows:campaign.find(x=>x.name==='Traffic'||x.metricName==='Traffic')?.information?.length||0,
         pagesRows:pages.find(x=>x.name==='Traffic'||x.metricName==='Traffic')?.information?.length||0,
         technologyRows:technology.find(x=>x.name==='Traffic'||x.metricName==='Traffic')?.information?.length||0}
