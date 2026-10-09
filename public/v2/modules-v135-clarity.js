@@ -131,7 +131,7 @@
       if(!wanted.includes(metric.name))continue;
       for(const detail of (metric.information||[]).slice(0,20)){
         const dimension=txt(detail.Device)||'عام';
-        const fields=['subTotal','sessionsWithMetricPercentage','averageScrollDepth','averageEngagementTime','averageScrollDepthPercentage','averageEngagementTimeInSeconds','sessionsCount'];
+        const fields=['subTotal','sessionsWithMetricPercentage','averageScrollDepth','totalTime','activeTime','averageEngagementTime','sessionsCount'];
         const values=fields.filter(k=>detail[k]!==undefined&&detail[k]!==null).map(k=>k+': '+detail[k]);
         if(!values.length)continue;
         rows.push('<tr><td>'+esc(names[metric.name])+'</td><td>'+esc(dimension)+'</td><td style="direction:ltr;text-align:left">'+esc(values.join(' · '))+'</td></tr>');
