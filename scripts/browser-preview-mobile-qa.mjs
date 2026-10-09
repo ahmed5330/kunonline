@@ -13,6 +13,7 @@ const databaseId=config.match(/database_id\s*=\s*"([^"]+)"/)?.[1];if(!databaseId
 const d1Url=`https://api.cloudflare.com/client/v4/accounts/${accountId}/d1/database/${databaseId}/query`;
 const nonce=randomBytes(5).toString('hex'),email=`qa-mobile-${nonce}@example.test`,userId=`QA-MOBILE-${nonce}`,password=`Mobile!${randomBytes(12).toString('hex')}Aa1`,orderId=`QA-MOBILE-CALL-${nonce}`,createdAt=new Date().toISOString();
 const origin=new URL(base).origin,sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const cairoBusinessDate=new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Cairo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(createdAt));
 let chrome=null,userDir=null,cdp=null,clientId=null;
 
 async function d1(sql,params=[]){const r=await fetch(d1Url,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({sql,params})}),p=await r.json().catch(()=>({})),x=p?.result?.[0];if(!r.ok||p.success===false||x?.success===false)throw new Error(`Preview D1 failed ${r.status}: ${JSON.stringify(p?.errors||x?.error||p).slice(0,900)}`);return x?.results||[];}
@@ -31,11 +32,11 @@ async function waitFor(expression,label,timeout=12000){
     let details={};
     try{
       details=await evalJs(`(async()=>{
-        const r=await fetch('/api/customer-service?clientId=${encodeURIComponent(clientId)}',{credentials:'include'});
+        const r=await fetch('/api/customer-service?clientId=${encodeURIComponent(clientId)}&storeId=${encodeURIComponent(store)}',{credentials:'include'});
         const d=await r.json().catch(()=>({}));
         const active=document.querySelector('.nav button.active[data-view]')?.dataset.view||'';
         const page=document.getElementById('root');
-        return {apiStatus:r.status,fixtureInResponse:Array.isArray(d.orders)&&d.orders.some(x=>x.id===${JSON.stringify(orderId)}),activeView:active,customerServiceRendered:Boolean(page?.querySelector('.cs-page')),loading:Boolean(page?.querySelector('.cs-loading')),errorCard:Boolean(page?.querySelector('.card.empty')),routeReady:typeof document.querySelector('.nav button[data-view="customer-service"]')?.onclick==='function'};
+        return {apiStatus:r.status,fixtureInResponse:Array.isArray(d.orders)&&d.orders.some(x=>x.id===${JSON.stringify(orderId)}),apiOrderCount:Array.isArray(d.orders)?d.orders.length:null,selectedStore:await window.kunStoreId?.(),selectedClient:await window.kunClientId?.(),activeView:active,customerServiceRendered:Boolean(page?.querySelector('.cs-page')),loading:Boolean(page?.querySelector('.cs-loading')),errorCard:Boolean(page?.querySelector('.card.empty')),routeReady:typeof document.querySelector('.nav button[data-view="customer-service"]')?.onclick==='function'};
       })()`);
     }catch(e){details={diagnosticError:String(e.message).slice(0,200)};}
     throw new Error('Mobile QA wait failed: mobile call card (safe diagnostic: '+JSON.stringify(details)+')');
@@ -111,7 +112,7 @@ try{
   await navigate(`${base}/v2/`);
   await waitFor(`window.kunStoreId?.().then(id=>id===${JSON.stringify(store)})`,'mobile call QA selected correct tenant store',20000);
   await sleep(450);
-  await d1("INSERT INTO orders (id,client_id,store_id,name,phone,product,qty,total,state,date,created_at,history,contact_log,note) VALUES (?,?,?,?,?,?,1,25,'pending',?,?, '[]','[]',?)",[orderId,clientId,store,'Mobile Call QA','01012345678','Mobile QA product',createdAt.slice(0,10),createdAt,'mobile call persistence']);
+  await d1("INSERT INTO orders (id,client_id,store_id,name,phone,product,qty,total,state,date,created_at,history,contact_log,note) VALUES (?,?,?,?,?,?,1,25,'pending',?,?, '[]','[]',?)",[orderId,clientId,store,'Mobile Call QA','01012345678','Mobile QA product',cairoBusinessDate,createdAt,'mobile call persistence']);
   // Prove the authorized, store-filtered API can see the exact fixture before
   // blaming or interacting with mobile navigation. This never relaxes the
   // browser's real card/tel:/trusted-tap/persistence requirements.
