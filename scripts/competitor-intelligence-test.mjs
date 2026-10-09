@@ -20,8 +20,8 @@ assert.equal(COMPETITOR_REPORT_SCHEMA.properties.angles.minItems,1);
 assert.ok(COMPETITOR_REPORT_SCHEMA.required.includes('tests'));
 assert.throws(()=>parseCompetitorReport({response:{...example,angles:[]}}),/غير مكتمل/);
 
-assert.throws(()=>parseCompetitorReport('invalid'),/غير صالحة/);
-assert.throws(()=>parseCompetitorReport('{"summary":"x"}'),/ناقص/);
+assert.throws(()=>parseCompetitorReport('invalid'),{code:'COMPETITOR_AI_INVALID'});
+assert.throws(()=>parseCompetitorReport('{"summary":"x"}'),{code:'COMPETITOR_AI_INVALID'});
 const denied=await handleCompetitorIntelligence({request:new Request('https://kun.test/api/competitors/status?storeId=s1'),env:{},ctx:{},delegate:{fetch:async()=>new Response('{"error":"login"}',{status:401})}});
 assert.equal(denied.status,401);
 assert.equal((await denied.json()).code,'AUTH_REQUIRED');
