@@ -1,14 +1,14 @@
 /* Kun Online V136 — Arabic, tenant-scoped Clarity / Meta Growth Analytics */
 (function(){
 'use strict';
-const ROOT=()=>document.getElementById('root'),V={active:false,tab:'overview',data:null,search:'',request:0,busy:false};
+const ROOT=()=>document.getElementById('root'),V={active:false,tab:'overview',data:null,search:'',request:0,busy:false,days:1};
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const tx=v=>String(v??'').trim(),n=v=>v==null||v===''?'—':Number(v).toLocaleString('ar-EG',{maximumFractionDigits:2}),pct=v=>v==null?'—':n(v)+'%';
 const view=()=>document.querySelector('.nav button.active[data-view]')?.dataset.view||'';
-const tabs={overview:'نظرة عامة',growth:'تحليل الإعلانات والنمو',pages:'الصفحات وتجربة الشراء',audience:'الزوار والأجهزة',friction:'النقرات والمشكلات',metrics:'كل المقاييس'};
+const tabs={overview:'نظرة عامة',growth:'تحليل الإعلانات والنمو',pages:'الصفحات وتجربة الشراء',audience:'الزوار والأجهزة',friction:'النقرات والمشكلات',health:'جودة التتبع والربط',metrics:'كل المقاييس'};
 const dims={Campaign:'الحملات',Source:'مصادر الزيارات',Device:'الأجهزة',URL:'صفحات المتجر',Medium:'UTM Medium',Channel:'قنوات الزيارة',Browser:'المتصفحات',OS:'أنظمة التشغيل','Country/Region':'الدول والمناطق'};
 const issues={RageClickCount:'Rage Clicks',DeadClickCount:'Dead Clicks',QuickbackClick:'Quickback',ScriptErrorCount:'Script Errors',ErrorClickCount:'Error Clicks',ExcessiveScroll:'Excessive Scroll'};
-const status={meta_source_detected:'مصدر Meta مؤكد من UTM',utm_missing:'اسم الحملة غير ظاهر في Clarity',source_missing:'المصدر غير محدد',source_not_meta:'المصدر ليس Meta'};
+const status={meta_source_detected:'المصدر Meta حسب Clarity (ليس إثبات دفع)',utm_missing:'اسم الحملة غير ظاهر في Clarity',source_missing:'المصدر غير محدد',source_not_meta:'المصدر ليس Meta'};
 const toast=m=>window.showToast?window.showToast(m):console.log(m);
 async function context(){
  const clientId=tx(await window.kunClientId?.()),storeId=tx(await window.kunStoreId?.());
@@ -30,7 +30,7 @@ function style(){
  '.cl136 .head{background:linear-gradient(125deg,#271747,#7945b2);color:#fff;border-radius:20px;padding:21px;display:flex;gap:14px;flex-wrap:wrap;align-items:center}',
  '.cl136 .head h2{font-size:25px;margin:0 0 6px;font-weight:900}.cl136 .head p{font-size:12px;opacity:.85;line-height:1.9;margin:0}.cl136 .space{flex:1}',
  '.cl136 button,.cl136 a.action{border:1px solid var(--line,#d6cde3);background:var(--surface,#fff);color:var(--ink,#1b2636);font-family:inherit;font-size:12px;border-radius:11px;padding:9px 13px;font-weight:800;cursor:pointer;text-decoration:none}',
- '.cl136 button:disabled{opacity:.5}.cl136 .tabs{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}.cl136 .tabs .sel{background:#713aac;color:#fff;border-color:#713aac}',
+ '.cl136 select{border-radius:9px;background:#fff;color:#261b39;font:inherit;font-size:12px;padding:9px;border:1px solid #cfc3df}.cl136 button:disabled{opacity:.5}.cl136 .tabs{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}.cl136 .tabs .sel{background:#713aac;color:#fff;border-color:#713aac}',
  '.cl136 .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin:12px 0}',
  '.cl136 .metric,.cl136 .box{border:1px solid var(--line,#dcd9e7);background:var(--surface,#fff);border-radius:15px;padding:17px;margin:11px 0}',
  '.cl136 .metric{margin:0}.cl136 .metric span{font-size:12px;opacity:.7;display:block}.cl136 .metric strong{font-size:24px;font-weight:900;display:block;margin:8px 0}',
@@ -58,9 +58,9 @@ function breakdown(dim,rows,limit=25){
 }
 function summary(d){
  const m=d.latest?.metrics||{},g=d.growth||{},paid=(m.campaigns||[]).reduce((total,x)=>total+(Number(x.paidSessions)||0),0);
- return '<div class="cards">'+metric('جلسات Clarity',n(m.totals?.sessions),'آخر 24 ساعة UTC')+
+ return '<div class="cards">'+metric('جلسات Clarity',n(m.totals?.sessions),'آخر '+(m.snapshotHours||24)+' ساعة UTC')+
  metric('جلسات البوت',n(m.totals?.botSessions),'وفق تصنيف Clarity')+
- metric('جلسات مصدر Meta',n(paid),'مصدر facebook/instagram ضمن UTM')+
+ metric('جلسات مصدر Meta',n(paid),'حسب مصدر Clarity، قد يشمل زيارات عضوية')+
  metric('الحملات',n(m.dimensions?.Campaign?.length),'الأسماء الظاهرة بالتقسيم')+
  metric('حملات Meta',n(g.campaigns?.length),'بما فيها غير المطابقة')+
  metric('آخر سحب',d.latest?.syncedAt?new Date(d.latest.syncedAt).toLocaleString('ar-EG'):'—','بيانات مخزنة من API')+'</div>';
@@ -110,14 +110,34 @@ function friction(d){
  '<section class="box"><h3>أولوية مشكلات الحملات</h3>'+table(['الحملة','الجلسات','Rage','Dead','Quickback','Script Errors'],
  (m.campaigns||[]).slice(0,70).map(r=>'<tr><td>'+esc(r.name)+'</td><td>'+n(r.sessions)+'</td><td>'+pct(r.RageClickCount)+'</td><td>'+pct(r.DeadClickCount)+'</td><td>'+pct(r.QuickbackClick)+'</td><td>'+pct(r.ScriptErrorCount)+'</td></tr>'))+'</section>';
 }
+function health(d){
+ const c=d.latest.metrics?.coverage||{},sample=d.latest.sampleCoverage||{},info=d.status||{};
+ const age=info.lastSyncAt?Math.max(0,(Date.now()-Date.parse(info.lastSyncAt))/3600000):null;
+ const flags=[];
+ if((c.metaWithoutCampaignSessions||0)>0)flags.push('يوجد '+n(c.metaWithoutCampaignSessions)+' جلسات مصدرها Meta من غير utm_campaign؛ راجع Parameter URLs للإعلانات.');
+ if((sample.campaignRows||0)>=1000||(sample.pagesRows||0)>=1000||(sample.technologyRows||0)>=1000)flags.push('هناك نتيجة وصلت 1000 صف؛ بعض التقسيمات مقطوعة حسب سقف Data Export API.');
+ if(age!=null&&age>24)flags.push('البيانات المخزنة أقدم من 24 ساعة؛ اختبر التوكن وحد المزامنة.');
+ if((c.metaSourceSessions||0)===0&&(c.sessions||0)>0)flags.push('لم يرصد Clarity مصدر Facebook أو Instagram في النافذة المختارة. تأكد من UTM Source أولًا.');
+ return '<div class="cards">'+metric('جلسات مصدر Meta',n(c.metaSourceSessions),'حسب Clarity، لا تثبت نقرة مدفوعة')+
+ metric('Meta بلا اسم حملة',n(c.metaWithoutCampaignSessions),'تحتاج utm_campaign')+
+ metric('نسبة تسمية كل الجلسات',pct(c.taggedRate),'Organic قد يكون غير موسوم طبيعيًا')+
+ metric('زيارات بلا مصدر',n(c.unknownSourceSessions),'ليس بالضرورة فقدان التتبع')+
+ metric('جودة تسمية Meta',c.metaUntaggedRate==null?'—':pct(100-c.metaUntaggedRate),'وجود اسم حملة في تقسيم Clarity')+
+ metric('عمر آخر مزامنة',age==null?'—':n(age)+' ساعة','آخر نجاح، وليس آخر زيارة')+'</div>'+
+ '<section class="box"><h3>فحص دقة التقارير</h3>'+
+ (flags.length?flags.map(m=>'<div class="note warning">'+esc(m)+'</div>').join(''):'<div class="note">لا توجد إشارات خلل مؤكدة بالبيانات المتاحة؛ راجع Live Sessions داخل Clarity.</div>')+
+ '<div class="note">حد API عشرة طلبات للمشروع يوميًا. يحتفظ كن أونلاين بطلبين كاحتياطي؛ كل مزامنة موسعة تستخدم 3 طلبات.</div></section>'+
+ '<section class="box"><h3>حجم العينات المتاحة</h3>'+table(['التقسيم','الصفوف','التغطية'],
+ [['الحملات والمصادر',sample.campaignRows],['الصفحات',sample.pagesRows],['التقنية',sample.technologyRows]].map(x=>'<tr><td>'+esc(x[0])+'</td><td>'+n(x[1])+'</td><td>'+(Number(x[1])>=1000?'ربما ناقصة (حد API)':'حسب استجابة Clarity')+'</td></tr>'))+'</section>'+caveats(d);
+}
 function metrics(d){
  const catalog=d.latest.metrics?.catalog||[];
  return '<section class="box"><h3>مكتبة مؤشرات Microsoft Clarity</h3><p>كل Metric أعاده Data Export API مع عدد سجلاته، وأمثلة حقول محدودة. لا يمكن استخراج فيديوهات التسجيلات أو الصور الحرارية من هذا API.</p>'+
  table(['المقياس','مجموعة البيانات','عدد الصفوف','الحد'],catalog.map(x=>'<tr><td>'+esc(x.label)+'<div class="muted">'+esc(x.metric)+'</div></td><td>'+esc(x.scope)+'</td><td>'+n(x.rows)+'</td><td>'+esc(x.limited?'ربما 1000':'—')+'</td></tr>'))+'</section>'+
  '<div class="grid">'+catalog.map(x=>'<section class="box"><h3>'+esc(x.label)+'</h3><div class="muted">'+esc(x.scope)+'</div><pre>'+esc(JSON.stringify(x.example,null,2))+'</pre></section>').join('')+'</div>';
 }
-function history(d){return '<section class="box"><h3>تاريخ المزامنات</h3><p>كل نقطة تمثل آخر 24 ساعة وقت سحبها؛ الفترات متداخلة ولا تُجمع لإجمالي شهري.</p>'+
- table(['وقت العينة','الجلسات في نافذة 24 ساعة'],(d.history||[]).slice(0,30).map(x=>'<tr><td>'+esc(new Date(x.syncedAt).toLocaleString('ar-EG'))+'</td><td>'+n(x.campaignSessions)+'</td></tr>'))+'</section>';}
+function history(d){return '<section class="box"><h3>تاريخ المزامنات</h3><p>كل نقطة تمثل نافذة متحركة وقت سحبها؛ الفترات متداخلة ولا تُجمع لإجمالي شهري.</p>'+
+ table(['وقت العينة','الجلسات في نافذة '+(V.days*24)+' ساعة'],(d.history||[]).slice(0,30).map(x=>'<tr><td>'+esc(new Date(x.syncedAt).toLocaleString('ar-EG'))+'</td><td>'+n(x.campaignSessions)+'</td></tr>'))+'</section>';}
 function csv(){
  const d=V.data;if(!d?.latest)return;
  let keys=['name','sessions','botSessions'],rows=d.latest.metrics.dimensions.Campaign||[];
@@ -125,6 +145,7 @@ function csv(){
  if(V.tab==='pages'){keys=['name','sessions','botSessions','scrollDepth','engagementTime','rageRate','deadRate'];rows=d.latest.metrics.pagesDetail||[];}
  if(V.tab==='audience'){keys=['dimension','name','sessions','botSessions'];rows=Object.entries(d.latest.metrics.dimensions).flatMap(([dimension,list])=>list.map(x=>({...x,dimension})));}
  if(V.tab==='friction'){keys=['name','sessions',...Object.keys(issues)];rows=d.latest.metrics.campaigns||[];}
+ if(V.tab==='health'){keys=['metric','value'];rows=Object.entries(d.latest.metrics.coverage||{}).map(([metric,value])=>({metric,value}));}
  if(V.tab==='metrics'){keys=['metric','label','scope','rows','limited'];rows=d.latest.metrics.catalog||[];}
  const safe=v=>String(v??'').replace(/"/g,'""').replace(/^[=+\-@]/,"'$&");
  const lines=[keys,...rows.map(x=>keys.map(k=>x[k]))],txt='\uFEFF'+lines.map(r=>r.map(v=>'"'+safe(v)+'"').join(',')).join('\r\n');
@@ -135,26 +156,27 @@ function render(){
  const el=ROOT();if(!el)return;style();
  const d=V.data,missing=!d?.latest;
  el.innerHTML='<div class="cl136"><header class="head"><div><h2>◈ Clarity Intelligence</h2><p>مركز التحليلات التفصيلية وسلوك العميل والنمو من Meta Ads</p></div><span class="space"></span>'+
- '<button id="cl136-system">التقارير العامة</button><button id="cl136-sync">مزامنة Clarity</button><button id="cl136-csv">CSV</button></header>'+
+ '<button id="cl136-system">التقارير العامة</button><label style="font-size:12px;font-weight:800">الفترة <select id="cl136-days" aria-label="فترة Clarity"><option value="1" '+(V.days===1?'selected':'')+'>24 ساعة</option><option value="2" '+(V.days===2?'selected':'')+'>48 ساعة</option><option value="3" '+(V.days===3?'selected':'')+'>72 ساعة</option></select></label><button id="cl136-sync">مزامنة Clarity</button><button id="cl136-csv">CSV</button></header>'+
  '<nav class="tabs">'+Object.entries(tabs).map(([id,label])=>'<button data-tab="'+esc(id)+'" class="'+(V.tab===id?'sel':'')+'">'+esc(label)+'</button>').join('')+'</nav>'+
- (missing?'<section class="box"><h3>لا توجد بيانات لهذا المتجر حتى الآن</h3><p>اربط Project ID وData Export API Token داخل التكاملات ثم اختبر الاتصال.</p><button id="cl136-setup">فتح التكاملات</button></section>':
- (V.tab==='overview'?overview(d):V.tab==='growth'?growth(d):V.tab==='pages'?pages(d):V.tab==='audience'?audience(d):V.tab==='friction'?friction(d):metrics(d))+history(d))+
+ (missing?'<section class="box"><h3>لا توجد بيانات مخزنة لفترة '+(V.days*24)+' ساعة</h3><p>لو الربط متصل، اضغط مزامنة Clarity لسحب النافذة المختارة (3 طلبات API). وإن لم يكن متصلًا فراجعه داخل التكاملات.</p><button id="cl136-setup">فتح التكاملات</button></section>':
+ (V.tab==='overview'?overview(d):V.tab==='growth'?growth(d):V.tab==='pages'?pages(d):V.tab==='audience'?audience(d):V.tab==='friction'?friction(d):V.tab==='health'?health(d):metrics(d))+history(d))+
  '<section class="box"><p>آخر مزامنة '+esc(d?.status?.lastSyncAt?new Date(d.status.lastSyncAt).toLocaleString('ar-EG'):'—')+
  ' · استهلاك API: '+n(d?.status?.quotaUsedToday||0)+' / '+n(d?.status?.quotaBudget||8)+
  ' · 3 طلبات لكل مزامنة موسعة، مع احتياطي لحدود Clarity.</p><a class="action" target="_blank" rel="noopener noreferrer" href="https://clarity.microsoft.com/">افتح Microsoft Clarity ↗</a></section></div>';
  el.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{V.tab=b.dataset.tab;V.search='';render();});
  el.querySelector('#cl136-system').onclick=()=>{V.active=false;V.request++;document.querySelector('.nav button[data-view="analytics"]')?.click();};
  el.querySelector('#cl136-csv').onclick=csv;
+ el.querySelector('#cl136-days').onchange=e=>{V.days=Number(e.target.value)||1;V.data=null;const el=ROOT();if(el)el.innerHTML='<div class="cl136"><div class="box">جاري تحميل الفترة من البيانات المخزنة...</div></div>';reload().catch(err=>{toast(err.message);render();});};
  el.querySelector('#cl136-setup')?.addEventListener('click',()=>document.querySelector('.nav button[data-view="integrations"]')?.click());
  el.querySelector('#cl136-sync').onclick=async e=>{
   if(V.busy)return;V.busy=true;e.target.disabled=true;
-  try{const synced=await api('/api/clarity/sync',{method:'POST',body:'{}'});toast(synced.skipped?'البيانات حديثة؛ تم استخدام النسخة المخزنة':'تمت مزامنة Clarity');await reload();}
+  try{const synced=await api('/api/clarity/sync',{method:'POST',body:JSON.stringify({days:V.days})});toast(synced.skipped?'البيانات حديثة؛ تم استخدام النسخة المخزنة':'تمت مزامنة Clarity');await reload();}
   catch(ex){toast(ex.message);e.target.disabled=false;}finally{V.busy=false;}
  };
  const input=el.querySelector('#cl136-search');if(input)input.oninput=e=>{V.search=e.target.value;const selection=e.target.selectionStart;render();const again=ROOT().querySelector('#cl136-search');again?.focus();again?.setSelectionRange(selection,selection);};
 }
 async function reload(){
- const rid=++V.request;const d=await api('/api/clarity/growth');if(rid!==V.request)return;V.data=d;render();
+ const rid=++V.request;const d=await api('/api/clarity/growth?days='+V.days);if(rid!==V.request)return;V.data=d;render();
 }
 function open(which='overview',depth=0){
  if(view()!=='analytics'){
@@ -186,5 +208,5 @@ function hook(){
  setTimeout(shortcut,150);
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',hook,{once:true});else hook();
-window.KunClarityGrowthV136={open,version:'136.0'};
+window.KunClarityGrowthV136={open,version:'137.0'};
 })();

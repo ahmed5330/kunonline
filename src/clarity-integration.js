@@ -5,7 +5,7 @@
 import {encryptSecret,decryptSecret} from './integration-secrets.js';
 import {requirePermission,resolveTenant} from './access-control.js';
 import {resolveStoreScope} from './store-scope.js';
-import {reportFromCapture,mergeMetaWithClarity} from './clarity-growth-insights.js';
+import {reportFromCapture,mergeMetaWithClarity,sanitizeClarityExport} from './clarity-growth-insights.js';
 import {metaAdsExpertAnalysisV2} from './meta-ads-expert.js';
 
 const CLARITY_API='https://www.clarity.ms/export-data/api/v1/project-live-insights';
@@ -13,6 +13,8 @@ const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:
 const clean=v=>String(v??'').trim();
 const err=(message,status=400,code='CLARITY_INVALID')=>Object.assign(new Error(message),{status,code});
 const today=()=>new Date().toISOString().slice(0,10);
+export function clarityDays(v=1){const str=String(v??1).trim();if(!/^[123]$/.test(str))throw err('فترة Clarity المسموحة 24 أو 48 أو 72 ساعة فقط',400,'CLARITY_INVALID_DAYS');return Number(str);}
+const snapshotDays=(raw)=>{try{const parsed=typeof raw==='string'?JSON.parse(raw):raw;return clarityDays(parsed?.days||1);}catch{return 1;}};
 
 export function clarityProjectId(input){
   const raw=clean(input);
@@ -93,9 +95,10 @@ async function userScope(request,env,ctx,delegate,body,write=false,resource='int
   const scope=await resolveStoreScope(env,me,clientId,storeId,{write});
   return {me,clientId,storeId:scope.storeId};
 }
-async function clarityGet(token,dimensions){
+async function clarityGet(token,dimensions,days=1){
   const u=new URL(CLARITY_API);
-  u.searchParams.set('numOfDays','1');
+  u.searchParams.set('numOfDays',String(clarityDays(days)));
+  if(dimensions.length<1||dimensions.length>3)throw err('حد Clarity المسموح 3 أبعاد لكل استدعاء');
   for(const [i,d] of dimensions.entries())u.searchParams.set('dimension'+(i+1),d);
   let response;
   try{response=await fetch(u.toString(),{method:'GET',headers:{Authorization:'Bearer '+token,Accept:'application/json'},signal:AbortSignal.timeout(15000)});}
@@ -106,19 +109,18 @@ async function clarityGet(token,dimensions){
   }
   const data=await response.json().catch(()=>null);
   if(!Array.isArray(data))throw err('استجابة Microsoft Clarity غير متوقعة',502,'CLARITY_RESPONSE_INVALID');
-  return clarityMetrics(data);
+  return sanitizeClarityExport(clarityMetrics(data));
 }
-async function syncOne(env,clientId,storeId,{force=false}={}){
+async function syncOne(env,clientId,storeId,{force=false,days=1}={}){
+  days=clarityDays(days);
   const row=await rowFor(env,clientId,storeId);
   if(!row)throw err('اربط Clarity بهذا المتجر أولاً',404,'CLARITY_NOT_CONNECTED');
   if(!row.token_ciphertext_b64||!row.token_iv_b64)throw err('أضف Data Export API Token لتفعيل التحليلات',409,'CLARITY_TOKEN_REQUIRED');
-  // Three separate 1-day views per snapshot; 2 scheduled snapshots consume 6 of the 10 project requests/day. Reserve 2 for troubleshooting.
-  const age=Date.now()-Date.parse(row.last_sync_at||'1970-01-01T00:00:00Z');
-  if(!force&&Number.isFinite(age)&&age<4*60*60*1000){
-    const fresh=await env.DB.prepare('SELECT device_json FROM clarity_snapshots WHERE client_id=? AND store_id=? AND project_id=? ORDER BY synced_at DESC LIMIT 1').bind(clientId,storeId,row.project_id).first();
-    let extended=false;try{extended=JSON.parse(fresh?.device_json||'null')?.version===2;}catch{}
-    if(extended)return {ok:true,skipped:true,reason:'fresh_cache',...publicStatus(row)};
-  }
+  // Three provider calls per snapshot; eight reserved daily calls per project, two held back.
+  // Cached windows must match exactly: a 72-hour export is not a substitute for 24-hour data.
+  const cached=await env.DB.prepare('SELECT synced_at,device_json FROM clarity_snapshots WHERE client_id=? AND store_id=? AND project_id=? ORDER BY synced_at DESC LIMIT 30').bind(clientId,storeId,row.project_id).all();
+  const usable=(cached.results||[]).find(x=>snapshotDays(x.device_json)===days&&Number.isFinite(Date.parse(x.synced_at))&&Date.now()-Date.parse(x.synced_at)<4*3600000);
+  if(!force&&row.last_sync_at&&usable)return {ok:true,skipped:true,reason:'fresh_cache',days,syncedAt:usable.synced_at,...publicStatus(row)};
   const day=today();
   const attemptAt=new Date().toISOString();
   const reserved=await env.DB.prepare("UPDATE clarity_connections SET quota_count=CASE WHEN quota_day=? THEN quota_count+3 ELSE 3 END,quota_day=?,last_attempt_at=?,updated_at=? WHERE client_id=? AND store_id=? AND (quota_day IS NULL OR quota_day<>? OR quota_count<=5)").bind(day,day,attemptAt,attemptAt,clientId,storeId,day).run();
@@ -127,15 +129,15 @@ async function syncOne(env,clientId,storeId,{force=false}={}){
   try{token=await decryptSecret(env,row.token_ciphertext_b64,row.token_iv_b64);}
   catch{throw err('تعذر قراءة توكن Clarity المشفر',503,'CLARITY_SECRET_DECRYPT_FAILED');}
   try{
-    const campaign=await clarityGet(token,['Campaign','Source','Device']);
+    const campaign=await clarityGet(token,['Campaign','Source','Device'],days);
     // Second view covers page URLs, media, and channels; per-URL sessions must not be totaled across pages.
-    const pages=await clarityGet(token,['URL','Medium','Channel']);
-    const technology=await clarityGet(token,['Browser','OS','Country/Region']);
-    const device={version:2,pages,technology};
+    const pages=await clarityGet(token,['URL','Medium','Channel'],days);
+    const technology=await clarityGet(token,['Browser','OS','Country/Region'],days);
+    const device={version:2,days,pages,technology};
     const syncedAt=new Date().toISOString();
     await env.DB.prepare("INSERT INTO clarity_snapshots (client_id,store_id,synced_at,project_id,campaign_json,device_json) VALUES (?,?,?,?,?,?)").bind(clientId,storeId,syncedAt,row.project_id,JSON.stringify(campaign),JSON.stringify(device)).run();
     await env.DB.prepare("UPDATE clarity_connections SET status='connected',last_sync_at=?,last_error=NULL,updated_at=? WHERE client_id=? AND store_id=?").bind(syncedAt,syncedAt,clientId,storeId).run();
-    return {ok:true,skipped:false,syncedAt,projectId:row.project_id,quotaUsedToday:(row.quota_day===day?Number(row.quota_count):0)+3};
+    return {ok:true,skipped:false,syncedAt,projectId:row.project_id,days,quotaUsedToday:(row.quota_day===day?Number(row.quota_count):0)+3};
   }catch(e){
     const message=e.code==='CLARITY_TOKEN_INVALID'?'API Token غير صالح أو منتهي':e.message;
     await env.DB.prepare("UPDATE clarity_connections SET status='error',last_error=?,updated_at=? WHERE client_id=? AND store_id=?").bind(message,new Date().toISOString(),clientId,storeId).run();
@@ -161,26 +163,28 @@ async function saveConnection(env,clientId,storeId,body){
   }
   return publicStatus(await rowFor(env,clientId,storeId));
 }
-export async function insights(env,clientId,storeId){
+export async function insights(env,clientId,storeId,days=1){
+  days=clarityDays(days);
   const row=await rowFor(env,clientId,storeId);
   if(!row)return {ok:true,status:publicStatus(null),latest:null,history:[]};
   const rs=await env.DB.prepare("SELECT synced_at,project_id,campaign_json,device_json FROM clarity_snapshots WHERE client_id=? AND store_id=? AND project_id=? ORDER BY synced_at DESC LIMIT 30").bind(clientId,storeId,row.project_id).all();
-  const snapshots=rs.results||[];
+  const snapshots=(rs.results||[]).filter(x=>snapshotDays(x.device_json)===days);
   const parse=s=>{try{return JSON.parse(s||'[]')}catch{return [];}};
   const unpack=entry=>{
-    const campaign=parse(entry.campaign_json),second=parse(entry.device_json);
+    // Historical snapshots may predate URL redaction: sanitize on read as well.
+    const campaign=sanitizeClarityExport(parse(entry.campaign_json)),second=parse(entry.device_json);
     const extended=second&&typeof second==='object'&&!Array.isArray(second)&&second.version===2;
-    const pages=extended&&Array.isArray(second.pages)?second.pages:[];
-    const technology=extended&&Array.isArray(second.technology)?second.technology:[];
-    const legacy=Array.isArray(second)?second:[];
-    const report=reportFromCapture({campaign,pages,technology,legacyDevice:legacy});
+    const pages=extended&&Array.isArray(second.pages)?sanitizeClarityExport(second.pages):[];
+    const technology=extended&&Array.isArray(second.technology)?sanitizeClarityExport(second.technology):[];
+    const legacy=Array.isArray(second)?sanitizeClarityExport(second):[];
+    const report=reportFromCapture({campaign,pages,technology,legacyDevice:legacy,days});
     const {dimensions,totals,diagnostics,catalog,limitations,campaigns,pagesDetail}=report;
     return {syncedAt:entry.synced_at,projectId:entry.project_id,
       // Legacy contract kept for existing Clarity integrations:
       campaignMetrics:campaign,deviceMetrics:legacy.length?legacy:technology,
       campaigns:dimensions.Campaign,campaignFriction:campaigns,sources:dimensions.Source,devices:dimensions.Device,
       // Detailed analytics for the dedicated new dashboard.
-      metrics:{totals,dimensions,campaigns,pagesDetail,diagnostics,catalog,limitations,snapshotHours:24,projectId:entry.project_id},
+      metrics:{totals,dimensions,campaigns,pagesDetail,diagnostics,catalog,limitations,snapshotHours:days*24,windowDays:days,projectId:entry.project_id,coverage:report.coverage},
       sampleCoverage:{campaignRows:campaign.find(x=>x.name==='Traffic'||x.metricName==='Traffic')?.information?.length||0,
         pagesRows:pages.find(x=>x.name==='Traffic'||x.metricName==='Traffic')?.information?.length||0,
         technologyRows:technology.find(x=>x.name==='Traffic'||x.metricName==='Traffic')?.information?.length||0}
@@ -189,13 +193,14 @@ export async function insights(env,clientId,storeId){
   const latest=snapshots[0]?unpack(snapshots[0]):null;
   return {ok:true,status:publicStatus(row),latest,
     history:snapshots.map(s=>{const metric=parse(s.campaign_json).find(x=>String(x.name||x.metricName).toLowerCase()==='traffic');return {syncedAt:s.synced_at,campaignSessions:(metric?.information||[]).reduce((sum,r)=>sum+(Number(r.totalSessionCount)||0),0)};}),
-    historyNote:'عينات 24 ساعة متحركة ومتداخلة بتوقيت UTC؛ لا تُجمع عينات التاريخ كأيام مستقلة.'};
+    days,historyNote:'عينات '+(days*24)+' ساعة متحركة ومتداخلة بتوقيت UTC؛ لا تُجمع عينات التاريخ كأيام مستقلة.'};
 }
-async function growthReport(env,clientId,storeId){
-  const basic=await insights(env,clientId,storeId);
+async function growthReport(env,clientId,storeId,days=1){
+  days=clarityDays(days);
+  const basic=await insights(env,clientId,storeId,days);
   if(!basic.latest)return {ok:true,status:basic.status,latest:null,growth:null,history:basic.history};
   const now=new Date();
-  const from=new Date(now.getTime()-86400000).toISOString().slice(0,10);
+  const from=new Date(now.getTime()-days*86400000).toISOString().slice(0,10);
   const to=now.toISOString().slice(0,10);
   let meta=null,metaError=null;
   try{meta=await metaAdsExpertAnalysisV2(env,{clientId,storeId,from,to});}
@@ -214,11 +219,12 @@ export async function handleClarityApi({request,env,ctx,delegate}){
     const action=path.slice('/api/clarity/'.length);
     const write=(action==='connect'||action==='sync'||action==='disconnect');
     const {clientId,storeId}=await userScope(request,env,ctx,delegate,body,write,['insights','growth','report'].includes(action)?'analytics':'integrations');
+    const days=['sync','insights','growth','report'].includes(action)?clarityDays(body.days||url.searchParams.get('days')||1):1;
       if(action==='status'&&method==='GET')return json({ok:true,...publicStatus(await rowFor(env,clientId,storeId))});
     if(action==='connect'&&method==='POST')return json({ok:true,...await saveConnection(env,clientId,storeId,body)});
-    if(action==='sync'&&method==='POST')return json(await syncOne(env,clientId,storeId,{}));
-    if((action==='insights'||action==='report')&&method==='GET')return json(await insights(env,clientId,storeId));
-    if(action==='growth'&&method==='GET')return json(await growthReport(env,clientId,storeId));
+    if(action==='sync'&&method==='POST')return json(await syncOne(env,clientId,storeId,{days}));
+    if((action==='insights'||action==='report')&&method==='GET')return json(await insights(env,clientId,storeId,days));
+    if(action==='growth'&&method==='GET')return json(await growthReport(env,clientId,storeId,days));
     if(action==='disconnect'&&method==='DELETE'){
       await env.DB.prepare("DELETE FROM clarity_snapshots WHERE client_id=? AND store_id=?").bind(clientId,storeId).run();
       await env.DB.prepare("DELETE FROM clarity_connections WHERE client_id=? AND store_id=?").bind(clientId,storeId).run();

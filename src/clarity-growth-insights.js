@@ -6,6 +6,26 @@ const num=v=>{if(v===null||v===undefined||v==='')return null;const x=Number(v);r
 const number=v=>num(v)??0;
 const key=s=>safe(s).normalize('NFKC').toLocaleLowerCase('en').replace(/\s+/g,' ');
 const META_SOURCE=/(facebook|instagram|(^|[^a-z])(?:fb|ig|meta)([^a-z]|$))/i;
+/** Drop URL parameters and fragments BEFORE persisting export rows: links may contain phone numbers,
+ * emails, ad click identifiers or checkout secrets. Existing snapshot contracts remain unchanged.
+ */
+export function sanitizeClarityExport(metrics){
+  if(!Array.isArray(metrics))return [];
+  return metrics.map(metric=>{
+    const information=(Array.isArray(metric.information)?metric.information:[]).map(row=>{
+      const safeRow={};
+      for(const [field,value] of Object.entries(row||{})){
+        const isUrl=/(url|uri|referrer|referer|href|link)/i.test(field);
+        safeRow[field]=isUrl&&typeof value==='string'
+          ?value.replace(/[?#].*$/,'').slice(0,500)
+          :value;
+      }
+      return safeRow;
+    });
+    return {...metric,information};
+  });
+}
+
 const TAXONOMY=Object.freeze({
   Campaign:{label:'الحملات',bucket:'campaign'},
   Source:{label:'المصادر',bucket:'campaign'},
@@ -92,7 +112,7 @@ function catalog(capture){
   }
   return result;
 }
-export function reportFromCapture({campaign=[],pages=[],technology=[],legacyDevice=[]}={}){
+export function reportFromCapture({campaign=[],pages=[],technology=[],legacyDevice=[],days=1}={}){
   const capture={campaign:Array.isArray(campaign)?campaign:[],pages:Array.isArray(pages)?pages:[],technology:Array.isArray(technology)?technology:[]};
   const legacy=Array.isArray(legacyDevice)?legacyDevice:[];
   const dimensions={};
@@ -102,7 +122,13 @@ export function reportFromCapture({campaign=[],pages=[],technology=[],legacyDevi
   }
   const primary=items(capture.campaign,'Traffic'),legacyPrimary=legacy.length?items(legacy,'Traffic'):[];
   const count=primary.length?primary:legacyPrimary;
+  const periodHours=([1,2,3].includes(Number(days))?Number(days):1)*24;
   const totals={sessions:count.reduce((a,b)=>a+number(b.totalSessionCount),0),botSessions:count.reduce((a,b)=>a+number(b.totalBotSessionCount),0),rowCount:count.length};
+  const untagged=count.filter(x=>!safe(x.Campaign)||/^(غير محدد|\(not set\)|not set|undefined)$/i.test(safe(x.Campaign))).reduce((n,x)=>n+number(x.totalSessionCount),0);
+  const facebook=count.filter(x=>META_SOURCE.test(safe(x.Source))).reduce((n,x)=>n+number(x.totalSessionCount),0);
+  const unknownSource=count.filter(x=>!safe(x.Source)||/^(غير محدد|\(not set\)|not set|undefined)$/i.test(safe(x.Source))).reduce((n,x)=>n+number(x.totalSessionCount),0);
+  const metaWithoutCampaign=count.filter(x=>META_SOURCE.test(safe(x.Source))&&(!safe(x.Campaign)||/^(غير محدد|\(not set\)|not set|undefined)$/i.test(safe(x.Campaign)))).reduce((n,x)=>n+number(x.totalSessionCount),0);
+  const coverage={sessions:totals.sessions,untaggedSessions:untagged,taggedSessions:Math.max(0,totals.sessions-untagged),metaSourceSessions:facebook,metaWithoutCampaignSessions:metaWithoutCampaign,unknownSourceSessions:unknownSource,taggedRate:totals.sessions?Number((100*(totals.sessions-untagged)/totals.sessions).toFixed(2)):null,unknownSourceRate:totals.sessions?Number((100*unknownSource/totals.sessions).toFixed(2)):null,metaUntaggedRate:facebook?Number((100*metaWithoutCampaign/facebook).toFixed(2)):null};
   const depth=new Map(segmentAverage(capture.pages,'URL','ScrollDepth','averageScrollDepth').map(r=>[r.name,r.average]));
   const engagement=new Map(segmentAverage(capture.pages,'URL','EngagementTime','averageEngagementTime').map(r=>[r.name,r.average]));
   const pageRage=new Map(segmentMetric(capture.pages,'URL','RageClickCount').map(r=>[r.name,r.rate]));
@@ -120,10 +146,10 @@ export function reportFromCapture({campaign=[],pages=[],technology=[],legacyDevi
   if(Object.values(capture).some(metricLimited))limitations.push('بعض نتائج التقسيم وصلت إلى حد 1000 صف في Clarity، وقد تكون المجاميع أقل من الواقع.');
   if(legacy.length&&!capture.pages.length)limitations.push('العينات القديمة لا تحتوي على تصنيف الصفحات والبلدان والمتصفحات؛ سيظهر ذلك بعد أول مزامنة موسّعة.');
   limitations.push('جلسات كل صفحة URL تمثل الجلسات التي شاهدت الصفحة؛ الجلسة الواحدة قد تزور عدة صفحات، فلا تُجمع الصفحات كزوار فريدين.');
-  limitations.push('كل عينة تمثل 24 ساعة متحركة بتوقيت UTC؛ نوافذ العينات التاريخية قد تكون متداخلة، ولا يمكن جمعها لإنتاج إجمالي شهري دقيق.');
+  limitations.push('كل عينة تمثل '+periodHours+' ساعة متحركة بتوقيت UTC؛ نوافذ العينات التاريخية قد تكون متداخلة، ولا يمكن جمعها لإنتاج إجمالي شهري دقيق.');
   limitations.push('التسجيلات والخرائط الحرارية والفانل التفصيلي غير متاحة من Data Export API؛ تُفتح مباشرة في Clarity.');
-  return {totals,dimensions,pagesDetail,campaigns,diagnostics:FRICTION.map(name=>({metric:name,label:METRIC_LABELS[name],segments:segmentMetric(capture.campaign,'Campaign',name)})),catalog:catalog(capture),
-    limitations,snapshotHours:24,source:'clarity_export',rawDimensions:Object.keys(TAXONOMY)};
+  return {totals,coverage,dimensions,pagesDetail,campaigns,diagnostics:FRICTION.map(name=>({metric:name,label:METRIC_LABELS[name],segments:segmentMetric(capture.campaign,'Campaign',name)})),catalog:catalog(capture),
+    limitations,snapshotHours:periodHours,source:'clarity_export',rawDimensions:Object.keys(TAXONOMY)};
 }
 const round=v=>Number(number(v).toFixed(2));
 export function mergeMetaWithClarity(report,meta){
@@ -138,6 +164,8 @@ export function mergeMetaWithClarity(report,meta){
       claritySessions:c?.sessions??null,metaSourceSessions:c?.paidSessions??null,rageRate:c?.RageClickCount??null,deadRate:c?.DeadClickCount??null,scriptErrorRate:c?.ScriptErrorCount??null,quickbackRate:c?.QuickbackClick??null};
   });
   const recommendations=[];
+  const cov=report?.coverage||{};
+  if(cov.metaWithoutCampaignSessions>0)recommendations.push({priority:'high',category:'utm_health',title:'زيارات إعلانات Meta بلا اسم حملة واضح',detail:'ظهر '+cov.metaWithoutCampaignSessions+' جلسات من مصدر Facebook/Instagram دون utm_campaign محدد داخل Clarity. أصلح روابط الإعلان والتتبع قبل تفسير انخفاض جودة هذه الحملات.'});
   const significant=rows.filter(r=>r.spend>0).sort((a,b)=>b.spend-a.spend);
   if(!meta?.connected){recommendations.push({priority:'info',category:'connections',title:'إعلانات Meta غير متصلة',detail:'ربط Meta Ads في التكاملات يضيف الإنفاق وأداء الحملة إلى إشارات Clarity.'});}
   for(const r of significant.slice(0,25)){
@@ -153,5 +181,5 @@ export function mergeMetaWithClarity(report,meta){
     recommendations:[...recommendations,...metaRecommendations].slice(0,75),
     adsets:(meta?.adsets?.rows||[]).slice(0,100).map(x=>({name:x.name,campaignName:x.campaignName,spend:round(x.spend),purchases:round(x.purchases),cpp:round(x.cpp),roas:round(x.roas),ctr:round(x.ctr),diagnostics:x.flags||[]})),
     ads:(meta?.ads?.rows||[]).slice(0,100).map(x=>({name:x.name,campaignName:x.campaignName,adsetName:x.adsetName,spend:round(x.spend),purchases:round(x.purchases),cpp:round(x.cpp),roas:round(x.roas),ctr:round(x.ctr),diagnostics:x.flags||[]})),
-    attributionWarning:'المقارنة بالاسم والإشارات UTM فقط. Clarity يقدم آخر 24 ساعة UTC بينما Meta يستخدم أيامًا تقويمية وفترات Attribution مختلفة؛ لا توجد مطابقة جلسة إلى طلب أو Creative.'};
+    attributionWarning:'المقارنة بالاسم وإشارات UTM فقط. Clarity يقدم نافذة '+(Number(report?.snapshotHours)||24)+' ساعة متحركة UTC بينما Meta يحسب أيامًا تقويمية وفترات Attribution مختلفة؛ مصدر Facebook/Instagram في Clarity قد يشمل زيارات عضوية وإحالات ولا يثبت نقرات مدفوعة. لا توجد مطابقة جلسة إلى طلب أو Creative.'};
 }
