@@ -5,6 +5,7 @@ import {spawn} from 'node:child_process';
 import {randomBytes} from 'node:crypto';
 
 const uiSrc=await readFile(new URL('../public/v2/modules-v29-product-import.js',import.meta.url),'utf8');
+const bundleSrc=await readFile(new URL('../public/v2/modules-v134-bundle-import-picker.js',import.meta.url),'utf8');
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 let chrome=null,userDir=null,cdp=null;
 async function findChrome(){for(const path of ['/usr/bin/google-chrome','/usr/bin/google-chrome-stable','/usr/bin/chromium','/usr/bin/chromium-browser','/opt/google/chrome/chrome'])try{await access(path);return path;}catch{}throw new Error('No Chrome/Chromium executable found for product import fixture QA');}
@@ -34,6 +35,7 @@ try{
       drawer:(title,html)=>{document.getElementById('drawer').innerHTML=html;},
       api:async(path,options={})=>{
         if(path.startsWith('/api/commerce/product-import/providers'))return [{provider:'easyorders',name:'Easy Orders',label:'مزامنة Easy Orders'}];
+        if(path.startsWith('/api/commerce/product-import/bundle-options?'))return {products:[{id:'INV-A',name:'جراب',sku:'CASE',stock:10},{id:'INV-B',name:'نظارة',sku:'GLASSES',stock:5}],mappings:{P2:{productId:'BND2',components:[{productId:'INV-B',quantity:1}]}}};
         if(path==='/api/commerce/product-import/preview')return {provider:'easyorders',name:'Easy Orders',total:2,created:1,updated:1,priceRule:'discounted_price',items};
         if(path==='/api/commerce/product-import'){window.__importPayload=JSON.parse(options.body||'{}');return {created:1,updated:0,skipped:0,errors:[],selectionMode:window.__importPayload.selectionMode,total:1,costsCaptured:1};}
         throw new Error('Unexpected API '+path);
@@ -41,12 +43,19 @@ try{
     };
     return true;
   })()`);
+  await evalJs(`eval(${JSON.stringify(bundleSrc)})`);
   await evalJs(`eval(${JSON.stringify(uiSrc)})`);
   await waitFor(`document.documentElement.dataset.productImport==='required-costs-v29.2'`,'v29.2 UI ready');
   await evalJs(`products()`);await waitFor(`!!document.getElementById('commerceProductImport')`,'product import button');
   const opened=await evalJs(`window.KunCommerceProductImportV29?.open?.('easyorders')`);if(!opened)throw new Error('Public Easy Orders review entrypoint did not open');
   await waitFor(`!!document.getElementById('syncCommerceProducts')`,'required sync drawer');
 
+  await waitFor(`document.querySelector('.commerceBundleEdit[data-bundle-id="P2"]')?.textContent.includes('مربوط')`,'existing optional bundle persisted');
+  // Stage a mapping for P1 without touching P2's existing mapping.
+  await evalJs(`document.querySelector('.commerceBundleEdit[data-bundle-id="P1"]').click()`);
+  await waitFor(`!!document.getElementById('bun134Stage')`,'bundle editor');
+  await evalJs(`(()=>{const select=document.querySelector('.bun134-product');select.value='INV-A';select.dispatchEvent(new Event('change',{bubbles:true}));document.querySelector('.bun134-qty').value='2';document.getElementById('bun134Stage').click();return true;})()`);
+  await waitFor(`document.querySelector('.commerceBundleEdit[data-bundle-id="P1"]')?.textContent.includes('مُعدّل')`,'staged bundle mapping');
   const initial=await evalJs(`(()=>({disabled:document.getElementById('syncCommerceProducts').disabled,modeChecked:!!document.querySelector('input[name="commerceImportMode"]:checked'),costs:document.querySelectorAll('.commerceImportCost').length,text:document.getElementById('drawer').innerText}))()`);
   if(!initial.disabled||initial.modeChecked||initial.costs!==2)throw new Error(`Initial mandatory state is wrong: ${JSON.stringify(initial)}`);
   if(!initial.text.includes('راجع التكاليف قبل المزامنة')||!initial.text.includes('السعر بعد الخصم')||!initial.text.includes('599')||!initial.text.includes('800'))throw new Error('In-system cost review or discounted Easy Orders selling-price explanation/values are not visible');
@@ -67,6 +76,6 @@ try{
   await evalJs(`(()=>{const input=document.querySelector('.commerceImportCost[data-cost-id="P1"]');input.value='220';input.dispatchEvent(new Event('input',{bubbles:true}));document.getElementById('syncCommerceProducts').click();return true;})()`);
   await waitFor(`window.__importPayload!==null`,'sync payload');
   const payload=await evalJs(`window.__importPayload`);
-  if(payload.selectionMode!=='selected'||payload.selectedExternalIds?.length!==1||payload.selectedExternalIds[0]!=='P1'||Number(payload.productCosts?.P1)!==220)throw new Error(`Mandatory sync payload is wrong: ${JSON.stringify(payload)}`);
+  if(payload.selectionMode!=='selected'||payload.selectedExternalIds?.length!==1||payload.selectedExternalIds[0]!=='P1'||Number(payload.productCosts?.P1)!==220||payload.bundleComponents?.P1?.[0]?.productId!=='INV-A'||payload.bundleComponents?.P1?.[0]?.quantity!==2||Object.prototype.hasOwnProperty.call(payload.bundleComponents||{},'P2'))throw new Error(`Mandatory sync payload is wrong: ${JSON.stringify(payload)}`);
   console.log('Browser product import fixture QA passed: inventory/public entry opens the in-system cost review, scope choice is explicit, all/selected modes stay blocked until every targeted product has a cost, and sync sends selection + productCosts.');
 }finally{await cleanupBrowser();}
