@@ -114,7 +114,11 @@ async function syncOne(env,clientId,storeId,{force=false}={}){
   if(!row.token_ciphertext_b64||!row.token_iv_b64)throw err('أضف Data Export API Token لتفعيل التحليلات',409,'CLARITY_TOKEN_REQUIRED');
   // Three separate 1-day views per snapshot; 2 scheduled snapshots consume 6 of the 10 project requests/day. Reserve 2 for troubleshooting.
   const age=Date.now()-Date.parse(row.last_sync_at||'1970-01-01T00:00:00Z');
-  if(!force&&Number.isFinite(age)&&age<4*60*60*1000)return {ok:true,skipped:true,reason:'fresh_cache',...publicStatus(row)};
+  if(!force&&Number.isFinite(age)&&age<4*60*60*1000){
+    const fresh=await env.DB.prepare('SELECT device_json FROM clarity_snapshots WHERE client_id=? AND store_id=? AND project_id=? ORDER BY synced_at DESC LIMIT 1').bind(clientId,storeId,row.project_id).first();
+    let extended=false;try{extended=JSON.parse(fresh?.device_json||'null')?.version===2;}catch{}
+    if(extended)return {ok:true,skipped:true,reason:'fresh_cache',...publicStatus(row)};
+  }
   const day=today();
   const attemptAt=new Date().toISOString();
   const reserved=await env.DB.prepare("UPDATE clarity_connections SET quota_count=CASE WHEN quota_day=? THEN quota_count+3 ELSE 3 END,quota_day=?,last_attempt_at=?,updated_at=? WHERE client_id=? AND store_id=? AND (quota_day IS NULL OR quota_day<>? OR quota_count<=5)").bind(day,day,attemptAt,attemptAt,clientId,storeId,day).run();
@@ -195,7 +199,8 @@ async function growthReport(env,clientId,storeId){
   let meta=null,metaError=null;
   try{meta=await metaAdsExpertAnalysisV2(env,{clientId,storeId,from,to});}
   catch(e){metaError={code:e?.code||'META_READ_FAILED',message:'تعذر تحميل تحليل Meta؛ تقرير Clarity متاح بصورة مستقلة.'};}
-  return {...basic,growth:mergeMetaWithClarity(basic.latest.metrics,meta),metaError};
+  const latest={...basic.latest};delete latest.campaignMetrics;delete latest.deviceMetrics;
+  return {...basic,latest,growth:mergeMetaWithClarity(latest.metrics,meta),metaError};
 }
 
 export async function handleClarityApi({request,env,ctx,delegate}){
