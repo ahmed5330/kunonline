@@ -8,7 +8,7 @@ const view=()=>document.querySelector('.nav button.active[data-view]')?.dataset.
 const tabs={overview:'نظرة عامة',growth:'تحليل الإعلانات والنمو',pages:'الصفحات وتجربة الشراء',audience:'الزوار والأجهزة',friction:'النقرات والمشكلات',health:'جودة التتبع والربط',metrics:'كل المقاييس'};
 const dims={Campaign:'الحملات',Source:'مصادر الزيارات',Device:'الأجهزة',URL:'صفحات المتجر',Medium:'UTM Medium',Channel:'قنوات الزيارة',Browser:'المتصفحات',OS:'أنظمة التشغيل','Country/Region':'الدول والمناطق'};
 const issues={RageClickCount:'Rage Clicks',DeadClickCount:'Dead Clicks',QuickbackClick:'Quickback',ScriptErrorCount:'Script Errors',ErrorClickCount:'Error Clicks',ExcessiveScroll:'Excessive Scroll'};
-const status={meta_source_detected:'مصدر Meta مؤكد من UTM',utm_missing:'اسم الحملة غير ظاهر في Clarity',source_missing:'المصدر غير محدد',source_not_meta:'المصدر ليس Meta'};
+const status={meta_source_detected:'المصدر Meta حسب Clarity (ليس إثبات دفع)',utm_missing:'اسم الحملة غير ظاهر في Clarity',source_missing:'المصدر غير محدد',source_not_meta:'المصدر ليس Meta'};
 const toast=m=>window.showToast?window.showToast(m):console.log(m);
 async function context(){
  const clientId=tx(await window.kunClientId?.()),storeId=tx(await window.kunStoreId?.());
@@ -60,7 +60,7 @@ function summary(d){
  const m=d.latest?.metrics||{},g=d.growth||{},paid=(m.campaigns||[]).reduce((total,x)=>total+(Number(x.paidSessions)||0),0);
  return '<div class="cards">'+metric('جلسات Clarity',n(m.totals?.sessions),'آخر '+(m.snapshotHours||24)+' ساعة UTC')+
  metric('جلسات البوت',n(m.totals?.botSessions),'وفق تصنيف Clarity')+
- metric('جلسات مصدر Meta',n(paid),'مصدر facebook/instagram ضمن UTM')+
+ metric('جلسات مصدر Meta',n(paid),'حسب مصدر Clarity، قد يشمل زيارات عضوية')+
  metric('الحملات',n(m.dimensions?.Campaign?.length),'الأسماء الظاهرة بالتقسيم')+
  metric('حملات Meta',n(g.campaigns?.length),'بما فيها غير المطابقة')+
  metric('آخر سحب',d.latest?.syncedAt?new Date(d.latest.syncedAt).toLocaleString('ar-EG'):'—','بيانات مخزنة من API')+'</div>';
@@ -118,11 +118,11 @@ function health(d){
  if((sample.campaignRows||0)>=1000||(sample.pagesRows||0)>=1000||(sample.technologyRows||0)>=1000)flags.push('هناك نتيجة وصلت 1000 صف؛ بعض التقسيمات مقطوعة حسب سقف Data Export API.');
  if(age!=null&&age>24)flags.push('البيانات المخزنة أقدم من 24 ساعة؛ اختبر التوكن وحد المزامنة.');
  if((c.metaSourceSessions||0)===0&&(c.sessions||0)>0)flags.push('لم يرصد Clarity مصدر Facebook أو Instagram في النافذة المختارة. تأكد من UTM Source أولًا.');
- return '<div class="cards">'+metric('جلسات مصدر Meta',n(c.metaSourceSessions),'من utm_source')+
+ return '<div class="cards">'+metric('جلسات مصدر Meta',n(c.metaSourceSessions),'حسب Clarity، لا تثبت نقرة مدفوعة')+
  metric('Meta بلا اسم حملة',n(c.metaWithoutCampaignSessions),'تحتاج utm_campaign')+
  metric('نسبة تسمية كل الجلسات',pct(c.taggedRate),'Organic قد يكون غير موسوم طبيعيًا')+
  metric('زيارات بلا مصدر',n(c.unknownSourceSessions),'ليس بالضرورة فقدان التتبع')+
- metric('جودة تسمية Meta',c.metaUntaggedRate==null?'—':pct(100-c.metaUntaggedRate),'وجود utm_campaign بمصدر Meta')+
+ metric('جودة تسمية Meta',c.metaUntaggedRate==null?'—':pct(100-c.metaUntaggedRate),'وجود اسم حملة في تقسيم Clarity')+
  metric('عمر آخر مزامنة',age==null?'—':n(age)+' ساعة','آخر نجاح، وليس آخر زيارة')+'</div>'+
  '<section class="box"><h3>فحص دقة التقارير</h3>'+
  (flags.length?flags.map(m=>'<div class="note warning">'+esc(m)+'</div>').join(''):'<div class="note">لا توجد إشارات خلل مؤكدة بالبيانات المتاحة؛ راجع Live Sessions داخل Clarity.</div>')+
