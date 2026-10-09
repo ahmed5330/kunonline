@@ -78,7 +78,7 @@ function overview(d){
 function growth(d){
  const g=d.growth||{};
  const a=(g.campaigns||[]).filter(x=>!V.search||x.name.toLowerCase().includes(V.search.toLowerCase()));
- const lines=a.map(x=>'<tr><td><b>'+esc(x.name)+'</b><div class="muted">'+esc(status[x.sourceStatus]||'')+'</div></td>'+
+ const lines=a.map(x=>'<tr><td><b>'+esc(x.name)+'</b><div class="muted">'+esc(status[x.sourceStatus]||'')+'</div>'+((x.landingPages||[]).length?'<div class="muted">صفحات وصول: '+(x.landingPages||[]).slice(0,2).map(p=>esc(p.url)+' ('+n(p.sessions)+')').join('، ')+'</div>':'')+'</td>'+
  '<td>'+n(x.spend)+'</td><td>'+pct(x.ctr)+'</td><td>'+n(x.platformPurchases)+'</td><td>'+n(x.realOrders)+'</td><td>'+n(x.deliveredOrders)+'</td>'+
  '<td>'+n(x.realRoas)+'x</td><td>'+n(x.claritySessions)+'</td><td>'+n(x.metaSourceSessions)+'</td><td>'+pct(x.rageRate)+'</td><td>'+pct(x.deadRate)+'</td><td>'+pct(x.scriptErrorRate)+'</td></tr>');
  return '<section class="box"><h3>توليفة التسويق: Meta × Clarity × نتائج الطلبات</h3><div class="note warning">'+esc(g.attributionWarning||'بيانات Meta/Clarity منفصلة في أوقات ومناهج القياس')+'</div>'+
@@ -88,10 +88,18 @@ function growth(d){
  table(['الإعلان','المجموعة','الحملة','Spend','Purchases','CPP','ROAS'],(g.ads||[]).slice(0,70).map(r=>'<tr><td>'+esc(r.name)+'</td><td>'+esc(r.adsetName)+'</td><td>'+esc(r.campaignName)+'</td><td>'+n(r.spend)+'</td><td>'+n(r.purchases)+'</td><td>'+n(r.cpp)+'</td><td>'+n(r.roas)+'x</td></tr>'))+'</section>';
 }
 function pages(d){
- const dim=d.latest.metrics.dimensions||{};
- return '<div class="note warning">الجلسات حسب صفحة URL ليست Funnel متتابعًا؛ استخدم Clarity Funnels والتسجيلات للتمييز بين التوقف ومشاهدة الصفحة.</div>'+breakdown('URL',dim.URL,100)+
+ const m=d.latest.metrics||{},dim=m.dimensions||{},details=m.pagesDetail||[];
+ const linked=new Map();
+ for(const campaign of m.campaigns||[])for(const p of campaign.landingPages||[]){
+   const list=linked.get(p.url)||[];list.push({name:campaign.name,sessions:p.sessions});linked.set(p.url,list);
+ }
+ const cells=details.slice(0,100).map(p=>'<tr><td><b>'+esc(p.name)+'</b><div class="muted">'+(linked.get(p.name)||[]).sort((a,b)=>b.sessions-a.sessions).slice(0,3).map(x=>esc(x.name)+' ('+n(x.sessions)+')').join('، ')+'</div></td>'+
+ '<td>'+n(p.sessions)+'</td><td>'+n(p.botSessions)+'</td><td>'+pct(p.scrollDepth)+'</td><td>'+n(p.engagementTime)+'</td><td>'+pct(p.rageRate)+'</td><td>'+pct(p.deadRate)+'</td></tr>');
+ return '<div class="note warning">جلسات الصفحة ليست Funnel تحويلًا ولا زوارًا فريدين. أرقام متوسط التمرير والتفاعل تظهر فقط إن وفر Clarity القيم والأوزان اللازمة. لو المصدر غير كافٍ يظهر «—».</div>'+
+ '<section class="box"><h3>تحليل صفحات الوصول وتجربة الشراء</h3>'+
+ table(['الصفحة / أبرز حملات UTM','جلسات','بوت','Scroll Depth','Engagement Time','Rage %','Dead %'],cells)+'</section>'+
  '<div class="grid">'+breakdown('Medium',dim.Medium,45)+breakdown('Channel',dim.Channel,45)+'</div>'+
- '<section class="box"><h3>رحلة العميل داخل صفحة المنتج والشراء</h3><p>راجع على Clarity تسجيلات العملاء وخرائط الضغط والتمرير وأخطاء التحميل عند الصفحات الأعلى زيارةً من الإعلانات، خصوصًا على الجوال.</p>'+
+ '<section class="box"><h3>تحسين صفحة المنتج والـ Checkout</h3><p>راجع النقرات غير الفعالة والتمرير والتفاعل وأخطاء التحميل في صفحة وصول كل حملة، خاصة على الجوال. استخدم Funnel حقيقي من Clarity أو حدث شراء موثق؛ لا تستنتج نسبة تحويل من مشاهدات الصفحات.</p>'+
  '<a class="action" href="https://clarity.microsoft.com/" target="_blank" rel="noopener noreferrer">التسجيلات والـ Heatmaps والـ Funnels ↗</a></section>';
 }
 function audience(d){
@@ -118,7 +126,7 @@ function csv(){
  const d=V.data;if(!d?.latest)return;
  let keys=['name','sessions','botSessions'],rows=d.latest.metrics.dimensions.Campaign||[];
  if(V.tab==='growth'){keys=['name','spend','ctr','platformPurchases','realOrders','deliveredOrders','realRoas','claritySessions','metaSourceSessions','rageRate','deadRate','scriptErrorRate','sourceStatus'];rows=d.growth?.campaigns||[];}
- if(V.tab==='pages')rows=d.latest.metrics.dimensions.URL||[];
+ if(V.tab==='pages'){keys=['name','sessions','botSessions','scrollDepth','engagementTime','rageRate','deadRate'];rows=d.latest.metrics.pagesDetail||[];}
  if(V.tab==='audience'){keys=['dimension','name','sessions','botSessions'];rows=Object.entries(d.latest.metrics.dimensions).flatMap(([dimension,list])=>list.map(x=>({...x,dimension})));}
  if(V.tab==='friction'){keys=['name','sessions',...Object.keys(issues)];rows=d.latest.metrics.campaigns||[];}
  if(V.tab==='metrics'){keys=['metric','label','scope','rows','limited'];rows=d.latest.metrics.catalog||[];}
