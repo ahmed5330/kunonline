@@ -136,8 +136,8 @@ function metrics(d){
  table(['المقياس','مجموعة البيانات','عدد الصفوف','الحد'],catalog.map(x=>'<tr><td>'+esc(x.label)+'<div class="muted">'+esc(x.metric)+'</div></td><td>'+esc(x.scope)+'</td><td>'+n(x.rows)+'</td><td>'+esc(x.limited?'ربما 1000':'—')+'</td></tr>'))+'</section>'+
  '<div class="grid">'+catalog.map(x=>'<section class="box"><h3>'+esc(x.label)+'</h3><div class="muted">'+esc(x.scope)+'</div><pre>'+esc(JSON.stringify(x.example,null,2))+'</pre></section>').join('')+'</div>';
 }
-function history(d){return '<section class="box"><h3>تاريخ المزامنات</h3><p>كل نقطة تمثل آخر 24 ساعة وقت سحبها؛ الفترات متداخلة ولا تُجمع لإجمالي شهري.</p>'+
- table(['وقت العينة','الجلسات في نافذة 24 ساعة'],(d.history||[]).slice(0,30).map(x=>'<tr><td>'+esc(new Date(x.syncedAt).toLocaleString('ar-EG'))+'</td><td>'+n(x.campaignSessions)+'</td></tr>'))+'</section>';}
+function history(d){return '<section class="box"><h3>تاريخ المزامنات</h3><p>كل نقطة تمثل نافذة متحركة وقت سحبها؛ الفترات متداخلة ولا تُجمع لإجمالي شهري.</p>'+
+ table(['وقت العينة','الجلسات في نافذة '+(V.days*24)+' ساعة'],(d.history||[]).slice(0,30).map(x=>'<tr><td>'+esc(new Date(x.syncedAt).toLocaleString('ar-EG'))+'</td><td>'+n(x.campaignSessions)+'</td></tr>'))+'</section>';}
 function csv(){
  const d=V.data;if(!d?.latest)return;
  let keys=['name','sessions','botSessions'],rows=d.latest.metrics.dimensions.Campaign||[];
@@ -145,6 +145,7 @@ function csv(){
  if(V.tab==='pages'){keys=['name','sessions','botSessions','scrollDepth','engagementTime','rageRate','deadRate'];rows=d.latest.metrics.pagesDetail||[];}
  if(V.tab==='audience'){keys=['dimension','name','sessions','botSessions'];rows=Object.entries(d.latest.metrics.dimensions).flatMap(([dimension,list])=>list.map(x=>({...x,dimension})));}
  if(V.tab==='friction'){keys=['name','sessions',...Object.keys(issues)];rows=d.latest.metrics.campaigns||[];}
+ if(V.tab==='health'){keys=['metric','value'];rows=Object.entries(d.latest.metrics.coverage||{}).map(([metric,value])=>({metric,value}));}
  if(V.tab==='metrics'){keys=['metric','label','scope','rows','limited'];rows=d.latest.metrics.catalog||[];}
  const safe=v=>String(v??'').replace(/"/g,'""').replace(/^[=+\-@]/,"'$&");
  const lines=[keys,...rows.map(x=>keys.map(k=>x[k]))],txt='\uFEFF'+lines.map(r=>r.map(v=>'"'+safe(v)+'"').join(',')).join('\r\n');
@@ -155,26 +156,27 @@ function render(){
  const el=ROOT();if(!el)return;style();
  const d=V.data,missing=!d?.latest;
  el.innerHTML='<div class="cl136"><header class="head"><div><h2>◈ Clarity Intelligence</h2><p>مركز التحليلات التفصيلية وسلوك العميل والنمو من Meta Ads</p></div><span class="space"></span>'+
- '<button id="cl136-system">التقارير العامة</button><button id="cl136-sync">مزامنة Clarity</button><button id="cl136-csv">CSV</button></header>'+
+ '<button id="cl136-system">التقارير العامة</button><label style="font-size:12px;font-weight:800">الفترة <select id="cl136-days" aria-label="فترة Clarity"><option value="1" '+(V.days===1?'selected':'')+'>24 ساعة</option><option value="2" '+(V.days===2?'selected':'')+'>48 ساعة</option><option value="3" '+(V.days===3?'selected':'')+'>72 ساعة</option></select></label><button id="cl136-sync">مزامنة Clarity</button><button id="cl136-csv">CSV</button></header>'+
  '<nav class="tabs">'+Object.entries(tabs).map(([id,label])=>'<button data-tab="'+esc(id)+'" class="'+(V.tab===id?'sel':'')+'">'+esc(label)+'</button>').join('')+'</nav>'+
- (missing?'<section class="box"><h3>لا توجد بيانات لهذا المتجر حتى الآن</h3><p>اربط Project ID وData Export API Token داخل التكاملات ثم اختبر الاتصال.</p><button id="cl136-setup">فتح التكاملات</button></section>':
- (V.tab==='overview'?overview(d):V.tab==='growth'?growth(d):V.tab==='pages'?pages(d):V.tab==='audience'?audience(d):V.tab==='friction'?friction(d):metrics(d))+history(d))+
+ (missing?'<section class="box"><h3>لا توجد بيانات مخزنة لفترة '+(V.days*24)+' ساعة</h3><p>لو الربط متصل، اضغط مزامنة Clarity لسحب النافذة المختارة (3 طلبات API). وإن لم يكن متصلًا فراجعه داخل التكاملات.</p><button id="cl136-setup">فتح التكاملات</button></section>':
+ (V.tab==='overview'?overview(d):V.tab==='growth'?growth(d):V.tab==='pages'?pages(d):V.tab==='audience'?audience(d):V.tab==='friction'?friction(d):V.tab==='health'?health(d):metrics(d))+history(d))+
  '<section class="box"><p>آخر مزامنة '+esc(d?.status?.lastSyncAt?new Date(d.status.lastSyncAt).toLocaleString('ar-EG'):'—')+
  ' · استهلاك API: '+n(d?.status?.quotaUsedToday||0)+' / '+n(d?.status?.quotaBudget||8)+
  ' · 3 طلبات لكل مزامنة موسعة، مع احتياطي لحدود Clarity.</p><a class="action" target="_blank" rel="noopener noreferrer" href="https://clarity.microsoft.com/">افتح Microsoft Clarity ↗</a></section></div>';
  el.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{V.tab=b.dataset.tab;V.search='';render();});
  el.querySelector('#cl136-system').onclick=()=>{V.active=false;V.request++;document.querySelector('.nav button[data-view="analytics"]')?.click();};
  el.querySelector('#cl136-csv').onclick=csv;
+ el.querySelector('#cl136-days').onchange=e=>{V.days=Number(e.target.value)||1;V.data=null;const el=ROOT();if(el)el.innerHTML='<div class="cl136"><div class="box">جاري تحميل الفترة من البيانات المخزنة...</div></div>';reload().catch(err=>{toast(err.message);render();});};
  el.querySelector('#cl136-setup')?.addEventListener('click',()=>document.querySelector('.nav button[data-view="integrations"]')?.click());
  el.querySelector('#cl136-sync').onclick=async e=>{
   if(V.busy)return;V.busy=true;e.target.disabled=true;
-  try{const synced=await api('/api/clarity/sync',{method:'POST',body:'{}'});toast(synced.skipped?'البيانات حديثة؛ تم استخدام النسخة المخزنة':'تمت مزامنة Clarity');await reload();}
+  try{const synced=await api('/api/clarity/sync',{method:'POST',body:JSON.stringify({days:V.days})});toast(synced.skipped?'البيانات حديثة؛ تم استخدام النسخة المخزنة':'تمت مزامنة Clarity');await reload();}
   catch(ex){toast(ex.message);e.target.disabled=false;}finally{V.busy=false;}
  };
  const input=el.querySelector('#cl136-search');if(input)input.oninput=e=>{V.search=e.target.value;const selection=e.target.selectionStart;render();const again=ROOT().querySelector('#cl136-search');again?.focus();again?.setSelectionRange(selection,selection);};
 }
 async function reload(){
- const rid=++V.request;const d=await api('/api/clarity/growth');if(rid!==V.request)return;V.data=d;render();
+ const rid=++V.request;const d=await api('/api/clarity/growth?days='+V.days);if(rid!==V.request)return;V.data=d;render();
 }
 function open(which='overview',depth=0){
  if(view()!=='analytics'){
@@ -206,5 +208,5 @@ function hook(){
  setTimeout(shortcut,150);
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',hook,{once:true});else hook();
-window.KunClarityGrowthV136={open,version:'136.0'};
+window.KunClarityGrowthV136={open,version:'137.0'};
 })();
