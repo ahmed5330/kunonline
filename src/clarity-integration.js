@@ -171,11 +171,12 @@ export async function insights(env,clientId,storeId,days=1){
   const snapshots=(rs.results||[]).filter(x=>snapshotDays(x.device_json)===days);
   const parse=s=>{try{return JSON.parse(s||'[]')}catch{return [];}};
   const unpack=entry=>{
-    const campaign=parse(entry.campaign_json),second=parse(entry.device_json);
+    // Historical snapshots may predate URL redaction: sanitize on read as well.
+    const campaign=sanitizeClarityExport(parse(entry.campaign_json)),second=parse(entry.device_json);
     const extended=second&&typeof second==='object'&&!Array.isArray(second)&&second.version===2;
-    const pages=extended&&Array.isArray(second.pages)?second.pages:[];
-    const technology=extended&&Array.isArray(second.technology)?second.technology:[];
-    const legacy=Array.isArray(second)?second:[];
+    const pages=extended&&Array.isArray(second.pages)?sanitizeClarityExport(second.pages):[];
+    const technology=extended&&Array.isArray(second.technology)?sanitizeClarityExport(second.technology):[];
+    const legacy=Array.isArray(second)?sanitizeClarityExport(second):[];
     const report=reportFromCapture({campaign,pages,technology,legacyDevice:legacy,days});
     const {dimensions,totals,diagnostics,catalog,limitations,campaigns,pagesDetail}=report;
     return {syncedAt:entry.synced_at,projectId:entry.project_id,
