@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
-import {__subscriptionInternals} from '../src/subscription-billing.js';
+import {__subscriptionInternals,subscriptionAccess} from '../src/subscription-billing.js';
 
 const {monthBounds,trialActive,daysBetween}=__subscriptionInternals;
 assert.deepEqual(monthBounds('2026-10-04'),{key:'2026-10',from:'2026-10-01',to:'2026-10-31'});
@@ -45,13 +45,22 @@ const pendingListBlock=topups.slice(topups.indexOf('export async function listPe
 assert.ok(!pendingListBlock.includes('proof_data_url,proof_url,status'),'pending topup list must not select Base64 screenshots');
 assert.ok(pendingListBlock.includes('has_proof'),'pending topup list should expose only a lightweight proof-presence flag');
 assert.ok(commerce27.includes("getPendingTopupProofAdmin(env,decodeURIComponent(m[1]))"),'admin proof route must be wired');
-assert.ok(control.includes('SUBSCRIPTION_ACCESS_PAUSED'),'server access lock must be reserved for an explicit subscription/wallet pause');
-assert.ok(control.includes("path==='/api/wallet/topups'&&method==='POST'"),'client topup submission must bypass normal feature routing');
-assert.ok(!billing.includes("reason=walletPaused?'wallet_paused':emptyBalance?'balance_empty':insufficientOrderBalance"),'positive balance must not lock merely because it is below the next order fee');
-assert.ok(!billing.includes('const locked=walletPaused||emptyBalance'),'empty balance must not lock an unmanaged client out of the application');
-assert.ok(!billing.includes('const locked=subscriptionPaused||walletPaused||emptyBalance'),'empty balance must not lock a managed client out of the application');
-assert.ok(billing.includes('const locked=subscriptionPaused||walletPaused'),'only explicit subscription/wallet pauses may lock managed access');
-assert.ok(ui.includes('الرصيد يحتاج شحن — النظام متاح'),'client UI must state that empty balance no longer disables the app');
+assert.ok(control.includes('SUBSCRIPTION_BALANCE_REQUIRED'),'paid wallet exhaustion must return a distinct 402 code');
+assert.ok(control.includes("path==='/api/wallet/topups'&&method==='POST'"),'client topup submission must remain available while locked');
+assert.ok(!billing.includes("reason=walletPaused?'wallet_paused':emptyBalance?'balance_empty':insufficientOrderBalance"),'small positive balances should remain active until zero');
+assert.ok(billing.includes("const locked=walletPaused||(billed&&emptyBalance)"),'unmanaged legacy accounts are exempt unless v27 wallet billing is explicitly configured');
+assert.ok(billing.includes("const locked=subscriptionPaused||walletPaused||emptyBalance"),'managed paid zero balances must be locked');
+assert.ok(billing.includes("emptyBalance?'balance_empty':null"),'client and admin must expose the precise balance-empty reason');
+assert.ok(ui.includes('الرصيد انتهى — التشغيل متوقف'),'client UI must communicate the balance-based lock');
+assert.ok(ui.includes('refreshTopupHistory'),'client should see approval/pending/rejection status');
+const topupRequest=fs.readFileSync('src/wallet-topup-request.js','utf8');
+const listTopupSql=topupRequest.slice(topupRequest.indexOf('export async function listTopups'));
+assert.ok(listTopupSql.includes('has_proof'),'client topup list should only receive proof presence');
+assert.ok(!listTopupSql.includes('transfer_method,proof_data_url,proof_url,status'),'client status updates must not download entire payment screenshot');
+assert.ok(preview.indexOf('const subscription=await handleSubscriptionControl')<preview.indexOf('const competitors=await handleCompetitorIntelligence'),'preview must enforce billing before add-on AI and competitors routes');
+assert.ok(ui.includes('updateBalanceBanner'),'client must receive a proactive balance alert');
+assert.ok(ui.includes("state.adminClients.filter(x=>x.reason==='balance_empty')"),'admin exhausted-balance count must reflect true billing locks');
+assert.ok(fs.readFileSync('public/v2/modules-v79-printing.js','utf8').includes("try{await render();if(window.KunSubscriptionsV127?.access?.locked"),'J&T sending state must unwind after billing/refresh errors');
 assert.ok(orders.includes('startingBalance<=0'),'order billing must stop only after balance is exhausted');
 assert.ok(orders.includes('const shortage=round2(fee-startingBalance)'),'final order must be allowed to consume the remaining positive balance and cross once below zero');
 assert.ok(orders.includes('orderBeforeBillingStart'),'order billing must compare business order date with the paid billing start');
@@ -122,8 +131,8 @@ assert.ok(ui.includes("b.onclick=event=>{event?.preventDefault?.();event?.stopPr
 assert.ok(ui.includes("$$('[data-sub127-hidden=\"1\"]')"),'restore navigation must iterate all hidden routes');
 assert.ok(ui.includes("$('.nav button[data-view]')"),'navigation state sync must iterate all routes with querySelectorAll semantics');
 assert.equal(/(?<!\$)\$\([^\n;]*\)\.forEach\s*\(/.test(ui),false,'single-element $() helper must never be used with forEach');
-assert.ok(preview.includes('/v2/modules-v127-subscriptions.js?v=127.16'),'preview must load v127.16 UI');
-assert.ok(production.includes('/v2/modules-v127-subscriptions.js?v=127.16'),'production must load v127.16 UI');
+assert.ok(preview.includes('/v2/modules-v127-subscriptions.js?v=127.17'),'preview must load v127.17 UI');
+assert.ok(production.includes('/v2/modules-v127-subscriptions.js?v=127.17'),'production must load v127.17 UI');
 assert.ok(preview.includes('handleSubscriptionControl'),'preview must enforce subscription control server-side');
 assert.ok(production.includes('handleSubscriptionControl'),'production wrapper must enforce before production-specific APIs');
 assert.ok(admin.includes("const allowedPlans=new Set(['starter','growth','pro','enterprise'])"),'Trial must not be a billing plan for new accounts');
@@ -134,4 +143,35 @@ assert.ok(!adminUi.includes('<option value=\"trial\">Trial</option>'),'Trial mus
 for(const file of [billing,control,orders,topups,ui]){
   for(const unsafe of ['DROP TABLE','ALTER TABLE','CREATE TABLE','DELETE FROM subscriptions','DELETE FROM wallet_accounts'])assert.ok(!file.includes(unsafe),`unexpected destructive/migration token: ${unsafe}`);
 }
-console.log('subscriptions v127 contract: ok');
+
+const makeBillingEnv=({balance=0,walletStatus='active',subscriptionStatus='active'}={})=>{
+  const wallet={client_id:'billing-test',balance,currency:'EGP',status:walletStatus,billing_version:'v27',base_order_fee:2};
+  const sub={id:'SUB-TEST',client_id:'billing-test',status:subscriptionStatus,amount:0,currency:'EGP',billing_cycle:'monthly',period_end:'2099-12-31',created_at:'2026-01-01T00:00:00.000Z'};
+  return {DB:{prepare(sql){
+    return {bind(){return {
+      async first(){
+        if(sql.includes('SELECT * FROM wallet_accounts'))return wallet;
+        if(sql.includes('SELECT * FROM subscriptions'))return sub;
+        if(sql.includes('SELECT created_at FROM audit_log'))return {created_at:'2026-01-01T00:00:00.000Z'};
+        if(sql.includes('SELECT balance,status,currency FROM wallet_accounts'))return wallet;
+        throw new Error('Unexpected billing query: '+sql);
+      }
+    }}};
+  }}};
+};
+const empty=await subscriptionAccess(makeBillingEnv({balance:0}),'billing-test',{applyMonthly:false});
+assert.equal(empty.locked,true);
+assert.equal(empty.reason,'balance_empty');
+assert.equal(empty.balanceEmpty,true);
+const debt=await subscriptionAccess(makeBillingEnv({balance:-19}),'billing-test',{applyMonthly:false});
+assert.equal(debt.reason,'balance_empty');
+const replenished=await subscriptionAccess(makeBillingEnv({balance:1}),'billing-test',{applyMonthly:false});
+assert.equal(replenished.locked,false);
+assert.equal(replenished.reason,null);
+const freeTrial=await subscriptionAccess(makeBillingEnv({balance:0,subscriptionStatus:'trialing'}),'billing-test',{applyMonthly:false});
+assert.equal(freeTrial.trialActive,true);
+assert.equal(freeTrial.locked,false,'approved free trial must stay usable at zero balance');
+const adminPause=await subscriptionAccess(makeBillingEnv({balance:50,subscriptionStatus:'paused'}),'billing-test',{applyMonthly:false});
+assert.equal(adminPause.reason,'subscription_paused');
+
+console.log('subscriptions v127.17 billing contract: ok');

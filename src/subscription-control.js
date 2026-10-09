@@ -92,9 +92,12 @@ export async function handleSubscriptionControl({request,env,ctx,delegate}){
     const access=await subscriptionAccess(env,clientId,{applyMonthly:true});
     if(path==='/api/subscription/access'&&method==='GET')return json({ok:true,...access});
     if(access.locked&&!allowedWhileLocked(path,method)){
+      const balanceRequired=access.reason==='balance_empty';
       return json({
-        error:'الحساب موقوف حاليًا من إعدادات الاشتراك أو المحفظة. راجع إدارة الحساب.',
-        code:'SUBSCRIPTION_ACCESS_PAUSED',
+        error:balanceRequired
+          ?'رصيد المحفظة انتهى. تم إيقاف العمليات مؤقتًا لحين اعتماد شحن الرصيد. يمكن متابعة الاشتراك وإرسال إثبات التحويل من الداشبورد.'
+          :'الحساب موقوف حاليًا من إعدادات الاشتراك أو المحفظة. راجع إدارة الحساب.',
+        code:balanceRequired?'SUBSCRIPTION_BALANCE_REQUIRED':'SUBSCRIPTION_ACCESS_PAUSED',
         access
       },402);
     }
