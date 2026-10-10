@@ -60,7 +60,10 @@ const recoveryApproved=await approveTopup(env,recovery.id,'qa-admin','recover',{
 must(recoveryApproved.requestedAmount===20&&recoveryApproved.creditedAmount===25,'Admin must be able to override the amount credited for a transfer');
 must(recoveryApproved.balanceAfterCredit===22&&recoveryApproved.balance===22,'Approval must add the admin-confirmed credit automatically');
 const pendingAfterApproval=await env.DB.prepare("SELECT status FROM order_billing WHERE order_id='WAITING'").first();must(pendingAfterApproval.status==='pending_insufficient','Approval must not silently consume the new credit against old pending orders');
-const recoveredOrder=await billOrder(env,'WAITING');must(recoveredOrder.status==='charged'&&(await walletSnapshot(env,client)).balance===18,'Pending order can be billed explicitly after the account is funded');
+const implicitRetry=await billOrder(env,'WAITING');
+must(implicitRetry.code==='BACKLOG_REQUIRES_REVIEW','Webhook retries must never silently charge pending debts after topup');
+const recoveredOrder=await billOrder(env,'WAITING',{allowBacklogCharge:true});
+must(recoveredOrder.status==='charged'&&(await walletSnapshot(env,client)).balance===18,'An explicitly reviewed debt can be billed when funded');
 // A scheduled/bulk reconciliation must NEVER replay pending fees or old unbilled
 // orders after a recovery topup. Only genuinely new orders may be auto-billed.
 await env.DB.prepare("INSERT INTO orders(id,client_id,store_id,date,created_at) VALUES ('HISTORIC-UNBILLED',?,?,?,?)")
@@ -71,6 +74,9 @@ must(!sweep.some(row=>['WAITING-2','HISTORIC-UNBILLED'].includes(row.orderId)),
   'Scheduled reconciliation must not consume approved credit on previously exhausted debt or historical unbilled orders');
 must((await walletSnapshot(env,client)).balance===ledgerBeforeSweep.balance,
   'A scheduled sweep after topup must not debit any historical backlog');
+const historicalWebhook=await billOrder(env,'HISTORIC-UNBILLED');
+must(historicalWebhook.code==='PRE_TOPUP_BACKLOG_REVIEW','Historical webhook import must not debit wallet after a recovery topup');
+must((await walletSnapshot(env,client)).balance===18,'Historical webhook update must not consume freshly approved balance');
 const waiting2=await env.DB.prepare("SELECT status FROM order_billing WHERE order_id='WAITING-2'").first();
 must(waiting2.status==='pending_insufficient','Historical insufficient item must remain reviewable, never silently deleted');
 await env.DB.prepare("INSERT INTO orders(id,client_id,store_id,date,created_at) VALUES ('POST-RECOVERY-NEW',?,?,?,?)")
