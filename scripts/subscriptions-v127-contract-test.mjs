@@ -62,8 +62,8 @@ assert.ok(preview.indexOf('const subscription=await handleSubscriptionControl')<
 assert.ok(ui.includes('updateBalanceBanner'),'client must receive a proactive balance alert');
 assert.ok(ui.includes("state.adminClients.filter(x=>x.reason==='balance_empty')"),'admin exhausted-balance count must reflect true billing locks');
 assert.ok(fs.readFileSync('public/v2/modules-v79-printing.js','utf8').includes("try{await render();if(window.KunSubscriptionsV127?.access?.locked"),'J&T sending state must unwind after billing/refresh errors');
-assert.ok(orders.includes('startingBalance<=0'),'order billing must stop only after balance is exhausted');
-assert.ok(orders.includes('const shortage=round2(fee-startingBalance)'),'final order must be allowed to consume the remaining positive balance and cross once below zero');
+assert.ok(orders.includes('startingBalance<fee'),'order billing must prevent debits if the full fee is unavailable');
+assert.ok(orders.includes('ELSE -credit_limit-0.01'),'concurrent order charges must fail atomically rather than make balance negative');
 assert.ok(orders.includes('orderBeforeBillingStart'),'order billing must compare business order date with the paid billing start');
 assert.ok(orders.includes("PRE_BILLING_DATE"),'late-synced historical orders must be waived instead of charged');
 assert.ok(orders.includes("date,created_at FROM orders"),'billOrder must load the business order date, not rowid only');
@@ -145,8 +145,10 @@ assert.ok(ui.includes("b.onclick=event=>{event?.preventDefault?.();event?.stopPr
 assert.ok(ui.includes("$$('[data-sub127-hidden=\"1\"]')"),'restore navigation must iterate all hidden routes');
 assert.ok(ui.includes("$('.nav button[data-view]')"),'navigation state sync must iterate all routes with querySelectorAll semantics');
 assert.equal(/(?<!\$)\$\([^\n;]*\)\.forEach\s*\(/.test(ui),false,'single-element $() helper must never be used with forEach');
-assert.ok(preview.includes('/v2/modules-v127-subscriptions.js?v=127.18'),'preview must load v127.18 UI');
-assert.ok(production.includes('/v2/modules-v127-subscriptions.js?v=127.18'),'production must load v127.18 UI');
+assert.ok(preview.includes('/v2/modules-v127-subscriptions.js?v=127.19'),'preview must load v127.19 UI');
+assert.ok(production.includes('/v2/modules-v127-subscriptions.js?v=127.19'),'production must load v127.19 UI');
+assert.ok(control.includes('walletPaymentDiagnostics(env,clientId)'),'admin ledger must return a read-only post-topup audit');
+assert.ok(ui.includes('مراجعة الرصيد بعد آخر شحن معتمد'),'admin subscription view must expose the post-credit debit breakdown');
 assert.ok(preview.includes('handleSubscriptionControl'),'preview must enforce subscription control server-side');
 assert.ok(production.includes('handleSubscriptionControl'),'production wrapper must enforce before production-specific APIs');
 assert.ok(admin.includes("const allowedPlans=new Set(['starter','growth','pro','enterprise'])"),'Trial must not be a billing plan for new accounts');
@@ -218,4 +220,4 @@ assert.equal(await guardedRequest({path:'/api/state',method:'PUT',balance:50}),n
 assert.equal(await guardedRequest({path:'/api/state',method:'PUT',subscriptionStatus:'trialing'}),null,'approved trial must not require credit');
 assert.equal((await guardedRequest({path:'/api/printing',role:'staff'})).status,402,'store staff must respect the same server wallet gate');
 
-console.log('subscriptions v127.18 billing contract: ok');
+console.log('subscriptions v127.19 billing contract: ok');

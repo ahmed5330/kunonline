@@ -2,6 +2,7 @@ import {
   subscriptionAccess,configureSubscription,startFreeTrial,endFreeTrial,listSubscriptionsAdmin,reconcileMonthlySubscriptions
 } from './subscription-billing.js';
 import {requestTopup,listTopups,listPendingTopupsAdmin,getPendingTopupProofAdmin,approveTopup,rejectTopup,walletSnapshot,listWalletLog,adminCreditWallet} from './wallet-billing.js';
+import {walletPaymentDiagnostics} from './wallet-payment-diagnostics.js';
 
 const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}});
 const text=v=>String(v??'').trim();
@@ -40,19 +41,25 @@ export async function handleSubscriptionControl({request,env,ctx,delegate}){
     let match=path.match(/^\/api\/admin\/subscriptions\/([^/]+)\/ledger$/);
     if(match&&method==='GET'){
       requireAdmin(me);const clientId=decodeURIComponent(match[1]);
-      const [wallet,log,access]=await Promise.all([
+      const [wallet,log,access,diagnostics]=await Promise.all([
         walletSnapshot(env,clientId),
         listWalletLog(env,clientId,url.searchParams.get('limit')||40),
-        subscriptionAccess(env,clientId,{applyMonthly:false})
+        subscriptionAccess(env,clientId,{applyMonthly:false}),
+        walletPaymentDiagnostics(env,clientId)
       ]);
-      return json({ok:true,clientId,wallet,access,log});
+      return json({ok:true,clientId,wallet,access,log,diagnostics});
     }
     match=path.match(/^\/api\/admin\/subscriptions\/([^/]+)\/credit$/);
     if(match&&method==='POST'){
       requireAdmin(me);const clientId=decodeURIComponent(match[1]),body=await bodyOf(request),amount=Number(body.amount),actor=me.email||me.uid||'admin';
-      const credit=await adminCreditWallet(env,clientId,amount,actor,String(body.note||'تصحيح رصيد من إدارة الاشتراكات'));
-      const access=await subscriptionAccess(env,clientId,{applyMonthly:true});
-      return json({ok:true,credit,access});
+      const credit=await adminCreditWallet(env,clientId,amount,actor,String(body.note||'تصحيح رصيد من إدارة الاشتراكات'),{requestId:body.requestId});
+      // Credit has already been committed. A subsequent monthly settlement failure
+      // must not surface as "credit failed", which could prompt a duplicate payment.
+      let access=null,settlementPending=false;
+      try{access=await subscriptionAccess(env,clientId,{applyMonthly:true});}
+      catch(error){settlementPending=true;console.warn('manual credit settlement pending',error?.code||'unknown');}
+      const wallet=await walletSnapshot(env,clientId);
+      return json({ok:true,credit,access,finalBalance:wallet.balance,settlementPending});
     }
     match=path.match(/^\/api\/admin\/subscriptions\/([^/]+)$/);
     if(match&&method==='PATCH'){

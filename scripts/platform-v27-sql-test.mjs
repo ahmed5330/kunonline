@@ -3,6 +3,7 @@ import {readFile} from 'node:fs/promises';
 import {ensureWalletAccount,migrateLegacyBilling,walletSnapshot,billOrder,reconcileUnbilledOrders,requestTopup,approveTopup,adminCreditWallet,sanitizeLegacyStateBilling} from '../src/wallet-billing.js';
 import {setTenantModules,effectiveOrderFee} from '../src/feature-entitlements.js';
 import {configureSubscription,subscriptionAccess,startFreeTrial,endFreeTrial} from '../src/subscription-billing.js';
+import {walletPaymentDiagnostics} from '../src/wallet-payment-diagnostics.js';
 import {saveAttribution,campaignPerformance} from '../src/marketing-intelligence.js';
 import {addOrderNote,logContact,timeline} from '../src/order-events.js';
 import {createAdDraft,generateAdDraft,requestAdAction} from '../src/ad-studio.js';
@@ -46,11 +47,20 @@ charged=await billOrder(env,'NEW');must((await walletSnapshot(env,client)).balan
 const count=await env.DB.prepare("SELECT COUNT(*) n FROM wallet_log WHERE idempotency_key='order:NEW'").first();must(Number(count.n)===1,'Order ledger must be idempotent');
 const proof='data:image/jpeg;base64,AA==';const top=await requestTopup(env,client,{amount:10,senderPhone:'01000000000',proofDataUrl:proof},'qa-owner');const firstApproval=await approveTopup(env,top.id,'qa-admin','ok');must(firstApproval.creditedAmount===10&&(await walletSnapshot(env,client)).balance===26,'Topup did not credit exactly once');
 const duplicate=await approveTopup(env,top.id,'qa-admin','again');must(duplicate.alreadyApproved===true&&(await walletSnapshot(env,client)).balance===26,'Repeated approval must be idempotent and must not double-credit');
-await adminCreditWallet(env,client,4,'qa-admin','legacy admin endpoint compatibility');must((await walletSnapshot(env,client)).balance===30,'Admin direct credit must update v27 ledger');
+const firstManual=await adminCreditWallet(env,client,4,'qa-admin','legacy admin endpoint compatibility',{requestId:'credit-fixture-01'});
+must(firstManual.alreadyCredited===false&&(await walletSnapshot(env,client)).balance===30,'Admin direct credit must update v27 ledger');
+const duplicateManual=await adminCreditWallet(env,client,4,'qa-admin','retry',{requestId:'credit-fixture-01'});
+must(duplicateManual.alreadyCredited===true&&(await walletSnapshot(env,client)).balance===30,
+  'Repeated admin credit must never add the same money twice');
+let creditMismatchRejected=false;
+try{await adminCreditWallet(env,client,40,'qa-admin','incorrect retry',{requestId:'credit-fixture-01'})}
+catch(error){creditMismatchRejected=error?.code==='ADMIN_CREDIT_KEY_CONFLICT'}
+must(creditMismatchRejected&&(await walletSnapshot(env,client)).balance===30,
+  'Reusing a credit request ID for another amount must fail instead of crediting');
 let unsafe={clients:[{id:client,walletBalance:999,walletFeePerOrder:5}]};unsafe=await sanitizeLegacyStateBilling(env,unsafe);must(unsafe.clients[0].walletBalance===30&&unsafe.clients[0].walletFeePerOrder===0,'Legacy state write must not re-enable double charging');
 await env.DB.prepare('UPDATE wallet_accounts SET balance=1,credit_limit=0 WHERE client_id=?').bind(client).run();
 await env.DB.prepare("INSERT INTO orders(id,client_id,store_id,date,created_at) VALUES ('LOW',?,?,?,?)").bind(client,store,day,new Date(Date.now()+2000).toISOString()).run();
-const low=await billOrder(env,'LOW');must(low.status==='charged'&&low.fee===4,'Final order must charge in full while starting balance is still positive');must((await walletSnapshot(env,client)).balance===-3,'Final order may cross balance below zero once, then subscription access locks');
+const low=await billOrder(env,'LOW');must(low.status==='pending_insufficient'&&low.fee===4,'New order must remain pending if full fee is unavailable');must((await walletSnapshot(env,client)).balance===1,'Order fees must never force the wallet negative');
 await env.DB.prepare("INSERT INTO orders(id,client_id,store_id,date,created_at) VALUES ('WAITING',?,?,?,?)").bind(client,store,day,new Date(Date.now()+3000).toISOString()).run();
 const waiting=await billOrder(env,'WAITING');must(waiting.status==='pending_insufficient','Orders arriving after exhaustion must remain pending until the next topup');
 await env.DB.prepare("INSERT INTO orders(id,client_id,store_id,date,created_at) VALUES ('WAITING-2',?,?,?,?)").bind(client,store,day,new Date(Date.now()+3200).toISOString()).run();
@@ -58,12 +68,12 @@ const stillPending=await billOrder(env,'WAITING-2');must(stillPending.status==='
 const recovery=await requestTopup(env,client,{amount:20,senderPhone:'01000000000',proofDataUrl:proof},'qa-owner');
 const recoveryApproved=await approveTopup(env,recovery.id,'qa-admin','recover',{creditAmount:25});
 must(recoveryApproved.requestedAmount===20&&recoveryApproved.creditedAmount===25,'Admin must be able to override the amount credited for a transfer');
-must(recoveryApproved.balanceAfterCredit===22&&recoveryApproved.balance===22,'Approval must add the admin-confirmed credit automatically');
+must(recoveryApproved.balanceAfterCredit===26&&recoveryApproved.balance===26,'Approval must add the admin-confirmed credit automatically');
 const pendingAfterApproval=await env.DB.prepare("SELECT status FROM order_billing WHERE order_id='WAITING'").first();must(pendingAfterApproval.status==='pending_insufficient','Approval must not silently consume the new credit against old pending orders');
 const implicitRetry=await billOrder(env,'WAITING');
 must(implicitRetry.code==='BACKLOG_REQUIRES_REVIEW','Webhook retries must never silently charge pending debts after topup');
 const recoveredOrder=await billOrder(env,'WAITING',{allowBacklogCharge:true});
-must(recoveredOrder.status==='charged'&&(await walletSnapshot(env,client)).balance===18,'An explicitly reviewed debt can be billed when funded');
+must(recoveredOrder.status==='charged'&&(await walletSnapshot(env,client)).balance===22,'An explicitly reviewed debt can be billed when funded');
 // A scheduled/bulk reconciliation must NEVER replay pending fees or old unbilled
 // orders after a recovery topup. Only genuinely new orders may be auto-billed.
 await env.DB.prepare("INSERT INTO orders(id,client_id,store_id,date,created_at) VALUES ('HISTORIC-UNBILLED',?,?,?,?)")
@@ -76,7 +86,7 @@ must((await walletSnapshot(env,client)).balance===ledgerBeforeSweep.balance,
   'A scheduled sweep after topup must not debit any historical backlog');
 const historicalWebhook=await billOrder(env,'HISTORIC-UNBILLED');
 must(historicalWebhook.code==='PRE_TOPUP_BACKLOG_REVIEW','Historical webhook import must not debit wallet after a recovery topup');
-must((await walletSnapshot(env,client)).balance===18,'Historical webhook update must not consume freshly approved balance');
+must((await walletSnapshot(env,client)).balance===22,'Historical webhook update must not consume freshly approved balance');
 const waiting2=await env.DB.prepare("SELECT status FROM order_billing WHERE order_id='WAITING-2'").first();
 must(waiting2.status==='pending_insufficient','Historical insufficient item must remain reviewable, never silently deleted');
 await env.DB.prepare("INSERT INTO orders(id,client_id,store_id,date,created_at) VALUES ('POST-RECOVERY-NEW',?,?,?,?)")
@@ -84,8 +94,27 @@ await env.DB.prepare("INSERT INTO orders(id,client_id,store_id,date,created_at) 
 const newOrders=await reconcileUnbilledOrders(env,{clientId:client,limit:300});
 must(newOrders.some(o=>o.orderId==='POST-RECOVERY-NEW'&&o.status==='charged'),
   'Legitimate newly created orders after payment must still be billed automatically');
-must((await walletSnapshot(env,client)).balance===14,
+must((await walletSnapshot(env,client)).balance===18,
   'Only the new per-order fee must have been deducted');
+const creditsOnPreviouslyLimitedWallet=await walletSnapshot(env,client);
+await env.DB.prepare('UPDATE wallet_accounts SET balance=1,credit_limit=100 WHERE client_id=?').bind(client).run();
+await env.DB.prepare("INSERT INTO orders(id,client_id,store_id,date,created_at) VALUES ('LIMITED-CREDIT',?,?,?,?)")
+  .bind(client,store,day,new Date(Date.now()+70000).toISOString()).run();
+const creditProtected=await billOrder(env,'LIMITED-CREDIT');
+must(creditProtected.status==='pending_insufficient'&&(await walletSnapshot(env,client)).balance===1,
+  'Legacy credit limits may cover monthly debt but must not overdraw on order fees');
+await env.DB.prepare('UPDATE wallet_accounts SET balance=1,credit_limit=100 WHERE client_id=?').bind(client).run();
+await env.DB.prepare("INSERT INTO orders(id,client_id,store_id,date,created_at) VALUES ('CONCURRENT-A',?,?,?,?)")
+  .bind(client,store,day,new Date(Date.now()+71000).toISOString()).run();
+await env.DB.prepare("INSERT INTO orders(id,client_id,store_id,date,created_at) VALUES ('CONCURRENT-B',?,?,?,?)")
+  .bind(client,store,day,new Date(Date.now()+72000).toISOString()).run();
+const concurrent=await Promise.all([billOrder(env,'CONCURRENT-A'),billOrder(env,'CONCURRENT-B')]);
+must(concurrent.every(row=>row.status==='pending_insufficient')&&(await walletSnapshot(env,client)).balance===1,
+  'Parallel new orders cannot overdraw a wallet whose available funds are below one order fee');
+// Restore unrelated billing fixture to its pre-limit balance, all in test-only SQLite.
+await env.DB.prepare('UPDATE wallet_accounts SET balance=?,credit_limit=100 WHERE client_id=?')
+  .bind(creditsOnPreviouslyLimitedWallet.balance,client).run();
+
 
 // Managed subscriptions use one authoritative ledger: the monthly minimum is posted
 // exactly once even when it crosses below zero. A paid subscription pauses
@@ -124,6 +153,35 @@ const brokenTopup=await requestTopup(env,c3,{amount:10,senderPhone:'01000000000'
 await env.DB.prepare("UPDATE wallet_topup_requests SET status='approved' WHERE id=?").bind(brokenTopup.id).run();
 let integrityCaught=false;try{await approveTopup(env,brokenTopup.id,'qa-admin','integrity check')}catch(error){integrityCaught=error?.code==='TOPUP_APPROVAL_INTEGRITY'}
 must(integrityCaught,'Approved topup without a matching ledger credit must fail integrity validation instead of pretending money was added');
+
+// Regression for the reported 500 EGP recharge / 333 EGP positive balance,
+// then -178 EGP incident. The breakdown must reveal whether the subsequent
+// 511 EGP came from a monthly subscription versus previously billed orders.
+// This is an isolated *synthetic fixture*, NOT a claim about a real client's ledger.
+const c4='C4';
+await env.DB.prepare(`INSERT INTO wallet_accounts
+  (client_id,balance,currency,base_order_fee,min_order_fee,max_order_fee,credit_limit,billing_version,billing_start_rowid,status,updated_at)
+  VALUES (?,-167,'EGP',2,0,0,167,'v27',0,'active',?)`).bind(c4,ts).run();
+const diagnosticTopup=await requestTopup(env,c4,{amount:500,senderPhone:'01000000000',proofDataUrl:proof},'qa-owner');
+const diagnosticApproval=await approveTopup(env,diagnosticTopup.id,'qa-admin','audit fixture');
+must(diagnosticApproval.balanceAfterCredit===333,'An approved 500 topup after -167 must show 333');
+const diagnosticInitial=await walletPaymentDiagnostics(env,c4);
+must(diagnosticInitial.lastApprovedCredit?.amount===500&&diagnosticInitial.sinceLastCredit?.debits===0,
+  'Read-only diagnostic must identify the approved credit without inventing a debit');
+const diagnosticMonthly=await configureSubscription(env,c4,{monthlyMinimum:511,baseOrderFee:2,status:'active'},'qa-admin');
+must(diagnosticMonthly.balance===-178,'Explicit 511 monthly minimum can explain a later -178 ledger state');
+const diagnosticAfter=await walletPaymentDiagnostics(env,c4);
+must(diagnosticAfter.lastApprovedCredit?.balanceAfter===333&&diagnosticAfter.sinceLastCredit?.debits===511
+  &&diagnosticAfter.sinceLastCredit?.debitBreakdown?.subscription===511
+  &&diagnosticAfter.sinceLastCredit?.debitBreakdown?.orders===0
+  &&diagnosticAfter.ledgerBalanceMismatch===0
+  &&diagnosticAfter.sinceLastCredit?.drift===0
+  &&diagnosticAfter.missingApprovedCredits===0,'Admin audit must accurately attribute a 511 debit to its ledger reference and verify balances');
+await env.DB.prepare('UPDATE wallet_accounts SET balance=-177 WHERE client_id=?').bind(c4).run();
+const mismatch=await walletPaymentDiagnostics(env,c4);
+must(mismatch.ledgerBalanceMismatch===1&&mismatch.sinceLastCredit?.drift===1,
+  'Diagnostic must flag an unlogged balance mutation instead of reporting everything as healthy');
+await env.DB.prepare('UPDATE wallet_accounts SET balance=-178 WHERE client_id=?').bind(c4).run();
 
 // Real marketing metrics must count externally-entered/unattributed orders at account level.
 const c2='C2',s2='S2';
