@@ -47,7 +47,16 @@ charged=await billOrder(env,'NEW');must((await walletSnapshot(env,client)).balan
 const count=await env.DB.prepare("SELECT COUNT(*) n FROM wallet_log WHERE idempotency_key='order:NEW'").first();must(Number(count.n)===1,'Order ledger must be idempotent');
 const proof='data:image/jpeg;base64,AA==';const top=await requestTopup(env,client,{amount:10,senderPhone:'01000000000',proofDataUrl:proof},'qa-owner');const firstApproval=await approveTopup(env,top.id,'qa-admin','ok');must(firstApproval.creditedAmount===10&&(await walletSnapshot(env,client)).balance===26,'Topup did not credit exactly once');
 const duplicate=await approveTopup(env,top.id,'qa-admin','again');must(duplicate.alreadyApproved===true&&(await walletSnapshot(env,client)).balance===26,'Repeated approval must be idempotent and must not double-credit');
-await adminCreditWallet(env,client,4,'qa-admin','legacy admin endpoint compatibility');must((await walletSnapshot(env,client)).balance===30,'Admin direct credit must update v27 ledger');
+const firstManual=await adminCreditWallet(env,client,4,'qa-admin','legacy admin endpoint compatibility',{requestId:'credit-fixture-01'});
+must(firstManual.alreadyCredited===false&&(await walletSnapshot(env,client)).balance===30,'Admin direct credit must update v27 ledger');
+const duplicateManual=await adminCreditWallet(env,client,4,'qa-admin','retry',{requestId:'credit-fixture-01'});
+must(duplicateManual.alreadyCredited===true&&(await walletSnapshot(env,client)).balance===30,
+  'Repeated admin credit must never add the same money twice');
+let creditMismatchRejected=false;
+try{await adminCreditWallet(env,client,40,'qa-admin','incorrect retry',{requestId:'credit-fixture-01'})}
+catch(error){creditMismatchRejected=error?.code==='ADMIN_CREDIT_KEY_CONFLICT'}
+must(creditMismatchRejected&&(await walletSnapshot(env,client)).balance===30,
+  'Reusing a credit request ID for another amount must fail instead of crediting');
 let unsafe={clients:[{id:client,walletBalance:999,walletFeePerOrder:5}]};unsafe=await sanitizeLegacyStateBilling(env,unsafe);must(unsafe.clients[0].walletBalance===30&&unsafe.clients[0].walletFeePerOrder===0,'Legacy state write must not re-enable double charging');
 await env.DB.prepare('UPDATE wallet_accounts SET balance=1,credit_limit=0 WHERE client_id=?').bind(client).run();
 await env.DB.prepare("INSERT INTO orders(id,client_id,store_id,date,created_at) VALUES ('LOW',?,?,?,?)").bind(client,store,day,new Date(Date.now()+2000).toISOString()).run();
