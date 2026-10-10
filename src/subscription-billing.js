@@ -179,10 +179,10 @@ export async function configureSubscription(env,clientId,body={},actor='admin'){
   if(body.startFreeTrial===true){
     const start=cairoYmd(),end=addDays(start,30);
     await env.DB.prepare("UPDATE subscriptions SET status='trialing',period_start=?,period_end=?,updated_at=? WHERE id=?").bind(start,end,ts,row.id).run();
-    await env.DB.prepare("UPDATE wallet_accounts SET status='active',credit_limit=0,updated_at=? WHERE client_id=?").bind(ts,clientId).run();
+    await env.DB.prepare("UPDATE wallet_accounts SET status='active',credit_limit=CASE WHEN balance<0 THEN ROUND(-balance,2) ELSE 0 END,updated_at=? WHERE client_id=?").bind(ts,clientId).run();
   }else if(body.endFreeTrial===true){
     await env.DB.prepare("UPDATE subscriptions SET status='active',period_end=?,updated_at=? WHERE id=?").bind(cairoYmd(),ts,row.id).run();
-    await env.DB.prepare("UPDATE wallet_accounts SET status='active',credit_limit=0,updated_at=? WHERE client_id=?").bind(ts,clientId).run();
+    await env.DB.prepare("UPDATE wallet_accounts SET status='active',credit_limit=CASE WHEN balance<0 THEN ROUND(-balance,2) ELSE 0 END,updated_at=? WHERE client_id=?").bind(ts,clientId).run();
   }
   return subscriptionAccess(env,clientId,{applyMonthly:body.endFreeTrial===true||body.applyMonthly===true||status==='active'});
 }
@@ -192,7 +192,7 @@ export async function startFreeTrial(env,clientId,{days=30,actor='admin'}={}){
   const row=await ensureSubscriptionRow(env,clientId),start=cairoYmd(),end=addDays(start,Math.max(1,Math.min(90,Number(days)||30))),ts=now();
   await env.DB.batch([
     env.DB.prepare("UPDATE subscriptions SET status='trialing',period_start=?,period_end=?,provider='kun_wallet',updated_at=? WHERE id=?").bind(start,end,ts,row.id),
-    env.DB.prepare("UPDATE wallet_accounts SET status='active',credit_limit=0,updated_at=? WHERE client_id=?").bind(ts,clientId),
+    env.DB.prepare("UPDATE wallet_accounts SET status='active',credit_limit=CASE WHEN balance<0 THEN ROUND(-balance,2) ELSE 0 END,updated_at=? WHERE client_id=?").bind(ts,clientId),
     env.DB.prepare('INSERT INTO audit_log (id,client_id,actor_email,action,entity_type,entity_id,metadata_json,created_at) VALUES (?,?,?,?,?,?,?,?)')
       .bind(rid('AUD'),clientId,actor,'subscription.trial.start','subscription',row.id,JSON.stringify({start,end,days:Number(days)||30}),ts)
   ]);
@@ -204,7 +204,7 @@ export async function endFreeTrial(env,clientId,{actor='admin'}={}){
   const row=await ensureSubscriptionRow(env,clientId),ts=now(),end=cairoYmd();
   await env.DB.batch([
     env.DB.prepare("UPDATE subscriptions SET status='active',period_end=?,updated_at=? WHERE id=?").bind(end,ts,row.id),
-    env.DB.prepare("UPDATE wallet_accounts SET status='active',credit_limit=0,updated_at=? WHERE client_id=?").bind(ts,clientId),
+    env.DB.prepare("UPDATE wallet_accounts SET status='active',credit_limit=CASE WHEN balance<0 THEN ROUND(-balance,2) ELSE 0 END,updated_at=? WHERE client_id=?").bind(ts,clientId),
     env.DB.prepare('INSERT INTO audit_log (id,client_id,actor_email,action,entity_type,entity_id,metadata_json,created_at) VALUES (?,?,?,?,?,?,?,?)')
       .bind(rid('AUD'),clientId,actor,'subscription.trial.end','subscription',row.id,JSON.stringify({end}),ts)
   ]);

@@ -2,7 +2,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {readFile} from 'node:fs/promises';
 import {ensureWalletAccount,migrateLegacyBilling,walletSnapshot,billOrder,requestTopup,approveTopup,adminCreditWallet,sanitizeLegacyStateBilling} from '../src/wallet-billing.js';
 import {setTenantModules,effectiveOrderFee} from '../src/feature-entitlements.js';
-import {configureSubscription,subscriptionAccess} from '../src/subscription-billing.js';
+import {configureSubscription,subscriptionAccess,startFreeTrial,endFreeTrial} from '../src/subscription-billing.js';
 import {saveAttribution,campaignPerformance} from '../src/marketing-intelligence.js';
 import {addOrderNote,logContact,timeline} from '../src/order-events.js';
 import {createAdDraft,generateAdDraft,requestAdAction} from '../src/ad-studio.js';
@@ -76,6 +76,20 @@ const c3MonthlyCount=await env.DB.prepare("SELECT COUNT(*) n FROM wallet_log WHE
 await subscriptionAccess(env,c3,{applyMonthly:true});
 const c3MonthlyCountAgain=await env.DB.prepare("SELECT COUNT(*) n FROM wallet_log WHERE client_id=? AND reference_type='subscription_month'").bind(c3).first();
 must(Number(c3MonthlyCount.n)===1&&Number(c3MonthlyCountAgain.n)===1,'Monthly minimum must be idempotent and charged once per month');
+// Admin must remain able to manage paid subscriptions and trials despite
+// debt already posted by the monthly minimum.
+const c3Paused=await configureSubscription(env,c3,{monthlyMinimum:20,baseOrderFee:6,status:'paused'},'qa-admin');
+must(c3Paused.locked&&c3Paused.reason==='subscription_paused','Admin must be able to pause a subscription while wallet debt is posted');
+const c3Resumed=await configureSubscription(env,c3,{monthlyMinimum:20,baseOrderFee:5,status:'active'},'qa-admin');
+must(c3Resumed.locked&&c3Resumed.reason==='balance_empty','Resuming a paid subscription with negative balance must retain the balance lock');
+const c3Trial=await startFreeTrial(env,c3,{days:30,actor:'qa-admin'});
+must(c3Trial.trialActive&&!c3Trial.locked&&c3Trial.balance===-7,'Admin may start an explicit free trial without clearing debt');
+const c3TrialEnded=await endFreeTrial(env,c3,{actor:'qa-admin'});
+must(!c3TrialEnded.trialActive&&c3TrialEnded.locked&&c3TrialEnded.reason==='balance_empty','Ending trial must restore paid-wallet lock while debt remains');
+const c3DebtWallet=await env.DB.prepare('SELECT balance,credit_limit FROM wallet_accounts WHERE client_id=?').bind(c3).first();
+must(c3DebtWallet.balance===-7&&c3DebtWallet.credit_limit>=7,'Admin updates must preserve both wallet debt and valid credit floor');
+const c3ChargeCount=await env.DB.prepare("SELECT COUNT(*) n FROM wallet_log WHERE client_id=? AND reference_type='subscription_month'").bind(c3).first();
+must(Number(c3ChargeCount.n)===1,'Admin config/trial transitions must not charge the monthly minimum twice');
 const c3Top=await requestTopup(env,c3,{amount:500,senderPhone:'01000000000',proofDataUrl:proof},'qa-owner');
 const c3Approved=await approveTopup(env,c3Top.id,'qa-admin','single-ledger recovery');
 must(c3Approved.balance===493&&c3Approved.access?.locked===false&&c3Approved.access?.balanceEmpty===false,'500 topup after a -7 monthly balance must finish at 493 and clear the empty-balance state');
