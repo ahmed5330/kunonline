@@ -120,6 +120,19 @@ assert.ok(ui.includes("الفترة المجانية اختيارية من ال�
 assert.ok(ui.includes("topupDraft:{amount:'',phone:'',file:null,fileName:''}"),'client topup form must keep an in-memory draft');
 assert.equal(ui.includes('panel.outerHTML=html'),false,'access refresh must never replace the client topup form DOM');
 assert.ok(ui.includes('function patchClientPanel'),'access refresh must patch subscription KPIs without rebuilding inputs');
+assert.ok(ui.includes('function shouldShowDashboardPanel'),'dashboard must gate billing panel on real wallet access');
+const matchPanelRule=ui.match(/function shouldShowDashboardPanel\\(a\\)\\{([\\s\\S]*?)\\n  \\}/);
+assert.ok(matchPanelRule,'expected isolated dashboard-wallet visibility policy');
+const shouldShowDashboardPanel=new Function('a',matchPanelRule[1]);
+assert.equal(shouldShowDashboardPanel({locked:false,balance:243,trialActive:false}),false,'approved and unlocked payment must remove the screenshot card');
+assert.equal(shouldShowDashboardPanel({locked:false,balance:1,trialActive:false}),false,'funded wallets should not show the topup card persistently');
+assert.equal(shouldShowDashboardPanel({locked:false,balance:0,trialActive:true}),false,'valid free trial must not trigger a paywall');
+assert.equal(shouldShowDashboardPanel({locked:true,balance:0,trialActive:false}),true,'exhausted wallets must retain the topup form until approved');
+assert.equal(shouldShowDashboardPanel({locked:true,balance:100,trialActive:false}),true,'accounts paused by admin must keep their access instructions');
+assert.ok(ui.includes("if(!walletScreen&&!shouldShowDashboardPanel(state.access))"),'funded dashboard should remove the large payment form');
+assert.ok(ui.includes("function showWalletPage()"),'wallet form must remain reachable from the wallet nav');
+assert.ok(ui.includes("if(target==='wallet'&&state.me?.role==='client'&&!state.locked)"),'wallet navigation must open its dedicated page');
+
 assert.ok(ui.includes('function bindClientPanel'),'client topup form bindings must be stable and one-time');
 assert.ok(ui.includes("proofInput?.files?.[0]||state.topupDraft.file"),'selected proof file must survive a dashboard rerender');
 assert.ok(ui.includes("state.topupDraft.amount=amount.value"),'amount typing must persist immediately');
@@ -132,8 +145,8 @@ assert.ok(ui.includes("b.onclick=event=>{event?.preventDefault?.();event?.stopPr
 assert.ok(ui.includes("$$('[data-sub127-hidden=\"1\"]')"),'restore navigation must iterate all hidden routes');
 assert.ok(ui.includes("$('.nav button[data-view]')"),'navigation state sync must iterate all routes with querySelectorAll semantics');
 assert.equal(/(?<!\$)\$\([^\n;]*\)\.forEach\s*\(/.test(ui),false,'single-element $() helper must never be used with forEach');
-assert.ok(preview.includes('/v2/modules-v127-subscriptions.js?v=127.17'),'preview must load v127.17 UI');
-assert.ok(production.includes('/v2/modules-v127-subscriptions.js?v=127.17'),'production must load v127.17 UI');
+assert.ok(preview.includes('/v2/modules-v127-subscriptions.js?v=127.18'),'preview must load v127.18 UI');
+assert.ok(production.includes('/v2/modules-v127-subscriptions.js?v=127.18'),'production must load v127.18 UI');
 assert.ok(preview.includes('handleSubscriptionControl'),'preview must enforce subscription control server-side');
 assert.ok(production.includes('handleSubscriptionControl'),'production wrapper must enforce before production-specific APIs');
 assert.ok(admin.includes("const allowedPlans=new Set(['starter','growth','pro','enterprise'])"),'Trial must not be a billing plan for new accounts');
@@ -205,4 +218,4 @@ assert.equal(await guardedRequest({path:'/api/state',method:'PUT',balance:50}),n
 assert.equal(await guardedRequest({path:'/api/state',method:'PUT',subscriptionStatus:'trialing'}),null,'approved trial must not require credit');
 assert.equal((await guardedRequest({path:'/api/printing',role:'staff'})).status,402,'store staff must respect the same server wallet gate');
 
-console.log('subscriptions v127.17 billing contract: ok');
+console.log('subscriptions v127.18 billing contract: ok');
