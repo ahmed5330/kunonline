@@ -1,20 +1,44 @@
 import {effectiveOrderFee} from './feature-entitlements.js';
 import {now,rid,round2,ensureWalletAccount,mirrorLegacyBalance} from './wallet-core.js';
 
-export async function billOrder(env,orderId){
-  const order=await env.DB.prepare('SELECT rowid AS order_rowid,id,client_id,store_id FROM orders WHERE id=?').bind(orderId).first();
+export async function billOrder(env,orderId,{allowBacklogCharge=false}={}){
+  const order=await env.DB.prepare('SELECT rowid AS order_rowid,id,client_id,store_id,date,created_at FROM orders WHERE id=?').bind(orderId).first();
   if(!order)return {ok:false,skipped:'order_not_found'};
   const account=await ensureWalletAccount(env,order.client_id);
   if(account.billing_version!=='v27'||account.status!=='active')return {ok:true,skipped:'billing_not_v27'};
   if(Number(order.order_rowid)<=Number(account.billing_start_rowid||0))return {ok:true,skipped:'pre_v27_order'};
   const existing=await env.DB.prepare('SELECT * FROM order_billing WHERE order_id=?').bind(orderId).first();
   if(existing?.status==='charged'||existing?.status==='waived')return {ok:true,status:existing.status,fee:Number(existing.fee)||0};
+  if(existing&&!allowBacklogCharge)return {ok:false,status:existing.status,fee:round2(existing.fee),code:'BACKLOG_REQUIRES_REVIEW'};
   const fee=await effectiveOrderFee(env,order.client_id),ts=now();
   if(fee<=0){
     await env.DB.prepare(`INSERT INTO order_billing (order_id,client_id,store_id,fee,status,attempts,created_at,charged_at,updated_at)
       VALUES (?,?,?,?, 'waived',1,?,?,?) ON CONFLICT(order_id) DO UPDATE SET status='waived',fee=0,updated_at=excluded.updated_at`)
       .bind(orderId,order.client_id,order.store_id||null,0,ts,ts,ts).run();
     return {ok:true,status:'waived',fee:0};
+  }
+  if(!allowBacklogCharge){
+    const recovery=await env.DB.prepare(`SELECT id FROM wallet_log
+      WHERE client_id=? AND type='topup' AND balance_after-amount<=0
+        AND datetime(created_at)>=datetime(?) LIMIT 1`)
+      .bind(order.client_id,order.created_at||order.date||'').first();
+    if(recovery){
+      await env.DB.prepare(`INSERT OR IGNORE INTO order_billing
+        (order_id,client_id,store_id,fee,status,attempts,last_error,created_at,updated_at)
+        VALUES (?,?,?,?, 'pending_insufficient',0,'PRE_TOPUP_BACKLOG_REVIEW',?,?)`)
+        .bind(orderId,order.client_id,order.store_id||null,fee,ts,ts).run();
+      return {ok:false,status:'pending_insufficient',fee,code:'PRE_TOPUP_BACKLOG_REVIEW'};
+    }
+  }
+  const startingBalance=round2(account.balance);
+  if(startingBalance<fee){
+    await env.DB.prepare(`INSERT INTO order_billing
+      (order_id,client_id,store_id,fee,status,attempts,last_error,created_at,updated_at)
+      VALUES (?,?,?,?, 'pending_insufficient',1,'INSUFFICIENT_BALANCE',?,?)
+      ON CONFLICT(order_id) DO UPDATE SET fee=excluded.fee,status='pending_insufficient',
+        attempts=order_billing.attempts+1,last_error='INSUFFICIENT_BALANCE',updated_at=excluded.updated_at`)
+      .bind(orderId,order.client_id,order.store_id||null,fee,ts,ts).run();
+    return {ok:false,status:'pending_insufficient',fee,code:'INSUFFICIENT_BALANCE'};
   }
   await env.DB.prepare(`INSERT INTO order_billing (order_id,client_id,store_id,fee,status,attempts,created_at,updated_at)
     VALUES (?,?,?,?, 'pending',0,?,?) ON CONFLICT(order_id) DO UPDATE SET fee=excluded.fee,updated_at=excluded.updated_at`)
@@ -23,7 +47,10 @@ export async function billOrder(env,orderId){
   try{
     await env.DB.batch([
       // CHECK(balance >= -credit_limit) on wallet_accounts makes an overdraw fail the whole transaction.
-      env.DB.prepare('UPDATE wallet_accounts SET balance=ROUND(balance-?,2),updated_at=? WHERE client_id=?').bind(fee,ts,order.client_id),
+      // Fail the entire D1 batch if a concurrent billing request already used up
+      // the balance. The CHECK constraint rejects the impossible sentinel.
+      env.DB.prepare('UPDATE wallet_accounts SET balance=CASE WHEN ROUND(balance,2)>=? THEN ROUND(balance-?,2) ELSE (0-credit_limit-0.01) END,updated_at=? WHERE client_id=?')
+        .bind(fee,fee,ts,order.client_id),
       env.DB.prepare(`INSERT INTO wallet_log (id,client_id,store_id,type,amount,balance_after,note,created_at,created_by,order_id,reference_type,reference_id,idempotency_key,metadata_json)
         SELECT ?,?,?, 'deduct',?,balance,?,?,?,?,?,?,?,? FROM wallet_accounts WHERE client_id=?`)
         .bind(logId,order.client_id,order.store_id||null,fee,'خصم تلقائي — أوردر جديد',ts,'system',orderId,'order',orderId,key,JSON.stringify({billingVersion:'v27'}),order.client_id),
@@ -50,9 +77,17 @@ export async function billOrder(env,orderId){
 }
 
 export async function reconcileUnbilledOrders(env,{clientId=null,limit=100}={}){
-  let sql=`SELECT o.id FROM orders o JOIN wallet_accounts w ON w.client_id=o.client_id AND w.billing_version='v27' AND w.status='active'
+  // Only auto-reconcile newly discovered orders. Never consume later topups
+  // by replaying pending/failed charges from an exhausted wallet.
+  let sql=`SELECT o.id FROM orders o JOIN wallet_accounts w ON w.client_id=o.client_id AND w.billing_version='v27' AND w.status='active' AND w.balance>0
     LEFT JOIN order_billing b ON b.order_id=o.id
-    WHERE o.rowid>COALESCE(w.billing_start_rowid,0) AND (b.order_id IS NULL OR b.status IN ('pending','pending_insufficient','failed'))`;
+    WHERE o.rowid>COALESCE(w.billing_start_rowid,0) AND b.order_id IS NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM wallet_log t
+        WHERE t.client_id=o.client_id AND t.type='topup'
+          AND t.balance_after-t.amount<=0
+          AND datetime(t.created_at)>=datetime(o.created_at)
+      )`;
   const binds=[];if(clientId){sql+=' AND o.client_id=?';binds.push(clientId)}sql+=' ORDER BY COALESCE(o.created_at,o.date) ASC LIMIT ?';binds.push(Math.max(1,Math.min(300,Number(limit)||100)));
   const {results=[]}=await env.DB.prepare(sql).bind(...binds).all(),outcomes=[];
   for(const row of results){try{outcomes.push({orderId:row.id,...await billOrder(env,row.id)})}catch(error){outcomes.push({orderId:row.id,ok:false,error:String(error?.message||error)})}}
