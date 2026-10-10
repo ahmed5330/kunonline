@@ -3,6 +3,7 @@ import {readFile} from 'node:fs/promises';
 import {ensureWalletAccount,migrateLegacyBilling,walletSnapshot,billOrder,reconcileUnbilledOrders,requestTopup,approveTopup,adminCreditWallet,sanitizeLegacyStateBilling} from '../src/wallet-billing.js';
 import {setTenantModules,effectiveOrderFee} from '../src/feature-entitlements.js';
 import {configureSubscription,subscriptionAccess,startFreeTrial,endFreeTrial} from '../src/subscription-billing.js';
+import {walletPaymentDiagnostics} from '../src/wallet-payment-diagnostics.js';
 import {saveAttribution,campaignPerformance} from '../src/marketing-intelligence.js';
 import {addOrderNote,logContact,timeline} from '../src/order-events.js';
 import {createAdDraft,generateAdDraft,requestAdAction} from '../src/ad-studio.js';
@@ -143,6 +144,35 @@ const brokenTopup=await requestTopup(env,c3,{amount:10,senderPhone:'01000000000'
 await env.DB.prepare("UPDATE wallet_topup_requests SET status='approved' WHERE id=?").bind(brokenTopup.id).run();
 let integrityCaught=false;try{await approveTopup(env,brokenTopup.id,'qa-admin','integrity check')}catch(error){integrityCaught=error?.code==='TOPUP_APPROVAL_INTEGRITY'}
 must(integrityCaught,'Approved topup without a matching ledger credit must fail integrity validation instead of pretending money was added');
+
+// Regression for the reported 500 EGP recharge / 333 EGP positive balance,
+// then -178 EGP incident. The breakdown must reveal whether the subsequent
+// 511 EGP came from a monthly subscription versus previously billed orders.
+// This is an isolated *synthetic fixture*, NOT a claim about a real client's ledger.
+const c4='C4';
+await env.DB.prepare(`INSERT INTO wallet_accounts
+  (client_id,balance,currency,base_order_fee,min_order_fee,max_order_fee,credit_limit,billing_version,billing_start_rowid,status,updated_at)
+  VALUES (?,-167,'EGP',2,0,0,167,'v27',0,'active',?)`).bind(c4,ts).run();
+const diagnosticTopup=await requestTopup(env,c4,{amount:500,senderPhone:'01000000000',proofDataUrl:proof},'qa-owner');
+const diagnosticApproval=await approveTopup(env,diagnosticTopup.id,'qa-admin','audit fixture');
+must(diagnosticApproval.balanceAfterCredit===333,'An approved 500 topup after -167 must show 333');
+const diagnosticInitial=await walletPaymentDiagnostics(env,c4);
+must(diagnosticInitial.lastApprovedCredit?.amount===500&&diagnosticInitial.sinceLastCredit?.debits===0,
+  'Read-only diagnostic must identify the approved credit without inventing a debit');
+const diagnosticMonthly=await configureSubscription(env,c4,{monthlyMinimum:511,baseOrderFee:2,status:'active'},'qa-admin');
+must(diagnosticMonthly.balance===-178,'Explicit 511 monthly minimum can explain a later -178 ledger state');
+const diagnosticAfter=await walletPaymentDiagnostics(env,c4);
+must(diagnosticAfter.lastApprovedCredit?.balanceAfter===333&&diagnosticAfter.sinceLastCredit?.debits===511
+  &&diagnosticAfter.sinceLastCredit?.debitBreakdown?.subscription===511
+  &&diagnosticAfter.sinceLastCredit?.debitBreakdown?.orders===0
+  &&diagnosticAfter.ledgerBalanceMismatch===0
+  &&diagnosticAfter.sinceLastCredit?.drift===0
+  &&diagnosticAfter.missingApprovedCredits===0,'Admin audit must accurately attribute a 511 debit to its ledger reference and verify balances');
+await env.DB.prepare('UPDATE wallet_accounts SET balance=-177 WHERE client_id=?').bind(c4).run();
+const mismatch=await walletPaymentDiagnostics(env,c4);
+must(mismatch.ledgerBalanceMismatch===1&&mismatch.sinceLastCredit?.drift===1,
+  'Diagnostic must flag an unlogged balance mutation instead of reporting everything as healthy');
+await env.DB.prepare('UPDATE wallet_accounts SET balance=-178 WHERE client_id=?').bind(c4).run();
 
 // Real marketing metrics must count externally-entered/unattributed orders at account level.
 const c2='C2',s2='S2';
