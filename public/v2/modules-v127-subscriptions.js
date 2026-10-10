@@ -1,7 +1,7 @@
-/* Kun Online v127.17 — enforce paid-wallet access, low-credit notices and transparent topup status. */
+/* Kun Online v127.18 — auto-hide the resolved billing card; keep wallet accessible. */
 (()=>{
   if(window.KunSubscriptionsV127)return;
-  const VERSION='127.17';
+  const VERSION='127.18';
   const $=(s,r=document)=>r?.querySelector?.(s)||null;
   const $$=(s,r=document)=>r?[...r.querySelectorAll(s)]:[];
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -103,7 +103,7 @@
     const low=Boolean(!a?.trialActive&&!a?.locked&&balance>0&&balance<=limit&&a?.subscriptionStatus!=='unmanaged');
     if(!exhausted&&!low){banner?.remove();return;}
     if(!top)return;
-    if(!banner){banner=document.createElement('div');banner.id='sub127BalanceBanner';banner.className='sub127-access-banner';banner.setAttribute('role','alert');banner.onclick=()=>$('.nav button[data-view="dashboard"]')?.click();top.insertAdjacentElement('afterend',banner);}
+    if(!banner){banner=document.createElement('div');banner.id='sub127BalanceBanner';banner.className='sub127-access-banner';banner.setAttribute('role','alert');banner.onclick=()=>{if(state.locked)$('.nav button[data-view="dashboard"]')?.click();else showWalletPage();};top.insertAdjacentElement('afterend',banner);}
     banner.classList.toggle('critical',exhausted);
     banner.textContent=exhausted?'الرصيد انتهى — تم إيقاف العمليات. افتح الداشبورد وأرسل إثبات تحويل لشحن المحفظة.':'تنبيه: رصيدك قرب يخلص ('+money(balance,a.currency)+'). اشحن المحفظة قبل توقف العمليات.';
   }
@@ -161,9 +161,28 @@
     if(submit)submit.onclick=()=>submitTopup(panel).catch(e=>window.showToast?.(e.message));
   }
 
+  // A payment counts as resolved only when the server confirms a positive
+  // wallet balance and re-enabled access; pending transfer requests don't qualify.
+  function shouldShowDashboardPanel(a){
+    return Boolean(a?.locked||(!a?.trialActive&&Number(a?.balance)<=0));
+  }
+  function showWalletPage(){
+    if(!state.me?.clientId||state.me.role!=='client'||state.locked)return;
+    const root=$('#root');if(!root)return;
+    $('.nav button[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view==='wallet'));
+    root.innerHTML='<div class="sub127-wallet-screen" data-sub127-wallet-screen="1"><div class="page-head"><div><div class="title">المحفظة</div><div class="sub">متابعة الرصيد وطلبات شحن المحفظة وسجل اعتماد التحويلات</div></div></div></div>';
+    ensureClientPanel();
+  }
   function ensureClientPanel(){
     if(!state.me?.clientId||state.me.role==='admin'||!state.access)return;
-    const dashboard=$('.v33-dashboard')||($('.nav button.active[data-view="dashboard"]')?$('#root'):null);if(!dashboard)return;
+    const walletScreen=$('[data-sub127-wallet-screen]');
+    const dashboard=walletScreen||$('.v33-dashboard')||($('.nav button.active[data-view="dashboard"]')?$('#root'):null);
+    if(!dashboard)return;
+    if(!walletScreen&&!shouldShowDashboardPanel(state.access)){
+      // Keep the topup form in Wallet, not over a funded customer's dashboard.
+      $('[data-sub127-client-panel]',dashboard)?.remove();
+      return;
+    }
     let panel=$('[data-sub127-client-panel]',dashboard);
     if(!panel){
       const html=clientPanelHtml(state.access),hero=$('.dash-hero',dashboard);
@@ -375,12 +394,15 @@
       if(target==='subscriptions'&&state.me?.role==='admin'){
         event.preventDefault();event.stopImmediatePropagation();setAdminActive();setTimeout(renderAdmin,0);return;
       }
+      if(target==='wallet'&&state.me?.role==='client'&&!state.locked){
+        event.preventDefault();event.stopImmediatePropagation();showWalletPage();return;
+      }
       if(state.locked&&target&&target!=='dashboard'){event.preventDefault();event.stopImmediatePropagation();window.showToast?.('الحساب موقوف حاليًا من إعدادات الاشتراك أو المحفظة.');$('.nav button[data-view="dashboard"]')?.click();return;}
       if(target==='dashboard')setTimeout(ensureClientPanel,300);
     },true);
     const root=$('#root');if(root)new MutationObserver(()=>{
       if(state.me?.role==='admin'&&$('.nav button.active[data-view="subscriptions"]')&&!$('.sub127-admin',root)&&root.dataset.sub127Admin!=='loading')setTimeout(renderAdmin,0);
-      if(state.me?.role!=='admin'){if(state.locked)lockNav();if($('.v33-dashboard')&&!$('[data-sub127-client-panel]'))setTimeout(ensureClientPanel,40);}
+      if(state.me?.role!=='admin'){if(state.locked)lockNav();if($('.v33-dashboard')&&shouldShowDashboardPanel(state.access)&&!$('[data-sub127-client-panel]'))setTimeout(ensureClientPanel,40);}
     }).observe(root,{childList:true,subtree:true});
   }
 
