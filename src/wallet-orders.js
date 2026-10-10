@@ -33,13 +33,16 @@ async function waivePreBillingOrder(env,order,reason='PRE_BILLING_DATE'){
   return {ok:true,status:'waived',fee:0,skipped:'pre_billing_date'};
 }
 
-export async function billOrder(env,orderId){
+export async function billOrder(env,orderId,{allowBacklogCharge=false}={}){
   const order=await env.DB.prepare('SELECT rowid AS order_rowid,id,client_id,store_id,date,created_at FROM orders WHERE id=?').bind(orderId).first();
   if(!order)return {ok:false,skipped:'order_not_found'};
   const account=await ensureWalletAccount(env,order.client_id);
   if(account.billing_version!=='v27'||account.status!=='active')return {ok:true,skipped:'billing_not_v27'};
   const existing=await env.DB.prepare('SELECT * FROM order_billing WHERE order_id=?').bind(orderId).first();
   if(existing?.status==='charged'||existing?.status==='waived')return {ok:true,status:existing.status,fee:Number(existing.fee)||0};
+  // Existing uncollected debt must not be retried just because an integration
+  // sends an order update after the merchant tops up. Require explicit review.
+  if(existing&&!allowBacklogCharge)return {ok:false,status:existing.status,fee:round2(existing.fee),code:'BACKLOG_REQUIRES_REVIEW'};
   const startedAt=await billingStartAt(env,order.client_id);
   if(orderBeforeBillingStart(order,startedAt,account.billing_start_rowid))return waivePreBillingOrder(env,order,'PRE_BILLING_DATE');
   const fee=await subscriptionOrderFee(env,order.client_id),ts=now();
@@ -48,6 +51,21 @@ export async function billOrder(env,orderId){
       VALUES (?,?,?,?, 'waived',1,?,?,?) ON CONFLICT(order_id) DO UPDATE SET status='waived',fee=0,updated_at=excluded.updated_at`)
       .bind(orderId,order.client_id,order.store_id||null,0,ts,ts,ts).run();
     return {ok:true,status:'waived',fee:0};
+  }
+  if(!allowBacklogCharge){
+    const recovered=await env.DB.prepare(`SELECT id FROM wallet_log
+      WHERE client_id=? AND type='topup' AND balance_after-amount<=0
+        AND datetime(created_at)>=datetime(?) LIMIT 1`)
+      .bind(order.client_id,order.created_at||order.date||'').first();
+    if(recovered){
+      // Imported/historical order predates recovery from a depleted balance.
+      // Record it as pending review, not a fresh debit against new money.
+      await env.DB.prepare(`INSERT OR IGNORE INTO order_billing
+        (order_id,client_id,store_id,fee,status,attempts,last_error,created_at,updated_at)
+        VALUES (?,?,?,?, 'pending_insufficient',0,'PRE_TOPUP_BACKLOG_REVIEW',?,?)`)
+        .bind(orderId,order.client_id,order.store_id||null,fee,ts,ts).run();
+      return {ok:false,status:'pending_insufficient',fee,code:'PRE_TOPUP_BACKLOG_REVIEW'};
+    }
   }
   const startingBalance=round2(account.balance);
   if(startingBalance<=0){
@@ -98,9 +116,21 @@ export async function billOrder(env,orderId){
 }
 
 export async function reconcileUnbilledOrders(env,{clientId=null,limit=100}={}){
-  let sql=`SELECT o.id FROM orders o JOIN wallet_accounts w ON w.client_id=o.client_id AND w.billing_version='v27' AND w.status='active'
+  // Automatic reconciliation is for newly discovered, unbilled orders only.
+  // A failed/insufficient order is an explicit debt candidate, NOT a mandate to
+  // debit a later approved topup silently. Reattempts need an explicit billOrder.
+  //
+  // Also never sweep an unbilled order that existed before a topup restored an
+  // exhausted wallet: those historical orders require manual ledger review.
+  let sql=`SELECT o.id FROM orders o JOIN wallet_accounts w ON w.client_id=o.client_id AND w.billing_version='v27' AND w.status='active' AND w.balance>0
     LEFT JOIN order_billing b ON b.order_id=o.id
-    WHERE o.rowid>COALESCE(w.billing_start_rowid,0) AND (b.order_id IS NULL OR b.status IN ('pending','pending_insufficient','failed'))`;
+    WHERE o.rowid>COALESCE(w.billing_start_rowid,0) AND b.order_id IS NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM wallet_log t
+        WHERE t.client_id=o.client_id AND t.type='topup'
+          AND t.balance_after-t.amount<=0
+          AND datetime(t.created_at)>=datetime(o.created_at)
+      )`;
   const binds=[];if(clientId){sql+=' AND o.client_id=?';binds.push(clientId)}sql+=' ORDER BY COALESCE(o.date,o.created_at) ASC LIMIT ?';binds.push(Math.max(1,Math.min(300,Number(limit)||100)));
   const {results=[]}=await env.DB.prepare(sql).bind(...binds).all(),outcomes=[];
   for(const row of results){try{outcomes.push({orderId:row.id,...await billOrder(env,row.id)})}catch(error){outcomes.push({orderId:row.id,ok:false,error:String(error?.message||error)})}}
