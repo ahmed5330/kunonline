@@ -33,16 +33,34 @@ async function waivePreBillingOrder(env,order,reason='PRE_BILLING_DATE'){
   return {ok:true,status:'waived',fee:0,skipped:'pre_billing_date'};
 }
 
-export async function billOrder(env,orderId){
+export async function billOrder(env,orderId,{allowBacklogCharge=false}={}){
   const order=await env.DB.prepare('SELECT rowid AS order_rowid,id,client_id,store_id,date,created_at FROM orders WHERE id=?').bind(orderId).first();
   if(!order)return {ok:false,skipped:'order_not_found'};
   const account=await ensureWalletAccount(env,order.client_id);
   if(account.billing_version!=='v27'||account.status!=='active')return {ok:true,skipped:'billing_not_v27'};
   const existing=await env.DB.prepare('SELECT * FROM order_billing WHERE order_id=?').bind(orderId).first();
   if(existing?.status==='charged'||existing?.status==='waived')return {ok:true,status:existing.status,fee:Number(existing.fee)||0};
+  // Existing uncollected debt must not be retried just because an integration
+  // sends an order update after the merchant tops up. Require explicit review.
+  if(existing&&!allowBacklogCharge)return {ok:false,status:existing.status,fee:round2(existing.fee),code:'BACKLOG_REQUIRES_REVIEW'};
   const startedAt=await billingStartAt(env,order.client_id);
   if(orderBeforeBillingStart(order,startedAt,account.billing_start_rowid))return waivePreBillingOrder(env,order,'PRE_BILLING_DATE');
   const fee=await subscriptionOrderFee(env,order.client_id),ts=now();
+  if(!allowBacklogCharge){
+    const recovered=await env.DB.prepare(`SELECT id FROM wallet_log
+      WHERE client_id=? AND type='topup' AND balance_after-amount<=0
+        AND datetime(created_at)>=datetime(?) LIMIT 1`)
+      .bind(order.client_id,order.created_at||order.date||'').first();
+    if(recovered){
+      // Imported/historical order predates recovery from a depleted balance.
+      // Record it as pending review, not a fresh debit against new money.
+      await env.DB.prepare(`INSERT OR IGNORE INTO order_billing
+        (order_id,client_id,store_id,fee,status,attempts,last_error,created_at,updated_at)
+        VALUES (?,?,?,?, 'pending_insufficient',0,'PRE_TOPUP_BACKLOG_REVIEW',?,?)`)
+        .bind(orderId,order.client_id,order.store_id||null,fee,ts,ts).run();
+      return {ok:false,status:'pending_insufficient',fee,code:'PRE_TOPUP_BACKLOG_REVIEW'};
+    }
+  }
   if(fee<=0){
     await env.DB.prepare(`INSERT INTO order_billing (order_id,client_id,store_id,fee,status,attempts,created_at,charged_at,updated_at)
       VALUES (?,?,?,?, 'waived',1,?,?,?) ON CONFLICT(order_id) DO UPDATE SET status='waived',fee=0,updated_at=excluded.updated_at`)
