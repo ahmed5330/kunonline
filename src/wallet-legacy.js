@@ -1,15 +1,38 @@
 import {now,rid,round2,ensureWalletAccount,mirrorLegacyBalance} from './wallet-core.js';
 
-export async function adminCreditWallet(env,clientId,amount,actor='admin',note='Manual admin credit'){
+export async function adminCreditWallet(env,clientId,amount,actor='admin',note='Manual admin credit',options={}){
   amount=round2(amount);if(amount<=0)throw Object.assign(new Error('المبلغ لازم يكون أكبر من صفر'),{status:400});
-  await ensureWalletAccount(env,clientId);const ts=now(),logId=rid('WLG'),key=`admin-credit:${crypto.randomUUID()}`;
-  await env.DB.batch([
-    env.DB.prepare('UPDATE wallet_accounts SET balance=ROUND(balance+?,2),updated_at=? WHERE client_id=?').bind(amount,ts,clientId),
-    env.DB.prepare(`INSERT INTO wallet_log (id,client_id,store_id,type,amount,balance_after,note,created_at,created_by,reference_type,reference_id,idempotency_key,metadata_json)
-      SELECT ?,?,NULL,'topup',?,balance,?,?,?,?,?,?,? FROM wallet_accounts WHERE client_id=?`)
-      .bind(logId,clientId,amount,String(note||'Manual admin credit'),ts,actor,'admin_adjustment',logId,key,JSON.stringify({source:'admin_direct'}),clientId)
-  ]);
-  const row=await env.DB.prepare('SELECT balance FROM wallet_accounts WHERE client_id=?').bind(clientId).first();await mirrorLegacyBalance(env,clientId,row?.balance||0);return {ok:true,clientId,balance:round2(row?.balance),walletLogId:logId};
+  const requestId=String(options?.requestId||'').trim();
+  if(requestId&&!/^[a-zA-Z0-9:_-]{8,128}$/.test(requestId)){
+    throw Object.assign(new Error('رمز عملية التصحيح غير صحيح'),{status:400,code:'ADMIN_CREDIT_KEY_INVALID'});
+  }
+  await ensureWalletAccount(env,clientId);
+  const ts=now(),logId=rid('WLG'),key=requestId?`admin-credit:${clientId}:${requestId}`:`admin-credit:${crypto.randomUUID()}`;
+  const existing=()=>env.DB.prepare('SELECT id,amount FROM wallet_log WHERE client_id=? AND idempotency_key=? LIMIT 1').bind(clientId,key).first();
+  const result=async(prev)=>{
+    if(round2(prev.amount)!==amount)throw Object.assign(new Error('رمز عملية التصحيح مستخدم بالفعل لمبلغ مختلف'),{status:409,code:'ADMIN_CREDIT_KEY_CONFLICT'});
+    const row=await env.DB.prepare('SELECT balance FROM wallet_accounts WHERE client_id=?').bind(clientId).first();
+    return {ok:true,alreadyCredited:true,clientId,balance:round2(row?.balance),walletLogId:prev.id};
+  };
+  const prior=requestId?await existing():null;
+  if(prior)return result(prior);
+  try{
+    await env.DB.batch([
+      env.DB.prepare('UPDATE wallet_accounts SET balance=ROUND(balance+?,2),updated_at=? WHERE client_id=?').bind(amount,ts,clientId),
+      env.DB.prepare(`INSERT INTO wallet_log (id,client_id,store_id,type,amount,balance_after,note,created_at,created_by,reference_type,reference_id,idempotency_key,metadata_json)
+        SELECT ?,?,NULL,'topup',?,balance,?,?,?,?,?,?,? FROM wallet_accounts WHERE client_id=?`)
+        .bind(logId,clientId,amount,String(note||'Manual admin credit'),ts,actor,'admin_adjustment',logId,key,JSON.stringify({source:'admin_direct'}),clientId)
+    ]);
+  }catch(error){
+    if(requestId&&/UNIQUE constraint failed|idx_wallet_log_idempotency/i.test(String(error?.message||error))){
+      const credited=await existing();
+      if(credited)return result(credited);
+    }
+    throw error;
+  }
+  const row=await env.DB.prepare('SELECT balance FROM wallet_accounts WHERE client_id=?').bind(clientId).first();
+  await mirrorLegacyBalance(env,clientId,row?.balance||0);
+  return {ok:true,alreadyCredited:false,clientId,balance:round2(row?.balance),walletLogId:logId};
 }
 
 export async function sanitizeLegacyStateBilling(env,state){
