@@ -2,6 +2,7 @@ import {
   subscriptionAccess,configureSubscription,startFreeTrial,endFreeTrial,listSubscriptionsAdmin,reconcileMonthlySubscriptions
 } from './subscription-billing.js';
 import {requestTopup,listTopups,listPendingTopupsAdmin,getPendingTopupProofAdmin,approveTopup,rejectTopup,walletSnapshot,listWalletLog,adminCreditWallet} from './wallet-billing.js';
+import {walletPaymentDiagnostics} from './wallet-payment-diagnostics.js';
 
 const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}});
 const text=v=>String(v??'').trim();
@@ -40,12 +41,13 @@ export async function handleSubscriptionControl({request,env,ctx,delegate}){
     let match=path.match(/^\/api\/admin\/subscriptions\/([^/]+)\/ledger$/);
     if(match&&method==='GET'){
       requireAdmin(me);const clientId=decodeURIComponent(match[1]);
-      const [wallet,log,access]=await Promise.all([
+      const [wallet,log,access,diagnostics]=await Promise.all([
         walletSnapshot(env,clientId),
         listWalletLog(env,clientId,url.searchParams.get('limit')||40),
-        subscriptionAccess(env,clientId,{applyMonthly:false})
+        subscriptionAccess(env,clientId,{applyMonthly:false}),
+        walletPaymentDiagnostics(env,clientId)
       ]);
-      return json({ok:true,clientId,wallet,access,log});
+      return json({ok:true,clientId,wallet,access,log,diagnostics});
     }
     match=path.match(/^\/api\/admin\/subscriptions\/([^/]+)\/credit$/);
     if(match&&method==='POST'){
