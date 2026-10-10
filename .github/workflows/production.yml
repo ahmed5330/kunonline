@@ -210,3 +210,19 @@ jobs:
           grep -Fq 'AndroidManifest.xml' "$listing"
           if [ -n "$expected_sha" ]; then actual_sha="$(sha256sum "$apk" | awk '{print $1}')"; test "$actual_sha" = "$expected_sha"; fi
           echo "Printing UI and Android download verified through Kun Online: $(wc -c < "$apk") bytes"
+      - name: Verify live V2 login gateway and session endpoints
+        run: |
+          set -euo pipefail
+          node scripts/live-production-login-route-probe.mjs
+          verified=0
+          for i in {1..8}; do
+            nonce="${GITHUB_RUN_ID}-${i}"
+            page="$(curl -fsSL -H 'Cache-Control: no-cache' "https://app.kun-online.com/v2/?login_gateway=${nonce}" 2>/dev/null || true)"
+            auth="$(curl -fsSL -H 'Cache-Control: no-cache' "https://app.kun-online.com/v2/modules-v142-login-gateway.js?v=142.0&check=${nonce}" 2>/dev/null || true)"
+            if grep -Fq '/v2/modules-v142-login-gateway.js?v=142.0' <<< "$page" \
+              && grep -Fq "fetch('/api/login'" <<< "$auth" \
+              && grep -Fq "fetch('/api/me'" <<< "$auth"; then verified=1; break; fi
+            sleep 3
+          done
+          if [ "$verified" != 1 ]; then echo 'V2 login entry or its JavaScript asset is missing from production'; exit 1; fi
+          echo 'V2 login gateway and public authentication routes are reachable on production'
