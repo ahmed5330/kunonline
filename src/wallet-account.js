@@ -52,7 +52,11 @@ export async function configureWallet(env,clientId,patch={},actor='admin'){
   await ensureWalletAccount(env,clientId);
   const current=await env.DB.prepare('SELECT * FROM wallet_accounts WHERE client_id=?').bind(clientId).first();
   const base=Math.max(0,Number(patch.baseOrderFee??current.base_order_fee)||0);
-  const credit=Math.max(0,Number(patch.creditLimit??current.credit_limit)||0);
+  // Never configure a credit limit below already-posted debt: D1 enforces
+  // CHECK(balance >= -credit_limit). Reducing the limit may only affect
+  // future credit, never invalidate historical wallet ledger entries.
+  const outstandingDebt=Math.max(0,round2(0-Number(current.balance||0)));
+  const credit=Math.max(0,Number(patch.creditLimit??current.credit_limit)||0,outstandingDebt);
   const status=['active','paused'].includes(patch.status)?patch.status:current.status;
   await env.DB.prepare('UPDATE wallet_accounts SET base_order_fee=?,min_order_fee=0,max_order_fee=0,credit_limit=?,status=?,updated_at=? WHERE client_id=?')
     .bind(base,credit,status,now(),clientId).run();
