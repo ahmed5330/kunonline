@@ -53,8 +53,13 @@ export async function handleSubscriptionControl({request,env,ctx,delegate}){
     if(match&&method==='POST'){
       requireAdmin(me);const clientId=decodeURIComponent(match[1]),body=await bodyOf(request),amount=Number(body.amount),actor=me.email||me.uid||'admin';
       const credit=await adminCreditWallet(env,clientId,amount,actor,String(body.note||'تصحيح رصيد من إدارة الاشتراكات'));
-      const access=await subscriptionAccess(env,clientId,{applyMonthly:true});
-      return json({ok:true,credit,access});
+      // Credit has already been committed. A subsequent monthly settlement failure
+      // must not surface as "credit failed", which could prompt a duplicate payment.
+      let access=null,settlementPending=false;
+      try{access=await subscriptionAccess(env,clientId,{applyMonthly:true});}
+      catch(error){settlementPending=true;console.warn('manual credit settlement pending',error?.code||'unknown');}
+      const wallet=await walletSnapshot(env,clientId);
+      return json({ok:true,credit,access,finalBalance:wallet.balance,settlementPending});
     }
     match=path.match(/^\/api\/admin\/subscriptions\/([^/]+)$/);
     if(match&&method==='PATCH'){
