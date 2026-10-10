@@ -46,6 +46,12 @@ export async function billOrder(env,orderId,{allowBacklogCharge=false}={}){
   const startedAt=await billingStartAt(env,order.client_id);
   if(orderBeforeBillingStart(order,startedAt,account.billing_start_rowid))return waivePreBillingOrder(env,order,'PRE_BILLING_DATE');
   const fee=await subscriptionOrderFee(env,order.client_id),ts=now();
+  if(fee<=0){
+    await env.DB.prepare(`INSERT INTO order_billing (order_id,client_id,store_id,fee,status,attempts,created_at,charged_at,updated_at)
+      VALUES (?,?,?,?, 'waived',1,?,?,?) ON CONFLICT(order_id) DO UPDATE SET status='waived',fee=0,updated_at=excluded.updated_at`)
+      .bind(orderId,order.client_id,order.store_id||null,0,ts,ts,ts).run();
+    return {ok:true,status:'waived',fee:0};
+  }
   if(!allowBacklogCharge){
     const recovered=await env.DB.prepare(`SELECT id FROM wallet_log
       WHERE client_id=? AND type='topup' AND balance_after-amount<=0
@@ -60,12 +66,6 @@ export async function billOrder(env,orderId,{allowBacklogCharge=false}={}){
         .bind(orderId,order.client_id,order.store_id||null,fee,ts,ts).run();
       return {ok:false,status:'pending_insufficient',fee,code:'PRE_TOPUP_BACKLOG_REVIEW'};
     }
-  }
-  if(fee<=0){
-    await env.DB.prepare(`INSERT INTO order_billing (order_id,client_id,store_id,fee,status,attempts,created_at,charged_at,updated_at)
-      VALUES (?,?,?,?, 'waived',1,?,?,?) ON CONFLICT(order_id) DO UPDATE SET status='waived',fee=0,updated_at=excluded.updated_at`)
-      .bind(orderId,order.client_id,order.store_id||null,0,ts,ts,ts).run();
-    return {ok:true,status:'waived',fee:0};
   }
   const startingBalance=round2(account.balance);
   if(startingBalance<=0){
