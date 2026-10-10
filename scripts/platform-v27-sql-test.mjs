@@ -1,6 +1,6 @@
 import {DatabaseSync} from 'node:sqlite';
 import {readFile} from 'node:fs/promises';
-import {ensureWalletAccount,migrateLegacyBilling,walletSnapshot,billOrder,requestTopup,approveTopup,adminCreditWallet,sanitizeLegacyStateBilling} from '../src/wallet-billing.js';
+import {ensureWalletAccount,migrateLegacyBilling,walletSnapshot,billOrder,reconcileUnbilledOrders,requestTopup,approveTopup,adminCreditWallet,sanitizeLegacyStateBilling} from '../src/wallet-billing.js';
 import {setTenantModules,effectiveOrderFee} from '../src/feature-entitlements.js';
 import {configureSubscription,subscriptionAccess,startFreeTrial,endFreeTrial} from '../src/subscription-billing.js';
 import {saveAttribution,campaignPerformance} from '../src/marketing-intelligence.js';
@@ -53,12 +53,33 @@ await env.DB.prepare("INSERT INTO orders(id,client_id,store_id,date,created_at) 
 const low=await billOrder(env,'LOW');must(low.status==='charged'&&low.fee===4,'Final order must charge in full while starting balance is still positive');must((await walletSnapshot(env,client)).balance===-3,'Final order may cross balance below zero once, then subscription access locks');
 await env.DB.prepare("INSERT INTO orders(id,client_id,store_id,date,created_at) VALUES ('WAITING',?,?,?,?)").bind(client,store,day,new Date(Date.now()+3000).toISOString()).run();
 const waiting=await billOrder(env,'WAITING');must(waiting.status==='pending_insufficient','Orders arriving after exhaustion must remain pending until the next topup');
+await env.DB.prepare("INSERT INTO orders(id,client_id,store_id,date,created_at) VALUES ('WAITING-2',?,?,?,?)").bind(client,store,day,new Date(Date.now()+3200).toISOString()).run();
+const stillPending=await billOrder(env,'WAITING-2');must(stillPending.status==='pending_insufficient','Second historical pending order must be recorded without debit');
 const recovery=await requestTopup(env,client,{amount:20,senderPhone:'01000000000',proofDataUrl:proof},'qa-owner');
 const recoveryApproved=await approveTopup(env,recovery.id,'qa-admin','recover',{creditAmount:25});
 must(recoveryApproved.requestedAmount===20&&recoveryApproved.creditedAmount===25,'Admin must be able to override the amount credited for a transfer');
 must(recoveryApproved.balanceAfterCredit===22&&recoveryApproved.balance===22,'Approval must add the admin-confirmed credit automatically');
 const pendingAfterApproval=await env.DB.prepare("SELECT status FROM order_billing WHERE order_id='WAITING'").first();must(pendingAfterApproval.status==='pending_insufficient','Approval must not silently consume the new credit against old pending orders');
 const recoveredOrder=await billOrder(env,'WAITING');must(recoveredOrder.status==='charged'&&(await walletSnapshot(env,client)).balance===18,'Pending order can be billed explicitly after the account is funded');
+// A scheduled/bulk reconciliation must NEVER replay pending fees or old unbilled
+// orders after a recovery topup. Only genuinely new orders may be auto-billed.
+await env.DB.prepare("INSERT INTO orders(id,client_id,store_id,date,created_at) VALUES ('HISTORIC-UNBILLED',?,?,?,?)")
+  .bind(client,store,day,new Date(Date.now()-600000).toISOString()).run();
+const ledgerBeforeSweep=await walletSnapshot(env,client);
+const sweep=await reconcileUnbilledOrders(env,{clientId:client,limit:300});
+must(!sweep.some(row=>['WAITING-2','HISTORIC-UNBILLED'].includes(row.orderId)),
+  'Scheduled reconciliation must not consume approved credit on previously exhausted debt or historical unbilled orders');
+must((await walletSnapshot(env,client)).balance===ledgerBeforeSweep.balance,
+  'A scheduled sweep after topup must not debit any historical backlog');
+const waiting2=await env.DB.prepare("SELECT status FROM order_billing WHERE order_id='WAITING-2'").first();
+must(waiting2.status==='pending_insufficient','Historical insufficient item must remain reviewable, never silently deleted');
+await env.DB.prepare("INSERT INTO orders(id,client_id,store_id,date,created_at) VALUES ('POST-RECOVERY-NEW',?,?,?,?)")
+  .bind(client,store,day,new Date(Date.now()+60000).toISOString()).run();
+const newOrders=await reconcileUnbilledOrders(env,{clientId:client,limit:300});
+must(newOrders.some(o=>o.orderId==='POST-RECOVERY-NEW'&&o.status==='charged'),
+  'Legitimate newly created orders after payment must still be billed automatically');
+must((await walletSnapshot(env,client)).balance===14,
+  'Only the new per-order fee must have been deducted');
 
 // Managed subscriptions use one authoritative ledger: the monthly minimum is posted
 // exactly once even when it crosses below zero. A paid subscription pauses
