@@ -324,8 +324,8 @@
       const btn=$('#sub127ManualCredit',back);btn.disabled=true;btn.textContent='جارٍ إضافة الرصيد...';
       try{
         const d=await api(`/api/admin/subscriptions/${encodeURIComponent(clientId)}/credit`,{method:'POST',body:JSON.stringify({amount,note})});
-        const finalBalance=d?.access?.balance??d?.credit?.balance;
-        window.showToast?.(`تم إضافة ${money(amount,c.currency)} — الرصيد الآن ${money(finalBalance,c.currency)} — ${d?.access?.locked?'الحساب ما زال متوقفًا':'الحساب نشط'}`);
+        const finalBalance=d?.finalBalance??d?.access?.balance??d?.credit?.balance;
+        window.showToast?.(`تم إضافة ${money(amount,c.currency)} — الرصيد الحالي ${money(finalBalance,c.currency)} — ${d?.settlementPending?'تسوية الاشتراك لم تكتمل؛ راجع سجل الخصومات':d?.access?.locked?'الحساب ما زال متوقفًا':'الحساب نشط'}`);
         closeModal();await renderAdmin();
       }catch(e){btn.disabled=false;btn.textContent='إضافة الرصيد وتفعيل الحساب';window.showToast?.(e.message);}
     };
@@ -342,8 +342,14 @@
     if(result?.alreadyApproved)parts.push('الطلب كان معتمدًا بالفعل ولن يتم إضافة الرصيد مرة ثانية');
     else parts.push(`تم إضافة ${money(result?.creditedAmount,currency)} إلى رصيد العميل`);
     if(Number(result?.requestedAmount)!==Number(result?.creditedAmount))parts.push(`المبلغ المرسل كان ${money(result?.requestedAmount,currency)} وتم اعتماد ${money(result?.creditedAmount,currency)}`);
-    parts.push(`الرصيد بعد الاعتماد ${money(result?.balanceAfterCredit??result?.balance,currency)}`);
-    if(result?.access)parts.push(result.access.locked?'الحساب ما زال موقوفًا':'الحساب نشط');
+    const finalBalance=result?.access?.balance??result?.balance;
+    parts.push(`الرصيد الحالي بعد تسوية الرسوم ${money(finalBalance,currency)}`);
+    const beforeFees=Number(result?.balanceAfterCredit),afterFees=Number(finalBalance);
+    if(Number.isFinite(beforeFees)&&Number.isFinite(afterFees)&&Math.abs(beforeFees-afterFees)>0.009){
+      parts.push(`الرصيد بعد إضافة المبلغ وقبل التسوية ${money(beforeFees,currency)} — حركات/رسوم لاحقة ${money(beforeFees-afterFees,currency)}`);
+    }
+    if(result?.settlementPending)parts.push('تنبيه: تم اعتماد الشحن لكن تسوية رسوم الاشتراك لم تكتمل بعد؛ راجع السجل قبل اعتماد الرصيد كنهائي');
+    else if(result?.access)parts.push(result.access.locked?'الحساب ما زال موقوفًا':'الحساب نشط');
     window.showToast?.(parts.join(' — '));await renderAdmin();
     return result;
   }
