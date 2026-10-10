@@ -1,6 +1,31 @@
 import {effectiveOrderFee} from './feature-entitlements.js';
 import {now,rid,round2,ensureWalletAccount,mirrorLegacyBalance} from './wallet-core.js';
 
+function cairoToday(){
+  const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Cairo',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());
+  const value=k=>parts.find(p=>p.type===k)?.value||'';
+  return `${value('year')}-${value('month')}-${value('day')}`;
+}
+async function pricedOrderFee(env,clientId,account){
+  let sub=null;
+  try{
+    sub=await env.DB.prepare('SELECT status,period_end FROM subscriptions WHERE client_id=? ORDER BY created_at DESC LIMIT 1').bind(clientId).first();
+  }catch(error){
+    // Old v27 fixtures and legacy installations can predate managed subscriptions.
+    // All other billing errors must propagate, never guess or silently waive.
+    if(!/no such table:\s*subscriptions/i.test(String(error?.message||error)))throw error;
+  }
+  if(!sub)return {fee:round2(await effectiveOrderFee(env,clientId)),reason:'unmanaged'};
+  if(['paused','cancelled','suspended'].includes(String(sub.status||'')))return {fee:0,reason:'subscription_paused'};
+  if(sub.status==='trialing'&&/^\d{4}-\d{2}-\d{2}$/.test(String(sub.period_end||''))&&cairoToday()<sub.period_end){
+    return {fee:0,reason:'free_trial'};
+  }
+  // The paid subscription's configured per-order fee is final. Module deltas
+  // must not silently override the price displayed in the admin/customer panel.
+  return {fee:Math.max(0,round2(account.base_order_fee)),reason:'managed_paid'};
+}
+
+
 export async function billOrder(env,orderId,{allowBacklogCharge=false}={}){
   const order=await env.DB.prepare('SELECT rowid AS order_rowid,id,client_id,store_id,date,created_at FROM orders WHERE id=?').bind(orderId).first();
   if(!order)return {ok:false,skipped:'order_not_found'};
@@ -10,12 +35,12 @@ export async function billOrder(env,orderId,{allowBacklogCharge=false}={}){
   const existing=await env.DB.prepare('SELECT * FROM order_billing WHERE order_id=?').bind(orderId).first();
   if(existing?.status==='charged'||existing?.status==='waived')return {ok:true,status:existing.status,fee:Number(existing.fee)||0};
   if(existing&&!allowBacklogCharge)return {ok:false,status:existing.status,fee:round2(existing.fee),code:'BACKLOG_REQUIRES_REVIEW'};
-  const fee=await effectiveOrderFee(env,order.client_id),ts=now();
+  const pricing=await pricedOrderFee(env,order.client_id,account),fee=pricing.fee,ts=now();
   if(fee<=0){
     await env.DB.prepare(`INSERT INTO order_billing (order_id,client_id,store_id,fee,status,attempts,created_at,charged_at,updated_at)
       VALUES (?,?,?,?, 'waived',1,?,?,?) ON CONFLICT(order_id) DO UPDATE SET status='waived',fee=0,updated_at=excluded.updated_at`)
       .bind(orderId,order.client_id,order.store_id||null,0,ts,ts,ts).run();
-    return {ok:true,status:'waived',fee:0};
+    return {ok:true,status:'waived',fee:0,reason:pricing.reason};
   }
   if(!allowBacklogCharge){
     const recovery=await env.DB.prepare(`SELECT id FROM wallet_log
@@ -93,3 +118,5 @@ export async function reconcileUnbilledOrders(env,{clientId=null,limit=100}={}){
   return outcomes;
 }
 
+
+export const __previewWalletBillingInternals={pricedOrderFee};

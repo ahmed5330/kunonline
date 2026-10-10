@@ -27,6 +27,7 @@ CREATE INDEX idx_ai_insights_client ON ai_insight_snapshots(client_id,status,gen
 CREATE INDEX idx_ai_insights_store ON ai_insight_snapshots(client_id,store_id,status);
 `);
 db.exec(await readFile(new URL('../migrations/0014_platform_control_wallet_marketing.sql',import.meta.url),'utf8'));
+db.exec('CREATE TABLE IF NOT EXISTS subscriptions (id TEXT PRIMARY KEY, client_id TEXT NOT NULL, status TEXT, period_end TEXT, created_at TEXT NOT NULL)');
 const env={DB:new D1(db)},client='C1',store='S1',ts=new Date().toISOString(),day=ts.slice(0,10);
 await env.DB.prepare('INSERT INTO state(id,json,updated_at) VALUES (1,?,?)').bind(JSON.stringify({clients:[{id:client,name:'QA',walletBalance:20,walletFeePerOrder:3}]}),ts).run();
 await env.DB.prepare("INSERT INTO orders(id,client_id,store_id,date,created_at) VALUES ('OLD',?,?,?,?)").bind(client,store,day,ts).run();
@@ -73,6 +74,34 @@ await env.DB.prepare("INSERT INTO orders(id,client_id,store_id,date,created_at) 
 must((await billOrder(env,'BLOCK-NEGATIVE')).status==='pending_insufficient'&&(await walletSnapshot(env,client)).balance===0,
   'Even old legacy credit limits must not let a new charge push an exhausted wallet into negative balance');
 
+
+// Preview is the production order backend. Managed paid fees and free trials must
+// match the subscription UI rather than using legacy module fee-delta pricing.
+const managed='MANAGED-TENANT';
+await env.DB.prepare(`INSERT INTO wallet_accounts
+  (client_id,balance,currency,base_order_fee,min_order_fee,max_order_fee,credit_limit,billing_version,billing_start_rowid,status,updated_at)
+  VALUES (?,10,'EGP',2,0,0,0,'v27',0,'active',?)`).bind(managed,ts).run();
+await setTenantModules(env,managed,{ai:{enabled:true,feeDelta:3}},'qa-admin');
+must(await effectiveOrderFee(env,managed)===5,'Legacy fee with module delta should differ from managed configured fee');
+await env.DB.prepare("INSERT INTO subscriptions(id,client_id,status,period_end,created_at) VALUES ('MANAGED-SUB',?,'trialing','2099-12-31',?)")
+  .bind(managed,ts).run();
+await env.DB.prepare("INSERT INTO orders(id,client_id,store_id,date,created_at) VALUES ('FREE-TRIAL-ORDER',?,?,?,?)")
+  .bind(managed,store,day,new Date(Date.now()+90000).toISOString()).run();
+const trialOrder=await billOrder(env,'FREE-TRIAL-ORDER');
+must(trialOrder.status==='waived'&&trialOrder.reason==='free_trial'&&(await walletSnapshot(env,managed)).balance===10,
+  'Preview billing must not deduct order fees during an approved 30-day trial');
+await env.DB.prepare("UPDATE subscriptions SET status='active' WHERE client_id=?").bind(managed).run();
+await env.DB.prepare("INSERT INTO orders(id,client_id,store_id,date,created_at) VALUES ('MANAGED-PAID-ORDER',?,?,?,?)")
+  .bind(managed,store,day,new Date(Date.now()+91000).toISOString()).run();
+const paidOrder=await billOrder(env,'MANAGED-PAID-ORDER');
+must(paidOrder.status==='charged'&&paidOrder.fee===2&&(await walletSnapshot(env,managed)).balance===8,
+  'Managed subscription must charge configured 2 EGP, not old 5 EGP module-delta price');
+await env.DB.prepare("UPDATE subscriptions SET status='paused' WHERE client_id=?").bind(managed).run();
+await env.DB.prepare("INSERT INTO orders(id,client_id,store_id,date,created_at) VALUES ('MANAGED-PAUSED-ORDER',?,?,?,?)")
+  .bind(managed,store,day,new Date(Date.now()+92000).toISOString()).run();
+const pausedOrder=await billOrder(env,'MANAGED-PAUSED-ORDER');
+must(pausedOrder.status==='waived'&&pausedOrder.reason==='subscription_paused'&&(await walletSnapshot(env,managed)).balance===8,
+  'Paused managed subscription must not generate hidden per-order charges');
 
 // Real marketing metrics must count externally-entered/unattributed orders at account level.
 const c2='C2',s2='S2';
