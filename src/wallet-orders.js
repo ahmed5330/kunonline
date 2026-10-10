@@ -13,11 +13,11 @@ async function pricedOrderFee(env,clientId,account){
   }catch(error){
     // Old v27 fixtures and legacy installations can predate managed subscriptions.
     // All other billing errors must propagate, never guess or silently waive.
-    if(!/no such table:\\s*subscriptions/i.test(String(error?.message||error)))throw error;
+    if(!/no such table:\s*subscriptions/i.test(String(error?.message||error)))throw error;
   }
   if(!sub)return {fee:round2(await effectiveOrderFee(env,clientId)),reason:'unmanaged'};
   if(['paused','cancelled','suspended'].includes(String(sub.status||'')))return {fee:0,reason:'subscription_paused'};
-  if(sub.status==='trialing'&&/^\\d{4}-\\d{2}-\\d{2}$/.test(String(sub.period_end||''))&&cairoToday()<sub.period_end){
+  if(sub.status==='trialing'&&/^\d{4}-\d{2}-\d{2}$/.test(String(sub.period_end||''))&&cairoToday()<sub.period_end){
     return {fee:0,reason:'free_trial'};
   }
   // The paid subscription's configured per-order fee is final. Module deltas
