@@ -30,3 +30,7 @@ jobs:
         run: npm run check:production-config
       - name: Read-only production login health probe
         run: node scripts/live-production-login-route-probe.mjs
+      - name: Validate V2 login gateway and browser asset references
+        run: |
+          node --check public/v2/modules-v142-login-gateway.js
+          node scripts/v2-login-gateway-contract-test.mjs
