@@ -68,19 +68,14 @@ export async function billOrder(env,orderId,{allowBacklogCharge=false}={}){
     }
   }
   const startingBalance=round2(account.balance);
-  if(startingBalance<=0){
+  // An order is not credit: never bill it partially or below zero, even when a
+  // legacy/monthly credit_limit is present on the wallet account.
+  if(startingBalance<fee){
     await env.DB.prepare(`INSERT INTO order_billing (order_id,client_id,store_id,fee,status,attempts,last_error,created_at,updated_at)
       VALUES (?,?,?,?, 'pending_insufficient',1,'INSUFFICIENT_BALANCE',?,?)
       ON CONFLICT(order_id) DO UPDATE SET fee=excluded.fee,status='pending_insufficient',attempts=order_billing.attempts+1,last_error='INSUFFICIENT_BALANCE',updated_at=excluded.updated_at`)
       .bind(orderId,order.client_id,order.store_id||null,fee,ts,ts).run();
     return {ok:false,status:'pending_insufficient',fee,balance:startingBalance,code:'INSUFFICIENT_BALANCE'};
-  }
-  if(startingBalance<fee){
-    const shortage=round2(fee-startingBalance),currentCredit=Math.max(0,Number(account.credit_limit)||0);
-    if(currentCredit<shortage){
-      await env.DB.prepare('UPDATE wallet_accounts SET credit_limit=?,updated_at=? WHERE client_id=? AND credit_limit<?')
-        .bind(shortage,ts,order.client_id,shortage).run();
-    }
   }
   await env.DB.prepare(`INSERT INTO order_billing (order_id,client_id,store_id,fee,status,attempts,created_at,updated_at)
     VALUES (?,?,?,?, 'pending',0,?,?) ON CONFLICT(order_id) DO UPDATE SET fee=excluded.fee,updated_at=excluded.updated_at`)
@@ -89,7 +84,10 @@ export async function billOrder(env,orderId,{allowBacklogCharge=false}={}){
   try{
     await env.DB.batch([
       // CHECK(balance >= -credit_limit) on wallet_accounts makes an overdraw fail the whole transaction.
-      env.DB.prepare('UPDATE wallet_accounts SET balance=ROUND(balance-?,2),updated_at=? WHERE client_id=?').bind(fee,ts,order.client_id),
+      // Preflight balance may be stale when two new orders arrive simultaneously.
+      // Reject the entire atomic batch if available funds were consumed meanwhile.
+      env.DB.prepare('UPDATE wallet_accounts SET balance=CASE WHEN ROUND(balance,2)>=? THEN ROUND(balance-?,2) ELSE -credit_limit-0.01 END,updated_at=? WHERE client_id=?')
+        .bind(fee,fee,ts,order.client_id),
       env.DB.prepare(`INSERT INTO wallet_log (id,client_id,store_id,type,amount,balance_after,note,created_at,created_by,order_id,reference_type,reference_id,idempotency_key,metadata_json)
         SELECT ?,?,?, 'deduct',?,balance,?,?,?,?,?,?,?,? FROM wallet_accounts WHERE client_id=?`)
         .bind(logId,order.client_id,order.store_id||null,fee,'خصم تلقائي — أوردر جديد',ts,'system',orderId,'order',orderId,key,JSON.stringify({billingVersion:'v27'}),order.client_id),
