@@ -98,9 +98,21 @@ export async function billOrder(env,orderId){
 }
 
 export async function reconcileUnbilledOrders(env,{clientId=null,limit=100}={}){
-  let sql=`SELECT o.id FROM orders o JOIN wallet_accounts w ON w.client_id=o.client_id AND w.billing_version='v27' AND w.status='active'
+  // Automatic reconciliation is for newly discovered, unbilled orders only.
+  // A failed/insufficient order is an explicit debt candidate, NOT a mandate to
+  // debit a later approved topup silently. Reattempts need an explicit billOrder.
+  //
+  // Also never sweep an unbilled order that existed before a topup restored an
+  // exhausted wallet: those historical orders require manual ledger review.
+  let sql=`SELECT o.id FROM orders o JOIN wallet_accounts w ON w.client_id=o.client_id AND w.billing_version='v27' AND w.status='active' AND w.balance>0
     LEFT JOIN order_billing b ON b.order_id=o.id
-    WHERE o.rowid>COALESCE(w.billing_start_rowid,0) AND (b.order_id IS NULL OR b.status IN ('pending','pending_insufficient','failed'))`;
+    WHERE o.rowid>COALESCE(w.billing_start_rowid,0) AND b.order_id IS NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM wallet_log t
+        WHERE t.client_id=o.client_id AND t.type='topup'
+          AND t.balance_after-t.amount<=0
+          AND datetime(t.created_at)>=datetime(o.created_at)
+      )`;
   const binds=[];if(clientId){sql+=' AND o.client_id=?';binds.push(clientId)}sql+=' ORDER BY COALESCE(o.date,o.created_at) ASC LIMIT ?';binds.push(Math.max(1,Math.min(300,Number(limit)||100)));
   const {results=[]}=await env.DB.prepare(sql).bind(...binds).all(),outcomes=[];
   for(const row of results){try{outcomes.push({orderId:row.id,...await billOrder(env,row.id)})}catch(error){outcomes.push({orderId:row.id,ok:false,error:String(error?.message||error)})}}
