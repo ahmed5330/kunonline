@@ -126,7 +126,7 @@ export async function reconcileUnbilledOrders(env,{clientId=null,limit=100}={}){
       AND NOT EXISTS (
         SELECT 1 FROM wallet_log t
         WHERE t.client_id=o.client_id AND t.type='topup'
-          AND datetime(t.created_at)>=datetime(o.created_at)
+          AND datetime(t.created_at)>=datetime(COALESCE(o.created_at,o.date))
       )`;
   const binds=[];if(clientId){sql+=' AND o.client_id=?';binds.push(clientId)}sql+=' ORDER BY COALESCE(o.date,o.created_at) ASC LIMIT ?';binds.push(Math.max(1,Math.min(300,Number(limit)||100)));
   const {results=[]}=await env.DB.prepare(sql).bind(...binds).all(),outcomes=[];
