@@ -48,24 +48,24 @@ const low=await billOrder(env,'LOW');must(low.status==='pending_insufficient','I
 // Reproduce payment incident on the actual Preview billing code: topping up a
 // depleted wallet must not trigger silent retroactive charges several minutes
 // later from the cron or an integration order retry.
-await env.DB.prepare('UPDATE wallet_accounts SET balance=-3,credit_limit=3 WHERE client_id=?').bind(client).run();
+// Keep the real small positive balance (= 1 EGP), still insufficient for an order.
 const recharge=await requestTopup(env,client,{amount:25,senderPhone:'01000000000',proofDataUrl:proof},'qa-owner');
 await approveTopup(env,recharge.id,'qa-admin','recover');
-must((await walletSnapshot(env,client)).balance===22,'Topup must leave the ledger with exactly credited amount minus preexisting debt');
+must((await walletSnapshot(env,client)) .balance===26,'Topup must credit the entire 25 EGP without auto-debiting pending order fees');
 const replay=await billOrder(env,'LOW');
-must(replay.code==='BACKLOG_REQUIRES_REVIEW'&&(await walletSnapshot(env,client)).balance===22,
+must(replay.code==='BACKLOG_REQUIRES_REVIEW'&&(await walletSnapshot(env,client)) .balance===26,
   'Webhook replay cannot consume restored credit for old pending order');
 await env.DB.prepare("INSERT INTO orders(id,client_id,store_id,date,created_at) VALUES ('BACKLOG-OLD',?,?,?,?)")
   .bind(client,store,day,new Date(Date.now()-600000).toISOString()).run();
 must((await billOrder(env,'BACKLOG-OLD')).code==='PRE_TOPUP_BACKLOG_REVIEW',
   'Late historical import must be held for review after account recharge');
 const sweep=await reconcileUnbilledOrders(env,{clientId:client,limit:300});
-must(!sweep.some(o=>o.orderId==='LOW'||o.orderId==='BACKLOG-OLD')&&(await walletSnapshot(env,client)).balance===22,
+must(!sweep.some(o=>o.orderId==='LOW'||o.orderId==='BACKLOG-OLD')&&(await walletSnapshot(env,client)) .balance===26,
   'Scheduled reconciliation cannot drain recharge with old orders');
 await env.DB.prepare("INSERT INTO orders(id,client_id,store_id,date,created_at) VALUES ('AFTER-TOPUP',?,?,?,?)")
   .bind(client,store,day,new Date(Date.now()+60000).toISOString()).run();
 const legit=await reconcileUnbilledOrders(env,{clientId:client,limit:300});
-must(legit.some(o=>o.orderId==='AFTER-TOPUP'&&o.status==='charged')&&(await walletSnapshot(env,client)).balance===18,
+must(legit.some(o=>o.orderId==='AFTER-TOPUP'&&o.status==='charged')&&(await walletSnapshot(env,client)) .balance===22,
   'New orders after reactivation still incur configured fee');
 await env.DB.prepare('UPDATE wallet_accounts SET balance=0,credit_limit=100 WHERE client_id=?').bind(client).run();
 await env.DB.prepare("INSERT INTO orders(id,client_id,store_id,date,created_at) VALUES ('BLOCK-NEGATIVE',?,?,?,?)")
