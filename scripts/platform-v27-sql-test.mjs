@@ -1,6 +1,6 @@
 import {DatabaseSync} from 'node:sqlite';
 import {readFile} from 'node:fs/promises';
-import {ensureWalletAccount,migrateLegacyBilling,walletSnapshot,billOrder,requestTopup,approveTopup,adminCreditWallet,sanitizeLegacyStateBilling} from '../src/wallet-billing.js';
+import {ensureWalletAccount,migrateLegacyBilling,walletSnapshot,billOrder,reconcileUnbilledOrders,requestTopup,approveTopup,adminCreditWallet,sanitizeLegacyStateBilling} from '../src/wallet-billing.js';
 import {setTenantModules,effectiveOrderFee} from '../src/feature-entitlements.js';
 import {saveAttribution,campaignPerformance} from '../src/marketing-intelligence.js';
 import {addOrderNote,logContact,timeline} from '../src/order-events.js';
@@ -45,6 +45,34 @@ let unsafe={clients:[{id:client,walletBalance:999,walletFeePerOrder:5}]};unsafe=
 await env.DB.prepare('UPDATE wallet_accounts SET balance=1,credit_limit=0 WHERE client_id=?').bind(client).run();
 await env.DB.prepare("INSERT INTO orders(id,client_id,store_id,date,created_at) VALUES ('LOW',?,?,?,?)").bind(client,store,day,new Date(Date.now()+2000).toISOString()).run();
 const low=await billOrder(env,'LOW');must(low.status==='pending_insufficient','Insufficient balance must be pending, not negative');must((await walletSnapshot(env,client)).balance===1,'Failed charge must rollback balance');
+// Reproduce payment incident on the actual Preview billing code: topping up a
+// depleted wallet must not trigger silent retroactive charges several minutes
+// later from the cron or an integration order retry.
+await env.DB.prepare('UPDATE wallet_accounts SET balance=-3,credit_limit=3 WHERE client_id=?').bind(client).run();
+const recharge=await requestTopup(env,client,{amount:25,senderPhone:'01000000000',proofDataUrl:proof},'qa-owner');
+await approveTopup(env,recharge.id,'qa-admin','recover');
+must((await walletSnapshot(env,client)).balance===22,'Topup must leave the ledger with exactly credited amount minus preexisting debt');
+const replay=await billOrder(env,'LOW');
+must(replay.code==='BACKLOG_REQUIRES_REVIEW'&&(await walletSnapshot(env,client)).balance===22,
+  'Webhook replay cannot consume restored credit for old pending order');
+await env.DB.prepare("INSERT INTO orders(id,client_id,store_id,date,created_at) VALUES ('BACKLOG-OLD',?,?,?,?)")
+  .bind(client,store,day,new Date(Date.now()-600000).toISOString()).run();
+must((await billOrder(env,'BACKLOG-OLD')).code==='PRE_TOPUP_BACKLOG_REVIEW',
+  'Late historical import must be held for review after account recharge');
+const sweep=await reconcileUnbilledOrders(env,{clientId:client,limit:300});
+must(!sweep.some(o=>o.orderId==='LOW'||o.orderId==='BACKLOG-OLD')&&(await walletSnapshot(env,client)).balance===22,
+  'Scheduled reconciliation cannot drain recharge with old orders');
+await env.DB.prepare("INSERT INTO orders(id,client_id,store_id,date,created_at) VALUES ('AFTER-TOPUP',?,?,?,?)")
+  .bind(client,store,day,new Date(Date.now()+60000).toISOString()).run();
+const legit=await reconcileUnbilledOrders(env,{clientId:client,limit:300});
+must(legit.some(o=>o.orderId==='AFTER-TOPUP'&&o.status==='charged')&&(await walletSnapshot(env,client)).balance===18,
+  'New orders after reactivation still incur configured fee');
+await env.DB.prepare('UPDATE wallet_accounts SET balance=0,credit_limit=100 WHERE client_id=?').bind(client).run();
+await env.DB.prepare("INSERT INTO orders(id,client_id,store_id,date,created_at) VALUES ('BLOCK-NEGATIVE',?,?,?,?)")
+  .bind(client,store,day,new Date(Date.now()+70000).toISOString()).run();
+must((await billOrder(env,'BLOCK-NEGATIVE')).status==='pending_insufficient'&&(await walletSnapshot(env,client)).balance===0,
+  'Even old legacy credit limits must not let a new charge push an exhausted wallet into negative balance');
+
 
 // Real marketing metrics must count externally-entered/unattributed orders at account level.
 const c2='C2',s2='S2';
