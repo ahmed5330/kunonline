@@ -169,7 +169,7 @@
   function showWalletPage(){
     if(!state.me?.clientId||state.me.role!=='client'||state.locked)return;
     const root=$('#root');if(!root)return;
-    $('.nav button[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view==='wallet'));
+    document.querySelectorAll('.nav button[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view==='wallet'));
     root.innerHTML='<div class="sub127-wallet-screen" data-sub127-wallet-screen="1"><div class="page-head"><div><div class="title">المحفظة</div><div class="sub">متابعة الرصيد وطلبات شحن المحفظة وسجل اعتماد التحويلات</div></div></div></div>';
     ensureClientPanel();
   }
