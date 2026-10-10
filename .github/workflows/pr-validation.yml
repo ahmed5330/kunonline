@@ -28,3 +28,5 @@ jobs:
         run: npm run check:preview-config
       - name: Verify Production remains migration-free
         run: npm run check:production-config
+      - name: Read-only production login health probe
+        run: node scripts/live-production-login-route-probe.mjs
