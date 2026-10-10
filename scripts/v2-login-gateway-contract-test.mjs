@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+const html=fs.readFileSync('public/v2/index.html','utf8');
+const gateway=fs.readFileSync('public/v2/modules-v142-login-gateway.js','utf8');
+const wrapper=fs.readFileSync('src/index-production-mobile-update.js','utf8');
+assert.match(html,/<script src="\/v2\/modules-v142-login-gateway\.js\?v=142\.0" defer data-kun-login-gateway="1"><\/script>/,'V2 must render login gateway for all unauthenticated users');
+assert.match(gateway,/fetch\('\/api\/me'/,'check authenticated session before opening form');
+assert.match(gateway,/fetch\('\/api\/login'/,'submit credentials through existing API only');
+assert.match(gateway,/credentials:'include'/,'accept first-party session cookie');
+assert.match(gateway,/if\(!verified\.ok\|\|!user\?\.role\)/,'verify session cookie before navigating');
+assert.match(gateway,/location\.replace\('\/v2\/\?login=ok'\)/,'return to V2 after successful login');
+assert.match(gateway,/form\.addEventListener\('submit'/,'provide working form submission');
+assert.match(gateway,/e\.preventDefault\(\)/,'do not reload during POST');
+assert.match(gateway,/box\.querySelector\('#kun-v142-error'\)/,'display transient backend failures');
+assert.match(wrapper,/assetUrl\.pathname='\/v2\/index\.html'/,'production root must serve V2 asset containing login gateway');
+assert.doesNotMatch(gateway,/localStorage|sessionStorage|console\.log\(password/,'do not persist or log credentials');
+console.log('V2 login gateway route, cookie and asset contract: ok');
