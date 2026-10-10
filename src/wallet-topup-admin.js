@@ -21,6 +21,15 @@ export async function getPendingTopupProofAdmin(env,topupId){
   return row;
 }
 
+async function afterTopupSettlement(env,clientId){
+  try{
+    return {access:await (await import('./subscription-billing.js')).reconcileSubscriptionAfterTopup(env,clientId),settlementPending:false};
+  }catch(error){
+    // Payment is already credited, so never claim activation or ask the user
+    // to approve the same transfer again. Surface incomplete billing explicitly.
+    return {access:null,settlementPending:true,settlementErrorCode:String(error?.code||'BILLING_SETTLEMENT_RETRY')};
+  }
+}
 export async function approveTopup(env,topupId,actor,note='',options={}){
   const row=await env.DB.prepare("SELECT * FROM wallet_topup_requests WHERE id=?").bind(topupId).first();
   if(!row)throw Object.assign(new Error('طلب الشحن غير موجود'),{status:404,code:'TOPUP_NOT_FOUND'});
@@ -33,11 +42,11 @@ export async function approveTopup(env,topupId,actor,note='',options={}){
       });
     }
     const account=await ensureWalletAccount(env,row.client_id);
-    let access=null;try{access=await (await import('./subscription-billing.js')).reconcileSubscriptionAfterTopup(env,row.client_id);}catch{}
+    const {access,settlementPending,settlementErrorCode}=await afterTopupSettlement(env,row.client_id);
     return {
       ok:true,alreadyApproved:true,id:topupId,clientId:row.client_id,status:'approved',
       requestedAmount:round2(row.amount),creditedAmount:round2(applied.amount),
-      balanceAfterCredit:round2(applied.balance_after),balance:round2(account.balance),
+      balanceAfterCredit:round2(applied.balance_after),balance:round2((await ensureWalletAccount(env,row.client_id)).balance),settlementPending,settlementErrorCode,
       currency:account.currency||row.currency||'EGP',access
     };
   }
@@ -53,11 +62,11 @@ export async function approveTopup(env,topupId,actor,note='',options={}){
     await env.DB.prepare("UPDATE wallet_topup_requests SET status='approved',reviewed_by=?,reviewed_at=?,review_note=? WHERE id=? AND status='pending'")
       .bind(actor||'admin',ts,String(note||'Recovered existing wallet credit'),topupId).run();
     const account=await ensureWalletAccount(env,row.client_id);
-    let access=null;try{access=await (await import('./subscription-billing.js')).reconcileSubscriptionAfterTopup(env,row.client_id);}catch{}
+    const {access,settlementPending,settlementErrorCode}=await afterTopupSettlement(env,row.client_id);
     return {
       ok:true,alreadyApproved:true,recoveredRequestState:true,id:topupId,clientId:row.client_id,status:'approved',
       requestedAmount:round2(row.amount),creditedAmount:round2(existingCredit.amount),
-      balanceAfterCredit:round2(existingCredit.balance_after),balance:round2(account.balance),
+      balanceAfterCredit:round2(existingCredit.balance_after),balance:round2((await ensureWalletAccount(env,row.client_id)).balance),settlementPending,settlementErrorCode,
       currency:account.currency||row.currency||'EGP',access
     };
   }
@@ -111,14 +120,13 @@ export async function approveTopup(env,topupId,actor,note='',options={}){
 
   // Approval credits exactly the admin-confirmed amount. Do not silently consume it
   // against old pending order rows inside the approval action.
-  let access=null;
-  try{access=await (await import('./subscription-billing.js')).reconcileSubscriptionAfterTopup(env,row.client_id);}catch{}
+  const {access,settlementPending,settlementErrorCode}=await afterTopupSettlement(env,row.client_id);
 
   const final=await env.DB.prepare('SELECT balance,currency FROM wallet_accounts WHERE client_id=?').bind(row.client_id).first();
   await mirrorLegacyBalance(env,row.client_id,final?.balance||0);
   return {
     ok:true,alreadyApproved:false,id:topupId,clientId:row.client_id,status:'approved',
-    requestedAmount,creditedAmount,previousBalance:round2(account.balance),
+    requestedAmount,creditedAmount,previousBalance:round2(account.balance),settlementPending,settlementErrorCode,
     balanceAfterCredit:round2(credited?.balance),balance:round2(final?.balance),
     currency:final?.currency||row.currency||'EGP',access
   };
