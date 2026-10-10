@@ -54,7 +54,7 @@ export async function billOrder(env,orderId,{allowBacklogCharge=false}={}){
   }
   if(!allowBacklogCharge){
     const recovered=await env.DB.prepare(`SELECT id FROM wallet_log
-      WHERE client_id=? AND type='topup' AND balance_after-amount<=0
+      WHERE client_id=? AND type='topup'
         AND datetime(created_at)>=datetime(?) LIMIT 1`)
       .bind(order.client_id,order.created_at||order.date||'').first();
     if(recovered){
@@ -126,7 +126,6 @@ export async function reconcileUnbilledOrders(env,{clientId=null,limit=100}={}){
       AND NOT EXISTS (
         SELECT 1 FROM wallet_log t
         WHERE t.client_id=o.client_id AND t.type='topup'
-          AND t.balance_after-t.amount<=0
           AND datetime(t.created_at)>=datetime(o.created_at)
       )`;
   const binds=[];if(clientId){sql+=' AND o.client_id=?';binds.push(clientId)}sql+=' ORDER BY COALESCE(o.date,o.created_at) ASC LIMIT ?';binds.push(Math.max(1,Math.min(300,Number(limit)||100)));
