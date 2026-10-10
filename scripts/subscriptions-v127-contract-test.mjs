@@ -121,7 +121,7 @@ assert.ok(ui.includes("topupDraft:{amount:'',phone:'',file:null,fileName:''}"),'
 assert.equal(ui.includes('panel.outerHTML=html'),false,'access refresh must never replace the client topup form DOM');
 assert.ok(ui.includes('function patchClientPanel'),'access refresh must patch subscription KPIs without rebuilding inputs');
 assert.ok(ui.includes('function shouldShowDashboardPanel'),'dashboard must gate billing panel on real wallet access');
-const matchPanelRule=ui.match(/function shouldShowDashboardPanel\\(a\\)\\{([\\s\\S]*?)\\n  \\}/);
+const matchPanelRule=ui.match(/function shouldShowDashboardPanel\(a\)\{([\s\S]*?)\n  \}/);
 assert.ok(matchPanelRule,'expected isolated dashboard-wallet visibility policy');
 const shouldShowDashboardPanel=new Function('a',matchPanelRule[1]);
 assert.equal(shouldShowDashboardPanel({locked:false,balance:243,trialActive:false}),false,'approved and unlocked payment must remove the screenshot card');
