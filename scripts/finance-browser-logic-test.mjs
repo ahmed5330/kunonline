@@ -11,7 +11,8 @@ const endpoints={
  '/api/accounting/entries':()=>({ok:true,entries:purchases?[{type:'expense',category:'مشتريات',amount:50,date:'2026-10-11'}]:[]}),
  '/api/accounting/collected-profit':()=>({ok:true,collectedGross:350,missingProductCostOrders:0,managementFees:0}),
  '/api/cod-reconciliation/candidates':()=>[],
- '/api/cod-reconciliation':()=>[]
+ '/api/cod-reconciliation':()=>[],
+ '/api/cod-reconciliation/summary':()=>({ok:true,totalOrders:800,totalExpected:250000})
 };
 const select=selector=>selector.includes('button.active[data-view]')?{dataset:{view:'finance'}}:selector.includes('[data-view="finance"]')?{textContent:'المالية'}:null;
 const document={
@@ -32,6 +33,8 @@ await window.KunFinanceCommandCenterV96.render();
 for(const token of ['صافي الربح التشغيلي','صافي الربح المحاسبي','التحصيل: المالية × الحسابات','متطابق','ليس رصيد البنك'])
  assert.ok(root.innerHTML.includes(token),`missing visible finance indicator: ${token}`);
 assert.ok(!root.innerHTML.includes('فرق ٢٠'),'false positive in balanced fixture');
+assert.ok(root.innerHTML.includes(new Intl.NumberFormat('ar-EG',{maximumFractionDigits:2}).format(250000)),'Finance screen must show all pending COD, not only the first 500 candidate records');
+assert.ok(root.innerHTML.includes(new Intl.NumberFormat('ar-EG',{maximumFractionDigits:0}).format(800)),'Finance must show all pending COD orders including those beyond the 500-record list');
 collectedCash=370;
 await window.KunFinanceCommandCenterV96.reload();
 assert.ok(root.innerHTML.includes('فرق'),'collection mismatch must surface instead of displaying false green');
