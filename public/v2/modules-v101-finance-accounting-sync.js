@@ -50,5 +50,5 @@
     if(active())schedule(120);
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();
-  window.KunFinanceAccountingSyncV101={version:'101.0',sync,schedule};
+  window.KunFinanceAccountingSyncV101={version:'101.1',sync,schedule};
 })();
