@@ -22,7 +22,7 @@ for(const label of ['ملخص الأداء','عدد الأوردرات','الإ�
   assert.ok(ui.includes(label),`missing consolidated top KPI: ${label}`);
 assert.ok(ui.includes('dash-f126-grid'),'summary must own all eight cards');
 assert.ok(ui.includes('const sources=entries(d,\'مصادر الطلبات\')'),'summary must show all order sources without removing manual entries');
-assert.ok(ui.includes('const statuses=entries(d,\'حالات الطلبات\')'),'summary must show all order statuses');
+assert.ok(ui.includes("statuses=entries(d,'حالات الطلبات')"),'summary must show all order statuses');
 assert.ok(ui.includes('selectedRates(d)'),'selected period must drive confirmation/delivery rates');
 assert.ok(ui.includes('[data-dash-executive="122"]')&&ui.includes('#cp47Section')&&ui.includes('[data-dash-section="overview"]'),'old duplicate dashboard sections must be hidden');
 assert.ok(ui.includes('if(old?.__kunSummarySig===signature)return'),'render must not loop on its own MutationObserver updates');
