@@ -1,7 +1,7 @@
-/* Kun Online v126.0 — restore top financial cards in the new dashboard design */
+/* Kun Online v126.1 — financial cards + system-wide actual cost per incoming order */
 (()=>{
   if(window.KunDashboardFinanceTopV126)return;
-  const VERSION='126.0';
+  const VERSION='126.1';
   const nativeFetch=window.fetch.bind(window);
   const state={dashboard:null,collected:null,timer:0,collecting:false,lastCollectedKey:''};
   const $=(s,r=document)=>r?.querySelector?.(s)||null;
@@ -14,18 +14,18 @@
   function style(){
     if($('#kunDashboardFinanceTop126Style'))return;
     const el=document.createElement('style');el.id='kunDashboardFinanceTop126Style';el.textContent=`
-      .dash-f126{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;padding:0!important;border:0!important;background:transparent!important;box-shadow:none!important;overflow:visible!important}
+      .dash-f126{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;padding:0!important;border:0!important;background:transparent!important;box-shadow:none!important;overflow:visible!important}
       .dash-f126:before{display:none!important}
       .dash-f126-card{position:relative;overflow:hidden;display:flex;flex-direction:column;min-height:154px;padding:17px;border:1px solid var(--line,#e2e8f0);border-radius:18px;background:linear-gradient(160deg,#fff 0%,#fbfdff 100%);box-shadow:0 10px 28px rgba(15,23,42,.055)}
       .dash-f126-card:before{content:'';position:absolute;inset:0 0 auto;height:3px;background:var(--f126-accent,#2563eb)}
-      .dash-f126-card.collected{--f126-accent:#16a34a}.dash-f126-card.pending{--f126-accent:#d97706}.dash-f126-card.pnl{--f126-accent:#2563eb}.dash-f126-card.pnl.negative{--f126-accent:#dc2626}
+      .dash-f126-card.collected{--f126-accent:#16a34a}.dash-f126-card.pending{--f126-accent:#d97706}.dash-f126-card.pnl{--f126-accent:#2563eb}.dash-f126-card.cpp{--f126-accent:#0e7490}.dash-f126-card.pnl.negative{--f126-accent:#dc2626}
       .dash-f126-head{display:flex;align-items:flex-start;gap:8px}.dash-f126-icon{display:grid;place-items:center;width:31px;height:31px;border-radius:10px;background:color-mix(in srgb,var(--f126-accent) 11%,transparent);color:var(--f126-accent);font-weight:950;font-size:15px}
       .dash-f126-copy{min-width:0}.dash-f126-copy span{display:block;color:var(--muted,#64748b);font-size:9px;font-weight:900}.dash-f126-copy small{display:block;margin-top:3px;color:var(--muted,#64748b);font-size:8.2px;line-height:1.45}
-      .dash-f126-value{display:block;margin:14px 0 12px;font-size:27px;line-height:1.15;color:var(--ink,#0f172a);letter-spacing:-.5px}.dash-f126-card.collected .dash-f126-value{color:#15803d}.dash-f126-card.pending .dash-f126-value{color:#b45309}.dash-f126-card.pnl.negative .dash-f126-value{color:#b91c1c}
+      .dash-f126-value{display:block;margin:14px 0 12px;font-size:27px;line-height:1.15;color:var(--ink,#0f172a);letter-spacing:-.5px} .dash-f126-card.collected .dash-f126-value{color:#15803d}.dash-f126-card.pending .dash-f126-value{color:#b45309}.dash-f126-card.pnl.negative .dash-f126-value{color:#b91c1c}
       .dash-f126-foot{display:flex;align-items:center;gap:8px;margin-top:auto;padding-top:11px;border-top:1px solid var(--line,#e2e8f0)}.dash-f126-foot span{color:var(--muted,#64748b);font-size:8.5px;line-height:1.45}.dash-f126-detail{margin-inline-start:auto;flex:0 0 auto;border:1px solid var(--line,#dbe3ec);border-radius:9px;background:var(--card,#fff);color:#0d47a1;padding:7px 9px;font:inherit;font-size:8.5px;font-weight:900;cursor:pointer}.dash-f126-detail:hover{border-color:#93add0;background:#f8fbff}
       .dash-f126-loading{opacity:.58}.dash-f126-modal{max-width:980px!important;width:min(980px,94vw)!important}.dash-f126-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:12px 0}.dash-f126-summary>div{padding:11px;border:1px solid var(--line,#e2e8f0);border-radius:11px}.dash-f126-summary span{display:block;color:var(--muted,#64748b);font-size:9px}.dash-f126-summary b{display:block;margin-top:5px;font-size:14px}.dash-f126-formula{padding:11px 12px;border:1px dashed var(--line,#cbd5e1);border-radius:11px;background:#f8fafc;font-size:10px;font-weight:800;line-height:1.65}.dash-f126-list{display:grid;gap:7px;margin-top:12px}.dash-f126-row{display:flex;justify-content:space-between;gap:12px;padding:10px 11px;border:1px solid var(--line,#e2e8f0);border-radius:10px}.dash-f126-row span{font-size:9.5px;color:var(--muted,#64748b)}.dash-f126-row b{font-size:10px}.dash-f126-table{overflow:auto;max-height:390px;margin-top:12px}.dash-f126-table table{width:100%;border-collapse:collapse;min-width:760px}.dash-f126-table th,.dash-f126-table td{padding:9px;border-bottom:1px solid var(--line,#e2e8f0);text-align:right;font-size:9px;white-space:nowrap}
       body[data-theme="dark"] .dash-f126-card{background:linear-gradient(160deg,#172033,var(--card));border-color:var(--line)}body[data-theme="dark"] .dash-f126-formula{background:#172033}
-      @media(max-width:900px){.dash-f126{grid-template-columns:1fr 1fr}.dash-f126-card.pnl{grid-column:1/-1}}@media(max-width:600px){.dash-f126{grid-template-columns:1fr}.dash-f126-card.pnl{grid-column:auto}.dash-f126-summary{grid-template-columns:1fr 1fr}.dash-f126-value{font-size:25px}}@media(max-width:390px){.dash-f126-summary{grid-template-columns:1fr}}
+      @media(max-width:980px){.dash-f126{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:600px){.dash-f126{grid-template-columns:1fr}.dash-f126-summary{grid-template-columns:1fr 1fr}.dash-f126-value{font-size:25px}}@media(max-width:390px){.dash-f126-summary{grid-template-columns:1fr}}
     `;document.head.appendChild(el);
   }
 
@@ -60,14 +60,16 @@
   }
 
   function card(type,title,value,sub,foot,negative=false){
-    return `<article class="dash-f126-card ${type}${negative?' negative':''}"><div class="dash-f126-head"><div class="dash-f126-icon">${type==='collected'?'✓':type==='pending'?'◷':'↕'}</div><div class="dash-f126-copy"><span>${esc(title)}</span><small>${esc(sub)}</small></div></div><strong class="dash-f126-value">${value}</strong><div class="dash-f126-foot"><span>${esc(foot)}</span><button type="button" class="dash-f126-detail" data-f126-detail="${type}">عرض المفردات ←</button></div></article>`;
+    return `<article class="dash-f126-card ${type}${negative?' negative':''}"><div class="dash-f126-head"><div class="dash-f126-icon">${type==='collected'?'✓':type==='pending'?'◷':type==='cpp'?'◎':'↕'}</div><div class="dash-f126-copy"><span>${esc(title)}</span><small>${esc(sub)}</small></div></div><strong class="dash-f126-value">${value}</strong><div class="dash-f126-foot"><span>${esc(foot)}</span><button type="button" class="dash-f126-detail" data-f126-detail="${type}">عرض المفردات ←</button></div></article>`;
   }
   function html(){
     const d=state.dashboard||{},c=d.currency||'EGP',f=d.finance||{},o=d.overview||{},cp=state.collected;
     const collectedValue=state.collecting&&!cp?'جارٍ الحساب…':cp?.error?'غير متاح':money(cp?.collectedProfit||0,cp?.currency||c);
     const collectedFoot=cp?.error?'تعذر تحميل مفردات التحصيل':cp?`${num(cp.collectedOrders)} أوردر محصل · صافي بعد الإدارة والمصاريف`:'يتم تحميل بيانات التحصيل';
-    const pending=n(o.expectedProfit),net=n(f.netProfit);
-    return `<section class="dash-section dash-f126" data-dashboard-finance-top="126">${card('collected','أرباح تم التحصيل',collectedValue,'ما تم تحصيله فعليًا وصافي نتيجته',collectedFoot)}${card('pending','أرباح منتظرة',money(pending,c),'الأرباح المتوقع دخولها من الطلبات النشطة','المؤكد + التجهيز + الجاري شحنه')}${card('pnl','الربح / الخسارة',money(net,c),'صافي نتيجة الفترة بعد التكلفة والمصروفات','إيراد المنتجات − تكلفة المنتج − المصروفات',net<0)}</section>`;
+    const pending=n(o.expectedProfit),net=n(f.netProfit),orders=n(o.totalOrders),adSpend=n(o.adSpend);
+    const actualCpp=orders?money(adSpend/orders,c):'—';
+    const cppFoot=orders?`${num(orders)} أوردر من كل المصادر · إعلانات ${money(adSpend,c)}`:'لا توجد أوردرات خلال الفترة المحددة';
+    return `<section class="dash-section dash-f126" data-dashboard-finance-top="126">${card('collected','أرباح تم التحصيل',collectedValue,'ما تم تحصيله فعليًا وصافي نتيجته',collectedFoot)}${card('pending','أرباح منتظرة',money(pending,c),'الأرباح المتوقع دخولها من الطلبات النشطة','المؤكد + التجهيز + الجاري شحنه')}${card('pnl','الربح / الخسارة',money(net,c),'صافي نتيجة الفترة بعد التكلفة والمصروفات','إيراد المنتجات − تكلفة المنتج − المصروفات',net<0)}${card('cpp','سعر الطلب الفعلي',actualCpp,'إجمالي صرف الإعلانات ÷ جميع الأوردرات',cppFoot)}</section>`;
   }
   function render(){
     if(!active()||!state.dashboard)return;
@@ -90,6 +92,20 @@
       return `<div class="dash-f126-row"><span>${esc(item.label)}</span><b>${value}</b></div>`;
     }).join('')}</div>`;
   }
+  function cppDetails(){
+    const d=state.dashboard||{},o=d.overview||{},orders=n(o.totalOrders),spend=n(o.adSpend),currency=d.currency||'EGP';
+    const cost=orders?money(spend/orders,currency):'غير متاح (لا توجد طلبات)';
+    const source=d.ads?.spendSource||'';
+    const sourceLabel=source==='integrations'?'تكاملات منصات الإعلانات':source==='manual'?'المصاريف الإعلانية المسجلة يدويًا':'لا يوجد صرف إعلاني مسجل';
+    const sourceRows=d.overview?.details?.orders?.find(x=>x.label==='مصادر الطلبات')?.items||[];
+    const sourceBreakdown=sourceRows.map(x=>({label:x.label,value:x.value}));
+    const content=`<div class="kun85-scope-note">الفترة: ${esc(d.from||'')} — ${esc(d.to||'')} · <b>${esc(cost)}</b></div>
+      <div class="dash-f126-summary"><div><span>إجمالي مصروفات الإعلانات</span><b>${money(spend,currency)}</b></div><div><span>كل الأوردرات الداخلة</span><b>${num(orders)}</b></div><div><span>سعر الأوردر الفعلي</span><b>${esc(cost)}</b></div><div><span>مصدر مصروف الإعلانات</span><b>${esc(sourceLabel)}</b></div></div>
+      <div class="dash-f126-formula">سعر الأوردر الفعلي = إجمالي مصروفات الإعلانات خلال الفترة ÷ جميع الأوردرات المسجلة خلال نفس الفترة. يشمل طلبات إيزي أوردر والطلبات التي أضافها أي عضو من فريق المتجر، وجميع الحالات بما فيها الملغية والمرتجعة. كل أوردر يُحسب مرة واحدة فقط. لا نعتمد على عدد Purchases الذي تعرضه منصة الإعلان.</div>
+      <h3 style="font-size:13px;margin:16px 0 8px">تفصيل عدد الأوردرات حسب مصدرها</h3>
+      ${sourceBreakdown.length?detailRows(sourceBreakdown,currency):'<div class="dash-empty">لا توجد طلبات في هذه الفترة.</div>'}`;
+    modal('مفردات سعر الطلب الفعلي',content);
+  }
   async function pendingDetails(){
     const d=state.dashboard||{},items=d.overview?.details?.expectedProfit||[];
     modal('مفردات الأرباح المنتظرة',`<div class="kun85-scope-note">${esc(d.from||'')} — ${esc(d.to||'')} · الإجمالي <b>${money(d.overview?.expectedProfit,d.currency)}</b></div><div class="dash-f126-formula">الأرباح المنتظرة تشمل الطلبات المؤكدة + قيد التجهيز + الجاري شحنها بعد مصاريف الطلب التشغيلية.</div>${detailRows(items,d.currency)}`);
@@ -110,7 +126,7 @@
     try{const x=await collected(true),period=x.orderPeriodFrom?`${x.orderPeriodFrom} — ${x.orderPeriodTo}`:'—';$('.dash-f126-modal',holder).innerHTML=`<h2>مفردات الأرباح المحصلة</h2><div class="kun85-scope-note">فترة التحصيل: ${esc(x.from)} — ${esc(x.to)} · ${esc(x.storeName||'كل المتاجر')}</div><div class="dash-f126-summary"><div><span>المحصل من الشحن</span><b>${money(x.collectedGross,x.currency)}</b></div><div><span>مصاريف الإدارة</span><b>${money(x.managementFees,x.currency)}</b></div><div><span>مصاريف مدة الأوردرات</span><b>${money(x.periodExpenses,x.currency)}</b></div><div><span>صافي المحصل</span><b>${money(x.collectedProfit,x.currency)}</b></div></div><div class="dash-f126-formula">${esc(x.formula)} · مدة الأوردرات: ${esc(period)}</div>${collectedRows(x)}<div class="dash-f126-list"><div class="dash-f126-row"><span>مصاريف عامة</span><b>${money(x.expenses?.general,x.currency)}</b></div><div class="dash-f126-row"><span>صرف الإعلانات المحتسب</span><b>${money(x.expenses?.adSpend,x.currency)}</b></div><div class="dash-f126-row"><span>مصدر صرف الإعلانات</span><b>${x.expenses?.adSpendSource==='integrations'?'تكاملات الإعلانات':'تسجيل يدوي'}</b></div></div><div class="cs-modal-actions"><button class="btn soft" data-f126-close>قفل</button></div>`; $('[data-f126-close]',holder).onclick=closeModal;}
     catch(error){$('.dash-f126-modal',holder).innerHTML=`<h2>تعذر تحميل التفاصيل</h2><p>${esc(error.message)}</p><div class="cs-modal-actions"><button class="btn soft" data-f126-close>قفل</button></div>`; $('[data-f126-close]',holder).onclick=closeModal;}
   }
-  function open(type){if(type==='collected')return collectedDetails();if(type==='pending')return pendingDetails();return pnlDetails();}
+  function open(type){if(type==='collected')return collectedDetails();if(type==='pending')return pendingDetails();if(type==='cpp')return cppDetails();return pnlDetails();}
   function schedule(delay=40){clearTimeout(state.timer);state.timer=setTimeout(render,delay);}
   function capture(path,data){
     if(path==='/api/dashboard'&&data?.ok){state.dashboard=data;schedule(20);setTimeout(()=>refreshCollected(false),40);}
