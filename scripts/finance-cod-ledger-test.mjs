@@ -34,6 +34,8 @@ assert.equal(orderEconomics({total:1000,discount_amount:100,refund_amount:20,pro
 let candidates=await codCandidates(env,'tenant-1','store-A');
 assert.deepEqual(candidates.map(x=>x.id).sort(),['OLD','S1','S2'],'duplicate order should never be eligible for COD reconciliation');
 assert.equal(candidates.find(x=>x.id==='S1')?.expectedAmount,880);
+candidates=await codCandidates(env,'tenant-1','store-A',{from:'2026-10-01',to:'2026-10-31'});
+assert.deepEqual(candidates.map(x=>x.id).sort(),['S1','S2'],'the detail list and summary must share the same date window');
 let summary=await codPendingSummary(env,'tenant-1','store-A',{from:'2026-10-01',to:'2026-10-31'});
 assert.equal(summary.totalOrders,2,'unbounded financial summary respects date and branch and removes linked duplicate');
 assert.equal(summary.totalExpected,1380);
