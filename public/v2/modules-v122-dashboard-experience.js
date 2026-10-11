@@ -94,7 +94,10 @@
     const toolbar=$('.dash-period-toolbar',root),legacy=$('.dash-range',root);
     if(!$('.dash-x-nav',dashboard)){const target=toolbar||legacy||$('.dash-hero',dashboard);target?.insertAdjacentHTML('afterend',nav());}
     const sig=d?`${d.from}|${d.to}|${n(d.finance?.netProfit)}|${n(d.overview?.totalOrders)}|${n(d.ads?.realRoas)}`:'';
-    let exec=$('[data-dash-executive="122"]',dashboard);if(d&&exec?.dataset.sig!==sig){const html=executive(d);if(exec)exec.outerHTML=html;else{const navEl=$('.dash-x-nav',dashboard),insertAfter=navEl||toolbar||legacy||$('.dash-hero',dashboard);insertAfter?.insertAdjacentHTML('afterend',html);}exec=$('[data-dash-executive="122"]',dashboard);if(exec)exec.dataset.sig=sig;}
+    let exec=$('[data-dash-executive="122"]',dashboard);
+    // Unified performance cards replace the old dark executive pulse entirely.
+    if(window.KunDashboardFinanceTopV126?.version==='126.2'){exec?.remove();}
+    else if(d&&exec?.dataset.sig!==sig){const html=executive(d);if(exec)exec.outerHTML=html;else{const navEl=$('.dash-x-nav',dashboard),insertAfter=navEl||toolbar||legacy||$('.dash-hero',dashboard);insertAfter?.insertAdjacentHTML('afterend',html);}exec=$('[data-dash-executive="122"]',dashboard);if(exec)exec.dataset.sig=sig;}
     const current=$$('[data-dash-section]',dashboard).map(x=>x.dataset.dashSection).filter(Boolean);if(current.join('|')!==sectionOrder.join('|'))for(const k of sectionOrder){const sec=$(`[data-dash-section="${k}"]`,dashboard);if(sec)dashboard.appendChild(sec);}
   }
   function decorate(){
