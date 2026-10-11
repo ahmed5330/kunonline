@@ -36,7 +36,33 @@
   function controls(){const custom=state.preset==='custom',presets=[['today','اليوم'],['7','7 أيام'],['month','الشهر الحالي'],['30','30 يوم'],['all','من البداية']];return `<div class="fin96-range">${presets.map(([id,label])=>`<button class="${state.preset===id?'active':''}" data-fin96-preset="${id}">${label}</button>`).join('')}<button class="${custom?'active':''}" data-fin96-preset="custom">مدة معينة</button></div>${custom?`<div class="fin96-custom"><input class="input" type="date" id="fin96From" value="${esc(state.from||cairoToday())}"><input class="input" type="date" id="fin96To" value="${esc(state.to||cairoToday())}"><button class="btn primary" id="fin96Apply">تطبيق</button></div>`:''}`;}
   function skeleton(){return `<div class="fin96"><div class="page-head fin96-head"><div><div class="fin96-eyebrow">FINANCE COMMAND CENTER</div><div class="title">المالية والربحية</div><div class="sub">جارٍ تجميع المبيعات والتكاليف والتحصيلات والحركات المحاسبية من مصادرها الفعلية...</div></div></div><div class="fin96-kpis">${Array.from({length:8},()=>'<div class="fin96-kpi"><span>...</span><strong>—</strong></div>').join('')}</div></div>`;}
   function expenseBars(d,currency){const f=d.dashboard?.finance||{},b=f.expenseBreakdown||{},items=[['تكلفة المنتج',n(f.productCost)],['الإعلانات',n(b.ads)],['الشحن',n(b.shipping)],['مصاريف عامة',n(b.general)],['تغليف/أوردر',n(b.orderOther)],['إدارة',n(b.admin)]],max=Math.max(1,...items.map(x=>x[1]));return `<div class="fin96-bars">${items.map(([label,value])=>`<div class="fin96-bar-row"><span>${label}</span><div class="fin96-bar-track"><div class="fin96-bar-fill" style="width:${Math.max(0,Math.min(100,value/max*100))}%"></div></div><b>${money(value,currency)}</b></div>`).join('')}</div>`;}
-  function health(d){const f=d.dashboard?.finance||{},o=d.dashboard?.overview||{},b=f.expenseBreakdown||{},a=d.accounting||{},revenue=n(f.revenue??o.expectedRevenue),cost=n(f.productCost),shipping=n(b.shipping),ads=n(b.ads);const rows=[];rows.push(['تكلفة المنتج',revenue>0&&cost<=0?'تحتاج استكمال':'مرتبطة بالحساب',revenue>0&&cost<=0?'warn':'ok']);rows.push(['تكلفة الشحن',n(a.shippedOrders)>0&&shipping<=0?'تحتاج استكمال':'مرتبطة بالحساب',n(a.shippedOrders)>0&&shipping<=0?'warn':'ok']);rows.push(['الإعلانات',ads>0?`محتسب ${money(ads,d.currency)}`:'0 في الفترة','ok']);rows.push(['الحركات اليدوية',`${n(a.entries)} حركة`,'ok']);rows.push(['مصدر تكلفة المنتج',esc(o.productCostSource||d.dashboard?.costing?.source||'غير محدد'),'ok']);return `<div class="fin96-health">${rows.map(([label,value,cls])=>`<div class="fin96-health-row ${cls}"><span>${label}</span><b>${value}</b></div>`).join('')}</div>`;}
+  function health(d){
+    const f=d.dashboard?.finance||{},o=d.dashboard?.overview||{},b=f.expenseBreakdown||{},a=d.accounting||{},col=d.collected||{};
+    const revenue=n(f.revenue??o.expectedRevenue),cost=n(f.productCost),shipping=n(b.shipping),ads=n(b.ads);
+    const rows=[],ok=(label,message)=>rows.push([label,message,'ok']),warn=(label,message)=>rows.push([label,message,'warn']);
+    const audit=(label,first,second)=>{
+      const diff=Math.round((n(first)-n(second))*100)/100;
+      if(Math.abs(diff)>0.01)warn(label,`فرق ${money(diff,d.currency)} — يحتاج مراجعة`);
+      else ok(label,'متطابق ✓');
+    };
+    if(revenue>0&&cost<=0)warn('تكلفة المنتج','مبيعات بدون تكلفة مسجلة؛ الربح قد يكون مبالغًا فيه');
+    else ok('تكلفة المنتج',`محتسب ${money(cost,d.currency)}`);
+    if(n(a.shippedOrders)>0&&shipping<=0)warn('تكلفة الشحن','شحن بدون تكلفة مسجلة؛ راجع فواتير الناقل');
+    else ok('تكلفة الشحن',`محتسب ${money(shipping,d.currency)}`);
+    ok('الإعلانات',ads>0?`محتسب ${money(ads,d.currency)}`:'لا يوجد صرف مسجل خلال الفترة');
+    ok('الحركات اليدوية',`${n(a.entries)} حركة`);
+    const source=o.productCostSource||d.dashboard?.costing?.source||'غير محدد';
+    if(source==='غير محدد')warn('مصدر تكلفة المنتج',source);else ok('مصدر تكلفة المنتج',source);
+    if(a.ok&&col.ok)audit('التحصيل: المالية × الحسابات',a.collectedRevenue,col.collectedGross);
+    else warn('التحصيل: المالية × الحسابات','لا يمكن التحقق لأن أحد مصدري التحصيل غير متاح');
+    audit('صافي التشغيل × معادلة P&L',f.netProfit,n(f.revenue)-n(f.productCost)-n(f.expenses));
+    audit('إجمالي المصروفات × بنودها',f.expenses,n(b.ads)+n(b.shipping)+n(b.general)+n(b.orderOther)+n(b.admin));
+    audit('إعلانات الداشبورد × المالية',d.dashboard?.ads?.spend,b.ads);
+    if(n(col.missingProductCostOrders)>0)warn('تكاليف أوردرات التحصيل',`${n(col.missingProductCostOrders)} أوردر بدون تكلفة مؤكدة`);
+    else if(col.ok)ok('تكاليف أوردرات التحصيل','لا توجد أوردرات ناقصة التكلفة وفق السجلات الحالية');
+    if(n(a.unverifiedCollectedOrders)>0)warn('مبالغ تحصيل تقديرية',`${n(a.unverifiedCollectedOrders)} أوردر بدون مبلغ تحصيل صريح`);
+    return `<div class="fin96-health">${rows.map(([label,value,cls])=>`<div class="fin96-health-row ${cls}"><span>${esc(label)}</span><b>${esc(value)}</b></div>`).join('')}</div>`;
+  }
   function entriesTable(rows,currency){if(!Array.isArray(rows)||!rows.length)return '<div class="fin96-empty">لا توجد حركات محاسبية يدوية في الفترة.</div>';return `<div class="fin96-table"><table><thead><tr><th>التاريخ</th><th>النوع</th><th>البند</th><th>الجهة</th><th>البيان</th><th>المبلغ</th></tr></thead><tbody>${rows.slice(0,50).map(x=>`<tr><td>${esc(x.date||String(x.createdAt||'').slice(0,10)||'—')}</td><td>${x.type==='income'?'إيراد':'مصروف'}</td><td>${esc(x.category||'—')}</td><td>${esc(x.counterparty||'—')}</td><td>${esc(x.note||'—')}</td><td class="${x.type==='income'?'fin96-pos':'fin96-neg'}">${x.type==='income'?'+':'−'} ${money(x.amount,x.currency||currency)}</td></tr>`).join('')}</tbody></table></div>`;}
   function codTable(rows,currency){if(!Array.isArray(rows)||!rows.length)return '<div class="fin96-empty">لا توجد دفعات COD مسجلة حتى الآن.</div>';return `<div class="fin96-table"><table><thead><tr><th>المرجع</th><th>شركة الشحن</th><th>المتوقع</th><th>الفعلي</th><th>الفرق</th><th>الحالة</th></tr></thead><tbody>${rows.slice(0,20).map(x=>`<tr><td>${esc(x.reference||x.id||'—')}</td><td>${esc(x.provider||'—')}</td><td>${money(x.expected_amount,currency)}</td><td>${x.actual_amount===null||x.actual_amount===undefined?'—':money(x.actual_amount,currency)}</td><td class="${n(x.difference)<0?'fin96-neg':n(x.difference)>0?'fin96-pos':''}">${x.difference===null||x.difference===undefined?'—':money(x.difference,currency)}</td><td>${esc(x.status||'—')}</td></tr>`).join('')}</tbody></table></div>`;}
 
