@@ -62,6 +62,7 @@
     else if(col.ok)ok('تكاليف أوردرات التحصيل','لا توجد أوردرات ناقصة التكلفة وفق السجلات الحالية');
     if(n(a.unverifiedCollectedOrders)>0)warn('مبالغ تحصيل تقديرية',`${n(a.unverifiedCollectedOrders)} أوردر بدون مبلغ تحصيل صريح`);
     if(!d.codSummary?.ok&&(d.codCandidates||[]).length>=500)warn('COD غير مسوّى','عرض 500 طلب فقط؛ إجمالي المستحقات قد يكون أكبر حتى تتوفر بيانات الملخص الكاملة');
+    if(n(d.codSummary?.inExistingReconciliation)>0)warn('تسويات COD معلّقة',`${n(d.codSummary?.inExistingReconciliation)} أوردر مرتبط بدفعة تسوية مفتوحة أو عليها اختلاف، ولا يُعامل كمبلغ محصل حتى التأكيد`);
     if((Array.isArray(d.entries)?d.entries:d.entries?.entries||[]).some(row=>row.type==='expense'&&String(row.category||'').trim()==='مشتريات'))warn('مشتريات المخزون','راجع تسجيل المشتريات كأصول مخزون؛ احتسابها كمصروف مع COGS قد يكرر التكلفة');
     return `<div class="fin96-health">${rows.map(([label,value,cls])=>`<div class="fin96-health-row ${cls}"><span>${esc(label)}</span><b>${esc(value)}</b></div>`).join('')}</div>`;
   }
