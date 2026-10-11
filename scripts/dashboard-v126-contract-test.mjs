@@ -5,7 +5,7 @@ const ui=fs.readFileSync('public/v2/modules-v126-dashboard-finance-top.js','utf8
 const preview=fs.readFileSync('src/index-commerce-v38.js','utf8');
 const production=fs.readFileSync('src/index-production-mobile-update.js','utf8');
 
-for(const label of ['أرباح تم تحصيلها','أرباح منتظرة','الربح / الخسارة','التفاصيل ←']) assert.ok(ui.includes(label),`missing label: ${label}`);
+for(const label of ['صافي التحصيل التقديري','هامش الطلبات النشطة','الربح / الخسارة','التفاصيل ←']) assert.ok(ui.includes(label),`missing label: ${label}`);
 for(const token of ['/api/accounting/collected-profit','/api/system/dashboard/input-details','expectedProfit','netProfit']) assert.ok(ui.includes(token),`missing data contract: ${token}`);
 assert.ok(ui.includes('data-dashboard-finance-top="126"'),'top finance section marker is required');
 for(const marker of ["card('cpp','سعر الطلب الفعلي'","const actualCpp=orders?money(adSpend/orders,c):'—'","data-f126-detail","if(type==='cpp')return cppDetails()","إجمالي مصروفات الإعلانات خلال الفترة ÷ جميع الأوردرات"]) assert.ok(ui.includes(marker),`missing actual system-wide order-cost card: ${marker}`);
@@ -18,7 +18,7 @@ for(const unsafe of ['DROP TABLE','DELETE FROM','ALTER TABLE','CREATE TABLE','mi
 
 
 // One consolidated summary is the only visible KPI surface above analyses.
-for(const label of ['ملخص الأداء','عدد الأوردرات','الإيرادات المتوقعة','الربح / الخسارة','سعر الطلب الفعلي','أرباح تم تحصيلها','أرباح منتظرة','نسبة التأكيد','نسبة التسليم'])
+for(const label of ['ملخص الأداء','عدد الأوردرات','الإيرادات المتوقعة','الربح / الخسارة','سعر الطلب الفعلي','صافي التحصيل التقديري','هامش الطلبات النشطة','نسبة التأكيد','نسبة التسليم'])
   assert.ok(ui.includes(label),`missing consolidated top KPI: ${label}`);
 assert.ok(ui.includes('dash-f126-grid'),'summary must own all eight cards');
 assert.ok(ui.includes('const sources=entries(d,\'مصادر الطلبات\')'),'summary must show all order sources without removing manual entries');
