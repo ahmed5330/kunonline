@@ -28,7 +28,8 @@ const result=computeDashboardSnapshot({orders,historyOrders,transactions,billing
 assert.equal(result.overview.totalOrders,10,'all system orders must count regardless of source/status');
 assert.equal(result.overview.actualOrderCost,100,'actual CPP must equal ad spend / every order entered');
 assert.equal(result.overview.expectedRevenue,800,'expected revenue must exclude cancelled and returned orders');
-assert.equal(result.overview.expectedProfit,249,'expected operating profit must use confirmed/preparing/shipped and subtract shipping, per-order other cost and admin fee, but not product cost');
+assert.equal(result.overview.expectedProfit,159,'active-order contribution must subtract COGS and direct order fees (before shared ads)');
+assert.equal(result.overview.activeProductCost,90,'active-order COGS must be disclosed separately');
 assert.equal(result.finance.productCost,240,'product cost must apply only to revenue-eligible orders');
 assert.equal(result.finance.grossProfit,560,'gross profit must be eligible revenue minus product cost only');
 assert.equal(result.finance.expenseBreakdown.ads,1000,'connected ad spend must be primary spend source');
