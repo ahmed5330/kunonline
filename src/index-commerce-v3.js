@@ -79,9 +79,21 @@ async function codCandidates(env,clientId,storeId){
   const {results}=await env.DB.prepare(`SELECT o.id,o.store_id,o.date,o.name,o.awb,o.total,o.discount_amount,o.refund_amount,o.state,o.checkpoint FROM orders o LEFT JOIN cod_reconciliation_items i ON i.client_id=o.client_id AND i.store_id IS o.store_id AND i.order_id=o.id WHERE o.client_id=? ${storeId?'AND o.store_id=?':''} AND o.state='signed' AND i.id IS NULL AND NOT EXISTS (SELECT 1 FROM order_duplicate_links dup WHERE dup.duplicate_order_id=o.id) ORDER BY o.date DESC LIMIT 500`).bind(...(storeId?[clientId,storeId]:[clientId])).all();
   return (results||[]).map(o=>({...o,expectedAmount:round2(Math.max(0,num(o.total)-num(o.discount_amount)-num(o.refund_amount)))}));
 }
-async function listReconciliations(env,clientId,storeId){
-  const {results}=await env.DB.prepare(`SELECT id,store_id,provider,reference,status,expected_amount,actual_amount,difference,currency,reconciled_at,note,created_by,created_at,updated_at FROM cod_reconciliations WHERE client_id=? ${storeId?'AND store_id=?':''} ORDER BY created_at DESC LIMIT 200`).bind(...(storeId?[clientId,storeId]:[clientId])).all();
+async function listReconciliations(env,clientId,storeId,{from=null,to=null}={}){
+  const binds=storeId?[clientId,storeId]:[clientId];
+  let where=`client_id=? ${storeId?'AND store_id=?':''}`;
+  if(/^\\d{4}-\\d{2}-\\d{2}$/.test(String(from||''))){where+=' AND date(created_at)>=date(?)';binds.push(from);}
+  if(/^\\d{4}-\\d{2}-\\d{2}$/.test(String(to||''))){where+=' AND date(created_at)<=date(?)';binds.push(to);}
+  const {results}=await env.DB.prepare(`SELECT id,store_id,provider,reference,status,expected_amount,actual_amount,difference,currency,reconciled_at,note,created_by,created_at,updated_at FROM cod_reconciliations WHERE ${where} ORDER BY created_at DESC LIMIT 200`).bind(...binds).all();
   return results||[];
+}
+async function codPendingSummary(env,clientId,storeId,{from=null,to=null}={}){
+  const binds=storeId?[clientId,storeId]:[clientId];
+  let where=`o.client_id=? ${storeId?'AND o.store_id=?':''} AND o.state='signed' AND i.id IS NULL AND NOT EXISTS (SELECT 1 FROM order_duplicate_links dup WHERE dup.duplicate_order_id=o.id)`;
+  if(/^\\d{4}-\\d{2}-\\d{2}$/.test(String(from||''))){where+=' AND date(COALESCE(o.date,o.created_at))>=date(?)';binds.push(from);}
+  if(/^\\d{4}-\\d{2}-\\d{2}$/.test(String(to||''))){where+=' AND date(COALESCE(o.date,o.created_at))<=date(?)';binds.push(to);}
+  const row=await env.DB.prepare(`SELECT COUNT(*) totalOrders,COALESCE(SUM(MAX(0,COALESCE(o.total,0)-COALESCE(o.discount_amount,0)-COALESCE(o.refund_amount,0))),0) totalExpected FROM orders o LEFT JOIN cod_reconciliation_items i ON i.client_id=o.client_id AND i.store_id IS o.store_id AND i.order_id=o.id WHERE ${where}`).bind(...binds).first();
+  return {ok:true,totalOrders:Number(row?.totalOrders)||0,totalExpected:round2(row?.totalExpected),basis:'canonical_signed_unreconciled_orders',scope:storeId||null,from:from||null,to:to||null};
 }
 async function createReconciliation(request,env,me,clientId,storeId){
   if(!canFinanceWrite(me)) return json({error:'مش مسموح بتسوية التحصيلات'},403);
@@ -112,8 +124,12 @@ async function fetchV3(request,env,ctx){
     if(path==='/api/cod-reconciliation/candidates'&&request.method==='GET'){
       const me=await meFromBase(request,env,ctx);requirePermission(me,'cod','read');const clientId=targetClient(me,url.searchParams.get('clientId')||(me.role==='client'?me.clientId:null)),storeId=url.searchParams.get('storeId')||request.headers.get('X-Kun-Store-Id')||null;return json(await codCandidates(env,clientId,storeId));
     }
+    if(path==='/api/cod-reconciliation/summary'&&request.method==='GET'){
+      const me=await meFromBase(request,env,ctx);requirePermission(me,'cod','read');const clientId=targetClient(me,url.searchParams.get('clientId')||(me.role==='client'?me.clientId:null)),storeId=url.searchParams.get('storeId')||request.headers.get('X-Kun-Store-Id')||null;
+      return json(await codPendingSummary(env,clientId,storeId,{from:url.searchParams.get('from'),to:url.searchParams.get('to')}));
+    }
     if(path==='/api/cod-reconciliation'&&request.method==='GET'){
-      const me=await meFromBase(request,env,ctx);requirePermission(me,'cod','read');const clientId=targetClient(me,url.searchParams.get('clientId')||(me.role==='client'?me.clientId:null)),storeId=url.searchParams.get('storeId')||request.headers.get('X-Kun-Store-Id')||null;return json(await listReconciliations(env,clientId,storeId));
+      const me=await meFromBase(request,env,ctx);requirePermission(me,'cod','read');const clientId=targetClient(me,url.searchParams.get('clientId')||(me.role==='client'?me.clientId:null)),storeId=url.searchParams.get('storeId')||request.headers.get('X-Kun-Store-Id')||null;return json(await listReconciliations(env,clientId,storeId,{from:url.searchParams.get('from'),to:url.searchParams.get('to')}));
     }
     if(path==='/api/cod-reconciliation'&&request.method==='POST'){
       const me=await meFromBase(request,env,ctx);const b=await request.clone().json().catch(()=>({}));const clientId=targetClient(me,b.clientId||b.client_id||(me.role==='client'?me.clientId:null)),storeId=b.storeId||b.store_id||request.headers.get('X-Kun-Store-Id')||null;return createReconciliation(new Request(request.url,{method:'POST',headers:request.headers,body:JSON.stringify(b)}),env,me,clientId,storeId);
