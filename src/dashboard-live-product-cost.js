@@ -69,8 +69,8 @@ export async function applyCurrentInventoryCosts(env,{snapshot,clientId,storeId=
   const storeOrders=storeId?' AND store_id=?':'',storeItems=storeId?' AND store_id=?':'',storeCatalog=storeId?' AND store_id=?':'';
   const orderBinds=storeId?[clientId,storeId,from,to]:[clientId,from,to],scopeBinds=storeId?[clientId,storeId]:[clientId];
   const [orderResult,itemResult,productResult,variantResult]=await Promise.all([
-    env.DB.prepare(`SELECT id,date,created_at,state,product_id,variant_id,qty,product_cost FROM orders WHERE client_id=?${storeOrders} AND date(COALESCE(date,created_at)) BETWEEN date(?) AND date(?)`).bind(...orderBinds).all(),
-    env.DB.prepare(`SELECT oi.order_id,oi.product_id,oi.variant_id,oi.qty FROM order_items oi JOIN orders o ON o.id=oi.order_id AND o.client_id=oi.client_id WHERE oi.client_id=?${storeItems?' AND oi.store_id=?':''} AND date(COALESCE(o.date,o.created_at)) BETWEEN date(?) AND date(?)`).bind(...orderBinds).all().catch(()=>({results:[]})),
+    env.DB.prepare(`SELECT id,date,created_at,state,product_id,variant_id,qty,product_cost FROM orders o WHERE o.client_id=?${storeOrders} AND date(COALESCE(o.date,o.created_at)) BETWEEN date(?) AND date(?) AND NOT EXISTS (SELECT 1 FROM order_duplicate_links d WHERE d.duplicate_order_id=o.id)`).bind(...orderBinds).all(),
+    env.DB.prepare(`SELECT oi.order_id,oi.product_id,oi.variant_id,oi.qty FROM order_items oi JOIN orders o ON o.id=oi.order_id AND o.client_id=oi.client_id WHERE oi.client_id=?${storeItems?' AND oi.store_id=?':''} AND date(COALESCE(o.date,o.created_at)) BETWEEN date(?) AND date(?) AND NOT EXISTS (SELECT 1 FROM order_duplicate_links d WHERE d.duplicate_order_id=o.id)`).bind(...orderBinds).all().catch(()=>({results:[]})),
     env.DB.prepare(`SELECT id,cost FROM products WHERE client_id=?${storeCatalog}`).bind(...scopeBinds).all(),
     env.DB.prepare(`SELECT id,product_id,cost FROM product_variants WHERE client_id=?${storeCatalog}`).bind(...scopeBinds).all()
   ]);
@@ -80,11 +80,24 @@ export async function applyCurrentInventoryCosts(env,{snapshot,clientId,storeId=
   for(const order of orders)costByOrder.set(costKey(order.id),currentOrderCost(order,itemsByOrder,catalog));
 
   const eligible=orders.filter(order=>!excludedStates.has(clean(order.state))),productCost=round(eligible.reduce((sum,order)=>sum+num(costByOrder.get(costKey(order.id))),0));
+  const active=orders.filter(order=>['confirmed','preparing','shipped'].includes(clean(order.state))),activeCost=round(active.reduce((sum,order)=>sum+num(costByOrder.get(costKey(order.id))),0));
   const revenue=num(snapshot.finance?.revenue??snapshot.overview?.expectedRevenue),expenses=num(snapshot.finance?.expenses),grossProfit=round(revenue-productCost),netProfit=round(grossProfit-expenses),profitMargin=revenue?round(netProfit/revenue*100):0;
   snapshot.finance={...(snapshot.finance||{}),productCost,grossProfit,netProfit};
   snapshot.overview={...(snapshot.overview||{}),netProfit,profitMargin,productCostSource:'current_inventory'};
   snapshot.rates={...(snapshot.rates||{}),selected:selectedRateSummary(orders,from,to)};
   updateMarginDetails(snapshot,productCost,netProfit,profitMargin);
+  // The KPI for active orders must use the SAME variant/product cost as the
+  // P&L. Adjust only the COGS delta, preserving shipping and management fees.
+  if(snapshot.overview?.activeProductCost!==undefined){
+    const oldCost=num(snapshot.overview.activeProductCost),difference=round(activeCost-oldCost);
+    snapshot.overview.activeProductCost=activeCost;
+    snapshot.overview.expectedProfit=round(num(snapshot.overview.expectedProfit)-difference);
+    snapshot.overview.expectedProfitPerActiveOrder=snapshot.overview.activeOrders?round(snapshot.overview.expectedProfit/snapshot.overview.activeOrders):0;
+    for(const item of snapshot.overview.details?.expectedProfit||[]){
+      if(item.label==='تكلفة البضاعة للطلبات النشطة')item.value=activeCost;
+      if(item.label==='هامش الطلبات النشطة قبل الإعلانات والمصاريف العامة'||item.label==='الربح التشغيلي المتوقع')item.value=snapshot.overview.expectedProfit;
+    }
+  }
 
   if(Array.isArray(snapshot.trend?.points)){
     const granularity=snapshot.trend.granularity||'day',costByBucket=new Map();

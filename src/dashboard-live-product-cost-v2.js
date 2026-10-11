@@ -48,8 +48,8 @@ export async function applyCurrentInventoryCostsV2(env,{snapshot,clientId,storeI
   const orderStore=storeId?' AND store_id=?':'',itemStore=storeId?' AND o.store_id=?':'',catalogStore=storeId?' AND store_id=?':'';
   const rangeBinds=storeId?[clientId,storeId,from,to]:[clientId,from,to],scopeBinds=storeId?[clientId,storeId]:[clientId];
   const [orderResult,itemResult,productResult,variantResult]=await Promise.all([
-    env.DB.prepare(`SELECT id,date,created_at,state,product_id,variant_id,product,qty,product_cost FROM orders WHERE client_id=?${orderStore} AND date(COALESCE(date,created_at)) BETWEEN date(?) AND date(?)`).bind(...rangeBinds).all(),
-    env.DB.prepare(`SELECT oi.order_id,oi.product_id,oi.variant_id,oi.sku,oi.product_name,oi.qty FROM order_items oi JOIN orders o ON o.id=oi.order_id AND o.client_id=oi.client_id WHERE oi.client_id=?${itemStore} AND date(COALESCE(o.date,o.created_at)) BETWEEN date(?) AND date(?)`).bind(...rangeBinds).all().catch(()=>({results:[]})),
+    env.DB.prepare(`SELECT id,date,created_at,state,product_id,variant_id,product,qty,product_cost FROM orders o WHERE o.client_id=?${orderStore} AND date(COALESCE(o.date,o.created_at)) BETWEEN date(?) AND date(?) AND NOT EXISTS (SELECT 1 FROM order_duplicate_links d WHERE d.duplicate_order_id=o.id)`).bind(...rangeBinds).all(),
+    env.DB.prepare(`SELECT oi.order_id,oi.product_id,oi.variant_id,oi.sku,oi.product_name,oi.qty FROM order_items oi JOIN orders o ON o.id=oi.order_id AND o.client_id=oi.client_id WHERE oi.client_id=?${itemStore} AND date(COALESCE(o.date,o.created_at)) BETWEEN date(?) AND date(?) AND NOT EXISTS (SELECT 1 FROM order_duplicate_links d WHERE d.duplicate_order_id=o.id)`).bind(...rangeBinds).all().catch(()=>({results:[]})),
     env.DB.prepare(`SELECT id,name,sku,cost FROM products WHERE client_id=?${catalogStore}`).bind(...scopeBinds).all(),
     env.DB.prepare(`SELECT id,product_id,name,sku,cost FROM product_variants WHERE client_id=?${catalogStore}`).bind(...scopeBinds).all()
   ]);
@@ -57,10 +57,20 @@ export async function applyCurrentInventoryCostsV2(env,{snapshot,clientId,storeI
   const catalog=buildCatalog(productResult.results||[],variantResult.results||[]),costByOrder=new Map();let liveLines=0,fallbackLines=0;
   for(const order of orders){const resolved=orderCost(order,itemsByOrder,catalog);costByOrder.set(clean(order.id),resolved.cost);liveLines+=resolved.liveLines;fallbackLines+=resolved.fallbackLines;}
   const eligible=orders.filter(order=>!excludedStates.has(clean(order.state))),productCost=round(eligible.reduce((sum,order)=>sum+num(costByOrder.get(clean(order.id))),0));
+  const active=orders.filter(order=>['confirmed','preparing','shipped'].includes(clean(order.state))),activeCost=round(active.reduce((sum,order)=>sum+num(costByOrder.get(clean(order.id))),0));
   const revenue=num(snapshot.finance?.revenue??snapshot.overview?.expectedRevenue),expenses=num(snapshot.finance?.expenses),grossProfit=round(revenue-productCost),netProfit=round(grossProfit-expenses),profitMargin=revenue?round(netProfit/revenue*100):0;
   snapshot.finance={...(snapshot.finance||{}),productCost,grossProfit,netProfit};
   snapshot.overview={...(snapshot.overview||{}),netProfit,profitMargin,productCostSource:'current_inventory_resolved'};
   snapshot.rates={...(snapshot.rates||{}),selected:selectedRateSummary(orders,from,to)};updateMarginDetails(snapshot,productCost,netProfit,profitMargin);
+  if(snapshot.overview?.activeProductCost!==undefined){
+    const difference=round(activeCost-num(snapshot.overview.activeProductCost));snapshot.overview.activeProductCost=activeCost;
+    snapshot.overview.expectedProfit=round(num(snapshot.overview.expectedProfit)-difference);
+    snapshot.overview.expectedProfitPerActiveOrder=snapshot.overview.activeOrders?round(snapshot.overview.expectedProfit/snapshot.overview.activeOrders):0;
+    for(const item of snapshot.overview.details?.expectedProfit||[]){
+      if(item.label==='تكلفة البضاعة للطلبات النشطة')item.value=activeCost;
+      if(item.label==='هامش الطلبات النشطة قبل الإعلانات والمصاريف العامة'||item.label==='الربح التشغيلي المتوقع')item.value=snapshot.overview.expectedProfit;
+    }
+  }
   if(Array.isArray(snapshot.trend?.points)){const granularity=snapshot.trend.granularity||'day',costByBucket=new Map();for(const order of eligible){const key=bucketFor(dateKey(order.date||order.created_at),granularity);costByBucket.set(key,round(num(costByBucket.get(key))+num(costByOrder.get(clean(order.id)))));}snapshot.trend.points=snapshot.trend.points.map(point=>{const currentProductCost=round(num(costByBucket.get(clean(point.key)))),pointRevenue=num(point.revenue),operating=num(point.adSpend)+num(point.otherExpenses)+num(point.shipping)+num(point.orderOther)+num(point.adminFees),gross=round(pointRevenue-currentProductCost);return {...point,productCost:currentProductCost,grossProfit:gross,netProfit:round(gross-operating)};});}
   snapshot.costing={source:'current_inventory_resolved',variantFirst:true,skuFallback:true,nameFallback:true,lineLevelHistoricalFallback:true,liveLines,fallbackLines,updatedAt:new Date().toISOString()};
   return snapshot;
