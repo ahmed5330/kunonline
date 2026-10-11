@@ -4,11 +4,11 @@ import vm from 'node:vm';
 
 const js=fs.readFileSync('public/v2/modules-v96-finance-command-center.js','utf8');
 const root={innerHTML:''},styles=[];
-let collectedCash=350;
+let collectedCash=350,purchases=false;
 const endpoints={
  '/api/dashboard':()=>({ok:true,from:'2026-10-01',to:'2026-10-11',currency:'EGP',overview:{expectedRevenue:500,profitMargin:60,productCostSource:'current_inventory'},ads:{spend:60},finance:{revenue:500,productCost:100,grossProfit:400,expenses:100,netProfit:300,expenseBreakdown:{ads:60,general:40,shipping:0,orderOther:0,admin:0}}}),
  '/api/accounting/overview':()=>({ok:true,collectedRevenue:collectedCash,netCash:380,manualIncome:20,manualExpenses:40,managementFees:0,entries:1,shippedOrders:0,unverifiedCollectedOrders:0}),
- '/api/accounting/entries':()=>[],
+ '/api/accounting/entries':()=>purchases?[{type:'expense',category:'مشتريات',amount:50}]:[],
  '/api/accounting/collected-profit':()=>({ok:true,collectedGross:350,missingProductCostOrders:0,managementFees:0}),
  '/api/cod-reconciliation/candidates':()=>[],
  '/api/cod-reconciliation':()=>[]
@@ -36,5 +36,7 @@ collectedCash=370;
 await window.KunFinanceCommandCenterV96.reload();
 assert.ok(root.innerHTML.includes('فرق'),'collection mismatch must surface instead of displaying false green');
 assert.ok(root.innerHTML.includes('يحتاج مراجعة'),'mismatch should be actionable');
+purchases=true;await window.KunFinanceCommandCenterV96.reload();
+assert.ok(root.innerHTML.includes('مشتريات المخزون'),'inventory purchases that may double count COGS must be flagged');
 assert.equal(styles.length,1,'do not mount duplicate finance styles');
 console.log('Finance page simulated-browser ledger reconciliation PASS');
