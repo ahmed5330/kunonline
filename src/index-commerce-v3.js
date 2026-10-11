@@ -7,7 +7,7 @@ const now=()=>new Date().toISOString();
 const id=p=>`${p}-${crypto.randomUUID().slice(0,8).toUpperCase()}`;
 const num=v=>Number.isFinite(Number(v))?Number(v):0;
 const round2=v=>Math.round((num(v)+Number.EPSILON)*100)/100;
-function codPeriod(url){
+export function codPeriod(url){
   const from=url.searchParams.get('from')||null,to=url.searchParams.get('to')||null;
   for(const value of [from,to])if(value&&(!/^\d{4}-\d{2}-\d{2}$/.test(value)||Number.isNaN(Date.parse(value+'T00:00:00Z'))||new Date(value+'T00:00:00Z').toISOString().slice(0,10)!==value))throw Object.assign(new Error('تاريخ فترة التسوية غير صالح'),{status:400,code:'COD_PERIOD_INVALID'});
   if(from&&to&&from>to)throw Object.assign(new Error('تاريخ البداية يجب أن يسبق النهاية'),{status:400,code:'COD_PERIOD_REVERSED'});
@@ -42,9 +42,12 @@ export function orderEconomics(o){
   const gross=num(o.total);
   const discount=num(o.discount_amount);
   const refunds=num(o.refund_amount);
-  const netRevenue=Math.max(0,gross-discount-refunds);
+  // Cancelled and returned orders are not recognized operating sales; actual
+  // shipping/handling already incurred remains a cost of doing business.
+  const eligible=!['cancelled','returned'].includes(String(o.state||'').toLowerCase());
+  const netRevenue=eligible?Math.max(0,gross-discount-refunds):0;
   // orders.product_cost stores the order-level COGS, not a unit cost.
-  const cogs=Math.max(0,num(o.product_cost));
+  const cogs=eligible?Math.max(0,num(o.product_cost)):0;
   const shipping=Math.max(0,num(o.shipping_cost));
   const other=Math.max(0,num(o.other_cost));
   const contribution=netRevenue-cogs-shipping-other;
@@ -73,7 +76,7 @@ async function profitIntelligence(env,clientId,url){
   const operatingExpenses=num(tx?.expenses);
   const otherIncome=num(tx?.income);
   const netProfit=sum.contribution-operatingExpenses+otherIncome;
-  const summary={...Object.fromEntries(Object.entries(sum).map(([k,v])=>[k,typeof v==='number'?round2(v):v])),operatingExpenses:round2(operatingExpenses),otherIncome:round2(otherIncome),netProfit:round2(netProfit),marginPct:sum.netRevenue?round2(netProfit/sum.netRevenue*100):0};
+  const summary={...Object.fromEntries(Object.entries(sum).map(([k,v])=>[k,typeof v==='number'?round2(v):v])),operatingExpenses:round2(operatingExpenses),otherIncome:round2(otherIncome),netProfit:round2(netProfit),marginPct:sum.netRevenue?round2(netProfit/sum.netRevenue*100):0,profitBasis:'legacy_partial_order_contribution_minus_booked_transactions',reconciledWithAccounting:false,notice:'هذه مساهمة الطلبات بعد تكلفتها وحركاتها اليدوية، ولا تغني عن قائمة الأرباح والخسائر الرسمية في قسم المالية التي تشمل الإعلانات المتصلة ورسوم الإدارة'};
   if(groupBy==='summary') return {summary};
   const keyFor=o=>groupBy==='product'?(o.product_id||o.product||'غير محدد'):groupBy==='source'?(o.source||'غير محدد'):o.id;
   const groups=new Map();
