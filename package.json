@@ -73,7 +73,7 @@
     "test:warehouse": "node scripts/warehouse-operations-test.mjs",
     "test:warehouse:browser": "node scripts/browser-warehouse-operations-fixture-test.mjs",
     "test:clarity": "node scripts/clarity-integration-test.mjs",
-    "test:clarity-growth": "node scripts/clarity-growth-test.mjs",
+    "test:clarity-growth": "node scripts/clarity-growth-test.mjs && node scripts/clarity-readable-ui-test.mjs",
     "test:ai-marketing": "node --check src/ai-marketing-analyst.js && node --check public/v2/modules-v138-ai-marketing.js && node scripts/ai-marketing-test.mjs",
     "test:competitors": "node --check src/competitor-intelligence.js && node --check public/v2/modules-v139-competitors.js && node scripts/competitor-intelligence-test.mjs"
   },
