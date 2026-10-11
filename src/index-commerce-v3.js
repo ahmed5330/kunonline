@@ -9,7 +9,7 @@ const num=v=>Number.isFinite(Number(v))?Number(v):0;
 const round2=v=>Math.round((num(v)+Number.EPSILON)*100)/100;
 function codPeriod(url){
   const from=url.searchParams.get('from')||null,to=url.searchParams.get('to')||null;
-  for(const value of [from,to])if(value&&(!/^\d{4}-\d{2}-\d{2}$/.test(value)||new Date(value+'T00:00:00Z').toISOString().slice(0,10)!==value))throw Object.assign(new Error('تاريخ فترة التسوية غير صالح'),{status:400,code:'COD_PERIOD_INVALID'});
+  for(const value of [from,to])if(value&&(!/^\d{4}-\d{2}-\d{2}$/.test(value)||Number.isNaN(Date.parse(value+'T00:00:00Z'))||new Date(value+'T00:00:00Z').toISOString().slice(0,10)!==value))throw Object.assign(new Error('تاريخ فترة التسوية غير صالح'),{status:400,code:'COD_PERIOD_INVALID'});
   if(from&&to&&from>to)throw Object.assign(new Error('تاريخ البداية يجب أن يسبق النهاية'),{status:400,code:'COD_PERIOD_REVERSED'});
   return {from,to};
 }
@@ -136,23 +136,23 @@ async function fetchV3(request,env,ctx){
   const url=new URL(request.url),path=url.pathname;
   try{
     if(path==='/api/profit-intelligence'&&request.method==='GET'){
-      const me=await meFromBase(request,env,ctx);const clientId=targetClient(me,url.searchParams.get('clientId')||(me.role==='client'?me.clientId:null));return json(await profitIntelligence(env,clientId,url));
+      const me=await meFromBase(request,env,ctx);requirePermission(me,'profit','read');const clientId=targetClient(me,url.searchParams.get('clientId')||(me.role==='client'?me.clientId:null));const scope=await resolveStoreScope(env,me,clientId,url.searchParams.get('storeId')||request.headers.get('X-Kun-Store-Id')||null,{write:false});if(scope.storeId)url.searchParams.set('storeId',scope.storeId);return json(await profitIntelligence(env,clientId,url));
     }
     if(path==='/api/cod-reconciliation/candidates'&&request.method==='GET'){
-      const me=await meFromBase(request,env,ctx);requirePermission(me,'cod','read');const clientId=targetClient(me,url.searchParams.get('clientId')||(me.role==='client'?me.clientId:null)),storeId=url.searchParams.get('storeId')||request.headers.get('X-Kun-Store-Id')||null;return json(await codCandidates(env,clientId,storeId,{from:url.searchParams.get('from'),to:url.searchParams.get('to')}));
+      const me=await meFromBase(request,env,ctx);requirePermission(me,'cod','read');const clientId=targetClient(me,url.searchParams.get('clientId')||(me.role==='client'?me.clientId:null));const scope=await resolveStoreScope(env,me,clientId,url.searchParams.get('storeId')||request.headers.get('X-Kun-Store-Id')||null,{write:false});return json(await codCandidates(env,clientId,scope.storeId,codPeriod(url)));
     }
     if(path==='/api/cod-reconciliation/summary'&&request.method==='GET'){
-      const me=await meFromBase(request,env,ctx);requirePermission(me,'cod','read');const clientId=targetClient(me,url.searchParams.get('clientId')||(me.role==='client'?me.clientId:null)),storeId=url.searchParams.get('storeId')||request.headers.get('X-Kun-Store-Id')||null;
-      return json(await codPendingSummary(env,clientId,storeId,{from:url.searchParams.get('from'),to:url.searchParams.get('to')}));
+      const me=await meFromBase(request,env,ctx);requirePermission(me,'cod','read');const clientId=targetClient(me,url.searchParams.get('clientId')||(me.role==='client'?me.clientId:null));const scope=await resolveStoreScope(env,me,clientId,url.searchParams.get('storeId')||request.headers.get('X-Kun-Store-Id')||null,{write:false});
+      return json(await codPendingSummary(env,clientId,scope.storeId,codPeriod(url)));
     }
     if(path==='/api/cod-reconciliation'&&request.method==='GET'){
-      const me=await meFromBase(request,env,ctx);requirePermission(me,'cod','read');const clientId=targetClient(me,url.searchParams.get('clientId')||(me.role==='client'?me.clientId:null)),storeId=url.searchParams.get('storeId')||request.headers.get('X-Kun-Store-Id')||null;return json(await listReconciliations(env,clientId,storeId,{from:url.searchParams.get('from'),to:url.searchParams.get('to')}));
+      const me=await meFromBase(request,env,ctx);requirePermission(me,'cod','read');const clientId=targetClient(me,url.searchParams.get('clientId')||(me.role==='client'?me.clientId:null));const scope=await resolveStoreScope(env,me,clientId,url.searchParams.get('storeId')||request.headers.get('X-Kun-Store-Id')||null,{write:false});return json(await listReconciliations(env,clientId,scope.storeId,codPeriod(url)));
     }
     if(path==='/api/cod-reconciliation'&&request.method==='POST'){
-      const me=await meFromBase(request,env,ctx);const b=await request.clone().json().catch(()=>({}));const clientId=targetClient(me,b.clientId||b.client_id||(me.role==='client'?me.clientId:null)),storeId=b.storeId||b.store_id||request.headers.get('X-Kun-Store-Id')||null;return createReconciliation(new Request(request.url,{method:'POST',headers:request.headers,body:JSON.stringify(b)}),env,me,clientId,storeId);
+      const me=await meFromBase(request,env,ctx);requirePermission(me,'cod','write');const b=await request.clone().json().catch(()=>({}));const clientId=targetClient(me,b.clientId||b.client_id||(me.role==='client'?me.clientId:null));const scope=await resolveStoreScope(env,me,clientId,b.storeId||b.store_id||url.searchParams.get('storeId')||request.headers.get('X-Kun-Store-Id')||null,{write:true});return createReconciliation(new Request(request.url,{method:'POST',headers:request.headers,body:JSON.stringify(b)}),env,me,clientId,scope.storeId);
     }
     return workerV2.fetch(request,env,ctx);
-  }catch(e){return json({error:e.message||'حدث خطأ'},e.status||500);}
+  }catch(e){return json({error:e.message||'حدث خطأ',code:e.code||'FINANCE_ROUTE_ERROR'},e.status||500);}
 }
 
 export default {fetch:fetchV3,scheduled(controller,env,ctx){return workerV2.scheduled?.(controller,env,ctx);}};
