@@ -55,5 +55,5 @@
   function mergeLegacyProfit(){document.querySelector('.nav button[data-view="profit"]')?.remove();const f=document.querySelector('.nav button[data-view="finance"]');if(f)f.textContent='المالية والربحية';window.KunSidebarGroupsV90?.sync?.();}
   function install(){ensureStyle();mergeLegacyProfit();if(typeof render==='function'&&!render.__kunFinanceV96){const prev=render,next=function(){if(view===VIEW||view==='profit')return renderFinance();return prev();};next.__kunFinanceV96=true;render=next;}document.addEventListener('click',e=>{if(e.target.closest?.('.nav button[data-view="finance"]'))setTimeout(()=>{if(active())renderFinance();},0);},true);}
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',install,{once:true});else install();
-  window.KunFinanceCommandCenterV96={version:'96.0',render:renderFinance,reload:()=>load(true),range};
+  window.KunFinanceCommandCenterV96={version:'96.1',render:renderFinance,reload:()=>load(true),range};
 })();
