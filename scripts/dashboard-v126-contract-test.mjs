@@ -12,8 +12,8 @@ for(const marker of ["card('cpp','سعر الطلب الفعلي'","const actual
 assert.doesNotThrow(()=>new Function(ui),'top eight KPIs dashboard browser module must parse');
 assert.ok(ui.includes('grid-template-columns:repeat(4,minmax(0,1fr))'),'desktop layout must support four cards per row');
 
-assert.ok(preview.includes('/v2/modules-v126-dashboard-finance-top.js?v=126.2'),'preview must load v126');
-assert.ok(production.includes('/v2/modules-v126-dashboard-finance-top.js?v=126.2'),'production html must load v126');
+assert.ok(preview.includes('/v2/modules-v126-dashboard-finance-top.js?v=126.3'),'preview must load v126');
+assert.ok(production.includes('/v2/modules-v126-dashboard-finance-top.js?v=126.3'),'production html must load v126');
 for(const unsafe of ['DROP TABLE','DELETE FROM','ALTER TABLE','CREATE TABLE','migrations/']) assert.ok(!ui.includes(unsafe),`unexpected DB mutation token: ${unsafe}`);
 
 
