@@ -214,7 +214,7 @@ function recommendationCard(r){
 }
 function growth(d){
  const g=d.growth||{},rows=(g.campaigns||[]).filter(x=>!V.search||tx(x.name).toLowerCase().includes(V.search.toLowerCase()));
- const recommendations=(g.recommendations||[]).sort((a,b)=>(a.priority==='high'?0:1)-(b.priority==='high'?0:1));
+ const recommendations=(g.recommendations||[]).slice().sort((a,b)=>(a.priority==='high'?0:1)-(b.priority==='high'?0:1));
  const lines=rows.map(x=>'<tr><td><b>'+esc(x.name)+'</b><div class="muted">'+esc(status[x.sourceStatus]||'')+'</div></td>'+
  '<td>'+n(x.spend)+'</td><td>'+pct(x.ctr)+'</td><td>'+n(x.platformPurchases)+'</td><td>'+n(x.realOrders)+'</td><td>'+n(x.deliveredOrders)+'</td>'+
  '<td>'+(x.realRoas==null?'—':n(x.realRoas)+'x')+'</td><td>'+n(x.claritySessions)+'</td><td>'+n(x.metaSourceSessions)+'</td><td>'+pct(x.rageRate)+'</td><td>'+pct(x.deadRate)+'</td><td>'+pct(x.scriptErrorRate)+'</td></tr>');
@@ -362,7 +362,7 @@ function render(){
   try{const synced=await api('/api/clarity/sync',{method:'POST',body:JSON.stringify({days:V.days})});toast(synced.skipped?'البيانات حديثة؛ تم استخدام النسخة المخزنة':'تمت مزامنة Clarity');await reload();}
   catch(ex){toast(ex.message);e.target.disabled=false;}finally{V.busy=false;}
  };
- const input=el.querySelector('#cl136-search');if(input)input.oninput=e=>{V.search=e.target.value;const selection=e.target.selectionStart;render();const again=ROOT().querySelector('#cl136-search');again?.focus();again?.setSelectionRange(selection,selection);};
+ const input=el.querySelector('#cl136-search');if(input)input.oninput=e=>{V.search=e.target.value;const rows=input.closest('details')?.querySelectorAll('table tbody tr')||[];rows.forEach(row=>{row.hidden=!!V.search&&!row.cells?.[0]?.textContent?.toLowerCase().includes(V.search.toLowerCase());});};
 }
 async function reload(){
  const rid=++V.request;const d=await api('/api/clarity/growth?days='+V.days);if(rid!==V.request)return;V.data=d;render();
