@@ -61,6 +61,7 @@
     if(n(col.missingProductCostOrders)>0)warn('تكاليف أوردرات التحصيل',`${n(col.missingProductCostOrders)} أوردر بدون تكلفة مؤكدة`);
     else if(col.ok)ok('تكاليف أوردرات التحصيل','لا توجد أوردرات ناقصة التكلفة وفق السجلات الحالية');
     if(n(a.unverifiedCollectedOrders)>0)warn('مبالغ تحصيل تقديرية',`${n(a.unverifiedCollectedOrders)} أوردر بدون مبلغ تحصيل صريح`);
+    if((d.entries||[]).some(row=>row.type==='expense'&&String(row.category||'').trim()==='مشتريات'))warn('مشتريات المخزون','راجع تسجيل المشتريات كأصول مخزون؛ احتسابها كمصروف مع COGS قد يكرر التكلفة');
     return `<div class="fin96-health">${rows.map(([label,value,cls])=>`<div class="fin96-health-row ${cls}"><span>${esc(label)}</span><b>${esc(value)}</b></div>`).join('')}</div>`;
   }
   function entriesTable(rows,currency){if(!Array.isArray(rows)||!rows.length)return '<div class="fin96-empty">لا توجد حركات محاسبية يدوية في الفترة.</div>';return `<div class="fin96-table"><table><thead><tr><th>التاريخ</th><th>النوع</th><th>البند</th><th>الجهة</th><th>البيان</th><th>المبلغ</th></tr></thead><tbody>${rows.slice(0,50).map(x=>`<tr><td>${esc(x.date||String(x.createdAt||'').slice(0,10)||'—')}</td><td>${x.type==='income'?'إيراد':'مصروف'}</td><td>${esc(x.category||'—')}</td><td>${esc(x.counterparty||'—')}</td><td>${esc(x.note||'—')}</td><td class="${x.type==='income'?'fin96-pos':'fin96-neg'}">${x.type==='income'?'+':'−'} ${money(x.amount,x.currency||currency)}</td></tr>`).join('')}</tbody></table></div>`;}
