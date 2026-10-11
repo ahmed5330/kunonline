@@ -215,7 +215,7 @@ function recommendationCard(r){
 function growth(d){
  const g=d.growth||{},rows=(g.campaigns||[]).filter(x=>!V.search||tx(x.name).toLowerCase().includes(V.search.toLowerCase()));
  const recommendations=(g.recommendations||[]).sort((a,b)=>(a.priority==='high'?0:1)-(b.priority==='high'?0:1));
- const lines=rows.map(x=>'<tr><td><b>'+esc(x.name)+'</b><div class="muted">'+esc(status[x.sourceStatus]||'')+'</div>'+
+ const lines=rows.map(x=>'<tr><td><b>'+esc(x.name)+'</b><div class="muted">'+esc(status[x.sourceStatus]||'')+'</div></td>'+
  '<td>'+n(x.spend)+'</td><td>'+pct(x.ctr)+'</td><td>'+n(x.platformPurchases)+'</td><td>'+n(x.realOrders)+'</td><td>'+n(x.deliveredOrders)+'</td>'+
  '<td>'+(x.realRoas==null?'—':n(x.realRoas)+'x')+'</td><td>'+n(x.claritySessions)+'</td><td>'+n(x.metaSourceSessions)+'</td><td>'+pct(x.rageRate)+'</td><td>'+pct(x.deadRate)+'</td><td>'+pct(x.scriptErrorRate)+'</td></tr>');
  return reportScope(d)+
@@ -267,12 +267,36 @@ function audience(d){
  return '<div class="grid">'+['Source','Channel','Medium','Device','Browser','OS','Country/Region','Campaign'].map(x=>breakdown(x,dimsData[x],30)).join('')+'</div>';
 }
 function friction(d){
- const m=d.latest.metrics||{};
- return '<div class="note">المقاييس التي لا يقدّم Clarity حقول النسبة وعدد الجلسات الخاصة بها تظهر بدون نسبة. القيمة «—» ليست صفرًا.</div>'+
+ const m=d.latest.metrics||{},campaigns=(m.campaigns||[]);
+ const definitions=[
+ ['Rage Clicks · نقرات متكررة','تكرار الضغط سريعًا على نفس الموضع قد يعكس صعوبة في التفاعل، لكنه لا يثبت وجود خطأ تقني.'],
+ ['Dead Clicks · نقرات بلا استجابة','ضغط على عنصر لم يترتب عليه تغير متوقع في الصفحة؛ يلزم مراجعة التسجيل لتمييزه عن التفاعل الطبيعي.'],
+ ['Quickback · رجوع سريع','عودة الزائر بسرعة بعد الانتقال، وقد تشير إلى اختلاف المتوقع عن المحتوى.'],
+ ['Script Errors · أخطاء برمجية','إشارات لأخطاء JavaScript يجب فحصها في Console وربطها بالصفحة والجهاز.'],
+ ['Excessive Scroll · تمرير مفرط','سلوك تمرير متكرر قد يعني صعوبة العثور على المحتوى؛ ليس دليلًا منفردًا على مشكلة.'],
+ ['نِسَب مفقودة · —','إذا لم يُرجع Clarity النسبة مع حجم عينة صالح فلن نحولها إلى صفر أو نخترع متوسطًا.']
+ ];
+ const rows=campaigns.filter(x=>numberOrNull(x.sessions)>=30).filter(x=>numberOrNull(x.RageClickCount)>=15||
+ numberOrNull(x.DeadClickCount)>=20||numberOrNull(x.ScriptErrorCount)>=5)
+ .sort((a,b)=>Math.max(Number(b.RageClickCount)||0,Number(b.DeadClickCount)||0)-Math.max(Number(a.RageClickCount)||0,Number(a.DeadClickCount)||0)).slice(0,6);
+ return reportScope(d)+
+ '<h3 class="read-title">قراءة مشاكل التفاعل بشكل مفهوم</h3><p class="read-sub">هذه مؤشرات سلوكية وليست أخطاء مؤكدة في المتجر. اعتمد على تسجيلات الجلسات لاختبار الفرضية وتحديد الصفحة أو العنصر.</p>'+
+ '<div class="brief-definitions">'+definitions.map(x=>'<div class="brief-definition"><b>'+esc(x[0])+'</b><p>'+esc(x[1])+'</p></div>').join('')+'</div>'+
+ '<h3 class="read-title">الحملات التي تستحق الفحص أولًا</h3>'+
+ (rows.length?'<div class="brief-signals">'+rows.map(r=>readSignal({
+   level:'important',title:'مراجعة تفاعل حملة '+r.name,source:'Clarity · UTM Campaign',
+   evidence:n(r.sessions)+' جلسة · Rage '+pct(r.RageClickCount)+' · Dead '+pct(r.DeadClickCount)+' · أخطاء JS '+pct(r.ScriptErrorCount),
+   meaning:'ظهرت إشارة واحدة أو أكثر أعلى الحدود الاسترشادية. لا نعرف الصفحة أو المشكلة الدقيقة قبل مشاهدة الجلسات.',
+   action:'شاهد تسجيلات الحملة وابحث عن الصفحة المتكررة، ثم افحص العنصر أو الخطأ على الجهاز الأكثر استخدامًا.',
+   jump:'pages',scope:'قاعدة تشخيص · 30 جلسة فأكثر'
+ })).join('')+'</div>':
+ '<div class="read-empty">لا توجد حملة في العينة الحالية تجاوزت حدود الفحص مع 30 جلسة أو أكثر؛ وقد تكون بعض المؤشرات غير متاحة.</div>')+
+ '<details class="read-more"><summary>التفاصيل الفنية لكل مؤشرات الاحتكاك</summary>'+
  '<div class="grid">'+(m.diagnostics||[]).map(b=>'<section class="box"><h3>'+esc(b.label||issues[b.metric]||b.metric)+'</h3>'+
- table(['الحملة','حجم العينة','النسبة الموزونة'],(b.segments||[]).slice(0,30).map(r=>'<tr><td>'+esc(r.name)+'</td><td>'+n(r.sessions)+'</td><td>'+pct(r.rate)+'</td></tr>'))+'</section>').join('')+'</div>'+
- '<section class="box"><h3>أولوية مشكلات الحملات</h3>'+table(['الحملة','الجلسات','Rage','Dead','Quickback','Script Errors'],
- (m.campaigns||[]).slice(0,70).map(r=>'<tr><td>'+esc(r.name)+'</td><td>'+n(r.sessions)+'</td><td>'+pct(r.RageClickCount)+'</td><td>'+pct(r.DeadClickCount)+'</td><td>'+pct(r.QuickbackClick)+'</td><td>'+pct(r.ScriptErrorCount)+'</td></tr>'))+'</section>';
+ table(['الحملة','الجلسات المقيسة','النسبة الموزونة'],(b.segments||[]).slice(0,30).map(r=>'<tr><td>'+esc(r.name)+'</td><td>'+n(r.sessions)+'</td><td>'+pct(r.rate)+'</td></tr>'))+'</section>').join('')+'</div>'+
+ '<section class="box"><h3>جدول مقارنة مؤشرات كل حملة</h3>'+
+ table(['الحملة','جلسات','Rage','Dead','Quickback','Script Errors'],campaigns.slice(0,70).map(r=>'<tr><td>'+esc(r.name)+'</td><td>'+n(r.sessions)+'</td><td>'+pct(r.RageClickCount)+'</td><td>'+pct(r.DeadClickCount)+'</td><td>'+pct(r.QuickbackClick)+'</td><td>'+pct(r.ScriptErrorCount)+'</td></tr>'))+
+ '</section></details>';
 }
 function health(d){
  const c=d.latest.metrics?.coverage||{},sample=d.latest.sampleCoverage||{},info=d.status||{};
@@ -319,15 +343,16 @@ function render(){
  if(!V.active||view()!=='analytics')return;
  const el=ROOT();if(!el)return;style();
  const d=V.data,missing=!d?.latest;
- el.innerHTML='<div class="cl136"><header class="head"><div><h2>◈ Clarity Intelligence</h2><p>مركز التحليلات التفصيلية وسلوك العميل والنمو من Meta Ads</p></div><span class="space"></span>'+
+ el.innerHTML='<div class="cl136"><header class="head"><div><h2>◈ تحليل سلوك العملاء · Microsoft Clarity</h2><p>من سلوك الزائر إلى قرار تحسين واضح: دليل ← تفسير محتمل ← إجراء قابل للاختبار</p></div><span class="space"></span>'+
  '<button id="cl136-system">التقارير العامة</button><label style="font-size:12px;font-weight:800">الفترة <select id="cl136-days" aria-label="فترة Clarity"><option value="1" '+(V.days===1?'selected':'')+'>24 ساعة</option><option value="2" '+(V.days===2?'selected':'')+'>48 ساعة</option><option value="3" '+(V.days===3?'selected':'')+'>72 ساعة</option></select></label><button id="cl136-sync">مزامنة Clarity</button><button id="cl136-csv">CSV</button></header>'+
  '<nav class="tabs">'+Object.entries(tabs).map(([id,label])=>'<button data-tab="'+esc(id)+'" class="'+(V.tab===id?'sel':'')+'">'+esc(label)+'</button>').join('')+'</nav>'+
  (missing?'<section class="box"><h3>لا توجد بيانات مخزنة لفترة '+(V.days*24)+' ساعة</h3><p>لو الربط متصل، اضغط مزامنة Clarity لسحب النافذة المختارة (3 طلبات API). وإن لم يكن متصلًا فراجعه داخل التكاملات.</p><button id="cl136-setup">فتح التكاملات</button></section>':
- (V.tab==='overview'?overview(d):V.tab==='growth'?growth(d):V.tab==='pages'?pages(d):V.tab==='audience'?audience(d):V.tab==='friction'?friction(d):V.tab==='health'?health(d):metrics(d))+history(d))+
+ (V.tab==='overview'?overview(d):V.tab==='growth'?growth(d):V.tab==='pages'?pages(d):V.tab==='audience'?audience(d):V.tab==='friction'?friction(d):V.tab==='health'?health(d)+'<details class="read-more"><summary>تاريخ المزامنات (عينات متداخلة)</summary>'+history(d)+'</details>':metrics(d)))+
  '<section class="box"><p>آخر مزامنة '+esc(d?.status?.lastSyncAt?new Date(d.status.lastSyncAt).toLocaleString('ar-EG'):'—')+
  ' · استهلاك API: '+n(d?.status?.quotaUsedToday||0)+' / '+n(d?.status?.quotaBudget||8)+
  ' · 3 طلبات لكل مزامنة موسعة، مع احتياطي لحدود Clarity.</p><a class="action" target="_blank" rel="noopener noreferrer" href="https://clarity.microsoft.com/">افتح Microsoft Clarity ↗</a></section></div>';
  el.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{V.tab=b.dataset.tab;V.search='';render();});
+ el.querySelectorAll('[data-cl136-jump]').forEach(b=>b.onclick=()=>{V.tab=tabs[b.dataset.cl136Jump]?b.dataset.cl136Jump:'overview';V.search='';render();window.scrollTo?.({top:0,behavior:'smooth'});});
  el.querySelector('#cl136-system').onclick=()=>{V.active=false;V.request++;document.querySelector('.nav button[data-view="analytics"]')?.click();};
  el.querySelector('#cl136-csv').onclick=csv;
  el.querySelector('#cl136-days').onchange=e=>{V.days=Number(e.target.value)||1;V.data=null;const el=ROOT();if(el)el.innerHTML='<div class="cl136"><div class="box">جاري تحميل الفترة من البيانات المخزنة...</div></div>';reload().catch(err=>{toast(err.message);render();});};
