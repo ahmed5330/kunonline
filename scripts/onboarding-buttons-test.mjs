@@ -27,6 +27,7 @@ CREATE TABLE subscriptions(id TEXT PRIMARY KEY,client_id TEXT,plan TEXT,status T
 CREATE TABLE stores(id TEXT PRIMARY KEY,client_id TEXT,name TEXT,code TEXT,currency TEXT,timezone TEXT,status TEXT,is_default INTEGER,created_at TEXT,updated_at TEXT);
 CREATE TABLE user_store_access(id TEXT PRIMARY KEY,client_id TEXT,user_id TEXT,store_id TEXT,role TEXT,created_at TEXT);
 CREATE TABLE orders(id TEXT PRIMARY KEY,client_id TEXT,store_id TEXT,total REAL,created_at TEXT,date TEXT,state TEXT);
+CREATE TABLE order_duplicate_links(duplicate_order_id TEXT PRIMARY KEY,canonical_order_id TEXT);
 CREATE TABLE products(id TEXT PRIMARY KEY,client_id TEXT,active INTEGER DEFAULT 1,stock INTEGER DEFAULT 0,low_stock_threshold INTEGER DEFAULT 5);
 CREATE TABLE store_connections(id TEXT PRIMARY KEY,client_id TEXT,status TEXT);
 CREATE TABLE tenant_modules(client_id TEXT,module_key TEXT,enabled INTEGER DEFAULT 1,per_order_fee_delta REAL DEFAULT 0,config_json TEXT DEFAULT '{}',configured_by TEXT,configured_at TEXT,PRIMARY KEY(client_id,module_key));
