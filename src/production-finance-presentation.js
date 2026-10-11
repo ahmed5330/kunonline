@@ -6,16 +6,18 @@ import {shippingRowsForRange} from './shipping-finance.js';
 // differs from the upstream dashboard basis. Correcting just the shipping row
 // made the sum of costs disagree with the visible net profit.
 export function reconcileMonthlyShippingTotals(data,correctShipping){
-  if(!data?.costs||!data?.profit)return data;
+  if(!data?.costs)return data;
   const round=value=>Math.round((Number(value)||0)*100)/100;
   const previous=round(data.costs.shipping),next=round(correctShipping),delta=round(next-previous);
   data.costs.shipping=next;
   if(!delta)return data;
   data.costs.operatingExpenses=round(data.costs.operatingExpenses+delta);
-  data.profit.operatingNetProfit=round(data.profit.operatingNetProfit-delta);
-  data.profit.accountingNetProfit=round(data.profit.accountingNetProfit-delta);
-  const sales=round(data.sales?.revenue);
-  data.profit.marginPct=sales?round(data.profit.accountingNetProfit/sales*100):0;
+  if(data.profit){
+    data.profit.operatingNetProfit=round(data.profit.operatingNetProfit-delta);
+    data.profit.accountingNetProfit=round(data.profit.accountingNetProfit-delta);
+    const sales=round(data.sales?.revenue);
+    data.profit.marginPct=sales?round(data.profit.accountingNetProfit/sales*100):0;
+  }
   return data;
 }
 
