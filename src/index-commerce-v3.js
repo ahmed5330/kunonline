@@ -36,7 +36,8 @@ function orderEconomics(o){
   const discount=num(o.discount_amount);
   const refunds=num(o.refund_amount);
   const netRevenue=Math.max(0,gross-discount-refunds);
-  const cogs=Math.max(0,num(o.product_cost)*qty);
+  // orders.product_cost stores the order-level COGS, not a unit cost.
+  const cogs=Math.max(0,num(o.product_cost));
   const shipping=Math.max(0,num(o.shipping_cost));
   const other=Math.max(0,num(o.other_cost));
   const contribution=netRevenue-cogs-shipping-other;
@@ -52,11 +53,11 @@ async function profitIntelligence(env,clientId,url){
   if(storeId){sql+=' AND store_id=?';binds.push(storeId)}
   if(from){sql+=' AND date>=?';binds.push(from)}
   if(to){sql+=' AND date<=?';binds.push(to)}
-  sql+=' ORDER BY date DESC LIMIT 5000';
+  sql+=' AND NOT EXISTS (SELECT 1 FROM order_duplicate_links dup WHERE dup.duplicate_order_id=orders.id) ORDER BY date DESC LIMIT 5000';
   const {results}=await env.DB.prepare(sql).bind(...binds).all();
   const rows=(results||[]).map(o=>({...o,economics:orderEconomics(o)}));
   const sum=rows.reduce((a,o)=>{const e=o.economics;a.orders++;a.gross+=e.gross;a.discount+=e.discount;a.refunds+=e.refunds;a.netRevenue+=e.netRevenue;a.cogs+=e.cogs;a.shipping+=e.shipping;a.other+=e.other;a.contribution+=e.contribution;return a},{orders:0,gross:0,discount:0,refunds:0,netRevenue:0,cogs:0,shipping:0,other:0,contribution:0});
-  let txSql=`SELECT COALESCE(SUM(CASE WHEN type='expense' THEN amount ELSE 0 END),0) expenses, COALESCE(SUM(CASE WHEN type='income' THEN amount ELSE 0 END),0) income FROM transactions WHERE ${storeId?'client_id=? AND store_id=?':'(client_id=? OR client_id IS NULL)'}`;
+  let txSql=`SELECT COALESCE(SUM(CASE WHEN type='expense' THEN amount ELSE 0 END),0) expenses, COALESCE(SUM(CASE WHEN type='income' THEN amount ELSE 0 END),0) income FROM transactions WHERE ${storeId?'client_id=? AND store_id=?':'client_id=?'}`;
   const txBinds=[clientId];
   if(storeId)txBinds.push(storeId);
   if(from){txSql+=' AND date>=?';txBinds.push(from)}
@@ -75,7 +76,7 @@ async function profitIntelligence(env,clientId,url){
 }
 
 async function codCandidates(env,clientId,storeId){
-  const {results}=await env.DB.prepare(`SELECT o.id,o.store_id,o.date,o.name,o.awb,o.total,o.discount_amount,o.refund_amount,o.state,o.checkpoint FROM orders o LEFT JOIN cod_reconciliation_items i ON i.client_id=o.client_id AND i.store_id IS o.store_id AND i.order_id=o.id WHERE o.client_id=? ${storeId?'AND o.store_id=?':''} AND o.state='signed' AND i.id IS NULL ORDER BY o.date DESC LIMIT 500`).bind(...(storeId?[clientId,storeId]:[clientId])).all();
+  const {results}=await env.DB.prepare(`SELECT o.id,o.store_id,o.date,o.name,o.awb,o.total,o.discount_amount,o.refund_amount,o.state,o.checkpoint FROM orders o LEFT JOIN cod_reconciliation_items i ON i.client_id=o.client_id AND i.store_id IS o.store_id AND i.order_id=o.id WHERE o.client_id=? ${storeId?'AND o.store_id=?':''} AND o.state='signed' AND i.id IS NULL AND NOT EXISTS (SELECT 1 FROM order_duplicate_links dup WHERE dup.duplicate_order_id=o.id) ORDER BY o.date DESC LIMIT 500`).bind(...(storeId?[clientId,storeId]:[clientId])).all();
   return (results||[]).map(o=>({...o,expectedAmount:round2(Math.max(0,num(o.total)-num(o.discount_amount)-num(o.refund_amount)))}));
 }
 async function listReconciliations(env,clientId,storeId){
@@ -88,7 +89,7 @@ async function createReconciliation(request,env,me,clientId,storeId){
   const orderIds=[...new Set((Array.isArray(b.orderIds)?b.orderIds:[]).map(String).filter(Boolean))];
   if(!orderIds.length) return json({error:'اختر طلبًا واحدًا على الأقل'},400);
   const placeholders=orderIds.map(()=>'?').join(',');
-  const {results}=await env.DB.prepare(`SELECT o.id,o.store_id,o.awb,o.total,o.discount_amount,o.refund_amount,o.history FROM orders o LEFT JOIN cod_reconciliation_items i ON i.client_id=o.client_id AND i.store_id IS o.store_id AND i.order_id=o.id WHERE o.client_id=? ${storeId?'AND o.store_id=?':''} AND o.state='signed' AND i.id IS NULL AND o.id IN (${placeholders})`).bind(...(storeId?[clientId,storeId,...orderIds]:[clientId,...orderIds])).all();
+  const {results}=await env.DB.prepare(`SELECT o.id,o.store_id,o.awb,o.total,o.discount_amount,o.refund_amount,o.history FROM orders o LEFT JOIN cod_reconciliation_items i ON i.client_id=o.client_id AND i.store_id IS o.store_id AND i.order_id=o.id WHERE o.client_id=? ${storeId?'AND o.store_id=?':''} AND o.state='signed' AND i.id IS NULL AND NOT EXISTS (SELECT 1 FROM order_duplicate_links dup WHERE dup.duplicate_order_id=o.id) AND o.id IN (${placeholders})`).bind(...(storeId?[clientId,storeId,...orderIds]:[clientId,...orderIds])).all();
   if((results||[]).length!==orderIds.length) return json({error:'بعض الطلبات غير متاحة للتسوية أو تمت تسويتها سابقًا'},400);
   const expected=round2((results||[]).reduce((s,o)=>s+Math.max(0,num(o.total)-num(o.discount_amount)-num(o.refund_amount)),0));
   const actual=b.actualAmount===undefined||b.actualAmount===null||b.actualAmount===''?null:round2(Math.max(0,num(b.actualAmount)));
@@ -96,7 +97,7 @@ async function createReconciliation(request,env,me,clientId,storeId){
   const status=actual===null?'open':Math.abs(difference)<0.01?'reconciled':'disputed';
   const rid=id('COD'),ts=now();
   const stmts=[env.DB.prepare(`INSERT INTO cod_reconciliations (id,client_id,store_id,provider,reference,status,expected_amount,actual_amount,difference,currency,reconciled_at,note,created_by,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(rid,clientId,storeId||null,b.provider||null,b.reference||null,status,expected,actual,difference,b.currency||'EGP',status==='reconciled'?ts:null,b.note||'',me.email||me.uid||'',ts,ts)];
-  for(const o of results||[]){const itemExpected=round2(Math.max(0,num(o.total)-num(o.discount_amount)-num(o.refund_amount))),itemStatus=status==='reconciled'?'reconciled':status==='disputed'?'disputed':'pending',itemActual=status==='reconciled'?itemExpected:null;stmts.push(env.DB.prepare(`INSERT INTO cod_reconciliation_items (id,reconciliation_id,client_id,store_id,order_id,awb,expected_amount,actual_amount,difference,status,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`).bind(id('CODI'),rid,clientId,o.store_id||storeId||null,o.id,o.awb||null,itemExpected,itemActual,status==='reconciled'?0:null,itemStatus,ts));if(status==='reconciled'){let history=[];try{history=JSON.parse(o.history||'[]')}catch{}history.push({state:'collected',at:ts,note:`COD reconciliation ${rid}`});stmts.push(env.DB.prepare("UPDATE orders SET state='collected',collected_at=?,checkpoint='تم التحصيل عبر تسوية COD',history=? WHERE id=? AND client_id=? AND store_id IS ? AND state='signed'").bind(ts,JSON.stringify(history),o.id,clientId,o.store_id||storeId||null));}}
+  for(const o of results||[]){const itemExpected=round2(Math.max(0,num(o.total)-num(o.discount_amount)-num(o.refund_amount))),itemStatus=status==='reconciled'?'reconciled':status==='disputed'?'disputed':'pending',itemActual=status==='reconciled'?itemExpected:null;stmts.push(env.DB.prepare(`INSERT INTO cod_reconciliation_items (id,reconciliation_id,client_id,store_id,order_id,awb,expected_amount,actual_amount,difference,status,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`).bind(id('CODI'),rid,clientId,o.store_id||storeId||null,o.id,o.awb||null,itemExpected,itemActual,status==='reconciled'?0:null,itemStatus,ts));if(status==='reconciled'){let history=[];try{history=JSON.parse(o.history||'[]')}catch{}history.push({state:'collected',at:ts,note:`COD reconciliation ${rid}`});stmts.push(env.DB.prepare("UPDATE orders SET state='collected',collected_at=?,collected_amount=?,checkpoint='تم التحصيل عبر تسوية COD',history=? WHERE id=? AND client_id=? AND store_id IS ? AND state='signed'").bind(ts,itemExpected,JSON.stringify(history),o.id,clientId,o.store_id||storeId||null));}}
   await env.DB.batch(stmts);
   await audit(env,me,clientId,storeId,'cod_reconciliation.create','cod_reconciliation',rid,{orderCount:orderIds.length,expected,actual,difference,status});
   return json({ok:true,id:rid,status,storeId:storeId||null,expectedAmount:expected,actualAmount:actual,difference},201);
