@@ -86,9 +86,9 @@ const v135=readFileSync(new URL('../public/v2/modules-v135-clarity.js',import.me
 assert.ok(v135.includes('window.KunClarityGrowthV136'));
 assert.ok(!v135.includes("?.open('overview')||renderReport()"),'legacy report must not overwrite V136');
 const html=readFileSync(new URL('../public/v2/index.html',import.meta.url),'utf8');
-assert.ok(html.includes('modules-v136-clarity-growth.js?v=137.0'));
+assert.ok(html.includes('modules-v136-clarity-growth.js?v=137.1'));
 assert.ok(frontend.includes('cl136-days'));
-assert.ok(frontend.includes('جودة التتبع والربط'));
+assert.ok(frontend.includes('جودة البيانات'));
 assert.ok(frontend.includes('body:JSON.stringify({days:V.days})'));
 assert.ok(frontend.includes('growth?days='));
 const server=readFileSync(new URL('../src/clarity-integration.js',import.meta.url),'utf8');
