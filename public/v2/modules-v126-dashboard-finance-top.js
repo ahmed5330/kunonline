@@ -1,7 +1,7 @@
-/* Kun Online v126.2 — one consolidated performance section without duplicate dashboard blocks */
+/* Kun Online v126.4 — one consolidated performance section without duplicate dashboard blocks */
 (()=>{
   if(window.KunDashboardFinanceTopV126)return;
-  const VERSION='126.2';
+  const VERSION='126.4';
   const nativeFetch=window.fetch.bind(window);
   const state={dashboard:null,collected:null,timer:0,collecting:false,lastCollectedKey:''};
   const $=(s,r=document)=>r?.querySelector?.(s)||null;
@@ -128,7 +128,7 @@
       <div class="dash-f126-grid">
       ${card('orders','عدد الأوردرات',num(orders),'من جميع المصادر والأعضاء','كل الحالات · بدون تكرار')}
       ${card('revenue','الإيرادات المتوقعة',money(o.expectedRevenue,c),'بعد استبعاد الملغي والمرتجع','مبيعات الفترة قبل التحصيل')}
-      ${card('pnl','الربح / الخسارة',money(net,c),'صافي الفترة بعد كل المصروفات','النتيجة التشغيلية',net<0)}
+      ${card('pnl','صافي الربح التشغيلي',money(net,c),'صافي الفترة بعد كل المصروفات','النتيجة التشغيلية',net<0)}
       ${card('cpp','سعر الطلب الفعلي',actualCpp,'صرف الإعلانات ÷ كل الأوردرات',cppFoot)}
       ${card('collected','صافي التحصيل التقديري',collectedValue,'بعد تكلفة البضاعة المسجلة ومصاريف التحصيل',collectedFoot)}
       ${card('pending','هامش الطلبات النشطة',money(pending,c),'بعد تكلفة البضاعة ورسوم الطلب','قبل الإعلانات والمصاريف العامة')}
@@ -212,8 +212,8 @@
   async function pnlDetails(){
     const d=state.dashboard||{},ctx=await context(),u=new URL('/api/system/dashboard/input-details',location.origin);
     u.searchParams.set('kind','netProfit');if(ctx.clientId)u.searchParams.set('clientId',ctx.clientId);if(ctx.storeId)u.searchParams.set('storeId',ctx.storeId);if(d.from)u.searchParams.set('from',d.from);if(d.to)u.searchParams.set('to',d.to);
-    const holder=modal('مفردات الربح / الخسارة','<div class="cs-loading">جارٍ تحميل تفاصيل الحساب…</div>');
-    try{const x=await getJson(u.pathname+u.search),summary=x.summary||[];$('.dash-f126-modal',holder).innerHTML=`<h2>مفردات الربح / الخسارة</h2><div class="kun85-scope-note">${esc(x.from||d.from||'')} — ${esc(x.to||d.to||'')} · الناتج <b>${money(x.total,d.currency)}</b></div><div class="dash-f126-summary">${summary.map(row=>`<div><span>${esc(row.label)}</span><b>${row.percent?`${num(row.value)}%`:row.money?money(row.value,d.currency):num(row.value)}</b></div>`).join('')}</div><div class="dash-f126-formula">المعادلة: ${esc(x.formula||'إيراد المنتجات − تكلفة المنتج − المصروفات التشغيلية')}</div><div class="cs-modal-actions"><button class="btn soft" data-f126-close>قفل</button></div>`; $('[data-f126-close]',holder).onclick=closeModal;}
+    const holder=modal('مفردات صافي الربح التشغيلي','<div class="cs-loading">جارٍ تحميل تفاصيل الحساب…</div>');
+    try{const x=await getJson(u.pathname+u.search),summary=x.summary||[];$('.dash-f126-modal',holder).innerHTML=`<h2>مفردات صافي الربح التشغيلي</h2><div class="kun85-scope-note">${esc(x.from||d.from||'')} — ${esc(x.to||d.to||'')} · الناتج <b>${money(x.total,d.currency)}</b></div><div class="dash-f126-summary">${summary.map(row=>`<div><span>${esc(row.label)}</span><b>${row.percent?`${num(row.value)}%`:row.money?money(row.value,d.currency):num(row.value)}</b></div>`).join('')}</div><div class="dash-f126-formula">المعادلة: ${esc(x.formula||'إيراد المنتجات − تكلفة المنتج − المصروفات التشغيلية')}</div><div class="cs-modal-actions"><button class="btn soft" data-f126-close>قفل</button></div>`; $('[data-f126-close]',holder).onclick=closeModal;}
     catch(error){$('.dash-f126-modal',holder).innerHTML=`<h2>تعذر تحميل التفاصيل</h2><p>${esc(error.message)}</p><div class="cs-modal-actions"><button class="btn soft" data-f126-close>قفل</button></div>`; $('[data-f126-close]',holder).onclick=closeModal;}
   }
   function collectedRows(x){

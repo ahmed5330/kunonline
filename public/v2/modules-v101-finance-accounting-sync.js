@@ -39,7 +39,9 @@
     const note=document.querySelector('.fin96-note');if(note)note.textContent=`المصروفات اليدوية (${money(data.manualExpenses,data.currency)}) داخلة بالفعل ضمن مصروفات التشغيل مرة واحدة، والإيرادات الأخرى (${money(data.otherIncome,data.currency)}) تُضاف بعد صافي التشغيل. التحصيل النقدي يظل منفصلًا عن إيراد المبيعات حتى لا تتكرر الأرقام.`;
     document.querySelector('.fin96')?.setAttribute('data-accounting-sync','v101');
   }
-  async function sync(){if(!active()||state.busy)return;const id=++state.seq;state.busy=true;try{const data=await source();if(id===state.seq)apply(data);}catch(error){console.warn('Finance accounting sync',error);}finally{state.busy=false;}}
+  // v96.1 has a complete, same-period operational/accounting bridge already.
+  // Suppress the legacy overlay to avoid duplicate API requests and stale DOM rewrites.
+  async function sync(){if(window.KunFinanceCommandCenterV96?.version==='96.1')return;if(!active()||state.busy)return;const id=++state.seq;state.busy=true;try{const data=await source();if(id===state.seq)apply(data);}catch(error){console.warn('Finance accounting sync',error);}finally{state.busy=false;}}
   function schedule(delay=80){clearTimeout(state.timer);state.timer=setTimeout(sync,delay);}
   function boot(){
     const root=document.getElementById('root');if(root)new MutationObserver(records=>{if(active()&&records.some(r=>r.type==='childList'))schedule(120);}).observe(root,{childList:true,subtree:false});
@@ -48,5 +50,5 @@
     if(active())schedule(120);
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();
-  window.KunFinanceAccountingSyncV101={version:'101.0',sync,schedule};
+  window.KunFinanceAccountingSyncV101={version:'101.1',sync,schedule};
 })();

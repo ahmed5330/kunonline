@@ -36,6 +36,10 @@ async function waivePreBillingOrder(env,order,reason='PRE_BILLING_DATE'){
 export async function billOrder(env,orderId,{allowBacklogCharge=false}={}){
   const order=await env.DB.prepare('SELECT rowid AS order_rowid,id,client_id,store_id,date,created_at FROM orders WHERE id=?').bind(orderId).first();
   if(!order)return {ok:false,skipped:'order_not_found'};
+  // Never charge a linked duplicate Easy Orders/webhook/import order twice.
+  // Existing historic charges are left untouched for audited human review.
+  const linkedDuplicate=await env.DB.prepare('SELECT canonical_order_id FROM order_duplicate_links WHERE duplicate_order_id=?').bind(orderId).first();
+  if(linkedDuplicate)return {ok:true,skipped:'linked_duplicate_order',canonicalOrderId:linkedDuplicate.canonical_order_id||null};
   const account=await ensureWalletAccount(env,order.client_id);
   if(account.billing_version!=='v27'||account.status!=='active')return {ok:true,skipped:'billing_not_v27'};
   const existing=await env.DB.prepare('SELECT * FROM order_billing WHERE order_id=?').bind(orderId).first();
@@ -123,6 +127,7 @@ export async function reconcileUnbilledOrders(env,{clientId=null,limit=100}={}){
   let sql=`SELECT o.id FROM orders o JOIN wallet_accounts w ON w.client_id=o.client_id AND w.billing_version='v27' AND w.status='active' AND w.balance>0
     LEFT JOIN order_billing b ON b.order_id=o.id
     WHERE o.rowid>COALESCE(w.billing_start_rowid,0) AND b.order_id IS NULL
+      AND NOT EXISTS (SELECT 1 FROM order_duplicate_links dup WHERE dup.duplicate_order_id=o.id)
       AND NOT EXISTS (
         SELECT 1 FROM wallet_log t
         WHERE t.client_id=o.client_id AND t.type='topup'
