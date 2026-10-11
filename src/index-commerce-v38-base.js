@@ -40,8 +40,8 @@ async function revenueRows(env,{clientId,storeId,from,to}){const rows=await ship
 async function productCostRows(env,{clientId,storeId,from,to}){
   const orderStore=storeId?' AND store_id=?':'',itemStore=storeId?' AND o.store_id=?':'',catalogStore=storeId?' AND store_id=?':'',rangeBinds=storeId?[clientId,storeId,from,to]:[clientId,from,to],scopeBinds=storeId?[clientId,storeId]:[clientId];
   const [orderResult,itemResult,productResult,variantResult]=await Promise.all([
-    env.DB.prepare(`SELECT id,ref,name,date,created_at,state,product_id,variant_id,product,qty,product_cost FROM orders WHERE client_id=?${orderStore} AND date(COALESCE(date,created_at)) BETWEEN date(?) AND date(?) ORDER BY COALESCE(date,created_at) DESC`).bind(...rangeBinds).all(),
-    env.DB.prepare(`SELECT oi.order_id,oi.product_id,oi.variant_id,oi.sku,oi.product_name,oi.qty FROM order_items oi JOIN orders o ON o.id=oi.order_id AND o.client_id=oi.client_id WHERE oi.client_id=?${itemStore} AND date(COALESCE(o.date,o.created_at)) BETWEEN date(?) AND date(?)`).bind(...rangeBinds).all().catch(()=>({results:[]})),
+    env.DB.prepare(`SELECT id,ref,name,date,created_at,state,product_id,variant_id,product,qty,product_cost FROM orders WHERE client_id=?${orderStore} AND date(COALESCE(date,created_at)) BETWEEN date(?) AND date(?) AND NOT EXISTS (SELECT 1 FROM order_duplicate_links d WHERE d.duplicate_order_id=orders.id) ORDER BY COALESCE(date,created_at) DESC`).bind(...rangeBinds).all(),
+    env.DB.prepare(`SELECT oi.order_id,oi.product_id,oi.variant_id,oi.sku,oi.product_name,oi.qty FROM order_items oi JOIN orders o ON o.id=oi.order_id AND o.client_id=oi.client_id WHERE oi.client_id=?${itemStore} AND date(COALESCE(o.date,o.created_at)) BETWEEN date(?) AND date(?) AND NOT EXISTS (SELECT 1 FROM order_duplicate_links d WHERE d.duplicate_order_id=o.id)`).bind(...rangeBinds).all().catch(()=>({results:[]})),
     env.DB.prepare(`SELECT id,name,sku,cost FROM products WHERE client_id=?${catalogStore}`).bind(...scopeBinds).all(),
     env.DB.prepare(`SELECT id,product_id,name,sku,cost FROM product_variants WHERE client_id=?${catalogStore}`).bind(...scopeBinds).all()
   ]);
