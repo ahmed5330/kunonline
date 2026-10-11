@@ -18,6 +18,7 @@ assert.ok(finance.includes('صافي الربح التشغيلي'),'operating ne
 assert.ok(accounts.includes('صافي الربح المحاسبي للشهر'),'Accounts must expose matching definition');
 assert.ok(dashboard.includes("card('pnl','صافي الربح التشغيلي'"),'dashboard must not mislabel operating profit');
 assert.ok(finance.includes('ليس رصيد البنك'),'registered cash flow must not be marketed as bank cash');
+for(const metric of ['التحصيل: المالية × الحسابات','صافي التشغيل × معادلة P&L','إجمالي المصروفات × بنودها','إعلانات الداشبورد × المالية','مبالغ تحصيل تقديرية']) assert.ok(finance.includes(metric),`missing live reconciliation status: ${metric}`);
 assert.ok(accountingBackend.includes('netCash=r2(collectedRevenue+manualIncome-manualExpenses)'),
   'accrued management fees must not distort registered inflow/outflow balance');
 assert.ok(detail.includes("AND NOT EXISTS (SELECT 1 FROM order_duplicate_links d WHERE d.duplicate_order_id=orders.id) ORDER BY"),
