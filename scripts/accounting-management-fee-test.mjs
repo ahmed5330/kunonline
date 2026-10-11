@@ -54,7 +54,7 @@ assert.ok(index.includes('modules-v97-view-persistence-v976.js?v=97.6'),'View pe
 assert.ok(index.includes('modules-v51-permission-navigation.js?v=51.15'),'Permission navigation v51.15 must be cache-busted for the accounting guard loader');
 assert.ok(index.includes('modules-v103-accounting-navigation-guard.js?v=103.1'),'Accounting deterministic navigation guard must be directly loaded by v2');
 for(const marker of ['/api/accounting/monthly','/api/accounting/overview','صافي الربح المحاسبي / الخسارة','إيرادات أخرى مسجلة يدويًا','kun:accounting-changed','operatingNet+otherIncome'])assert.ok(financeSync.includes(marker),`Finance accounting sync missing ${marker}`);
-assert.ok(loader.includes('/v2/modules-v101-finance-accounting-sync.js?v=101.0'),'Finance accounting sync asset is not runtime-loaded');
+assert.ok(loader.includes('/v2/modules-v101-finance-accounting-sync.js?v=101.1'),'Finance accounting sync asset is not runtime-loaded');
 assert.ok(loader.includes('data-kun-finance-accounting-sync="v101"'),'Finance accounting sync loader guard is missing');
 for(const marker of ['routeAccounting','permissionState','event.preventDefault();event.stopImmediatePropagation()','window.setView(VIEW)','window.KunViewPersistenceV97?.save?.(VIEW)','accountingVisible','جارٍ تحميل الحسابات الشهرية','جارٍ تجميع حساب الشهر','XMLHttpRequest','/api/accounting/catalog','/api/accounting/monthly'])assert.ok(guard.includes(marker),`Accounting deterministic navigation guard missing ${marker}`);
 assert.ok(!guard.includes('Do not stop propagation'),'Accounting route must not leave competing legacy click handlers running');
