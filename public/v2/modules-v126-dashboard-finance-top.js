@@ -1,7 +1,7 @@
-/* Kun Online v126.1 — financial cards + system-wide actual cost per incoming order */
+/* Kun Online v126.2 — one consolidated performance section without duplicate dashboard blocks */
 (()=>{
   if(window.KunDashboardFinanceTopV126)return;
-  const VERSION='126.1';
+  const VERSION='126.2';
   const nativeFetch=window.fetch.bind(window);
   const state={dashboard:null,collected:null,timer:0,collecting:false,lastCollectedKey:''};
   const $=(s,r=document)=>r?.querySelector?.(s)||null;
@@ -26,6 +26,43 @@
       .dash-f126-loading{opacity:.58}.dash-f126-modal{max-width:980px!important;width:min(980px,94vw)!important}.dash-f126-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:12px 0}.dash-f126-summary>div{padding:11px;border:1px solid var(--line,#e2e8f0);border-radius:11px}.dash-f126-summary span{display:block;color:var(--muted,#64748b);font-size:9px}.dash-f126-summary b{display:block;margin-top:5px;font-size:14px}.dash-f126-formula{padding:11px 12px;border:1px dashed var(--line,#cbd5e1);border-radius:11px;background:#f8fafc;font-size:10px;font-weight:800;line-height:1.65}.dash-f126-list{display:grid;gap:7px;margin-top:12px}.dash-f126-row{display:flex;justify-content:space-between;gap:12px;padding:10px 11px;border:1px solid var(--line,#e2e8f0);border-radius:10px}.dash-f126-row span{font-size:9.5px;color:var(--muted,#64748b)}.dash-f126-row b{font-size:10px}.dash-f126-table{overflow:auto;max-height:390px;margin-top:12px}.dash-f126-table table{width:100%;border-collapse:collapse;min-width:760px}.dash-f126-table th,.dash-f126-table td{padding:9px;border-bottom:1px solid var(--line,#e2e8f0);text-align:right;font-size:9px;white-space:nowrap}
       body[data-theme="dark"] .dash-f126-card{background:linear-gradient(160deg,#172033,var(--card));border-color:var(--line)}body[data-theme="dark"] .dash-f126-formula{background:#172033}
       @media(max-width:980px){.dash-f126{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:600px){.dash-f126{grid-template-columns:1fr}.dash-f126-summary{grid-template-columns:1fr 1fr}.dash-f126-value{font-size:25px}}@media(max-width:390px){.dash-f126-summary{grid-template-columns:1fr}}
+
+      /* Single, durable performance summary replaces four overlapping surfaces. */
+      .v33-dashboard [data-dash-executive="122"],
+      .v33-dashboard #cp47Section,
+      .v33-dashboard [data-dash-section="overview"],
+      .v33-dashboard .dash-x-nav [data-dx-jump="overview"]{display:none!important}
+      .v33-dashboard .dash-f126{display:block!important;padding:20px!important;border:1px solid var(--line,#e2e8f0)!important;border-radius:20px!important;background:var(--card,#fff)!important;box-shadow:0 10px 30px rgba(15,23,42,.05)!important;overflow:visible!important}
+      .dash-f126 .dash-f126-headline{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;margin-bottom:16px}
+      .dash-f126 .dash-f126-headline h2{font-size:19px;color:var(--ink,#0f172a);font-weight:900;line-height:1.4;margin:2px 0 3px}
+      .dash-f126 .dash-f126-headline p{margin:0;color:var(--muted,#64748b);font-size:11px;line-height:1.65}
+      .dash-f126 .dash-f126-eyebrow{font-size:10px;font-weight:850;color:#2563eb}
+      .dash-f126 .dash-f126-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+      .dash-f126 .dash-f126-period{border:1px solid var(--line,#e2e8f0);border-radius:10px;padding:8px 10px;color:var(--muted,#64748b);font-size:10px}
+      .dash-f126 .dash-f126-refresh{border:1px solid var(--line,#e2e8f0);border-radius:10px;padding:8px 12px;background:var(--card,#fff);color:var(--ink,#0f172a);font:inherit;font-size:11px;font-weight:800;cursor:pointer}
+      .dash-f126 .dash-f126-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+      .dash-f126 .dash-f126-card{appearance:none;text-align:right;font:inherit;cursor:pointer;min-width:0;min-height:135px;padding:14px;border-radius:14px;box-shadow:none;transition:border-color .15s,transform .15s,box-shadow .15s}
+      .dash-f126 .dash-f126-card:hover,.dash-f126 .dash-f126-card:focus-visible{border-color:#93c5fd;box-shadow:0 7px 18px rgba(15,23,42,.08);transform:translateY(-1px)}
+      .dash-f126 .dash-f126-card:focus-visible{outline:2px solid #2563eb;outline-offset:2px}
+      .dash-f126 .dash-f126-value{font-size:24px;margin:13px 0 10px;overflow-wrap:anywhere}
+      .dash-f126 .dash-f126-foot{border-top:0;padding-top:0}
+      .dash-f126 .dash-f126-detail-cue{color:var(--f126-accent,#2563eb);font-size:10px;font-weight:800;white-space:nowrap;margin-inline-start:auto}
+      .dash-f126 .dash-f126-card.orders{--f126-accent:#2563eb}
+      .dash-f126 .dash-f126-card.revenue{--f126-accent:#0891b2}
+      .dash-f126 .dash-f126-card.confirmation{--f126-accent:#7c3aed}
+      .dash-f126 .dash-f126-card.delivery{--f126-accent:#16a34a}
+      .dash-f126 .dash-f126-extras{margin-top:13px;border-top:1px solid var(--line,#e2e8f0);padding-top:10px}
+      .dash-f126 .dash-f126-extras summary{cursor:pointer;color:var(--ink,#0f172a);font-size:11px;font-weight:850;list-style:none;padding:8px 0}
+      .dash-f126 .dash-f126-extras summary::-webkit-details-marker{display:none}
+      .dash-f126 .dash-f126-breakdowns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;padding:10px 0 4px}
+      .dash-f126 .dash-f126-breakdowns h3{margin:0 0 7px;font-size:11px}
+      .dash-f126 .dash-f126-chips{display:flex;flex-wrap:wrap;gap:7px}
+      .dash-f126 .dash-f126-chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line,#e2e8f0);border-radius:9px;background:var(--card,#fff);padding:7px 9px;font-size:10px}
+      .dash-f126 .dash-f126-chip b{font-weight:900;color:var(--ink,#0f172a)}
+      body[data-theme="dark"] .v33-dashboard .dash-f126{background:var(--card,#172033)!important}
+      body[data-theme="dark"] .dash-f126 .dash-f126-refresh,body[data-theme="dark"] .dash-f126 .dash-f126-chip{background:var(--card,#172033)}
+      @media(max-width:1040px){.dash-f126 .dash-f126-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+      @media(max-width:590px){.v33-dashboard .dash-f126{padding:13px!important}.dash-f126 .dash-f126-grid,.dash-f126 .dash-f126-breakdowns{grid-template-columns:1fr}.dash-f126 .dash-f126-card{min-height:112px}.dash-f126 .dash-f126-value{font-size:23px}}
     `;document.head.appendChild(el);
   }
 
@@ -60,16 +97,49 @@
   }
 
   function card(type,title,value,sub,foot,negative=false){
-    return `<article class="dash-f126-card ${type}${negative?' negative':''}"><div class="dash-f126-head"><div class="dash-f126-icon">${type==='collected'?'✓':type==='pending'?'◷':type==='cpp'?'◎':'↕'}</div><div class="dash-f126-copy"><span>${esc(title)}</span><small>${esc(sub)}</small></div></div><strong class="dash-f126-value">${value}</strong><div class="dash-f126-foot"><span>${esc(foot)}</span><button type="button" class="dash-f126-detail" data-f126-detail="${type}">عرض المفردات ←</button></div></article>`;
+    return `<button type="button" class="dash-f126-card ${type}${negative?' negative':''}" data-f126-detail="${esc(type)}" aria-label="عرض تفاصيل ${esc(title)}"><span class="dash-f126-head"><span class="dash-f126-icon" aria-hidden="true">${type==='collected'?'✓':type==='pending'?'◷':type==='cpp'?'◎':type==='orders'?'▦':type==='revenue'?'↗':type==='confirmation'?'☑':type==='delivery'?'⇄':'↕'}</span><span class="dash-f126-copy"><span>${esc(title)}</span><small>${esc(sub)}</small></span></span><strong class="dash-f126-value">${value}</strong><span class="dash-f126-foot"><span>${esc(foot)}</span><span class="dash-f126-detail-cue" aria-hidden="true">التفاصيل ←</span></span></button>`;
+  }
+  function selectedRates(d){
+    const rates=d.rates?.selected;
+    return rates&&rates.from===d.from&&rates.to===d.to?rates:null;
+  }
+  function entries(d,label){
+    return d.overview?.details?.orders?.find(row=>row.label===label)?.items||[];
+  }
+  function chips(rows){
+    if(!rows.length)return '<span class="dash-f126-chip">لا توجد بيانات لهذه الفترة</span>';
+    return rows.map(row=>`<span class="dash-f126-chip">${esc(row.label)} <b>${num(row.value)}</b></span>`).join('');
   }
   function html(){
-    const d=state.dashboard||{},c=d.currency||'EGP',f=d.finance||{},o=d.overview||{},cp=state.collected;
-    const collectedValue=state.collecting&&!cp?'جارٍ الحساب…':cp?.error?'غير متاح':money(cp?.collectedProfit||0,cp?.currency||c);
-    const collectedFoot=cp?.error?'تعذر تحميل مفردات التحصيل':cp?`${num(cp.collectedOrders)} أوردر محصل · صافي بعد الإدارة والمصاريف`:'يتم تحميل بيانات التحصيل';
-    const pending=n(o.expectedProfit),net=n(f.netProfit),orders=n(o.totalOrders),adSpend=n(o.adSpend);
+    const d=state.dashboard||{},c=d.currency||'EGP',f=d.finance||{},o=d.overview||{};
+    // A change of dashboard period must not show yesterday's collected profit.
+    const cp=state.collected?.from===d.from&&state.collected?.to===d.to?state.collected:null;
+    const collectedValue=state.collecting&&!cp?'جارٍ الحساب…':cp?.error?'غير متاح':cp?money(cp.collectedProfit||0,cp.currency||c):'جارٍ الحساب…';
+    const collectedFoot=cp?.error?'تعذر قراءة بيانات التحصيل':cp?`${num(cp.collectedOrders)} أوردر محصل`:'يتم التحقق من المحصل في نفس الفترة';
+    const pending=n(o.expectedProfit),net=n(f.netProfit),orders=n(o.totalOrders),adSpend=n(o.adSpend),rt=selectedRates(d);
     const actualCpp=orders?money(adSpend/orders,c):'—';
-    const cppFoot=orders?`${num(orders)} أوردر من كل المصادر · إعلانات ${money(adSpend,c)}`:'لا توجد أوردرات خلال الفترة المحددة';
-    return `<section class="dash-section dash-f126" data-dashboard-finance-top="126">${card('collected','أرباح تم التحصيل',collectedValue,'ما تم تحصيله فعليًا وصافي نتيجته',collectedFoot)}${card('pending','أرباح منتظرة',money(pending,c),'الأرباح المتوقع دخولها من الطلبات النشطة','المؤكد + التجهيز + الجاري شحنه')}${card('pnl','الربح / الخسارة',money(net,c),'صافي نتيجة الفترة بعد التكلفة والمصروفات','إيراد المنتجات − تكلفة المنتج − المصروفات',net<0)}${card('cpp','سعر الطلب الفعلي',actualCpp,'إجمالي صرف الإعلانات ÷ جميع الأوردرات',cppFoot)}</section>`;
+    const cppFoot=orders?`${num(orders)} أوردر · صرف إعلانات ${money(adSpend,c)}`:'لا توجد أوردرات خلال الفترة';
+    const confirmed=rt?.total?num(rt.confirmationRate)+'%':'—';
+    const delivered=rt&&(n(rt.delivered)+n(rt.returned))?num(rt.deliveryRate)+'%':'—';
+    const sources=entries(d,'مصادر الطلبات'),statuses=entries(d,'حالات الطلبات');
+    return `<section class="dash-section dash-f126" data-dashboard-finance-top="126" dir="rtl">
+      <div class="dash-f126-headline"><div><span class="dash-f126-eyebrow">نظرة موحدة على المتجر</span><h2>ملخص الأداء</h2><p>كل الأرقام الأساسية في مكان واحد، بدون تكرار. اضغط على أي مؤشر لمعرفة تفاصيل حسابه.</p></div>
+      <div class="dash-f126-actions"><span class="dash-f126-period">${esc(d.from||'')} — ${esc(d.to||'')}</span><button type="button" class="dash-f126-refresh" data-f126-refresh="1">↻ تحديث الملخص</button></div></div>
+      <div class="dash-f126-grid">
+      ${card('orders','عدد الأوردرات',num(orders),'من جميع المصادر والأعضاء','كل الحالات · بدون تكرار')}
+      ${card('revenue','الإيرادات المتوقعة',money(o.expectedRevenue,c),'بعد استبعاد الملغي والمرتجع','مبيعات الفترة قبل التحصيل')}
+      ${card('pnl','الربح / الخسارة',money(net,c),'صافي الفترة بعد كل المصروفات','النتيجة التشغيلية',net<0)}
+      ${card('cpp','سعر الطلب الفعلي',actualCpp,'صرف الإعلانات ÷ كل الأوردرات',cppFoot)}
+      ${card('collected','أرباح تم تحصيلها',collectedValue,'ما تحصّل فعليًا وصافي نتيجته',collectedFoot)}
+      ${card('pending','أرباح منتظرة',money(pending,c),'المؤكد + التجهيز + الشحن','صافي الطلبات النشطة')}
+      ${card('confirmation','نسبة التأكيد',confirmed,'الأوردرات المؤكدة من الوارد','خلال الفترة المختارة')}
+      ${card('delivery','نسبة التسليم',delivered,'من الطلبات التي اكتملت نتيجتها',rt?`مرتجع: ${num(rt.returnRate)}%`:'بيانات الفترة قيد التحميل')}
+      </div>
+      <details class="dash-f126-extras"><summary>▾ تفاصيل سريعة: مصادر الأوردرات وحالاتها</summary>
+        <div class="dash-f126-breakdowns"><div><h3>مصادر الأوردرات</h3><div class="dash-f126-chips">${chips(sources)}</div></div>
+        <div><h3>حالات الأوردرات</h3><div class="dash-f126-chips">${chips(statuses)}</div></div></div>
+      </details>
+    </section>`;
   }
   function render(){
     if(!active()||!state.dashboard)return;
