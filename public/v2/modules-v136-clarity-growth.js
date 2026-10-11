@@ -5,7 +5,7 @@ const ROOT=()=>document.getElementById('root'),V={active:false,tab:'overview',da
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const tx=v=>String(v??'').trim(),n=v=>v==null||v===''?'—':Number(v).toLocaleString('ar-EG',{maximumFractionDigits:2}),pct=v=>v==null?'—':n(v)+'%';
 const view=()=>document.querySelector('.nav button.active[data-view]')?.dataset.view||'';
-const tabs={overview:'نظرة عامة',growth:'تحليل الإعلانات والنمو',pages:'الصفحات وتجربة الشراء',audience:'الزوار والأجهزة',friction:'النقرات والمشكلات',health:'جودة التتبع والربط',metrics:'كل المقاييس'};
+const tabs={overview:'الملخص التنفيذي',growth:'الإعلانات والفرص',pages:'صفحات المتجر',audience:'الجمهور والأجهزة',friction:'مشكلات التفاعل',health:'جودة البيانات',metrics:'المقاييس الخام'};
 const dims={Campaign:'الحملات',Source:'مصادر الزيارات',Device:'الأجهزة',URL:'صفحات المتجر',Medium:'UTM Medium',Channel:'قنوات الزيارة',Browser:'المتصفحات',OS:'أنظمة التشغيل','Country/Region':'الدول والمناطق'};
 const issues={RageClickCount:'Rage Clicks',DeadClickCount:'Dead Clicks',QuickbackClick:'Quickback',ScriptErrorCount:'Script Errors',ErrorClickCount:'Error Clicks',ExcessiveScroll:'Excessive Scroll'};
 const status={meta_source_detected:'المصدر Meta حسب Clarity (ليس إثبات دفع)',utm_missing:'اسم الحملة غير ظاهر في Clarity',source_missing:'المصدر غير محدد',source_not_meta:'المصدر ليس Meta'};
@@ -193,28 +193,74 @@ function overview(d){
  '<p class="muted">تنبيه: اختلاف توقيت Clarity وMeta يمنع الاستدلال المباشر على إسناد جلسة لأوردر.</p></section>'+
  '<details class="read-more"><summary>حدود التصدير وملاحظات جودة البيانات</summary>'+caveats(d)+'</details>';
 }
+function recommendationCard(r){
+ const category=String(r.category||'');
+ const isMeta=category==='meta_expert';
+ const evidence=tx(r.detail);
+ const action=tx(r.action)||(category==='landing'?'راجع جلسات الزوار وأزرار صفحة الهبوط قبل زيادة الإنفاق':
+   category==='errors'?'افحص أخطاء JavaScript في صفحة الطلب والمنتج':
+   category.includes('utm')||category==='attribution'?'صحح وسوم UTM، ثم أعد جمع البيانات وقارن النتائج':
+   'افتح التقرير التفصيلي واختبر الفرضية على المتجر');
+ const meaning=category==='landing'?'قد يكون التفاعل مع صفحة الوصول غير مريح لبعض الزوار':
+   category==='errors'?'الأخطاء التقنية تستحق الفحص قبل أي قرار بالتوسع':
+   category==='attribution'||category==='utm_health'?'مطابقة الحملات غير مكتملة، فلا يمكن ربط هذه الزيارات بالإعلانات بثقة':
+   isMeta?'قراءة أداء Meta مستقلة عن جلسات Clarity':
+   'إشارة للمراجعة وليست دليلًا قاطعًا على السبب';
+ return '<article class="rec'+(r.priority==='high'?' high':'')+'"><small>'+(r.priority==='high'?'يستحق أولوية في المراجعة':'ملاحظة للمراجعة')+
+ ' · '+(isMeta?'مصدر التحليل: Meta':'مصدر التحليل: Clarity / UTM')+'</small><h4>'+esc(r.title)+'</h4>'+
+ (r.campaign?'<div class="muted">الحملة: '+esc(r.campaign)+'</div>':'')+
+ '<p class="rec-meaning"><b>الدليل:</b> '+esc(evidence||'تفاصيل القياس غير متاحة في هذا المؤشر')+'</p>'+
+ '<p><b>القراءة المحتملة:</b> '+esc(meaning)+'</p><p><b>الإجراء المقترح:</b> '+esc(action)+'</p></article>';
+}
 function growth(d){
- const g=d.growth||{};
- const a=(g.campaigns||[]).filter(x=>!V.search||x.name.toLowerCase().includes(V.search.toLowerCase()));
- const lines=a.map(x=>'<tr><td><b>'+esc(x.name)+'</b><div class="muted">'+esc(status[x.sourceStatus]||'')+'</div>'+((x.landingPages||[]).length?'<div class="muted">صفحات وصول: '+(x.landingPages||[]).slice(0,2).map(p=>esc(p.url)+' ('+n(p.sessions)+')').join('، ')+'</div>':'')+'</td>'+
+ const g=d.growth||{},rows=(g.campaigns||[]).filter(x=>!V.search||tx(x.name).toLowerCase().includes(V.search.toLowerCase()));
+ const recommendations=(g.recommendations||[]).sort((a,b)=>(a.priority==='high'?0:1)-(b.priority==='high'?0:1));
+ const lines=rows.map(x=>'<tr><td><b>'+esc(x.name)+'</b><div class="muted">'+esc(status[x.sourceStatus]||'')+'</div>'+
  '<td>'+n(x.spend)+'</td><td>'+pct(x.ctr)+'</td><td>'+n(x.platformPurchases)+'</td><td>'+n(x.realOrders)+'</td><td>'+n(x.deliveredOrders)+'</td>'+
- '<td>'+n(x.realRoas)+'x</td><td>'+n(x.claritySessions)+'</td><td>'+n(x.metaSourceSessions)+'</td><td>'+pct(x.rageRate)+'</td><td>'+pct(x.deadRate)+'</td><td>'+pct(x.scriptErrorRate)+'</td></tr>');
- return '<section class="box"><h3>توليفة التسويق: Meta × Clarity × نتائج الطلبات</h3><div class="note warning">'+esc(g.attributionWarning||'بيانات Meta/Clarity منفصلة في أوقات ومناهج القياس')+'</div>'+
- '<input id="cl136-search" placeholder="ابحث باسم الحملة..." value="'+esc(V.search)+'">'+table(['الحملة وUTM','Spend','CTR','Meta Purchases','Real Orders','تم التسليم','Real ROAS','جلسات Clarity','جلسات مصدر Meta','Rage %','Dead %','أخطاء JS %'],lines)+'</section>'+
- '<section class="box"><h3>فرص النمو والأولويات</h3><div class="recommendations">'+(g.recommendations||[]).map(r=>'<div class="rec '+(r.priority==='high'?'high':'')+'"><small>'+esc(r.priority==='high'?'أولوية عالية':'مراجعة')+'</small><h4>'+esc(r.title)+'</h4><p>'+esc(r.campaign||'')+'</p><p>'+esc(r.detail||'')+'</p>'+(r.action?'<p><b>الإجراء:</b> '+esc(r.action)+'</p>':'')+'</div>').join('')+'</div></section>'+
- '<section class="box"><h3>مجموعات الإعلانات والإعلانات</h3><p>البيانات أدناه من Meta فقط؛ لا ننسب مؤشرات Clarity إلى Ad Set أو Creative بدون click ID/UTM مخصص على مستوى الإعلان.</p>'+
- table(['الإعلان','المجموعة','الحملة','Spend','Purchases','CPP','ROAS'],(g.ads||[]).slice(0,70).map(r=>'<tr><td>'+esc(r.name)+'</td><td>'+esc(r.adsetName)+'</td><td>'+esc(r.campaignName)+'</td><td>'+n(r.spend)+'</td><td>'+n(r.purchases)+'</td><td>'+n(r.cpp)+'</td><td>'+n(r.roas)+'x</td></tr>'))+'</section>';
+ '<td>'+(x.realRoas==null?'—':n(x.realRoas)+'x')+'</td><td>'+n(x.claritySessions)+'</td><td>'+n(x.metaSourceSessions)+'</td><td>'+pct(x.rageRate)+'</td><td>'+pct(x.deadRate)+'</td><td>'+pct(x.scriptErrorRate)+'</td></tr>');
+ return reportScope(d)+
+ '<h3 class="read-title">أين توجد فرص التحسين؟</h3><p class="read-sub">إشارات مراجعة من سلوك Clarity، وبعضها من تحليل Meta المنفصل. لا تُحسب كل جلسة باعتبارها أوردرًا أو ضياع مبيعات.</p>'+
+ (recommendations.length?'<div class="recommendations">'+recommendations.slice(0,8).map(recommendationCard).join('')+'</div>':
+ '<div class="read-empty">لا توجد توصيات قابلة للاستخراج من هذه النافذة. قد تكون بيانات الإنفاق غير متصلة أو حجم العينة محدودًا؛ راجع بيانات Clarity الأولية.</div>')+
+ (recommendations.length>8?'<details class="read-more"><summary>عرض بقية الملاحظات ('+n(recommendations.length-8)+')</summary><div class="recommendations">'+recommendations.slice(8).map(recommendationCard).join('')+'</div></details>':'')+
+ '<details class="read-more"><summary>جدول مقارنة كل الحملات: Meta × Clarity × طلبات كن أونلاين</summary>'+
+ '<div class="note warning">'+esc(g.attributionWarning||'فترات ومناهج القياس مختلفة؛ المطابقة بالاسم فقط')+'</div>'+
+ '<input id="cl136-search" placeholder="ابحث باسم الحملة..." aria-label="البحث عن الحملة" value="'+esc(V.search)+'">'+
+ table(['الحملة وUTM','صرف Meta','CTR','مشتريات Meta','أوردرات النظام','تم التسليم','ROAS الفعلي','جلسات Clarity','جلسات مصدر Meta','Rage %','Dead %','أخطاء JS %'],lines)+
+ '</details>'+
+ '<details class="read-more"><summary>تفصيل الإعلانات والمجموعات من Meta (بيانات مستقلة عن جلسات Clarity)</summary>'+
+ table(['الإعلان','المجموعة','الحملة','صرف Meta','Purchases','CPP','ROAS'],(g.ads||[]).slice(0,70).map(r=>'<tr><td>'+esc(r.name)+'</td><td>'+esc(r.adsetName)+'</td><td>'+esc(r.campaignName)+'</td><td>'+n(r.spend)+'</td><td>'+n(r.purchases)+'</td><td>'+n(r.cpp)+'</td><td>'+n(r.roas)+'x</td></tr>'))+
+ '</details>';
 }
 function pages(d){
  const m=d.latest.metrics||{},dim=m.dimensions||{},details=m.pagesDetail||[];
  const cells=details.slice(0,100).map(p=>'<tr><td><b>'+esc(p.name)+'</b></td>'+
  '<td>'+n(p.sessions)+'</td><td>'+n(p.botSessions)+'</td><td>'+pct(p.scrollDepth)+'</td><td>'+n(p.engagementTime)+'</td><td>'+pct(p.rageRate)+'</td><td>'+pct(p.deadRate)+'</td></tr>');
- return '<div class="note warning">لا تتوفر مطابقة مؤكدة بين حملة وصفحة URL من تجميعات التصدير الحالية؛ جلسات الصفحة ليست Funnel تحويلًا ولا زوارًا فريدين. أرقام متوسط التمرير والتفاعل تظهر فقط إن وفر Clarity القيم والأوزان اللازمة. لو المصدر غير كافٍ يظهر «—».</div>'+
- '<section class="box"><h3>تحليل صفحات الوصول وتجربة الشراء</h3>'+
- table(['صفحة URL','جلسات','بوت','Scroll Depth','Engagement Time','Rage %','Dead %'],cells)+'</section>'+
- '<div class="grid">'+breakdown('Medium',dim.Medium,45)+breakdown('Channel',dim.Channel,45)+'</div>'+
- '<section class="box"><h3>تحسين صفحة المنتج والـ Checkout</h3><p>راجع النقرات غير الفعالة والتمرير والتفاعل وأخطاء التحميل في صفحات المنتج والشراء الأكثر زيارةً، خاصة على الجوال. استخدم Funnel حقيقي من Clarity أو حدث شراء موثق؛ لا تستنتج نسبة تحويل من مشاهدات الصفحات.</p>'+
- '<a class="action" href="https://clarity.microsoft.com/" target="_blank" rel="noopener noreferrer">التسجيلات والـ Heatmaps والـ Funnels ↗</a></section>';
+ const prioritised=details.filter(x=>numberOrNull(x.sessions)>=30&&
+ (numberOrNull(x.rageRate)>=15||numberOrNull(x.deadRate)>=20))
+ .sort((a,b)=>Math.max(Number(b.rageRate)||0,Number(b.deadRate)||0)-Math.max(Number(a.rageRate)||0,Number(a.deadRate)||0)).slice(0,5);
+ return reportScope(d)+
+ '<h3 class="read-title">صفحات تستحق المراجعة</h3><p class="read-sub">نبرز الصفحات التي لديها 30 جلسة على الأقل ومؤشر تفاعل غير طبيعي تجاوز حدًا استرشاديًا. لا تُفسر كل نقرة بوصفها خطأ مؤكدًا.</p>'+
+ (prioritised.length?'<div class="brief-signals">'+prioritised.map(p=>readSignal({
+   level:'important',source:'Clarity · صفحات URL',
+   title:'مراجعة '+String(p.name||'صفحة').slice(0,90),
+   evidence:n(p.sessions)+' جلسة · Rage '+pct(p.rageRate)+' · Dead '+pct(p.deadRate),
+   meaning:'قد يجد بعض الزوار صعوبة في فهم أو الضغط على عناصر الصفحة.',
+   action:'افتح تسجيلات هذه الصفحة وخرائط الحرارة، وتحقق من الأزرار والتصفح على الهاتف.',
+   jump:'friction',scope:'عينة 30 جلسة أو أكثر'
+ })).join('')+'</div>':
+ '<div class="read-empty">لا توجد صفحات تجاوزت حدود التنبيه مع عينة 30 جلسة أو أكثر. لو قيم Clarity ناقصة فهذا لا يعني أن معدل الاحتكاك صفر.</div>')+
+ '<h3 class="read-title">ماذا يعني كل مؤشر في الصفحة؟</h3>'+
+ '<div class="brief-definitions">'+
+ '<div class="brief-definition"><b>عمق التمرير Scroll Depth</b><p>متوسط مدى النزول داخل الصفحة إن وفر Clarity المقياس. لا يثبت أن العميل شاهد كل المحتوى.</p></div>'+
+ '<div class="brief-definition"><b>وقت التفاعل Engagement</b><p>مؤشر تفاعل بحسب Clarity، وليس مدة الجلسة كلها. الوحدة تتبع حقل التصدير عند توفره.</p></div>'+
+ '<div class="brief-definition"><b>النقرات غير الفعالة Dead Clicks</b><p>قد تشير لعناصر يتوقع الزائر تفاعلها. راجع التسجيلات أولًا لمعرفة السبب.</p></div></div>'+
+ '<details class="read-more"><summary>عرض جدول جميع الصفحات والقياسات الخام</summary>'+
+ '<div class="note warning">تقسيم URL ليس Funnel تحويلًا، ولا يعني جلسات فريدة. «—» تعني أن Clarity لم يُرجع قيمة قابلة للحساب.</div>'+
+ table(['صفحة URL','جلسات','بوت','Scroll Depth','Engagement Time','Rage %','Dead %'],cells)+'</details>'+
+ '<div class="grid">'+breakdown('Medium',dim.Medium,30)+breakdown('Channel',dim.Channel,30)+'</div>'+
+ '<section class="box"><h3>الخطوة التالية لتطوير صفحة المنتج والشراء</h3><p>ابدأ بأكثر صفحات المنتج والشراء زيارة، وافحص أزرار إتمام الطلب وعناصر اختيار المقاس أو الكمية وأخطاء التحميل؛ قارن نتيجة أي تعديل بأوردرات حقيقية داخل كن أونلاين.</p>'+
+ '<a class="action" href="https://clarity.microsoft.com/" target="_blank" rel="noopener noreferrer">افتح التسجيلات وخرائط الحرارة في Microsoft Clarity ↗</a></section>';
 }
 function audience(d){
  const dimsData=d.latest.metrics.dimensions||{};
