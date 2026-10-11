@@ -147,7 +147,15 @@
     const old=$('[data-dashboard-finance-top="126"]',dash);
     const nav=$('.dash-x-nav',dash),toolbar=$('.dash-period-toolbar',dash),legacy=$('.dash-range',dash),hero=$('.dash-hero',dash);
     const anchor=nav||toolbar||legacy||hero;if(!anchor)return;
+    const signature=JSON.stringify([state.dashboard.from,state.dashboard.to,state.dashboard.overview,state.dashboard.finance?.netProfit,state.dashboard.rates?.selected,state.collected,state.collecting]);
+    if(old?.__kunSummarySig===signature)return;
+    const extrasOpen=old?.querySelector('.dash-f126-extras')?.open||false;
     if(old)old.outerHTML=html();else anchor.insertAdjacentHTML('afterend',html());
+    const current=$('[data-dashboard-finance-top="126"]',dash);
+    if(current){
+      current.__kunSummarySig=signature;
+      if(extrasOpen){const details=$('.dash-f126-extras',current);if(details)details.open=true;}
+    }
   }
 
   function closeModal(){$('#dashF126ModalBack')?.remove();}
@@ -176,6 +184,27 @@
       ${sourceBreakdown.length?detailRows(sourceBreakdown,currency):'<div class="dash-empty">لا توجد طلبات في هذه الفترة.</div>'}`;
     modal('مفردات سعر الطلب الفعلي',content);
   }
+  function ordersDetails(){
+    const d=state.dashboard||{};
+    modal('تفاصيل عدد الأوردرات',`<div class="kun85-scope-note">${esc(d.from||'')} — ${esc(d.to||'')} · الإجمالي <b>${num(d.overview?.totalOrders)}</b></div><div class="dash-f126-formula">يشمل كل الأوردرات المسجلة خلال الفترة، من إيزي أوردر أو الإضافة اليدوية بواسطة أي عضو في الفريق أو أي تكامل آخر، بجميع حالاتها. الأوردر الواحد يُحسب مرة واحدة.</div>${detailRows(d.overview?.details?.orders||[],d.currency)}`);
+  }
+  function revenueDetails(){
+    const d=state.dashboard||{};
+    modal('تفاصيل الإيرادات المتوقعة',`<div class="kun85-scope-note">${esc(d.from||'')} — ${esc(d.to||'')} · الإيرادات المتوقعة <b>${money(d.overview?.expectedRevenue,d.currency)}</b></div><div class="dash-f126-formula">الإيرادات المتوقعة بعد استبعاد الملغي والمرتجع؛ وهي تختلف عن المبالغ المحصلة بالفعل.</div>${detailRows(d.overview?.details?.expectedRevenue||[],d.currency)}`);
+  }
+  function ratesDetails(type){
+    const d=state.dashboard||{},r=selectedRates(d),isConfirmation=type==='confirmation';
+    const title=isConfirmation?'تفاصيل نسبة التأكيد':'تفاصيل نسبة التسليم والمرتجعات';
+    if(!r){modal(title,'<div class="dash-empty">معدلات هذه الفترة غير متاحة حاليًا؛ يُرجى تحديث البيانات.</div>');return;}
+    const numerator=isConfirmation?n(r.confirmed):n(r.delivered);
+    const denominator=isConfirmation?n(r.total):n(r.delivered)+n(r.returned);
+    const percentage=denominator?num(isConfirmation?r.confirmationRate:r.deliveryRate)+'%':'—';
+    const formula=isConfirmation?'الأوردرات المؤكدة ÷ جميع الأوردرات المسجلة خلال الفترة × 100':'الأوردرات التي تم تسليمها ÷ (تم التسليم + المرتجعات التي انتهى شحنها) × 100';
+    const detailItems=isConfirmation?
+      [{label:'كل الأوردرات الداخلة',value:r.total},{label:'الأوردرات المؤكدة',value:r.confirmed}]:
+      [{label:'تم التسليم',value:r.delivered},{label:'مرتجعات',value:r.returned},{label:'نسبة المرتجعات من نتائج الشحن',value:r.returnRate,percent:true}];
+    modal(title,`<div class="kun85-scope-note">الفترة: ${esc(d.from||'')} — ${esc(d.to||'')} · النتيجة <b>${esc(percentage)}</b></div><div class="dash-f126-formula">${esc(formula)}. العدد المحتسب: ${num(numerator)} من ${num(denominator)}.</div>${detailRows(detailItems,d.currency)}`);
+  }
   async function pendingDetails(){
     const d=state.dashboard||{},items=d.overview?.details?.expectedProfit||[];
     modal('مفردات الأرباح المنتظرة',`<div class="kun85-scope-note">${esc(d.from||'')} — ${esc(d.to||'')} · الإجمالي <b>${money(d.overview?.expectedProfit,d.currency)}</b></div><div class="dash-f126-formula">الأرباح المنتظرة تشمل الطلبات المؤكدة + قيد التجهيز + الجاري شحنها بعد مصاريف الطلب التشغيلية.</div>${detailRows(items,d.currency)}`);
@@ -196,7 +225,15 @@
     try{const x=await collected(true),period=x.orderPeriodFrom?`${x.orderPeriodFrom} — ${x.orderPeriodTo}`:'—';$('.dash-f126-modal',holder).innerHTML=`<h2>مفردات الأرباح المحصلة</h2><div class="kun85-scope-note">فترة التحصيل: ${esc(x.from)} — ${esc(x.to)} · ${esc(x.storeName||'كل المتاجر')}</div><div class="dash-f126-summary"><div><span>المحصل من الشحن</span><b>${money(x.collectedGross,x.currency)}</b></div><div><span>مصاريف الإدارة</span><b>${money(x.managementFees,x.currency)}</b></div><div><span>مصاريف مدة الأوردرات</span><b>${money(x.periodExpenses,x.currency)}</b></div><div><span>صافي المحصل</span><b>${money(x.collectedProfit,x.currency)}</b></div></div><div class="dash-f126-formula">${esc(x.formula)} · مدة الأوردرات: ${esc(period)}</div>${collectedRows(x)}<div class="dash-f126-list"><div class="dash-f126-row"><span>مصاريف عامة</span><b>${money(x.expenses?.general,x.currency)}</b></div><div class="dash-f126-row"><span>صرف الإعلانات المحتسب</span><b>${money(x.expenses?.adSpend,x.currency)}</b></div><div class="dash-f126-row"><span>مصدر صرف الإعلانات</span><b>${x.expenses?.adSpendSource==='integrations'?'تكاملات الإعلانات':'تسجيل يدوي'}</b></div></div><div class="cs-modal-actions"><button class="btn soft" data-f126-close>قفل</button></div>`; $('[data-f126-close]',holder).onclick=closeModal;}
     catch(error){$('.dash-f126-modal',holder).innerHTML=`<h2>تعذر تحميل التفاصيل</h2><p>${esc(error.message)}</p><div class="cs-modal-actions"><button class="btn soft" data-f126-close>قفل</button></div>`; $('[data-f126-close]',holder).onclick=closeModal;}
   }
-  function open(type){if(type==='collected')return collectedDetails();if(type==='pending')return pendingDetails();if(type==='cpp')return cppDetails();return pnlDetails();}
+  function open(type){
+    if(type==='orders')return ordersDetails();
+    if(type==='revenue')return revenueDetails();
+    if(type==='confirmation'||type==='delivery')return ratesDetails(type);
+    if(type==='collected')return collectedDetails();
+    if(type==='pending')return pendingDetails();
+    if(type==='cpp')return cppDetails();
+    return pnlDetails();
+  }
   function schedule(delay=40){clearTimeout(state.timer);state.timer=setTimeout(render,delay);}
   function capture(path,data){
     if(path==='/api/dashboard'&&data?.ok){state.dashboard=data;schedule(20);setTimeout(()=>refreshCollected(false),40);}
@@ -207,7 +244,12 @@
   };
   function hook(){
     style();const root=$('#root');if(root)new MutationObserver(()=>{if(active())schedule(55);}).observe(root,{childList:true,subtree:true});
-    document.addEventListener('click',event=>{const detail=event.target.closest?.('[data-f126-detail]');if(detail){event.preventDefault();open(detail.dataset.f126Detail);return;}if(event.target.closest?.('.nav button[data-view="dashboard"],[data-dash-preset],#dashApplyRange,[data-v125-period]'))setTimeout(()=>{schedule(120);refreshCollected(true);},700);},true);
+    document.addEventListener('click',event=>{
+      const detail=event.target.closest?.('[data-f126-detail]');if(detail){event.preventDefault();open(detail.dataset.f126Detail);return;}
+      if(event.target.closest?.('[data-f126-refresh]')){event.preventDefault();window.KunDashboardV33?.reload?.();return;}
+      if(event.target.closest?.('.nav button[data-view="dashboard"],[data-dash-preset],#dashApplyRange,[data-v125-period]'))
+        setTimeout(()=>{schedule(120);refreshCollected(true);},700);
+    },true);
     setTimeout(()=>{render();if(active()&&state.dashboard)refreshCollected(false);},900);
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',hook,{once:true});else hook();
