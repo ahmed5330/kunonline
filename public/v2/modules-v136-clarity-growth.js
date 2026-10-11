@@ -1,4 +1,4 @@
-/* Kun Online V136 — Arabic, tenant-scoped Clarity / Meta Growth Analytics */
+/* Kun Online v137.1 — interpretable Clarity insights, evidence and actions per store */
 (function(){
 'use strict';
 const ROOT=()=>document.getElementById('root'),V={active:false,tab:'overview',data:null,search:'',request:0,busy:false,days:1};
@@ -45,7 +45,31 @@ function style(){
  '.cl136 .rec{padding:15px;border-radius:13px;border:1px solid var(--line,#ddd);border-right:4px solid #8d62bd}.cl136 .rec.high{border-right-color:#c74740}',
  '.cl136 .rec h4{font-size:14px;margin:8px 0}.cl136 .rec p{font-size:12px}.cl136 input{border:1px solid #cfc5e1;border-radius:11px;padding:10px;background:var(--surface,#fff);color:var(--ink,#1b2636);width:min(400px,100%);font:inherit}',
  '.cl136 pre{white-space:pre-wrap;overflow-wrap:anywhere;direction:ltr;text-align:left;font-size:11px;max-height:210px;overflow:auto}',
- '@media(max-width:600px){.cl136 .head h2{font-size:20px}.cl136 .grid{grid-template-columns:1fr}}'
+ '.cl136 .head{background:linear-gradient(120deg,#112a40,#254c69);border:1px solid #42627d;padding:25px;box-shadow:0 14px 32px rgba(19,43,72,.1)}',
+ '.cl136 .head h2{font-size:23px;line-height:1.5}.cl136 .head p{font-size:13px;opacity:.9}.cl136 .tabs{overflow-x:auto;flex-wrap:nowrap;scrollbar-width:thin;padding-bottom:6px}.cl136 .tabs button{flex:0 0 auto;white-space:nowrap}.cl136 .tabs .sel{background:#164d6c;border-color:#164d6c}',
+ '.cl136 .box{margin:12px 0}.cl136 .metric{box-shadow:0 2px 9px rgba(16,33,50,.035)}.cl136 .metric strong{font-size:23px;font-variant-numeric:tabular-nums}.cl136 .metric span:last-child{line-height:1.75}',
+ '.cl136 .read-title{margin:21px 0 10px;font-weight:900;font-size:18px}.cl136 .read-sub{font-size:12px;color:var(--muted,#64748b);line-height:1.9;margin:0 0 12px}',
+ '.cl136 .read-scope{border:1px solid var(--line,#dcd9e7);border-radius:13px;padding:12px 15px;background:var(--surface,#fff);display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:11px;line-height:1.9;margin-top:13px}',
+ '.cl136 .read-scope strong{font-size:12px;color:var(--ink,#1b2636)}.cl136 .read-scope .read-sep{width:1px;height:21px;background:var(--line,#dcd9e7)}',
+ '.cl136 .brief-cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.cl136 .brief-card{padding:15px;border-radius:14px;border:1px solid var(--line,#dcd9e7);background:var(--surface,#fff);min-width:0}',
+ '.cl136 .brief-card span{font-size:11px;color:var(--muted,#64748b);display:block}.cl136 .brief-card strong{font-size:25px;display:block;margin:9px 0;font-weight:900;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}.cl136 .brief-card small{font-size:10px;color:var(--muted,#64748b);line-height:1.75;display:block}',
+ '.cl136 .brief-signals{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.cl136 .brief-signal{border:1px solid var(--line,#dcd9e7);background:var(--surface,#fff);padding:17px;border-radius:16px;display:flex;flex-direction:column;gap:10px;min-width:0}',
+ '.cl136 .brief-signal.is-important{border-inline-start:3px solid #d97706}.cl136 .brief-signal.is-urgent{border-inline-start:3px solid #b91c1c}.cl136 .brief-signal.is-normal{border-inline-start:3px solid #0e7490}',
+ '.cl136 .brief-top{display:flex;align-items:center;gap:8px;justify-content:space-between;flex-wrap:wrap}.cl136 .brief-tag{font-size:10px;color:var(--ink,#1b2636);font-weight:850;background:var(--bg,#f1f5f9);border:1px solid var(--line,#dcd9e7);border-radius:6px;padding:4px 8px}',
+ '.cl136 .brief-signal h4{font-size:14px;font-weight:900;margin:0;line-height:1.65;overflow-wrap:anywhere}.cl136 .brief-signal .brief-line{font-size:12px;line-height:1.9;margin:0;color:var(--ink,#1b2636)}',
+ '.cl136 .brief-signal .brief-line b{font-weight:850;color:var(--ink,#1b2636)}.cl136 .brief-evidence{padding:10px 12px;background:var(--bg,#f5f7fa);border-radius:10px;font-size:11px;line-height:1.85;color:var(--ink,#1b2636)}',
+ '.cl136 .brief-next{display:flex;align-items:center;justify-content:space-between;gap:7px;margin-top:auto;padding-top:8px;border-top:1px solid var(--line,#dcd9e7)}.cl136 .brief-next button{border-color:#cbd5e1;background:transparent}',
+ '.cl136 .brief-guide{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.cl136 .brief-guide .box{margin:0}.cl136 .brief-guide ul{padding-inline-start:22px;line-height:2.2;font-size:12px;margin:5px 0}',
+ '.cl136 .brief-definition{border:1px solid var(--line,#dcd9e7);background:var(--surface,#fff);border-radius:12px;padding:14px}.cl136 .brief-definition b{font-size:13px;display:block;margin-bottom:6px}.cl136 .brief-definition p{margin:0;font-size:11px;line-height:1.9}',
+ '.cl136 .brief-definitions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:12px 0}',
+ '.cl136 details.read-more{border:1px solid var(--line,#dcd9e7);border-radius:14px;background:var(--surface,#fff);margin:12px 0;padding:12px 15px}',
+ '.cl136 details.read-more>summary{font-size:13px;font-weight:850;cursor:pointer;line-height:1.8;padding:4px 0}.cl136 details.read-more[open]>summary{margin-bottom:12px}',
+ '.cl136 .rec{background:var(--surface,#fff)}.cl136 .rec small{color:var(--muted,#64748b);font-size:10px}.cl136 .rec .rec-meaning{padding:10px;background:var(--bg,#f5f7fa);border-radius:9px}',
+ '.cl136 .read-empty{padding:20px;border:1px dashed var(--line,#cbd5e1);border-radius:14px;color:var(--muted,#64748b);font-size:12px;line-height:1.9}',
+ 'body[data-theme="dark"] .cl136 .brief-evidence,body[data-theme="dark"] .cl136 .rec .rec-meaning{background:var(--panel,#172033)}',
+ '@media(max-width:1050px){.cl136 .brief-cards{grid-template-columns:repeat(2,minmax(0,1fr))}}',
+ '@media(max-width:720px){.cl136 .brief-signals,.cl136 .brief-guide,.cl136 .brief-definitions{grid-template-columns:1fr}}',
+ '@media(max-width:600px){.cl136 .head h2{font-size:20px}.cl136 .grid{grid-template-columns:1fr}.cl136 .brief-cards{grid-template-columns:repeat(2,minmax(0,1fr))}.cl136 .brief-card{padding:12px}.cl136 .brief-card strong{font-size:21px}.cl136 .read-scope{gap:6px}.cl136 .read-scope .read-sep{display:none}}'
  ].join('');
  document.head.appendChild(st);
 }
@@ -65,15 +89,109 @@ function summary(d){
  metric('حملات Meta',n(g.campaigns?.length),'بما فيها غير المطابقة')+
  metric('آخر سحب',d.latest?.syncedAt?new Date(d.latest.syncedAt).toLocaleString('ar-EG'):'—','بيانات مخزنة من API')+'</div>';
 }
+// Interpretable, deterministic observations backed by data exported by Clarity.
+// Numeric cutoffs below are product prioritization rules, not Clarity diagnoses.
+const numberOrNull=value=>value===null||value===undefined||value===''||!Number.isFinite(Number(value))?null:Number(value);
+function clockLabel(value){
+ const parsed=Date.parse(String(value||''));return Number.isFinite(parsed)?new Date(parsed).toLocaleString('ar-EG'):'غير متاح';
+}
+function reportScope(d){
+ const hours=d.latest?.metrics?.snapshotHours||V.days*24;
+ const elapsed=Date.now()-Date.parse(String(d.latest?.syncedAt||''));
+ const stale=Number.isFinite(elapsed)&&elapsed>24*3600000;
+ const limited=Object.values(d.latest?.sampleCoverage||{}).some(x=>Number(x)>=1000);
+ return '<div class="read-scope" data-clarity-report-scope><strong>المصدر: Microsoft Clarity Data Export API</strong><span class="read-sep"></span><span>نافذة التحليل: آخر '+n(hours)+' ساعة (UTC)</span><span class="read-sep"></span><span>آخر سحب: '+esc(clockLabel(d.latest?.syncedAt))+'</span>'+
+ (stale?'<span class="brief-tag">البيانات تحتاج تحديثًا</span>':'')+
+ (limited?'<span class="brief-tag">بعض العينات قد تكون ناقصة (حد API)</span>':'')+'</div>';
+}
+function readSignal({level='normal',title,source='Clarity',evidence,meaning,action,jump,scope}){
+ return '<article class="brief-signal is-'+esc(level)+'"><div class="brief-top"><span class="brief-tag">'+esc(source)+'</span><span class="muted">'+esc(scope||'ملاحظة تشخيصية')+'</span></div>'+
+ '<h4>'+esc(title)+'</h4><div class="brief-evidence"><b>الدليل من البيانات:</b> '+esc(evidence)+'</div>'+
+ '<p class="brief-line"><b>ماذا يعني؟</b> '+esc(meaning)+'</p>'+
+ '<p class="brief-line"><b>الخطوة المقترحة:</b> '+esc(action)+'</p>'+
+ (jump?'<div class="brief-next"><span class="muted">استنتاج مبدئي، وليس إثباتًا لسبب المشكلة</span><button type="button" data-cl136-jump="'+esc(jump)+'">راجع التفاصيل ←</button></div>':'')+
+ '</article>';
+}
+function evidenceSignals(d){
+ const m=d.latest?.metrics||{},c=m.coverage||{},g=d.growth||{},arr=[];
+ const cMeta=numberOrNull(c.metaWithoutCampaignSessions);
+ if(cMeta!==null&&cMeta>0)arr.push({
+   level:'important',title:'جلسات من Meta بدون اسم حملة',source:'Clarity · جودة UTM',
+   evidence:n(cMeta)+' جلسة مصدرها Facebook أو Instagram لم يظهر لها utm_campaign في نافذة '+n(m.snapshotHours||V.days*24)+' ساعة.',
+   meaning:'المقارنة بين الحملة وسلوك الزوار ممكن تكون ناقصة، ولا يمكن إسناد كل جلسة لإعلان بعينه.',
+   action:'راجع utm_campaign وutm_source في روابط الإعلانات، ثم أعد فحص التقرير بعد تحديث البيانات.',jump:'health'
+ });
+ const campaigns=(g.campaigns||[]).filter(x=>numberOrNull(x.claritySessions)>=30);
+ const kinds=[
+   {key:'rageRate',cutoff:15,term:'نقرات متكررة',hint:'قد تكون هناك عناصر أو خطوات تسبب إحباطًا لدى بعض الزوار.',fix:'شاهد تسجيلات جلسات الحملة واختبر أزرار المنتج والطلب، خصوصًا على الجوال.'},
+   {key:'deadRate',cutoff:20,term:'نقرات غير فعّالة',hint:'قد يتوقع العميل استجابة من عنصر لا يتفاعل بالشكل المعتاد.',fix:'اختبر أزرار الشراء والقوائم وحالات التحميل، ثم راجع الخرائط الحرارية.'},
+   {key:'scriptErrorRate',cutoff:5,term:'أخطاء JavaScript',hint:'قد تؤثر أخطاء البرمجة في التصفح أو إتمام الطلب؛ لا تثبت وحدها حدوث فقد مبيعات.',fix:'افحص Console وأخطاء المتصفح في صفحات الهبوط والـCheckout المرتبطة بالحملة.'}
+ ];
+ for(const kind of kinds){
+   const candidates=campaigns.filter(x=>numberOrNull(x[kind.key])!==null&&Number(x[kind.key])>=kind.cutoff)
+       .sort((a,b)=>Number(b[kind.key])-Number(a[kind.key]));
+   const item=candidates[0];if(!item)continue;
+   arr.push({level:'urgent',title:kind.term+' في حملة «'+item.name+'»',source:'Clarity · UTM Campaign',
+     evidence:pct(item[kind.key])+' من جلسات المقياس المعروضة لهذه الحملة · '+n(item.claritySessions)+' جلسة Clarity مسجلة ضمن تقسيم الحملة.',
+     meaning:kind.hint,action:kind.fix,jump:'friction',scope:'قاعدة مراجعة: ≥ '+n(kind.cutoff)+'%، بعينة 30 جلسة أو أكثر'});
+ }
+ const pages=(m.pagesDetail||[]).filter(x=>numberOrNull(x.sessions)>=30)
+   .filter(x=>(numberOrNull(x.rageRate)>=15)||(numberOrNull(x.deadRate)>=20))
+   .sort((a,b)=>Math.max(Number(b.rageRate)||0,Number(b.deadRate)||0)-Math.max(Number(a.rageRate)||0,Number(a.deadRate)||0));
+ if(pages.length){
+   const p=pages[0],label=numberOrNull(p.rageRate)>=15?'Rage Clicks':'Dead Clicks',rate=label==='Rage Clicks'?p.rageRate:p.deadRate;
+   arr.push({level:'important',title:'صفحة زيارة تستحق مراجعة: '+String(p.name||'').slice(0,65),source:'Clarity · تقسيم URL',
+     evidence:n(p.sessions)+' جلسة مرتبطة بالصفحة · '+label+' '+pct(rate)+'.',
+     meaning:'إشارة تستدعي مراجعة تجربة الصفحة، وليست دليلًا منفردًا على سبب انخفاض التحويل.',
+     action:'راجع التسجيلات الخاصة بهذه الصفحة على الجوال والكمبيوتر، ثم اختبر العنصر محل المشكلة.',jump:'pages'});
+ }
+ if(!arr.length)arr.push({
+   level:'normal',title:'لا توجد إشارة أولوية قوية في العينة المتاحة',source:'Clarity · قراءة أولية',
+   evidence:n(m.totals?.sessions)+' جلسة في النافذة المختارة، مع فحص الإشارات التي أعادها التصدير فقط.',
+   meaning:'غياب إشارات فوق الحدود الاسترشادية لا يعني أن تجربة الشراء خالية من المشكلات؛ وقد تكون بعض المقاييس غير متاحة.',
+   action:'ابدأ بأكثر الصفحات زيارةً، وشاهد تسجيلات حقيقية، وراجع تسمية الحملات وجودة التتبع.',jump:'pages'
+ });
+ return arr.slice(0,4);
+}
+function readingBrief(d){
+ const signals=evidenceSignals(d);
+ return '<h3 class="read-title">ماذا تقول بيانات Clarity؟</h3><p class="read-sub">كل ملاحظة هنا مرتبطة بدليل، وتفسير محتمل، وخطوة عملية. التنبيهات مبنية على قواعد تشخيص وليست قرارات ذكاء اصطناعي مؤكدة أو قياسًا مباشرًا للمبيعات.</p>'+
+ '<div class="brief-signals" data-clarity-evidence-cards>'+signals.map(readSignal).join('')+'</div>';
+}
+function briefStats(d){
+ const m=d.latest?.metrics||{},c=m.coverage||{},sourceCount=(m.dimensions?.Source||[]).length,
+ count=m.totals?.sessions,bot=m.totals?.botSessions,taggedMeta=c.metaSourceSessions,utmLoss=c.metaWithoutCampaignSessions;
+ const items=[
+  ['جلسات Clarity',n(count),'عدد جلسات في نافذة التصدير، وليس عدد العملاء الفريدين'],
+  ['جلسات البوت',n(bot),'جلسات صنّفها Clarity آلية؛ لا تُجمع فوق الإجمالي'],
+  ['جلسات مصدر Meta',n(taggedMeta),'Facebook/Instagram حسب Clarity، ولا تعني بالضرورة زيارات مدفوعة'],
+  ['Meta بدون اسم حملة',n(utmLoss),'جلسات تحتاج مراجعة UTM Campaign']
+ ];
+ return '<div class="brief-cards" data-clarity-kpis>'+items.map(x=>'<article class="brief-card"><span>'+esc(x[0])+'</span><strong>'+esc(x[1])+'</strong><small>'+esc(x[2])+'</small></article>').join('')+'</div>';
+}
+function readingGuide(d){
+ const limitations=(d.latest?.metrics?.limitations||[]).slice(0,3);
+ return '<div class="brief-guide"><section class="box"><h3>كيف تحوّل القراءة إلى تحسين؟</h3><ul>'+
+ '<li>ابدأ بالملاحظة الأكثر تكرارًا وبعينة واضحة، ثم افتح تسجيلات الجلسات.</li>'+
+ '<li>حدد الصفحة أو العنصر المؤثر، وغيّر شيئًا واحدًا ثم اختبر أثره.</li>'+
+ '<li>قارن نتائج الأوردرات والتسليم من كن أونلاين بعد التعديل؛ لا تستخدم الجلسات وحدها كمقياس للربحية.</li>'+
+ '</ul></section><section class="box"><h3>درجة اكتمال الدليل</h3><p>جلسات Clarity ترصد سلوك الزائر؛ Meta يعرض أداء الإعلانات؛ وكن أونلاين يعرض الطلبات. المقارنة بينها للمراجعة، وليست ربطًا فرديًا لكل جلسة بأوردر.</p>'+
+ (limitations.length?limitations.map(x=>'<div class="muted">• '+esc(x)+'</div>').join(''):'<p class="muted">الفترة محدودة بنافذة Data Export؛ تحقق من التسجيلات قبل اتخاذ قرار.</p>')+
+ '</section></div>';
+}
 function caveats(d){return '<section class="box"><h3>حدود البيانات وجودة التقرير</h3>'+(d.latest?.metrics?.limitations||[]).map(t=>'<div class="note warning">'+esc(t)+'</div>').join('')+
  '<div class="note">أرقام Clarity ليست زيارات Meta الفريدة أو أوردرات. لا يمكن حساب ROAS أو Funnel أو نسبة التحويل الصحيحة من جلسات Clarity وحدها.</div></section>';}
 function overview(d){
- const m=d.latest.metrics,g=d.growth||{},v=m.dimensions||{};
- return summary(d)+'<div class="grid">'+['Campaign','Source','Device','Channel'].map(x=>breakdown(x,v[x],12)).join('')+'</div>'+
- '<section class="box"><h3>الوضع التجاري في Meta + كن أونلاين</h3>'+
- (g.metaConnected?'<div class="cards">'+metric('إجمالي الإنفاق',n(g.metaTotals?.spend),'Meta حسب النطاق اليومي')+metric('Real ROAS',n(g.metaTotals?.realRoas)+'x','الإيرادات المسلمة ÷ الصرف')+
- metric('أوردرات فعلية',n(g.metaTotals?.realOrders),'متجر كن أونلاين')+metric('Meta Purchases',n(g.metaTotals?.platformPurchases),'من Meta')+'</div>':'<p>اربط حساب Meta Ads في التكاملات لتفعيل الربط بالنمو والإنفاق.</p>')+
- '<p>المقارنة تشخيصية وليست إسنادًا لجلسات Clarity إلى الطلبات.</p></section>'+caveats(d);
+ const m=d.latest.metrics||{},v=m.dimensions||{},g=d.growth||{};
+ return reportScope(d)+briefStats(d)+readingBrief(d)+readingGuide(d)+
+ '<h3 class="read-title">من أين تأتي الجلسات؟</h3><p class="read-sub">جداول تفصيلية للمصادر والأجهزة. تختلف الجلسات عن عدد الأوردرات.</p>'+
+ '<div class="grid">'+breakdown('Source',v.Source,8)+breakdown('Device',v.Device,8)+'</div>'+
+ '<section class="box"><h3>ماذا نعرف عن الإعلانات والمبيعات؟</h3>'+
+ (g.metaConnected?'<div class="cards">'+metric('إنفاق Meta',n(g.metaTotals?.spend),'من Meta، وفق نطاقها الزمني')+
+ metric('أوردرات فعلية',n(g.metaTotals?.realOrders),'من بيانات كن أونلاين')+
+ metric('Real ROAS',g.metaTotals?.realRoas==null?'—':n(g.metaTotals.realRoas)+'x','إيرادات الطلبات المُسلَّمة ÷ الصرف وفق تقرير Meta × كن أونلاين')+'</div>':'<p>بيانات Meta غير مرتبطة أو غير متاحة. تقارير Clarity السلوكية تظل قابلة للعرض، ولكن لا يمكن استنتاج أداء الإنفاق الإعلاني منها وحدها.</p>')+
+ '<p class="muted">تنبيه: اختلاف توقيت Clarity وMeta يمنع الاستدلال المباشر على إسناد جلسة لأوردر.</p></section>'+
+ '<details class="read-more"><summary>حدود التصدير وملاحظات جودة البيانات</summary>'+caveats(d)+'</details>';
 }
 function growth(d){
  const g=d.growth||{};
@@ -208,5 +326,5 @@ function hook(){
  setTimeout(shortcut,150);
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',hook,{once:true});else hook();
-window.KunClarityGrowthV136={open,version:'137.0'};
+window.KunClarityGrowthV136={open,version:'137.1'};
 })();
