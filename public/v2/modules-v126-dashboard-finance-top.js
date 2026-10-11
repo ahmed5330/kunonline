@@ -130,8 +130,8 @@
       ${card('revenue','الإيرادات المتوقعة',money(o.expectedRevenue,c),'بعد استبعاد الملغي والمرتجع','مبيعات الفترة قبل التحصيل')}
       ${card('pnl','الربح / الخسارة',money(net,c),'صافي الفترة بعد كل المصروفات','النتيجة التشغيلية',net<0)}
       ${card('cpp','سعر الطلب الفعلي',actualCpp,'صرف الإعلانات ÷ كل الأوردرات',cppFoot)}
-      ${card('collected','أرباح تم تحصيلها',collectedValue,'ما تحصّل فعليًا وصافي نتيجته',collectedFoot)}
-      ${card('pending','أرباح منتظرة',money(pending,c),'المؤكد + التجهيز + الشحن','صافي الطلبات النشطة')}
+      ${card('collected','صافي التحصيل التقديري',collectedValue,'بعد تكلفة البضاعة المسجلة ومصاريف التحصيل',collectedFoot)}
+      ${card('pending','هامش الطلبات النشطة',money(pending,c),'بعد تكلفة البضاعة ورسوم الطلب','قبل الإعلانات والمصاريف العامة')}
       ${card('confirmation','نسبة التأكيد',confirmed,'الأوردرات المؤكدة من الوارد','خلال الفترة المختارة')}
       ${card('delivery','نسبة التسليم',delivered,'من الطلبات التي اكتملت نتيجتها',rt?`مرتجع: ${num(rt.returnRate)}%`:'بيانات الفترة قيد التحميل')}
       </div>
@@ -207,7 +207,7 @@
   }
   async function pendingDetails(){
     const d=state.dashboard||{},items=d.overview?.details?.expectedProfit||[];
-    modal('مفردات الأرباح المنتظرة',`<div class="kun85-scope-note">${esc(d.from||'')} — ${esc(d.to||'')} · الإجمالي <b>${money(d.overview?.expectedProfit,d.currency)}</b></div><div class="dash-f126-formula">الأرباح المنتظرة تشمل الطلبات المؤكدة + قيد التجهيز + الجاري شحنها بعد مصاريف الطلب التشغيلية.</div>${detailRows(items,d.currency)}`);
+    modal('مفردات هامش الطلبات النشطة',`<div class="kun85-scope-note">${esc(d.from||'')} — ${esc(d.to||'')} · الإجمالي <b>${money(d.overview?.expectedProfit,d.currency)}</b></div><div class="dash-f126-formula">يشمل الطلبات المؤكدة وقيد التجهيز والجاري شحنها، بعد تكلفة البضاعة ورسوم الطلب المباشرة، وقبل الإعلانات والمصاريف العامة. ليس صافي ربح المتجر.</div>${detailRows(items,d.currency)}`);
   }
   async function pnlDetails(){
     const d=state.dashboard||{},ctx=await context(),u=new URL('/api/system/dashboard/input-details',location.origin);
@@ -221,8 +221,8 @@
     return `<div class="dash-f126-table"><table><thead><tr><th>الأوردر</th><th>العميل</th><th>تاريخ الأوردر</th><th>تاريخ التحصيل</th><th>المحصل</th><th>الإدارة</th><th>بعد الإدارة</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(r.ref||r.id)}</td><td>${esc(r.customerName||'—')}</td><td>${esc(r.orderDate||'—')}</td><td>${esc(r.collectedAt||'—')}</td><td>${money(r.collectedAmount,x.currency)}</td><td>${money(r.managementFee,x.currency)}</td><td><b>${money(r.afterManagement,x.currency)}</b></td></tr>`).join('')}</tbody></table></div>`;
   }
   async function collectedDetails(){
-    const holder=modal('مفردات الأرباح المحصلة','<div class="cs-loading">جارٍ تحميل كل الحسابات…</div>');
-    try{const x=await collected(true),period=x.orderPeriodFrom?`${x.orderPeriodFrom} — ${x.orderPeriodTo}`:'—';$('.dash-f126-modal',holder).innerHTML=`<h2>مفردات الأرباح المحصلة</h2><div class="kun85-scope-note">فترة التحصيل: ${esc(x.from)} — ${esc(x.to)} · ${esc(x.storeName||'كل المتاجر')}</div><div class="dash-f126-summary"><div><span>المحصل من الشحن</span><b>${money(x.collectedGross,x.currency)}</b></div><div><span>مصاريف الإدارة</span><b>${money(x.managementFees,x.currency)}</b></div><div><span>مصاريف مدة الأوردرات</span><b>${money(x.periodExpenses,x.currency)}</b></div><div><span>صافي المحصل</span><b>${money(x.collectedProfit,x.currency)}</b></div></div><div class="dash-f126-formula">${esc(x.formula)} · مدة الأوردرات: ${esc(period)}</div>${collectedRows(x)}<div class="dash-f126-list"><div class="dash-f126-row"><span>مصاريف عامة</span><b>${money(x.expenses?.general,x.currency)}</b></div><div class="dash-f126-row"><span>صرف الإعلانات المحتسب</span><b>${money(x.expenses?.adSpend,x.currency)}</b></div><div class="dash-f126-row"><span>مصدر صرف الإعلانات</span><b>${x.expenses?.adSpendSource==='integrations'?'تكاملات الإعلانات':'تسجيل يدوي'}</b></div></div><div class="cs-modal-actions"><button class="btn soft" data-f126-close>قفل</button></div>`; $('[data-f126-close]',holder).onclick=closeModal;}
+    const holder=modal('مفردات صافي التحصيل التقديري','<div class="cs-loading">جارٍ تحميل كل الحسابات…</div>');
+    try{const x=await collected(true),period=x.orderPeriodFrom?`${x.orderPeriodFrom} — ${x.orderPeriodTo}`:'—';$('.dash-f126-modal',holder).innerHTML=`<h2>مفردات صافي التحصيل التقديري</h2><div class="kun85-scope-note">فترة التحصيل: ${esc(x.from)} — ${esc(x.to)} · ${esc(x.storeName||'كل المتاجر')}</div><div class="dash-f126-summary"><div><span>المحصل من الشحن</span><b>${money(x.collectedGross,x.currency)}</b></div><div><span>تكلفة البضاعة المسجلة</span><b>${money(x.productCost,x.currency)}</b></div><div><span>مصاريف الإدارة</span><b>${money(x.managementFees,x.currency)}</b></div><div><span>مصاريف فترة التحصيل</span><b>${money(x.periodExpenses,x.currency)}</b></div><div><span>صافي المحصل</span><b>${money(x.collectedProfit,x.currency)}</b></div></div><div class="dash-f126-formula">${esc(x.formula)} · تاريخ إنشاء الأوردرات المحصلة: ${esc(period)} ${x.missingProductCostOrders?` · تنبيه: ${num(x.missingProductCostOrders)} أوردر بلا تكلفة بضاعة موجبة مسجلة، فالربح تقديري`:''}</div>${collectedRows(x)}<div class="dash-f126-list"><div class="dash-f126-row"><span>مصاريف عامة بفترة التحصيل</span><b>${money(x.expenses?.general,x.currency)}</b></div><div class="dash-f126-row"><span>صرف الإعلانات المحتسب</span><b>${money(x.expenses?.adSpend,x.currency)}</b></div><div class="dash-f126-row"><span>مصدر صرف الإعلانات</span><b>${x.expenses?.adSpendSource==='integrations'?'تكاملات الإعلانات':'تسجيل يدوي'}</b></div></div><div class="cs-modal-actions"><button class="btn soft" data-f126-close>قفل</button></div>`; $('[data-f126-close]',holder).onclick=closeModal;}
     catch(error){$('.dash-f126-modal',holder).innerHTML=`<h2>تعذر تحميل التفاصيل</h2><p>${esc(error.message)}</p><div class="cs-modal-actions"><button class="btn soft" data-f126-close>قفل</button></div>`; $('[data-f126-close]',holder).onclick=closeModal;}
   }
   function open(type){
