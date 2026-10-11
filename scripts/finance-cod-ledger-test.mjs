@@ -42,11 +42,20 @@ assert.equal(summary.totalExpected,1380);
 assert.equal((await codPendingSummary(env,'tenant-2','store-A',{from:'2026-10-01',to:'2026-10-31'})).totalExpected,900,'a different tenant is isolated');
 assert.equal((await codPendingSummary(env,'tenant-1','store-B',{from:'2026-10-01',to:'2026-10-31'})).totalExpected,700,'a different store is isolated');
 
-const me={role:'admin',email:'qa@example.com',uid:'mock'};
+const me={role:'client',clientId:'tenant-1',email:'qa@example.com',uid:'mock'};
 const post=(orderIds,actualAmount)=>new Request('https://test/api/cod-reconciliation',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({orderIds,actualAmount,provider:'J&T',reference:'TEST'})});
 let attempt=await createReconciliation(post(['S1','DUP-S1'],1760),env,me,'tenant-1','store-A');
 assert.equal(attempt.status,400,'duplicate order cannot enter a COD payment batch');
 assert.equal(db.prepare('SELECT COUNT(*) n FROM cod_reconciliations').get().n,0,'invalid mixed COD batch must not write financial records');
+for(const invalid of ['garbage',-3,Infinity,{},true]){
+ const bad=await createReconciliation(post(['S1'],invalid),env,me,'tenant-1','store-A');
+ assert.equal(bad.status,400,'malformed or negative amount must never create a COD dispute / monetary posting');
+ assert.equal((await bad.json()).code,'COD_AMOUNT_INVALID');
+}
+assert.equal((await createReconciliation(post(['S1','OTHER-STORE'],1580),env,me,'tenant-1',null)).status,400,'never mix multiple warehouses in one cash batch');
+assert.equal((await createReconciliation(post(Array.from({length:201},(_,i)=>'ORD-'+i),0),env,me,'tenant-1','store-A')).status,400,'prevent oversized SQL parameters and partial settlement');
+assert.equal(db.prepare('SELECT COUNT(*) n FROM cod_reconciliations').get().n,0,'invalid COD requests must be fully read-only');
+
 const response=await createReconciliation(post(['S1'],880),env,me,'tenant-1','store-A');
 assert.equal(response.status,201);
 const payload=await response.json();
