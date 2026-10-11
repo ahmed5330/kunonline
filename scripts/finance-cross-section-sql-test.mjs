@@ -83,6 +83,6 @@ assert.equal(report.finance.expenseBreakdown.admin,0,'unpaid wallet obligations 
 assert.equal(report.overview.activeProductCost,200);
 assert.equal(report.overview.expectedProfit,375,'600-200 COGS-20 direct shipping-5 other, before overhead');
 assert.equal(report.overview.expectedProfitPerActiveOrder,375);
-assert.equal(report.finance.netProfit,155,'850 revenue - 290 COGS - 100 ads - 30 rent - 20 ship - 5 order costs');
+assert.equal(report.finance.netProfit,405,'850 revenue - 290 COGS - 100 ads - 30 rent - 20 ship - 5 order costs');
 console.log('Financial reconciliation SQL QA PASS: settlement dates, actual COD, duplicate fees, COGS, pending wallets, ad-spend chart');
 db.close();
