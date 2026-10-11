@@ -68,7 +68,7 @@ export async function handleAccountingMonthly({request,env,ctx,delegate}){
       profit:{grossProfit:r2(finance.grossProfit),operatingNetProfit,otherIncome,accountingNetProfit,marginPct:salesRevenue?r2(accountingNetProfit/salesRevenue*100):0},
       cash:{collectedRevenue:r2(overview.collectedRevenue),manualIncome:otherIncome,manualExpenses,managementFees,registeredNetCash:r2(overview.netCash)},
       manual:{income:otherIncome,expenses:manualExpenses,entries:Number(overview.entries)||0,categories},
-      quality:{productCostSource:dashboard.overview?.productCostSource||dashboard.costing?.source||null,adSpendSource:dashboard.ads?.spendSource||null,managementFeeOrders:Number(overview.managementActiveOrders)||0},
+      quality:{productCostSource:dashboard.overview?.productCostSource||dashboard.costing?.source||null,adSpendSource:dashboard.ads?.spendSource||null,managementFeeOrders:Number(overview.managementActiveOrders)||0,costFallbackLines:Number(dashboard.costing?.fallbackLines)||0,unverifiedCollectedOrders:Number(overview.unverifiedCollectedOrders)||0,inventoryPurchasesAsExpenses:r2(categories.filter(x=>x.type==='expense'&&text(x.category)==='مشتريات').reduce((sum,x)=>sum+n(x.amount),0)),cashExcludesAccruedManagementFees:true},
       formula:{salesRevenue:'مبيعات الطلبات غير الملغاة وغير المرتجعة',operatingNetProfit:'المبيعات - تكلفة المنتج - مصروفات التشغيل',accountingNetProfit:'صافي الربح التشغيلي + الإيرادات اليدوية الأخرى',cash:'التحصيل الفعلي منفصل عن إيراد المبيعات لتجنب التكرار'}
     });
   }catch(error){return json({error:error?.message||'تعذر تحميل الحساب الشهري',code:error?.code||'ACCOUNTING_MONTHLY_ERROR'},error?.status||500);}
