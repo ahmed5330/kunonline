@@ -36,13 +36,13 @@ export async function campaignPerformance(env,{clientId,storeId=null,from,to,pla
       SUM(CASE WHEN o.state='cancelled' THEN 1 ELSE 0 END) cancelled_orders,
       SUM(CASE WHEN o.state='returned' THEN 1 ELSE 0 END) returned_orders,
       COALESCE(SUM(CASE WHEN o.state IN ('signed','collected') THEN o.total ELSE 0 END),0) delivered_revenue,
-      COUNT(DISTINCT CASE WHEN o.customer_id IS NOT NULL AND date(o.date)=(
-        SELECT MIN(date(o2.date)) FROM orders o2
+      COUNT(DISTINCT CASE WHEN o.customer_id IS NOT NULL AND date(COALESCE(o.date,o.created_at))=(
+        SELECT MIN(date(COALESCE(o2.date,o2.created_at))) FROM orders o2
         WHERE o2.client_id=o.client_id AND o2.customer_id=o.customer_id AND NOT EXISTS (SELECT 1 FROM order_duplicate_links d2 WHERE d2.duplicate_order_id=o2.id)
       ) THEN o.customer_id END) new_customers
     FROM order_attribution x
     JOIN orders o ON o.id=x.order_id AND o.client_id=x.client_id
-    WHERE x.client_id=? AND date(o.date) BETWEEN date(?) AND date(?) ${storeId?'AND o.store_id=?':''}
+    WHERE x.client_id=? AND date(COALESCE(o.date,o.created_at)) BETWEEN date(?) AND date(?) ${storeId?'AND o.store_id=?':''}
       AND NOT EXISTS (SELECT 1 FROM order_duplicate_links d WHERE d.duplicate_order_id=o.id)
     GROUP BY x.campaign_id`).bind(...attributionBinds).all();
   const attribution=new Map(attributionRows.map(row=>[String(row.campaign_id),row]));
@@ -70,7 +70,7 @@ export async function campaignPerformance(env,{clientId,storeId=null,from,to,pla
     SUM(CASE WHEN state='returned' THEN 1 ELSE 0 END) returned_orders,
     COALESCE(SUM(CASE WHEN state IN ('signed','collected') THEN total ELSE 0 END),0) delivered_revenue,
     COUNT(DISTINCT customer_id) customers
-    FROM orders WHERE client_id=? ${storeId?'AND store_id=?':''} AND date(date) BETWEEN date(?) AND date(?) AND NOT EXISTS (SELECT 1 FROM order_duplicate_links d WHERE d.duplicate_order_id=orders.id)`)
+    FROM orders WHERE client_id=? ${storeId?'AND store_id=?':''} AND date(COALESCE(date,created_at)) BETWEEN date(?) AND date(?) AND NOT EXISTS (SELECT 1 FROM order_duplicate_links d WHERE d.duplicate_order_id=orders.id)`)
     .bind(...(storeId?[clientId,storeId,from,to]:[clientId,from,to])).first();
   total.attributedOrders=attributedOrders;total.realOrders=n(overall?.real_orders);total.unattributedOrders=Math.max(0,total.realOrders-attributedOrders);total.confirmedOrders=n(overall?.confirmed_orders);total.deliveredOrders=n(overall?.delivered_orders);total.cancelledOrders=n(overall?.cancelled_orders);total.returnedOrders=n(overall?.returned_orders);total.deliveredRevenue=r2(overall?.delivered_revenue);total.customers=n(overall?.customers);
   total.ctr=pct(total.clicks,total.impressions);total.cpc=total.clicks?r2(total.spend/total.clicks):0;total.cpm=total.impressions?r2(total.spend/total.impressions*1000):0;total.frequency=total.reach?r2(total.impressions/total.reach):0;total.platformCpp=total.platformPurchases?r2(total.spend/total.platformPurchases):0;total.platformRoas=total.spend?r2(total.platformPurchaseValue/total.spend):0;total.realOrderCost=total.realOrders?r2(total.spend/total.realOrders):0;total.confirmedOrderCost=total.confirmedOrders?r2(total.spend/total.confirmedOrders):0;total.deliveredOrderCost=total.deliveredOrders?r2(total.spend/total.deliveredOrders):0;total.cac=total.customers?r2(total.spend/total.customers):0;total.realRoas=total.spend?r2(total.deliveredRevenue/total.spend):0;
