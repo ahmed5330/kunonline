@@ -31,7 +31,10 @@ function productCostFor(order,productCosts){
   if(saved>0)return saved;
   return r2(n(productCosts.get(String(order.product_id||'')))*Math.max(1,n(order.qty)||1));
 }
-function billingFeeFor(order,billing){const row=billing.get(String(order.id));return row&&!['waived','failed'].includes(row.status)?n(row.fee):0;}
+// Pending/insufficient amounts are NOT expenses. Only a successfully charged
+// wallet event belongs to actual operating costs. Historical debt remains
+// visible in billing reports without silently overstating realized costs.
+function billingFeeFor(order,billing){const row=billing.get(String(order.id));return row?.status==='charged'?n(row.fee):0;}
 function sum(rows,fn){return r2((rows||[]).reduce((a,x)=>a+n(fn(x)),0));}
 function groupBreakdown(rows,keyFn,valueFn=()=>1){
   const m=new Map();for(const row of rows||[]){const key=text(keyFn(row))||'غير محدد';m.set(key,r2(n(m.get(key))+n(valueFn(row))));}
@@ -88,15 +91,20 @@ export function computeDashboardSnapshot({orders=[],historyOrders=[],transaction
   const productCosts=new Map(products.map(p=>[String(p.id),n(p.cost)])),billing=new Map(billingRows.map(x=>[String(x.order_id),x]));
   const eligible=orders.filter(o=>!excludedRevenueStates.has(o.state)),activeExpected=orders.filter(o=>activeExpectedStates.has(o.state));
   const totalOrders=orders.length,enteredRevenue=sum(orders,o=>o.total),cancelled=orders.filter(o=>o.state==='cancelled'),returned=orders.filter(o=>o.state==='returned'),expectedRevenue=sum(eligible,o=>o.total),cancelledRevenue=sum(cancelled,o=>o.total),returnedRevenue=sum(returned,o=>o.total);
-  const campaignSpend=r2(marketing?.total?.spend),manualAdTransactions=transactions.filter(t=>isAdCategory(t.category)),manualAdSpend=sum(manualAdTransactions,t=>t.amount),adSpend=campaignSpend>0?campaignSpend:manualAdSpend,adSpendSource=campaignSpend>0?'integrations':'manual';
+  // Use the same date-filtered daily metrics for the headline, CPA and time
+// series. Campaign aggregation can omit unlinked/orphaned daily rows, and
+// mixing the two would make the chart disagree with the cards.
+const campaignSpend=sum(dailyAds,a=>a.spend),manualAdTransactions=transactions.filter(t=>isAdCategory(t.category)),manualAdSpend=sum(manualAdTransactions,t=>t.amount),adSpend=campaignSpend>0?campaignSpend:manualAdSpend,adSpendSource=campaignSpend>0?'integrations':'manual';
   const otherTransactions=transactions.filter(t=>!isAdCategory(t.category)),otherExpenses=sum(otherTransactions,t=>t.amount);
   const actualOrderCost=totalOrders?r2(adSpend/totalOrders):0;
-  const activeRevenue=sum(activeExpected,o=>o.total),activeShipping=sum(activeExpected,o=>o.shipping_cost),activeOther=sum(activeExpected,o=>o.other_cost),activeAdmin=sum(activeExpected,o=>billingFeeFor(o,billing)),expectedProfit=r2(activeRevenue-activeShipping-activeOther-activeAdmin),expectedProfitPerActiveOrder=activeExpected.length?r2(expectedProfit/activeExpected.length):0;
+  // The prior 'expected profit' omitted COGS altogether. What can be stated
+// for active orders is their contribution BEFORE shared ads/overheads.
+const activeRevenue=sum(activeExpected,o=>o.total),activeProductCost=sum(activeExpected,o=>productCostFor(o,productCosts)),activeShipping=sum(activeExpected,o=>o.shipping_cost),activeOther=sum(activeExpected,o=>o.other_cost),activeAdmin=sum(activeExpected,o=>billingFeeFor(o,billing)),expectedProfit=r2(activeRevenue-activeProductCost-activeShipping-activeOther-activeAdmin),expectedProfitPerActiveOrder=activeExpected.length?r2(expectedProfit/activeExpected.length):0;
   const eligibleProductCost=sum(eligible,o=>productCostFor(o,productCosts)),allShipping=sum(orders,o=>o.shipping_cost),allOrderOther=sum(orders,o=>o.other_cost),allAdmin=sum(orders,o=>billingFeeFor(o,billing)),operatingExpenses=r2(adSpend+otherExpenses+allShipping+allOrderOther+allAdmin),grossProfit=r2(expectedRevenue-eligibleProductCost),netProfit=r2(grossProfit-operatingExpenses),profitMargin=pct(netProfit,expectedRevenue);
   const bySource=groupBreakdown(orders,o=>o.source||'غير محدد'),byState=groupBreakdown(orders,o=>o.state||'غير محدد'),expenseCategories=groupBreakdown(otherTransactions,t=>t.category||'غير مصنف',t=>t.amount);
   const m=marketing?.total||{},platformPurchases=n(m.platformPurchases),clicks=n(m.clicks),ads={spend:adSpend,spendSource:adSpendSource,impressions:n(m.impressions),reach:n(m.reach),clicks,leads:n(m.leads),platformPurchases,platformPurchaseValue:r2(m.platformPurchaseValue),realOrders:totalOrders,confirmedOrders:n(m.confirmedOrders),deliveredOrders:n(m.deliveredOrders),ctr:r2(m.ctr),cpc:r2(m.cpc),cpm:r2(m.cpm),frequency:r2(m.frequency),platformCpp:r2(m.platformCpp),systemCpp:actualOrderCost,confirmedCpp:n(m.confirmedOrders)?r2(adSpend/n(m.confirmedOrders)):0,deliveredCpp:n(m.deliveredOrders)?r2(adSpend/n(m.deliveredOrders)):0,cac:r2(m.cac),platformRoas:r2(m.platformRoas),realRoas:r2(m.realRoas),cpa:platformPurchases?r2(adSpend/platformPurchases):n(m.confirmedOrders)?r2(adSpend/n(m.confirmedOrders)):0,conversionRate:pct(platformPurchases,clicks),rpc:clicks?r2(n(m.platformPurchaseValue)/clicks):0,aov:platformPurchases?r2(n(m.platformPurchaseValue)/platformPurchases):0,campaigns:(marketing.campaigns||[]).slice(0,50)};
   const rates={d7:rateWindow(historyOrders,today,7),d30:rateWindow(historyOrders,today,30)};
-  const provinces=governorates(orders),overview={totalOrders,actualOrderCost,enteredRevenue,expectedRevenue,expectedProfit,expectedProfitPerActiveOrder,profitMargin,netProfit,adSpend,otherExpenses,activeOrders:activeExpected.length,cancelled:cancelled.length,returned:returned.length};
+  const provinces=governorates(orders),overview={totalOrders,actualOrderCost,enteredRevenue,expectedRevenue,expectedProfit,activeProductCost,expectedProfitPerActiveOrder,profitMargin,netProfit,adSpend,otherExpenses,activeOrders:activeExpected.length,cancelled:cancelled.length,returned:returned.length};
   const matches=matchingAiSnapshots(aiSnapshots,from,to),latestAi=[];
   let aiAnalysis=null;
   for(const entry of matches){
@@ -113,7 +121,7 @@ export function computeDashboardSnapshot({orders=[],historyOrders=[],transaction
       orders:[{label:'إجمالي الطلبات الداخلة',value:totalOrders},{label:'مصادر الطلبات',items:bySource},{label:'حالات الطلبات',items:byState}],
       actualOrderCost:[{label:'صرف الإعلانات',value:adSpend,money:true},{label:'كل الطلبات الداخلة للنظام',value:totalOrders},{label:'المعادلة',text:'صرف الإعلانات ÷ كل الطلبات من المتجر أو الإدخال اليدوي أو أي مصدر'}],
       expectedRevenue:[{label:'إجمالي قيمة الطلبات الداخلة',value:enteredRevenue,money:true},{label:'قيمة الطلبات الملغاة',value:cancelledRevenue,money:true},{label:'قيمة الطلبات المرتجعة',value:returnedRevenue,money:true},{label:'الإيراد المتوقع',value:expectedRevenue,money:true}],
-      expectedProfit:[{label:'طلبات مؤكدة/تجهيز/جاري الشحن',value:activeExpected.length},{label:'إيرادها',value:activeRevenue,money:true},{label:'الشحن',value:activeShipping,money:true},{label:'التغليف/مصاريف الطلب الأخرى',value:activeOther,money:true},{label:'مصاريف الإدارة',value:activeAdmin,money:true},{label:'الربح التشغيلي المتوقع',value:expectedProfit,money:true}],
+      expectedProfit:[{label:'طلبات مؤكدة/تجهيز/جاري الشحن',value:activeExpected.length},{label:'إيرادها',value:activeRevenue,money:true},{label:'تكلفة البضاعة للطلبات النشطة',value:activeProductCost,money:true},{label:'الشحن',value:activeShipping,money:true},{label:'التغليف/مصاريف الطلب الأخرى',value:activeOther,money:true},{label:'رسوم الأوردرات المسحوبة من المحفظة',value:activeAdmin,money:true},{label:'هامش الطلبات النشطة قبل الإعلانات والمصاريف العامة',value:expectedProfit,money:true}],
       margin:[{label:'الإيراد المتوقع',value:expectedRevenue,money:true},{label:'تكلفة المنتج',value:eligibleProductCost,money:true},{label:'كل المصروفات التشغيلية',value:operatingExpenses,money:true},{label:'صافي الربح',value:netProfit,money:true},{label:'هامش الربح',value:profitMargin,percent:true}],
       adSpend:[{label:'صرف الإعلانات',value:adSpend,money:true},{label:'مصدر الرقم',text:adSpendSource==='integrations'?'بيانات منصات الإعلانات المتصلة':'المصاريف الإعلانية المسجلة يدويًا'},{label:'الحملات',items:ads.campaigns.slice(0,12).map(c=>({label:c.name||c.platform,value:r2(c.spend)}))}],
       otherExpenses:[{label:'إجمالي المصاريف الأخرى',value:otherExpenses,money:true},{label:'حسب التصنيف',items:expenseCategories}]
