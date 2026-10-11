@@ -40,7 +40,7 @@
     "test:order-sync": "node scripts/order-sync-test.mjs",
     "test:manual-order-form": "node scripts/manual-order-form-test.mjs",
     "test:order-sheet-import": "node --check src/order-import-reconciliation.js && node --check src/order-sheet-import.js && node --check src/order-deduplication.js && node --check public/v2/modules-v35-order-import.js && node --check scripts/live-preview-order-sheet-import-test.mjs && node scripts/order-sheet-import-test.mjs && node scripts/order-deduplication-test.mjs",
-    "test:accounting": "node scripts/accounting-management-fee-test.mjs && node scripts/finance-cross-section-sql-test.mjs && node scripts/finance-dashboard-reconciliation-qa.mjs && node scripts/finance-ui-consistency-test.mjs",
+    "test:accounting": "node scripts/accounting-management-fee-test.mjs && node scripts/finance-cross-section-sql-test.mjs && node scripts/finance-dashboard-reconciliation-qa.mjs && node scripts/finance-ui-consistency-test.mjs && node scripts/finance-browser-logic-test.mjs",
     "test:customer-service": "node --check public/v2/modules-v75-customer-service-interactions.js && node --check scripts/browser-customer-service-interactions-fixture-test.mjs && node scripts/customer-service-test.mjs && node scripts/customer-service-interactions-test.mjs && node scripts/browser-customer-service-interactions-fixture-test.mjs",
     "test:customer-service-rich-card": "node --check public/v2/modules-v42-customer-service-rich-cards.js && node scripts/customer-service-rich-card-test.mjs",
     "test:dashboard-v32": "node scripts/dashboard-v32-test.mjs && node scripts/dashboard-current-cost-test.mjs",
