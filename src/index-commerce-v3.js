@@ -30,7 +30,7 @@ async function audit(env,me,clientId,storeId,action,entityType,entityId,metadata
   }catch(_){/* audit must not hide the primary response on preview */}
 }
 
-function orderEconomics(o){
+export function orderEconomics(o){
   const qty=Math.max(1,num(o.qty)||1);
   const gross=num(o.total);
   const discount=num(o.discount_amount);
@@ -75,11 +75,11 @@ async function profitIntelligence(env,clientId,url){
   return {summary,groupBy,breakdown};
 }
 
-async function codCandidates(env,clientId,storeId){
+export async function codCandidates(env,clientId,storeId){
   const {results}=await env.DB.prepare(`SELECT o.id,o.store_id,o.date,o.name,o.awb,o.total,o.discount_amount,o.refund_amount,o.state,o.checkpoint FROM orders o LEFT JOIN cod_reconciliation_items i ON i.client_id=o.client_id AND i.store_id IS o.store_id AND i.order_id=o.id WHERE o.client_id=? ${storeId?'AND o.store_id=?':''} AND o.state='signed' AND i.id IS NULL AND NOT EXISTS (SELECT 1 FROM order_duplicate_links dup WHERE dup.duplicate_order_id=o.id) ORDER BY o.date DESC LIMIT 500`).bind(...(storeId?[clientId,storeId]:[clientId])).all();
   return (results||[]).map(o=>({...o,expectedAmount:round2(Math.max(0,num(o.total)-num(o.discount_amount)-num(o.refund_amount)))}));
 }
-async function listReconciliations(env,clientId,storeId,{from=null,to=null}={}){
+export async function listReconciliations(env,clientId,storeId,{from=null,to=null}={}){
   const binds=storeId?[clientId,storeId]:[clientId];
   let where=`client_id=? ${storeId?'AND store_id=?':''}`;
   if(/^\\d{4}-\\d{2}-\\d{2}$/.test(String(from||''))){where+=' AND date(created_at)>=date(?)';binds.push(from);}
@@ -87,7 +87,7 @@ async function listReconciliations(env,clientId,storeId,{from=null,to=null}={}){
   const {results}=await env.DB.prepare(`SELECT id,store_id,provider,reference,status,expected_amount,actual_amount,difference,currency,reconciled_at,note,created_by,created_at,updated_at FROM cod_reconciliations WHERE ${where} ORDER BY created_at DESC LIMIT 200`).bind(...binds).all();
   return results||[];
 }
-async function codPendingSummary(env,clientId,storeId,{from=null,to=null}={}){
+export async function codPendingSummary(env,clientId,storeId,{from=null,to=null}={}){
   const binds=storeId?[clientId,storeId]:[clientId];
   let where=`o.client_id=? ${storeId?'AND o.store_id=?':''} AND o.state='signed' AND i.id IS NULL AND NOT EXISTS (SELECT 1 FROM order_duplicate_links dup WHERE dup.duplicate_order_id=o.id)`;
   if(/^\\d{4}-\\d{2}-\\d{2}$/.test(String(from||''))){where+=' AND date(COALESCE(o.date,o.created_at))>=date(?)';binds.push(from);}
@@ -95,7 +95,7 @@ async function codPendingSummary(env,clientId,storeId,{from=null,to=null}={}){
   const row=await env.DB.prepare(`SELECT COUNT(*) totalOrders,COALESCE(SUM(MAX(0,COALESCE(o.total,0)-COALESCE(o.discount_amount,0)-COALESCE(o.refund_amount,0))),0) totalExpected FROM orders o LEFT JOIN cod_reconciliation_items i ON i.client_id=o.client_id AND i.store_id IS o.store_id AND i.order_id=o.id WHERE ${where}`).bind(...binds).first();
   return {ok:true,totalOrders:Number(row?.totalOrders)||0,totalExpected:round2(row?.totalExpected),basis:'canonical_signed_unreconciled_orders',scope:storeId||null,from:from||null,to:to||null};
 }
-async function createReconciliation(request,env,me,clientId,storeId){
+export async function createReconciliation(request,env,me,clientId,storeId){
   if(!canFinanceWrite(me)) return json({error:'مش مسموح بتسوية التحصيلات'},403);
   const b=await request.json().catch(()=>({}));
   const orderIds=[...new Set((Array.isArray(b.orderIds)?b.orderIds:[]).map(String).filter(Boolean))];
