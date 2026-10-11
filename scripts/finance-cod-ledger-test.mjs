@@ -66,5 +66,11 @@ assert.equal((await listReconciliations(env,'tenant-1','store-A',{from:'2026-01-
 const repeat=await createReconciliation(post(['S1'],880),env,me,'tenant-1','store-A');
 assert.equal(repeat.status,400,'repeated COD reconciliation cannot charge twice');
 assert.equal(db.prepare('SELECT COUNT(*) n FROM cod_reconciliations').get().n,1);
+const opened=await createReconciliation(post(['S2'],null),env,me,'tenant-1','store-A');
+assert.equal((await opened.json()).status,'open');
+const outstanding=await codPendingSummary(env,'tenant-1','store-A',{from:'2026-10-01',to:'2026-10-31'});
+assert.equal(outstanding.totalExpected,500,'open batch without actual funds must still appear in uncollected COD');
+assert.equal(outstanding.inExistingReconciliation,1,'open COD batch must have an explicit review signal');
+assert.equal((await codCandidates(env,'tenant-1','store-A',{from:'2026-10-01',to:'2026-10-31'})).length,0,'open batch already owns its linked order; candidate list should not offer double selection');
 console.log('COD reconciliation real SQL PASS: canonical settlement, actual amount, multi-tenant, store, dates, idempotency');
 db.close();
