@@ -17,7 +17,7 @@ const select=selector=>selector.includes('button.active[data-view]')?{dataset:{v
 const document={
  readyState:'complete',head:{appendChild:x=>styles.push(x)},
  createElement:()=>({id:'',textContent:''}),
- getElementById:id=>id==='root'?root:null,
+ getElementById:id=>id==='root'?root:styles.find(x=>x.id===id)||null,
  querySelector:select,querySelectorAll:()=>[],addEventListener:()=>{}
 };
 const window={kunClientId:async()=>'client',kunStoreId:async()=>'store',KunSidebarGroupsV90:{sync:()=>{}},setTimeout};
