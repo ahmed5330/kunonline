@@ -46,6 +46,8 @@ const sep=await accountingOverview(env,{...oct,from:'2026-09-25',to:'2026-09-25'
 assert.equal(sep.collectedRevenue,0,'September sales cannot show October COD');
 assert.equal(sep.deliveredRevenue,1000,'linked duplicate excluded from order-date sales');
 assert.equal(sep.managementFees,50,'duplicate linked order management fee cannot inflate expenses');
+assert.equal(sep.netCash,0,'accrued management fee on prior orders is not evidence of cash paid');
+assert.equal(sep.accruedManagementFeesExcludedFromCash,50);
 
 const collected=await collectedProfitOverview(env,{...oct,includeDetails:true});
 assert.equal(collected.collectedGross,1370,'collection report must agree with accounting settlement cash');
