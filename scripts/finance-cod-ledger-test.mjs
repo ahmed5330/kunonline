@@ -47,7 +47,7 @@ const post=(orderIds,actualAmount)=>new Request('https://test/api/cod-reconcilia
 let attempt=await createReconciliation(post(['S1','DUP-S1'],1760),env,me,'tenant-1','store-A');
 assert.equal(attempt.status,400,'duplicate order cannot enter a COD payment batch');
 assert.equal(db.prepare('SELECT COUNT(*) n FROM cod_reconciliations').get().n,0,'invalid mixed COD batch must not write financial records');
-for(const invalid of ['garbage',-3,Infinity,{},true]){
+for(const invalid of ['garbage',-3,'Infinity',{},true]){
  const bad=await createReconciliation(post(['S1'],invalid),env,me,'tenant-1','store-A');
  assert.equal(bad.status,400,'malformed or negative amount must never create a COD dispute / monetary posting');
  assert.equal((await bad.json()).code,'COD_AMOUNT_INVALID');
