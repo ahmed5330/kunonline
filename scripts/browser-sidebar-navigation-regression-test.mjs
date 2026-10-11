@@ -129,6 +129,6 @@ try{
 }finally{
  try{cdp?.close();}catch{}
  if(chrome&&!chrome.killed)chrome.kill('SIGTERM');
- await sleep(120);if(profile)await rm(profile,{recursive:true,force:true});
+ await sleep(120);if(profile)await rm(profile,{recursive:true,force:true,maxRetries:10,retryDelay:150});
  await new Promise(resolve=>server.close(resolve));
 }
