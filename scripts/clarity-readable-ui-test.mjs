@@ -43,12 +43,12 @@ const fixture={
 };
 const signals=Array.from(api.evidenceSignals(fixture));
 assert.ok(signals.some(x=>x.source.includes('UTM')&&x.title.includes('بدون اسم حملة')),'missing Meta UTM must be visible with evidence');
-assert.ok(signals.some(x=>x.title.includes('نقرات متكررة')&&x.evidence.includes('35')),'rage signal must include observed 35-session sample');
+assert.ok(signals.some(x=>x.title.includes('نقرات متكررة')&&x.evidence.includes(new Intl.NumberFormat('ar-EG').format(35))),'rage signal must include observed 35-session sample');
 assert.ok(signals.every(x=>x.action&&x.evidence&&x.meaning),'every item needs evidence, interpretation, and action');
 assert.ok(signals.length<=4,'do not overwhelm with a raw list of alerts');
 const html=api.overview(fixture);
 for(const x of ['جلسات Clarity','جلسات البوت','ماذا تقول بيانات Clarity؟','الدليل من البيانات:','ماذا يعني؟','الخطوة المقترحة:','حدود التصدير'])assert.ok(html.includes(x),`overview missing ${x}`);
-assert.ok(html.includes('75')&&html.includes('55'),'must display real fixture figures, not invented values');
+assert.ok(html.includes(new Intl.NumberFormat('ar-EG').format(75))&&html.includes(new Intl.NumberFormat('ar-EG').format(55)),'must display real fixture figures, not invented values');
 assert.ok(!html.includes('—</strong><small>جلسات'),'available sessions must display a value');
 assert.ok(!api.numberOrNull(null)&&api.numberOrNull(null)!==0,'null percentage must be unknown, not zero');
 const growth=api.growth(fixture);
