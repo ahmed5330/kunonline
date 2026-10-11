@@ -101,7 +101,7 @@ export async function listAccountingEntries(env,{clientId,storeId=null,from=null
 
 export async function listManagementFeeEntries(env,{clientId,storeId=null,from=null,to=null,limit=500}){
   const end=day(to),start=day(from||end),binds=[clientId];let where='f.client_id=?';if(storeId){where+=' AND f.store_id=?';binds.push(storeId);}where+=' AND date(COALESCE(o.date,o.created_at)) BETWEEN date(?) AND date(?)';binds.push(start,end,Math.min(1000,Math.max(1,Number(limit)||500)));
-  const {results=[]}=await env.DB.prepare(`SELECT f.order_id orderId,f.store_id storeId,f.rate_pct ratePct,f.base_amount baseAmount,f.amount,f.status,f.activated_at activatedAt,f.reversed_at reversedAt,f.updated_at updatedAt,o.date,o.state,o.name customerName,o.ref,o.total FROM order_management_fees f JOIN orders o ON o.id=f.order_id AND o.client_id=f.client_id WHERE ${where} ORDER BY COALESCE(o.date,o.created_at) DESC LIMIT ?`).bind(...binds).all();
+  const {results=[]}=await env.DB.prepare(`SELECT f.order_id orderId,f.store_id storeId,f.rate_pct ratePct,f.base_amount baseAmount,f.amount,f.status,f.activated_at activatedAt,f.reversed_at reversedAt,f.updated_at updatedAt,o.date,o.state,o.name customerName,o.ref,o.total FROM order_management_fees f JOIN orders o ON o.id=f.order_id AND o.client_id=f.client_id WHERE ${where} AND NOT EXISTS (SELECT 1 FROM order_duplicate_links dup WHERE dup.duplicate_order_id=o.id) ORDER BY COALESCE(o.date,o.created_at) DESC LIMIT ?`).bind(...binds).all();
   return results.map(x=>({...x,ratePct:r2(x.ratePct),baseAmount:r2(x.baseAmount),amount:r2(x.amount),total:r2(x.total)}));
 }
 
