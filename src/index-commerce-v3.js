@@ -93,11 +93,11 @@ export async function listReconciliations(env,clientId,storeId,{from=null,to=nul
 }
 export async function codPendingSummary(env,clientId,storeId,{from=null,to=null}={}){
   const binds=storeId?[clientId,storeId]:[clientId];
-  let where=`o.client_id=? ${storeId?'AND o.store_id=?':''} AND o.state='signed' AND i.id IS NULL AND NOT EXISTS (SELECT 1 FROM order_duplicate_links dup WHERE dup.duplicate_order_id=o.id)`;
+  let where=`o.client_id=? ${storeId?'AND o.store_id=?':''} AND o.state='signed' AND NOT EXISTS (SELECT 1 FROM order_duplicate_links dup WHERE dup.duplicate_order_id=o.id)`;
   if(/^\d{4}-\d{2}-\d{2}$/.test(String(from||''))){where+=' AND date(COALESCE(o.date,o.created_at))>=date(?)';binds.push(from);}
   if(/^\d{4}-\d{2}-\d{2}$/.test(String(to||''))){where+=' AND date(COALESCE(o.date,o.created_at))<=date(?)';binds.push(to);}
-  const row=await env.DB.prepare(`SELECT COUNT(*) totalOrders,COALESCE(SUM(MAX(0,COALESCE(o.total,0)-COALESCE(o.discount_amount,0)-COALESCE(o.refund_amount,0))),0) totalExpected FROM orders o LEFT JOIN cod_reconciliation_items i ON i.client_id=o.client_id AND i.store_id IS o.store_id AND i.order_id=o.id WHERE ${where}`).bind(...binds).first();
-  return {ok:true,totalOrders:Number(row?.totalOrders)||0,totalExpected:round2(row?.totalExpected),basis:'canonical_signed_unreconciled_orders',scope:storeId||null,from:from||null,to:to||null};
+  const row=await env.DB.prepare(`SELECT COUNT(*) totalOrders,COALESCE(SUM(MAX(0,COALESCE(o.total,0)-COALESCE(o.discount_amount,0)-COALESCE(o.refund_amount,0))),0) totalExpected,COALESCE(SUM(CASE WHEN EXISTS (SELECT 1 FROM cod_reconciliation_items i WHERE i.client_id=o.client_id AND i.store_id IS o.store_id AND i.order_id=o.id) THEN 1 ELSE 0 END),0) inExistingReconciliation FROM orders o WHERE ${where}`).bind(...binds).first();
+  return {ok:true,totalOrders:Number(row?.totalOrders)||0,totalExpected:round2(row?.totalExpected),inExistingReconciliation:Number(row?.inExistingReconciliation)||0,basis:'canonical_signed_not_collected_even_when_batch_open_or_disputed',scope:storeId||null,from:from||null,to:to||null};
 }
 export async function createReconciliation(request,env,me,clientId,storeId){
   if(!canFinanceWrite(me)) return json({error:'مش مسموح بتسوية التحصيلات'},403);
