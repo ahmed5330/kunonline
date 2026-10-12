@@ -173,7 +173,9 @@
     scoped.set(section,item);errors.delete(section);schedule(0);
     try{
       const data=await loadSnapshot(range);
-      if(scoped.get(section)!==item||!active())return;
+      if(scoped.get(section)!==item)return;
+      // Navigating away mid-request must not leave a disabled selector forever.
+      if(!active()){if(before)scoped.set(section,before);else scoped.delete(section);return;}
       if(data.from!==range.from||data.to!==range.to)throw new Error('الفترة المستلمة لا تطابق الاختيار');
       item.data=data;item.loading=false;
       if(section==='summary')window.KunDashboardFinanceTopV126?.setScopedDashboard?.(data);
