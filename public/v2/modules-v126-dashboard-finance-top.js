@@ -3,7 +3,7 @@
   if(window.KunDashboardFinanceTopV126)return;
   const VERSION='126.4';
   const nativeFetch=window.fetch.bind(window);
-  const state={dashboard:null,scopedDashboard:null,collected:null,timer:0,collecting:false,lastCollectedKey:'',scopeEpoch:0};
+  const state={dashboard:null,scopedDashboard:null,collected:null,timer:0,collecting:false,collectedRequest:0,lastPendingKey:'',lastCollectedKey:'',scopeEpoch:0};
   const dashboard=()=>state.scopedDashboard||state.dashboard;
   const $=(s,r=document)=>r?.querySelector?.(s)||null;
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -88,14 +88,34 @@
     return getJson(u.pathname+u.search);
   }
   async function refreshCollected(force=false){
-    const d=dashboard(),epoch=state.scopeEpoch;if(!d||state.collecting)return;
+    const d=dashboard(),epoch=state.scopeEpoch;
+    if(!d)return;
     const ctx=await context(),key=[ctx.clientId,ctx.storeId,d.from,d.to].join('|');
     if(epoch!==state.scopeEpoch||d!==dashboard())return;
     if(!force&&key===state.lastCollectedKey&&state.collected)return;
+    if(!force&&state.collecting&&key===state.lastPendingKey)return;
+    const request=++state.collectedRequest;
+    state.lastPendingKey=key;
     state.collecting=true;render();
-    try{const result=await collected(false);if(epoch===state.scopeEpoch&&d===dashboard()){state.collected=result;state.lastCollectedKey=key;}}
-    catch(error){if(epoch===state.scopeEpoch&&d===dashboard())state.collected={error:error.message};}
-    finally{state.collecting=false;render();if(epoch!==state.scopeEpoch||d!==dashboard())setTimeout(()=>refreshCollected(false),30);}
+    try{
+      // Snapshot the range and tenant before the asynchronous request, not after it.
+      const u=new URL('/api/accounting/collected-profit',location.origin);
+      if(ctx.clientId)u.searchParams.set('clientId',ctx.clientId);
+      if(ctx.storeId)u.searchParams.set('storeId',ctx.storeId);
+      if(d.from)u.searchParams.set('from',d.from);
+      if(d.to)u.searchParams.set('to',d.to);
+      const result=await getJson(u.pathname+u.search);
+      if(request!==state.collectedRequest||epoch!==state.scopeEpoch||d!==dashboard())return;
+      if(result.from!==d.from||result.to!==d.to)throw new Error('فترة بيانات التحصيل لا تطابق الفترة المختارة');
+      state.collected=result;state.lastCollectedKey=key;
+    }catch(error){
+      if(request!==state.collectedRequest||epoch!==state.scopeEpoch||d!==dashboard())return;
+      state.collected={error:error.message,from:d.from,to:d.to};state.lastCollectedKey=key;
+    }finally{
+      if(request===state.collectedRequest){state.collecting=false;state.lastPendingKey='';render();}
+      if(request===state.collectedRequest&&(epoch!==state.scopeEpoch||d!==dashboard()))
+        setTimeout(()=>refreshCollected(false),30);
+    }
   }
 
   function card(type,title,value,sub,foot,negative=false){
@@ -239,7 +259,7 @@
   function schedule(delay=40){clearTimeout(state.timer);state.timer=setTimeout(render,delay);}
   function capture(path,data){
     if(path==='/api/dashboard'&&data?.ok){state.dashboard=data;if(!state.scopedDashboard){state.scopeEpoch++;state.collected=null;state.lastCollectedKey='';}schedule(20);if(!state.scopedDashboard)setTimeout(()=>refreshCollected(false),40);}
-    if(path==='/api/accounting/collected-profit'&&data?.ok&&!data.orders&&data.from===dashboard()?.from&&data.to===dashboard()?.to){state.collected=data;schedule(20);}
+    // Only guarded refreshCollected may install a collected-profit response.
   }
   window.fetch=async function(...args){
     const response=await nativeFetch(...args);try{const input=args[0],url=typeof input==='string'?input:input?.url||'',path=new URL(url,location.origin).pathname;if(path==='/api/dashboard'||path==='/api/accounting/collected-profit')response.clone().json().then(data=>capture(path,data)).catch(()=>{});}catch{}return response;
