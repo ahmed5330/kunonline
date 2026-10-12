@@ -7,6 +7,7 @@ on:
       - 'src/index-commerce-v38.js'
       - 'src/index-production-mobile-update.js'
       - 'scripts/dashboard-v125-contract-test.mjs'
+      - 'scripts/dashboard-v125-browser-visibility-test.mjs'
       - '.github/workflows/dashboard-v125-contract.yml'
   workflow_dispatch:
 
@@ -22,3 +23,5 @@ jobs:
         run: node --check public/v2/modules-v125-dashboard-section-periods.js
       - name: Validate dashboard v125 contract
         run: node scripts/dashboard-v125-contract-test.mjs
+      - name: Validate rendered date filters in Chromium
+        run: node scripts/dashboard-v125-browser-visibility-test.mjs
