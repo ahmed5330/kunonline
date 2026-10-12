@@ -3,7 +3,7 @@
   if(window.KunDashboardFinanceTopV126)return;
   const VERSION='126.4';
   const nativeFetch=window.fetch.bind(window);
-  const state={dashboard:null,scopedDashboard:null,collected:null,timer:0,collecting:false,lastCollectedKey:''};
+  const state={dashboard:null,scopedDashboard:null,collected:null,timer:0,collecting:false,lastCollectedKey:'',scopeEpoch:0};
   const dashboard=()=>state.scopedDashboard||state.dashboard;
   const $=(s,r=document)=>r?.querySelector?.(s)||null;
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -88,13 +88,14 @@
     return getJson(u.pathname+u.search);
   }
   async function refreshCollected(force=false){
-    const d=dashboard();if(!d||state.collecting)return;
+    const d=dashboard(),epoch=state.scopeEpoch;if(!d||state.collecting)return;
     const ctx=await context(),key=[ctx.clientId,ctx.storeId,d.from,d.to].join('|');
+    if(epoch!==state.scopeEpoch||d!==dashboard())return;
     if(!force&&key===state.lastCollectedKey&&state.collected)return;
     state.collecting=true;render();
-    try{state.collected=await collected(false);state.lastCollectedKey=key;}
-    catch(error){state.collected={error:error.message};}
-    finally{state.collecting=false;render();if(dashboard()&&(dashboard().from!==d.from||dashboard().to!==d.to))setTimeout(()=>refreshCollected(false),30);}
+    try{const result=await collected(false);if(epoch===state.scopeEpoch&&d===dashboard()){state.collected=result;state.lastCollectedKey=key;}}
+    catch(error){if(epoch===state.scopeEpoch&&d===dashboard())state.collected={error:error.message};}
+    finally{state.collecting=false;render();if(epoch!==state.scopeEpoch||d!==dashboard())setTimeout(()=>refreshCollected(false),30);}
   }
 
   function card(type,title,value,sub,foot,negative=false){
@@ -237,8 +238,8 @@
   }
   function schedule(delay=40){clearTimeout(state.timer);state.timer=setTimeout(render,delay);}
   function capture(path,data){
-    if(path==='/api/dashboard'&&data?.ok){state.dashboard=data;schedule(20);if(!state.scopedDashboard)setTimeout(()=>refreshCollected(false),40);}
-    if(path==='/api/accounting/collected-profit'&&data?.ok&&!data.orders){state.collected=data;schedule(20);}
+    if(path==='/api/dashboard'&&data?.ok){state.dashboard=data;if(!state.scopedDashboard){state.scopeEpoch++;state.collected=null;state.lastCollectedKey='';}schedule(20);if(!state.scopedDashboard)setTimeout(()=>refreshCollected(false),40);}
+    if(path==='/api/accounting/collected-profit'&&data?.ok&&!data.orders&&data.from===dashboard()?.from&&data.to===dashboard()?.to){state.collected=data;schedule(20);}
   }
   window.fetch=async function(...args){
     const response=await nativeFetch(...args);try{const input=args[0],url=typeof input==='string'?input:input?.url||'',path=new URL(url,location.origin).pathname;if(path==='/api/dashboard'||path==='/api/accounting/collected-profit')response.clone().json().then(data=>capture(path,data)).catch(()=>{});}catch{}return response;
@@ -247,12 +248,13 @@
     style();const root=$('#root');if(root)new MutationObserver(()=>{if(active())schedule(55);}).observe(root,{childList:true,subtree:true});
     document.addEventListener('click',event=>{
       const detail=event.target.closest?.('[data-f126-detail]');if(detail){event.preventDefault();open(detail.dataset.f126Detail);return;}
-      if(event.target.closest?.('[data-f126-refresh]')){event.preventDefault();window.KunDashboardV33?.reload?.();return;}
-      if(event.target.closest?.('.nav button[data-view="dashboard"],[data-dash-preset],#dashApplyRange,[data-v125-period]'))
+      if(event.target.closest?.('[data-f126-refresh]')){event.preventDefault();window.KunDashboardSectionPeriodsV125?.reloadSection?.('summary');return;}
+      if(event.target.closest?.('.nav button[data-view="dashboard"],[data-dash-preset],#dashApplyRange'))
         setTimeout(()=>{schedule(120);refreshCollected(true);},700);
     },true);
+    document.addEventListener('change',event=>{if(event.target.closest?.('#storeBtn')){state.scopeEpoch++;state.dashboard=null;state.scopedDashboard=null;state.collected=null;state.lastCollectedKey='';$('[data-dashboard-finance-top="126"]')?.remove();}},true);
     setTimeout(()=>{render();if(active()&&state.dashboard)refreshCollected(false);},900);
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',hook,{once:true});else hook();
-  window.KunDashboardFinanceTopV126={version:VERSION,refresh:()=>{render();return refreshCollected(true);},setScopedDashboard:d=>{if(!d?.ok)return;state.scopedDashboard=d;state.collected=null;state.lastCollectedKey='';render();refreshCollected(true);},clearScopedDashboard:()=>{state.scopedDashboard=null;state.collected=null;state.lastCollectedKey='';render();refreshCollected(true);},open};
+  window.KunDashboardFinanceTopV126={version:VERSION,refresh:()=>{render();return refreshCollected(true);},setScopedDashboard:d=>{if(!d?.ok)return;state.scopeEpoch++;state.scopedDashboard=d;state.collected=null;state.lastCollectedKey='';render();refreshCollected(true);},clearScopedDashboard:()=>{state.scopeEpoch++;state.scopedDashboard=null;state.collected=null;state.lastCollectedKey='';render();refreshCollected(true);},open};
 })();
