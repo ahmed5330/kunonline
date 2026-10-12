@@ -79,7 +79,7 @@
     if(!active())return;
     style();
     const root=$('#root');if(!root)return;
-    $('[data-dash-section]',root).filter(el=>el.classList.contains('dash-section')).forEach(decorateSection);
+    Array.from(root.querySelectorAll('.dash-section[data-dash-section]')).forEach(decorateSection);
     const summary=$('[data-dashboard-finance-top="126"]',root);if(summary)decorateSection(summary);
   }
   function schedule(delay=60){clearTimeout(timer);timer=setTimeout(decorate,delay);}
