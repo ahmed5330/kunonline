@@ -101,7 +101,7 @@ async function websiteWithDirectAndroidDownload(request,env){
     html=html.replace('</body>','<script src="/v2/modules-v124-dashboard-periods-province.js?v=124.1" data-kun-dashboard-periods-v124="1"></script></body>');
   }
   if(!html.includes('/v2/modules-v125-dashboard-section-periods.js')){
-    html=html.replace('</body>','<script src="/v2/modules-v125-dashboard-section-periods.js?v=125.2" data-kun-dashboard-section-periods-v125="1"></script></body>');
+    html=html.replace('</body>','<script src="/v2/modules-v125-dashboard-section-periods.js?v=125.3" data-kun-dashboard-section-periods-v125="1"></script></body>');
   }
   if(!html.includes('/v2/modules-v126-dashboard-finance-top.js')){
     html=html.replace('</body>','<script src="/v2/modules-v126-dashboard-finance-top.js?v=126.5" data-kun-dashboard-finance-top-v126="1"></script></body>');
