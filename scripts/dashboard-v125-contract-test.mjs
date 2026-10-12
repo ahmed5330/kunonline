@@ -13,7 +13,7 @@ for(const section of ['overview','trend','finance','ads','rates','provinces','ai
   assert.ok(ui.includes(`'${section}'`),`missing main dashboard section: ${section}`);
 }
 
-assert.ok(ui.includes("data-dashboard-finance-top=\\\"126\\\"")&&ui.includes('dash-f126-headline'),'consolidated summary must expose the same filter as other dashboard sections');
+assert.ok(ui.includes('data-dashboard-finance-top="126"')&&ui.includes('dash-f126-headline'),'consolidated summary must expose the same filter as other dashboard sections');
 assert.ok(ui.includes('dash-v125-period-bar'),'each section must receive a dedicated persistent period bar');
 assert.ok(ui.includes("head.insertAdjacentHTML('beforeend'"),'period bar must live in the section header instead of the volatile action controls');
 assert.ok(ui.includes('data-v125-period'),'period selects must use the v125 event contract');
