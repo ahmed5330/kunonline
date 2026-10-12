@@ -3,7 +3,8 @@
   if(window.KunDashboardFinanceTopV126)return;
   const VERSION='126.4';
   const nativeFetch=window.fetch.bind(window);
-  const state={dashboard:null,collected:null,timer:0,collecting:false,lastCollectedKey:''};
+  const state={dashboard:null,scopedDashboard:null,collected:null,timer:0,collecting:false,lastCollectedKey:''};
+  const dashboard=()=>state.scopedDashboard||state.dashboard;
   const $=(s,r=document)=>r?.querySelector?.(s)||null;
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const n=v=>Number(v)||0;
@@ -77,7 +78,7 @@
     return data;
   }
   async function collected(details=false){
-    const d=state.dashboard;if(!d)return null;
+    const d=dashboard();if(!d)return null;
     const ctx=await context(),u=new URL('/api/accounting/collected-profit',location.origin);
     if(ctx.clientId)u.searchParams.set('clientId',ctx.clientId);
     if(ctx.storeId)u.searchParams.set('storeId',ctx.storeId);
@@ -87,13 +88,13 @@
     return getJson(u.pathname+u.search);
   }
   async function refreshCollected(force=false){
-    const d=state.dashboard;if(!d||state.collecting)return;
+    const d=dashboard();if(!d||state.collecting)return;
     const ctx=await context(),key=[ctx.clientId,ctx.storeId,d.from,d.to].join('|');
     if(!force&&key===state.lastCollectedKey&&state.collected)return;
     state.collecting=true;render();
     try{state.collected=await collected(false);state.lastCollectedKey=key;}
     catch(error){state.collected={error:error.message};}
-    finally{state.collecting=false;render();}
+    finally{state.collecting=false;render();if(dashboard()&&(dashboard().from!==d.from||dashboard().to!==d.to))setTimeout(()=>refreshCollected(false),30);}
   }
 
   function card(type,title,value,sub,foot,negative=false){
@@ -111,7 +112,7 @@
     return rows.map(row=>`<span class="dash-f126-chip">${esc(row.label)} <b>${num(row.value)}</b></span>`).join('');
   }
   function html(){
-    const d=state.dashboard||{},c=d.currency||'EGP',f=d.finance||{},o=d.overview||{};
+    const d=dashboard()||{},c=d.currency||'EGP',f=d.finance||{},o=d.overview||{};
     // A change of dashboard period must not show yesterday's collected profit.
     const cp=state.collected?.from===d.from&&state.collected?.to===d.to?state.collected:null;
     const collectedValue=state.collecting&&!cp?'جارٍ الحساب…':cp?.error?'غير متاح':cp?money(cp.collectedProfit||0,cp.currency||c):'جارٍ الحساب…';
@@ -142,12 +143,12 @@
     </section>`;
   }
   function render(){
-    if(!active()||!state.dashboard)return;
+    if(!active()||!dashboard())return;
     style();const dash=$('.v33-dashboard');if(!dash)return;
     const old=$('[data-dashboard-finance-top="126"]',dash);
     const nav=$('.dash-x-nav',dash),toolbar=$('.dash-period-toolbar',dash),legacy=$('.dash-range',dash),hero=$('.dash-hero',dash);
     const anchor=nav||toolbar||legacy||hero;if(!anchor)return;
-    const signature=JSON.stringify([state.dashboard.from,state.dashboard.to,state.dashboard.overview,state.dashboard.finance?.netProfit,state.dashboard.rates?.selected,state.collected,state.collecting]);
+    const d=dashboard(),signature=JSON.stringify([d.from,d.to,d.overview,d.finance?.netProfit,d.rates?.selected,state.collected,state.collecting]);
     if(old?.__kunSummarySig===signature)return;
     const extrasOpen=old?.querySelector('.dash-f126-extras')?.open||false;
     if(old)old.outerHTML=html();else anchor.insertAdjacentHTML('afterend',html());
@@ -171,7 +172,7 @@
     }).join('')}</div>`;
   }
   function cppDetails(){
-    const d=state.dashboard||{},o=d.overview||{},orders=n(o.totalOrders),spend=n(o.adSpend),currency=d.currency||'EGP';
+    const d=dashboard()||{},o=d.overview||{},orders=n(o.totalOrders),spend=n(o.adSpend),currency=d.currency||'EGP';
     const cost=orders?money(spend/orders,currency):'غير متاح (لا توجد طلبات)';
     const source=d.ads?.spendSource||'';
     const sourceLabel=source==='integrations'?'تكاملات منصات الإعلانات':source==='manual'?'المصاريف الإعلانية المسجلة يدويًا':'لا يوجد صرف إعلاني مسجل';
@@ -185,15 +186,15 @@
     modal('مفردات سعر الطلب الفعلي',content);
   }
   function ordersDetails(){
-    const d=state.dashboard||{};
+    const d=dashboard()||{};
     modal('تفاصيل عدد الأوردرات',`<div class="kun85-scope-note">${esc(d.from||'')} — ${esc(d.to||'')} · الإجمالي <b>${num(d.overview?.totalOrders)}</b></div><div class="dash-f126-formula">يشمل كل الأوردرات المسجلة خلال الفترة، من إيزي أوردر أو الإضافة اليدوية بواسطة أي عضو في الفريق أو أي تكامل آخر، بجميع حالاتها. الأوردر الواحد يُحسب مرة واحدة.</div>${detailRows(d.overview?.details?.orders||[],d.currency)}`);
   }
   function revenueDetails(){
-    const d=state.dashboard||{};
+    const d=dashboard()||{};
     modal('تفاصيل الإيرادات المتوقعة',`<div class="kun85-scope-note">${esc(d.from||'')} — ${esc(d.to||'')} · الإيرادات المتوقعة <b>${money(d.overview?.expectedRevenue,d.currency)}</b></div><div class="dash-f126-formula">الإيرادات المتوقعة بعد استبعاد الملغي والمرتجع؛ وهي تختلف عن المبالغ المحصلة بالفعل.</div>${detailRows(d.overview?.details?.expectedRevenue||[],d.currency)}`);
   }
   function ratesDetails(type){
-    const d=state.dashboard||{},r=selectedRates(d),isConfirmation=type==='confirmation';
+    const d=dashboard()||{},r=selectedRates(d),isConfirmation=type==='confirmation';
     const title=isConfirmation?'تفاصيل نسبة التأكيد':'تفاصيل نسبة التسليم والمرتجعات';
     if(!r){modal(title,'<div class="dash-empty">معدلات هذه الفترة غير متاحة حاليًا؛ يُرجى تحديث البيانات.</div>');return;}
     const numerator=isConfirmation?n(r.confirmed):n(r.delivered);
@@ -206,11 +207,11 @@
     modal(title,`<div class="kun85-scope-note">الفترة: ${esc(d.from||'')} — ${esc(d.to||'')} · النتيجة <b>${esc(percentage)}</b></div><div class="dash-f126-formula">${esc(formula)}. العدد المحتسب: ${num(numerator)} من ${num(denominator)}.</div>${detailRows(detailItems,d.currency)}`);
   }
   async function pendingDetails(){
-    const d=state.dashboard||{},items=d.overview?.details?.expectedProfit||[];
+    const d=dashboard()||{},items=d.overview?.details?.expectedProfit||[];
     modal('مفردات هامش الطلبات النشطة',`<div class="kun85-scope-note">${esc(d.from||'')} — ${esc(d.to||'')} · الإجمالي <b>${money(d.overview?.expectedProfit,d.currency)}</b></div><div class="dash-f126-formula">يشمل الطلبات المؤكدة وقيد التجهيز والجاري شحنها، بعد تكلفة البضاعة ورسوم الطلب المباشرة، وقبل الإعلانات والمصاريف العامة. ليس صافي ربح المتجر.</div>${detailRows(items,d.currency)}`);
   }
   async function pnlDetails(){
-    const d=state.dashboard||{},ctx=await context(),u=new URL('/api/system/dashboard/input-details',location.origin);
+    const d=dashboard()||{},ctx=await context(),u=new URL('/api/system/dashboard/input-details',location.origin);
     u.searchParams.set('kind','netProfit');if(ctx.clientId)u.searchParams.set('clientId',ctx.clientId);if(ctx.storeId)u.searchParams.set('storeId',ctx.storeId);if(d.from)u.searchParams.set('from',d.from);if(d.to)u.searchParams.set('to',d.to);
     const holder=modal('مفردات صافي الربح التشغيلي','<div class="cs-loading">جارٍ تحميل تفاصيل الحساب…</div>');
     try{const x=await getJson(u.pathname+u.search),summary=x.summary||[];$('.dash-f126-modal',holder).innerHTML=`<h2>مفردات صافي الربح التشغيلي</h2><div class="kun85-scope-note">${esc(x.from||d.from||'')} — ${esc(x.to||d.to||'')} · الناتج <b>${money(x.total,d.currency)}</b></div><div class="dash-f126-summary">${summary.map(row=>`<div><span>${esc(row.label)}</span><b>${row.percent?`${num(row.value)}%`:row.money?money(row.value,d.currency):num(row.value)}</b></div>`).join('')}</div><div class="dash-f126-formula">المعادلة: ${esc(x.formula||'إيراد المنتجات − تكلفة المنتج − المصروفات التشغيلية')}</div><div class="cs-modal-actions"><button class="btn soft" data-f126-close>قفل</button></div>`; $('[data-f126-close]',holder).onclick=closeModal;}
@@ -236,7 +237,7 @@
   }
   function schedule(delay=40){clearTimeout(state.timer);state.timer=setTimeout(render,delay);}
   function capture(path,data){
-    if(path==='/api/dashboard'&&data?.ok){state.dashboard=data;schedule(20);setTimeout(()=>refreshCollected(false),40);}
+    if(path==='/api/dashboard'&&data?.ok){state.dashboard=data;schedule(20);if(!state.scopedDashboard)setTimeout(()=>refreshCollected(false),40);}
     if(path==='/api/accounting/collected-profit'&&data?.ok&&!data.orders){state.collected=data;schedule(20);}
   }
   window.fetch=async function(...args){
@@ -253,5 +254,5 @@
     setTimeout(()=>{render();if(active()&&state.dashboard)refreshCollected(false);},900);
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',hook,{once:true});else hook();
-  window.KunDashboardFinanceTopV126={version:VERSION,refresh:()=>{render();return refreshCollected(true);},open};
+  window.KunDashboardFinanceTopV126={version:VERSION,refresh:()=>{render();return refreshCollected(true);},setScopedDashboard:d=>{if(!d?.ok)return;state.scopedDashboard=d;state.collected=null;state.lastCollectedKey='';render();refreshCollected(true);},clearScopedDashboard:()=>{state.scopedDashboard=null;state.collected=null;state.lastCollectedKey='';render();refreshCollected(true);},open};
 })();
