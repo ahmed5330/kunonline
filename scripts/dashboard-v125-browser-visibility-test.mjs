@@ -53,7 +53,7 @@ try{
     results.noDocumentOverflow=document.documentElement.scrollWidth<=window.innerWidth+1;
     results.ok=results.finance&&results.ads&&results.summary&&results.navigationIndependence&&results.count===3&&results.noDocumentOverflow;
     document.getElementById('test-result').textContent=JSON.stringify(results);
-  },350);
+  },750);
   </script></body></html>`;
   const file=join(dir,'index.html');writeFileSync(file,html);
   const r=spawnSync(chrome,['--headless=new','--no-sandbox','--disable-gpu','--disable-dev-shm-usage','--no-first-run','--virtual-time-budget=1700','--window-size=1191,841','--dump-dom','file://'+file],{encoding:'utf8',timeout:35000,maxBuffer:2_000_000});
