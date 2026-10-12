@@ -11,6 +11,7 @@
     ['month_to_date','من بداية الشهر'],
     ['last_month','آخر ٣٠ يوم'],
     ['previous_month','الشهر السابق'],
+    ['all_time','من البداية'],
     ['custom','مدة معينة']
   ];
   const state={selected:'today',custom:null,timer:0,applying:false};
@@ -35,6 +36,7 @@
     if(preset==='month_to_date')return {from:monthStart(anchor),to:anchor};
     if(preset==='last_month')return {from:addDays(anchor,-29),to:anchor};
     if(preset==='previous_month'){const last=addDays(monthStart(anchor),-1);return {from:monthStart(last),to:last};}
+    if(preset==='all_time')return {from:'2000-01-01',to:anchor};
     if(preset==='custom'&&state.custom?.from&&state.custom?.to)return {...state.custom};
     const current=window.KunDashboardV33?.range?.();
     return current?.from&&current?.to&&current.from!=='beginning'?current:{from:anchor,to:anchor};
