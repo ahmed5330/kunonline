@@ -1,7 +1,7 @@
-/* Kun Online v125.1 — visible synchronized date filters above every dashboard section including the consolidated summary */
+/* Kun Online v125.2 — independent server-backed ranges per dashboard section */
 (()=>{
   if(window.KunDashboardSectionPeriodsV125)return;
-  const VERSION='125.1';
+  const VERSION='125.2';
   const MAIN_SECTIONS=new Set(['overview','trend','finance','ads','rates','provinces','ai','summary']);
   const PRESETS=[
     ['today','اليوم'],
@@ -14,7 +14,9 @@
     ['all_time','من البداية'],
     ['custom','مدة معينة']
   ];
-  let timer=0;
+  let timer=0,seq=0;
+  const scoped=new Map();
+  const errors=new Map();
   const LABELS={overview:'الملخص',summary:'ملخص الأداء',trend:'الاتجاهات',finance:'المالية والربحية',ads:'الحملات الإعلانية',rates:'التأكيد والتسليم',provinces:'المحافظات والشحن',ai:'توصيات الذكاء الاصطناعي'};
   const $=(s,r=document)=>r?.querySelector?.(s)||null;
   const $$=(s,r=document)=>r?[...r.querySelectorAll(s)]:[];
@@ -22,14 +24,15 @@
   const active=()=>$('.nav button.active')?.dataset.view==='dashboard'&&$('.v33-dashboard');
   const periodApi=()=>window.KunDashboardPeriodsProvinceV124||null;
   const selected=()=>periodApi()?.selected?.()||'today';
+  const selection=section=>scoped.get(section)?.preset||selected();
   const labelFor=key=>PRESETS.find(([value])=>value===key)?.[1]||'مدة معينة';
   const options=current=>PRESETS.map(([value,label])=>`<option value="${value}" ${current===value?'selected':''}>${label}</option>`).join('');
 
   function rangeFor(key){
     try{return periodApi()?.rangeForPreset?.(key)||null;}catch{return null;}
   }
-  function rangeText(key){
-    const r=rangeFor(key);
+  function rangeText(key,section){
+    const r=section&&scoped.get(section)?.range||rangeFor(key);
     if(!r?.from||!r?.to)return labelFor(key);
     return r.from===r.to?r.from:`${r.from} — ${r.to}`;
   }
@@ -49,6 +52,10 @@
       .v33-dashboard .dash-f126-headline.dash-v125-head .dash-f126-period{display:none}
       .v33-dashboard .dash-v125-period-bar select{direction:rtl}
       .v33-dashboard .dash-v125-period-bar:focus-within{border-color:#60a5fa}
+      .dash-v125-period-reset,.dash-v125-unify{border:1px solid var(--line,#cbd5e1);border-radius:9px;background:var(--card,#fff);color:var(--ink,#0f172a);font:inherit;font-size:10px;font-weight:800;cursor:pointer;padding:8px 10px}
+      .dash-v125-period-status{color:var(--muted,#64748b);font-size:9px;font-weight:700}
+      .dash-v125-period-error{color:#b91c1c;font-size:9px;flex:1 0 100%}
+      .dash-v125-unify{margin-inline-start:8px}
       body[data-theme="dark"] .v33-dashboard .dash-section-head.dash-v125-head>.dash-v125-period-bar{background:linear-gradient(180deg,#172033,var(--card));border-color:var(--line)}
       body[data-theme="dark"] .dash-v125-period-select{background:var(--card);border-color:var(--line)}
       @media(max-width:680px){
