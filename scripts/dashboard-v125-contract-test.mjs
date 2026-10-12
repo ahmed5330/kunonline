@@ -18,12 +18,16 @@ assert.ok(ui.includes('dash-v125-period-bar'),'each section must receive a dedic
 assert.ok(ui.includes("head.insertAdjacentHTML('beforeend'"),'period bar must live in the section header instead of the volatile action controls');
 assert.ok(ui.includes('data-v125-period'),'period selects must use the v125 event contract');
 assert.ok(ui.includes('KunDashboardPeriodsProvinceV124'),'v125 must delegate range calculation/application to the established v124 period controller');
-assert.ok(ui.includes('api.apply(value)'),'section selectors must actually apply the selected date range');
+assert.ok(ui.includes('requestJson(')&&ui.includes('XMLHttpRequest'),'independent date filters must request their own server-backed snapshot');
+assert.ok(ui.includes('renderScopedSection')&&ui.includes('setScopedDashboard'),'each section must render scoped financial and operational values');
+assert.ok(ui.includes("url.searchParams.set('clientId'" )&&ui.includes("url.searchParams.set('storeId'"),'scoped requests must preserve tenant/store context');
+assert.ok(ui.includes('clearSection')&&ui.includes('unify()'),'each section must support independent reset and all-section synchronization');
+assert.ok(ui.includes('customModal(section)')&&ui.includes('calendarDate('),'custom date picker must validate dates without changing dashboard global selection');
 assert.ok(ui.includes("MutationObserver(()=>schedule(80))"),'section period bars must be restored after dashboard rerenders');
 assert.ok(ui.includes('.dash-section-actions .dash-v124-period-control{display:none!important}'),'old volatile section controls must not create duplicates');
 
-assert.ok(preview.includes('/v2/modules-v125-dashboard-section-periods.js?v=125.1'),'preview must inject dashboard v125');
-assert.ok(production.includes('/v2/modules-v125-dashboard-section-periods.js?v=125.1'),'production must inject dashboard v125');
+assert.ok(preview.includes('/v2/modules-v125-dashboard-section-periods.js?v=125.2'),'preview must inject dashboard v125');
+assert.ok(production.includes('/v2/modules-v125-dashboard-section-periods.js?v=125.2'),'production must inject dashboard v125');
 assert.ok(preview.indexOf('modules-v125-dashboard-section-periods.js')>preview.indexOf('modules-v124-dashboard-periods-province.js'),'preview must load v125 after v124');
 assert.ok(production.indexOf('modules-v125-dashboard-section-periods.js')>production.indexOf('modules-v124-dashboard-periods-province.js'),'production must load v125 after v124');
 
