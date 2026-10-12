@@ -31,4 +31,9 @@ const executive=fs.readFileSync('public/v2/modules-v122-dashboard-experience.js'
 const collected=fs.readFileSync('public/v2/modules-v47-collected-profit.js','utf8');
 assert.ok(executive.includes("window.KunDashboardFinanceTopV126?.version==='126.4'"),'legacy dark executive must not recreate itself');
 assert.ok(collected.includes("window.KunDashboardFinanceTopV126?.version==='126.4'"),'legacy standalone collected cards must not reappear/poll');
+assert.ok(ui.includes('const request=++state.collectedRequest'),'new accounting requests must supersede older dates and stores');
+assert.ok(ui.includes('if(request!==state.collectedRequest||epoch!==state.scopeEpoch||d!==dashboard())return'),'stale accounting responses must not overwrite later scoped periods');
+assert.ok(ui.includes('result.from!==d.from||result.to!==d.to'),'collected-profit range must match selected period');
+assert.ok(ui.includes("state.scopedDashboard=d"),'scoped performance summary must update only its own section');
+assert.ok(!ui.includes("if(path==='/api/accounting/collected-profit'&&data?.ok&&!data.orders)"),'global fetch capture must not bypass accounting guards');
 console.log('dashboard v126 finance top contract: ok');
