@@ -1,7 +1,7 @@
-/* Kun Online v125.2 — independent server-backed ranges per dashboard section */
+/* Kun Online v125.3 — visible top-of-section date bars, including narrow RTL layouts */
 (()=>{
   if(window.KunDashboardSectionPeriodsV125)return;
-  const VERSION='125.2';
+  const VERSION='125.3';
   const MAIN_SECTIONS=new Set(['overview','trend','finance','ads','rates','provinces','ai','summary']);
   const PRESETS=[
     ['today','اليوم'],
@@ -21,7 +21,7 @@
   const $=(s,r=document)=>r?.querySelector?.(s)||null;
   const $$=(s,r=document)=>r?[...r.querySelectorAll(s)]:[];
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  const active=()=>$('.nav button.active')?.dataset.view==='dashboard'&&$('.v33-dashboard');
+  const active=()=>!!$('#root .v33-dashboard');
   const periodApi=()=>window.KunDashboardPeriodsProvinceV124||null;
   const selected=()=>periodApi()?.selected?.()||'today';
   const selection=section=>scoped.get(section)?.preset||selected();
@@ -41,14 +41,20 @@
     const el=document.createElement('style');
     el.id='kunDashboardSectionPeriods125Style';
     el.textContent=`
-      .v33-dashboard .dash-section-head.dash-v125-head{display:flex;flex-wrap:wrap;align-items:flex-start;gap:10px}
-      .v33-dashboard .dash-section-head.dash-v125-head>.dash-v125-period-bar{order:20;flex:1 0 100%;width:100%;display:flex!important;align-items:center;gap:10px;padding:9px 11px;border:1px solid var(--line,#e2e8f0);border-radius:12px;background:linear-gradient(180deg,#fbfdff,#f8fafc);box-sizing:border-box}
+      .v33-dashboard{width:100%;max-width:100%;min-width:0;overflow-x:clip}
+      .v33-dashboard .dash-section{max-width:100%;min-width:0}
+      .v33-dashboard .dash-section-head{min-width:0}
+      .v33-dashboard .dash-section.dash-v125-ready{scroll-margin-top:72px}
+      .v33-dashboard .dash-section>.dash-v125-period-bar{position:relative;z-index:2;display:flex!important;align-items:center;flex-wrap:wrap;gap:10px;width:100%;max-width:100%;min-width:0;margin:0 0 17px;padding:12px 14px;border:1px solid #bdd7f4;border-radius:12px;background:#f2f7ff;box-sizing:border-box;direction:rtl;text-align:right}
+      .v33-dashboard .dash-section>.dash-v125-period-bar .dash-v125-period-select{flex:0 1 215px}
+      .v33-dashboard .dash-section>.dash-v125-period-bar [data-v125-range]{word-break:break-word}
+      .v33-dashboard .dash-section-head.dash-v125-head>.dash-v125-period-bar{display:none!important}
        .dash-v125-period-copy{display:grid;gap:2px;min-width:150px}.dash-v125-period-copy>span{color:var(--muted,#64748b);font-size:8px;font-weight:900}.dash-v125-period-copy>strong{color:var(--ink,#0f172a);font-size:10px;font-weight:900;line-height:1.4}
       .dash-v125-period-select{margin-inline-start:auto;min-width:178px;height:36px;padding:0 11px;border:1px solid var(--line,#dbe3ec);border-radius:10px;background:var(--card,#fff);color:var(--ink,#0f172a);font:inherit;font-size:10px;font-weight:900;outline:0;cursor:pointer}
       .dash-v125-period-select:focus{border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.09)}
       .v33-dashboard .dash-section-actions .dash-v124-period-control{display:none!important}
       .v33-dashboard .dash-f126-headline.dash-v125-head{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
-      .v33-dashboard .dash-f126-headline.dash-v125-head>.dash-v125-period-bar{order:20;flex:1 0 100%;width:100%;display:flex;align-items:center;gap:10px;padding:9px 11px;border:1px solid var(--line,#e2e8f0);border-radius:12px;background:var(--card,#fff);box-sizing:border-box}
+      .v33-dashboard .dash-f126-headline.dash-v125-head>.dash-v125-period-bar{display:none!important}
       .v33-dashboard .dash-f126-headline.dash-v125-head .dash-f126-period{display:none}
       .v33-dashboard .dash-v125-period-bar select{direction:rtl}
       .v33-dashboard .dash-v125-period-bar:focus-within{border-color:#60a5fa}
@@ -56,13 +62,13 @@
       .dash-v125-period-status{color:var(--muted,#64748b);font-size:9px;font-weight:700}
       .dash-v125-period-error{color:#b91c1c;font-size:9px;flex:1 0 100%}
       .dash-v125-unify{margin-inline-start:8px}
-      body[data-theme="dark"] .v33-dashboard .dash-section-head.dash-v125-head>.dash-v125-period-bar{background:linear-gradient(180deg,#172033,var(--card));border-color:var(--line)}
+      body[data-theme="dark"] .v33-dashboard .dash-section>.dash-v125-period-bar{background:#172b42;border-color:#31517b}
       body[data-theme="dark"] .dash-v125-period-select{background:var(--card);border-color:var(--line)}
       @media(max-width:680px){
-        .v33-dashboard .dash-section-head.dash-v125-head>.dash-v125-period-bar,.v33-dashboard .dash-f126-headline.dash-v125-head>.dash-v125-period-bar{display:grid!important;grid-template-columns:minmax(0,1fr) minmax(150px,.8fr);gap:8px;padding:8px 9px}
+        .v33-dashboard .dash-section>.dash-v125-period-bar{display:grid!important;grid-template-columns:minmax(0,1fr) minmax(150px,.8fr);gap:8px;padding:10px}
         .dash-v125-period-copy{min-width:0}.dash-v125-period-select{width:100%;min-width:0;margin-inline-start:0}
       }
-      @media(max-width:390px){.v33-dashboard .dash-section-head.dash-v125-head>.dash-v125-period-bar,.v33-dashboard .dash-f126-headline.dash-v125-head>.dash-v125-period-bar{grid-template-columns:1fr}.dash-v125-period-select{height:38px}}
+      @media(max-width:390px){.v33-dashboard .dash-section>.dash-v125-period-bar{grid-template-columns:1fr}.dash-v125-period-select{height:38px}}
     `;
     document.head.appendChild(el);
   }
@@ -72,19 +78,28 @@
   function decorateSection(sec){
     const section=String(sec?.dataset?.dashSection||(sec?.dataset?.dashboardFinanceTop==='126'?'summary':''));
     if(!MAIN_SECTIONS.has(section))return;
+    // Keep this control outside volatile legacy headers: the screenshots showed
+    // those headings clipped and the per-section date control invisible.
     const head=section==='summary'?$('.dash-f126-headline',sec):$('.dash-section-head',sec);if(!head)return;
-    head.classList.add('dash-v125-head');
-    let bar=$(`.dash-v125-period-bar[data-v125-period-bar="${section}"]`,head);
+    sec.classList.add('dash-v125-ready');
+    let bar=$(`:scope > .dash-v125-period-bar[data-v125-period-bar="${section}"]`,sec);
     const current=selection(section);
-    if(!bar){head.insertAdjacentHTML('beforeend',barHtml(section,current));bar=$(`.dash-v125-period-bar[data-v125-period-bar="${section}"]`,head);}
+    if(!bar){
+      // A misplaced bar from previous versions should be relocated, not duplicated.
+      const old=$(`.dash-v125-period-bar[data-v125-period-bar="${section}"]`,sec);
+      if(old)sec.insertBefore(old,sec.firstChild);
+      else sec.insertAdjacentHTML('afterbegin',barHtml(section,current));
+      bar=$(`:scope > .dash-v125-period-bar[data-v125-period-bar="${section}"]`,sec);
+    }
     const select=$('[data-v125-period]',bar),range=$('[data-v125-range]',bar);
     if(select&&select.value!==current)select.value=current;
     const txt=rangeText(current,section);if(range&&range.textContent!==txt)range.textContent=txt;
     const entry=scoped.get(section),status=$('[data-v125-status]',bar),reset=$('[data-v125-reset]',bar),error=$('[data-v125-error]',bar);
-    if(status)status.textContent=entry?.loading?'جاري تحميل القسم…':entry?'فترة مستقلة':'الفترة العامة';
+    const nextStatus=entry?.loading?'جاري تحميل القسم…':entry?'فترة مستقلة':'الفترة العامة';
+    if(status&&status.textContent!==nextStatus)status.textContent=nextStatus;
     if(reset)reset.hidden=!entry;
     if(select)select.disabled=!!entry?.loading;
-    if(error){error.textContent=errors.get(section)||'';error.hidden=!errors.has(section);}
+    if(error){const message=errors.get(section)||'';if(error.textContent!==message)error.textContent=message;if(error.hidden!==!errors.has(section))error.hidden=!errors.has(section);}
     $$('.dash-section-actions .dash-v124-period-control',sec).forEach(node=>node.setAttribute('aria-hidden','true'));
   }
   function decorate(){
