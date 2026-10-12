@@ -26,7 +26,7 @@ assert.ok(ui.includes("statuses=entries(d,'حالات الطلبات')"),'summar
 assert.ok(ui.includes('selectedRates(d)'),'selected period must drive confirmation/delivery rates');
 assert.ok(ui.includes('[data-dash-executive="122"]')&&ui.includes('#cp47Section')&&ui.includes('[data-dash-section="overview"]'),'old duplicate dashboard sections must be hidden');
 assert.ok(ui.includes('if(old?.__kunSummarySig===signature)return'),'render must not loop on its own MutationObserver updates');
-assert.ok(ui.includes('data-f126-refresh')&&ui.includes('KunDashboardV33?.reload'),'unified dashboard must remain refreshable');
+assert.ok(ui.includes('data-f126-refresh')&&ui.includes("KunDashboardSectionPeriodsV125?.reloadSection?.('summary')"),'unified dashboard must remain refreshable');
 const executive=fs.readFileSync('public/v2/modules-v122-dashboard-experience.js','utf8');
 const collected=fs.readFileSync('public/v2/modules-v47-collected-profit.js','utf8');
 assert.ok(executive.includes("window.KunDashboardFinanceTopV126?.version==='126.4'"),'legacy dark executive must not recreate itself');
