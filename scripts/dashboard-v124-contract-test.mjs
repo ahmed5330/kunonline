@@ -6,12 +6,13 @@ const ui=read('public/v2/modules-v124-dashboard-periods-province.js');
 const preview=read('src/index-commerce-v38.js');
 const production=read('src/index-production-mobile-update.js');
 
-for(const label of ['اليوم','أمس','من بداية الأسبوع','آخر ٧ أيام','من بداية الشهر','آخر شهر','مدة معينة']){
+for(const label of ['اليوم','أمس','من بداية الأسبوع','آخر ٧ أيام','من بداية الشهر','آخر ٣٠ يوم','مدة معينة']){
   assert.ok(ui.includes(label),`missing dashboard period label: ${label}`);
 }
 assert.match(ui,/preset==='week_to_date'.*weekStart\(anchor\)/s,'week-to-date must start at current week start');
 assert.match(ui,/preset==='last_7_days'.*addDays\(anchor,-6\)/s,'last 7 days must include today plus previous six days');
 assert.match(ui,/preset==='last_month'.*addDays\(anchor,-29\)/s,'last month must be a rolling 30-day window');
+assert.ok(ui.includes("preset==='previous_month'"),'previous calendar month must be distinct from rolling 30 days');
 assert.match(ui,/daysSinceSaturday=.*getUTCDay\(\)-6/s,'dashboard week must start on Saturday');
 
 assert.ok(ui.includes("$$('.dash-section[data-dash-section]'"),'period controls must be added to dashboard sections');
@@ -25,8 +26,8 @@ assert.ok(ui.includes("tableWrap.classList.remove('dash-u-province-hidden')"),'t
 assert.ok(ui.includes('dash-v124-orders-track'),'order-volume visualization must be merged into the province table');
 assert.ok(ui.includes('بدون تكرار نفس المحافظات مرتين'),'province copy must explain the single merged view');
 
-assert.ok(preview.includes('/v2/modules-v124-dashboard-periods-province.js?v=124.0'),'preview must inject dashboard v124');
-assert.ok(production.includes('/v2/modules-v124-dashboard-periods-province.js?v=124.0'),'production must inject dashboard v124');
+assert.ok(preview.includes('/v2/modules-v124-dashboard-periods-province.js?v=124.1'),'preview must inject dashboard v124');
+assert.ok(production.includes('/v2/modules-v124-dashboard-periods-province.js?v=124.1'),'production must inject dashboard v124');
 
 for(const unsafe of ['DROP TABLE','DELETE FROM','ALTER TABLE','CREATE TABLE','migrations/']){
   assert.ok(!ui.includes(unsafe),`dashboard v124 must not contain database mutation token: ${unsafe}`);
