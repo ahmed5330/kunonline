@@ -234,6 +234,7 @@
     document.addEventListener('change',event=>{
       if(event.target.closest?.('#storeBtn')){unify();}
     },true);
+    schedule(0); // first paint: show filters without waiting for the delayed legacy refresh
     setTimeout(decorate,420);
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',hook);else hook();
