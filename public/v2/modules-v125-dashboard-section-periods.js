@@ -67,7 +67,7 @@
     document.head.appendChild(el);
   }
   function barHtml(section,current){
-    return `<div class="dash-v125-period-bar" data-v125-period-bar="${esc(section)}"><div class="dash-v125-period-copy"><span>فلتر التاريخ · ${esc(LABELS[section]||section)}</span><strong data-v125-range>${esc(rangeText(current))}</strong></div><select class="dash-v125-period-select" data-v125-period="${esc(section)}" aria-label="تحديد فترة ${esc(LABELS[section]||section)}">${options(current)}</select></div>`;
+    return `<div class="dash-v125-period-bar" data-v125-period-bar="${esc(section)}"><div class="dash-v125-period-copy"><span>فلتر التاريخ · ${esc(LABELS[section]||section)}</span><strong data-v125-range>${esc(rangeText(current,section))}</strong></div><select class="dash-v125-period-select" data-v125-period="${esc(section)}" aria-label="تحديد فترة ${esc(LABELS[section]||section)}">${options(current)}</select><span class="dash-v125-period-status" data-v125-status>عام</span><button type="button" class="dash-v125-period-reset" data-v125-reset="${esc(section)}" hidden>↶ الفترة العامة</button><span class="dash-v125-period-error" data-v125-error hidden></span></div>`;
   }
   function decorateSection(sec){
     const section=String(sec?.dataset?.dashSection||(sec?.dataset?.dashboardFinanceTop==='126'?'summary':''));
@@ -75,11 +75,16 @@
     const head=section==='summary'?$('.dash-f126-headline',sec):$('.dash-section-head',sec);if(!head)return;
     head.classList.add('dash-v125-head');
     let bar=$(`.dash-v125-period-bar[data-v125-period-bar="${section}"]`,head);
-    const current=selected();
+    const current=selection(section);
     if(!bar){head.insertAdjacentHTML('beforeend',barHtml(section,current));bar=$(`.dash-v125-period-bar[data-v125-period-bar="${section}"]`,head);}
     const select=$('[data-v125-period]',bar),range=$('[data-v125-range]',bar);
     if(select&&select.value!==current)select.value=current;
-    if(range&&range.textContent!==rangeText(current))range.textContent=rangeText(current);
+    const txt=rangeText(current,section);if(range&&range.textContent!==txt)range.textContent=txt;
+    const entry=scoped.get(section),status=$('[data-v125-status]',bar),reset=$('[data-v125-reset]',bar),error=$('[data-v125-error]',bar);
+    if(status)status.textContent=entry?.loading?'جاري تحميل القسم…':entry?'فترة مستقلة':'الفترة العامة';
+    if(reset)reset.hidden=!entry;
+    if(select)select.disabled=!!entry?.loading;
+    if(error){error.textContent=errors.get(section)||'';error.hidden=!errors.has(section);}
     $$('.dash-section-actions .dash-v124-period-control',sec).forEach(node=>node.setAttribute('aria-hidden','true'));
   }
   function decorate(){
@@ -88,6 +93,8 @@
     const root=$('#root');if(!root)return;
     Array.from(root.querySelectorAll('.dash-section[data-dash-section]')).forEach(decorateSection);
     const summary=$('[data-dashboard-finance-top="126"]',root);if(summary)decorateSection(summary);
+    scoped.forEach((entry,section)=>{if(section==='summary'||!entry?.data||entry.loading)return;const sec=$('.dash-section[data-dash-section="'+section+'"]',root);if(sec&&sec.dataset.v125ScopeSig!==entry.data.from+'|'+entry.data.to)window.KunDashboardV33?.renderScopedSection?.(section,entry.data);});
+    const toolbar=$('.dash-period-toolbar',root);if(toolbar&&!$('[data-v125-unify]',toolbar))toolbar.insertAdjacentHTML('beforeend','<button type="button" class="dash-v125-unify" data-v125-unify="1">توحيد فترات الأقسام</button>');
   }
   function schedule(delay=60){clearTimeout(timer);timer=setTimeout(decorate,delay);}
   function apply(value){
