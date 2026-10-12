@@ -92,7 +92,7 @@ async function websiteWithDirectAndroidDownload(request,env){
     html=html.replace('</body>','<script src="/v2/modules-v121-dashboard-sync-guard.js?v=121.1" data-kun-dashboard-sync-guard="1"></script></body>');
   }
   if(!html.includes('/v2/modules-v122-dashboard-experience.js')){
-    html=html.replace('</body>','<script src="/v2/modules-v122-dashboard-experience.js?v=122.0" data-kun-dashboard-experience="1"></script></body>');
+    html=html.replace('</body>','<script src="/v2/modules-v122-dashboard-experience.js?v=122.1" data-kun-dashboard-experience="1"></script></body>');
   }
   if(!html.includes('/v2/modules-v123-dashboard-unified.js')){
     html=html.replace('</body>','<script src="/v2/modules-v123-dashboard-unified.js?v=123.0" data-kun-dashboard-unified="1"></script></body>');
@@ -101,10 +101,10 @@ async function websiteWithDirectAndroidDownload(request,env){
     html=html.replace('</body>','<script src="/v2/modules-v124-dashboard-periods-province.js?v=124.1" data-kun-dashboard-periods-v124="1"></script></body>');
   }
   if(!html.includes('/v2/modules-v125-dashboard-section-periods.js')){
-    html=html.replace('</body>','<script src="/v2/modules-v125-dashboard-section-periods.js?v=125.1" data-kun-dashboard-section-periods-v125="1"></script></body>');
+    html=html.replace('</body>','<script src="/v2/modules-v125-dashboard-section-periods.js?v=125.2" data-kun-dashboard-section-periods-v125="1"></script></body>');
   }
   if(!html.includes('/v2/modules-v126-dashboard-finance-top.js')){
-    html=html.replace('</body>','<script src="/v2/modules-v126-dashboard-finance-top.js?v=126.4" data-kun-dashboard-finance-top-v126="1"></script></body>');
+    html=html.replace('</body>','<script src="/v2/modules-v126-dashboard-finance-top.js?v=126.5" data-kun-dashboard-finance-top-v126="1"></script></body>');
   }
   if(!html.includes('/v2/modules-v127-subscriptions.js')){
     html=html.replace('</body>','<script src="/v2/modules-v127-subscriptions.js?v=127.19" data-kun-subscriptions-v127="1"></script></body>');

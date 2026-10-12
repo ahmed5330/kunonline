@@ -13,7 +13,7 @@
     provinces:['الشحن','كفاءة الشحن حسب المحافظة','أين يأتي الحجم وأين تتحسن أو تتراجع جودة التسليم والمرتجعات.'],
     ai:['الذكاء','قراءة AI وخطوات العمل','الإشارات والتوصيات العملية بعد ربط التسويق والتشغيل والمالية.']
   };
-  let lastData=null,timer=0,decorating=false;
+  let lastData=null,timer=0,decorating=false,scopedTrend=null;
   const $=(s,r=document)=>r.querySelector(s);
   const $$=(s,r=document)=>[...r.querySelectorAll(s)];
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -102,7 +102,7 @@
   }
   function decorate(){
     if(decorating||!active())return;const root=$('#root');if(!root)return;decorating=true;
-    try{style();decorateHero(root);ensureStructure(root,lastData);decorateSections(root);dedupe(root);trendDepth(root,lastData);}finally{decorating=false;}
+    try{style();decorateHero(root);ensureStructure(root,lastData);decorateSections(root);dedupe(root);trendDepth(root,scopedTrend||lastData);}finally{decorating=false;}
   }
   function schedule(delay=40){clearTimeout(timer);timer=setTimeout(decorate,delay);}
   window.fetch=async function(...args){
@@ -114,5 +114,5 @@
     setTimeout(decorate,350);
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',hook);else hook();
-  window.KunDashboardExperienceV122={refresh:()=>decorate(),version:VERSION};
+  window.KunDashboardExperienceV122={refresh:()=>decorate(),setTrendSnapshot:d=>{scopedTrend=d||null;schedule(20);},version:VERSION};
 })();
