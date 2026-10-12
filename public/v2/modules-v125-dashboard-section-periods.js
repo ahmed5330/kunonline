@@ -11,6 +11,7 @@
     ['month_to_date','من بداية الشهر'],
     ['last_month','آخر ٣٠ يوم'],
     ['previous_month','الشهر السابق'],
+    ['all_time','من البداية'],
     ['custom','مدة معينة']
   ];
   let timer=0;
