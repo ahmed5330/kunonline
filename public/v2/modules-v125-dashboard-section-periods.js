@@ -198,7 +198,7 @@
   }
   function reloadSection(section){
     const entry=scoped.get(section);
-    if(!entry)return window.KunDashboardV33?.reloadSection?.(section);
+    if(!entry)return section==='summary'?window.KunDashboardV33?.reload?.():window.KunDashboardV33?.reloadSection?.(section);
     return apply(entry.preset,section,entry.range);
   }
   function hook(){
