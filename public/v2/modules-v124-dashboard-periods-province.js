@@ -1,7 +1,7 @@
-/* Kun Online v124.0 — one province view + visible period filter in every dashboard section */
+/* Kun Online v124.1 — calendar-accurate previous month and dashboard period coordination */
 (()=>{
   if(window.KunDashboardPeriodsProvinceV124)return;
-  const VERSION='124.0';
+  const VERSION='124.1';
   const nativeFetch=window.fetch.bind(window);
   const PRESETS=[
     ['today','اليوم'],
@@ -9,7 +9,8 @@
     ['week_to_date','من بداية الأسبوع'],
     ['last_7_days','آخر ٧ أيام'],
     ['month_to_date','من بداية الشهر'],
-    ['last_month','آخر شهر'],
+    ['last_month','آخر ٣٠ يوم'],
+    ['previous_month','الشهر السابق'],
     ['custom','مدة معينة']
   ];
   const state={selected:'today',custom:null,timer:0,applying:false};
@@ -33,6 +34,7 @@
     if(preset==='last_7_days')return {from:addDays(anchor,-6),to:anchor};
     if(preset==='month_to_date')return {from:monthStart(anchor),to:anchor};
     if(preset==='last_month')return {from:addDays(anchor,-29),to:anchor};
+    if(preset==='previous_month'){const last=addDays(monthStart(anchor),-1);return {from:monthStart(last),to:last};}
     if(preset==='custom'&&state.custom?.from&&state.custom?.to)return {...state.custom};
     const current=window.KunDashboardV33?.range?.();
     return current?.from&&current?.to&&current.from!=='beginning'?current:{from:anchor,to:anchor};
