@@ -47,10 +47,11 @@ jobs:
         run: |
           node scripts/kun-primary-navigation-contract-test.mjs
           node --check public/v2/kun-design-v143.js
-      - name: Contextual help browser and accessibility regression
+      - name: Production navigation restore regression
         run: |
-          node --check public/v2/kun-context-help-v146.js
-          node scripts/browser-context-help-fixture-test.mjs
+          node scripts/kun-primary-navigation-contract-test.mjs
+          node --check public/v2/kun-design-v143.js
+          node -e "const s=require('fs').readFileSync('public/v2/index.html','utf8');if(s.includes('kun-context-help-v146'))process.exit(1);console.log('v146 invasive help inactive')"
       - name: Serialized warehouse transaction and browser regression
         run: |
           node scripts/warehouse-operations-test.mjs
