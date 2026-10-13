@@ -93,7 +93,7 @@ assert.ok(ui.includes('sub127-proof-large'),'admin payment modal must render a l
 assert.ok(ui.includes('data-sub127-view-client-payment'),'client table must expose pending payment details directly');
 assert.ok(ui.includes("/api/admin/wallet/topups/${encodeURIComponent(key)}/proof"),'proof image must load lazily on demand');
 assert.ok(ui.includes("root.dataset.sub127Admin==='loading'"),'admin screen must suppress duplicate concurrent loads');
-assert.ok(ui.includes('state.locked?5000:60000'),'locked clients must recheck activation within five seconds');
+assert.ok(ui.includes('state.locked?5000:low?10000:60000'),'locked clients must recheck within 5s and low-balance clients within 10s');
 assert.ok(ui.includes('KunPermissionNavigationV51?.load'),'unlock must reload navigation permissions, not only reapply stale state');
 assert.ok(ui.includes("kun:subscription-access-restored"),'unlock must broadcast navigation restoration');
 assert.ok(ui.includes("$('.nav .nav-group')"),'unlock must restore hidden navigation groups');
