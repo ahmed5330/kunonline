@@ -10,6 +10,7 @@
   const root=()=>document.getElementById('root');
   const toast=s=>window.showToast?window.showToast(s):alert(s);
   const ID='kun-clarity-135';
+  const hint=label=>window.KunHelpSafeV147?.icon(label)||'';
   let screen='integrations';
   async function scope(){
     const clientId=txt(await (window.kunClientId?.()||Promise.resolve('')));
@@ -48,7 +49,7 @@
   }
   function cardMarkup(){
     return '<div class="cl135" id="'+ID+'">'+
-      '<div class="cl135-header"><div class="cl135-mark" aria-hidden="true">◈</div><div><div class="cl135-title">Microsoft Clarity</div><div class="cl135-sub">سلوك العملاء · التسجيلات والخرائط الحرارية في Clarity · تحليل الحملات داخل كن أونلاين</div></div><span class="cl135-status" id="cl135-status">تحميل...</span></div>'+
+      '<div class="cl135-header"><div class="cl135-mark" aria-hidden="true">◈</div><div><div class="cl135-title">Microsoft Clarity'+hint('Microsoft Clarity')+'</div><div class="cl135-sub">سلوك العملاء · التسجيلات والخرائط الحرارية في Clarity · تحليل الحملات داخل كن أونلاين</div></div><span class="cl135-status" id="cl135-status">تحميل...</span></div>'+
       '<div class="cl135-grid"><label>Project ID أو كود التثبيت كاملًا<textarea id="cl135-project" placeholder="Project ID أو الصق كود Clarity كاملًا" aria-label="Clarity Project ID"></textarea></label>'+
       '<label>Data Export API Token (اختياري للتتبع، مطلوب للتحليلات)<input id="cl135-token" type="password" autocomplete="new-password" placeholder="اتركه فارغًا للاحتفاظ بالتوكن المشفر"></label></div>'+
       '<div class="cl135-actions"><button class="cl135-btn cl135-main" id="cl135-save">حفظ وربط</button><button class="cl135-btn" id="cl135-sync">اختبار API ومزامنة</button><button class="cl135-btn" id="cl135-report">عرض تحليلات الإعلانات</button><button class="cl135-btn" id="cl135-copy">نسخ كود التثبيت</button><a class="cl135-btn" href="https://clarity.microsoft.com/" target="_blank" rel="noopener noreferrer" style="text-decoration:none">فتح لوحة Clarity ↗</a><button class="cl135-btn cl135-warn" id="cl135-remove">فصل التكامل</button></div>'+
@@ -115,7 +116,7 @@
   }
   const normalize=s=>txt(s).replace(/\s+/g,' ').toLowerCase();
   function table(rows,headers){
-    return '<div class="cl135-tablewrap"><table class="cl135-table"><thead><tr>'+headers.map(s=>'<th>'+esc(s)+'</th>').join('')+
+    return '<div class="cl135-tablewrap"><table class="cl135-table"><thead><tr>'+headers.map(s=>'<th>'+esc(s)+hint(s)+'</th>').join('')+
     '</tr></thead><tbody>'+rows.join('')+'</tbody></table></div>';
   }
   function trafficSection(title,rows){
@@ -199,7 +200,7 @@
       const bot=devices.reduce((n,r)=>n+r.botSessions,0);
       const totalCampaign=campaigns.reduce((n,r)=>n+r.sessions,0);
       el.innerHTML='<div class="page-head"><div><div class="title">◈ Microsoft Clarity</div><div class="sub">سلوك الزوار مع سياق الحملات الإعلانية · '+esc(latest?new Date(latest.syncedAt).toLocaleString('ar-EG'):'لا توجد مزامنة بعد')+'</div></div><div class="spacer"></div><button class="btn soft" id="cl135-back">العودة للتكاملات</button><button class="btn primary" id="cl135-refresh">مزامنة الآن</button></div>'+
-      '<div class="cl135-kpis"><div class="cl135-kpi"><span>جلسات آخر 24 ساعة من Clarity</span><strong>'+number(sessions||totalCampaign)+'</strong></div><div class="cl135-kpi"><span>جلسات البوت</span><strong>'+number(bot)+'</strong></div><div class="cl135-kpi"><span>الحملات التي ظهر اسمها</span><strong>'+number(campaigns.filter(x=>x.name!=='غير محدد').length)+'</strong></div><div class="cl135-kpi"><span>حالة API</span><strong style="font-size:15px">'+esc(statusName(st))+'</strong></div></div>'+
+      '<div class="cl135-kpis"><div class="cl135-kpi"><span>جلسات آخر 24 ساعة من Clarity'+hint('جلسات آخر 24 ساعة من Clarity')+'</span><strong>'+number(sessions||totalCampaign)+'</strong></div><div class="cl135-kpi"><span>جلسات البوت'+hint('جلسات البوت')+'</span><strong>'+number(bot)+'</strong></div><div class="cl135-kpi"><span>الحملات التي ظهر اسمها'+hint('الحملات التي ظهر اسمها')+'</span><strong>'+number(campaigns.filter(x=>x.name!=='غير محدد').length)+'</strong></div><div class="cl135-kpi"><span>حالة API'+hint('حالة API')+'</span><strong style="font-size:15px">'+esc(statusName(st))+'</strong></div></div>'+
       (!latest?'<div class="cl135 cl135-error">لم تُجلب بيانات بعد؛ ثبّت التتبع على المتجر واحفظ API Token في التكاملات، ثم اختبر الاتصال.</div>':'')+
       (meta.error?'<div class="cl135-small">Meta: '+esc(meta.error)+'</div>':'')+
       campaignGrid(campaigns,meta,latest?.campaignFriction||[])+trafficSection('مصادر الزيارات',sources)+trafficSection('أجهزة العملاء',devices)+behaviorSection(latest?.deviceMetrics||[])+
