@@ -71,11 +71,13 @@ assert.equal((await subscriptionAccess(paid.env,'qa')).locked,true,'editing fees
 await configureSubscription(paid.env,'qa',{status:'active'},'admin');
 assert.equal((await subscriptionAccess(paid.env,'qa')).locked,false);
 assert.equal(paid.balance(),93,'reactivation must not repeat the monthly fee');
-for(const amount of [Infinity,-Infinity,NaN,-1,0]){
+for(const amount of [Infinity,-Infinity,NaN,1e308,-1,0]){
  await assert.rejects(()=>adminCreditWallet(paid.env,'qa',amount),e=>e.status===400);
  await assert.rejects(()=>requestTopup(paid.env,'qa',{amount},'qa'),e=>e.status===400);
 }
-for(const amount of [Infinity,-1,'bad'])await assert.rejects(()=>configureSubscription(paid.env,'qa',{monthlyMinimum:amount}),e=>e.code==='SUBSCRIPTION_AMOUNT_INVALID');
+for(const amount of [Infinity,1e308,-1,'bad'])await assert.rejects(()=>configureSubscription(paid.env,'qa',{monthlyMinimum:amount}),e=>e.code==='SUBSCRIPTION_AMOUNT_INVALID');
+paid.topup('INVALID-CREDIT');
+await assert.rejects(()=>approveTopup(paid.env,'INVALID-CREDIT','admin','',{creditAmount:1e308}),e=>e.code==='TOPUP_CREDIT_AMOUNT_INVALID');
 assert.equal(paid.balance(),93,'invalid input must leave the balance intact');
 paid.db.close();
 
