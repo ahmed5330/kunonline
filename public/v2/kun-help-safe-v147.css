@@ -1,0 +1,29 @@
+/* Kun Online v147 — isolated opt-in contextual guide. No styles for app elements. */
+.kh147-sidebar-slot{margin:7px 1px 12px;border-bottom:1px solid var(--line,#e4ebf3);padding:0 5px 12px}
+.kh147-guide-button{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;min-height:44px;padding:10px 12px;border:1px solid #d4e7f6;border-radius:11px;color:#155281;background:#eff7fd;text-align:center;cursor:pointer;font:800 12px Tajawal,Cairo,sans-serif;line-height:1.4}
+.kh147-guide-button:hover{border-color:#8fbbe4;background:#e4f1fa}
+.kh147-inline{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;min-width:22px;min-height:22px;margin-inline-start:5px;padding:0;vertical-align:middle;border-radius:50%;border:1px solid #accfe8;background:#edf7fd;color:#14548d;font:900 13px/1 Tajawal,Cairo,sans-serif;cursor:pointer;touch-action:manipulation}
+.kh147-inline:hover{background:#d9ecfa;border-color:#4498d1}
+.kh147-inline:focus-visible,.kh147-guide-button:focus-visible,.kh147-close:focus-visible{outline:3px solid #4c9ee9;outline-offset:2px}
+.kh147-overlay{position:fixed;inset:0;z-index:214000;direction:rtl;font-family:Tajawal,Cairo,system-ui,sans-serif}
+.kh147-backdrop{position:absolute;inset:0;background:rgba(14,28,46,.42)}
+.kh147-panel{position:absolute;left:0;top:0;bottom:0;width:min(430px,100%);display:flex;flex-direction:column;background:var(--card,#fff);border-inline-end:1px solid var(--line,#dbe5ed);color:var(--ink,#172c43);box-shadow:5px 0 38px rgba(13,28,49,.19)}
+.kh147-header{padding:18px 20px 14px;display:flex;align-items:center;justify-content:space-between;gap:14px;border-bottom:1px solid var(--line,#e2eaf4)}
+.kh147-header h2{font-size:18px;line-height:1.55;font-weight:900;margin:0;color:var(--ink,#172c43)}
+.kh147-close{min-width:40px;min-height:40px;border:1px solid var(--line,#dbe5ed);background:var(--card,#fff);color:var(--ink,#172c43);border-radius:11px;cursor:pointer;font:900 24px Tajawal,Cairo,sans-serif}
+.kh147-content{overflow-y:auto;min-height:0;flex:1;padding:16px 20px calc(26px + env(safe-area-inset-bottom));overscroll-behavior:contain}
+.kh147-intro{font-size:13px;line-height:1.9;color:var(--muted,#64748b);margin:0 0 14px}
+.kh147-item{border:1px solid var(--line,#e0e8f1);border-radius:12px;margin-bottom:9px;overflow:hidden;background:var(--card,#fff)}
+.kh147-item summary{padding:11px 13px;cursor:pointer;font-weight:800;font-size:13px;color:var(--ink,#172c43);list-style-position:inside;line-height:1.5}
+.kh147-item summary:hover{background:var(--surface-2,#f2f7fb)}
+.kh147-item[open] summary{border-bottom:1px solid var(--line,#e0e8f1);background:var(--surface-2,#f2f7fb)}
+.kh147-topic{padding:5px 13px 17px}
+.kh147-topic h2,.kh147-topic h3{font-size:15px;margin:11px 0 5px;font-weight:900;color:var(--ink,#172c43)}
+.kh147-detail-line{padding-top:12px}
+.kh147-detail-line strong{font-size:12px;font-weight:900;color:var(--blue,#0e5095);display:block;margin-bottom:4px}
+.kh147-detail-line p{margin:0;line-height:1.85;color:var(--ink,#172c43);font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere}
+body[data-theme="dark"] .kh147-guide-button{background:#1b3b56;border-color:#365778;color:#d8ecff}
+body[data-theme="dark"] .kh147-inline{background:#214365;border-color:#4f7294;color:#d7edff}
+body[data-theme="dark"] .kh147-detail-line strong{color:#83c5ff}
+@media(max-width:820px){.kh147-panel{inset:auto 0 0 0;width:100%;max-height:82dvh;border-radius:19px 19px 0 0;box-shadow:0 -10px 30px rgba(12,26,44,.25)}.kh147-header{padding:13px 16px}.kh147-content{padding:12px 15px calc(15px + env(safe-area-inset-bottom))}.kh147-inline{width:24px;height:24px;min-width:24px;min-height:24px;font-size:14px}.kh147-guide-button{min-height:46px}}
+@media(prefers-reduced-motion:reduce){.kh147-inline,.kh147-guide-button{transition:none}}
