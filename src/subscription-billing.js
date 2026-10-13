@@ -38,7 +38,9 @@ export async function latestSubscription(env,clientId){
 async function ensureManagedWallet(env,clientId,actor='system'){
   let account=await ensureWalletAccount(env,clientId);
   if(account.billing_version!=='v27'){
+    const previousStatus=account.status;
     await migrateLegacyBilling(env,clientId,actor);
+    if(previousStatus!=='active')await env.DB.prepare('UPDATE wallet_accounts SET status=? WHERE client_id=?').bind(previousStatus,clientId).run();
     account=await ensureWalletAccount(env,clientId);
   }
   return account;
@@ -84,7 +86,9 @@ async function chargeMonthlyMinimum(env,clientId,row,account,{today=cairoYmd()}=
   const ts=now(),logId=rid('WLG');
   try{
     await env.DB.batch([
-      env.DB.prepare('UPDATE wallet_accounts SET credit_limit=?,updated_at=? WHERE client_id=?').bind(requiredCredit,ts,clientId),
+      // Compute against the balance inside this transaction, including any
+      // final-order debit that committed after the earlier account snapshot.
+      env.DB.prepare('UPDATE wallet_accounts SET credit_limit=MAX(COALESCE(credit_limit,0),MAX(0,ROUND(?-balance,2))),updated_at=? WHERE client_id=?').bind(minimum,ts,clientId),
       env.DB.prepare('UPDATE wallet_accounts SET balance=ROUND(balance-?,2),updated_at=? WHERE client_id=?').bind(minimum,ts,clientId),
       env.DB.prepare(`INSERT INTO wallet_log
         (id,client_id,store_id,type,amount,balance_after,note,created_at,created_by,reference_type,reference_id,idempotency_key,metadata_json)
@@ -95,6 +99,7 @@ async function chargeMonthlyMinimum(env,clientId,row,account,{today=cairoYmd()}=
   }catch(error){
     if(/idx_wallet_log_idempotency|UNIQUE constraint failed/i.test(String(error?.message||error))){
       existing=await monthlyChargeLog(env,clientId,key);
+      if(!existing)throw error;
       const current=await env.DB.prepare('SELECT balance FROM wallet_accounts WHERE client_id=?').bind(clientId).first();
       return {charged:true,amount:minimum,key,bounds,log:existing,balance:round2(current?.balance),alreadyCharged:true};
     }
@@ -179,6 +184,11 @@ export async function subscriptionOrderFee(env,clientId){
 }
 
 export async function configureSubscription(env,clientId,body={},actor='admin'){
+  for(const value of [body.monthlyMinimum,body.amount,body.baseOrderFee]){
+    if(value!==undefined&&value!==null&&(!Number.isFinite(Number(value))||Number(value)<0)){
+      throw Object.assign(new Error('رسوم الاشتراك يجب أن تكون أرقامًا صالحة غير سالبة'),{status:400,code:'SUBSCRIPTION_AMOUNT_INVALID'});
+    }
+  }
   const account=await ensureManagedWallet(env,clientId,actor),current=await latestSubscription(env,clientId);
   const monthlyMinimum=clampMoney(body.monthlyMinimum??body.amount??current?.amount??0),baseOrderFee=clampMoney(body.baseOrderFee??account.base_order_fee??0);
   let row=current||await ensureSubscriptionRow(env,clientId,{monthlyMinimum});

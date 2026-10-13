@@ -9,7 +9,7 @@ function validateProofDataUrl(value){
 }
 
 export async function requestTopup(env,clientId,body,actor){
-  const amount=round2(body.amount);if(amount<=0)throw Object.assign(new Error('المبلغ لازم يكون أكبر من صفر'),{status:400});
+  const amount=round2(body.amount);if(!Number.isFinite(amount)||amount<=0)throw Object.assign(new Error('المبلغ لازم يكون رقمًا صالحًا أكبر من صفر'),{status:400,code:'TOPUP_AMOUNT_INVALID'});
   const phone=String(body.senderPhone||body.phone||'').replace(/\s+/g,'').trim();if(phone.length<8)throw Object.assign(new Error('رقم الهاتف المحوّل منه مطلوب'),{status:400});
   const proofDataUrl=validateProofDataUrl(body.proofDataUrl||null),proofUrl=body.proofUrl?String(body.proofUrl):null;
   if(!proofDataUrl&&!proofUrl)throw Object.assign(new Error('ارفع صورة إثبات التحويل'),{status:400,code:'PROOF_REQUIRED'});

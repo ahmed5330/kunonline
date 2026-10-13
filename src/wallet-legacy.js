@@ -1,7 +1,7 @@
 import {now,rid,round2,ensureWalletAccount,mirrorLegacyBalance} from './wallet-core.js';
 
 export async function adminCreditWallet(env,clientId,amount,actor='admin',note='Manual admin credit',options={}){
-  amount=round2(amount);if(amount<=0)throw Object.assign(new Error('المبلغ لازم يكون أكبر من صفر'),{status:400});
+  amount=round2(amount);if(!Number.isFinite(amount)||amount<=0)throw Object.assign(new Error('المبلغ لازم يكون رقمًا صالحًا أكبر من صفر'),{status:400,code:'ADMIN_CREDIT_AMOUNT_INVALID'});
   const requestId=String(options?.requestId||'').trim();
   if(requestId&&!/^[a-zA-Z0-9:_-]{8,128}$/.test(requestId)){
     throw Object.assign(new Error('رمز عملية التصحيح غير صحيح'),{status:400,code:'ADMIN_CREDIT_KEY_INVALID'});
