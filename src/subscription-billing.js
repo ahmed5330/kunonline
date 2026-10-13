@@ -105,7 +105,8 @@ async function chargeMonthlyMinimum(env,clientId,row,account,{today=cairoYmd()}=
   return {charged:true,amount:minimum,key,bounds,balance:round2(updated?.balance),log:{id:logId}};
 }
 
-export async function subscriptionAccess(env,clientId,{applyMonthly=true}={}){
+// Access checks are read-only; posting the monthly minimum requires an explicit reconciliation.
+export async function subscriptionAccess(env,clientId,{applyMonthly=false}={}){
   const today=cairoYmd(),account=await ensureWalletAccount(env,clientId);
   let subscription=await latestSubscription(env,clientId);
   if(!subscription){
@@ -123,12 +124,21 @@ export async function subscriptionAccess(env,clientId,{applyMonthly=true}={}){
     };
   }
   if(subscription.status==='trialing'&&!trialActive(subscription,today)){
-    const ts=now();await env.DB.prepare("UPDATE subscriptions SET status='active',updated_at=? WHERE id=? AND status='trialing'").bind(ts,subscription.id).run();
-    subscription={...subscription,status:'active',updated_at:ts};
+    // Effective expiration is immediate; only explicit settlement persists it.
+    if(applyMonthly){
+      const ts=now();await env.DB.prepare("UPDATE subscriptions SET status='active',updated_at=? WHERE id=? AND status='trialing'").bind(ts,subscription.id).run();
+      subscription={...subscription,status:'active',updated_at:ts};
+    }else subscription={...subscription,status:'active'};
   }
   const inTrial=trialActive(subscription,today);
   let billingStartedAt=null;
-  if(!inTrial&&subscription.status==='active')billingStartedAt=await ensurePaidBillingStart(env,clientId,subscription.id,'system');
+  if(!inTrial&&subscription.status==='active'){
+    if(applyMonthly)billingStartedAt=await ensurePaidBillingStart(env,clientId,subscription.id,'system');
+    else{
+      const prior=await env.DB.prepare("SELECT created_at FROM audit_log WHERE client_id=? AND action='subscription.billing.start' ORDER BY created_at ASC LIMIT 1").bind(clientId).first();
+      billingStartedAt=prior?.created_at||null;
+    }
+  }
   const monthlyMinimum=clampMoney(subscription.amount),orderFee=inTrial?0:clampMoney(account.base_order_fee);
   let monthly={charged:true,amount:0,balance:round2(account.balance),bounds:monthBounds(today)};
   if(!inTrial&&subscription.status==='active'&&applyMonthly){
@@ -172,10 +182,13 @@ export async function configureSubscription(env,clientId,body={},actor='admin'){
   const account=await ensureManagedWallet(env,clientId,actor),current=await latestSubscription(env,clientId);
   const monthlyMinimum=clampMoney(body.monthlyMinimum??body.amount??current?.amount??0),baseOrderFee=clampMoney(body.baseOrderFee??account.base_order_fee??0);
   let row=current||await ensureSubscriptionRow(env,clientId,{monthlyMinimum});
-  const ts=now(),status=['active','paused','suspended'].includes(text(body.status))?text(body.status):row.status;
+  const ts=now(),requestedStatus=text(body.status),explicitStatus=['active','paused','suspended'].includes(requestedStatus);
+  const status=explicitStatus?requestedStatus:row.status;
   await env.DB.prepare('UPDATE subscriptions SET amount=?,status=?,billing_cycle=\'monthly\',provider=\'kun_wallet\',updated_at=? WHERE id=?')
     .bind(monthlyMinimum,status,ts,row.id).run();
-  await configureWallet(env,clientId,{baseOrderFee,creditLimit:0,status:status==='active'||status==='trialing'?'active':'paused'},actor);
+  // Updating a fee must not silently unpause a wallet suspended by the admin.
+  const walletStatus=explicitStatus?(status==='active'?'active':'paused'):account.status;
+  await configureWallet(env,clientId,{baseOrderFee,creditLimit:0,status:walletStatus},actor);
   if(body.startFreeTrial===true){
     const start=cairoYmd(),end=addDays(start,30);
     await env.DB.prepare("UPDATE subscriptions SET status='trialing',period_start=?,period_end=?,updated_at=? WHERE id=?").bind(start,end,ts,row.id).run();
@@ -184,7 +197,7 @@ export async function configureSubscription(env,clientId,body={},actor='admin'){
     await env.DB.prepare("UPDATE subscriptions SET status='active',period_end=?,updated_at=? WHERE id=?").bind(cairoYmd(),ts,row.id).run();
     await env.DB.prepare("UPDATE wallet_accounts SET status='active',credit_limit=CASE WHEN balance<0 THEN ROUND(-balance,2) ELSE 0 END,updated_at=? WHERE client_id=?").bind(ts,clientId).run();
   }
-  return subscriptionAccess(env,clientId,{applyMonthly:body.endFreeTrial===true||body.applyMonthly===true||status==='active'});
+  return subscriptionAccess(env,clientId,{applyMonthly:body.endFreeTrial===true||body.applyMonthly===true||(explicitStatus&&requestedStatus==='active')});
 }
 
 export async function startFreeTrial(env,clientId,{days=30,actor='admin'}={}){
