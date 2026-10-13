@@ -1,0 +1,35 @@
+name: Storage audit (maintenance only)
+on:
+  push:
+    branches: [maintenance/storage-cleanup-20261013]
+    paths: ['.github/workflows/storage-cleanup-20261013.yml']
+permissions:
+  contents: read
+  actions: write
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Review GitHub Actions artifacts and caches without deleting anything
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "REPOSITORY=$GITHUB_REPOSITORY"
+          if gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=100" > /tmp/artifacts.json; then
+            jq -c '{artifact_count:.total_count,first_page_artifact_bytes:([.artifacts[].size_in_bytes]|add//0),sample:(.artifacts[0:25]|map({id,name,size_in_bytes,created_at,expires_at,expired}))}' /tmp/artifacts.json
+          else
+            echo "ARTIFACTS_API_UNAVAILABLE"
+          fi
+          if gh api "repos/$GITHUB_REPOSITORY/actions/cache/usage" > /tmp/cache-usage.json; then
+            jq -c '{cache_usage:.}' /tmp/cache-usage.json
+          else
+            echo "CACHE_USAGE_API_UNAVAILABLE"
+          fi
+          if gh api "repos/$GITHUB_REPOSITORY/actions/caches?per_page=100" > /tmp/caches.json; then
+            jq -c '{cache_count:.total_count,first_page_cache_bytes:([.actions_caches[].size_in_bytes]|add//0),sample:(.actions_caches[0:25]|map({id,key,ref,size_in_bytes,created_at,last_accessed_at}))}' /tmp/caches.json
+          else
+            echo "CACHES_API_UNAVAILABLE"
+          fi
