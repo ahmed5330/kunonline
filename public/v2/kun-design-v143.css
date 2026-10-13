@@ -109,3 +109,21 @@ body[data-theme="dark"] #root.ki130-ready .ki130-stat[aria-current="true"]{backg
 }
 @media(max-width:390px){#root .kpis{grid-template-columns:repeat(2,minmax(0,1fr))!important}.kun143-bottom button{font-size:9.5px}}
 @media(prefers-reduced-motion:reduce){.kun143-primary-button,#root .btn,.top .btn{transition:none!important}}
+
+
+/* v145 — all high-frequency workspaces are first-level, no duplicate secondary links. */
+.kun143-primary-label[hidden]{display:none!important}
+.kun143-primary-label:not(:first-child){margin-top:9px;padding-top:12px;border-top:1px solid #edf1f5}
+.kun143-primary-button{min-width:0}
+.kun143-primary-button span{min-width:0;overflow-wrap:anywhere;line-height:1.35}
+.kun143-secondary .nav button[data-kun-primary="1"]{display:none!important}
+.kun143-secondary .nav .nav-group.kun143-secondary-empty{display:none!important}
+.kun143-secondary .nav>.nav-standalone[data-kun-primary="1"]{display:none!important}
+.kun143-secondary .nav .nav-group-items{padding-bottom:3px}
+.kun143-secondary .nav .nav-group-toggle{font-size:12px}
+@media(max-width:820px){
+  .kun143-primary{gap:4px}
+  .kun143-primary-button{min-height:45px}
+  .kun143-primary-label:not(:first-child){margin-top:7px;padding-top:9px}
+  .kun143-bottom button span{overflow:hidden;text-overflow:ellipsis;max-width:100%}
+}
