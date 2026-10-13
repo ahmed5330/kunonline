@@ -6,9 +6,12 @@ html,body{max-width:100%;overflow-x:clip}
 #root .card,#root .dash-section,#root .dash-fin-card,#root .dash-ad-metric{min-width:0}
 #root .table-wrap,#root .dash-table-wrap{max-width:100%;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain}
 #root button:focus-visible,#root a:focus-visible,#root input:focus-visible,#root select:focus-visible,.top button:focus-visible,.top input:focus-visible{outline:3px solid var(--kun144-focus);outline-offset:2px}
-#root .dash-hero-side{border:1px solid rgba(106,156,206,.20);background:rgba(255,255,255,.08);box-shadow:none}
-#root .dash-hero-side strong,#root .dash-hero-side b{color:#f5f9ff!important;opacity:1}
-#root .dash-hero-side span,#root .dash-hero-side small{color:#c0d0e2!important;opacity:1}
+#root .dash-hero-side{border:1px solid rgba(106,156,206,.20);background:rgba(255,255,255,.86);box-shadow:none}
+#root .dash-hero-side strong,#root .dash-hero-side b{color:#183047!important;opacity:1}
+#root .dash-hero-side span,#root .dash-hero-side small{color:#60758b!important;opacity:1}
+body[data-theme="dark"] #root .dash-hero-side{background:rgba(255,255,255,.065);border-color:rgba(186,209,233,.20)}
+body[data-theme="dark"] #root .dash-hero-side strong,body[data-theme="dark"] #root .dash-hero-side b{color:#f5f9ff!important}
+body[data-theme="dark"] #root .dash-hero-side span,body[data-theme="dark"] #root .dash-hero-side small{color:#c0d0e2!important}
 #root .dash-hero .dash-hero-side{min-width:0;width:min(100%,360px)}
 body[data-theme="dark"] .top{color:#243d59}
 body[data-theme="dark"] .top .btn.soft{color:#17578c!important}
@@ -137,3 +140,6 @@ body[data-theme="gray"] #root .dash-f126-value{color:var(--ink)!important}
 }
 @media(min-width:821px){.kun144-mobile-tools{display:none!important}}
 @media(prefers-reduced-motion:reduce){#root *{scroll-behavior:auto!important}}
+
+/* Keep download label visible after moving its real link into mobile tools. */
+@media(max-width:820px){.kun144-mobile-tools #androidDownload span{display:inline!important;font-size:13px}}
