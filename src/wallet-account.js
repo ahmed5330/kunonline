@@ -14,7 +14,12 @@ async function legacyClient(env,clientId){
 export async function mirrorLegacyBalance(env,clientId,balance,{disableLegacyFee=false}={}){
   for(let attempt=0;attempt<3;attempt++){
     const {row,state,client}=await legacyClient(env,clientId);if(!state||!client)return true;
-    client.walletBalance=round2(balance);if(disableLegacyFee)client.walletFeePerOrder=0;
+    // Never let an older async mirror (e.g. a pre-topup debit) overwrite a
+    // later approved balance in the legacy state JSON. Always read the current
+    // authoritative wallet account in this retry, not the caller's snapshot.
+    const canonical=await env.DB.prepare('SELECT balance,billing_version FROM wallet_accounts WHERE client_id=?').bind(clientId).first();
+    client.walletBalance=round2(canonical?.balance??balance);
+    if(disableLegacyFee||canonical?.billing_version==='v27')client.walletFeePerOrder=0;
     const ts=now(),result=await env.DB.prepare('UPDATE state SET json=?,updated_at=? WHERE id=1 AND updated_at=?').bind(JSON.stringify(state),ts,row?.updated_at||'').run();
     if(Number(result?.meta?.changes||0)>0)return true;
   }
@@ -52,7 +57,11 @@ export async function configureWallet(env,clientId,patch={},actor='admin'){
   await ensureWalletAccount(env,clientId);
   const current=await env.DB.prepare('SELECT * FROM wallet_accounts WHERE client_id=?').bind(clientId).first();
   const base=Math.max(0,Number(patch.baseOrderFee??current.base_order_fee)||0);
-  const credit=Math.max(0,Number(patch.creditLimit??current.credit_limit)||0);
+  // Never configure a credit limit below already-posted debt: D1 enforces
+  // CHECK(balance >= -credit_limit). Reducing the limit may only affect
+  // future credit, never invalidate historical wallet ledger entries.
+  const outstandingDebt=Math.max(0,round2(0-Number(current.balance||0)));
+  const credit=Math.max(0,Number(patch.creditLimit??current.credit_limit)||0,outstandingDebt);
   const status=['active','paused'].includes(patch.status)?patch.status:current.status;
   await env.DB.prepare('UPDATE wallet_accounts SET base_order_fee=?,min_order_fee=0,max_order_fee=0,credit_limit=?,status=?,updated_at=? WHERE client_id=?')
     .bind(base,credit,status,now(),clientId).run();
