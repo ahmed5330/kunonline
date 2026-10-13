@@ -63,7 +63,9 @@ assert.ok(ui.includes('updateBalanceBanner'),'client must receive a proactive ba
 assert.ok(ui.includes("state.adminClients.filter(x=>x.reason==='balance_empty')"),'admin exhausted-balance count must reflect true billing locks');
 assert.ok(fs.readFileSync('public/v2/modules-v79-printing.js','utf8').includes("try{await render();if(window.KunSubscriptionsV127?.access?.locked"),'J&T sending state must unwind after billing/refresh errors');
 assert.ok(orders.includes('startingBalance<fee'),'order billing must prevent debits if the full fee is unavailable');
-assert.ok(orders.includes('ELSE -credit_limit-0.01'),'concurrent order charges must fail atomically rather than make balance negative');
+assert.ok(orders.includes('ELSE -COALESCE(credit_limit,0)-0.01'),'concurrent/locked order charges must fail atomically once the final order has exhausted a wallet');
+assert.ok(orders.includes('if(startingBalance<=0)'),'only positive-balance orders may take the final debit across zero');
+assert.ok(orders.includes('THEN MAX(COALESCE(credit_limit,0),MAX(0,ROUND(?-balance,2)))'),'final-order overdraft must have a bounded single-charge credit limit');
 assert.ok(orders.includes('orderBeforeBillingStart'),'order billing must compare business order date with the paid billing start');
 assert.ok(orders.includes("PRE_BILLING_DATE"),'late-synced historical orders must be waived instead of charged');
 assert.ok(orders.includes("date,created_at FROM orders"),'billOrder must load the business order date, not rowid only');
