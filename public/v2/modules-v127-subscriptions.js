@@ -103,9 +103,9 @@
     const low=Boolean(!a?.trialActive&&!a?.locked&&balance>0&&balance<=limit&&a?.subscriptionStatus!=='unmanaged');
     if(!exhausted&&!low){banner?.remove();return;}
     if(!top)return;
-    if(!banner){banner=document.createElement('div');banner.id='sub127BalanceBanner';banner.className='sub127-access-banner';banner.setAttribute('role','alert');banner.onclick=()=>{if(state.locked)$('.nav button[data-view="dashboard"]')?.click();else showWalletPage();};top.insertAdjacentElement('afterend',banner);}
+    if(!banner){banner=document.createElement('div');banner.id='sub127BalanceBanner';banner.className='sub127-access-banner';banner.setAttribute('role','alert');banner.onclick=()=>showWalletPage();top.insertAdjacentElement('afterend',banner);}
     banner.classList.toggle('critical',exhausted);
-    banner.textContent=exhausted?'الرصيد انتهى — تم إيقاف العمليات. افتح الداشبورد وأرسل إثبات تحويل لشحن المحفظة.':'تنبيه: رصيدك قرب يخلص ('+money(balance,a.currency)+'). اشحن المحفظة قبل توقف العمليات.';
+    banner.textContent=exhausted?(balance<0?'الرصيد بالسالب ('+money(balance,a.currency)+') — تم إيقاف أقسام التشغيل. افتح المحفظة لمراجعة الحركات وشحن الرصيد.':'الرصيد انتهى — تم إيقاف أقسام التشغيل. افتح المحفظة لشحن الرصيد.'):'تنبيه: رصيدك قرب يخلص ('+money(balance,a.currency)+'). اشحن المحفظة قبل توقف العمليات.';
   }
   async function submitTopup(panel){
     const amountInput=$('#sub127Amount',panel),phoneInput=$('#sub127Phone',panel),proofInput=$('#sub127Proof',panel),button=$('#sub127Submit',panel);
@@ -214,7 +214,8 @@
   }
   function scheduleAccessRefresh(){
     clearTimeout(state.timer);if(!state.me?.clientId||state.me.role==='admin')return;
-    state.timer=setTimeout(async()=>{await refreshAccess(false);scheduleAccessRefresh();},state.locked?5000:60000);
+    const low=Boolean(!state.access?.trialActive&&(Number(state.access?.balance)||0)<=Math.max(100,(Number(state.access?.orderFee)||0)*10));
+    state.timer=setTimeout(async()=>{await refreshAccess(false);scheduleAccessRefresh();},state.locked?5000:low?10000:60000);
   }
 
   function addAdminNav(){
