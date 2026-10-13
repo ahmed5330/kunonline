@@ -43,6 +43,10 @@ jobs:
           node --check public/v2/modules-v79-printing.js
           node --check public/v2/modules-v116-print-routing.js
           node scripts/integration-setup-test.mjs
+      - name: Kun Online primary navigation contract
+        run: |
+          node scripts/kun-primary-navigation-contract-test.mjs
+          node --check public/v2/kun-design-v143.js
       - name: Serialized warehouse transaction and browser regression
         run: |
           node scripts/warehouse-operations-test.mjs
