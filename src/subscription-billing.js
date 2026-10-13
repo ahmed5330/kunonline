@@ -185,7 +185,7 @@ export async function subscriptionOrderFee(env,clientId){
 
 export async function configureSubscription(env,clientId,body={},actor='admin'){
   for(const value of [body.monthlyMinimum,body.amount,body.baseOrderFee]){
-    if(value!==undefined&&value!==null&&(!Number.isFinite(Number(value))||Number(value)<0)){
+    if(value!==undefined&&value!==null&&(!Number.isFinite(round2(value))||!Number.isFinite(Number(value))||Number(value)<0)){
       throw Object.assign(new Error('رسوم الاشتراك يجب أن تكون أرقامًا صالحة غير سالبة'),{status:400,code:'SUBSCRIPTION_AMOUNT_INVALID'});
     }
   }
