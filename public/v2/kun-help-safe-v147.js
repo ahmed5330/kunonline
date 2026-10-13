@@ -448,8 +448,8 @@ const HEADINGS=Object.freeze({
  wallet:'المحفظة',integrations:'مركز التكاملات',settings:'الإعدادات',
  analytics:'التحليلات',marketing:'التسويق',generic:'شرح أقسام كن أونلاين'
 });
-const escapeText=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[c]));
-const hasExplicitHelp=label=>Boolean(G.get(normalize(label))||/^(real roas|real cpp|spend|cpp|roas|ctr|cpc|cpm|frequency|meta purchases|platform roas|platform cpp|bot sessions|sessions)$/i.test(String(label).trim()));
+const escapeText=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const hasExplicitHelp=label=>Boolean(String(label??'').trim().length&&String(label).trim().length<=110); // Called only at authored KPI/table locations; unknown labels get explicit generic guidance.
 function icon(label){
  if(!hasExplicitHelp(label))return '';
  const name=String(label).trim().slice(0,110);
