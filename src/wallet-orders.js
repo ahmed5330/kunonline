@@ -109,6 +109,13 @@ export async function billOrder(env,orderId,{allowBacklogCharge=false}={}){
     ]);
   }catch(error){
     const text=String(error?.message||error);
+    // Another request may already have committed this order and exhausted the
+    // wallet. Recover its ledger before classifying a CHECK failure as debt.
+    const committed=await env.DB.prepare('SELECT id,balance_after FROM wallet_log WHERE client_id=? AND idempotency_key=?').bind(order.client_id,key).first();
+    if(committed?.id){
+      await env.DB.prepare("UPDATE order_billing SET status='charged',wallet_log_id=?,last_error=NULL,charged_at=COALESCE(charged_at,?),updated_at=? WHERE order_id=?").bind(committed.id,ts,ts,orderId).run();
+      return {ok:true,status:'charged',fee,balance:round2(committed.balance_after),deduplicated:true};
+    }
     if(/CHECK constraint failed|wallet_accounts/i.test(text)){
       await env.DB.prepare("UPDATE order_billing SET status='pending_insufficient',attempts=attempts+1,last_error='INSUFFICIENT_BALANCE',updated_at=? WHERE order_id=?").bind(now(),orderId).run();
       return {ok:false,status:'pending_insufficient',fee,code:'INSUFFICIENT_BALANCE'};

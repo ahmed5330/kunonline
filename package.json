@@ -30,7 +30,7 @@
     "test:store-isolation": "node scripts/store-data-isolation-test.mjs",
     "test:store-sql": "node scripts/store-sql-integration-test.mjs",
     "test:v27-contract": "node scripts/platform-v27-contract-test.mjs",
-    "test:v27-sql": "node scripts/platform-v27-sql-test.mjs",
+    "test:v27-sql": "node scripts/platform-v27-sql-test.mjs && node scripts/subscriptions-v127-contract-test.mjs && node scripts/payment-access-v148-test.mjs",
     "test:onboarding-buttons": "node scripts/onboarding-buttons-test.mjs",
     "test:team": "node scripts/team-management-test.mjs",
     "test:v28-contract": "node scripts/team-v28-contract-test.mjs",

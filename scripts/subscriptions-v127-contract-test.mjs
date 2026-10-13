@@ -233,3 +233,4 @@ console.log('subscriptions v127.19 billing contract: ok');
 
 // Exercise the real SQLite CHECK constraint, idempotency and final-order overdraft.
 await import('./wallet-last-order-overdraft-test.mjs');
+await import('./payment-wallet-sqlite-test.mjs');
