@@ -84,7 +84,14 @@ try{
  console.log('Kun contextual help browser test: PASS — Clarity, Meta, keyboard, async render, mobile, dark theme');
 }finally{
  try{cdp?.close();}catch{}
- if(chrome)chrome.kill('SIGTERM');
+ if(chrome){
+  const exited=new Promise(resolve=>{
+   if(chrome.exitCode!==null||chrome.signalCode!==null)return resolve();
+   chrome.once('exit',resolve);
+  });
+  chrome.kill('SIGTERM');
+  await Promise.race([exited,new Promise(resolve=>setTimeout(resolve,1800))]);
+ }
  await new Promise(r=>server.close(r));
- if(profile)await rm(profile,{recursive:true,force:true});
+ if(profile)await rm(profile,{recursive:true,force:true,maxRetries:8,retryDelay:250});
 }
