@@ -73,8 +73,9 @@ function style(){
  ].join('');
  document.head.appendChild(st);
 }
-const metric=(label,value,note)=>'<div class="metric"><span>'+esc(label)+'</span><strong>'+esc(value)+'</strong><span>'+esc(note||'')+'</span></div>';
-const table=(heads,rows)=>'<div class="scroll"><table><thead><tr>'+heads.map(x=>'<th>'+esc(x)+'</th>').join('')+'</tr></thead><tbody>'+(rows.length?rows.join(''):'<tr><td colspan="'+heads.length+'">لا توجد بيانات متاحة.</td></tr>')+'</tbody></table></div>';
+const hint=label=>window.KunHelpSafeV147?.icon(label)||'';
+const metric=(label,value,note)=>'<div class="metric"><span>'+esc(label)+hint(label)+'</span><strong>'+esc(value)+'</strong><span>'+esc(note||'')+'</span></div>';
+const table=(heads,rows)=>'<div class="scroll"><table><thead><tr>'+heads.map(x=>'<th>'+esc(x)+hint(x)+'</th>').join('')+'</tr></thead><tbody>'+(rows.length?rows.join(''):'<tr><td colspan="'+heads.length+'">لا توجد بيانات متاحة.</td></tr>')+'</tbody></table></div>';
 function breakdown(dim,rows,limit=25){
  const list=(rows||[]).slice(0,limit),maximum=Math.max(1,...list.map(x=>Number(x.sessions)||0));
  return '<section class="box"><h3>'+esc(dims[dim]||dim)+'</h3>'+table(['الاسم','الجلسات','البوت'],
@@ -167,7 +168,7 @@ function briefStats(d){
   ['جلسات مصدر Meta',n(taggedMeta),'Facebook/Instagram حسب Clarity، ولا تعني بالضرورة زيارات مدفوعة'],
   ['Meta بدون اسم حملة',n(utmLoss),'جلسات تحتاج مراجعة UTM Campaign']
  ];
- return '<div class="brief-cards" data-clarity-kpis>'+items.map(x=>'<article class="brief-card"><span>'+esc(x[0])+'</span><strong>'+esc(x[1])+'</strong><small>'+esc(x[2])+'</small></article>').join('')+'</div>';
+ return '<div class="brief-cards" data-clarity-kpis>'+items.map(x=>'<article class="brief-card"><span>'+esc(x[0])+hint(x[0])+'</span><strong>'+esc(x[1])+'</strong><small>'+esc(x[2])+'</small></article>').join('')+'</div>';
 }
 function readingGuide(d){
  const limitations=(d.latest?.metrics?.limitations||[]).slice(0,3);
@@ -343,7 +344,7 @@ function render(){
  if(!V.active||view()!=='analytics')return;
  const el=ROOT();if(!el)return;style();
  const d=V.data,missing=!d?.latest;
- el.innerHTML='<div class="cl136"><header class="head"><div><h2>◈ تحليل سلوك العملاء · Microsoft Clarity</h2><p>من سلوك الزائر إلى قرار تحسين واضح: دليل ← تفسير محتمل ← إجراء قابل للاختبار</p></div><span class="space"></span>'+
+ el.innerHTML='<div class="cl136"><header class="head"><div><h2>◈ تحليل سلوك العملاء · Microsoft Clarity'+hint('Microsoft Clarity')+'</h2><p>من سلوك الزائر إلى قرار تحسين واضح: دليل ← تفسير محتمل ← إجراء قابل للاختبار</p></div><span class="space"></span>'+
  '<button id="cl136-system">التقارير العامة</button><label style="font-size:12px;font-weight:800">الفترة <select id="cl136-days" aria-label="فترة Clarity"><option value="1" '+(V.days===1?'selected':'')+'>24 ساعة</option><option value="2" '+(V.days===2?'selected':'')+'>48 ساعة</option><option value="3" '+(V.days===3?'selected':'')+'>72 ساعة</option></select></label><button id="cl136-sync">مزامنة Clarity</button><button id="cl136-csv">CSV</button></header>'+
  '<nav class="tabs">'+Object.entries(tabs).map(([id,label])=>'<button data-tab="'+esc(id)+'" class="'+(V.tab===id?'sel':'')+'">'+esc(label)+'</button>').join('')+'</nav>'+
  (missing?'<section class="box"><h3>لا توجد بيانات مخزنة لفترة '+(V.days*24)+' ساعة</h3><p>لو الربط متصل، اضغط مزامنة Clarity لسحب النافذة المختارة (3 طلبات API). وإن لم يكن متصلًا فراجعه داخل التكاملات.</p><button id="cl136-setup">فتح التكاملات</button></section>':
