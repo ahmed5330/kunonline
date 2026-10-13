@@ -26,7 +26,7 @@
       .sub127-status{display:inline-flex;padding:4px 7px;border-radius:999px;font-size:8px;font-weight:900;background:#eaf8ee;color:#15803d}.sub127-status.locked{background:#fee2e2;color:#b91c1c}.sub127-status.trial{background:#dcfce7;color:#15803d}.sub127-status.unmanaged{background:#f1f5f9;color:#64748b}
       .sub127-payment{display:grid;grid-template-columns:72px minmax(140px,1fr) repeat(3,minmax(100px,.7fr)) auto;gap:9px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line,#e2e8f0)}.sub127-proof{width:68px;height:54px;object-fit:cover;border-radius:8px;border:1px solid var(--line,#e2e8f0);background:#f8fafc;cursor:zoom-in}.sub127-actions{display:flex;gap:5px}.sub127-payment-cell{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.sub127-payment-cell .btn{padding:6px 9px;font-size:8px}.sub127-payment-phone{font-weight:900;direction:ltr;display:inline-block}.sub127-proof-large{display:block;width:min(100%,680px);max-height:68vh;object-fit:contain;margin:14px auto 0;border-radius:14px;border:1px solid var(--line,#e2e8f0);background:#0f172a}.sub127-payment-details{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:14px}.sub127-payment-detail{padding:10px;border:1px solid var(--line,#e2e8f0);border-radius:10px}.sub127-payment-detail span{display:block;color:var(--muted,#64748b);font-size:8px}.sub127-payment-detail b{display:block;margin-top:4px;font-size:11px}
       .sub127-modal-back{position:fixed;inset:0;z-index:99999;background:rgba(15,23,42,.48);display:grid;place-items:center;padding:16px}.sub127-modal{width:min(720px,96vw);max-height:92vh;overflow:auto;background:var(--card,#fff);border-radius:18px;padding:18px;box-shadow:0 26px 80px rgba(15,23,42,.28)}.sub127-modal-head{display:flex;align-items:flex-start;gap:10px}.sub127-modal-head h2{margin:0}.sub127-form{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:15px}.sub127-form label{display:grid;gap:5px;font-size:9px;font-weight:800;color:var(--muted,#64748b)}.sub127-modal-actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:15px}
-      html[data-kun-subscription-locked="1"] .nav .nav-group,html[data-kun-subscription-locked="1"] .nav button[data-view]:not([data-view="dashboard"]),html[data-kun-subscription-locked="1"] .nav [data-kun-shortcuts-nav],html[data-kun-subscription-locked="1"] #quickBtn{display:none!important}
+      html[data-kun-subscription-locked="1"] .nav .nav-group,html[data-kun-subscription-locked="1"] .nav button[data-view]:not([data-view="dashboard"]):not([data-view="wallet"]),html[data-kun-subscription-locked="1"] .nav [data-kun-shortcuts-nav],html[data-kun-subscription-locked="1"] #quickBtn{display:none!important}
       body[data-theme="dark"] .sub127-client-panel,body[data-theme="dark"] .sub127-kpi,body[data-theme="dark"] .sub127-modal{background:var(--card);border-color:var(--line)}body[data-theme="dark"] .sub127-table th{background:#172033}
       @media(max-width:850px){.sub127-kpis,.sub127-summary{grid-template-columns:1fr 1fr}.sub127-topup{grid-template-columns:1fr 1fr}.sub127-topup .btn{grid-column:1/-1}.sub127-payment{grid-template-columns:64px 1fr auto}.sub127-payment>:nth-child(3),.sub127-payment>:nth-child(4),.sub127-payment>:nth-child(5){display:none}}
       @media(max-width:520px){.sub127-kpis,.sub127-summary,.sub127-form,.sub127-topup{grid-template-columns:1fr}.sub127-client-head{flex-wrap:wrap}.sub127-badge{margin-inline-start:0}.sub127-toolbar .input{min-width:0;width:100%}.sub127-payment{grid-template-columns:58px 1fr}.sub127-actions{grid-column:1/-1}.sub127-proof{width:56px;height:50px}.sub127-payment-details{grid-template-columns:1fr 1fr}}
@@ -80,7 +80,7 @@
   function lockNav(){
     if(!state.access?.locked)return;
     document.documentElement.dataset.kunSubscriptionLocked='1';
-    $$('.nav button[data-view]').forEach(b=>{if(b.dataset.view==='dashboard')return;b.dataset.sub127Hidden='1';b.hidden=true;b.style.display='none';});
+    $$('.nav button[data-view]').forEach(b=>{if(b.dataset.view==='dashboard'||b.dataset.view==='wallet')return;b.dataset.sub127Hidden='1';b.hidden=true;b.style.display='none';});
     window.KunSidebarGroupsV90?.sync?.();
     const active=$('.nav button.active[data-view]');if(active&&active.dataset.view!=='dashboard')$('.nav button[data-view="dashboard"]')?.click();
   }
@@ -131,7 +131,7 @@
   function clientPanelHtml(a){
     const trial=a?.trialActive,locked=a?.locked,cls=locked?'locked':trial?'trial':'',badge=statusText(a),currency=a?.currency||'EGP';
     const description=locked?`${esc(reasonText(a))}${a.reason==='balance_empty'?' أرسل إثبات التحويل من النموذج التالي.':' راجع إدارة الحساب لإعادة التفعيل.'}`:trial?`الفترة المجانية فعالة حتى ${esc(a.trialEndsAt||'—')} ولا يتم خلالها خصم رسوم شهرية أو رسوم على الأوردرات.`:a?.balanceEmpty?'الرصيد يحتاج شحن. تأكد من متابعة حالة المحفظة من الإدارة.':'متابعة الرصيد ورسوم التشغيل الحالية.';
-    return `<section class="sub127-client-panel ${cls}" data-sub127-client-panel="1"><div class="sub127-client-head"><div><h3 data-sub127-client-title>${locked?'استكمال تشغيل Kun Online':'الاشتراك والرصيد'}</h3><p data-sub127-client-description>${description}</p></div><span class="sub127-badge" data-sub127-client-badge>${esc(badge)}</span></div><div class="sub127-kpis"><div class="sub127-kpi"><span>الرصيد الحالي</span><b data-sub127-client-balance>${money(a?.balance,currency)}</b></div><div class="sub127-kpi"><span>الحد الأدنى الشهري</span><b data-sub127-client-monthly>${trial?'مجانًا':money(a?.monthlyMinimum,currency)}</b></div><div class="sub127-kpi"><span>رسوم كل أوردر</span><b data-sub127-client-order-fee>${trial?'مجانًا':money(a?.orderFee,currency)}</b></div><div class="sub127-kpi"><span>الحالة</span><b data-sub127-client-status>${esc(badge)}</b></div></div><div class="sub127-topup"><label>المبلغ المحوّل<input class="input" id="sub127Amount" type="number" min="1" step="0.01" placeholder="مثال: 500" value="${esc(state.topupDraft.amount)}"></label><label>رقم الهاتف المحوّل منه<input class="input" id="sub127Phone" type="tel" placeholder="01xxxxxxxxx" value="${esc(state.topupDraft.phone)}"></label><label>صورة إثبات التحويل<input class="input" id="sub127Proof" type="file" accept="image/*"><span class="meta" id="sub127ProofName">${esc(state.topupDraft.fileName)}</span></label><button class="btn primary" id="sub127Submit" type="button">إرسال طلب الشحن</button></div><div class="sub127-note">بعد الإرسال يظهر الطلب لدى الإدارة في قسم «الاشتراكات». عند اعتماد التحويل يُضاف الرصيد فورًا، والعمليات المدفوعة تظل موقوفة حتى يصبح الرصيد موجبًا.</div><div id="sub127PaymentHistory" class="sub127-pay-status">${topupHistoryHtml()}</div></section>`;
+    return `<section class="sub127-client-panel ${cls}" data-sub127-client-panel="1"><div class="sub127-client-head"><div><h3 data-sub127-client-title>${locked?'استكمال تشغيل Kun Online':'الاشتراك والرصيد'}</h3><p data-sub127-client-description>${description}</p></div><span class="sub127-badge" data-sub127-client-badge>${esc(badge)}</span></div><div class="sub127-kpis"><div class="sub127-kpi"><span>الرصيد الحالي</span><b data-sub127-client-balance>${money(a?.balance,currency)}</b></div><div class="sub127-kpi"><span>الحد الأدنى الشهري</span><b data-sub127-client-monthly>${trial?'مجانًا':money(a?.monthlyMinimum,currency)}</b></div><div class="sub127-kpi"><span>رسوم كل أوردر</span><b data-sub127-client-order-fee>${trial?'مجانًا':money(a?.orderFee,currency)}</b></div><div class="sub127-kpi"><span>الحالة</span><b data-sub127-client-status>${esc(badge)}</b></div></div><div class="sub127-topup"><label>المبلغ المحوّل<input class="input" id="sub127Amount" type="number" min="1" step="0.01" placeholder="مثال: 500" value="${esc(state.topupDraft.amount)}"></label><label>رقم الهاتف المحوّل منه<input class="input" id="sub127Phone" type="tel" placeholder="01xxxxxxxxx" value="${esc(state.topupDraft.phone)}"></label><label>صورة إثبات التحويل<input class="input" id="sub127Proof" type="file" accept="image/*"><span class="meta" id="sub127ProofName">${esc(state.topupDraft.fileName)}</span></label><button class="btn primary" id="sub127Submit" type="button">إرسال طلب الشحن</button></div><div class="sub127-note">بعد اعتماد التحويل يُضاف المبلغ للمحفظة. أي حد أدنى شهري مستحق يُخصم بقيد مستقل ويظهر في سجل الحركات؛ الرصيد النهائي بعد التسوية هو المعتمد. الإيقاف الإداري لا يُلغى بمجرد الشحن.</div><div id="sub127PaymentHistory" class="sub127-pay-status">${topupHistoryHtml()}</div></section>`;
   }
 
   function patchClientPanel(panel,a){
@@ -167,7 +167,7 @@
     return Boolean(a?.locked||(!a?.trialActive&&Number(a?.balance)<=0));
   }
   function showWalletPage(){
-    if(!state.me?.clientId||state.me.role!=='client'||state.locked)return;
+    if(!state.me?.clientId||state.me.role!=='client')return;
     const root=$('#root');if(!root)return;
     document.querySelectorAll('.nav button[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view==='wallet'));
     root.innerHTML='<div class="sub127-wallet-screen" data-sub127-wallet-screen="1"><div class="page-head"><div><div class="title">المحفظة</div><div class="sub">متابعة الرصيد وطلبات شحن المحفظة وسجل اعتماد التحويلات</div></div></div></div>';
@@ -406,10 +406,10 @@
       if(target==='subscriptions'&&state.me?.role==='admin'){
         event.preventDefault();event.stopImmediatePropagation();setAdminActive();setTimeout(renderAdmin,0);return;
       }
-      if(target==='wallet'&&state.me?.role==='client'&&!state.locked){
+      if(target==='wallet'&&state.me?.role==='client'){
         event.preventDefault();event.stopImmediatePropagation();showWalletPage();return;
       }
-      if(state.locked&&target&&target!=='dashboard'){event.preventDefault();event.stopImmediatePropagation();window.showToast?.('الحساب موقوف حاليًا من إعدادات الاشتراك أو المحفظة.');$('.nav button[data-view="dashboard"]')?.click();return;}
+      if(state.locked&&target&&!['dashboard','wallet'].includes(target)){event.preventDefault();event.stopImmediatePropagation();window.showToast?.('الحساب موقوف حاليًا من إعدادات الاشتراك أو المحفظة.');$('.nav button[data-view="dashboard"]')?.click();return;}
       if(target==='dashboard')setTimeout(ensureClientPanel,300);
     },true);
     const root=$('#root');if(root)new MutationObserver(()=>{
@@ -422,7 +422,7 @@
     if(window.__kunSubscriptionRouteGuard127)return;window.__kunSubscriptionRouteGuard127=true;
     const original=window.setView;
     if(typeof original==='function')window.setView=function(view,...rest){
-      if(state.locked&&String(view)!=='dashboard'){window.showToast?.('الحساب موقوف حاليًا من إعدادات الاشتراك أو المحفظة.');return original.call(this,'dashboard',...rest);}
+      if(state.locked&&!['dashboard','wallet'].includes(String(view))){window.showToast?.('الحساب موقوف حاليًا من إعدادات الاشتراك أو المحفظة.');return original.call(this,'dashboard',...rest);}
       return original.call(this,view,...rest);
     };
   }
