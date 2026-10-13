@@ -47,6 +47,13 @@ jobs:
         run: |
           node scripts/kun-primary-navigation-contract-test.mjs
           node --check public/v2/kun-design-v143.js
+      - name: Safe contextual help browser regression
+        run: |
+          node --check public/v2/kun-help-safe-v147.js
+          node --check public/v2/modules-v135-clarity.js
+          node --check public/v2/modules-v136-clarity-growth.js
+          node --check public/v2/modules-v66-campaign-hub.js
+          node scripts/browser-safe-help-v147.mjs
       - name: Production navigation restore regression
         run: |
           node scripts/kun-primary-navigation-contract-test.mjs
