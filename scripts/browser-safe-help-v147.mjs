@@ -13,7 +13,7 @@ const [code,css,index,clarity,campaign,setup]=await Promise.all([
  'modules-v136-clarity-growth.js','modules-v66-campaign-hub.js','modules-v135-clarity.js'
 ].map(file=>readFile(new URL(file,base),'utf8')));
 assert.ok(index.includes('kun-help-safe-v147.js?v=147.0'),'Safe script must be registered');
-assert.ok(index.includes('kun-help-safe-v147.css?v=147.0'),'Safe style must be registered');
+assert.ok(index.includes('kun-help-safe-v147.css?v=147.1'),'Safe style must be registered');
 assert.ok(!index.includes('kun-context-help-v146'),'Invasive v146 must remain disabled');
 assert.ok(index.indexOf('kun-help-safe-v147.js')<index.indexOf('modules-v135-clarity.js'));
 assert.ok(!code.includes('new MutationObserver('),'Safe help must never crawl mutable page content');
