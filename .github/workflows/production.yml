@@ -43,6 +43,15 @@ jobs:
           node --check public/v2/modules-v79-printing.js
           node --check public/v2/modules-v116-print-routing.js
           node scripts/integration-setup-test.mjs
+      - name: Payment ledger and access consistency
+        run: |
+          node --check src/subscription-billing.js
+          node --check src/subscription-control.js
+          node --check src/wallet-account.js
+          node --check src/wallet-topup-admin.js
+          node --check public/v2/modules-v127-subscriptions.js
+          node scripts/subscriptions-v127-contract-test.mjs
+          node scripts/payment-access-v148-test.mjs
       - name: Kun Online primary navigation contract
         run: |
           node scripts/kun-primary-navigation-contract-test.mjs
