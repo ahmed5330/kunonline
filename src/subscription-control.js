@@ -99,7 +99,8 @@ export async function handleSubscriptionControl({request,env,ctx,delegate}){
       const body=await bodyOf(request);
       return json(await requestTopup(env,clientId,body,me.email||me.uid||me.role),201);
     }
-    const access=await subscriptionAccess(env,clientId,{applyMonthly:true});
+    // Authorization/status must not debit money during ordinary requests.
+    const access=await subscriptionAccess(env,clientId,{applyMonthly:false});
     if(path==='/api/subscription/access'&&method==='GET')return json({ok:true,...access});
     if(access.locked&&!allowedWhileLocked(path,method)){
       const balanceRequired=access.reason==='balance_empty';
