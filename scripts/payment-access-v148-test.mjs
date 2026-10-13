@@ -19,6 +19,7 @@ function readEnv({balance=333,monthlyMinimum=511,walletStatus='active',subscript
   if(sql.includes('SELECT balance,status,currency FROM wallet_accounts'))return wallet;
   throw Error('Unexpected SQL read: '+sql);
  },
+ async all(){calls.reads.push({sql,values});return {results:[]};},
  async run(){calls.writes.push({sql,values});throw Error('Read-only path attempted to write: '+sql);}
  };}};},async batch(){calls.writes.push({sql:'BATCH'});throw Error('Read-only access tried to bill');}}};
  return {env,wallet,subscription,calls};
@@ -57,7 +58,7 @@ for(const path of ['/api/subscription/access','/api/dashboard','/api/wallet']){
 }
 assert.equal(funded.calls.writes.length,0,'HTTP access checks cannot charge the wallet');
 assert.equal(await route({database:manualPause.env,path:'/api/wallet'}),null,'paused customer must be able to open wallet');
-assert.equal(await route({database:manualPause.env,path:'/api/wallet/topups'}),null,'paused customer should be allowed to check topups');
+assert.equal((await route({database:manualPause.env,path:'/api/wallet/topups'})).status,200,'paused customer should be allowed to check topups');
 const blocked=await route({database:manualPause.env,path:'/api/orders',method:'POST'});
 assert.equal(blocked.status,402);
 assert.equal((await blocked.json()).code,'SUBSCRIPTION_ACCESS_PAUSED');
