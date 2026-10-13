@@ -67,7 +67,9 @@ assert.equal(manualPause.calls.writes.length,0);
 const stateRow={updated_at:'2026-10-13T17:00:00Z',json:JSON.stringify({clients:[{id:'billing-qa',walletBalance:-178,walletFeePerOrder:2}]})};
 let stored=null,reads=0;
 const mirrorEnv={DB:{prepare(sql){
- return {bind(...values){return {
+ return {
+ async first(){if(sql.startsWith('SELECT json,updated_at FROM state'))return stateRow;throw Error('Unexpected direct mirror SQL '+sql);},
+ bind(...values){return {
  async first(){
   if(sql.startsWith('SELECT json,updated_at FROM state'))return stateRow;
   if(sql.startsWith('SELECT balance,billing_version FROM wallet_accounts')){reads++;return {balance:333,billing_version:'v27'};}
