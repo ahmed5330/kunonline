@@ -9,7 +9,7 @@ function validateProofDataUrl(value){
 }
 
 export async function requestTopup(env,clientId,body,actor){
-  const amount=round2(body.amount);if(amount<=0)throw Object.assign(new Error('المبلغ لازم يكون أكبر من صفر'),{status:400});
+  const amount=round2(body.amount);if(!Number.isFinite(amount)||amount<=0)throw Object.assign(new Error('المبلغ لازم يكون رقمًا صالحًا أكبر من صفر'),{status:400,code:'TOPUP_AMOUNT_INVALID'});
   const phone=String(body.senderPhone||body.phone||'').replace(/\s+/g,'').trim();if(phone.length<8)throw Object.assign(new Error('رقم الهاتف المحوّل منه مطلوب'),{status:400});
   const proofDataUrl=validateProofDataUrl(body.proofDataUrl||null),proofUrl=body.proofUrl?String(body.proofUrl):null;
   if(!proofDataUrl&&!proofUrl)throw Object.assign(new Error('ارفع صورة إثبات التحويل'),{status:400,code:'PROOF_REQUIRED'});
@@ -21,7 +21,7 @@ export async function requestTopup(env,clientId,body,actor){
 }
 
 export async function listTopups(env,clientId,{status=null,limit=100}={}){
-  let sql='SELECT id,client_id,amount,currency,sender_phone,transfer_method,proof_data_url,proof_url,status,requested_by,requested_at,reviewed_by,reviewed_at,review_note,metadata_json FROM wallet_topup_requests WHERE client_id=?',binds=[clientId];
+  let sql=`SELECT id,client_id,amount,currency,sender_phone,transfer_method,CASE WHEN COALESCE(proof_data_url,'')<>'' OR COALESCE(proof_url,'')<>'' THEN 1 ELSE 0 END has_proof,status,requested_by,requested_at,reviewed_by,reviewed_at,review_note FROM wallet_topup_requests WHERE client_id=?`,binds=[clientId];
   if(status){sql+=' AND status=?';binds.push(status)}sql+=' ORDER BY requested_at DESC LIMIT ?';binds.push(Math.max(1,Math.min(300,Number(limit)||100)));
   const {results=[]}=await env.DB.prepare(sql).bind(...binds).all();return results;
 }
