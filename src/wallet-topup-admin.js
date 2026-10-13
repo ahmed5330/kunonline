@@ -88,28 +88,33 @@ export async function approveTopup(env,topupId,actor,note='',options={}){
   };
   try{
     await env.DB.batch([
-      env.DB.prepare('UPDATE wallet_accounts SET balance=ROUND(balance+?,2),updated_at=? WHERE client_id=?').bind(creditedAmount,ts,row.client_id),
       env.DB.prepare(`INSERT INTO wallet_log (id,client_id,store_id,type,amount,balance_after,note,created_at,created_by,reference_type,reference_id,idempotency_key,metadata_json)
-        SELECT ?,?,NULL,'topup',?,balance,?,?,?,?,?,?,? FROM wallet_accounts WHERE client_id=?`)
-        .bind(logId,row.client_id,creditedAmount,`شحن محفظة معتمد — ${topupId}`,ts,actor||'admin','topup_request',topupId,key,JSON.stringify(metadata),row.client_id),
+        SELECT ?,?,NULL,'topup',?,ROUND(balance+?,2),?,?,?,?,?,?,? FROM wallet_accounts WHERE client_id=?
+          AND EXISTS (SELECT 1 FROM wallet_topup_requests WHERE id=? AND client_id=? AND status='pending')`)
+        .bind(logId,row.client_id,creditedAmount,creditedAmount,`شحن محفظة معتمد — ${topupId}`,ts,actor||'admin','topup_request',topupId,key,JSON.stringify(metadata),row.client_id,topupId,row.client_id),
+      env.DB.prepare('UPDATE wallet_accounts SET balance=ROUND(balance+?,2),updated_at=? WHERE client_id=? AND EXISTS (SELECT 1 FROM wallet_log WHERE id=? AND client_id=?)')
+        .bind(creditedAmount,ts,row.client_id,logId,row.client_id),
       env.DB.prepare("UPDATE wallet_topup_requests SET status='approved',reviewed_by=?,reviewed_at=?,review_note=? WHERE id=? AND status='pending'")
         .bind(actor||'admin',ts,String(note||''),topupId)
     ]);
   }catch(error){
     if(/idx_wallet_log_idempotency|UNIQUE constraint failed/i.test(String(error?.message||error))){
       const applied=await appliedTopupCredit(env,row.client_id,topupId);
+      if(!applied)throw error;
+      const {access,settlementPending,settlementErrorCode}=await afterTopupSettlement(env,row.client_id);
       const current=await ensureWalletAccount(env,row.client_id);
       return {
         ok:true,alreadyApproved:true,id:topupId,clientId:row.client_id,status:'approved',
         requestedAmount,creditedAmount:round2(applied?.amount??creditedAmount),
         balanceAfterCredit:round2(applied?.balance_after??current.balance),balance:round2(current.balance),
-        currency:current.currency||row.currency||'EGP'
+        currency:current.currency||row.currency||'EGP',access,settlementPending,settlementErrorCode
       };
     }
     throw error;
   }
 
   const applied=await appliedTopupCredit(env,row.client_id,topupId);
+  if(!applied)throw Object.assign(new Error('تمت مراجعة طلب الشحن قبل اعتماد الرصيد'),{status:409,code:'TOPUP_NOT_PENDING'});
   if(!applied||round2(applied.amount)!==creditedAmount){
     throw Object.assign(new Error('تعذر تأكيد قيد الشحن في سجل المحفظة بعد الاعتماد'),{
       status:500,code:'TOPUP_LEDGER_VERIFY_FAILED',clientId:row.client_id,topupId

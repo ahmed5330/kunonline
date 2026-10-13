@@ -38,8 +38,8 @@ function fixture(balance=23,fee=25){
    }
  }};
  const addOrder=(id,createdAt='2026-10-13T12:00:00Z')=>db.prepare('INSERT INTO orders VALUES (?,?,?,?,?)').run(id,'fixture','shop','2026-10-13',createdAt);
- const balanceNow=()=>db.prepare("SELECT balance,credit_limit FROM wallet_accounts WHERE client_id='fixture'").get();
- const logs=()=>db.prepare("SELECT order_id,amount,balance_after,idempotency_key FROM wallet_log WHERE client_id='fixture' AND type='deduct' ORDER BY rowid").all();
+ const balanceNow=()=>({...db.prepare("SELECT balance,credit_limit FROM wallet_accounts WHERE client_id='fixture'").get()});
+ const logs=()=>db.prepare("SELECT order_id,amount,balance_after,idempotency_key FROM wallet_log WHERE client_id='fixture' AND type='deduct' ORDER BY rowid").all().map(row=>({...row}));
  return {db,env,addOrder,balanceNow,logs};
 }
 
