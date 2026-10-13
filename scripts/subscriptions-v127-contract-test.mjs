@@ -230,3 +230,6 @@ assert.equal(await guardedRequest({path:'/api/state',method:'PUT',subscriptionSt
 assert.equal((await guardedRequest({path:'/api/printing',role:'staff'})).status,402,'store staff must respect the same server wallet gate');
 
 console.log('subscriptions v127.19 billing contract: ok');
+
+// Exercise the real SQLite CHECK constraint, idempotency and final-order overdraft.
+await import('./wallet-last-order-overdraft-test.mjs');
