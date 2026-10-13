@@ -10,7 +10,7 @@ const text=v=>String(v??'').trim();
 async function currentUser(request,env,ctx,delegate){
   const url=new URL(request.url);url.pathname='/api/me';url.search='';
   const response=await delegate.fetch(new Request(url.toString(),{method:'GET',headers:request.headers}),env,ctx),data=await response.json().catch(()=>({}));
-  if(!response.ok||!data?.role)throw Object.assign(new Error(data?.error||'محتاج تسجّل دخول'),{status:response.status||401,code:'AUTH_REQUIRED'});
+  if(!response.ok||!data?.role)throw Object.assign(new Error(data?.error||'محتاج تسجّل دخول'),{status:response.ok?401:response.status||401,code:'AUTH_REQUIRED'});
   return data;
 }
 const requireAdmin=me=>{if(me?.role!=='admin')throw Object.assign(new Error('المسار متاح لإدارة Kun Online فقط'),{status:403,code:'ADMIN_ONLY'});};

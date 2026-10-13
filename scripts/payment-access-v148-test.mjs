@@ -64,6 +64,13 @@ assert.equal(blocked.status,402);
 assert.equal((await blocked.json()).code,'SUBSCRIPTION_ACCESS_PAUSED');
 assert.equal(manualPause.calls.writes.length,0);
 
+// Legacy /api/me can return an error envelope with HTTP 200. It is still anonymous.
+for(const path of ['/api/subscription/access','/api/wallet/topups','/api/admin/subscriptions','/api/admin/wallet/topups']){
+ const response=await handleSubscriptionControl({request:new Request('https://fixture.example'+path),env:{DB:{prepare(){throw Error('Anonymous request touched the database');}}},ctx:{},delegate:{fetch:async()=>Response.json({error:'Login required'})}});
+ assert.equal(response.status,401,'anonymous payment APIs must never report successful HTTP status');
+ assert.equal((await response.json()).code,'AUTH_REQUIRED');
+}
+
 const stateRow={updated_at:'2026-10-13T17:00:00Z',json:JSON.stringify({clients:[{id:'billing-qa',walletBalance:-178,walletFeePerOrder:2}]})};
 let stored=null,reads=0;
 const mirrorEnv={DB:{prepare(sql){
