@@ -13,6 +13,7 @@
     'customer-service':['support.read'],
     printing:['orders.read','shipping.read','support.read'],
     'post-shipping':['shipping.read'],
+    'returns-exchanges':['support.read','shipping.read'],
     customers:['customers.read'],
     inbox:['inbox.read'],
     products:['products.read'],
