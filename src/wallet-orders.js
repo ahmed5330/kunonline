@@ -72,9 +72,10 @@ export async function billOrder(env,orderId,{allowBacklogCharge=false}={}){
     }
   }
   const startingBalance=round2(account.balance);
-  // An order is not credit: never bill it partially or below zero, even when a
-  // legacy/monthly credit_limit is present on the wallet account.
-  if(startingBalance<fee){
+  // Only the LAST order that finds a positive wallet may cross zero.
+  // Once the account is exhausted, later orders stay pending for review.
+  // Do not retroactively re-charge old pending orders after a topup.
+  if(startingBalance<=0){
     await env.DB.prepare(`INSERT INTO order_billing (order_id,client_id,store_id,fee,status,attempts,last_error,created_at,updated_at)
       VALUES (?,?,?,?, 'pending_insufficient',1,'INSUFFICIENT_BALANCE',?,?)
       ON CONFLICT(order_id) DO UPDATE SET fee=excluded.fee,status='pending_insufficient',attempts=order_billing.attempts+1,last_error='INSUFFICIENT_BALANCE',updated_at=excluded.updated_at`)
@@ -87,10 +88,18 @@ export async function billOrder(env,orderId,{allowBacklogCharge=false}={}){
   const logId=rid('WLG'),key=`order:${orderId}`;
   try{
     await env.DB.batch([
-      // CHECK(balance >= -credit_limit) on wallet_accounts makes an overdraw fail the whole transaction.
-      // Preflight balance may be stale when two new orders arrive simultaneously.
-      // Reject the entire atomic batch if available funds were consumed meanwhile.
-      env.DB.prepare('UPDATE wallet_accounts SET balance=CASE WHEN ROUND(balance,2)>=? THEN ROUND(balance-?,2) ELSE -credit_limit-0.01 END,updated_at=? WHERE client_id=?')
+      // Atomic, one-order overdraft: move to a negative balance ONLY if funds
+      // were still positive when this transaction began. Widen credit_limit
+      // solely to cover this final order, never to admit further orders.
+      // The CHECK(balance >= -credit_limit) aborts the WHOLE batch if another
+      // order already exhausted/paused the account, protecting the ledger.
+      env.DB.prepare(`UPDATE wallet_accounts SET
+        credit_limit=CASE WHEN ROUND(balance,2)>0 AND status='active' AND billing_version='v27'
+          THEN MAX(COALESCE(credit_limit,0),MAX(0,ROUND(?-balance,2)))
+          ELSE credit_limit END,
+        balance=CASE WHEN ROUND(balance,2)>0 AND status='active' AND billing_version='v27'
+          THEN ROUND(balance-?,2) ELSE -COALESCE(credit_limit,0)-0.01 END,
+        updated_at=? WHERE client_id=?`)
         .bind(fee,fee,ts,order.client_id),
       env.DB.prepare(`INSERT INTO wallet_log (id,client_id,store_id,type,amount,balance_after,note,created_at,created_by,order_id,reference_type,reference_id,idempotency_key,metadata_json)
         SELECT ?,?,?, 'deduct',?,balance,?,?,?,?,?,?,?,? FROM wallet_accounts WHERE client_id=?`)
@@ -106,8 +115,11 @@ export async function billOrder(env,orderId,{allowBacklogCharge=false}={}){
     }
     if(/idx_wallet_log_idempotency|UNIQUE constraint failed/i.test(text)){
       const log=await env.DB.prepare('SELECT id,balance_after FROM wallet_log WHERE client_id=? AND idempotency_key=?').bind(order.client_id,key).first();
-      await env.DB.prepare("UPDATE order_billing SET status='charged',wallet_log_id=?,last_error=NULL,charged_at=COALESCE(charged_at,?),updated_at=? WHERE order_id=?").bind(log?.id||null,ts,ts,orderId).run();
-      return {ok:true,status:'charged',fee,deduplicated:true};
+      // A UNIQUE failure elsewhere must never invent a charged billing row.
+      if(log?.id){
+        await env.DB.prepare("UPDATE order_billing SET status='charged',wallet_log_id=?,last_error=NULL,charged_at=COALESCE(charged_at,?),updated_at=? WHERE order_id=?").bind(log.id,ts,ts,orderId).run();
+        return {ok:true,status:'charged',fee,balance:round2(log.balance_after),deduplicated:true};
+      }
     }
     await env.DB.prepare("UPDATE order_billing SET status='failed',attempts=attempts+1,last_error=?,updated_at=? WHERE order_id=?").bind(text.slice(0,500),now(),orderId).run();
     throw error;
