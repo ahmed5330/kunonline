@@ -25,7 +25,7 @@ for(const token of ['subscription-minimum:','monthlyMinimum','trialing','balance
 assert.equal(billing.includes("MONTHLY_MINIMUM_INSUFFICIENT"),false,'monthly minimum must be posted to the wallet ledger instead of creating a hidden due state');
 assert.equal(billing.includes("monthly_minimum_due"),false,'managed access must not depend on a second hidden monthly-due lock state');
 assert.ok(billing.includes("const requiredCredit=Math.max(Number(account.credit_limit)||0,shortage)"),'monthly minimum must be able to cross the visible balance below zero safely');
-assert.ok(billing.includes("applyMonthly:body.endFreeTrial===true||body.applyMonthly===true||status==='active'"),'activating a subscription must apply the current monthly charge immediately');
+assert.ok(billing.includes("applyMonthly:body.endFreeTrial===true||body.applyMonthly===true||(explicitStatus&&requestedStatus==='active')"),'activating a subscription must apply the current monthly charge immediately');
 assert.ok(billing.includes("await migrateLegacyBilling(env,clientId,actor)"),'every managed subscription path must migrate billing at an explicit order cutoff');
 assert.ok(billing.includes("subscription.billing.start"),'paid subscription access must persist an immutable billing start timestamp');
 assert.ok(billing.includes("billingStartedAt"),'subscription access/admin snapshot must expose the paid billing start timestamp');
@@ -81,7 +81,7 @@ assert.ok(control.includes("/credit$/"),'manual balance correction route must be
 assert.ok(control.includes("path.startsWith('/api/admin/wallet/topups')"),'admin topup errors must not fall through to a stale delegated worker');
 for(const label of ['الاشتراكات','منح 30 يوم مجانًا لهذا الحساب','الحد الأدنى الشهري','رسوم كل أوردر','صورة إثبات التحويل','اعتماد'])assert.ok(ui.includes(label),`UI contract missing ${label}`);
 assert.ok(ui.includes("data-kun-subscription-locked"),'locked navigation must use a hard CSS lock');
-assert.ok(ui.includes("String(view)!=='dashboard'"),'programmatic routing must also be blocked while locked');
+assert.ok(ui.includes("!['dashboard','wallet'].includes(String(view))"),'programmatic routing must also be blocked while locked');
 assert.ok(ui.includes("accept=\"image/*\""),'payment proof input must support mobile image pickers');
 assert.ok(ui.includes("typeof createImageBitmap==='function'"),'proof compression must include browser capability fallback');
 assert.ok(ui.includes("sub127TrialToggle"),'admin must have an explicit free-trial toggle');
@@ -131,7 +131,7 @@ assert.equal(shouldShowDashboardPanel({locked:true,balance:0,trialActive:false})
 assert.equal(shouldShowDashboardPanel({locked:true,balance:100,trialActive:false}),true,'accounts paused by admin must keep their access instructions');
 assert.ok(ui.includes("if(!walletScreen&&!shouldShowDashboardPanel(state.access))"),'funded dashboard should remove the large payment form');
 assert.ok(ui.includes("function showWalletPage()"),'wallet form must remain reachable from the wallet nav');
-assert.ok(ui.includes("if(target==='wallet'&&state.me?.role==='client'&&!state.locked)"),'wallet navigation must open its dedicated page');
+assert.ok(ui.includes("if(target==='wallet'&&state.me?.role==='client')"),'wallet navigation must open its dedicated page');
 
 assert.ok(ui.includes('function bindClientPanel'),'client topup form bindings must be stable and one-time');
 assert.ok(ui.includes("proofInput?.files?.[0]||state.topupDraft.file"),'selected proof file must survive a dashboard rerender');
@@ -159,6 +159,13 @@ assert.ok(!adminUi.includes('<option value=\"trial\">Trial</option>'),'Trial mus
 for(const file of [billing,control,orders,topups,ui]){
   for(const unsafe of ['DROP TABLE','ALTER TABLE','CREATE TABLE','DELETE FROM subscriptions','DELETE FROM wallet_accounts'])assert.ok(!file.includes(unsafe),`unexpected destructive/migration token: ${unsafe}`);
 }
+
+assert.ok(billing.includes('subscriptionAccess(env,clientId,{applyMonthly=false}'),'default access reads must be pure');
+assert.ok(control.includes('subscriptionAccess(env,clientId,{applyMonthly:false})'),'ordinary client requests must not post monthly fees');
+assert.ok(ui.includes("if(b.dataset.view==='dashboard'||b.dataset.view==='wallet')return"),'suspended customer must be able to access Wallet');
+assert.ok(ui.includes('data-sub127-monthly-due'),'client must see a pending monthly charge before settlement');
+assert.ok(ui.includes('Number(client?.monthlyDue)>0'),'admin must see outstanding minimum when approving credit');
+assert.ok(billing.includes("explicitStatus=['active','paused','suspended']"),'editing fees must preserve manual wallet pauses');
 
 const makeBillingEnv=({balance=0,walletStatus='active',subscriptionStatus='active'}={})=>{
   const wallet={client_id:'billing-test',balance,currency:'EGP',status:walletStatus,billing_version:'v27',base_order_fee:2};
