@@ -3,7 +3,39 @@ import {round2} from './wallet-account.js';
 // Read-only, admin-only diagnostic (route authorization lives in subscription-control).
 // Ledger rows are ordered by SQLite insertion sequence, not by wall-clock timestamps,
 // because sync jobs can write several monetary events in the same millisecond.
-const signed=row=>['topup','credit','admin_credit','refund'].includes(String(row.type||'').toLowerCase())?Math.abs(Number(row.amount)||0):-(Math.abs(Number(row.amount)||0));
+const CREDIT_TYPES=new Set(['topup','credit','admin_credit','refund']);
+const DEBIT_TYPES=new Set(['deduct','debit','charge','fee','subscription']);
+const knownSigned=row=>{
+  const type=String(row.type||'').toLowerCase(),amount=Number(row.amount);
+  if(!Number.isFinite(amount)||amount<0||(!CREDIT_TYPES.has(type)&&!DEBIT_TYPES.has(type)))return null;
+  return (CREDIT_TYPES.has(type)?1:-1)*Math.abs(amount);
+};
+const signed=row=>knownSigned(row)??0;
+// Verify the chain oldest -> newest, not just current wallet balance vs latest row.
+// Use rowid for ordering because events frequently share a millisecond.
+export function auditWalletLedgerContinuity(logs,limit=12){
+  const rows=Array.isArray(logs)?logs:[];
+  const anomalies=[],unknownTypes=new Set();let verifiedPairs=0;
+  for(let i=rows.length-2;i>=0;i--){
+    const earlier=rows[i+1],later=rows[i],delta=knownSigned(later);
+    if(delta===null){
+      unknownTypes.add(String(later.type||'unknown').slice(0,60));continue;
+    }
+    const previous=Number(earlier.balance_after),actual=Number(later.balance_after);
+    if(!Number.isFinite(previous)||!Number.isFinite(actual)){
+      if(anomalies.length<limit)anomalies.push({id:later.id,seq:later.seq,reason:'non_numeric_balance'});
+      continue;
+    }
+    const expected=round2(previous+delta),difference=round2(actual-expected);
+    verifiedPairs++;
+    if(Math.abs(difference)>0.009&&anomalies.length<limit){
+      anomalies.push({id:later.id,seq:later.seq,at:later.created_at||null,referenceType:later.reference_type||null,
+        expected,recorded:round2(actual),difference});
+    }
+  }
+  return {checkedPairs:verifiedPairs,anomalyCount:anomalies.length,anomalies,
+    unknownTypes:[...unknownTypes],truncatedAnomalies:anomalies.length>=limit};
+}
 export async function walletPaymentDiagnostics(env,clientId){
   const account=await env.DB.prepare('SELECT balance,currency,billing_version FROM wallet_accounts WHERE client_id=?').bind(clientId).first();
   if(!account)return {clientId,available:false,reason:'WALLET_NOT_FOUND'};
@@ -28,6 +60,8 @@ export async function walletPaymentDiagnostics(env,clientId){
   };
   const {results:logs=[]}=await env.DB.prepare(`SELECT rowid seq,id,created_at,type,amount,balance_after,note,order_id,reference_type,reference_id
     FROM wallet_log WHERE client_id=? ORDER BY rowid DESC LIMIT 700`).bind(clientId).all();
+  const ledgerContinuity=auditWalletLedgerContinuity(logs);
+  const ledgerCoverage={scanned:logs.length,limitedTo:700,mayHaveOlderEntries:logs.length===700};
   const anchorIndex=logs.findIndex(row=>row.type==='topup'&&['topup_request','admin_adjustment'].includes(String(row.reference_type||'')));
   const latest=logs[0]||null,anchor=anchorIndex>=0?logs[anchorIndex]:null;
   const after=anchor?logs.slice(0,anchorIndex).reverse():[];
@@ -51,6 +85,7 @@ export async function walletPaymentDiagnostics(env,clientId){
       GROUP BY reference_id HAVING COUNT(*)>1)`).bind(clientId).first()||{};
   return {
     clientId,currency:account.currency||'EGP',balance:currentBalance,legacyMirror,
+    ledgerContinuity,ledgerCoverage,
     lastLedgerBalance:latest?round2(latest.balance_after):null,
     ledgerBalanceMismatch:latest?round2(currentBalance-Number(latest.balance_after||0)):null,
     lastApprovedCredit:anchor?{
