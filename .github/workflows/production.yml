@@ -43,6 +43,11 @@ jobs:
           node --check public/v2/modules-v79-printing.js
           node --check public/v2/modules-v116-print-routing.js
           node scripts/integration-setup-test.mjs
+      - name: V2 login session gateway regression
+        run: |
+          node --check public/v2/modules-v142-login-gateway.js
+          node --check src/index-production-mobile-update.js
+          node scripts/v2-login-gateway-contract-test.mjs
       - name: Payment ledger and access consistency
         run: |
           node --check src/subscription-billing.js
