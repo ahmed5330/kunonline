@@ -17,6 +17,7 @@ insert('B','C','S','2026-10-01','preparing',450);
 insert('C','C','S','2026-10-02','shipped',100);
 insert('D','C','S','2026-10-03','signed',400);
 insert('E','C','S','2026-10-03','collected',500,460,'2026-10-08T10:00:00Z');
+insert('MISSING-AMOUNT','C','S','2026-10-03','collected',300,null,'2026-10-08T10:00:00Z');
 insert('E-DUP','C','S','2026-10-03','collected',500,460,'2026-10-08T10:00:00Z');
 insert('RETURN','C','S','2026-10-04','returned',250);
 insert('OUTSIDE','OTHER','S','2026-10-03','collected',9999,9999,'2026-10-08T10:00:00Z');
@@ -26,15 +27,16 @@ class Statement {constructor(sql){this.sql=sql;this.args=[];}bind(...v){this.arg
   async first(){return db.prepare(this.sql).get(...this.args)||null;}}
 const env={DB:{prepare:sql=>new Statement(sql)}};
 const result=await growthOperatingEvidence(env,{clientId:'C',storeId:'S',from:'2026-10-01',to:'2026-10-12'});
-assert.equal(result.orderCohort.entered,6);
-assert.equal(result.orderCohort.collected,1);
+assert.equal(result.orderCohort.entered,7);
+assert.equal(result.orderCohort.collected,2);
 assert.equal(result.currentBacklog.active,4);
 assert.equal(result.currentBacklog.pendingConfirmation,1);
 assert.equal(result.currentBacklog.awaitingPacking,1);
 assert.equal(result.currentBacklog.awaitingDelivery,1);
 assert.equal(result.currentBacklog.deliveredNotMarkedCollected,1);
-assert.equal(result.codRecorded.count,1);
+assert.equal(result.codRecorded.count,2);
 assert.equal(result.codRecorded.grossRecorded,460);
+assert.equal(result.codRecorded.missingAmountCount,1,'missing COD cannot be inferred from order sale price');
 assert.equal(result.codRecorded.meanDaysFromOrderToRecordedCollection,5);
 assert.equal(result.verifiedStaffCapacity,false);
 assert.equal(result.verifiedCarrierPayoutSchedule,false);
