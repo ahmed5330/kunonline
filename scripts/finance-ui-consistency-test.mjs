@@ -9,7 +9,7 @@ const collectedProfitUI=fs.readFileSync('public/v2/modules-v47-collected-profit.
 const accountingBackend=fs.readFileSync('src/accounting.js','utf8');
 const detail=fs.readFileSync('src/index-commerce-v38-base.js','utf8');
 
-assert.match(html,/modules-v96-finance-command-center\.js\?v=96\.1/,
+assert.match(html,/modules-v96-finance-command-center\.js\?v=96\.2/,
   'finance command center must be loaded in the real user-facing V2 HTML');
 assert.match(finance,/version:'96\.1'/);
 assert.match(finance,/accountingNet=Math\.round\(\(net\+manualIncome\)\*100\)\/100/,
@@ -17,6 +17,11 @@ assert.match(finance,/accountingNet=Math\.round\(\(net\+manualIncome\)\*100\)\/1
 assert.ok(finance.includes('صافي الربح المحاسبي'),'accounting net must be visible in Finance');
 assert.ok(finance.includes('صافي الربح التشغيلي'),'operating net must be visible in Finance');
 assert.ok(accounts.includes('صافي الربح المحاسبي للشهر'),'Accounts must expose matching definition');
+assert.match(html,/modules-v36-accounting\.js\?v=100\.3/);
+assert.ok(accounts.includes('تحصيل بمبلغ مسجل فقط'),'Monthly Accounts must identify explicitly recorded collections');
+assert.ok(accounts.includes('cash.verifiedNetCash'),'Monthly Accounts must keep unverified COD out of verified movements');
+assert.ok(finance.includes('a.estimatedCollectedRevenue'),'Finance must distinguish estimated COD totals');
+assert.ok(finance.includes('a.verifiedCollectedRevenue'),'Finance must display verified COD and reconcile it to collection details');
 assert.ok(dashboard.includes("card('pnl','صافي الربح التشغيلي'"),'dashboard must not mislabel operating profit');
 assert.ok(finance.includes('ليس رصيد البنك'),'registered cash flow must not be marketed as bank cash');
 for(const metric of ['التحصيل: المالية × الحسابات','صافي التشغيل × معادلة P&L','إجمالي المصروفات × بنودها','إعلانات الداشبورد × المالية','مبالغ تحصيل تقديرية']) assert.ok(finance.includes(metric),`missing live reconciliation status: ${metric}`);
