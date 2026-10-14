@@ -20,7 +20,9 @@ export async function mirrorLegacyBalance(env,clientId,balance,{disableLegacyFee
     const canonical=await env.DB.prepare('SELECT balance,billing_version FROM wallet_accounts WHERE client_id=?').bind(clientId).first();
     client.walletBalance=round2(canonical?.balance??balance);
     if(disableLegacyFee||canonical?.billing_version==='v27')client.walletFeePerOrder=0;
-    const ts=now(),result=await env.DB.prepare('UPDATE state SET json=?,updated_at=? WHERE id=1 AND updated_at=?').bind(JSON.stringify(state),ts,row?.updated_at||'').run();
+    // Compare the original JSON as well as its timestamp: updates in the same millisecond
+    // must not pass the CAS and clobber a newer change to a client or unrelated field.
+    const ts=now(),result=await env.DB.prepare('UPDATE state SET json=?,updated_at=? WHERE id=1 AND updated_at IS ? AND json=?').bind(JSON.stringify(state),ts,row?.updated_at??null,row.json).run();
     if(Number(result?.meta?.changes||0)>0)return true;
   }
   return false;
