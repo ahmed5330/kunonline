@@ -31,7 +31,8 @@ export async function growthOperatingEvidence(env,{clientId,storeId,from,to}={})
        AND NOT EXISTS(SELECT 1 FROM order_duplicate_links d WHERE d.duplicate_order_id=o.id)`)
       .bind(clientId,storeId).first(),
     env.DB.prepare(`SELECT COUNT(*) recorded_collections,
-      COALESCE(SUM(COALESCE(o.collected_amount,o.total)),0) recorded_gross_collected,
+      COALESCE(SUM(CASE WHEN o.collected_amount IS NOT NULL AND o.collected_amount>=0 THEN o.collected_amount ELSE 0 END),0) recorded_gross_collected,
+      SUM(CASE WHEN o.collected_amount IS NULL THEN 1 ELSE 0 END) missing_recorded_amount_count,
       AVG(CASE WHEN o.collected_at IS NOT NULL AND
              date(o.collected_at)>=date(COALESCE(o.date,o.created_at)) THEN
              julianday(date(o.collected_at))-julianday(date(COALESCE(o.date,o.created_at))) END) average_order_to_recorded_collection_days
@@ -54,11 +55,12 @@ export async function growthOperatingEvidence(env,{clientId,storeId,from,to}={})
       deliveredNotMarkedCollected:asCount(backlog?.delivered_not_marked_collected)},
     codRecorded:{count:asCount(collected?.recorded_collections),
       grossRecorded:round(collected?.recorded_gross_collected),
+      missingAmountCount:asCount(collected?.missing_recorded_amount_count),
       meanDaysFromOrderToRecordedCollection:collected?.average_order_to_recorded_collection_days==null?
         null:round(collected.average_order_to_recorded_collection_days)},
     limitations:[
       'الحالات تمثل الوضع المسجل لكل طلب، ولا تثبت الطاقة اليومية الفعلية للموظفين.',
-      'مبالغ التحصيل المسجلة لا تعني وصول الأموال إلى حساب التاجر ولا تثبت مواعيد التسوية القادمة.',
+      'مبالغ التحصيل المسجلة لا تعني وصول الأموال إلى حساب التاجر ولا تثبت مواعيد التسوية القادمة؛ الطلبات بلا مبلغ تحصيل لا تُضاف إلى المبلغ المحصل.',
       'أرقام الطابور تشمل الطلبات غير المغلقة حاليًا حتى إن كانت خارج فترة التقرير، مع استبعاد النسخ المكررة.',
       'تقدير السيولة لا يستخدم رصيد محفظة كن ولا يفترض أي دفعة COD مستقبلية.'
     ],
