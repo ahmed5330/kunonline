@@ -21,7 +21,13 @@ export function assessScalingReadiness({
   const adSpend = nonNegative(marketing.spend) ? number(marketing.spend) : 0;
   const attributed = nonNegative(marketing.attributedOrders) ? number(marketing.attributedOrders) : null;
 
-  if (adSpend <= 0 || totalOrders <= 0) {
+  const reportedOrderCount = nonNegative(marketing.realOrders) ? number(marketing.realOrders) : null;
+  if (reportedOrderCount !== null && reportedOrderCount !== totalOrders) {
+    checks.push(check('data', 'موثوقية بيانات الإعلان والطلبات', 'blocked',
+      'عدد الطلبات الموحّد في التحليل التجاري لا يطابق مصدر تحليل الحملات للفترة والمتجر نفسيهما.',
+      'سوِّ مصادر الطلبات والنسخ المكررة والفلاتر قبل استخدام تكلفة الطلب أو اتخاذ قرار توسع.',
+      {adSpend, totalOrders, marketingRealOrders: reportedOrderCount, period}));
+  } else if (adSpend <= 0 || totalOrders <= 0) {
     checks.push(check('data', 'موثوقية بيانات الإعلان والطلبات', 'unknown',
       'لا توجد بيانات إنفاق وطلبات كافية في الفترة المختارة لتقييم التوسع.',
       'راجع مزامنة الحملات واستيراد جميع الطلبات والفترة المختارة.',
