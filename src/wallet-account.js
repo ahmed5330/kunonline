@@ -28,6 +28,20 @@ export async function mirrorLegacyBalance(env,clientId,balance,{disableLegacyFee
   return false;
 }
 
+// A payment or administrator credit may already be committed to the authoritative
+// wallet ledger. An unrelated legacy JSON mirror failure must never make that
+// successful financial transaction look rejected and invite a duplicate credit.
+export async function safeMirrorAfterLedgerCommit(env,clientId){
+  try{
+    const current=await env.DB.prepare('SELECT balance FROM wallet_accounts WHERE client_id=?').bind(clientId).first();
+    if(!current)return {legacyMirrorPending:true};
+    const synced=await mirrorLegacyBalance(env,clientId,current.balance);
+    return {legacyMirrorPending:synced!==true};
+  }catch(error){
+    return {legacyMirrorPending:true,legacyMirrorErrorCode:String(error?.code||'LEGACY_MIRROR_RETRY')};
+  }
+}
+
 export async function ensureWalletAccount(env,clientId){
   let row=await env.DB.prepare('SELECT * FROM wallet_accounts WHERE client_id=?').bind(clientId).first();
   if(row)return row;
