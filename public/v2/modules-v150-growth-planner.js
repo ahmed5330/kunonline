@@ -6,7 +6,7 @@
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c]));
   const money=v=>Number(v||0).toLocaleString('ar-EG',{maximumFractionDigits:2});
   const state={catalog:null,loading:false};
-  const field=(name,label,placeholder='',step='any')=>`<label class="gp150-field"><span>${esc(label)}</span><input name="${name}" type="number" inputmode="decimal" min="0" step="${step}" placeholder="${esc(placeholder)}" required></label>`;
+  const field=(name,label,placeholder='',step='any',optional=false)=>`<label class="gp150-field"><span>${esc(label)}</span><input name="${name}" type="number" inputmode="decimal" min="0" step="${step}" placeholder="${esc(placeholder)}" ${optional?'':'required'}></label>`;
   const info=(title,value,unit='')=>`<div class="gp150-metric"><small>${esc(title)}</small><strong>${esc(value)} ${esc(unit)}</strong></div>`;
   function style(){
     if(document.getElementById('growthPlanner150Styles'))return;
@@ -45,8 +45,8 @@
         <label class="gp150-check"><input type="checkbox" name="coversAllPromotedSkus"> أؤكد إني أدرجت كل مكونات المنتجات المعلن عنها (ومنها الباندل).</label>
       </div>
       <div class="gp150-section"><h4>5. قواعد التوسع — معاينة فقط</h4><div class="gp150-grid">
-        ${field('increasePct','زيادة الميزانية المقترحة (%)','1 إلى 30')}
-        ${field('maxDailyBudget','أقصى ميزانية يومية مسموحة للمراجعة','حد أمان')}
+        ${field('increasePct','زيادة الميزانية المقترحة (%)','1 إلى 30','any',true)}
+        ${field('maxDailyBudget','أقصى ميزانية يومية مسموحة للمراجعة','حد أمان','any',true)}
       </div><p>المعاينة لا تنفذ أي أوامر على Meta Ads. لا يتم رفع الميزانية دون صلاحيات وموافقة وتسجيل.</p></div>
       <div class="gp150-actions"><button type="submit" class="primary" id="gp150-simulate">تحليل سيناريو التوسع</button><span id="gp150-status" role="status"></span></div>
     </form><div id="gp150-output" aria-live="polite"></div></details>`;
@@ -113,6 +113,11 @@
       <p><b>لا يوجد إذن لزيادة الميزانية.</b> ${esc(s.disclaimer||'هذه محاكاة استرشادية.')}</p>
     </div>`;
   }
+  function cairoToday(){
+    const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Cairo',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());
+    const d=key=>parts.find(p=>p.type===key)?.value||'';
+    return d('year')+'-'+d('month')+'-'+d('day');
+  }
   async function submit(event){
     event.preventDefault();const form=event.currentTarget,button=document.getElementById('gp150-simulate');if(state.loading)return;
     state.loading=true;if(button)button.disabled=true;note('جارٍ تحليل بيانات المتجر والسيناريو...');
@@ -120,7 +125,7 @@
       const data=Object.fromEntries(new FormData(form).entries()),storeId=await window.kunStoreId?.(),clientId=await window.kunClientId?.();
       if(!clientId||!storeId)throw new Error('اختار متجرًا محددًا قبل المحاكاة.');
       const rangeDays=Number(document.getElementById('metaCampaignDays')?.value||30);
-      const to=new Date().toISOString().slice(0,10),since=new Date(Date.now()-(Math.max(1,rangeDays)-1)*86400000).toISOString().slice(0,10);
+      const to=cairoToday(),begin=new Date(to+'T00:00:00Z');begin.setUTCDate(begin.getUTCDate()-(Math.max(1,rangeDays)-1));const since=begin.toISOString().slice(0,10);
       const numeric=['horizonDays','proposedDailyBudget','costPerEnteredOrder','contributionPerDeliveredOrderBeforeAds',
         'returnLossPerFailedOrder','merchantCashAvailable','daysToNextCollection','extraDailyCashOutflow',
         'extraDailyOperatingCost','dailyConfirmationCapacity','dailyPackingCapacity','dailyShippingCapacity'];
