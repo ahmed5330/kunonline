@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import {mirrorLegacyBalance} from '../src/wallet-account.js';
+import {walletPaymentDiagnostics} from '../src/wallet-payment-diagnostics.js';
 
 // Synthetic real SQLite fixture. A concurrent state writer keeps the exact
 // same timestamp but changes JSON between our legacy read and CAS update.
@@ -8,6 +9,8 @@ const db=new DatabaseSync(':memory:');
 db.exec(`
 CREATE TABLE state(id INTEGER PRIMARY KEY,json TEXT,updated_at TEXT);
 CREATE TABLE wallet_accounts(client_id TEXT PRIMARY KEY,balance REAL,billing_version TEXT);
+CREATE TABLE wallet_log(id TEXT PRIMARY KEY,client_id TEXT,created_at TEXT,type TEXT,amount REAL,balance_after REAL,note TEXT,order_id TEXT,reference_type TEXT,reference_id TEXT);
+CREATE TABLE wallet_topup_requests(id TEXT PRIMARY KEY,client_id TEXT,status TEXT);
 `);
 const state={clients:[{id:'merchant',walletBalance:33,walletFeePerOrder:5,name:'متجر قبل التعديل'}],
   untouched:{safe:'original'}};
@@ -28,6 +31,12 @@ class P {
   }
 }
 const env={DB:{prepare:sql=>new P(sql)}};
+const before=await walletPaymentDiagnostics(env,'merchant');
+assert.equal(before.legacyMirror.balance,33);
+assert.equal(before.legacyMirror.balanceDrift,-300);
+assert.equal(before.legacyMirror.mismatch,true);
+assert.equal(before.legacyMirror.oldFeeStillEnabled,true);
+assert.ok(!JSON.stringify(before).includes('متجر قبل التعديل'),'diagnostic must not expose legacy state PII');
 concurrentWriter=()=>{
   const previous=db.prepare('SELECT * FROM state WHERE id=1').get();
   const edited=JSON.parse(previous.json);
@@ -43,6 +52,11 @@ assert.equal(data.clients[0].walletBalance,333,'canonical ledger balance must wi
 assert.equal(data.clients[0].walletFeePerOrder,0,'v27 legacy fee must not trigger double order billing');
 assert.equal(data.clients[0].name,'اسم المتجر تم تعديله من عملية أخرى','retry must preserve concurrent edits');
 assert.equal(data.untouched.safe,'updated-by-competitor','CAS protects unrelated state sections');
+const audit=await walletPaymentDiagnostics(env,'merchant');
+assert.equal(audit.legacyMirror.mismatch,false);
+assert.equal(audit.legacyMirror.oldFeeStillEnabled,false);
+assert.equal(audit.legacyMirror.balanceDrift,0);
+
 
 // An absent timestamp is still safely compared using SQL IS NULL.
 db.prepare('UPDATE state SET updated_at=NULL WHERE id=1').run();
