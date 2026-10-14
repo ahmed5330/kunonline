@@ -7,6 +7,9 @@ import {
 import {orderById,recordOrderEvent,recordOrderMutation,addOrderNote,logContact,timeline} from './order-events.js';
 import {campaignPerformance,saveAttribution,businessBrief,persistBrief,dateRange} from './marketing-intelligence.js';
 import {enrichBusinessBriefWithAI} from './ai-provider.js';
+import {dashboardData} from './dashboard-intelligence.js';
+import {growthStockCatalog,resolveForecastStock} from './growth-stock-catalog.js';
+import {simulateScaling,dryRunScalingRule} from './growth-scenario.js';
 import {listAdDrafts,createAdDraft,getAdDraft,generateAdDraft,requestAdAction} from './ad-studio.js';
 import {
   requireAdmin,listAdminClients,clientOverview,updateClientModules,updateClientBilling,
@@ -120,7 +123,7 @@ async function routeV27(request,env,ctx,me,url,body){
   const clientId=requestedClient(me,url,body);
   if(!clientId)return null;
   if(!featureSkip(path))await assertFeatureEnabled(env,me,clientId,path);
-  const needsStoreScope=(path==='/api/customers'&&method==='POST')||path.startsWith('/api/orders/')||path==='/api/order-attribution'||path==='/api/marketing/performance'||path==='/api/ai/business-brief'||path==='/api/growth/scaling-readiness'||path.startsWith('/api/ad-studio');
+  const needsStoreScope=(path==='/api/customers'&&method==='POST')||path.startsWith('/api/orders/')||path==='/api/order-attribution'||path==='/api/marketing/performance'||path==='/api/ai/business-brief'||path.startsWith('/api/growth/')||path.startsWith('/api/ad-studio');
   const scope=needsStoreScope?await scopeFor(env,me,clientId,request,body):{storeId:null};
   const storeId=scope.storeId||null;
 
@@ -158,6 +161,47 @@ async function routeV27(request,env,ctx,me,url,body){
     requirePermission(me,'ads','read');
     const range=dateRange(url),base=await businessBrief(env,{clientId,storeId,...range});
     return json({from:base.from,to:base.to,readiness:base.scalingReadiness});
+  }
+  if(path==='/api/growth/inventory-catalog'&&method==='GET'){
+    requirePermission(me,'inventory','read');
+    return json(await growthStockCatalog(env,{clientId,storeId,limit:url.searchParams.get('limit')||100}));
+  }
+  // A POST body contains hypothetical merchant cash/operations assumptions, not a write action.
+  // It only reads tenant-scoped data and cannot change Meta Ads, wallets or stored plans.
+  if(path==='/api/growth/scenario/preview'&&method==='POST'){
+    requirePermission(me,'ads','read');requirePermission(me,'inventory','read');requirePermission(me,'finance','read');
+    if(!storeId)throw Object.assign(new Error('اختار متجرًا محددًا للمحاكاة.'),{status:400,code:'GROWTH_STORE_REQUIRED'});
+    const plan=body.plan&&typeof body.plan==='object'&&!Array.isArray(body.plan)?body.plan:null;
+    if(!plan||JSON.stringify(plan).length>15000)throw Object.assign(new Error('مدخلات المحاكاة غير صالحة أو تتجاوز الحد المسموح.'),{status:400,code:'GROWTH_SCENARIO_BODY_INVALID'});
+    const range=dateRange(url);
+    const [dashboard,base,stockItems]=await Promise.all([
+      dashboardData(env,{clientId,storeId,...range}),
+      businessBrief(env,{clientId,storeId,...range}),
+      resolveForecastStock(env,{clientId,storeId,items:plan.stockItems||[]})
+    ]);
+    const reconciliation=dashboard.ads?.spendReconciliation||{};
+    const reportedCurrencies=reconciliation.campaignCurrencies||[];
+    const currency=String(dashboard.currency||'EGP').toUpperCase();
+    const verifiedCurrency=reportedCurrencies.length>0&&reportedCurrencies.every(value=>value===currency)&&
+      !reconciliation.currencyMismatch&&String(plan.currency||currency).toUpperCase()===currency;
+    const fromDate=Date.parse(dashboard.from+'T00:00:00Z'),toDate=Date.parse(dashboard.to+'T00:00:00Z');
+    const days=Math.max(1,Math.round((toDate-fromDate)/86400000)+1);
+    const scenario=simulateScaling({period:{from:dashboard.from,to:dashboard.to},history:{
+      days,spend:dashboard.ads.spend,realOrders:dashboard.overview.totalOrders,
+      attributedOrders:base.metrics?.marketing?.attributedOrders},
+      plan:{...plan,stockItems,currency,
+        currencyVerified:verifiedCurrency,coversAllPromotedSkus:plan.coversAllPromotedSkus===true}
+    });
+    const blockers=[];
+    if(dashboard.overview.totalOrders!==base.metrics.orders.total)blockers.push('الطلبات مختلفة بين الداشبورد وتحليل الأعمال.');
+    if(reconciliation.needsReview)blockers.push('الإنفاق المتزامن يختلف عن المصروفات المرتبطة بالحملات.');
+    if(reconciliation.currencyMismatch)blockers.push('عملة الحساب الإعلاني تختلف عن عملة المتجر.');
+    if(reconciliation.manualExcludedWhenIntegrated)scenario.warnings.push('راجع الإنفاق الإعلاني اليدوي المستبعد لتجنب ازدواج أو نقص المصروفات.');
+    if(blockers.length){scenario.blockers.push(...blockers);scenario.recommendation='fix_data_first';}
+    if(body.rule)scenario.rulePreview=dryRunScalingRule({scenario,proposedIncreasePct:body.rule.increasePct,maxDailyBudget:body.rule.maxDailyBudget});
+    return json({from:dashboard.from,to:dashboard.to,storeId,currency,
+      source:{dashboardOrders:dashboard.overview.totalOrders,businessOrders:base.metrics.orders.total,
+        recognizedSpend:dashboard.ads.spend,reconciliation},scenario});
   }
   if(path==='/api/ai/business-brief'&&method==='GET'){
     requirePermission(me,'ai','read');const range=dateRange(url),base=await businessBrief(env,{clientId,storeId,...range});
