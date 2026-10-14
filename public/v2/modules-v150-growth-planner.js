@@ -17,6 +17,7 @@
   function template(){
     return `<details open><summary>محاكي التوسع الإعلاني والربحية — بدون تعديل الميزانيات</summary>
     <p>استخدم أرقامك المتوقعة لبناء سيناريو، ثم قارنها بالمصروف والطلبات الحقيقية داخل كن أونلاين. النتائج افتراضية ولا تعني موافقة على التوسع.</p>
+    <div id="gp150-operating-facts" class="gp150-note" aria-live="polite">جارٍ مراجعة بيانات طابور الطلبات والتحصيل المسجل للمتجر...</div>
     <form id="gp150-form">
       <div class="gp150-section"><h4>1. خطة الإعلانات والطلبات</h4><div class="gp150-grid">
         ${field('horizonDays','مدة التوسع بالأيام','7','1')}
@@ -78,6 +79,29 @@
     root.appendChild(row);
   }
   function note(message){const el=document.getElementById('gp150-status');if(el)el.textContent=message;}
+  function operatingEvidence(){
+    const target=document.getElementById('gp150-operating-facts');
+    Promise.all([window.kunClientId?.(),window.kunStoreId?.()]).then(async ([clientId,storeId])=>{
+      if(!clientId||!storeId)throw new Error('اختار متجرًا محددًا لعرض طابور الطلبات.');
+      const to=cairoToday(),begin=new Date(to+'T00:00:00Z');begin.setUTCDate(begin.getUTCDate()-29);
+      const from=begin.toISOString().slice(0,10);
+      const q=new URLSearchParams({clientId,storeId,from,to});
+      const r=await fetch('/api/growth/operating-evidence?'+q,{credentials:'include'});
+      const data=await r.json().catch(()=>({}));
+      if(!r.ok)throw new Error(data.error||'تعذر تحميل حقائق التشغيل.');
+      if(!target?.isConnected)return;
+      const backlog=data.currentBacklog||{},cod=data.codRecorded||{};
+      target.innerHTML='<b>مؤشرات من سجلات المتجر — آخر 30 يومًا</b>'+
+        '<div class="gp150-metrics">'+
+        info('طلبات تنتظر التأكيد',money(backlog.pendingConfirmation||0))+
+        info('تنتظر التجهيز',money(backlog.awaitingPacking||0))+
+        info('في الشحن',money(backlog.awaitingDelivery||0))+
+        info('تم التسليم ولم يسجل تحصيلها',money(backlog.deliveredNotMarkedCollected||0))+
+        info('تحصيل مسجل في الفترة',money(cod.grossRecorded||0),'(ليس رصيد البنك)')+
+        info('متوسط طلب → تحصيل مسجل',cod.meanDaysFromOrderToRecordedCollection==null?'غير متاح':money(cod.meanDaysFromOrderToRecordedCollection),'يوم')+
+        '</div><p>دي حالات الطلبات الحالية والتحصيل المسجل في السيستم، مش طاقة الموظفين ولا تاريخ تحويل شركة الشحن ولا سيولة متاحة فعلًا.</p>';
+    }).catch(e=>{if(target?.isConnected)target.textContent='مؤشرات التشغيل غير متاحة: '+e.message;});
+  }
   function catalogLoad(){
     const target=document.getElementById('gp150-stock-note');
     Promise.all([window.kunClientId?.(),window.kunStoreId?.()]).then(async ([clientId,storeId])=>{
@@ -213,6 +237,7 @@
     document.getElementById('gp150-experiment')?.addEventListener('submit',compare);
     document.getElementById('gp150-add-stock')?.addEventListener('click',addStock);
     catalogLoad();
+    operatingEvidence();
   }
   let queued=false;
   function schedule(){if(queued)return;queued=true;queueMicrotask(()=>{queued=false;mount();});}
