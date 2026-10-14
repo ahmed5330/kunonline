@@ -131,11 +131,18 @@ export function dryRunScalingRule({scenario,proposedIncreasePct=10,maxDailyBudge
     fail('rule','نسبة الزيادة يجب أن تكون 1–30% مع حد أقصى يومي موجب.');
   const present=scenario.assumptions.proposedDailyBudget;
   const proposed=round(present*(1+percentage/100));
-  const safe=scenario.recommendation==='simulation_meets_inputs'&&scenario.readiness?.canScale===true &&
-    scenario.assumptions.currencyVerified===true&&proposed<=cap;
-  return {mode:'dry_run',execution:false,canSubmitForApproval:safe,changeType:'daily_budget_increase',
+  const meetsHypotheticalThresholds=scenario.recommendation==='simulation_meets_inputs'&&
+    scenario.readiness?.canScale===true&&scenario.assumptions.currencyVerified===true&&proposed<=cap;
+  // No trustworthy bank cash, payout schedule, end-to-end promoted-SKU mapping or
+  // signed-off team capacity feed is wired yet. A simulated scenario may be healthy
+  // but cannot become an actionable approval simply by checking user-attestation boxes.
+  const requiredIndependentEvidence=['merchant_bank_cash','carrier_payout_schedule',
+    'promoted_sku_coverage','staff_and_shipping_capacity','unit_economics'];
+  return {mode:'dry_run',execution:false,meetsHypotheticalThresholds,canSubmitForApproval:false,
+    pendingVerification:requiredIndependentEvidence,changeType:'daily_budget_increase',
     currentDailyBudget:present,proposedDailyBudget:proposed,maxDailyBudget:cap,
-    reason:safe?'مؤهل فقط لطلب مراجعة بشرية؛ لا تنفيذ تلقائي.':
-      'لا يسمح بالاقتراح التنفيذي قبل توثيق كافة المدخلات واجتياز بوابات الجاهزية وحد الإنفاق.',
+    reason:meetsHypotheticalThresholds?
+      'السيناريو يحقق الشروط الافتراضية، لكن تنقص أدلة مستقلة للسيولة والتحصيل والمخزون والتشغيل والربحية. لا يمكن طلب تنفيذ ميزانية الآن.':
+      'الشروط الافتراضية أو حد الإنفاق غير مكتملة، فضلًا عن نقص التحقق المستقل. لا يوجد تصريح بالصرف.',
     auditRequired:true,humanApprovalRequired:true,providerWrite:false};
 }
