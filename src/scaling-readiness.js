@@ -59,8 +59,9 @@ export function assessScalingReadiness({
       {outOfStock: out, lowStock: low, forecastCoverage: false}));
   } else {
     const rows = stockItems.map(item => {
-      const demand = number(item.projectedDailyOrders) * number(item.unitsPerOrder) *
-        (number(item.supplierLeadDays) + number(item.safetyDays));
+      const dailyDemand = number(item.projectedDailyOrders) * number(item.unitsPerOrder);
+      const demand = Math.max(dailyDemand, dailyDemand *
+        (number(item.supplierLeadDays) + number(item.safetyDays)));
       return {sku: String(item.sku || 'SKU'), requiredUnits: round(demand),
         availableUnits: number(item.availableUnits), gapUnits: round(Math.max(0, demand - number(item.availableUnits)))};
     });
