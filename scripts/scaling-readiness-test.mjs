@@ -26,6 +26,9 @@ assert.equal(approved.canScale,true);
 assert.equal(approved.checks.find(x=>x.id==='profitability').evidence.breakevenCpp,145);
 assert.equal(approved.checks.find(x=>x.id==='inventory').evidence.items[0].requiredUnits,400);
 
+const orderDiscrepancy=assessScalingReadiness({...complete,marketing:{...complete.marketing,realOrders:90}});
+assert.equal(orderDiscrepancy.checks.find(item=>item.id==='data').status,'blocked');
+assert.equal(orderDiscrepancy.canScale,false,'do not scale when business and marketing order populations differ');
 const stockShort=assessScalingReadiness({...complete,stockPlan:{coversAllPromotedSkus:true,items:[{sku:'A',availableUnits:200,projectedDailyOrders:50,unitsPerOrder:2,supplierLeadDays:3,safetyDays:1}]}});
 assert.equal(stockShort.decision,'blocked');
 assert.equal(stockShort.checks.find(x=>x.id==='inventory').evidence.items[0].gapUnits,200);
