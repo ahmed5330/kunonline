@@ -39,7 +39,7 @@
         ${field('dailyShippingCapacity','أقصى أوردرات يمكن شحنها','أوردر/يوم')}
       </div></div>
       <div class="gp150-section"><h4>4. مكونات المخزون والباندل</h4>
-        <p id="gp150-stock-note">جارٍ تحميل الأصناف من مخزون المتجر...</p>
+        <p id="gp150-stock-note">جارٍ تحميل الأصناف من مخزون المتجر...</p><div id="gp150-bundle-actions"></div>
         <div id="gp150-stock-rows"></div>
         <div class="gp150-actions"><button type="button" id="gp150-add-stock">إضافة SKU من المخزون</button></div>
         <label class="gp150-check"><input type="checkbox" name="coversAllPromotedSkus"> أؤكد إني أدرجت كل مكونات المنتجات المعلن عنها (ومنها الباندل).</label>
@@ -62,7 +62,7 @@
     </details></details>`;
   }
   function options(){return (state.catalog?.items||[]).map(p=>`<option value="${esc(p.id)}">${esc(p.name)} — ${esc(p.sku)} (مسجل ${esc(p.availableUnits)} قطعة)</option>`).join('')}
-  function addStock(){
+  function addStock(selectedProductId=null,requestedUnits=1){
     const root=document.getElementById('gp150-stock-rows'),list=state.catalog?.items||[];
     if(!root||!list.length)return;
     if(root.children.length>=8){note('حد أقصى 8 أصناف في الشاشة؛ الأصناف الأخرى يلزم تطوير ربط تلقائي شامل.');return;}
@@ -73,7 +73,9 @@
       <label class="gp150-field"><span>توريد (يوم)</span><input class="gp150-lead" type="number" min="0" step="any" placeholder="مدة التوريد" required></label>
       <label class="gp150-field"><span>أمان (يوم)</span><input class="gp150-safety" type="number" min="0" step="any" placeholder="مخزون أمان" required></label>
       <button type="button" class="gp150-remove" aria-label="حذف الصنف">×</button>`;
-    row.querySelector('.gp150-remove').onclick=()=>row.remove();root.appendChild(row);
+    row.querySelector('.gp150-remove').onclick=()=>row.remove();
+    if(typeof selectedProductId==='string'){row.querySelector('.gp150-product').value=selectedProductId;row.querySelector('.gp150-units').value=String(requestedUnits||1);}
+    root.appendChild(row);
   }
   function note(message){const el=document.getElementById('gp150-status');if(el)el.textContent=message;}
   function catalogLoad(){
@@ -85,6 +87,24 @@
       const data=await response.json().catch(()=>({}));
       if(!response.ok)throw new Error(data.error||'تعذر تحميل بيانات المخزون.');
       state.catalog=data;
+      const bundled=(data.bundles||[]).filter(bundle=>bundle.coverage==='visible'&&bundle.components?.length&&bundle.components.length<=8);
+      const selector=document.getElementById('gp150-bundle-actions');
+      if(selector&&bundled.length){
+        selector.innerHTML='<label class="gp150-field"><span>تحميل مكونات باندل Easy Orders مرتبط بالمخزون</span><select id="gp150-bundle-select"><option value="">اختار الباندل</option>'+
+          bundled.map(bundle=>'<option value="'+esc(bundle.externalId)+'">'+esc(bundle.externalId)+' — '+bundle.components.length+' مكونات</option>').join('')+
+          '</select></label><div class="gp150-actions"><button type="button" id="gp150-load-bundle">إضافة مكونات الباندل</button></div>';
+        selector.querySelector('#gp150-load-bundle').onclick=()=>{
+          const id=selector.querySelector('#gp150-bundle-select')?.value;
+          const bundle=bundled.find(x=>x.externalId===id);
+          if(!bundle)return note('اختار باندل من القائمة.');
+          const rows=document.getElementById('gp150-stock-rows');if(!rows)return;
+          rows.innerHTML='';
+          for(const part of bundle.components)addStock(String(part.productId),Number(part.quantity)||1);
+          const check=document.querySelector('#gp150-form [name="coversAllPromotedSkus"]');if(check)check.checked=false;
+          note('تم تحميل مكونات الباندل المسجلة. راجع مدة التوريد والأمان، وتأكد من تغطية باقي المنتجات المعلن عنها قبل اعتماد السيناريو.');
+        };
+      }
+
       if(target?.isConnected)target.textContent=`تم تحميل ${data.items?.length||0} صنف من المخزون المسجل. ${data.pagination?.truncated?'قد توجد أصناف إضافية لم تُحمّل.':''} ${data.mappingStatus==='loaded'?'ربط الباندل متاح للمراجعة.':'تحقق يدويًا من مكونات الباندل.'}`;
     }).catch(error=>{if(target?.isConnected)target.textContent=error.message;});
   }
