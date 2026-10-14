@@ -33,6 +33,10 @@ const stockShort=assessScalingReadiness({...complete,stockPlan:{coversAllPromote
 assert.equal(stockShort.decision,'blocked');
 assert.equal(stockShort.checks.find(x=>x.id==='inventory').evidence.items[0].gapUnits,200);
 
+const noStockSameDay=assessScalingReadiness({...complete,stockPlan:{coversAllPromotedSkus:true,items:[
+  {sku:'A',availableUnits:0,projectedDailyOrders:50,unitsPerOrder:2,supplierLeadDays:0,safetyDays:0}
+]}});
+assert.equal(noStockSameDay.checks.find(x=>x.id==='inventory').status,'blocked');
 const cashShort=assessScalingReadiness({...complete,cashPlan:{...complete.cashPlan,merchantCashAvailable:2000}});
 assert.equal(cashShort.checks.find(x=>x.id==='cash_flow').status,'blocked');
 
