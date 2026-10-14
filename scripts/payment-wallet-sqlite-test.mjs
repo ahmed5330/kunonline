@@ -118,6 +118,31 @@ assert.equal(mirrorNowOk.legacyMirrorPending,false);
 assert.equal(mirrorManual.balance(),17);
 mirrorManual.db.close();
 
+const mirrorOrder=fixture({balance:30,fee:8,minimum:0});
+mirrorOrder.order('BILL-WHEN-MIRROR-FAILS');
+mirrorOrder.setMirrorFailure(true);
+const billedWithMirrorDown=await billOrder(mirrorOrder.env,'BILL-WHEN-MIRROR-FAILS');
+assert.equal(billedWithMirrorDown.status,'charged');
+assert.equal(billedWithMirrorDown.legacyMirrorPending,true);
+assert.equal(mirrorOrder.balance(),22);
+assert.equal(mirrorOrder.db.prepare("SELECT COUNT(*) n FROM wallet_log WHERE client_id='qa'").get().n,1);
+const billedAgain=await billOrder(mirrorOrder.env,'BILL-WHEN-MIRROR-FAILS');
+assert.equal(billedAgain.status,'charged');
+assert.equal(mirrorOrder.balance(),22,'mirror outage must not trigger another order fee');
+mirrorOrder.db.close();
+
+const mirrorMonthly=fixture({balance:30,fee:5,minimum:10});
+mirrorMonthly.setMirrorFailure(true);
+const monthlyWithMirrorDown=await subscriptionAccess(mirrorMonthly.env,'qa',{applyMonthly:true});
+assert.equal(monthlyWithMirrorDown.monthlyCharged,true);
+assert.equal(monthlyWithMirrorDown.legacyMirrorPending,true);
+assert.equal(monthlyWithMirrorDown.balance,20);
+mirrorMonthly.setMirrorFailure(false);
+const monthlyOnce=await subscriptionAccess(mirrorMonthly.env,'qa',{applyMonthly:true});
+assert.equal(monthlyOnce.balance,20,'retry must not deduct monthly fee twice');
+assert.equal(mirrorMonthly.db.prepare("SELECT COUNT(*) n FROM wallet_log WHERE client_id='qa'").get().n,1);
+mirrorMonthly.db.close();
+
 // A stale monthly balance snapshot must not shrink credit below concurrent debt.
 const monthly=fixture({balance:5,fee:8,minimum:10});monthly.order('FINAL');
 monthly.hook(()=>billOrder(monthly.env,'FINAL'));
