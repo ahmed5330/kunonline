@@ -10,6 +10,7 @@ import {enrichBusinessBriefWithAI} from './ai-provider.js';
 import {dashboardData} from './dashboard-intelligence.js';
 import {growthStockCatalog,resolveForecastStock} from './growth-stock-catalog.js';
 import {simulateScaling,dryRunScalingRule} from './growth-scenario.js';
+import {compareGrowthPeriods} from './growth-experiment.js';
 import {listAdDrafts,createAdDraft,getAdDraft,generateAdDraft,requestAdAction} from './ad-studio.js';
 import {
   requireAdmin,listAdminClients,clientOverview,updateClientModules,updateClientBilling,
@@ -202,6 +203,22 @@ async function routeV27(request,env,ctx,me,url,body){
     return json({from:dashboard.from,to:dashboard.to,storeId,currency,
       source:{dashboardOrders:dashboard.overview.totalOrders,businessOrders:base.metrics.orders.total,
         recognizedSpend:dashboard.ads.spend,reconciliation},scenario});
+  }
+  if(path==='/api/growth/experiment/compare'&&method==='GET'){
+    requirePermission(me,'ads','read');requirePermission(me,'finance','read');
+    if(!storeId)throw Object.assign(new Error('اختار متجرًا محددًا للمقارنة.'),{status:400,code:'GROWTH_STORE_REQUIRED'});
+    const input=['beforeFrom','beforeTo','afterFrom','afterTo'].map(k=>url.searchParams.get(k)||'');
+    const [beforeFrom,beforeTo,afterFrom,afterTo]=input;
+    const goodDate=value=>/^\d{4}-\d{2}-\d{2}$/.test(value)&&!Number.isNaN(Date.parse(value+'T00:00:00Z'));
+    const daySpan=(from,to)=>(Date.parse(to+'T00:00:00Z')-Date.parse(from+'T00:00:00Z'))/86400000+1;
+    if(!input.every(goodDate)||beforeFrom>beforeTo||afterFrom>afterTo||beforeTo>=afterFrom||
+       daySpan(beforeFrom,beforeTo)>90||daySpan(afterFrom,afterTo)>90)
+      throw Object.assign(new Error('اختار فترتين صحيحتين غير متداخلتين، وبحد أقصى 90 يومًا لكل فترة.'),{status:400,code:'GROWTH_COMPARE_DATE_INVALID'});
+    const [before,after]=await Promise.all([
+      dashboardData(env,{clientId,storeId,from:beforeFrom,to:beforeTo}),
+      dashboardData(env,{clientId,storeId,from:afterFrom,to:afterTo})
+    ]);
+    return json({storeId,comparison:compareGrowthPeriods({before,after,today:after.today})});
   }
   if(path==='/api/ai/business-brief'&&method==='GET'){
     requirePermission(me,'ai','read');const range=dateRange(url),base=await businessBrief(env,{clientId,storeId,...range});
