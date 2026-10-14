@@ -5,6 +5,7 @@ const html=fs.readFileSync('public/v2/index.html','utf8');
 const finance=fs.readFileSync('public/v2/modules-v96-finance-command-center.js','utf8');
 const accounts=fs.readFileSync('public/v2/modules-v36-accounting.js','utf8');
 const dashboard=fs.readFileSync('public/v2/modules-v126-dashboard-finance-top.js','utf8');
+const collectedProfitUI=fs.readFileSync('public/v2/modules-v47-collected-profit.js','utf8');
 const accountingBackend=fs.readFileSync('src/accounting.js','utf8');
 const detail=fs.readFileSync('src/index-commerce-v38-base.js','utf8');
 
@@ -23,6 +24,11 @@ assert.ok(accountingBackend.includes('netCash=r2(collectedRevenue+manualIncome-m
   'accrued management fees must not distort registered inflow/outflow balance');
 assert.ok(detail.includes("AND NOT EXISTS (SELECT 1 FROM order_duplicate_links d WHERE d.duplicate_order_id=orders.id) ORDER BY"),
   'dashboard cost breakdown must use only canonical orders');
+assert.match(html,/modules-v47-collected-profit\.js\?v=47\.3/);
+assert.ok(collectedProfitUI.includes('missingCollectionAmountOrders'),'collected-profit UI must disclose estimated COD fallback');
+assert.ok(collectedProfitUI.includes('unverifiedCollectionFallbackGross'),'unverified order amount must be visible to merchants');
+assert.ok(collectedProfitUI.includes('collectionAmountEstimated'),'individual collected rows must expose legacy estimation');
+assert.doesNotThrow(()=>new Function(collectedProfitUI),'collected-profit UI must parse');
 assert.doesNotThrow(()=>new Function(finance),'finance UI must parse as JS');
 assert.doesNotThrow(()=>new Function(dashboard),'consolidated dashboard UI must parse as JS');
 console.log('Finance UI cross-section consistency PASS');
