@@ -5,8 +5,27 @@ import {round2} from './wallet-account.js';
 // because sync jobs can write several monetary events in the same millisecond.
 const signed=row=>['topup','credit','admin_credit','refund'].includes(String(row.type||'').toLowerCase())?Math.abs(Number(row.amount)||0):-(Math.abs(Number(row.amount)||0));
 export async function walletPaymentDiagnostics(env,clientId){
-  const account=await env.DB.prepare('SELECT balance,currency FROM wallet_accounts WHERE client_id=?').bind(clientId).first();
+  const account=await env.DB.prepare('SELECT balance,currency,billing_version FROM wallet_accounts WHERE client_id=?').bind(clientId).first();
   if(!account)return {clientId,available:false,reason:'WALLET_NOT_FOUND'};
+  // Never return the legacy state JSON; only reveal parity indicators to an admin.
+  const legacyRow=await env.DB.prepare('SELECT json FROM state WHERE id=1').first();
+  let legacyClient=null,legacyStateValid=false;
+  if(legacyRow?.json){
+    try{const parsed=JSON.parse(legacyRow.json);legacyStateValid=Array.isArray(parsed?.clients);
+      if(legacyStateValid)legacyClient=parsed.clients.find(row=>String(row.id)===String(clientId))||null;
+    }catch{legacyStateValid=false;}
+  }
+  const storedLegacyBalance=legacyClient&&Number.isFinite(Number(legacyClient.walletBalance))?
+    round2(legacyClient.walletBalance):null;
+  const canonicalBalance=round2(account.balance);
+  const legacyFee=legacyClient&&Number.isFinite(Number(legacyClient.walletFeePerOrder))?
+    round2(legacyClient.walletFeePerOrder):null;
+  const legacyMirror={
+    available:!!legacyClient,legacyStateValid,balance:storedLegacyBalance,
+    balanceDrift:storedLegacyBalance===null?null:round2(storedLegacyBalance-canonicalBalance),
+    mismatch:storedLegacyBalance!==null&&Math.abs(storedLegacyBalance-canonicalBalance)>0.009,
+    oldPerOrderFee:legacyFee,oldFeeStillEnabled:account.billing_version==='v27'&&legacyFee!==null&&legacyFee>0
+  };
   const {results:logs=[]}=await env.DB.prepare(`SELECT rowid seq,id,created_at,type,amount,balance_after,note,order_id,reference_type,reference_id
     FROM wallet_log WHERE client_id=? ORDER BY rowid DESC LIMIT 700`).bind(clientId).all();
   const anchorIndex=logs.findIndex(row=>row.type==='topup'&&['topup_request','admin_adjustment'].includes(String(row.reference_type||'')));
@@ -31,7 +50,7 @@ export async function walletPaymentDiagnostics(env,clientId){
     (SELECT reference_id FROM wallet_log WHERE client_id=? AND reference_type='topup_request'
       GROUP BY reference_id HAVING COUNT(*)>1)`).bind(clientId).first()||{};
   return {
-    clientId,currency:account.currency||'EGP',balance:currentBalance,
+    clientId,currency:account.currency||'EGP',balance:currentBalance,legacyMirror,
     lastLedgerBalance:latest?round2(latest.balance_after):null,
     ledgerBalanceMismatch:latest?round2(currentBalance-Number(latest.balance_after||0)):null,
     lastApprovedCredit:anchor?{
