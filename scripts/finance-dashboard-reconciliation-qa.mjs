@@ -52,6 +52,8 @@ assert.equal(data.overview.actualOrderCost,50,'actual CPP uses 100 EGP ads ÷ 2 
 assert.equal(data.overview.activeProductCost,120);
 assert.equal(data.finance.productCost,200);
 assert.equal(data.finance.expenseBreakdown.ads,100,'integrated ads suppress double-entered manual ads');
+assert.equal(data.ads.spendReconciliation.manualExcludedWhenIntegrated,true,'manual ads require source reconciliation, not automatic double counting');
+assert.ok(data.recommendations.some(x=>x.category==='finance'&&x.title.includes('مصاريف إعلانات يدوية')));
 assert.equal(data.finance.netProfit,500,'800 sales - 200 COGS - 100 ads');
 assert.equal(data.ads.realOrders,2,'Meta attributed reports must agree with the system dashboard');
 assert.equal(data.ads.confirmedOrders,2);
