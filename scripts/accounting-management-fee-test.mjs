@@ -52,7 +52,7 @@ assert.ok(ui.includes('estimatedCollectionAmount'),'estimated COD must have a vi
 assert.ok(ui.includes("api('/api/accounting/entries',{method:'POST'"),'Accounting UI must create manual entries');
 assert.ok(ui.includes("method:'DELETE'"),'Accounting UI must support deleting manual entries');
 assert.ok(index.includes('data-view="accounting">الحسابات والحركات</button>'),'Accounting navigation must be present before the base router binds click handlers');
-assert.ok(index.includes('modules-v36-accounting.js?v=100.2'),'Accounting v100.2 module is not cache-busted in v2');
+assert.ok(index.includes('modules-v36-accounting.js?v=100.3'),'Accounting v100.3 module is not cache-busted in v2');
 assert.ok(index.includes('modules-v97-view-persistence-v976.js?v=97.6'),'View persistence v97.6 must use a versioned asset path so stale navigation/bootstrap state cannot win');
 assert.ok(index.includes('modules-v51-permission-navigation.js?v=51.15'),'Permission navigation v51.15 must be cache-busted for the accounting guard loader');
 assert.ok(index.includes('modules-v103-accounting-navigation-guard.js?v=103.1'),'Accounting deterministic navigation guard must be directly loaded by v2');
