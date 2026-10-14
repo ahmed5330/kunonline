@@ -97,7 +97,9 @@
         info('تنتظر التجهيز',money(backlog.awaitingPacking||0))+
         info('في الشحن',money(backlog.awaitingDelivery||0))+
         info('تم التسليم ولم يسجل تحصيلها',money(backlog.deliveredNotMarkedCollected||0))+
-        info('تحصيل مسجل في الفترة',money(cod.grossRecorded||0),'(ليس رصيد البنك)')+
+        info('تحصيل بمبالغ مثبتة',money(cod.grossRecorded||0),'(ليس رصيد البنك)')+
+        info('طلبات محصلة بدون مبلغ مسجل',money(cod.missingAmountCount||0))+
+
         info('متوسط طلب → تحصيل مسجل',cod.meanDaysFromOrderToRecordedCollection==null?'غير متاح':money(cod.meanDaysFromOrderToRecordedCollection),'يوم')+
         '</div><p>دي حالات الطلبات الحالية والتحصيل المسجل في السيستم، مش طاقة الموظفين ولا تاريخ تحويل شركة الشحن ولا سيولة متاحة فعلًا.</p>';
     }).catch(e=>{if(target?.isConnected)target.textContent='مؤشرات التشغيل غير متاحة: '+e.message;});
