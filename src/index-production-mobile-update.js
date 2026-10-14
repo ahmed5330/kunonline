@@ -19,6 +19,8 @@ const LEGACY_APK_URL='https://github.com/ahmed5330/kunonline/releases/download/a
 const DIRECT_APK_PATH='/api/mobile/app-update/apk';
 const PRINTING_STATES=new Set(['confirmed','preparing']);
 const HTML_PATHS=new Set(['/','/index.html','/v2','/v2/','/v2/index.html']);
+// Auth endpoints must reach one signer/verifier, without billing, finance or UI response adapters.
+const AUTH_PATHS=new Set(['/api/login','/api/me','/api/logout']);
 
 function previewRuntimeEnv(env){
   if(!env?.PREVIEW_DB)return env;
@@ -145,6 +147,15 @@ export default {
 
     const mobileUpdate=await handleMobileAppUpdate(request);
     if(mobileUpdate)return mobileUpdate;
+
+    // A successful /api/login issues ko_session on the *same* origin as /api/me.
+    // Send both endpoints to the same upstream unchanged, including Cookie and
+    // Set-Cookie. Do not let subscription or finance middleware rewrite them.
+    // If the service binding is absent, both use the same local fallback.
+    if(AUTH_PATHS.has(new URL(request.url).pathname)){
+      const identity=await previewFetch(request,env);
+      return identity||app.fetch(request,previewRuntimeEnv(env),ctx);
+    }
 
     const dataEnv=previewRuntimeEnv(env);
     const delegate=previewDelegate(env,dataEnv,ctx);
