@@ -12,7 +12,13 @@
   const autoAttempted=new Set();
 
   async function api(path,options={}){const response=await fetch(path,{credentials:'include',headers:{'Content-Type':'application/json',...(options.headers||{})},...options});const data=await response.json().catch(()=>({}));if(!response.ok){const error=new Error(data.error||`HTTP ${response.status}`);error.code=data.code;error.status=response.status;throw error}return data;}
-  function range(days){const to=new Date().toISOString().slice(0,10),from=new Date(Date.now()-(Math.max(1,days)-1)*86400000).toISOString().slice(0,10);return {from,to};}
+  function range(days){
+    const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Cairo',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());
+    const get=key=>parts.find(p=>p.type===key)?.value||'';
+    const to=`${get('year')}-${get('month')}-${get('day')}`;
+    const date=new Date(to+'T00:00:00Z');date.setUTCDate(date.getUTCDate()-(Math.max(1,days)-1));
+    return {from:date.toISOString().slice(0,10),to};
+  }
   function statusLabel(s){const value=String(s||'unknown').toLowerCase();return value==='active'?'شغالة':value==='paused'?'متوقفة':value==='archived'?'مؤرشفة':value==='deleted'?'محذوفة':value==='with-issues'?'بها مشكلة':value;}
   function statusBadge(s){const value=String(s||'').toLowerCase(),cls=value==='active'?'b-delivered':value==='paused'||value==='archived'?'b-pending':'b-cancelled';return `<span class="badge ${cls}">${esc(statusLabel(value))}</span>`;}
   function fmtDate(x){if(!x)return 'لم تتم المزامنة بعد';const d=new Date(x);return Number.isNaN(d.getTime())?esc(x):d.toLocaleString('ar-EG');}
