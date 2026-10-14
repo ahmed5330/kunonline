@@ -69,5 +69,17 @@ assert.equal(pnl.profit.accountingNetProfit,690);
 assert.equal(pnl.profit.marginPct,69);
 reconcileMonthlyShippingTotals(pnl,30);
 assert.equal(pnl.profit.accountingNetProfit,690,'idempotent if the same shipping basis is applied twice');
+// An integrated spend row without a campaign join must still be in the dashboard spend total.
+// ROAS must use that same denominator and expose the campaign attribution gap.
+run('INSERT INTO campaign_daily_metrics VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)','ORPHAN','NO-MAPPED-CAMPAIGN','client','store',day,40,100,50,5,0,0,0,0,0);
+const withOrphan=await dashboardData(env,{clientId:'client',storeId:'store',from:day,to:day});
+assert.equal(withOrphan.ads.spend,140,'all integrated daily spend counts, even if a campaign link is missing');
+assert.equal(withOrphan.overview.actualOrderCost,70,'CPP denominator remains the two canonical orders');
+assert.equal(withOrphan.ads.spendReconciliation.needsReview,true);
+assert.equal(withOrphan.ads.spendReconciliation.discrepancy,40);
+assert.equal(withOrphan.ads.realRoas,2.14,'Real ROAS must share the recognized integrated ad spend denominator');
+assert.equal(withOrphan.finance.netProfit,460,'P&L uses 140 recognized ads, not 100 mapped campaign ads');
+assert.ok(withOrphan.recommendations.some(x=>x.category==='finance'&&x.severity==='danger'),'show reconciliation warning');
+assert.equal(withOrphan.finance.isCollectedProfit,false,'expected eligible order P&L cannot be called collected profit');
 db.close();
 console.log('Finance canonical order and P&L balance SQL QA PASS');
