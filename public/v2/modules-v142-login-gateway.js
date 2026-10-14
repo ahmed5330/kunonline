@@ -1,4 +1,4 @@
-/* Kun Online V2 login gateway v142.0.
+/* Kun Online V2 login gateway v142.1.
  * Dedicated authenticated entry, independent from the deprecated legacy root.
  * Never stores credentials outside this form and never logs them. */
 (()=>{
@@ -21,6 +21,25 @@
 #${id} .login-error:empty{display:none}
 #${id} .login-note{color:#64748b;font-size:12px;text-align:center;margin-top:17px;line-height:1.8}
 @media(max-width:520px){#${id}{padding:12px}#${id} .login-card{padding:22px 19px;border-radius:16px}}`;
+  // The browser can commit a newly issued first-party cookie slightly after
+  // the login response. Retry verification briefly, never accept a login
+  // response alone as proof of authentication.
+  async function verifyLoginSession(){
+    let serverUnavailable=false;
+    for(let attempt=0;attempt<4;attempt++){
+      try{
+        const verified=await fetch('/api/me',{credentials:'include',cache:'no-store',headers:{'Cache-Control':'no-cache'}});
+        const user=await verified.json().catch(()=>({}));
+        if(!verified.ok||!user?.role){
+          serverUnavailable=serverUnavailable||verified.status>=500;
+        }else return user;
+      }catch{serverUnavailable=true;}
+      if(attempt<3)await new Promise(resolve=>setTimeout(resolve,150*(attempt+1)));
+    }
+    throw new Error(serverUnavailable
+      ?'تم قبول بيانات الحساب لكن تعذر تأكيد الجلسة بسبب مشكلة اتصال أو خادم. حاول بعد قليل.'
+      :'تم قبول بيانات الحساب، لكن المتصفح لم يُثبت الجلسة. افتح https://app.kun-online.com/v2/ مباشرة في Chrome أو Edge، وتأكد من السماح بملفات تعريف الارتباط للموقع.');
+  }
   function mount(){
     let box=document.getElementById(id);
     if(box)return box;
@@ -40,9 +59,7 @@
         const response=await fetch('/api/login',{method:'POST',credentials:'include',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:mail,password})});
         const result=await response.json().catch(()=>({}));
         if(!response.ok)throw new Error(result?.error||'تعذر تسجيل الدخول. حاول مرة أخرى.');
-        const verified=await fetch('/api/me',{credentials:'include',cache:'no-store',headers:{'Cache-Control':'no-cache'}});
-        const user=await verified.json().catch(()=>({}));
-        if(!verified.ok||!user?.role)throw new Error('تم التحقق من الحساب ولكن الجلسة لم تثبت. حدّث الصفحة وحاول تاني.');
+        await verifyLoginSession();
         pass.value='';
         location.replace('/v2/?login=ok');
       }catch(e){error.textContent=e?.message||'حدث خطأ في الاتصال. حاول مرة أخرى.';button.disabled=false;button.textContent='تسجيل الدخول';}
