@@ -38,6 +38,10 @@ assert.equal(lowStock.stockItems[0].shortageUnits,80);
 assert.equal(lowStock.recommendation,'fix_blockers_first');
 assert.equal(lowStock.readiness.canScale,false);
 
+const zeroLead=simulateScaling({...base,plan:{...base.plan,stockItems:[{...base.plan.stockItems[0],availableUnits:0,supplierLeadDays:0,safetyDays:0}]}});
+assert.equal(zeroLead.stockItems[0].requiredUnits,20,'even same-day supplier delivery cannot certify zero physical units');
+assert.equal(zeroLead.readiness.checks.find(x=>x.id==='inventory').status,'blocked');
+assert.throws(()=>simulateScaling({...base,plan:{...base.plan,stockItems:[{...base.plan.stockItems[0],orderShare:0}]}}),/غير صالحة/);
 const lowCash=simulateScaling({...base,plan:{...base.plan,merchantCashAvailable:300}});
 assert.equal(lowCash.forecast.cashDeficit,7200);
 assert.equal(lowCash.recommendation,'fix_blockers_first');
