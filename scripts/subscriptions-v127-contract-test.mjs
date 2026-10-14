@@ -151,8 +151,8 @@ assert.ok(ui.includes("b.onclick=event=>{event?.preventDefault?.();event?.stopPr
 assert.ok(ui.includes("$$('[data-sub127-hidden=\"1\"]')"),'restore navigation must iterate all hidden routes');
 assert.ok(ui.includes("$('.nav button[data-view]')"),'navigation state sync must iterate all routes with querySelectorAll semantics');
 assert.equal(/(?<!\$)\$\([^\n;]*\)\.forEach\s*\(/.test(ui),false,'single-element $() helper must never be used with forEach');
-assert.ok(preview.includes('/v2/modules-v127-subscriptions.js?v=127.21'),'preview must load v127.21 UI');
-assert.ok(production.includes('/v2/modules-v127-subscriptions.js?v=127.21'),'production must load v127.21 UI');
+assert.ok(preview.includes('/v2/modules-v127-subscriptions.js?v=127.22'),'preview must load v127.22 UI');
+assert.ok(production.includes('/v2/modules-v127-subscriptions.js?v=127.22'),'production must load v127.22 UI');
 assert.ok(control.includes('walletPaymentDiagnostics(env,clientId)'),'admin ledger must return a read-only post-topup audit');
 assert.ok(ui.includes('مراجعة الرصيد بعد آخر شحن معتمد'),'admin subscription view must expose the post-credit debit breakdown');
 assert.ok(preview.includes('handleSubscriptionControl'),'preview must enforce subscription control server-side');
@@ -233,7 +233,7 @@ assert.equal(await guardedRequest({path:'/api/state',method:'PUT',balance:50}),n
 assert.equal(await guardedRequest({path:'/api/state',method:'PUT',subscriptionStatus:'trialing'}),null,'approved trial must not require credit');
 assert.equal((await guardedRequest({path:'/api/printing',role:'staff'})).status,402,'store staff must respect the same server wallet gate');
 
-console.log('subscriptions v127.21 billing contract: ok');
+console.log('subscriptions v127.22 billing contract: ok');
 
 // Exercise the real SQLite CHECK constraint, idempotency and final-order overdraft.
 await import('./wallet-last-order-overdraft-test.mjs');
