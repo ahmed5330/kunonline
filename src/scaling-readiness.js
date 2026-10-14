@@ -90,21 +90,22 @@ export function assessScalingReadiness({
   }
 
   const opsValid = operationsPlan && positive(operationsPlan.projectedDailyOrders) &&
-    nonNegative(operationsPlan.dailyConfirmationCapacity) && nonNegative(operationsPlan.dailyPackingCapacity);
+    nonNegative(operationsPlan.dailyConfirmationCapacity) && nonNegative(operationsPlan.dailyPackingCapacity) &&
+    nonNegative(operationsPlan.dailyShippingCapacity);
   if (!opsValid) {
-    checks.push(check('operations', 'طاقة التأكيد والتجهيز', pendingOrders >= 20 && totalOrders > 0 &&
+    checks.push(check('operations', 'طاقة التأكيد والتجهيز والشحن', pendingOrders >= 20 && totalOrders > 0 &&
       pendingOrders / totalOrders >= 0.25 ? 'warning' : 'unknown',
-      'لا توجد طاقة يومية موثقة للتأكيد والتغليف؛ الطلبات المعلقة خلال الفترة: ' + format(pendingOrders) + '.',
+      'لا توجد طاقة يومية موثقة للتأكيد والتغليف والشحن؛ الطلبات المعلقة خلال الفترة: ' + format(pendingOrders) + '.',
       'سجّل قدرة كل فريق وعدد الطلبات المتوقعة بعد التوسع وتراكم الطلبات الحالي.',
       {pendingOrders, capacityVerified: false}));
   } else {
     const demand = number(operationsPlan.projectedDailyOrders);
-    const cap = Math.min(number(operationsPlan.dailyConfirmationCapacity), number(operationsPlan.dailyPackingCapacity));
+    const cap = Math.min(number(operationsPlan.dailyConfirmationCapacity), number(operationsPlan.dailyPackingCapacity), number(operationsPlan.dailyShippingCapacity));
     checks.push(check('operations', 'طاقة التأكيد والتجهيز', cap >= demand ? 'ok' : 'blocked',
-      cap >= demand ? 'قدرة التأكيد والتجهيز تكفي الطلبات المتوقعة وفق المدخلات.' :
+      cap >= demand ? 'قدرة التأكيد والتجهيز والشحن تكفي الطلبات المتوقعة وفق المدخلات.' :
         'القدرة اليومية أقل من المستهدف بمقدار ' + format(demand - cap) + ' طلب.',
-      cap >= demand ? 'تابع تأخير الطوابير والشحن الفعلي.' : 'زوّد قدرة أضعف فريق قبل توسيع الإعلانات.',
-      {projectedDailyOrders: demand, dailyCapacity: cap, capacityVerified: true}));
+      cap >= demand ? 'تابع تأخير الطوابير والشحن الفعلي.' : 'زوّد قدرة أضعف فريق (التأكيد أو التجهيز أو الشحن) قبل توسيع الإعلانات.',
+      {projectedDailyOrders: demand, dailyCapacity: cap, confirmationCapacity: number(operationsPlan.dailyConfirmationCapacity), packingCapacity: number(operationsPlan.dailyPackingCapacity), shippingCapacity: number(operationsPlan.dailyShippingCapacity), capacityVerified: true}));
   }
 
   const economicsValid = unitEconomics && nonNegative(unitEconomics.contributionPerDeliveredOrderBeforeAds) &&
