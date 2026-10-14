@@ -22,6 +22,7 @@ class P {
   constructor(sql){this.sql=sql;this.args=[];}
   bind(...args){this.args=args;return this;}
   async first(){return db.prepare(this.sql).get(...this.args)||null;}
+  async all(){return {results:db.prepare(this.sql).all(...this.args)};}
   async run(){
     if(concurrentWriter&&this.sql.startsWith('UPDATE state SET')){
       const fn=concurrentWriter;concurrentWriter=null;fn();
