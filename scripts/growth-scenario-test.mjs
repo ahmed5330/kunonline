@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {simulateScaling,dryRunScalingRule} from '../src/growth-scenario.js';
 import {growthStockCatalog,resolveForecastStock} from '../src/growth-stock-catalog.js';
+import {moduleForPath} from '../src/feature-entitlements.js';
 
 const base={period:{from:'2026-10-01',to:'2026-10-30'},
   history:{days:30,spend:30000,realOrders:300,attributedOrders:280},
@@ -62,6 +63,9 @@ assert.equal(dryRunScalingRule({scenario:unverified,proposedIncreasePct:10,maxDa
 for(const [field,value] of [['expectedDeliveryRate',1.1],['horizonDays',0],['costPerEnteredOrder',0],['merchantCashAvailable',-1]])
   assert.throws(()=>simulateScaling({...base,plan:{...base.plan,[field]:value}}),/غير صالحة/);
 
+assert.equal(moduleForPath('/api/growth/scenario/preview'),'campaigns');
+assert.equal(moduleForPath('/api/growth/operating-evidence'),'campaigns');
+assert.equal(moduleForPath('/api/growth/inventory-catalog'),'campaigns');
 const queries=[];
 const db={prepare(sql){return {bind(...args){queries.push({sql,args});return this;},async all(){
   if(sql.includes('commerce_bundle_mappings'))return {results:[{external_id:'B1',product_id:'bundle',components_json:JSON.stringify([{productId:'P1',quantity:2}])}]};
