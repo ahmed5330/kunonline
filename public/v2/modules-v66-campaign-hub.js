@@ -12,7 +12,7 @@
   const levelLabels={campaign:'الحملات',adset:'المجموعات الإعلانية',ad:'الإعلانات'};
   const sectionLabels={campaign:'الحملات',adset:'المجموعات',ad:'الإعلانات'};
   const presets=[['today','اليوم'],['yesterday','أمس'],['7d','آخر أسبوع'],['mtd','من بداية الشهر'],['30d','آخر 30 يوم'],['custom','فترة معينة']];
-  const freshSection=()=>({preset:'7d',customFrom:'',customTo:'',mode:'analysis',expert:null,comparison:null,breakdownData:null,loading:false});
+  const freshSection=()=>({preset:'7d',customFrom:'',customTo:'',mode:'analysis',expert:null,comparison:null,breakdownData:null,loading:false,readiness:null,readinessKey:''});
   const state={level:'campaign',status:'active',breakdown:'image_asset',sections:{campaign:freshSection(),adset:freshSection(),ad:freshSection()},syncing:false};
   const fallbackCatalog=[
     {id:'image_asset',group:'الكرياتيف',label:'الصورة'},{id:'video_asset',group:'الكرياتيف',label:'الفيديو'},{id:'body_asset',group:'الكرياتيف',label:'النص الأساسي'},{id:'title_asset',group:'الكرياتيف',label:'العنوان'},{id:'description_asset',group:'الكرياتيف',label:'الوصف'},{id:'call_to_action_asset',group:'الكرياتيف',label:'CTA'},
@@ -111,13 +111,34 @@
   function comparison(level,section){const d=section.comparison;if(!d)return '<div class="card empty">جارٍ تحميل المقارنة...</div>';if(d.error)return `<div class="card empty">${esc(d.error)}</div>`;const rows=d.rows||[],dates=d.dates||[];return `<div class="card"><div class="section-head"><div><h3>مقارنة ${levelLabels[level]} يوم بيوم</h3><div class="muted">المقارنة هنا ثابتة على مستوى ${levelLabels[level]} فقط، وفق الفترة الخاصة بهذا القسم.</div></div></div><div class="table-wrap"><table class="table compact compare"><thead><tr><th>${level==='campaign'?'الحملة':level==='adset'?'المجموعة':'الإعلان'}</th>${dates.map(x=>`<th>${esc(x)}</th>`).join('')}<th>إجمالي الفترة</th></tr></thead><tbody>${rows.length?rows.map(x=>`<tr><td><b>${esc(x.name)}</b><div>${statusBadge(x.status)}</div>${x.campaignName?`<div class="muted">${esc(x.campaignName)}</div>`:''}${x.adsetName?`<div class="muted">${esc(x.adsetName)}</div>`:''}</td>${(x.daily||[]).map(day=>`<td>${dayCell(day)}</td>`).join('')}<td>${dayCell(x.total||{})}</td></tr>`).join(''):`<tr><td colspan="${dates.length+2}" class="empty">لا توجد عناصر مطابقة.</td></tr>`}</tbody></table></div></div>`;}
   function dateControls(level){const s=state.sections[level],r=rangeFor(level);return `<div class="card date-card"><div class="date-row"><b>الفترة — ${sectionLabels[level]}</b><div class="date-presets">${presets.map(([key,label])=>`<button data-date-preset="${key}" class="${s.preset===key?'active':''}">${label}</button>`).join('')}</div><div class="spacer"></div><span class="range-caption">${esc(r.from)} ← ${esc(r.to)}</span></div>${s.preset==='custom'?`<div class="custom-range"><label>من<input class="input" type="date" id="campaign66From" value="${esc(s.customFrom||r.from)}"></label><label>إلى<input class="input" type="date" id="campaign66To" value="${esc(s.customTo||r.to)}"></label><button class="btn primary" id="campaign66ApplyCustom">تطبيق الفترة</button></div>`:''}</div>`;}
   function sectionShell(level,body){const s=state.sections[level];return `<div class="campaign66"><div class="page-head"><div><div class="title">مركز الحملات الإعلانية — تحليل خبير${hint('الحملات الإعلانية')}</div><div class="sub">كل مستوى مستقل بتحليله وتاريخه ومقارنته</div></div><div class="spacer"></div><button class="btn soft" id="campaign66Sync">مزامنة Meta وتحليل</button></div><div class="hub-main-tabs"><button data-campaign-section="campaign" class="${level==='campaign'?'active':''}">الحملات</button><button data-campaign-section="adset" class="${level==='adset'?'active':''}">المجموعات الإعلانية</button><button data-campaign-section="ad" class="${level==='ad'?'active':''}">الإعلانات</button></div><div class="card hub-controls"><div class="seg"><button data-status="active" class="${state.status==='active'?'active':''}">الشغالة فقط</button><button data-status="all" class="${state.status==='all'?'active':''}">كل الإعلانات</button></div><div class="spacer"></div><div class="mode-tabs"><button data-section-mode="analysis" class="${s.mode==='analysis'?'active':''}">التحليل</button><button data-section-mode="comparison" class="${s.mode==='comparison'?'active':''}">المقارنة</button></div></div>${dateControls(level)}${body}</div>`;}
-  function analysis(level,section){const rows=levelRows(section.expert,level);return `${kpis(level,rows)}${sectionRecommendations(level,rows,section.expert)}${level==='campaign'?campaignTable(rows):granularTable(level,rows)}${level==='ad'?breakdownSection(section):''}`;}
+  function readinessHtml(data){
+    if(!data)return '<div class="card empty">جارٍ التحقق من جاهزية التوسع...</div>';
+    if(data.error)return `<div class="card"><h3>جاهزية التوسع قبل زيادة الميزانية</h3><div class="muted">تعذر تحميل تقييم الجاهزية: ${esc(data.error)}</div></div>`;
+    const report=data.readiness||{},checks=Array.isArray(report.checks)?report.checks:[],labels={ok:'مبدئيًا مناسب',unknown:'بيانات ناقصة',warning:'تحتاج مراجعة',blocked:'يمنع التوسع'},status={ready:'جاهزية مبدئية',insufficient_data:'الجاهزية غير مؤكدة',review_required:'راجع المخاطر أولًا',blocked:'لا توسع الآن'};
+    return `<section class="card" dir="rtl" aria-label="جاهزية التوسع الإعلاني"><div class="section-head"><div><h3>جاهزية التوسع قبل زيادة الميزانية</h3><p class="muted">فحص المخزون وسيولة التاجر والعمليات وهامش الربح وربط الطلبات — للفترة: ${esc(data.from||'')} إلى ${esc(data.to||'')}.</p></div><span class="badge b-pending">${esc(status[report.decision]||'تحتاج مراجعة')}</span></div><div class="rec-grid">${checks.map(item=>`<article class="rec" style="border-inline-start:3px solid ${item.status==='blocked'?'#dc2626':item.status==='warning'?'#d97706':item.status==='ok'?'#16a34a':'#94a3b8'}"><small class="muted">${esc(labels[item.status]||'مراجعة')}</small><h4>${esc(item.label||'')}</h4><p>${esc(item.detail||'')}</p><div class="muted">المطلوب: ${esc(item.nextStep||'')}</div></article>`).join('')}</div><p class="muted" style="margin-top:10px">${esc(report.disclaimer||'تقييم إرشادي لا يعدّل الحملات ولا يضمن الأرباح.')}</p></section>`;
+  }
+  function analysis(level,section){const rows=levelRows(section.expert,level);return `${level==='campaign'?readinessHtml(section.readiness):''}${kpis(level,rows)}${sectionRecommendations(level,rows,section.expert)}${level==='campaign'?campaignTable(rows):granularTable(level,rows)}${level==='ad'?breakdownSection(section):''}`;}
   function paint(){const host=root();if(!host)return;const level=state.level,s=state.sections[level],body=s.loading?'<div class="card empty">جارٍ تحميل بيانات القسم...</div>':s.mode==='comparison'?comparison(level,s):(s.expert?analysis(level,s):'<div class="card empty">جارٍ تحميل التحليل...</div>');host.innerHTML=sectionShell(level,body);bind();}
   async function loadExpert(level,{force=false}={}){const s=state.sections[level];if(s.expert&&!force)return s.expert;s.loading=true;paint();try{s.expert=await api(await scopedPath('/api/integrations/meta-ads/campaign-hub',level));const cat=s.expert?.breakdownCatalog||[];if(cat.length&&!cat.some(x=>x.id===state.breakdown))state.breakdown=cat[0].id;return s.expert;}finally{s.loading=false;}}
   async function loadComparison(level,{force=false}={}){const s=state.sections[level];if(s.comparison&&!force)return s.comparison;s.loading=true;paint();const r=rangeFor(level),days=Math.min(90,daysBetween(r.from,r.to));try{s.comparison=await api(await scopedPath('/api/integrations/meta-ads/daily-comparison',level,{level,status:state.status,days}));return s.comparison;}finally{s.loading=false;}}
   async function loadBreakdown(){const level='ad',s=state.sections.ad,box=document.getElementById('campaign66BreakdownBox');if(box)box.innerHTML='<div class="empty">جارٍ تحميل الـBreakdown من Meta...</div>';const r=rangeFor(level),days=Math.min(90,daysBetween(r.from,r.to));try{s.breakdownData=await api(await scopedPath('/api/integrations/meta-ads/breakdowns',level,{dimension:state.breakdown,status:state.status,days}));}catch(e){s.breakdownData={error:e.message,rows:[]};notify(e.message);}paint();}
-  function invalidate(level,{expert=true,comparison=true,breakdown=true}={}){const s=state.sections[level];if(expert)s.expert=null;if(comparison)s.comparison=null;if(breakdown)s.breakdownData=null;}
-  async function ensureCurrent(){const level=state.level,s=state.sections[level];try{if(s.mode==='analysis')await loadExpert(level);else await loadComparison(level);}catch(e){s.loading=false;notify(e.message);if(s.mode==='comparison')s.comparison={error:e.message,rows:[],dates:[]};}paint();}
+  function invalidate(level,{expert=true,comparison=true,breakdown=true}={}){const s=state.sections[level];if(expert){s.expert=null;s.readiness=null;s.readinessKey='';}if(comparison)s.comparison=null;if(breakdown)s.breakdownData=null;}
+  async function ensureCurrent(){
+    const level=state.level,s=state.sections[level];
+    try{
+      if(s.mode==='analysis'){
+        await loadExpert(level);
+        if(level==='campaign'){
+          const path=await scopedPath('/api/growth/scaling-readiness',level);
+          if(s.readinessKey!==path||!s.readiness){
+            s.readinessKey=path;s.readiness=null;
+            try{s.readiness=await api(path);}catch(error){s.readiness={error:error.message};}
+          }
+        }
+      }else await loadComparison(level);
+    }catch(e){s.loading=false;notify(e.message);if(s.mode==='comparison')s.comparison={error:e.message,rows:[],dates:[]};}
+    paint();
+  }
   async function syncNow(){const c=await context(),q=new URLSearchParams({clientId:c.clientId}),r=rangeFor(state.level);if(c.storeId)q.set('storeId',c.storeId);const days=Math.min(90,Math.max(7,daysBetween(r.from,r.to)));return api(`/api/integrations/meta-ads/expert-sync?${q}`,{method:'POST',body:JSON.stringify({days})});}
   function bind(){
     document.querySelectorAll('.campaign66 [data-campaign-section]').forEach(b=>b.onclick=async()=>{state.level=b.dataset.campaignSection;paint();await ensureCurrent();});
@@ -131,7 +152,7 @@
   }
   async function render(){activate();style();const host=root();if(!host)return;host.innerHTML='<div class="card empty">جارٍ تجهيز مركز الحملات...</div>';await ensureCurrent();}
   window.addEventListener('click',event=>{const button=event.target.closest?.('.nav button[data-view="campaigns"]');if(!button)return;event.preventDefault();event.stopPropagation();event.stopImmediatePropagation();setTimeout(render,0);},true);
-  window.KunCampaignHubV66={render,reload:async()=>{for(const level of ['campaign','adset','ad'])invalidate(level);return render();},state,rangeFor,version:'66.1'};
+  window.KunCampaignHubV66={render,reload:async()=>{for(const level of ['campaign','adset','ad'])invalidate(level);return render();},state,rangeFor,version:'66.2'};
   if(window.KunSectionReloadV57?.register)window.KunSectionReloadV57.register('campaigns',()=>window.KunCampaignHubV66.reload());
   document.documentElement.dataset.campaignHub='v66-ready';
 })();
