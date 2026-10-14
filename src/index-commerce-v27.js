@@ -71,9 +71,11 @@ function requestedClient(me,url,body={}){
   }
   return requested;
 }
-async function scopeFor(env,me,clientId,request,body={}){
+async function scopeFor(env,me,clientId,request,body={},options={}){
   if(!clientId)return {clientId:null,storeId:null,unrestricted:true};
-  return resolveStoreScope(env,me,clientId,requestedStoreId(request,body),{write:isWrite(request.method)});
+  // A growth scenario POST performs zero mutations; retain store-level read-only access.
+  // Every other POST/PATCH/PUT/DELETE continues to require writable store access.
+  return resolveStoreScope(env,me,clientId,requestedStoreId(request,body),{write:isWrite(request.method)&&options.readOnly!==true});
 }
 function featureSkip(path){return path==='/api/me'||path==='/api/login'||path==='/api/logout'||path==='/api/setup'||path==='/api/my-store-context'||path==='/api/tenant/features'||path==='/api/wallet'||path==='/api/wallet/log'||path==='/api/wallet/topups'||path.startsWith('/api/admin/')||path.startsWith('/api/preview/');}
 async function audit(env,me,clientId,storeId,action,entityType,entityId,metadata={}){
@@ -126,7 +128,7 @@ async function routeV27(request,env,ctx,me,url,body){
   if(!clientId)return null;
   if(!featureSkip(path))await assertFeatureEnabled(env,me,clientId,path);
   const needsStoreScope=(path==='/api/customers'&&method==='POST')||path.startsWith('/api/orders/')||path==='/api/order-attribution'||path==='/api/marketing/performance'||path==='/api/ai/business-brief'||path.startsWith('/api/growth/')||path.startsWith('/api/ad-studio');
-  const scope=needsStoreScope?await scopeFor(env,me,clientId,request,body):{storeId:null};
+  const scope=needsStoreScope?await scopeFor(env,me,clientId,request,body,{readOnly:path==='/api/growth/scenario/preview'&&method==='POST'}):{storeId:null};
   const storeId=scope.storeId||null;
 
   if(path==='/api/customers'&&method==='POST'){requirePermission(me,'customers','write');return json(await createStandaloneCustomer(env,{clientId,storeId,body,actor:me}),201);}
