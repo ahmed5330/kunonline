@@ -120,7 +120,7 @@ async function routeV27(request,env,ctx,me,url,body){
   const clientId=requestedClient(me,url,body);
   if(!clientId)return null;
   if(!featureSkip(path))await assertFeatureEnabled(env,me,clientId,path);
-  const needsStoreScope=(path==='/api/customers'&&method==='POST')||path.startsWith('/api/orders/')||path==='/api/order-attribution'||path==='/api/marketing/performance'||path==='/api/ai/business-brief'||path.startsWith('/api/ad-studio');
+  const needsStoreScope=(path==='/api/customers'&&method==='POST')||path.startsWith('/api/orders/')||path==='/api/order-attribution'||path==='/api/marketing/performance'||path==='/api/ai/business-brief'||path==='/api/growth/scaling-readiness'||path.startsWith('/api/ad-studio');
   const scope=needsStoreScope?await scopeFor(env,me,clientId,request,body):{storeId:null};
   const storeId=scope.storeId||null;
 
@@ -152,6 +152,12 @@ async function routeV27(request,env,ctx,me,url,body){
   if(path==='/api/order-attribution'&&method==='POST'){requirePermission(me,'campaigns','write');return json(await saveAttribution(env,{clientId,storeId,body,actor:me}),201);}
   if(path==='/api/marketing/performance'&&method==='GET'){
     requirePermission(me,'campaigns','read');const range=dateRange(url);return json(await campaignPerformance(env,{clientId,storeId,...range}));
+  }
+  // Low-cost read-only readiness endpoint for Campaign Hub; no LLM call or persisted snapshot.
+  if(path==='/api/growth/scaling-readiness'&&method==='GET'){
+    requirePermission(me,'ads','read');
+    const range=dateRange(url),base=await businessBrief(env,{clientId,storeId,...range});
+    return json({from:base.from,to:base.to,readiness:base.scalingReadiness});
   }
   if(path==='/api/ai/business-brief'&&method==='GET'){
     requirePermission(me,'ai','read');const range=dateRange(url),base=await businessBrief(env,{clientId,storeId,...range});
