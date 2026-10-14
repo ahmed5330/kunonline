@@ -67,6 +67,7 @@ export async function walletPaymentDiagnostics(env,clientId){
   const anchorIndex=logs.findIndex(row=>row.type==='topup'&&['topup_request','admin_adjustment'].includes(String(row.reference_type||'')));
   const latest=logs[0]||null,anchor=anchorIndex>=0?logs[anchorIndex]:null;
   const after=anchor?logs.slice(0,anchorIndex).reverse():[];
+  const unknownAfterCredit=after.filter(row=>knownSigned(row)===null);
   const debits=after.filter(row=>signed(row)<0);
   const credits=after.filter(row=>signed(row)>0);
   const byReason={orders:0,subscription:0,other:0};
@@ -95,6 +96,8 @@ export async function walletPaymentDiagnostics(env,clientId){
       balanceAfter:round2(anchor.balance_after)
     }:null,
     sinceLastCredit:anchor?{
+      reconstructionReliable:unknownAfterCredit.length===0&&ledgerContinuity.anomalyCount===0,
+      unknownLedgerEntries:unknownAfterCredit.length,
       debits:debitsTotal,credits:creditsTotal,debitBreakdown:byReason,
       expectedBalance:expectedFromTopup,
       drift:round2(currentBalance-expectedFromTopup),
