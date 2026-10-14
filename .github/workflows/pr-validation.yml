@@ -24,6 +24,8 @@ jobs:
         run: node scripts/browser-inventory-workspace-fixture-test.mjs
       - name: Sidebar cross-group navigation browser regression
         run: node scripts/browser-sidebar-navigation-regression-test.mjs
+      - name: Growth planner real Chromium interaction regression
+        run: node scripts/browser-growth-planner-fixture-test.mjs
       - name: Verify Preview isolation
         run: npm run check:preview-config
       - name: Verify Production remains migration-free
