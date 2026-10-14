@@ -36,6 +36,8 @@ assert.ok(billing.includes("baseOrderFee,orderFee:inTrial?0:baseOrderFee"),'admi
 assert.ok(topups.includes('reconcileSubscriptionAfterTopup'),'topup approval must immediately reconcile access');
 assert.ok(ui.includes('legacy.mismatch===true||legacy.oldFeeStillEnabled===true'),'admin ledger must warn about legacy mirror drift and double-charge fee');
 assert.ok(ui.includes('مطابقة نسخة الرصيد القديمة'),'admin must expose wallet legacy mirror parity');
+assert.ok(ui.includes('ledgerChain.anomalyCount'),'admin must surface ledger continuity problems instead of hiding intermediate drift');
+assert.ok(ui.includes('ledgerChainHtml'),'wallet ledger audit must show read-only intermediate balance anomalies');
 assert.ok(topups.includes("String(row.status)==='approved'"),'topup approval must be idempotent for already-approved requests');
 assert.ok(topups.includes("TOPUP_APPROVAL_INTEGRITY"),'an approved payment without a matching wallet ledger entry must be rejected as an integrity error');
 assert.ok(topups.includes("appliedTopupCredit"),'topup approval must verify its authoritative wallet ledger entry');
