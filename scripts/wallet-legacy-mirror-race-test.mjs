@@ -8,7 +8,7 @@ import {walletPaymentDiagnostics} from '../src/wallet-payment-diagnostics.js';
 const db=new DatabaseSync(':memory:');
 db.exec(`
 CREATE TABLE state(id INTEGER PRIMARY KEY,json TEXT,updated_at TEXT);
-CREATE TABLE wallet_accounts(client_id TEXT PRIMARY KEY,balance REAL,billing_version TEXT);
+CREATE TABLE wallet_accounts(client_id TEXT PRIMARY KEY,balance REAL,currency TEXT,billing_version TEXT);
 CREATE TABLE wallet_log(id TEXT PRIMARY KEY,client_id TEXT,created_at TEXT,type TEXT,amount REAL,balance_after REAL,note TEXT,order_id TEXT,reference_type TEXT,reference_id TEXT);
 CREATE TABLE wallet_topup_requests(id TEXT PRIMARY KEY,client_id TEXT,status TEXT);
 `);
@@ -16,7 +16,7 @@ const state={clients:[{id:'merchant',walletBalance:33,walletFeePerOrder:5,name:'
   untouched:{safe:'original'}};
 const stamp='2026-10-15T00:00:00.000Z';
 db.prepare('INSERT INTO state VALUES(1,?,?)').run(JSON.stringify(state),stamp);
-db.prepare('INSERT INTO wallet_accounts VALUES(?,?,?)').run('merchant',333,'v27');
+db.prepare('INSERT INTO wallet_accounts VALUES(?,?,?,?)').run('merchant',333,'EGP','v27');
 let concurrentWriter=null;
 class P {
   constructor(sql){this.sql=sql;this.args=[];}
