@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import {campaignPerformance} from '../src/marketing-performance.js';
+import {businessBrief} from '../src/business-intelligence.js';
 
 const db=new DatabaseSync(':memory:');
 db.exec(`
@@ -9,6 +10,9 @@ CREATE TABLE campaign_daily_metrics(client_id TEXT,campaign_id TEXT,store_id TEX
 CREATE TABLE orders(id TEXT PRIMARY KEY,client_id TEXT,store_id TEXT,date TEXT,created_at TEXT,state TEXT,total REAL,customer_id TEXT);
 CREATE TABLE order_attribution(order_id TEXT PRIMARY KEY,client_id TEXT,store_id TEXT,campaign_id TEXT);
 CREATE TABLE order_duplicate_links(duplicate_order_id TEXT PRIMARY KEY,canonical_order_id TEXT);
+CREATE TABLE products(id TEXT PRIMARY KEY,client_id TEXT,store_id TEXT,active INTEGER,stock REAL,low_stock_threshold REAL,cost REAL);
+CREATE TABLE transactions(id TEXT PRIMARY KEY,client_id TEXT,store_id TEXT,type TEXT,date TEXT,created_at TEXT,amount REAL);
+CREATE TABLE wallet_accounts(client_id TEXT PRIMARY KEY,balance REAL,credit_limit REAL,status TEXT,billing_version TEXT);
 `);
 db.prepare('INSERT INTO marketing_campaigns VALUES(?,?,?,?,?,?,?,?,?,?,?)').run('camp','client','store','meta','M1','Test Campaign','sales','active','EGP',100,'2026-10-12');
 db.prepare('INSERT INTO campaign_daily_metrics VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)').run('client','camp','store','2026-10-11',100,1000,800,100,4,2,850,2,850);
@@ -32,5 +36,22 @@ assert.equal(result.total.unattributedOrders,1);
 assert.equal(result.total.realOrderCost,50,'the actual acquisition cost denominator includes every unique order, including manual orders');
 assert.equal(result.campaigns[0].newCustomers,1,'new customer lookup must use the same order-date fallback');
 assert.equal(result.campaigns[0].realRoas,5,'attributed delivered revenue / campaign spend');
+db.prepare('INSERT INTO products VALUES(?,?,?,?,?,?,?)').run('P1','client','store',1,7,3,80);
+db.prepare('INSERT INTO products VALUES(?,?,?,?,?,?,?)').run('P2','other','other-store',1,0,3,400);
+db.prepare('INSERT INTO transactions VALUES(?,?,?,?,?,?,?)').run('TX-IN','client','store','income',null,'2026-10-11T15:00:00Z',200);
+db.prepare('INSERT INTO transactions VALUES(?,?,?,?,?,?,?)').run('TX-OUT','client','store','expense',null,'2026-10-11T16:00:00Z',40);
+db.prepare('INSERT INTO transactions VALUES(?,?,?,?,?,?,?)').run('TX-OUTSIDE','other','other-store','income',null,'2026-10-11T17:00:00Z',999);
+const brief=await businessBrief(env,{clientId:'client',storeId:'store',from:'2026-10-11',to:'2026-10-11'});
+assert.equal(brief.metrics.orders.total,2,'business intelligence must count canonical orders including null date/created_at fallback');
+assert.equal(brief.metrics.orders.delivered,1,'duplicated delivered order must not inflate delivery outcomes');
+assert.equal(brief.metrics.orders.deliveredRevenue,500,'business intelligence delivered revenue must exclude duplicates and other tenants');
+assert.equal(brief.metrics.marketing.realOrders,brief.metrics.orders.total,'marketing and business intelligence must use the same order population');
+assert.equal(brief.metrics.marketing.realOrderCost,50,'business intelligence CPP must use all canonical orders, including manually added orders');
+assert.equal(brief.metrics.finance.income,200,'income transactions without explicit date must be included');
+assert.equal(brief.metrics.finance.expenses,40,'expense transactions without explicit date must be included');
+assert.equal(brief.metrics.finance.net,160);
+assert.equal(brief.metrics.finance.isOrderProfit,false,'transaction movement is not profit');
+assert.equal(brief.scalingReadiness.checks.find(check=>check.id==='data').status,'ok');
+assert.equal(brief.scalingReadiness.canScale,false,'incomplete merchant cash and stock forecasts must not imply readiness');
 console.log('Campaign to dashboard date/duplicate reconciliation SQL PASS');
 db.close();
