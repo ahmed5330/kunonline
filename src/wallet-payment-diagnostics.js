@@ -15,7 +15,7 @@ const signed=row=>knownSigned(row)??0;
 // Use rowid for ordering because events frequently share a millisecond.
 export function auditWalletLedgerContinuity(logs,limit=12){
   const rows=Array.isArray(logs)?logs:[];
-  const anomalies=[],unknownTypes=new Set();let verifiedPairs=0;
+  const anomalies=[],unknownTypes=new Set();let verifiedPairs=0,anomalyCount=0;
   for(let i=rows.length-2;i>=0;i--){
     const earlier=rows[i+1],later=rows[i],delta=knownSigned(later);
     if(delta===null){
@@ -23,18 +23,20 @@ export function auditWalletLedgerContinuity(logs,limit=12){
     }
     const previous=Number(earlier.balance_after),actual=Number(later.balance_after);
     if(!Number.isFinite(previous)||!Number.isFinite(actual)){
+      anomalyCount++;
       if(anomalies.length<limit)anomalies.push({id:later.id,seq:later.seq,reason:'non_numeric_balance'});
       continue;
     }
     const expected=round2(previous+delta),difference=round2(actual-expected);
     verifiedPairs++;
-    if(Math.abs(difference)>0.009&&anomalies.length<limit){
-      anomalies.push({id:later.id,seq:later.seq,at:later.created_at||null,referenceType:later.reference_type||null,
+    if(Math.abs(difference)>0.009){
+      anomalyCount++;
+      if(anomalies.length<limit)anomalies.push({id:later.id,seq:later.seq,at:later.created_at||null,referenceType:later.reference_type||null,
         expected,recorded:round2(actual),difference});
     }
   }
-  return {checkedPairs:verifiedPairs,anomalyCount:anomalies.length,anomalies,
-    unknownTypes:[...unknownTypes],truncatedAnomalies:anomalies.length>=limit};
+  return {checkedPairs:verifiedPairs,anomalyCount,anomalies,
+    unknownTypes:[...unknownTypes],truncatedAnomalies:anomalyCount>anomalies.length};
 }
 export async function walletPaymentDiagnostics(env,clientId){
   const account=await env.DB.prepare('SELECT balance,currency,billing_version FROM wallet_accounts WHERE client_id=?').bind(clientId).first();
