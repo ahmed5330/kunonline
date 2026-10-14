@@ -11,6 +11,7 @@ import {dashboardData} from './dashboard-intelligence.js';
 import {growthStockCatalog,resolveForecastStock} from './growth-stock-catalog.js';
 import {simulateScaling,dryRunScalingRule} from './growth-scenario.js';
 import {compareGrowthPeriods} from './growth-experiment.js';
+import {growthOperatingEvidence} from './growth-operating-evidence.js';
 import {listAdDrafts,createAdDraft,getAdDraft,generateAdDraft,requestAdAction} from './ad-studio.js';
 import {
   requireAdmin,listAdminClients,clientOverview,updateClientModules,updateClientBilling,
@@ -162,6 +163,12 @@ async function routeV27(request,env,ctx,me,url,body){
     requirePermission(me,'ads','read');
     const range=dateRange(url),base=await businessBrief(env,{clientId,storeId,...range});
     return json({from:base.from,to:base.to,readiness:base.scalingReadiness});
+  }
+  if(path==='/api/growth/operating-evidence'&&method==='GET'){
+    requirePermission(me,'orders','read');requirePermission(me,'finance','read');
+    if(!storeId)throw Object.assign(new Error('اختار متجرًا محددًا.'),{status:400,code:'GROWTH_STORE_REQUIRED'});
+    const range=dateRange(url);
+    return json(await growthOperatingEvidence(env,{clientId,storeId,...range}));
   }
   if(path==='/api/growth/inventory-catalog'&&method==='GET'){
     requirePermission(me,'inventory','read');
