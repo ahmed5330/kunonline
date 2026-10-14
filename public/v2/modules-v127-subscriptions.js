@@ -340,7 +340,7 @@
       try{
         const d=await api(`/api/admin/subscriptions/${encodeURIComponent(clientId)}/credit`,{method:'POST',body:JSON.stringify({amount,note,requestId:manualCreditRequestId})});
         const finalBalance=d?.finalBalance??d?.access?.balance??d?.credit?.balance;
-        window.showToast?.(`${d?.credit?.alreadyCredited?'هذه العملية معتمدة من قبل؛ لم يتكرر الشحن':'تم إضافة '+money(amount,c.currency)} — الرصيد الحالي ${money(finalBalance,c.currency)} — ${d?.settlementPending?'تسوية الاشتراك لم تكتمل؛ راجع سجل الخصومات':d?.access?.locked?'الحساب ما زال متوقفًا':'الحساب نشط'}`);
+        window.showToast?.(`${d?.credit?.alreadyCredited?'هذه العملية معتمدة من قبل؛ لم يتكرر الشحن':'تم إضافة '+money(amount,c.currency)} — الرصيد الحالي ${money(finalBalance,c.currency)} — ${d?.settlementPending?'تسوية الاشتراك لم تكتمل؛ راجع سجل الخصومات':d?.access?.locked?'الحساب ما زال متوقفًا':'الحساب نشط'}${d?.credit?.legacyMirrorPending?' — تم حفظ الشحن لكن نسخة الرصيد القديمة تحتاج مزامنة ومراجعة سجل المحفظة':''}`);
         closeModal();await renderAdmin();
       }catch(e){btn.disabled=false;btn.textContent='إضافة الرصيد وتفعيل الحساب';window.showToast?.(e.message);}
     };
@@ -364,6 +364,7 @@
       parts.push(`الرصيد بعد إضافة المبلغ وقبل التسوية ${money(beforeFees,currency)} — حركات/رسوم لاحقة ${money(beforeFees-afterFees,currency)}`);
     }
     if(result?.settlementPending)parts.push('تنبيه: تم اعتماد الشحن لكن تسوية رسوم الاشتراك لم تكتمل بعد؛ راجع السجل قبل اعتماد الرصيد كنهائي');
+    if(result?.legacyMirrorPending)parts.push('تم اعتماد مبلغ الشحن في المحفظة الأساسية لكن مزامنة نسخة الرصيد القديمة لم تكتمل؛ راجع سجل الرصيد قبل التصحيح');
     else if(result?.access)parts.push(result.access.locked?'الحساب ما زال موقوفًا':'الحساب نشط');
     window.showToast?.(parts.join(' — '));await renderAdmin();
     return result;
