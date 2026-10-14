@@ -13,7 +13,7 @@ const required=(obj,key,{min=0,max=1e10,integer=false}={})=>{
 };
 const optional=(obj,key,opt={})=>obj?.[key]===null||obj?.[key]===undefined||obj?.[key]===''?null:required(obj,key,opt);
 const bounded=(v,min,max)=>Math.max(min,Math.min(max,v));
-const shareOf=x=>x?.orderShare===undefined?1:required(x,'orderShare',{min:0,max:1});
+const shareOf=x=>x?.orderShare===undefined?1:required(x,'orderShare',{min:0.0001,max:1});
 
 export function simulateScaling({period,history={},plan={}}={}){
   // Inputs are explicitly user-controlled simulation assumptions, not promises derived from wallet balance.
@@ -39,15 +39,17 @@ export function simulateScaling({period,history={},plan={}}={}){
   const stockItems=stockRows.map((item,i)=>{
     if(!item||typeof item!=='object'||Array.isArray(item))fail('stockItems','بيانات SKU غير صالحة.');
     const sku=String(item.sku||'').trim().slice(0,120);
-    if(!sku||seen.has(sku))fail('stockItems','كود SKU فارغ أو متكرر.');
-    seen.add(sku);
+    const identity=String(item.productId||sku).trim();
+    if(!sku||!identity||seen.has(identity))fail('stockItems','منتج المخزون فارغ أو متكرر.');
+    seen.add(identity);
     const availableUnits=required(item,'availableUnits',{min:0,max:1e9});
     const unitsPerOrder=required(item,'unitsPerOrder',{min:0.01,max:1000});
     const supplierLeadDays=required(item,'supplierLeadDays',{min:0,max:365});
     const safetyDays=required(item,'safetyDays',{min:0,max:365});
     const orderShare=shareOf(item);
     const dailyConsumption=projectedDailyOrders*unitsPerOrder*orderShare;
-    const requiredUnits=Math.ceil(dailyConsumption*(supplierLeadDays+safetyDays));
+    const requiredUnits=Math.ceil(Math.max(dailyConsumption,dailyConsumption*(supplierLeadDays+safetyDays)));
+    // At least the first day's physical demand must be covered, even if lead-time is claimed as zero.
     const horizonUnits=Math.ceil(dailyConsumption*horizonDays);
     return {sku,orderShare,availableUnits,unitsPerOrder,supplierLeadDays,safetyDays,
       dailyConsumption:round(dailyConsumption),requiredUnits,horizonUnits,shortageUnits:Math.max(0,requiredUnits-availableUnits),
