@@ -49,7 +49,17 @@
         ${field('maxDailyBudget','أقصى ميزانية يومية مسموحة للمراجعة','حد أمان','any',true)}
       </div><p>المعاينة لا تنفذ أي أوامر على Meta Ads. لا يتم رفع الميزانية دون صلاحيات وموافقة وتسجيل.</p></div>
       <div class="gp150-actions"><button type="submit" class="primary" id="gp150-simulate">تحليل سيناريو التوسع</button><span id="gp150-status" role="status"></span></div>
-    </form><div id="gp150-output" aria-live="polite"></div></details>`;
+    </form><div id="gp150-output" aria-live="polite"></div>
+    <details class="gp150-section"><summary>قياس نتيجة التوسع — مقارنة قبل وبعد</summary>
+      <p>مقارنة فترتين من نفس المتجر مع تقييم نضج الطلبات والتسليم والتكلفة.</p>
+      <form id="gp150-experiment"><div class="gp150-grid">
+        <label class="gp150-field"><span>قبل — من</span><input name="beforeFrom" type="date" required></label>
+        <label class="gp150-field"><span>قبل — إلى</span><input name="beforeTo" type="date" required></label>
+        <label class="gp150-field"><span>بعد — من</span><input name="afterFrom" type="date" required></label>
+        <label class="gp150-field"><span>بعد — إلى</span><input name="afterTo" type="date" required></label>
+      </div><div class="gp150-actions"><button type="submit">قارن الفترتين</button><span id="gp150-experiment-status" role="status"></span></div></form>
+      <div id="gp150-experiment-result" aria-live="polite"></div>
+    </details></details>`;
   }
   function options(){return (state.catalog?.items||[]).map(p=>`<option value="${esc(p.id)}">${esc(p.name)} — ${esc(p.sku)} (مسجل ${esc(p.availableUnits)} قطعة)</option>`).join('')}
   function addStock(){
@@ -144,11 +154,43 @@
     }catch(error){note(error.message||'تعذر إنشاء السيناريو.');}
     finally{state.loading=false;if(button?.isConnected)button.disabled=false;}
   }
+  async function compare(event){
+    event.preventDefault();const form=event.currentTarget,button=form.querySelector('button[type=submit]');
+    button.disabled=true;const status=document.getElementById('gp150-experiment-status');
+    if(status)status.textContent='جارٍ مقارنة البيانات...';
+    try{
+      const clientId=await window.kunClientId?.(),storeId=await window.kunStoreId?.();
+      if(!clientId||!storeId)throw new Error('اختار متجرًا محددًا.');
+      const p=new URLSearchParams({clientId,storeId,...Object.fromEntries(new FormData(form).entries())});
+      const r=await fetch('/api/growth/experiment/compare?'+p,{credentials:'include'});
+      const payload=await r.json().catch(()=>({}));
+      if(!r.ok)throw new Error(payload.error||'تعذر تحميل المقارنة');
+      if(!form.isConnected)return;
+      const x=payload.comparison||{},before=x.before||{},after=x.after||{},change=x.change||{};
+      const fmt=v=>v===null||v===undefined?'غير متاح':money(v);
+      const changeCard=(name,value)=>info(name,value===null||value===undefined?'غير متاح':money(value)+'%');
+      const output=document.getElementById('gp150-experiment-result');
+      output.innerHTML=`<div class="gp150-note"><b>${esc(x.status==='positive_indication'?'مؤشر تحسن يحتاج متابعة':x.status==='insufficient_evidence'?'الدليل غير كافٍ':'النتيجة تحتاج مراجعة')}</b>
+        <div class="gp150-metrics">
+          ${changeCard('تغير الإنفاق اليومي',change.dailyAdSpendPct)}
+          ${changeCard('تغير الطلبات اليومية',change.dailyOrdersPct)}
+          ${changeCard('تغير تكلفة الطلب',change.enteredCppPct)}
+          ${changeCard('تغير ROAS المسلم',change.realRoasPct)}
+          ${changeCard('تغير هامش الطلبات المؤهلة اليومي',change.eligibleProfitPerDayPct)}
+        </div>
+        <p>قبل: ${fmt(before.adSpend)} إنفاق / ${fmt(before.enteredOrders)} طلب. بعد: ${fmt(after.adSpend)} إنفاق / ${fmt(after.enteredOrders)} طلب.</p>
+        ${x.issues?.length?`<ul>${x.issues.map(v=>`<li>${esc(v)}</li>`).join('')}</ul>`:''}
+        <p>${esc(x.caveat||'هذه مقارنة ولا تثبت السببية.')}</p></div>`;
+      if(status)status.textContent='تمت المقارنة دون تعديل أي ميزانية.';
+    }catch(e){if(status)status.textContent=e.message;}
+    finally{if(button?.isConnected)button.disabled=false;}
+  }
   function mount(){
     const anchor=document.getElementById('metaScalingReadiness');
     if(!anchor||document.getElementById('growthPlanner150'))return;
     style();const host=document.createElement('section');host.id='growthPlanner150';host.className='gp150';host.innerHTML=template();
     anchor.after(host);document.getElementById('gp150-form')?.addEventListener('submit',submit);
+    document.getElementById('gp150-experiment')?.addEventListener('submit',compare);
     document.getElementById('gp150-add-stock')?.addEventListener('click',addStock);
     catalogLoad();
   }
