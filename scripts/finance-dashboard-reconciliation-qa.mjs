@@ -83,5 +83,11 @@ assert.equal(withOrphan.ads.realRoas,2.14,'Real ROAS must share the recognized i
 assert.equal(withOrphan.finance.netProfit,460,'P&L uses 140 recognized ads, not 100 mapped campaign ads');
 assert.ok(withOrphan.recommendations.some(x=>x.category==='finance'&&x.severity==='danger'),'show reconciliation warning');
 assert.equal(withOrphan.finance.isCollectedProfit,false,'expected eligible order P&L cannot be called collected profit');
+run("UPDATE stores SET currency='SAR' WHERE id='store'");
+const wrongCurrency=await dashboardData(env,{clientId:'client',storeId:'store',from:day,to:day});
+assert.equal(wrongCurrency.ads.spendReconciliation.currencyMismatch,true,'do not treat EGP ad spend as SAR without FX normalization');
+assert.deepEqual(wrongCurrency.ads.spendReconciliation.campaignCurrencies,['EGP']);
+assert.equal(wrongCurrency.ads.spendReconciliation.storeCurrency,'SAR');
+assert.ok(wrongCurrency.recommendations.some(rec=>rec.title.includes('اختلاف عملة')),'cross-currency warning must be visible');
 db.close();
 console.log('Finance canonical order and P&L balance SQL QA PASS');
