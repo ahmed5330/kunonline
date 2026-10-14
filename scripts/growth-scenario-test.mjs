@@ -87,4 +87,11 @@ assert.match(routes,/JSON\.stringify\(plan\)\.length>15000/);
 assert.match(routes,/currencyVerified:verifiedCurrency/);
 assert.match(routes,/reconciliation\.needsReview/);
 assert.doesNotMatch(routes,/\/api\/growth\/scenario\/execute/);
+const planner=await readFile(new URL('../public/v2/modules-v150-growth-planner.js',import.meta.url),'utf8');
+assert.match(planner,/gp150-bundle-select/);
+assert.match(planner,/bundle\.components/);
+assert.match(planner,/check\.checked=false/);
+assert.match(planner,/\/api\/growth\/scenario\/preview/);
+assert.doesNotMatch(planner,/\/api\/integrations\/meta-ads\/budget-update/);
+
 console.log('Growth simulation, inventory isolation, cash, economics and budget-rule dry-run tests PASS');
