@@ -243,8 +243,8 @@ jobs:
           for i in {1..8}; do
             nonce="${GITHUB_RUN_ID}-${i}"
             page="$(curl -fsSL -H 'Cache-Control: no-cache' "https://app.kun-online.com/v2/?login_gateway=${nonce}" 2>/dev/null || true)"
-            auth="$(curl -fsSL -H 'Cache-Control: no-cache' "https://app.kun-online.com/v2/modules-v142-login-gateway.js?v=142.0&check=${nonce}" 2>/dev/null || true)"
-            if grep -Fq '/v2/modules-v142-login-gateway.js?v=142.0' <<< "$page" \
+            auth="$(curl -fsSL -H 'Cache-Control: no-cache' "https://app.kun-online.com/v2/modules-v142-login-gateway.js?v=142.1&check=${nonce}" 2>/dev/null || true)"
+            if grep -Fq '/v2/modules-v142-login-gateway.js?v=142.1' <<< "$page" \
               && grep -Fq "fetch('/api/login'" <<< "$auth" \
               && grep -Fq "fetch('/api/me'" <<< "$auth"; then verified=1; break; fi
             sleep 3
