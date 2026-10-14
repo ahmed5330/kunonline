@@ -34,6 +34,8 @@ assert.ok(billing.includes("return clampMoney(account.base_order_fee)"),'managed
 assert.ok(billing.includes("orderFee=inTrial?0:clampMoney(account.base_order_fee)"),'client access must display the exact admin-defined fee');
 assert.ok(billing.includes("baseOrderFee,orderFee:inTrial?0:baseOrderFee"),'admin subscription list must show the exact base fee for managed clients');
 assert.ok(topups.includes('reconcileSubscriptionAfterTopup'),'topup approval must immediately reconcile access');
+assert.ok(ui.includes('legacy.mismatch===true||legacy.oldFeeStillEnabled===true'),'admin ledger must warn about legacy mirror drift and double-charge fee');
+assert.ok(ui.includes('مطابقة نسخة الرصيد القديمة'),'admin must expose wallet legacy mirror parity');
 assert.ok(topups.includes("String(row.status)==='approved'"),'topup approval must be idempotent for already-approved requests');
 assert.ok(topups.includes("TOPUP_APPROVAL_INTEGRITY"),'an approved payment without a matching wallet ledger entry must be rejected as an integrity error');
 assert.ok(topups.includes("appliedTopupCredit"),'topup approval must verify its authoritative wallet ledger entry');
