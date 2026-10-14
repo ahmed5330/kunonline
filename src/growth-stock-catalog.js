@@ -7,7 +7,7 @@ export async function growthStockCatalog(env,{clientId,storeId,limit=100}={}){
   if(!clientId||!storeId)fail('GROWTH_STORE_REQUIRED','اختار متجرًا لعرض مكونات المخزون في محاكي التوسع.');
   const max=Math.min(150,Math.max(1,Math.floor(Number(limit)||100)));
   const {results:products=[]}=await env.DB.prepare(
-    'SELECT id,name,sku,stock,low_stock_threshold,cost FROM products WHERE client_id=? AND store_id=? AND active=1 ORDER BY name,id LIMIT ?'
+    'SELECT id,name,sku,stock,low_stock_threshold FROM products WHERE client_id=? AND store_id=? AND active=1 ORDER BY name,id LIMIT ?'
   ).bind(clientId,storeId,max).all();
   let mappings=[],mappingStatus='not_available';
   try{
@@ -22,8 +22,7 @@ export async function growthStockCatalog(env,{clientId,storeId,limit=100}={}){
     else throw error;
   }
   const visibleProducts=products.map(p=>({id:p.id,name:p.name||'',sku:p.sku||p.id,
-    availableUnits:toNum(p.stock),lowStockThreshold:toNum(p.low_stock_threshold),
-    recordedUnitCost:toNum(p.cost)}));
+    availableUnits:toNum(p.stock),lowStockThreshold:toNum(p.low_stock_threshold)}));
   const allowedIds=new Set(visibleProducts.map(p=>String(p.id)));
   const bundles=[];
   for(const b of mappings){
