@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import {assessScalingReadiness} from '../src/scaling-readiness.js';
+import {enrichBusinessBriefWithAI} from '../src/ai-provider.js';
+import {readFile} from 'node:fs/promises';
 
 const base = {period:{from:'2026-10-01',to:'2026-10-07'},
   orders:{total:100,pending:5},inventory:{lowStock:0,outOfStock:0},
@@ -47,4 +49,25 @@ assert.equal(noWalletGuess.canScale,false);
 
 const missingBundles=assessScalingReadiness({...complete,stockPlan:{coversAllPromotedSkus:false,items:complete.stockPlan.items}});
 assert.equal(missingBundles.canScale,false,'partial stock coverage cannot certify scaling');
+// AI cannot bypass deterministic merchant-cash/stock/operations/profit guards.
+const savedFetch=globalThis.fetch;
+try{
+  globalThis.fetch=async()=>({ok:true,json:async()=>({output_text:JSON.stringify({summary:'توصيات',recommendations:[{type:'marketing',severity:'success',title:'زود الميزانية',action:'ارفع الميزانية 20%'}]})})});
+  const ai=await enrichBusinessBriefWithAI({OPENAI_API_KEY:'mock-key',OPENAI_TEXT_MODEL:'mock-model'},
+    {...base,from:'2026-10-01',to:'2026-10-07',metrics:{},adAnalysis:{},recommendations:[],scalingReadiness:incomplete});
+  assert.equal(ai.ai.used,true);
+  assert.equal(ai.recommendations[0].severity,'warning');
+  assert.match(ai.recommendations[0].action,/استكمل بيانات/);
+}finally{globalThis.fetch=savedFetch;}
+
+// Catch accidental removal of store scope, endpoint and active Campaigns view.
+const route=await readFile(new URL('../src/index-commerce-v27.js',import.meta.url),'utf8');
+const campaign=await readFile(new URL('../public/v2/modules-v27-meta-ads.js',import.meta.url),'utf8');
+const brief=await readFile(new URL('../src/business-intelligence.js',import.meta.url),'utf8');
+assert.match(route,/path==='\/api\/growth\/scaling-readiness'/);
+assert.match(route,/requirePermission\(me,'ads','read'\)/);
+assert.match(route,/const range=dateRange\(url\),base=await businessBrief\(env,\{clientId,storeId/);
+assert.match(brief,/scalingReadiness=assessScalingReadiness/);
+assert.match(campaign,/metaScalingReadiness/);
+assert.match(campaign,/\.dataset\.days===String\(days\)/);
 console.log('Scaling readiness safety and business scenario checks passed.');
