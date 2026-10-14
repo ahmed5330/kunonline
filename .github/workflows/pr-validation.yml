@@ -33,6 +33,8 @@ jobs:
       - name: Verify Preview Worker bundle without deploying
         run: |
           npx wrangler deploy --dry-run --config wrangler.preview.toml
+      - name: Boot branch Preview Worker locally and assert growth API authentication
+        run: node scripts/growth-local-worker-smoke.mjs
       - name: Read-only production login health probe
         run: node scripts/live-production-login-route-probe.mjs
       - name: Validate V2 login gateway and browser asset references
