@@ -54,6 +54,13 @@ assert.equal(feesDetail[0].amount,50);
 
 const collected=await collectedProfitOverview(env,{...oct,includeDetails:true});
 assert.equal(collected.collectedGross,1370,'collection report must agree with accounting settlement cash');
+assert.equal(collected.verifiedCollectedGross,870,'only collected_amount is a recorded COD amount');
+assert.equal(collected.unverifiedCollectionFallbackGross,500,'missing COD amount is not verified cash');
+assert.equal(collected.missingCollectionAmountOrders,1);
+assert.equal(collected.collectionQuality,'partially_estimated_from_order_total');
+assert.equal(collected.collectedProfitIsFullyVerified,false,'unreconciled COD and shipping disallow verified-profit status');
+assert.equal(collected.orders.find(x=>x.id==='COD-2').collectionAmountEstimated,true);
+
 assert.equal(collected.collectedOrders,2,'collection report must exclude linked duplicate');
 assert.equal(collected.productCost,400,'recorded order inventory cost must be deducted from collected margin');
 assert.equal(collected.managementFees,50,'collection margin subtracts active management fees for collected orders');
