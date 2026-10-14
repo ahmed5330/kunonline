@@ -17,7 +17,7 @@ assert.equal(incomplete.autoBudgetChanges,false);
 const complete={...base,
   stockPlan:{coversAllPromotedSkus:true,items:[{sku:'A',availableUnits:500,projectedDailyOrders:50,unitsPerOrder:2,supplierLeadDays:3,safetyDays:1}]},
   cashPlan:{merchantCashAvailable:50000,projectedDailyTotalOutflow:10000,daysToNextCollection:3,outflowIncludesAdsStockAndOperations:true},
-  operationsPlan:{projectedDailyOrders:50,dailyConfirmationCapacity:80,dailyPackingCapacity:75},
+  operationsPlan:{projectedDailyOrders:50,dailyConfirmationCapacity:80,dailyPackingCapacity:75,dailyShippingCapacity:70},
   unitEconomics:{contributionPerDeliveredOrderBeforeAds:200,expectedDeliveryRate:0.75,returnLossPerFailedOrder:20,projectedCostPerEnteredOrder:90}};
 
 const approved=assessScalingReadiness(complete);
@@ -39,6 +39,11 @@ assert.equal(cashShort.checks.find(x=>x.id==='cash_flow').status,'blocked');
 const opsShort=assessScalingReadiness({...complete,operationsPlan:{...complete.operationsPlan,dailyPackingCapacity:30}});
 assert.equal(opsShort.checks.find(x=>x.id==='operations').status,'blocked');
 
+const shippingShort=assessScalingReadiness({...complete,operationsPlan:{...complete.operationsPlan,dailyShippingCapacity:5}});
+assert.equal(shippingShort.checks.find(x=>x.id==='operations').status,'blocked','shipping throughput must block expansion even when packing is high');
+assert.equal(shippingShort.canScale,false);
+const shippingUnknown=assessScalingReadiness({...complete,operationsPlan:{projectedDailyOrders:50,dailyConfirmationCapacity:80,dailyPackingCapacity:70}});
+assert.equal(shippingUnknown.checks.find(x=>x.id==='operations').status,'unknown','shipping capacity cannot be silently assumed');
 const losing=assessScalingReadiness({...complete,unitEconomics:{...complete.unitEconomics,projectedCostPerEnteredOrder:170}});
 assert.equal(losing.checks.find(x=>x.id==='profitability').status,'blocked');
 
