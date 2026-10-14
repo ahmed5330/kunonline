@@ -37,3 +37,21 @@ export async function growthStockCatalog(env,{clientId,storeId,limit=100}={}){
   return {storeId,items:visibleProducts,bundles,mappingStatus,pagination:{limit:max,truncated:visibleProducts.length===max},
     source:'recorded_product_stock',note:'الكميات المسجلة قد تختلف عن المتاح الفعلي بعد الحجز. تحتاج مراجعة الباندل وSKU والفترات قبل قرار الزيادة.'};
 }
+
+export async function resolveForecastStock(env,{clientId,storeId,items}={}){
+  if(!clientId||!storeId)fail('GROWTH_STORE_REQUIRED','اختار المتجر قبل المحاكاة.');
+  if(!Array.isArray(items)||items.length>40)fail('GROWTH_STOCK_ITEMS_INVALID','قائمة المنتجات المختارة غير صالحة.');
+  if(!items.length)return [];
+  const ids=items.map(item=>clean(item?.productId));
+  if(ids.some(id=>!id)||new Set(ids).size!==ids.length)fail('GROWTH_STOCK_ITEMS_INVALID','اختار منتجات صالحة بدون تكرار.');
+  const placeholders=ids.map(()=>'?').join(',');
+  const {results=[]}=await env.DB.prepare(
+    `SELECT id,name,sku,stock FROM products WHERE client_id=? AND store_id=? AND active=1 AND id IN (${placeholders})`
+  ).bind(clientId,storeId,...ids).all();
+  const byId=new Map(results.map(item=>[String(item.id),item]));
+  if(ids.some(id=>!byId.has(id)))fail('GROWTH_STOCK_SCOPE','منتج مختار غير موجود في مخزون المتجر.',403);
+  return items.map((row,i)=>({sku:clean(byId.get(ids[i]).sku)||ids[i],productId:ids[i],
+    availableUnits:Math.max(0,toNum(byId.get(ids[i]).stock)),
+    unitsPerOrder:row.unitsPerOrder,orderShare:row.orderShare,
+    supplierLeadDays:row.supplierLeadDays,safetyDays:row.safetyDays}));
+}
