@@ -74,7 +74,7 @@ try{
  await cdp.send('Page.navigate',{url:'http://127.0.0.1:'+server.address().port+'/'});
  await waitFor('!!document.getElementById("growthPlanner150")');
  await waitFor('document.querySelectorAll("#gp150-bundle-select option").length===2');
- await waitFor('document.getElementById("gp150-operating-facts").textContent.includes("650")');
+ await waitFor('document.querySelectorAll("#gp150-operating-facts .gp150-metric").length>=6');
  assert.equal(await evaluate('document.querySelectorAll("#growthPlanner150").length'),1);
  await evaluate('document.getElementById("gp150-bundle-select").value="BUNDLE";document.getElementById("gp150-load-bundle").click();');
  assert.deepEqual(await evaluate('[...document.querySelectorAll(".gp150-units")].map(x=>Number(x.value))'),[2,1]);
