@@ -70,6 +70,7 @@ export function verifySqlIsReadonly(){
   return true;
 }
 export const INVARIANT_CHECKS=checks.map(([id,table])=>({id,table}));
+export const INVARIANT_SQL=Object.freeze(Object.fromEntries(checks.map(c=>[c[0],conflictSql(c)])));
 export async function verifyLiveInvariants(run){
   verifySqlIsReadonly();
   const tableRows=extractRows(await run(EXISTING_TABLES_SQL));
