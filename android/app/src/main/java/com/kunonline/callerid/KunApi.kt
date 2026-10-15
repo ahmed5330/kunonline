@@ -59,9 +59,29 @@ object KunApi {
                 return SyncResult(false, message.ifBlank { "تعذر تسجيل الدخول" })
             }
             val cookie = login.setCookie
-            if (cookie.isNullOrBlank()) return SyncResult(false, "تم الدخول لكن لم تصل جلسة صالحة")
+            if (cookie.isNullOrBlank() || !cookie.startsWith("ko_session=")) {
+                return SyncResult(false, "تم قبول بيانات الحساب لكن لم تصل جلسة دخول صالحة")
+            }
+            // A successful login response alone is not proof of a usable session.
+            // The same endpoint and cookie must work for /api/me before we persist it.
+            val identity = request("GET", "/api/me", cookie = cookie)
+            val role = runCatching { JSONObject(identity.body).optString("role") }.getOrDefault("")
+            if (identity.code !in 200..299 || role.isBlank() || role == "null") {
+                return SyncResult(false, errorMessage(identity).ifBlank { "تعذر تأكيد جلسة الدخول" })
+            }
             SecureStore.put(context, AUTH_PREFS, SESSION_KEY, cookie)
-            syncWithCookie(context, cookie)
+            val sync = syncWithCookie(context, cookie)
+            // A new or empty store may not be ready for its initial data sync.
+            // Keep a verified session instead of misreporting valid credentials as bad.
+            when {
+                sync.ok -> sync
+                session(context) != cookie -> SyncResult(false, sync.message)
+                else -> SyncResult(
+                    true,
+                    "تم تسجيل الدخول بنجاح، لكن تعذر تحديث البيانات مؤقتًا. جرّب زر التحديث بعد الدخول.",
+                    CustomerCache.count(context)
+                )
+            }
         }.getOrElse { SyncResult(false, "تعذر الاتصال بكن أونلاين") }
     }
 
