@@ -30,6 +30,7 @@ jobs:
           node scripts/preview-db-preflight-command-test.mjs
           node scripts/inventory-migrations-compatibility-test.mjs
           node scripts/preview-release-schema-contract-test.mjs
+          node scripts/preview-d1-release-invariants-test.mjs
       - name: Release compatibility gate fixture
         run: node scripts/production-preview-release-gate-test.mjs
       - name: Growth planner Chromium fixture
