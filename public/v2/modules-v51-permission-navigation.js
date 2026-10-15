@@ -16,6 +16,7 @@
     'returns-exchanges':['support.read','shipping.read'],
     customers:['customers.read'],
     inbox:['inbox.read'],
+    collaboration:['inbox.read'],
     products:['products.read'],
     inventory:['inventory.read'],
     suppliers:['procurement.read'],
@@ -43,7 +44,7 @@
     control:['owner'],
     settings:['owner']
   });
-  let snapshot=null,ready=false,allowed=new Set(),redirecting=false;
+  let snapshot=null,ready=false,allowed=new Set(),redirecting=false,lateNavTimer=null;
   const text=v=>String(v??'').trim();
   const permissions=()=>Array.isArray(snapshot?.permissions)?snapshot.permissions:[];
   function match(rule,target){
@@ -92,17 +93,30 @@
       quick.hidden=!writable;quick.style.display=writable?'':'none';
     }
     document.documentElement.dataset.permissionNavigation='ready';
+    document.documentElement.dataset.permissionNavigationVersion='51.15';
     window.KunSidebarGroupsV90?.sync?.();
     window.KunEcommerceCalculatorShortcutV93?.sync?.();
     window.KunFinanceCommandCenterV96?.mergeNavigation?.();
     goFirstAllowed();
+  }
+  function refreshLateInjectedNavigation(){
+    if(!ready||!snapshot?.role)return;
+    const button=document.querySelector('.nav button[data-view="collaboration"]');
+    if(!button)return;
+    const ok=allowedView('collaboration',snapshot);
+    button.hidden=!ok;button.style.display=ok?'':'none';button.setAttribute('aria-hidden',ok?'false':'true');button.tabIndex=ok?0:-1;
+    if(ok)allowed.add('collaboration');else{allowed.delete('collaboration');button.classList.remove('active');}
+  }
+  function scheduleLateNavApply(){
+    clearTimeout(lateNavTimer);
+    lateNavTimer=setTimeout(refreshLateInjectedNavigation,650);
   }
   async function loadAccess(force=false){
     try{
       if(force)window.KunPerformanceCore?.invalidate?.('/api/navigation-access');
       const response=await fetch('/api/navigation-access',{credentials:'include'}),data=await response.json().catch(()=>({}));
       if(!response.ok||!data?.role)throw new Error(data.error||`HTTP ${response.status}`);
-      snapshot=data;ready=true;apply();return data;
+      snapshot=data;ready=true;apply();scheduleLateNavApply();return data;
     }catch(error){console.warn('Permission navigation unavailable',error);return null;}
   }
   function targetView(element){return text(element?.dataset?.view||element?.dataset?.go);}
