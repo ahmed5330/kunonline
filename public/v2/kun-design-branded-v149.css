@@ -1,0 +1,64 @@
+/* Kun Online v149: approved blue/green branded dashboard presentation.
+   CSS ONLY: no altered financial data, orders, APIs, or authorization. */
+:root{--k149-blue:#10549a;--k149-green:#74d64e;--k149-navy:#092d53;--k149-paper:#f4f8fc;--k149-line:#e2eaf3;--k149-shadow:0 10px 36px rgba(15,75,132,.052)}
+body[data-theme="light"],body:not([data-theme]){--kun143-blue:var(--k149-blue);--kun143-green:var(--k149-green);--kun143-bg:var(--k149-paper);--kun143-line:var(--k149-line);--kun143-shadow:var(--k149-shadow);--blue:var(--k149-blue);--green:var(--k149-green);--bg:var(--k149-paper);--line:var(--k149-line)}
+body{font-family:Cairo,Tajawal,system-ui,sans-serif}
+@media(min-width:1001px){body .app{grid-template-columns:257px minmax(0,1fr)}}
+body .side{background:linear-gradient(167deg,#0b3764,#092d53 48%,#061f39)!important;color:#c3d8ea!important;border-inline-end:1px solid #1b4b79!important;box-shadow:inset -1px 0 rgba(255,255,255,.05)!important;padding:14px 11px 18px!important}
+body .side .brand{background:transparent!important;color:#fff!important;border:0!important;border-bottom:1px solid rgba(190,221,247,.14)!important;padding:10px 9px 18px!important;margin-bottom:12px!important;gap:11px!important}
+body .side .kun143-brand-image{width:59px!important;height:59px!important;flex-basis:59px!important;border-radius:50%!important;padding:3px!important;background:#fff!important;box-shadow:0 0 0 2px rgba(116,214,78,.55),0 8px 20px rgba(0,17,43,.32);object-fit:contain}
+body .side .kun143-brand-name{color:#fff!important;font:900 18px Cairo,Tajawal,sans-serif!important}
+body .side .kun143-brand-sub{color:#b4cae0!important;font-size:10px!important}
+body .side .kun143-primary-label{color:#a9c2db!important;padding:12px 13px 7px;font-weight:800}
+body .side .kun143-primary-label:not(:first-child){border-top:1px solid rgba(200,225,247,.13)!important}
+body .side .kun143-primary-button{min-height:44px!important;border-radius:11px!important;color:#c4d6ea!important;background:transparent!important;border:1px solid transparent!important;font:700 12px Cairo,Tajawal,sans-serif!important;transition:background .17s,border-color .17s,color .17s}
+body .side .kun143-primary-button svg{color:#9cbedc!important}
+body .side .kun143-primary-button:hover{color:#fff!important;background:rgba(177,219,255,.10)!important}
+body .side .kun143-primary-button[aria-current="page"]{color:#fff!important;background:linear-gradient(95deg,rgba(42,115,184,.38),rgba(39,90,150,.24))!important;border-color:rgba(127,210,239,.14)!important;box-shadow:inset -3px 0 var(--k149-green)!important;font-weight:900!important}
+body .side .kun143-primary-button[aria-current="page"] svg{color:#9bea77!important}
+body .side .kun143-secondary{border-top:1px solid rgba(200,225,247,.14)!important}
+body .side .kun143-secondary summary{color:#aec6df!important}
+body .side .kun143-secondary summary:hover{background:rgba(190,224,255,.09)!important;color:#fff!important}
+body .side .nav.kun-nav-grouped>.nav-standalone,body .side .nav.kun-nav-grouped>.nav-special-shortcut,body .side .nav .nav-group-toggle{color:#c5d8eb!important;background:transparent!important}
+body .side .nav .nav-group-toggle:hover,body .side .nav .nav-group-toggle[aria-expanded="true"],body .side .nav.kun-nav-grouped>.nav-standalone:hover{background:rgba(191,221,255,.12)!important;color:#fff!important}
+body .side .nav .nav-group-items>button[data-view]{color:#b5cee6!important}
+body .side .nav .nav-group-items>button[data-view]:hover,body .side .nav .nav-group-items>button[data-view].active{color:#fff!important;background:rgba(54,130,196,.28)!important}
+body .side .nav-group-icon,body .side .nav .nav-item-icon{color:#8bd96a!important;background:rgba(116,214,78,.11)!important;border-color:rgba(116,214,78,.13)!important}
+body .side .nav-group-items{border-color:rgba(199,223,243,.17)!important}
+body .side .nav-group-chevron{color:#adc6e0!important}
+body .side::-webkit-scrollbar-thumb{background:#39628a}
+body .top{min-height:76px;background:rgba(255,255,255,.98);border-bottom:1px solid var(--k149-line);box-shadow:0 2px 14px rgba(19,67,113,.028)}
+body .top .search,body .top #storeBtn{border:1px solid #e1eaf3!important;border-radius:11px;background:#f7fafe}
+body .top #quickBtn{background:var(--k149-blue);color:#fff;border-radius:11px;border-color:var(--k149-blue);box-shadow:0 6px 15px rgba(16,84,154,.13)}
+body .content{max-width:1680px;padding:29px 33px 56px}
+#root .page-head{margin-bottom:22px}
+#root .title{font:900 clamp(20px,2vw,28px)/1.6 Cairo,Tajawal,sans-serif;color:#123652}
+#root .sub{font-size:12px;color:#71869d}
+#root .card,#root .dash-section,#root .dash-chart-card,#root .dash-kpi,#root .dash-fin-card,#root .dash-ad-metric,#root .ki130-box,#root .ki130-stat{border:1px solid #e1eaf2;border-radius:16px!important;box-shadow:var(--k149-shadow)}
+#root .card{background:#fff}
+#root .dash-hero{border-radius:17px!important;background:linear-gradient(112deg,#0a3763 0%,#10549a 60%,#2175af 100%)!important;border:1px solid #1c6395!important;color:#fff!important;box-shadow:0 14px 34px rgba(16,84,154,.15)!important;overflow:hidden;position:relative;isolation:isolate}
+#root .dash-hero::after{content:"";pointer-events:none;position:absolute;width:250px;height:250px;left:-70px;top:-110px;border:1px solid rgba(116,214,78,.23);border-radius:50%;box-shadow:0 0 0 44px rgba(116,214,78,.07),0 0 0 88px rgba(116,214,78,.04);z-index:-1}
+#root .dash-hero .title{color:#fff!important}
+#root .dash-hero .sub{color:#d6e6f8!important}
+#root .dash-hero .dash-hero-side{border-radius:13px}
+#root .dash-section-head h2,#root .ki130-box h2{font-weight:900;color:#183c5c}
+#root .dash-section-head p{color:#75899d}
+#root .dash-kpis,#root .dash-finance-grid,#root .dash-rate-grid{gap:15px}
+#root .dash-kpi,#root .dash-fin-card{transition:border-color .15s,transform .15s}
+#root .dash-kpi:hover,#root .dash-fin-card:hover{border-color:#c7dcf0;transform:translateY(-1px)}
+#root .dash-kpi strong,#root .dash-fin-card>strong,#root .k-val{font-variant-numeric:tabular-nums;letter-spacing:-.35px}
+#root .table-wrap,#root .dash-table-wrap{border-color:#e1eaf3;background:#fff;border-radius:13px}
+#root .table th{background:#f4f8fc;color:#657e96}
+#root .table tbody tr:hover{background:#f7fbff}
+#root .btn.primary,#root button.primary,.top .btn.primary{background:var(--k149-blue);border-color:var(--k149-blue)}
+#root .btn.primary:hover,.top .btn.primary:hover{background:#0b427c}
+#root .tab.active{background:#ebf7eb;color:#155d39;border-color:#cde9c8}
+#root .dash-range-btn:focus-visible,#root .dash-custom-range:focus-visible{outline:3px solid #7bdc58;outline-offset:2px}
+body[data-theme="dark"] .content{color:#e8f2fc}
+body[data-theme="dark"] #root .title,body[data-theme="dark"] #root .dash-section-head h2{color:#eff8ff}
+body[data-theme="dark"] #root .card,body[data-theme="dark"] #root .dash-kpi,body[data-theme="dark"] #root .dash-fin-card,body[data-theme="dark"] #root .dash-section,body[data-theme="dark"] #root .dash-chart-card{background:#192a40;border-color:#34485e;box-shadow:none}
+body[data-theme="dark"] #root .table-wrap,body[data-theme="dark"] #root .dash-table-wrap{background:#192a40;border-color:#34485e}
+@media(max-width:1000px){body .side{background:linear-gradient(167deg,#0b3764,#061f39)!important}body .content{padding:18px 16px 102px}body .top{min-height:62px}}
+@media(max-width:820px){body .side{width:min(340px,91vw)!important}body .content{padding:14px 11px calc(102px + env(safe-area-inset-bottom))!important}body .top{min-height:60px}#root .dash-hero::after{width:155px;height:155px;left:-45px;top:-75px}#root .dash-kpis,#root .dash-finance-grid{gap:10px}.kun143-bottom{background:rgba(255,255,255,.98)!important;border-top:1px solid #dfebf5!important;box-shadow:0 -5px 25px rgba(8,48,91,.09)!important}.kun143-bottom button[aria-current="page"]{background:#e7f3fc!important;color:var(--k149-blue)!important}}
+@media(max-width:560px){body .content{padding:12px 9px calc(100px + env(safe-area-inset-bottom))!important}#root .title{font-size:20px}#root .dash-kpi,#root .dash-fin-card{transform:none!important}}
+@media(prefers-reduced-motion:reduce){#root .dash-kpi,#root .dash-fin-card{transition:none}}
