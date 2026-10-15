@@ -110,10 +110,22 @@ jobs:
         run: |
           set -euo pipefail
           nonce="${GITHUB_RUN_ID}-${GITHUB_SHA}"
-          curl --fail --silent --show-error --location --retry 3 --retry-delay 2 "https://app.kun-online.com/v2/?design=${nonce}" -o /tmp/kun-design-live.html
-          curl --fail --silent --show-error --location --retry 3 --retry-delay 2 "https://app.kun-online.com/v2/kun-dashboard-polish-v150.css?v=${nonce}" -o /tmp/kun-design-live.css
-          curl --fail --silent --show-error --location --retry 3 --retry-delay 2 "https://app.kun-online.com/v2/kun-dashboard-brand-v150.js?v=${nonce}" -o /tmp/kun-design-live.js
-          curl --fail --silent --show-error --location --retry 3 --retry-delay 2 "https://app.kun-online.com/v2/design-preview/index.html?v=${nonce}" -o /tmp/kun-design-live-preview.html
+          # Cloudflare deployment propagation is not necessarily instantaneous.
+          fetch_live() {
+            local label="$1" url="$2" outfile="$3" code
+            for i in {1..12}; do
+              code="$(curl --silent --show-error --location --max-time 12 -H 'Cache-Control: no-cache' -o "$outfile" -w '%{http_code}' "${url}&attempt=${i}" 2>/dev/null || true)"
+              echo "${label}: attempt ${i} => HTTP ${code:-network-error}"
+              if [ "$code" = 200 ]; then return 0; fi
+              sleep 3
+            done
+            echo "ERROR: ${label} is still unavailable after deployment propagation" >&2
+            return 1
+          }
+          fetch_live "V2 authenticated app shell" "https://app.kun-online.com/v2/index.html?design=${nonce}" /tmp/kun-design-live.html
+          fetch_live "V150 dashboard CSS" "https://app.kun-online.com/v2/kun-dashboard-polish-v150.css?v=${nonce}" /tmp/kun-design-live.css
+          fetch_live "V150 dashboard JS" "https://app.kun-online.com/v2/kun-dashboard-brand-v150.js?v=${nonce}" /tmp/kun-design-live.js
+          fetch_live "Isolated daisyUI demo" "https://app.kun-online.com/v2/design-preview/index.html?v=${nonce}" /tmp/kun-design-live-preview.html
           grep -Fq '/v2/kun-dashboard-polish-v150.css?v=150.0' /tmp/kun-design-live.html
           grep -Fq '/v2/kun-dashboard-brand-v150.js?v=150.0' /tmp/kun-design-live.html
           grep -Fq 'kun150-hero-logo' /tmp/kun-design-live.css
