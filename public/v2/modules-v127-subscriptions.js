@@ -1,7 +1,7 @@
-/* Kun Online v127.19 — wallet payment audit, balance safety and topup history. */
+/* Kun Online v127.22 — wallet payment audit, balance safety and topup history. */
 (()=>{
   if(window.KunSubscriptionsV127)return;
-  const VERSION='127.19';
+  const VERSION='127.22';
   const $=(s,r=document)=>r?.querySelector?.(s)||null;
   const $$=(s,r=document)=>r?[...r.querySelectorAll(s)]:[];
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -304,9 +304,18 @@
       const diag=data?.diagnostics||{},since=diag.sinceLastCredit,credit=diag.lastApprovedCredit;
       const missing=Number(diag.missingApprovedCredits)||0,duplicates=Number(diag.duplicateCreditRequests)||0;
       const ledgerDrift=Math.abs(Number(diag.ledgerBalanceMismatch)||0)>0.009;
-      const auditWarning=missing||duplicates||ledgerDrift||Math.abs(Number(since?.drift)||0)>0.009;
-      const auditHtml=credit?`<div class="card mt" style="border-color:${auditWarning?'#dc2626':'var(--line,#e2e8f0)'}"><h4 style="margin:0 0 6px">مراجعة الرصيد بعد آخر شحن معتمد</h4><div class="sub127-payment-details"><div class="sub127-payment-detail"><span>آخر مبلغ اتضاف</span><b>${money(credit.amount,data?.wallet?.currency||currency)}</b><small>${esc(credit.at||'')}</small></div><div class="sub127-payment-detail"><span>الرصيد بعد الاعتماد</span><b>${money(credit.balanceAfter,data?.wallet?.currency||currency)}</b></div><div class="sub127-payment-detail"><span>إجمالي الخصومات اللاحقة</span><b>${money(since?.debits,data?.wallet?.currency||currency)}</b></div><div class="sub127-payment-detail"><span>رسوم أوردرات</span><b>${money(since?.debitBreakdown?.orders,data?.wallet?.currency||currency)}</b></div><div class="sub127-payment-detail"><span>رسوم الاشتراك الشهري</span><b>${money(since?.debitBreakdown?.subscription,data?.wallet?.currency||currency)}</b></div><div class="sub127-payment-detail"><span>خصومات أخرى</span><b>${money(since?.debitBreakdown?.other,data?.wallet?.currency||currency)}</b></div></div><p class="meta">رصيد محسوب من آخر شحن: ${money(since?.expectedBalance,data?.wallet?.currency||currency)} · إضافات أخرى بعده: ${money(since?.credits,data?.wallet?.currency||currency)}. التفصيل تحت بيوضح سبب أي انخفاض لاحق.</p>${auditWarning?`<div class="insight warn">تنبيه سلامة مالية: فرق الرصيد عن آخر قيد ${money(diag.ledgerBalanceMismatch,data?.wallet?.currency||currency)}؛ اعتمادات بدون قيد ${num(missing)}؛ قيود شحن مكررة ${num(duplicates)}. راجع الحركات قبل أي تصحيح يدوي.</div>`:''}</div>`:('<div class="insight warn mt">لم يتم العثور على شحن معتمد ضمن آخر 700 قيد؛ راجع السجل الأقدم عند الحاجة.</div>');
-      host.innerHTML=`${auditHtml}<div class="sub127-payment-details"><div class="sub127-payment-detail"><span>الرصيد الحالي</span><b>${money(current,data?.wallet?.currency||currency)}</b></div><div class="sub127-payment-detail"><span>رسوم الأوردر الحالية</span><b>${money(fee,data?.wallet?.currency||currency)}</b></div><div class="sub127-payment-detail"><span>عدد الحركات المعروضة</span><b>${num(rows.length)}</b></div></div><div class="sub127-table-wrap mt"><table class="sub127-table"><thead><tr><th>التاريخ</th><th>الحركة</th><th>المبلغ</th><th>الرصيد بعدها</th></tr></thead><tbody>${rows.map(item=>`<tr><td>${esc(item.created_at||'—')}</td><td><b>${esc(item.note||item.type||'حركة رصيد')}</b><div class="meta">${esc(item.order_id?('أوردر '+item.order_id):(item.reference_type||''))}</div></td><td><b>${ledgerAmount(item,data?.wallet?.currency||currency)}</b></td><td>${money(item.balance_after,data?.wallet?.currency||currency)}</td></tr>`).join('')||'<tr><td colspan="4" class="empty">لا توجد حركات رصيد.</td></tr>'}</tbody></table></div>`;
+      const legacy=diag.legacyMirror||{},legacyWarning=legacy.mismatch===true||legacy.oldFeeStillEnabled===true;
+      const ledgerChain=diag.ledgerContinuity||{},ledgerWarning=Number(ledgerChain.anomalyCount)>0||
+        (Array.isArray(ledgerChain.unknownTypes)&&ledgerChain.unknownTypes.length>0);
+      const ledgerChainHtml=ledgerWarning?`<div class="insight warn mt"><b>تحذير: تسلسل أرصدة قيود المحفظة يحتاج مراجعة</b> ·
+        ${num(ledgerChain.anomalyCount||0)} انتقالات غير متطابقة،
+        وأنواع قيود غير معروفة: ${esc((ledgerChain.unknownTypes||[]).join('، ')||'لا يوجد')}.
+        تمت مراجعة ${num(diag.ledgerCoverage?.scanned||0)} قيد بحد أقصى 700؛
+        ده فحص تشخيصي فقط، ولا يتم إصلاح أو خصم أي مبلغ تلقائيًا.</div>`:'';
+
+      const auditWarning=missing||duplicates||ledgerDrift||Math.abs(Number(since?.drift)||0)>0.009||legacyWarning||ledgerWarning;
+      const auditHtml=credit?`<div class="card mt" style="border-color:${auditWarning?'#dc2626':'var(--line,#e2e8f0)'}"><h4 style="margin:0 0 6px">مراجعة الرصيد بعد آخر شحن معتمد</h4><div class="sub127-payment-details"><div class="sub127-payment-detail"><span>آخر مبلغ اتضاف</span><b>${money(credit.amount,data?.wallet?.currency||currency)}</b><small>${esc(credit.at||'')}</small></div><div class="sub127-payment-detail"><span>الرصيد بعد الاعتماد</span><b>${money(credit.balanceAfter,data?.wallet?.currency||currency)}</b></div><div class="sub127-payment-detail"><span>إجمالي الخصومات اللاحقة</span><b>${money(since?.debits,data?.wallet?.currency||currency)}</b></div><div class="sub127-payment-detail"><span>رسوم أوردرات</span><b>${money(since?.debitBreakdown?.orders,data?.wallet?.currency||currency)}</b></div><div class="sub127-payment-detail"><span>رسوم الاشتراك الشهري</span><b>${money(since?.debitBreakdown?.subscription,data?.wallet?.currency||currency)}</b></div><div class="sub127-payment-detail"><span>خصومات أخرى</span><b>${money(since?.debitBreakdown?.other,data?.wallet?.currency||currency)}</b></div></div><p class="meta">رصيد محسوب من آخر شحن: ${money(since?.expectedBalance,data?.wallet?.currency||currency)} · إضافات أخرى بعده: ${money(since?.credits,data?.wallet?.currency||currency)}. التفصيل تحت بيوضح سبب أي انخفاض لاحق.</p>${auditWarning?`<div class="insight warn">تنبيه سلامة مالية: فرق الرصيد عن آخر قيد ${money(diag.ledgerBalanceMismatch,data?.wallet?.currency||currency)}؛ اعتمادات بدون قيد ${num(missing)}؛ قيود شحن مكررة ${num(duplicates)}.${legacyWarning?` تنبيه نسخة البيانات القديمة: فرق ${money(legacy.balanceDrift,data?.wallet?.currency||currency)}${legacy.oldFeeStillEnabled?'، ورسوم الأوردر القديمة لا تزال مفعلة':''}.`:''} راجع الحركات قبل أي تصحيح يدوي.</div>`:''}</div>`:('<div class="insight warn mt">لم يتم العثور على شحن معتمد ضمن آخر 700 قيد؛ راجع السجل الأقدم عند الحاجة.</div>');
+      host.innerHTML=`${ledgerChainHtml}${auditHtml}<div class="sub127-payment-details"><div class="sub127-payment-detail"><span>الرصيد الحالي</span><b>${money(current,data?.wallet?.currency||currency)}</b></div><div class="sub127-payment-detail"><span>مطابقة نسخة الرصيد القديمة</span><b>${!legacy.available?'غير متاحة':legacyWarning?'تحتاج مراجعة':'متطابقة'}</b></div><div class="sub127-payment-detail"><span>رسوم الأوردر الحالية</span><b>${money(fee,data?.wallet?.currency||currency)}</b></div><div class="sub127-payment-detail"><span>عدد الحركات المعروضة</span><b>${num(rows.length)}</b></div></div><div class="sub127-table-wrap mt"><table class="sub127-table"><thead><tr><th>التاريخ</th><th>الحركة</th><th>المبلغ</th><th>الرصيد بعدها</th></tr></thead><tbody>${rows.map(item=>`<tr><td>${esc(item.created_at||'—')}</td><td><b>${esc(item.note||item.type||'حركة رصيد')}</b><div class="meta">${esc(item.order_id?('أوردر '+item.order_id):(item.reference_type||''))}</div></td><td><b>${ledgerAmount(item,data?.wallet?.currency||currency)}</b></td><td>${money(item.balance_after,data?.wallet?.currency||currency)}</td></tr>`).join('')||'<tr><td colspan="4" class="empty">لا توجد حركات رصيد.</td></tr>'}</tbody></table></div>`;
     }catch(error){host.innerHTML=`<div class="insight warn">تعذر تحميل سجل الرصيد: ${esc(error.message)}</div>`;}
   }
 
@@ -331,7 +340,7 @@
       try{
         const d=await api(`/api/admin/subscriptions/${encodeURIComponent(clientId)}/credit`,{method:'POST',body:JSON.stringify({amount,note,requestId:manualCreditRequestId})});
         const finalBalance=d?.finalBalance??d?.access?.balance??d?.credit?.balance;
-        window.showToast?.(`${d?.credit?.alreadyCredited?'هذه العملية معتمدة من قبل؛ لم يتكرر الشحن':'تم إضافة '+money(amount,c.currency)} — الرصيد الحالي ${money(finalBalance,c.currency)} — ${d?.settlementPending?'تسوية الاشتراك لم تكتمل؛ راجع سجل الخصومات':d?.access?.locked?'الحساب ما زال متوقفًا':'الحساب نشط'}`);
+        window.showToast?.(`${d?.credit?.alreadyCredited?'هذه العملية معتمدة من قبل؛ لم يتكرر الشحن':'تم إضافة '+money(amount,c.currency)} — الرصيد الحالي ${money(finalBalance,c.currency)} — ${d?.settlementPending?'تسوية الاشتراك لم تكتمل؛ راجع سجل الخصومات':d?.access?.locked?'الحساب ما زال متوقفًا':'الحساب نشط'}${d?.credit?.legacyMirrorPending?' — تم حفظ الشحن لكن نسخة الرصيد القديمة تحتاج مزامنة ومراجعة سجل المحفظة':''}`);
         closeModal();await renderAdmin();
       }catch(e){btn.disabled=false;btn.textContent='إضافة الرصيد وتفعيل الحساب';window.showToast?.(e.message);}
     };
@@ -355,6 +364,7 @@
       parts.push(`الرصيد بعد إضافة المبلغ وقبل التسوية ${money(beforeFees,currency)} — حركات/رسوم لاحقة ${money(beforeFees-afterFees,currency)}`);
     }
     if(result?.settlementPending)parts.push('تنبيه: تم اعتماد الشحن لكن تسوية رسوم الاشتراك لم تكتمل بعد؛ راجع السجل قبل اعتماد الرصيد كنهائي');
+    if(result?.legacyMirrorPending)parts.push('تم اعتماد مبلغ الشحن في المحفظة الأساسية لكن مزامنة نسخة الرصيد القديمة لم تكتمل؛ راجع سجل الرصيد قبل التصحيح');
     else if(result?.access)parts.push(result.access.locked?'الحساب ما زال موقوفًا':'الحساب نشط');
     window.showToast?.(parts.join(' — '));await renderAdmin();
     return result;

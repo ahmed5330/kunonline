@@ -87,6 +87,8 @@ jobs:
         run: node scripts/verify-production-config.mjs
       - name: Verify Worker builds without touching Production
         run: npx wrangler deploy --dry-run --config wrangler.production.toml
+      - name: Block incompatible Production release until canonical Preview backend is ready
+        run: node scripts/production-preview-release-gate.mjs
   deploy:
     needs: test
     runs-on: ubuntu-latest

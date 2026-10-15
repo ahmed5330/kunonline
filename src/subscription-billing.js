@@ -1,4 +1,4 @@
-import {ensureWalletAccount,mirrorLegacyBalance,configureWallet,migrateLegacyBilling,now,rid,round2} from './wallet-core.js';
+import {ensureWalletAccount,safeMirrorAfterLedgerCommit,configureWallet,migrateLegacyBilling,now,rid,round2} from './wallet-core.js';
 import {effectiveOrderFee} from './feature-entitlements.js';
 
 const text=v=>String(v??'').trim();
@@ -106,8 +106,8 @@ async function chargeMonthlyMinimum(env,clientId,row,account,{today=cairoYmd()}=
     throw error;
   }
   const updated=await env.DB.prepare('SELECT balance FROM wallet_accounts WHERE client_id=?').bind(clientId).first();
-  await mirrorLegacyBalance(env,clientId,updated?.balance||0);
-  return {charged:true,amount:minimum,key,bounds,balance:round2(updated?.balance),log:{id:logId}};
+  const mirror=await safeMirrorAfterLedgerCommit(env,clientId);
+  return {charged:true,amount:minimum,key,bounds,balance:round2(updated?.balance),log:{id:logId},...mirror};
 }
 
 // Access checks are read-only; posting the monthly minimum requires an explicit reconciliation.
@@ -162,6 +162,7 @@ export async function subscriptionAccess(env,clientId,{applyMonthly=false}={}){
   return {
     clientId,managed:true,locked,reason,balanceEmpty:emptyBalance,balance:round2(fresh.balance),currency:fresh.currency||subscription.currency||'EGP',
     monthlyMinimum,monthlyCharged:monthly.charged,monthlyDue:monthly.charged?0:monthlyMinimum,
+    legacyMirrorPending:monthly.legacyMirrorPending===true,
     orderFee,trialActive:inTrial,trialStartsAt:subscription.period_start||null,trialEndsAt:inTrial?subscription.period_end:null,
     trialDaysRemaining:inTrial?daysBetween(today,subscription.period_end):0,subscriptionStatus:subscription.status,
     billingCycle:subscription.billing_cycle||'monthly',periodStart:subscription.period_start||monthly.bounds?.from||null,periodEnd:subscription.period_end||monthly.bounds?.to||null,
