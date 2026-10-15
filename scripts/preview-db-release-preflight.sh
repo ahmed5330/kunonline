@@ -113,9 +113,9 @@ fi
 
 {
   echo "### Reviewed shared D1 release preflight"
-  echo "- Commit: `$GITHUB_SHA`"
-  echo "- Reviewed external backup reference: `$PREVIEW_D1_BACKUP_REF`"
-  echo "- Stable comparison: `$stable_sha`"
+  echo "- Commit: \`$GITHUB_SHA\`"
+  echo "- Reviewed external backup reference: \`$PREVIEW_D1_BACKUP_REF\`"
+  echo "- Stable comparison: \`$stable_sha\`"
   echo "- Remote export and additive migrations rehearsed on ephemeral SQLite copy."
   echo "- D1 Time Travel recovery bookmark (before migration): \`$recovery_bookmark\` (restore requires a separate reviewed incident action)."
   echo "- **No remote database writes in this preflight.**"
