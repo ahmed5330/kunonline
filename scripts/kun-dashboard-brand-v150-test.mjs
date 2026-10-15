@@ -11,7 +11,7 @@ assert.ok(preview.includes('daisyui@5'),'Approved design preview should use dais
 assert.ok(preview.includes('@tailwindcss/browser@4'),'Approved design preview should use Tailwind CSS 4');
 assert.ok(preview.includes('نموذج تصميم ببيانات تجريبية'),'Preview must clearly identify mock data');
 assert.ok(preview.includes('noindex,nofollow'),'Isolated demo should not be indexed');
-assert.ok(!/\\/api\\/|XMLHttpRequest|fetch\\s*\\(/.test(preview),'Preview must not call live account APIs');
+assert.ok(!preview.includes('/api/') && !preview.includes('XMLHttpRequest') && !preview.includes('fetch('),'Preview must not call live account APIs');
 
 const dashboard=fs.readFileSync('public/v2/modules-v126-dashboard-finance-top.js','utf8');
 const periods=fs.readFileSync('public/v2/modules-v125-dashboard-section-periods.js','utf8');
