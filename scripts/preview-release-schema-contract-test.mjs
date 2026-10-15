@@ -1,0 +1,25 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {
+  REQUIRED_RELEASE_SCHEMA,READONLY_SCHEMA_SQL,validateReleaseSchema,checkReleaseSchema
+} from './preview-release-schema-contract.mjs';
+
+const workflow=readFileSync('.github/workflows/preview.yml','utf8');
+const step=workflow.indexOf('node scripts/preview-release-schema-contract.mjs');
+const deploy=workflow.indexOf('name: Create fresh verified rollback baseline from stable Git source');
+assert(step>0 && deploy>step,'Live schema check must run before any Worker deployment');
+assert(READONLY_SCHEMA_SQL.includes("pragma_table_info('inventory_units')"));
+assert(!/\b(UPDATE|INSERT|DELETE|DROP|ALTER)\b/i.test(READONLY_SCHEMA_SQL),'Schema check must remain read-only');
+const rows=Object.entries(REQUIRED_RELEASE_SCHEMA).flatMap(([table,columns])=>
+  columns.map(column=>({table_name:table,column_name:column})));
+assert.equal(checkReleaseSchema([{success:true,results:rows}]).ok,true);
+assert.equal(validateReleaseSchema([{results:rows}]).missing.length,0);
+assert.equal(checkReleaseSchema({result:{results:rows}}).ok,true);
+const missing=rows.filter(x=>!(x.table_name==='wallet_accounts'&&x.column_name==='credit_limit'));
+assert.deepEqual(validateReleaseSchema([{results:missing}]).missing,['wallet_accounts.credit_limit']);
+assert.throws(()=>checkReleaseSchema([{results:missing}]),/deployment blocked/);
+assert.throws(()=>checkReleaseSchema([{results:[]}]),/deployment blocked/);
+assert.throws(()=>checkReleaseSchema('Invalid response'),/unrecognized/);
+const allButOne=rows.filter(x=>x.table_name!=='inventory_shipments');
+assert.ok(validateReleaseSchema([{results:allButOne}]).missing.includes('inventory_shipments.id'));
+console.log('Preview D1 release schema gate PASS: required columns, read-only SQL, missing-schema fail-closed.');
