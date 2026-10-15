@@ -49,7 +49,8 @@ requireText(packageJson,'node scripts/verify-cloudflare-crons.mjs kunonline-prev
 requireText(packageJson,'node scripts/verify-cloudflare-crons.mjs kunonline-sync-preview','sync live Cron verification is missing.');
 requireText(packageJson,'node scripts/browser-preview-breakdown-controls-test.mjs','live Breakdown browser interaction must remain a hard Preview smoke gate.');
 requireText(packageJson,'wrangler d1 migrations apply kunonline-preview --remote --config wrangler.preview.toml','migration command must be pinned to Preview D1/config.');
-requireText(packageJson,'wrangler deploy --config wrangler.preview.toml','Preview deployment command is not pinned.');
+requireText(workflow,'wrangler deploy --config wrangler.preview.toml','Reviewed Preview workflow must pin the deploy target.');
+requireText(packageJson,'Preview deployment is production-backed. Use reviewed GitHub Preview CI/CD workflow','Direct Preview deploy must fail closed instead of bypassing shared D1 gates.');
 requireText(packageJson,'wrangler deploy --config wrangler.sync.preview.toml','sync Preview deployment command is not pinned.');
 requireText(packageJson,'wrangler rollback --config wrangler.preview.toml','manual rollback command is not pinned to Preview.');
 requirePattern(packageJson,/"wrangler"\s*:\s*"4\.125\.0"/,'Wrangler must stay pinned to 4.125.0.');
