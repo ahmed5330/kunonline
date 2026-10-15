@@ -91,14 +91,16 @@ if [[ -z "$recovery_bookmark" ]]; then
   echo "::error::Cloudflare D1 recovery bookmark was not returned"; exit 1
 fi
 
-# Export is read-only. SQL remains on this ephemeral runner, is never uploaded
-# to CI artifacts, and is erased by the EXIT trap.
-npx wrangler d1 export kunonline-preview --remote --config wrangler.preview.toml --output "$scratch/backup.sql" > "$scratch/export.log" 2>&1 || {
-  echo "::error::Remote D1 export failed (details deliberately withheld to avoid leaking customer data)"
+# Export only the live SCHEMA for compatibility rehearsal: copying real customer
+# rows into a CI runner is prohibited. D1 exports can briefly block other
+# requests (Cloudflare docs), so no full-data export should happen here.
+# The reviewed independent disaster-recovery backup is an entirely separate gate.
+npx wrangler d1 export kunonline-preview --remote --no-data --skip-confirmation --config wrangler.preview.toml --output "$scratch/live-schema.sql" > "$scratch/export.log" 2>&1 || {
+  echo "::error::Read-only D1 schema export failed. No customer records were exported."
   exit 1
 }
-test -s "$scratch/backup.sql"
-sqlite3 -bail "$scratch/rehearsal.db" < "$scratch/backup.sql"
+test -s "$scratch/live-schema.sql"
+sqlite3 -bail "$scratch/rehearsal.db" < "$scratch/live-schema.sql"
 if [[ "$(sqlite3 "$scratch/rehearsal.db" 'PRAGMA integrity_check;')" != "ok" ]]; then
   echo "::error::Exported database failed integrity check"; exit 1
 fi
@@ -116,7 +118,7 @@ fi
   echo "- Commit: \`$GITHUB_SHA\`"
   echo "- Reviewed external backup reference: \`$PREVIEW_D1_BACKUP_REF\`"
   echo "- Stable comparison: \`$stable_sha\`"
-  echo "- Remote export and additive migrations rehearsed on ephemeral SQLite copy."
+  echo "- Live D1 schema-only export (NO customer records), additive migrations rehearsed on ephemeral SQLite."
   echo "- D1 Time Travel recovery bookmark (before migration): \`$recovery_bookmark\` (restore requires a separate reviewed incident action)."
   echo "- **No remote database writes in this preflight.**"
 } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
