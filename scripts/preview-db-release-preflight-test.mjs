@@ -9,6 +9,8 @@ const gate = readFileSync('scripts/preview-db-release-preflight.sh', 'utf8');
 const manifest = JSON.parse(readFileSync('package.json', 'utf8'));
 assert(!manifest.scripts['deploy:preview'].includes('wrangler deploy'), 'Direct Preview deploy must not bypass shared D1 gate');
 assert(gate.includes('d1 migrations list kunonline-preview --remote'), 'Must inspect actual remote pending migration set');
+assert(gate.includes('d1 export kunonline-preview --remote --no-data --skip-confirmation'), 'Never copy real customer records onto CI runners');
+assert(!gate.includes('backup.sql'), 'Legacy full customer data export must remain disabled');
 assert(gate.includes('Unreviewed pending remote D1 migration'), 'Unrehearsed pending migrations must block release');
 assert(gate.includes('recovery_bookmark') && gate.includes('GITHUB_STEP_SUMMARY'), 'Pre-migration recovery bookmark must be recorded');
 for (const variable of ['GITHUB_SHA','PREVIEW_D1_BACKUP_REF','stable_sha']) {
