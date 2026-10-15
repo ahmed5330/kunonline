@@ -1,7 +1,7 @@
 /* Kun Online v46.3 — variant-first inventory + governed Easy Orders cost review + inline selling-price and cost edit. */
 (function(){
   const K=window.KunActionsV23;if(!K)return;
-  let catalogPromise=null;
+  let catalogPromise=null,catalogScopeKey='';
   const esc=value=>K.esc?K.esc(value):String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
   const num=value=>Number.isFinite(Number(value))?Number(value):0;
   const money=value=>new Intl.NumberFormat('ar-EG',{maximumFractionDigits:2}).format(num(value));
@@ -10,13 +10,12 @@
 
   async function scope(){return K.scope();}
   async function catalog(force=false){
-    if(force)catalogPromise=null;
+    const {cid,sid}=await scope(),key=`${cid}\u0000${sid||''}`;
+    if(force||catalogScopeKey!==key){catalogScopeKey=key;catalogPromise=null;}
     if(catalogPromise)return catalogPromise;
-    catalogPromise=(async()=>{
-      const {cid,sid}=await scope(),q=`clientId=${encodeURIComponent(cid)}${sid?`&storeId=${encodeURIComponent(sid)}`:''}`;
-      const data=await K.api(`/api/catalog/products?${q}`);
-      return data.products||[];
-    })().catch(error=>{catalogPromise=null;throw error;});
+    const q=`clientId=${encodeURIComponent(cid)}${sid?`&storeId=${encodeURIComponent(sid)}`:''}`;
+    const pending=K.api(`/api/catalog/products?${q}`).then(data=>data.products||[]);
+    catalogPromise=pending.catch(error=>{if(catalogPromise===pending||catalogScopeKey===key)catalogPromise=null;throw error;});
     return catalogPromise;
   }
   function inventoryRows(products){
