@@ -12,9 +12,9 @@ android {
         applicationId = "com.kunonline.callerid.stable"
         minSdk = 29
         targetSdk = 35
-        // v2.8.5 adds scan-to-pack/dispatch and inspected per-piece returns.
-        versionCode = 128
-        versionName = "2.8.7"
+        // v2.8.8 adds permission-scoped home store switching for multi-store staff.
+        versionCode = 129
+        versionName = "2.8.8"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
