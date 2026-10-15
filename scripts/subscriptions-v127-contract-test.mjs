@@ -65,7 +65,8 @@ assert.ok(!listTopupSql.includes('transfer_method,proof_data_url,proof_url,statu
 assert.ok(preview.indexOf('const subscription=await handleSubscriptionControl')<preview.indexOf('const competitors=await handleCompetitorIntelligence'),'preview must enforce billing before add-on AI and competitors routes');
 assert.ok(ui.includes('updateBalanceBanner'),'client must receive a proactive balance alert');
 assert.ok(ui.includes("state.adminClients.filter(x=>x.reason==='balance_empty')"),'admin exhausted-balance count must reflect true billing locks');
-assert.ok(fs.readFileSync('public/v2/modules-v79-printing.js','utf8').includes("try{await render();if(window.KunSubscriptionsV127?.access?.locked"),'J&T sending state must unwind after billing/refresh errors');
+const printingGuard=fs.readFileSync('public/v2/modules-v79-printing.js','utf8');
+assert.ok(printingGuard.includes('if(sending.has(id))return')&&printingGuard.includes('finally{sending.delete(id)}'),'J&T official print must not be sent twice in parallel and must unlock on successful or failed refresh');
 assert.ok(orders.includes('if(startingBalance<=0)'),'further order debits are rejected only AFTER the final order has exhausted the balance');
 assert.ok(orders.includes('ELSE -COALESCE(credit_limit,0)-0.01'),'concurrent/locked order charges must fail atomically once the final order has exhausted a wallet');
 assert.ok(orders.includes('if(startingBalance<=0)'),'only positive-balance orders may take the final debit across zero');
