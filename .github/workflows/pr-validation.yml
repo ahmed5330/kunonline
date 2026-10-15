@@ -18,6 +18,8 @@ jobs:
           node-version: 22
           package-manager-cache: false
       - run: npm install --ignore-scripts
+      - name: Reject high severity dependency vulnerabilities
+        run: npm audit --audit-level=high
       - name: Run full contract and unit suite
         run: npm test
       - name: Verify Preview isolation

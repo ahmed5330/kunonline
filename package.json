@@ -78,6 +78,6 @@
     "test:warehouse:browser": "node scripts/browser-warehouse-operations-fixture-test.mjs"
   },
   "devDependencies": {
-    "wrangler": "4.125.0"
+    "wrangler": "4.151.0"
   }
 }

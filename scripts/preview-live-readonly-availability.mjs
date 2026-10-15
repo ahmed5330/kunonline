@@ -20,9 +20,9 @@ export function pendingMigrationNames(log){
   return files;
 }
 if(process.argv[1] && resolve(process.argv[1])===fileURLToPath(import.meta.url)){
-  const base=['wrangler','d1'];
+  const base=['node_modules/wrangler/bin/wrangler.js','d1'];
   const envOpts=['--config','wrangler.preview.toml'];
-  const infoRaw=execFileSync('npx',[...base,'info','kunonline-preview','--json',...envOpts],
+  const infoRaw=execFileSync(process.execPath,[...base,'info','kunonline-preview','--json',...envOpts],
     {encoding:'utf8',timeout:45000,maxBuffer:1024*1024});
   const info=verifyD1Info(JSON.parse(infoRaw));
   const pending=await pendingMigrationsReadonly(queryMigrationHistory,localMigrationFiles());

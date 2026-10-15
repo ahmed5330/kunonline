@@ -9,10 +9,9 @@ const portServer=createServer();
 await new Promise(done=>portServer.listen(0,'127.0.0.1',done));
 const port=portServer.address().port;
 await new Promise(done=>portServer.close(done));
-const bin=process.platform==='win32'?'npx.cmd':'./node_modules/.bin/wrangler';
-const args=process.platform==='win32'?
-  ['wrangler','dev','--local','--config','wrangler.preview.toml','--ip','127.0.0.1','--port',String(port)]:
-  ['dev','--local','--config','wrangler.preview.toml','--ip','127.0.0.1','--port',String(port)];
+const bin=process.execPath;
+const args=['node_modules/wrangler/bin/wrangler.js','dev','--local','--config','wrangler.preview.toml',
+  '--ip','127.0.0.1','--port',String(port)];
 let output='',child;
 try{
  child=spawn(bin,args,{stdio:['ignore','pipe','pipe'],env:{...process.env,WRANGLER_SEND_METRICS:'false'}});
