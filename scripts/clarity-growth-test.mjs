@@ -88,7 +88,7 @@ assert.ok(!v135.includes("?.open('overview')||renderReport()"),'legacy report mu
 const html=readFileSync(new URL('../public/v2/index.html',import.meta.url),'utf8');
 assert.ok(html.includes('modules-v136-clarity-growth.js?v=137.1'));
 assert.ok(frontend.includes('cl136-days'));
-assert.ok(frontend.includes('جودة التتبع والربط'));
+assert.ok(frontend.includes('جودة البيانات')&&frontend.includes('جودة التتبع'));
 assert.ok(frontend.includes('body:JSON.stringify({days:V.days})'));
 assert.ok(frontend.includes('growth?days='));
 const server=readFileSync(new URL('../src/clarity-integration.js',import.meta.url),'utf8');
