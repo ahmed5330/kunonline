@@ -54,6 +54,7 @@ jobs:
           fi
 
       - name: Validate shared D1 release, backup and migration rehearsal before mutation
+        id: shared_d1_preflight
         if: steps.ownership.outputs.is_latest == 'true'
         env:
           PREVIEW_D1_APPROVAL: ${{ inputs.shared_d1_approved_sha }}
@@ -61,7 +62,7 @@ jobs:
         run: bash scripts/preview-db-release-preflight.sh
 
       - name: Apply preview migrations only after D1 preflight
-        if: steps.ownership.outputs.is_latest == 'true'
+        if: steps.ownership.outputs.is_latest == 'true' && steps.shared_d1_preflight.outputs.apply_migrations == 'true'
         run: npm run db:migrate:preview
 
       - name: Reconfirm latest branch HEAD before deploy
