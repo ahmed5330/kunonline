@@ -63,7 +63,7 @@ done <<< "$changes"
 pending_log="$(npx wrangler d1 migrations list kunonline-preview --remote --config wrangler.preview.toml 2>&1)" || {
   echo "::error::Could not inspect actual pending remote D1 migrations"; exit 1
 }
-pending_files="$(printf '%s\\n' "$pending_log" | grep -Eo '[0-9]{4}_[A-Za-z0-9._-]+\\.sql' | sort -u || true)"
+pending_files="$(printf '%s\n' "$pending_log" | grep -Eo '[0-9]{4}_[A-Za-z0-9._-]+\.sql' | sort -u || true)"
 if [[ -z "$pending_files" ]] && ! grep -Eqi 'no migrations to apply|no migrations found|there are no migrations' <<< "$pending_log"; then
   echo "::error::Remote migration inventory is ambiguous; refusing any database mutation"; exit 1
 fi
