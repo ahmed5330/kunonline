@@ -4,10 +4,12 @@ import {round2} from './wallet-account.js';
 // Ledger rows are ordered by SQLite insertion sequence, not by wall-clock timestamps,
 // because sync jobs can write several monetary events in the same millisecond.
 const CREDIT_TYPES=new Set(['topup','credit','admin_credit','refund']);
+const moneyOrNull=value=>value===null||value===undefined||value===''?null:
+  Number.isFinite(Number(value))?Number(value):null;
 const DEBIT_TYPES=new Set(['deduct','debit','charge','fee','subscription']);
 const knownSigned=row=>{
-  const type=String(row.type||'').toLowerCase(),amount=Number(row.amount);
-  if(!Number.isFinite(amount)||amount<0||(!CREDIT_TYPES.has(type)&&!DEBIT_TYPES.has(type)))return null;
+  const type=String(row.type||'').toLowerCase(),amount=moneyOrNull(row.amount);
+  if(amount===null||amount<0||(!CREDIT_TYPES.has(type)&&!DEBIT_TYPES.has(type)))return null;
   return (CREDIT_TYPES.has(type)?1:-1)*Math.abs(amount);
 };
 const signed=row=>knownSigned(row)??0;
@@ -21,8 +23,8 @@ export function auditWalletLedgerContinuity(logs,limit=12){
     if(delta===null){
       unknownTypes.add(String(later.type||'unknown').slice(0,60));continue;
     }
-    const previous=Number(earlier.balance_after),actual=Number(later.balance_after);
-    if(!Number.isFinite(previous)||!Number.isFinite(actual)){
+    const previous=moneyOrNull(earlier.balance_after),actual=moneyOrNull(later.balance_after);
+    if(previous===null||actual===null){
       anomalyCount++;
       if(anomalies.length<limit)anomalies.push({id:later.id,seq:later.seq,reason:'non_numeric_balance'});
       continue;
@@ -49,11 +51,11 @@ export async function walletPaymentDiagnostics(env,clientId){
       if(legacyStateValid)legacyClient=parsed.clients.find(row=>String(row.id)===String(clientId))||null;
     }catch{legacyStateValid=false;}
   }
-  const storedLegacyBalance=legacyClient&&Number.isFinite(Number(legacyClient.walletBalance))?
-    round2(legacyClient.walletBalance):null;
+  const storedLegacyRaw=legacyClient?moneyOrNull(legacyClient.walletBalance):null;
+  const storedLegacyBalance=storedLegacyRaw===null?null:round2(storedLegacyRaw);
   const canonicalBalance=round2(account.balance);
-  const legacyFee=legacyClient&&Number.isFinite(Number(legacyClient.walletFeePerOrder))?
-    round2(legacyClient.walletFeePerOrder):null;
+  const legacyFeeRaw=legacyClient?moneyOrNull(legacyClient.walletFeePerOrder):null;
+  const legacyFee=legacyFeeRaw===null?null:round2(legacyFeeRaw);
   const legacyMirror={
     available:!!legacyClient,legacyStateValid,balance:storedLegacyBalance,
     balanceDrift:storedLegacyBalance===null?null:round2(storedLegacyBalance-canonicalBalance),
@@ -77,8 +79,10 @@ export async function walletPaymentDiagnostics(env,clientId){
   }
   const debitsTotal=round2(debits.reduce((a,r)=>a-signed(r),0));
   const creditsTotal=round2(credits.reduce((a,r)=>a+signed(r),0));
-  const expectedFromTopup=anchor?round2(Number(anchor.balance_after||0)+creditsTotal-debitsTotal):null;
+  const anchorBalance=anchor?moneyOrNull(anchor.balance_after):null;
+  const expectedFromTopup=anchorBalance===null?null:round2(anchorBalance+creditsTotal-debitsTotal);
   const currentBalance=round2(account.balance);
+  const lastLedgerBalance=latest?moneyOrNull(latest.balance_after):null;
   const {n:missingApprovedCredits=0}=await env.DB.prepare(`SELECT COUNT(*) n FROM wallet_topup_requests r
     WHERE r.client_id=? AND r.status='approved' AND NOT EXISTS
       (SELECT 1 FROM wallet_log l WHERE l.client_id=r.client_id
@@ -89,22 +93,22 @@ export async function walletPaymentDiagnostics(env,clientId){
   return {
     clientId,currency:account.currency||'EGP',balance:currentBalance,legacyMirror,
     ledgerContinuity,ledgerCoverage,
-    lastLedgerBalance:latest?round2(latest.balance_after):null,
-    ledgerBalanceMismatch:latest?round2(currentBalance-Number(latest.balance_after||0)):null,
+    lastLedgerBalance:lastLedgerBalance===null?null:round2(lastLedgerBalance),
+    ledgerBalanceMismatch:lastLedgerBalance===null?null:round2(currentBalance-lastLedgerBalance),
     lastApprovedCredit:anchor?{
-      id:anchor.reference_id,at:anchor.created_at,amount:round2(anchor.amount),
-      balanceAfter:round2(anchor.balance_after)
+      id:anchor.reference_id,at:anchor.created_at,amount:moneyOrNull(anchor.amount),
+      balanceAfter:anchorBalance===null?null:round2(anchorBalance)
     }:null,
     sinceLastCredit:anchor?{
-      reconstructionReliable:unknownAfterCredit.length===0&&ledgerContinuity.anomalyCount===0,
+      reconstructionReliable:expectedFromTopup!==null&&unknownAfterCredit.length===0&&ledgerContinuity.anomalyCount===0,
       unknownLedgerEntries:unknownAfterCredit.length,
       debits:debitsTotal,credits:creditsTotal,debitBreakdown:byReason,
       expectedBalance:expectedFromTopup,
-      drift:round2(currentBalance-expectedFromTopup),
-      becameEmpty:round2(anchor.balance_after)>0&&currentBalance<=0,
+      drift:expectedFromTopup===null?null:round2(currentBalance-expectedFromTopup),
+      becameEmpty:anchorBalance!==null&&anchorBalance>0&&currentBalance<=0,
       entries:after.slice(-100).map(row=>({
         id:row.id,at:row.created_at,type:row.type,amount:round2(row.amount),
-        balanceAfter:round2(row.balance_after),referenceType:row.reference_type,
+        balanceAfter:moneyOrNull(row.balance_after),referenceType:row.reference_type,
         orderId:row.order_id,note:row.note
       })),
       truncated:after.length>100
