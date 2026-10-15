@@ -88,7 +88,7 @@ scratch="$(mktemp -d)"
 chmod 700 "$scratch"
 trap 'rm -rf "$scratch"' EXIT
 # D1 production storage exposes a Time Travel recovery bookmark.
-npx wrangler d1 info kunonline-preview --json --config wrangler.preview.toml > "$scratch/info.json"
+node scripts/preview-live-readonly-availability.mjs --storage-only > "$scratch/info.json"
 node -e '
 const fs=require("node:fs");
 const d=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));

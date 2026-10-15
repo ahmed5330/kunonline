@@ -35,6 +35,8 @@ mock('node',[
   '    else',
   '      echo 0092_inventory_unit_qr_tracking.sql',
   '    fi',
+  'elif [[ "$1" == "scripts/preview-live-readonly-availability.mjs" && "$2" == "--storage-only" ]]; then',
+  '  echo \'{"version":"production"}\'',
   'else',
   '  exec "$TEST_REAL_NODE" "$@"',
   'fi'
