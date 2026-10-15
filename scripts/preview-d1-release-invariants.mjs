@@ -53,7 +53,9 @@ export function evaluateInvariants(existingTables,conflicts){
   for(const [id,table] of checks){
     if(!present.has(table))continue;
     if(!(id in conflicts))throw Error('Live invariant not verified: '+id);
-    const n=Number(conflicts[id]);
+    const raw=conflicts[id];
+    if(raw===null||raw===undefined||raw==='')throw Error('Invalid live invariant result: '+id);
+    const n=Number(raw);
     if(!Number.isFinite(n)||(n!==0&&n!==1))throw Error('Invalid live invariant result: '+id);
     if(n===1)bad.push(id);
   }
