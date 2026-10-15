@@ -61,6 +61,10 @@ jobs:
           PREVIEW_D1_BACKUP_REF: ${{ inputs.verified_backup_reference }}
         run: bash scripts/preview-db-release-preflight.sh
 
+      - name: Reject live inventory collisions before migrating production-backed Preview D1
+        if: steps.ownership.outputs.is_latest == 'true' && steps.shared_d1_preflight.outputs.apply_migrations == 'true'
+        run: node scripts/preview-d1-release-invariants.mjs
+
       - name: Apply preview migrations only after D1 preflight
         if: steps.ownership.outputs.is_latest == 'true' && steps.shared_d1_preflight.outputs.apply_migrations == 'true'
         run: npm run db:migrate:preview
