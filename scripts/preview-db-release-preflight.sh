@@ -75,6 +75,15 @@ while IFS= read -r migration_name; do
   fi
 done <<< "$pending_files"
 
+# A successful migration list query is not enough: ALL and ONLY the reviewed
+# files must actually be pending. A partially applied release requires separate
+# reconciliation, never a silent re-run with a different file set.
+expected_files="$(printf '%s\n' "$changes" | sed -n 's|^migrations/||p' | sort -u)"
+if [[ "$pending_files" != "$expected_files" ]]; then
+  echo "::error::Pending D1 migrations do not exactly match reviewed release migration files. Refusing partial/ambiguous promotion."
+  exit 1
+fi
+
 scratch="$(mktemp -d)"
 chmod 700 "$scratch"
 trap 'rm -rf "$scratch"' EXIT
