@@ -24,3 +24,11 @@ jobs:
         run: npm run check:preview-config
       - name: Verify Production remains migration-free
         run: npm run check:production-config
+      - name: Release compatibility gate fixture
+        run: node scripts/production-preview-release-gate-test.mjs
+      - name: Growth planner Chromium fixture
+        run: node scripts/browser-growth-planner-fixture-test.mjs
+      - name: Preview Worker dry-run bundling
+        run: npx wrangler deploy --dry-run --config wrangler.preview.toml
+      - name: Growth endpoint authentication with local Preview Worker
+        run: node scripts/growth-local-worker-smoke.mjs
