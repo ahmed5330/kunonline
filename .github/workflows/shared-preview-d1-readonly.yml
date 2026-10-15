@@ -1,8 +1,6 @@
 name: Shared Preview D1 read-only readiness
 # Runs on the protected review branch WITHOUT releasing any Worker or changing D1.
 on:
-  push:
-    branches: [release/growth-wallet-preview-20261015]
   workflow_dispatch:
 permissions:
   contents: read
@@ -28,6 +26,12 @@ jobs:
           node-version: 22
           package-manager-cache: false
       - run: npm install --ignore-scripts
+      - name: Require dedicated read-only Cloudflare audit credentials
+        run: |
+          if [[ -z "${CLOUDFLARE_API_TOKEN:-}" || -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]]; then
+            echo "::error::Read-only Cloudflare audit blocked: configure both environment secrets in kunonline-d1-readonly-audit. Do not use the Preview deploy token."
+            exit 1
+          fi
       - name: Confirm live shared D1 connection and pending migrations without writes
         id: connectivity
         continue-on-error: true
