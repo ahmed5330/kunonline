@@ -23,7 +23,7 @@ object NativeSectionsApi {
 
     fun scope(context: Context): ScopeInfo {
         val cookie = KunApi.sessionCookie(context) ?: return ScopeInfo()
-        return runCatching { KunApi.resolveScope(cookie) }.getOrDefault(ScopeInfo())
+        return runCatching { KunApi.resolveScope(cookie, context) }.getOrDefault(ScopeInfo())
     }
 
     fun get(context: Context, path: String, scoped: Boolean = false): NativeSectionResult =
