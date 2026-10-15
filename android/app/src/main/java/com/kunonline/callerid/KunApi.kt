@@ -69,6 +69,11 @@ object KunApi {
             if (identity.code !in 200..299 || role.isBlank() || role == "null") {
                 return SyncResult(false, errorMessage(identity).ifBlank { "تعذر تأكيد جلسة الدخول" })
             }
+            // Never reuse the previous account's order/caller-ID cache when an
+            // authenticated account switches and initial sync cannot complete.
+            clearScope()
+            MobileSyncClient.clear()
+            CustomerCache.clear(context)
             SecureStore.put(context, AUTH_PREFS, SESSION_KEY, cookie)
             val sync = syncWithCookie(context, cookie)
             // A new or empty store may not be ready for its initial data sync.
