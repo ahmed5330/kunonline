@@ -2,6 +2,7 @@ import app,{SyncEntrypoint as BaseSyncEntrypoint} from './index-commerce-v38-bas
 import {handleClarityApi,syncClarityScheduled} from './clarity-integration.js';
 import {handleAIMarketing} from './ai-marketing-analyst.js';
 import {handleCompetitorIntelligence} from './competitor-intelligence.js';
+import {handleSubscriptionControl} from './subscription-control.js';
 import safety from './index-commerce-v38-safety.js';
 import core from './index-commerce-v38-core.js';
 import {requirePermission} from './access-control.js';
@@ -112,6 +113,10 @@ export default {
   async fetch(request,env,ctx){
     const rootRedirect=redirectLegacyRoot(request);
     if(rootRedirect)return rootRedirect;
+    // Enforce subscription and balance state before AI, Clarity or competitor add-ons.
+    // Auth/login and topup recovery exemptions are defined centrally in subscription-control.
+    const subscription=await handleSubscriptionControl({request,env,ctx,delegate:app});
+    if(subscription)return subscription;
     const competitors=await handleCompetitorIntelligence({request,env,ctx,delegate:app});
     if(competitors)return competitors;
     const aiMarketing=await handleAIMarketing({request,env,ctx,delegate:app});
