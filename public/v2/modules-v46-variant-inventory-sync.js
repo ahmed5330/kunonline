@@ -1,7 +1,7 @@
 /* Kun Online v46.3 — variant-first inventory + governed Easy Orders cost review + inline selling-price and cost edit. */
 (function(){
   const K=window.KunActionsV23;if(!K)return;
-  let catalogPromise=null,catalogScopeKey='';
+  let catalogPromise=null,catalogScopeKey='',inventoryRequest=0;
   const esc=value=>K.esc?K.esc(value):String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
   const num=value=>Number.isFinite(Number(value))?Number(value):0;
   const money=value=>new Intl.NumberFormat('ar-EG',{maximumFractionDigits:2}).format(num(value));
@@ -104,6 +104,7 @@
   }
   async function enhanceInventory(force=false){
     if(typeof view!=='undefined'&&view!=='inventory')return;
+    const requestId=++inventoryRequest;
     const root=document.getElementById('root');if(!root)return;
     document.getElementById('pcVariantInventory')?.remove();
     await ensureSyncButton(root);
@@ -111,7 +112,7 @@
     if(force||!split.dataset.v46Loading){split.dataset.v46Loading='1';split.innerHTML='<div class="card empty">جارٍ تحميل مخزون المتغيرات...</div>';}
     try{
       const products=await catalog(force),rows=inventoryRows(products);
-      if(typeof view!=='undefined'&&view!=='inventory')return;
+      if(requestId!==inventoryRequest||(typeof view!=='undefined'&&view!=='inventory'))return;
       updateKpis(root,rows);split.innerHTML=renderTable(rows);split.dataset.v46Ready='1';
       split.querySelectorAll('[data-v46-adjust]').forEach(button=>button.onclick=()=>K.openStockAdjust?.({productId:button.dataset.productId,variantId:button.dataset.variantId||null}));
       split.querySelectorAll('[data-v46-price-edit]').forEach(button=>button.onclick=()=>savePrice(button));
@@ -122,7 +123,7 @@
 
   if(typeof inventory==='function'){
     const baseInventory=inventory;
-    inventory=function(){const html=baseInventory();queueMicrotask(()=>enhanceInventory(false));return html;};
+    inventory=function(){const html=baseInventory();queueMicrotask(()=>enhanceInventory(true));return html;};
   }
   document.addEventListener('click',event=>{
     const button=event.target.closest?.('#v46EasyOrdersSync');if(!button)return;event.preventDefault();event.stopImmediatePropagation();syncEasyOrders(button).catch(error=>K.notify(error.message));
