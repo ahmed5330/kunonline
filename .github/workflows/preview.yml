@@ -77,6 +77,10 @@ jobs:
             echo "Run became stale before deploy. Run=$GITHUB_SHA Latest=$latest. Deploy skipped."
           fi
 
+      - name: Fail closed if live Preview D1 is missing growth, wallet or inventory columns
+        if: steps.deploy_ownership.outputs.is_latest == 'true'
+        run: node scripts/preview-release-schema-contract.mjs
+
       - name: Resolve verified stable Preview source
         id: stable_source
         if: steps.deploy_ownership.outputs.is_latest == 'true'
