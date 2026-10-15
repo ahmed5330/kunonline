@@ -87,7 +87,7 @@ object MobileSyncClient {
             readTimeout = 20_000
             setRequestProperty("Cookie", cookie)
             setRequestProperty("Accept", "application/json")
-            setRequestProperty("X-Kun-Mobile", "native-android/2.8.5")
+            setRequestProperty("X-Kun-Mobile", "native-android/${BuildConfig.VERSION_NAME}")
         }
         try {
             val code = connection.responseCode
