@@ -38,25 +38,10 @@ mock('npx',[
   '    fi ;;',
   '  *"d1 info "*) echo \'{ "version": "production" }\' ;;',
   '  *"d1 time-travel info "*) echo "Bookmark: 00000085-0000024c-00004c6d-8e61117bf38d7adb71b934ebbf891683" ;;',
-  '  *"d1 export "*)',
-  '    prev=""',
-  '    for arg in "$@"; do',
-  '      if [[ "$prev" == "--output" ]]; then',
-  '        printf "CREATE TABLE rehearsal_fixture(id INTEGER);\\n" > "$arg"',
-  '        exit 0',
-  '      fi',
-  '      prev="$arg"',
-  '    done',
-  '    exit 51 ;;',
+  '  *"d1 execute "*)',
+  '    echo \'[{"success":true,"results":[{"type":"table","name":"orders","sql":"CREATE TABLE orders(id TEXT PRIMARY KEY)"}]}]\' ;;',
   '  *) exit 52 ;;',
   'esac'
-]);
-mock('sqlite3',[
-  'if [[ "$*" == *"PRAGMA integrity_check;"* ]]; then',
-  '  echo ok',
-  'else',
-  '  cat > /dev/null',
-  'fi'
 ]);
 function execute({pending='good',approval=true,backup=true,action='workflow_dispatch'}={}){
   const output=join(dir,'output-'+pending+'.txt'),summary=join(dir,'summary-'+pending+'.md');
