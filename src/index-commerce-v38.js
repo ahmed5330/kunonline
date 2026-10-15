@@ -3,6 +3,8 @@ import {handleClarityApi,syncClarityScheduled} from './clarity-integration.js';
 import {handleAIMarketing} from './ai-marketing-analyst.js';
 import {handleCompetitorIntelligence} from './competitor-intelligence.js';
 import {handleSubscriptionControl} from './subscription-control.js';
+import {reconcileMonthlySubscriptions} from './subscription-billing.js';
+import {handleInventoryUnitTracking,syncInventoryTrackingAfterResponse,reconcileTrackedOrderLifecycles,reconcileAllClientsUnitCoverage} from './inventory-unit-tracking.js';
 import safety from './index-commerce-v38-safety.js';
 import core from './index-commerce-v38-core.js';
 import {requirePermission} from './access-control.js';
@@ -123,6 +125,8 @@ export default {
     if(aiMarketing)return aiMarketing;
     const clarity=await handleClarityApi({request,env,ctx,delegate:app});
     if(clarity)return clarity;
+    const tracking=await handleInventoryUnitTracking({request,env,ctx,delegate:app});
+    if(tracking)return tracking;
     const mobileUpdate=await handleMobileAppUpdate(request);
     if(mobileUpdate)return mobileUpdate;
     const collaborationDenied=await collaborationPermissionGuard(request,env,ctx);
@@ -142,19 +146,28 @@ export default {
     if(monthly)return monthly;
     const handled=await handleJtHistoryReconcile({request,env,ctx,delegate:app});
     if(handled)return handled;
-    return injectV2Ui(request,await app.fetch(request,env,ctx));
+    const baseResponse=await app.fetch(request,env,ctx);
+    return injectV2Ui(request,await syncInventoryTrackingAfterResponse({request,response:baseResponse,env,actor:'system'}));
   },
-  scheduled(event,env,ctx){return app.scheduled?.(event,env,ctx);}
+  scheduled(event,env,ctx){
+    ctx?.waitUntil?.(reconcileMonthlySubscriptions(env,{limit:1000}).catch(()=>[]));
+    ctx?.waitUntil?.(reconcileTrackedOrderLifecycles(env,{limit:1000,actor:'scheduled'}).catch(()=>({ok:false})));
+    if(String(event?.cron||'')==='0 */2 * * *')ctx?.waitUntil?.(reconcileAllClientsUnitCoverage(env,{limit:1000,actor:'scheduled'}).catch(()=>({ok:false})));
+    return app.scheduled?.(event,env,ctx);
+  }
 };
 
 export class SyncEntrypoint extends BaseSyncEntrypoint {
   async runCron(cron){
     const upstream=await super.runCron(cron);
+    const lifecycle=await reconcileTrackedOrderLifecycles(this.env,{limit:1000,actor:'sync-cron'}).catch(error=>({ok:false,error:String(error?.code||error?.message||error)}));
+    const monthly=await reconcileMonthlySubscriptions(this.env,{limit:1000}).catch(error=>({ok:false,error:String(error?.code||error?.message||error)}));
+    const coverage=String(cron||'')==='0 */2 * * *'?await reconcileAllClientsUnitCoverage(this.env,{limit:1000,actor:'sync-cron'}).catch(error=>({ok:false,error:String(error?.code||error?.message||error)})):null;
     if(String(cron||'')==='0 */2 * * *'){
       const clarity=await syncClarityScheduled(this.env,{limit:30}).catch(error=>({ok:false,code:error?.code||'CLARITY_SCHEDULED_FAILED'}));
-      return {...(upstream&&typeof upstream==='object'?upstream:{upstream}),clarity};
+      return {...(upstream&&typeof upstream==='object'?upstream:{upstream}),clarity,unitLifecycle:lifecycle,subscription:monthly,unitCoverage:coverage};
     }
-    return upstream;
+    return {...(upstream&&typeof upstream==='object'?upstream:{upstream}),unitLifecycle:lifecycle,subscription:monthly};
   }
   async health(){return {...await super.health(),clarity:'connected-store-snapshots-every-12h'};}
 }
