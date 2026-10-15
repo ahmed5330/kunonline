@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+# Fail-closed database release gate for the *shared, production-backed* Preview D1.
+# Does not mutate the remote DB. No customer data is retained as a CI artifact.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+: "${GITHUB_SHA:?GitHub commit SHA is required}"
+if [[ ! "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+  echo "::error::Invalid release SHA"; exit 1
+fi
+if ! grep -Fq 'database_name = "kunonline-preview"' wrangler.preview.toml; then
+  echo "::error::Unexpected Preview D1 binding"; exit 1
+fi
+
+# Use the same known-good fallback as preview.yml. Never guess a schema baseline.
+stable_sha="$(git ls-remote origin refs/tags/preview-stable | awk '{print $1}')"
+if [[ -z "$stable_sha" ]]; then
+  stable_sha="05787d92d16d5b0da2bdf8dfcdd9a9cf54b875b5"
+fi
+git fetch --no-tags --depth=1 origin "$stable_sha" >/dev/null
+git cat-file -e "${stable_sha}^{commit}"
+
+changes="$(git diff --name-only "$stable_sha" "$GITHUB_SHA" -- migrations/ schema.sql migration_2026-08-23_commerce_os.sql)"
+if [[ -z "$changes" ]]; then
+  echo "No database schema file changes compared with verified Preview baseline $stable_sha."
+  exit 0
+fi
+
+# A push-triggered deploy must not silently migrate the production-backed Preview DB.
+# Manual dispatch alone is insufficient: approval must be SHA-pinned and an
+# independently retained backup's review reference must be provided.
+if [[ "${GITHUB_EVENT_NAME:-}" != "workflow_dispatch" ]]; then
+  echo "::error::Shared D1 schema changed. Automatic push release blocked; use reviewed manual dispatch."
+  exit 1
+fi
+if [[ "${PREVIEW_D1_APPROVAL:-}" != "${GITHUB_SHA}:kunonline-preview" ]]; then
+  echo "::error::Expected exact commit-specific approval: <SHA>:kunonline-preview"
+  exit 1
+fi
+if [[ ! "${PREVIEW_D1_BACKUP_REF:-}" =~ ^(r2://|s3://|backup-ticket:)[A-Za-z0-9_./:@-]{8,}$ ]]; then
+  echo "::error::Provide an independently retained and reviewed database backup reference."
+  exit 1
+fi
+
+# Deletions or edits of previously existing migrations are not automatically safe.
+# Only newly added additive migrations are eligible for SQL rehearsal here.
+while IFS= read -r file; do
+  if [[ "$file" == migrations/*.sql ]]; then
+    change_type="$(git diff --name-status "$stable_sha" "$GITHUB_SHA" -- "$file" | cut -f1)"
+    if [[ "$change_type" != "A" ]]; then
+      echo "::error::Migration $file was changed or deleted. Requires separate migration plan."
+      exit 1
+    fi
+  else
+    echo "::error::Base schema changed ($file). Requires separate migration plan."
+    exit 1
+  fi
+done <<< "$changes"
+
+scratch="$(mktemp -d)"
+chmod 700 "$scratch"
+trap 'rm -rf "$scratch"' EXIT
+# D1 production storage exposes a Time Travel recovery bookmark.
+npx wrangler d1 info kunonline-preview --json --config wrangler.preview.toml > "$scratch/info.json"
+node -e '
+const fs=require("node:fs");
+const d=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));
+if (d.version !== "production") throw new Error("D1 Time Travel recovery is not verified for this database");
+' "$scratch/info.json"
+npx wrangler d1 time-travel info kunonline-preview --config wrangler.preview.toml > "$scratch/bookmark.txt"
+if ! grep -Eq '[0-9a-f]{8}-[0-9a-f-]{16,}' "$scratch/bookmark.txt"; then
+  echo "::error::Cloudflare D1 recovery bookmark was not returned"; exit 1
+fi
+
+# Export is read-only. SQL remains on this ephemeral runner, is never uploaded
+# to CI artifacts, and is erased by the EXIT trap.
+npx wrangler d1 export kunonline-preview --remote --config wrangler.preview.toml --output "$scratch/backup.sql" > "$scratch/export.log" 2>&1 || {
+  echo "::error::Remote D1 export failed (details deliberately withheld to avoid leaking customer data)"
+  exit 1
+}
+test -s "$scratch/backup.sql"
+sqlite3 "$scratch/rehearsal.db" < "$scratch/backup.sql"
+if [[ "$(sqlite3 "$scratch/rehearsal.db" 'PRAGMA integrity_check;')" != "ok" ]]; then
+  echo "::error::Exported database failed integrity check"; exit 1
+fi
+
+while IFS= read -r file; do
+  echo "Rehearsing additive migration: $file"
+  sqlite3 -bail "$scratch/rehearsal.db" < "$file"
+done <<< "$changes"
+if [[ "$(sqlite3 "$scratch/rehearsal.db" 'PRAGMA integrity_check;')" != "ok" ]]; then
+  echo "::error::Migrated database failed integrity check"; exit 1
+fi
+
+{
+  echo "### Reviewed shared D1 release preflight"
+  echo "- Commit: `$GITHUB_SHA`"
+  echo "- Reviewed external backup reference: `$PREVIEW_D1_BACKUP_REF`"
+  echo "- Stable comparison: `$stable_sha`"
+  echo "- Remote export and additive migrations rehearsed on ephemeral SQLite copy."
+  echo "- D1 Time Travel recovery point captured before remote migration (see restricted run log)."
+  echo "- **No remote database writes in this preflight.**"
+} >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+echo "Shared D1 preflight PASS: release approval, recovery point, export, integrity and migration rehearsal."
