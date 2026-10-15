@@ -24,4 +24,7 @@ assert.ok(endpoint.includes("path==='/api/preview/growth-release'"));
 assert.ok(endpoint.includes(REQUIRED_RELEASE));
 const workflow=await readFile(new URL('../.github/workflows/production.yml',import.meta.url),'utf8');
 assert.ok(workflow.includes('node scripts/production-preview-release-gate.mjs'));
+const previewWorkflow=await readFile(new URL('../.github/workflows/preview.yml',import.meta.url),'utf8');
+assert.ok(previewWorkflow.includes('GROWTH_RELEASE_OUTCOME'),'Preview promotion must include backend compatibility handshake');
+assert.ok(previewWorkflow.includes('id: growth_release'),'Preview rollback must be able to identify failed growth release handshakes');
 console.log('Production Preview handshake gate contract PASS');
