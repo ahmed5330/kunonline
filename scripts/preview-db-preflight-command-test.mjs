@@ -63,6 +63,9 @@ try {
   const unknown=execute({pending:'bad'});
   assert.notEqual(unknown.result.status,0);
   assert.match(unknown.result.stdout+unknown.result.stderr,/Unreviewed pending remote D1 migration/);
+  const missing=execute({pending:'empty'});
+  assert.notEqual(missing.result.status,0);
+  assert.match(missing.result.stdout+missing.result.stderr,/do not exactly match reviewed/);
   assert.notEqual(execute({approval:false}).result.status,0);
   assert.notEqual(execute({backup:false}).result.status,0);
   assert.notEqual(execute({action:'push'}).result.status,0);
