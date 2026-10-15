@@ -23,6 +23,7 @@ git cat-file -e "${stable_sha}^{commit}"
 changes="$(git diff --name-only "$stable_sha" "$GITHUB_SHA" -- migrations/ schema.sql migration_2026-08-23_commerce_os.sql)"
 if [[ -z "$changes" ]]; then
   echo "No database schema file changes compared with verified Preview baseline $stable_sha."
+  echo "apply_migrations=false" >> "${GITHUB_OUTPUT:-/dev/null}"
   exit 0
 fi
 
@@ -118,4 +119,5 @@ fi
   echo "- D1 Time Travel recovery point captured before remote migration (see restricted run log)."
   echo "- **No remote database writes in this preflight.**"
 } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+echo "apply_migrations=true" >> "${GITHUB_OUTPUT:-/dev/null}"
 echo "Shared D1 preflight PASS: release approval, recovery point, export, integrity and migration rehearsal."
