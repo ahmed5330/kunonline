@@ -6,6 +6,10 @@ import path from 'node:path';
 
 const workflow = readFileSync('.github/workflows/preview.yml', 'utf8');
 const gate = readFileSync('scripts/preview-db-release-preflight.sh', 'utf8');
+const manifest = JSON.parse(readFileSync('package.json', 'utf8'));
+assert(!manifest.scripts['deploy:preview'].includes('wrangler deploy'), 'Direct Preview deploy must not bypass shared D1 gate');
+assert(gate.includes('d1 migrations list kunonline-preview --remote'), 'Must inspect actual remote pending migration set');
+assert(gate.includes('Unreviewed pending remote D1 migration'), 'Unrehearsed pending migrations must block release');
 const safetyStep = workflow.indexOf('run: bash scripts/preview-db-release-preflight.sh');
 const migrationStep = workflow.indexOf('run: npm run db:migrate:preview');
 assert(safetyStep > 0 && migrationStep > safetyStep, 'D1 preflight must precede migrations');
