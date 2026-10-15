@@ -13,8 +13,11 @@ jobs:
   audit:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # No protected deployment environment: this branch runs an audit only.
-    # Repository-scoped credentials are used only if available; otherwise fail.
+    # Isolated, READ-ONLY environment. Never reuse the Preview deploy token.
+    # Configure environment secrets with a Cloudflare D1 Read-only token;
+    # restrict this environment to the single reviewed release branch.
+    environment:
+      name: kunonline-d1-readonly-audit
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
