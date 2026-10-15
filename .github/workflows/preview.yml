@@ -65,6 +65,10 @@ jobs:
         if: steps.ownership.outputs.is_latest == 'true' && steps.shared_d1_preflight.outputs.apply_migrations == 'true'
         run: node scripts/preview-d1-release-invariants.mjs
 
+      - name: Reject live wallet settlement anomalies before modifying shared D1
+        if: steps.ownership.outputs.is_latest == 'true' && steps.shared_d1_preflight.outputs.apply_migrations == 'true'
+        run: node scripts/preview-wallet-finance-invariants.mjs
+
       - name: Apply preview migrations only after D1 preflight
         if: steps.ownership.outputs.is_latest == 'true' && steps.shared_d1_preflight.outputs.apply_migrations == 'true'
         run: npm run db:migrate:preview
