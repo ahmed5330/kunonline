@@ -268,8 +268,10 @@ object KunApi {
         val cookie = session(context) ?: return ActionResult(false, "سجّل الدخول أولاً")
         return runCatching {
             val scope = resolveScope(cookie, context)
-            if (scope.clientId.isNotBlank() && !values.has("clientId")) values.put("clientId", scope.clientId)
-            if (scope.storeId.isNotBlank() && !values.has("storeId")) values.put("storeId", scope.storeId)
+            // The active store is authoritative; stale form defaults must not
+            // silently send newly-created records to another selected store.
+            if (scope.clientId.isNotBlank()) values.put("clientId", scope.clientId)
+            if (scope.storeId.isNotBlank()) values.put("storeId", scope.storeId)
             val response = request("POST", path, values.toString(), cookie)
             if (response.code == 401) {
                 clearSession(context)
