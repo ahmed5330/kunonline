@@ -26,7 +26,8 @@ const walletBeforeMigration=workflow.indexOf('name: Reject live wallet settlemen
 assert(walletBeforeMigration>0 && walletBeforeMigration<migrationStep,'Wallet ledger pre-migration gate must execute before any shared D1 mutation');
 assert(workflow.includes('run: node scripts/preview-wallet-finance-invariants.mjs'),'Canonical read-only wallet validation missing');
 const readonlyAudit=readFileSync('.github/workflows/shared-preview-d1-readonly.yml','utf8');
-assert(readonlyAudit.includes('  workflow_dispatch:')&&!readonlyAudit.includes('  push:'),'Cloudflare read-only audit must require intentional manual invocation');
+assert(readonlyAudit.includes('  workflow_dispatch:')&&readonlyAudit.includes('branches: [release/growth-wallet-preview-20261015]'),'Audit must be restricted to the release branch before default-branch registration');
+assert(readonlyAudit.includes("paths:")&&readonlyAudit.includes("'.github/workflows/shared-preview-d1-readonly.yml'"),'Review-branch audit must run on workflow changes');
 assert(readonlyAudit.includes('Require dedicated read-only Cloudflare audit credentials'),'Audit must explicitly deny missing environment credentials');
 assert(readonlyAudit.includes('kunonline-d1-readonly-audit'),'Cloudflare audit must use a dedicated, segregated credentials environment');
 assert(gate.includes('apply_migrations=false') && gate.includes('apply_migrations=true'), 'Preflight must distinguish unchanged releases from approved schema changes');
