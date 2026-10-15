@@ -1,0 +1,67 @@
+name: Shared Preview D1 read-only readiness
+# Runs on the protected review branch WITHOUT releasing any Worker or changing D1.
+on:
+  push:
+    branches: [release/growth-wallet-preview-20261015]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: kunonline-d1-readonly-readiness
+  cancel-in-progress: true
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: preview
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: npm install --ignore-scripts
+      - name: Confirm live shared D1 connection and pending migrations without writes
+        id: connectivity
+        continue-on-error: true
+        run: node scripts/preview-live-readonly-availability.mjs
+      - name: Inspect live finance ledger consistency without customer records
+        id: finance
+        continue-on-error: true
+        if: steps.connectivity.outcome == 'success'
+        run: node scripts/preview-wallet-finance-invariants.mjs
+      - name: Inspect live inventory conflicts without customer records
+        id: inventory
+        continue-on-error: true
+        if: steps.connectivity.outcome == 'success'
+        run: node scripts/preview-d1-release-invariants.mjs
+      - name: Inspect required live schema columns without customer records
+        id: schema
+        continue-on-error: true
+        if: steps.connectivity.outcome == 'success'
+        run: node scripts/preview-release-schema-contract.mjs
+      - name: Summarize actual Cloudflare read-only results
+        if: always()
+        env:
+          CONNECTIVITY: ${{ steps.connectivity.outcome }}
+          FINANCE: ${{ steps.finance.outcome }}
+          INVENTORY: ${{ steps.inventory.outcome }}
+          SCHEMA: ${{ steps.schema.outcome }}
+        run: |
+          {
+            echo '## Actual shared Preview D1 read-only readiness'
+            echo "- Connection/storage: $CONNECTIVITY"
+            echo "- Finance/ledger: $FINANCE"
+            echo "- Inventory uniqueness: $INVENTORY"
+            echo "- Required schema: $SCHEMA"
+            echo '- No remote writes, deployments, database exports, or customer rows.'
+            echo '- This is NOT approval to migrate or deploy: independent verified backup and live user QA remain required.'
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$CONNECTIVITY" != "success" || "$FINANCE" != "success" || "$INVENTORY" != "success" || "$SCHEMA" != "success" ]]; then
+            echo "::error::Read-only live D1 readiness is incomplete; release remains blocked."
+            exit 1
+          fi
