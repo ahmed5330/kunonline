@@ -30,6 +30,8 @@ jobs:
         run: npm run check:preview-config
       - name: Verify Production remains migration-free
         run: npm run check:production-config
+      - name: Verify coordinated Production/Preview release gate contracts
+        run: node scripts/production-preview-release-gate-test.mjs
       - name: Verify Preview Worker bundle without deploying
         run: |
           npx wrangler deploy --dry-run --config wrangler.preview.toml
