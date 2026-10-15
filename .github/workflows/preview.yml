@@ -85,6 +85,10 @@ jobs:
         if: steps.deploy_ownership.outputs.is_latest == 'true'
         run: node scripts/preview-release-schema-contract.mjs
 
+      - name: Verify canonical wallet settlement has no missing or duplicate credits
+        if: steps.deploy_ownership.outputs.is_latest == 'true'
+        run: node scripts/preview-wallet-finance-invariants.mjs
+
       - name: Resolve verified stable Preview source
         id: stable_source
         if: steps.deploy_ownership.outputs.is_latest == 'true'
