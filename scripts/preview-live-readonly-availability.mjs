@@ -3,6 +3,7 @@
 import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {resolve} from 'node:path';
+import {pendingMigrationsReadonly,localMigrationFiles,queryMigrationHistory} from './preview-pending-migrations.mjs';
 
 export function verifyD1Info(json){
   const obj=Array.isArray(json)?json[0]:json;
@@ -24,9 +25,7 @@ if(process.argv[1] && resolve(process.argv[1])===fileURLToPath(import.meta.url))
   const infoRaw=execFileSync('npx',[...base,'info','kunonline-preview','--json',...envOpts],
     {encoding:'utf8',timeout:45000,maxBuffer:1024*1024});
   const info=verifyD1Info(JSON.parse(infoRaw));
-  const listRaw=execFileSync('npx',[...base,'migrations','list','kunonline-preview','--remote',...envOpts],
-    {encoding:'utf8',timeout:45000,maxBuffer:1024*1024});
-  const pending=pendingMigrationNames(listRaw);
+  const pending=await pendingMigrationsReadonly(queryMigrationHistory,localMigrationFiles());
   console.log('Read-only shared D1 connectivity PASS: production storage and Time Travel capability; pending migration count = '+pending.length);
   console.log('Time Travel availability does not verify any independent offsite backup or a tested restore.');
 }

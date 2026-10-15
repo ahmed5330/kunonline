@@ -26,16 +26,21 @@ mock('git',[
   '  *) exit 50 ;;',
   'esac'
 ]);
-mock('npx',[
-  'case "$*" in',
-  '  *"d1 migrations list "*)',
+mock('node',[
+  'if [[ "$1" == "scripts/preview-pending-migrations.mjs" ]]; then',
   '    if [[ "$TEST_PENDING" == "bad" ]]; then',
   '      echo 0091_unapproved_changes.sql',
   '    elif [[ "$TEST_PENDING" == "empty" ]]; then',
   '      echo "No migrations to apply"',
   '    else',
   '      echo 0092_inventory_unit_qr_tracking.sql',
-  '    fi ;;',
+  '    fi',
+  'else',
+  '  exec "$TEST_REAL_NODE" "$@"',
+  'fi'
+]);
+mock('npx',[
+  'case "$*" in',
   '  *"d1 info "*) echo \'{ "version": "production" }\' ;;',
   '  *"d1 time-travel info "*) echo "Bookmark: 00000085-0000024c-00004c6d-8e61117bf38d7adb71b934ebbf891683" ;;',
   '  *"d1 execute "*)',
@@ -48,7 +53,7 @@ function execute({pending='good',approval=true,backup=true,action='workflow_disp
   const result=spawnSync('bash',['scripts/preview-db-release-preflight.sh'],{
     encoding:'utf8',timeout:15000,
     env:{...process.env,PATH:bin+delimiter+process.env.PATH,
-      GITHUB_SHA:sha,GITHUB_EVENT_NAME:action,TEST_PENDING:pending,
+      GITHUB_SHA:sha,GITHUB_EVENT_NAME:action,TEST_PENDING:pending,TEST_REAL_NODE:process.execPath,
       PREVIEW_D1_APPROVAL:approval?sha+':kunonline-preview':'',
       PREVIEW_D1_BACKUP_REF:backup?'backup-ticket:verified-independent-backup-001':'',
       GITHUB_OUTPUT:output,GITHUB_STEP_SUMMARY:summary}

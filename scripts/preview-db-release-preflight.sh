@@ -61,7 +61,7 @@ done <<< "$changes"
 # Do not accidentally apply pending migrations from older branches that have
 # never been rehearsed. Only newly added migration files in this reviewed diff
 # are eligible for this release. A changed/unknown CLI format fails closed.
-pending_log="$(npx wrangler d1 migrations list kunonline-preview --remote --config wrangler.preview.toml 2>&1)" || {
+pending_log="$(node scripts/preview-pending-migrations.mjs 2>&1)" || {
   echo "::error::Could not inspect actual pending remote D1 migrations"; exit 1
 }
 pending_files="$(printf '%s\n' "$pending_log" | grep -Eo '[0-9]{4}_[A-Za-z0-9._-]+\.sql' | sort -u || true)"
@@ -118,4 +118,4 @@ node scripts/preview-live-schema-rehearsal.mjs "${reviewed_migrations[@]}"
   echo "- **No remote database writes in this preflight.**"
 } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
 echo "apply_migrations=true" >> "${GITHUB_OUTPUT:-/dev/null}"
-echo "Shared D1 preflight PASS: release approval, recovery point, export, integrity and migration rehearsal."
+echo "Shared D1 preflight PASS: release approval, recovery point, read-only schema integrity and migration rehearsal."

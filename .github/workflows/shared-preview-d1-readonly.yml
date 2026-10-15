@@ -9,6 +9,7 @@ on:
     paths:
       - '.github/workflows/shared-preview-d1-readonly.yml'
       - 'scripts/preview-live-readonly-availability.mjs'
+      - 'scripts/preview-pending-migrations.mjs'
       - 'scripts/preview-wallet-finance-invariants.mjs'
       - 'scripts/preview-d1-release-invariants.mjs'
       - 'scripts/preview-release-schema-contract.mjs'
