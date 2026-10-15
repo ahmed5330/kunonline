@@ -24,6 +24,8 @@ jobs:
         run: npm run check:preview-config
       - name: Verify Production remains migration-free
         run: npm run check:production-config
+      - name: Shared D1 migration safety gate regression
+        run: node scripts/preview-db-release-preflight-test.mjs
       - name: Release compatibility gate fixture
         run: node scripts/production-preview-release-gate-test.mjs
       - name: Growth planner Chromium fixture
