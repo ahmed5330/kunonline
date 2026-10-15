@@ -11,7 +11,7 @@ export async function walletSnapshot(env,clientId){
   try{
     unbilled=await env.DB.prepare("SELECT COUNT(*) n FROM order_billing b JOIN orders o ON o.id=b.order_id AND o.client_id=b.client_id WHERE b.client_id=? AND b.status IN ('pending','pending_insufficient','failed') AND NOT EXISTS (SELECT 1 FROM order_duplicate_links dup WHERE dup.duplicate_order_id=o.id)").bind(clientId).first();
   }catch(error){
-    if(!/no such table:\\s*order_duplicate_links/i.test(String(error?.message||error)))throw error;
+    if(!/no such table:\s*order_duplicate_links/i.test(String(error?.message||error)))throw error;
     unbilled=await env.DB.prepare("SELECT COUNT(*) n FROM order_billing WHERE client_id=? AND status IN ('pending','pending_insufficient','failed')").bind(clientId).first();
   }
   return {clientId,balance:round2(account.balance),currency:account.currency,effectiveOrderFee:fee,baseOrderFee:Number(account.base_order_fee)||0,minOrderFee:Number(account.min_order_fee)||0,maxOrderFee:Number(account.max_order_fee)||0,creditLimit:Number(account.credit_limit)||0,billingVersion:account.billing_version,status:account.status,pendingTopups:Number(pending?.n)||0,pendingTopupAmount:round2(pending?.amount),unbilledOrders:Number(unbilled?.n)||0};
