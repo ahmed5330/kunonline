@@ -57,6 +57,23 @@ while IFS= read -r file; do
   fi
 done <<< "$changes"
 
+# Do not accidentally apply pending migrations from older branches that have
+# never been rehearsed. Only newly added migration files in this reviewed diff
+# are eligible for this release. A changed/unknown CLI format fails closed.
+pending_log="$(npx wrangler d1 migrations list kunonline-preview --remote --config wrangler.preview.toml 2>&1)" || {
+  echo "::error::Could not inspect actual pending remote D1 migrations"; exit 1
+}
+pending_files="$(printf '%s\\n' "$pending_log" | grep -Eo '[0-9]{4}_[A-Za-z0-9._-]+\\.sql' | sort -u || true)"
+if [[ -z "$pending_files" ]] && ! grep -Eqi 'no migrations to apply|no migrations found|there are no migrations' <<< "$pending_log"; then
+  echo "::error::Remote migration inventory is ambiguous; refusing any database mutation"; exit 1
+fi
+while IFS= read -r migration_name; do
+  [[ -z "$migration_name" ]] && continue
+  if ! grep -Fxq "migrations/$migration_name" <<< "$changes"; then
+    echo "::error::Unreviewed pending remote D1 migration: $migration_name"; exit 1
+  fi
+done <<< "$pending_files"
+
 scratch="$(mktemp -d)"
 chmod 700 "$scratch"
 trap 'rm -rf "$scratch"' EXIT
@@ -79,7 +96,7 @@ npx wrangler d1 export kunonline-preview --remote --config wrangler.preview.toml
   exit 1
 }
 test -s "$scratch/backup.sql"
-sqlite3 "$scratch/rehearsal.db" < "$scratch/backup.sql"
+sqlite3 -bail "$scratch/rehearsal.db" < "$scratch/backup.sql"
 if [[ "$(sqlite3 "$scratch/rehearsal.db" 'PRAGMA integrity_check;')" != "ok" ]]; then
   echo "::error::Exported database failed integrity check"; exit 1
 fi
