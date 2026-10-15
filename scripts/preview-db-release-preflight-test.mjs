@@ -11,8 +11,10 @@ assert(!manifest.scripts['deploy:preview'].includes('wrangler deploy'), 'Direct 
 assert(gate.includes('d1 migrations list kunonline-preview --remote'), 'Must inspect actual remote pending migration set');
 assert(gate.includes('Unreviewed pending remote D1 migration'), 'Unrehearsed pending migrations must block release');
 assert(gate.includes('recovery_bookmark') && gate.includes('GITHUB_STEP_SUMMARY'), 'Pre-migration recovery bookmark must be recorded');
-for (const variable of ['GITHUB_SHA','PREVIEW_D1_BACKUP_REF','stable_sha'])
-  assert(!gate.includes('echo "- ' + (variable === 'GITHUB_SHA' ? 'Commit: ' : variable === 'PREVIEW_D1_BACKUP_REF' ? 'Reviewed external backup reference: ' : 'Stable comparison: ') + String.fromCharCode(96) + '
+for (const variable of ['GITHUB_SHA','PREVIEW_D1_BACKUP_REF','stable_sha']) {
+  const unescaped = String.fromCharCode(96) + '$' + variable + String.fromCharCode(96);
+  assert(!gate.includes(unescaped), 'Shell summary must not execute substitution for ' + variable);
+}
 const safetyStep = workflow.indexOf('run: bash scripts/preview-db-release-preflight.sh');
 const migrationStep = workflow.indexOf('run: npm run db:migrate:preview');
 assert(safetyStep > 0 && migrationStep > safetyStep, 'D1 preflight must precede migrations');
