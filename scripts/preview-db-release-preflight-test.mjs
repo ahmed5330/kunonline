@@ -13,6 +13,8 @@ assert(gate.includes('Unreviewed pending remote D1 migration'), 'Unrehearsed pen
 const safetyStep = workflow.indexOf('run: bash scripts/preview-db-release-preflight.sh');
 const migrationStep = workflow.indexOf('run: npm run db:migrate:preview');
 assert(safetyStep > 0 && migrationStep > safetyStep, 'D1 preflight must precede migrations');
+assert(workflow.includes("steps.shared_d1_preflight.outputs.apply_migrations == 'true'"), 'Only preflight-approved migrations may run');
+assert(gate.includes('apply_migrations=false') && gate.includes('apply_migrations=true'), 'Preflight must distinguish unchanged releases from approved schema changes');
 for (const text of ['inputs.shared_d1_approved_sha','inputs.verified_backup_reference'])
   assert(workflow.includes(text), 'Missing manual release input: ' + text);
 for (const text of ['workflow_dispatch','GITHUB_SHA','d1 time-travel info','d1 export','PRAGMA integrity_check;','sqlite3 -bail'])
