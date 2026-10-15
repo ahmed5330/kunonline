@@ -9,8 +9,9 @@ const gate = readFileSync('scripts/preview-db-release-preflight.sh', 'utf8');
 const manifest = JSON.parse(readFileSync('package.json', 'utf8'));
 assert(!manifest.scripts['deploy:preview'].includes('wrangler deploy'), 'Direct Preview deploy must not bypass shared D1 gate');
 assert(gate.includes('d1 migrations list kunonline-preview --remote'), 'Must inspect actual remote pending migration set');
-assert(gate.includes('d1 export kunonline-preview --remote --no-data --skip-confirmation'), 'Never copy real customer records onto CI runners');
-assert(!gate.includes('backup.sql'), 'Legacy full customer data export must remain disabled');
+assert(gate.includes('node scripts/preview-live-schema-rehearsal.mjs'), 'Migration compatibility must be rehearsed using read-only schema queries');
+assert(!gate.includes('d1 export '), 'D1 export can temporarily interrupt live requests and is forbidden during preflight');
+assert(!gate.includes('backup.sql'), 'No customer data export or SQL backup may enter CI runners');
 assert(gate.includes('Unreviewed pending remote D1 migration'), 'Unrehearsed pending migrations must block release');
 assert(gate.includes('recovery_bookmark') && gate.includes('GITHUB_STEP_SUMMARY'), 'Pre-migration recovery bookmark must be recorded');
 for (const variable of ['GITHUB_SHA','PREVIEW_D1_BACKUP_REF','stable_sha']) {
@@ -24,7 +25,7 @@ assert(workflow.includes("steps.shared_d1_preflight.outputs.apply_migrations == 
 assert(gate.includes('apply_migrations=false') && gate.includes('apply_migrations=true'), 'Preflight must distinguish unchanged releases from approved schema changes');
 for (const text of ['inputs.shared_d1_approved_sha','inputs.verified_backup_reference'])
   assert(workflow.includes(text), 'Missing manual release input: ' + text);
-for (const text of ['workflow_dispatch','GITHUB_SHA','d1 time-travel info','d1 export','PRAGMA integrity_check;','sqlite3 -bail'])
+for (const text of ['workflow_dispatch','GITHUB_SHA','d1 time-travel info','preview-live-schema-rehearsal.mjs'])
   assert(gate.includes(text), 'Missing shared DB safety mechanism: ' + text);
 
 const temp = mkdtempSync(path.join(os.tmpdir(), 'kun-preview-db-'));
