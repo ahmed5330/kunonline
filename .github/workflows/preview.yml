@@ -4,6 +4,15 @@ on:
   push:
     branches: [develop/ux-system-upgrade]
   workflow_dispatch:
+    inputs:
+      shared_d1_approved_sha:
+        description: 'Type <exact HEAD SHA>:kunonline-preview after reviewing the shared database release'
+        required: false
+        type: string
+      verified_backup_reference:
+        description: 'Externally retained, verified backup reference (r2://, s3://, or backup-ticket:)'
+        required: false
+        type: string
 concurrency:
   group: kunonline-preview
   cancel-in-progress: true
@@ -44,7 +53,14 @@ jobs:
             echo "Stale Preview run detected. Run=$GITHUB_SHA Latest=$latest. Preview mutation will be skipped."
           fi
 
-      - name: Apply preview migrations only
+      - name: Validate shared D1 release, backup and migration rehearsal before mutation
+        if: steps.ownership.outputs.is_latest == 'true'
+        env:
+          PREVIEW_D1_APPROVAL: ${{ inputs.shared_d1_approved_sha }}
+          PREVIEW_D1_BACKUP_REF: ${{ inputs.verified_backup_reference }}
+        run: bash scripts/preview-db-release-preflight.sh
+
+      - name: Apply preview migrations only after D1 preflight
         if: steps.ownership.outputs.is_latest == 'true'
         run: npm run db:migrate:preview
 
