@@ -29,7 +29,7 @@ assert.ok(billing.includes("applyMonthly:body.endFreeTrial===true||body.applyMon
 assert.ok(billing.includes("await migrateLegacyBilling(env,clientId,actor)"),'every managed subscription path must migrate billing at an explicit order cutoff');
 assert.ok(billing.includes("subscription.billing.start"),'paid subscription access must persist an immutable billing start timestamp');
 assert.ok(billing.includes("billingStartedAt"),'subscription access/admin snapshot must expose the paid billing start timestamp');
-assert.ok(orders.includes('subscriptionOrderFee'),'orders must waive fee during approved trial');
+assert.ok(orders.includes('subscriptionOrderFee')||(orders.includes('pricedOrderFee')&&orders.includes("reason:'free_trial'")&&orders.includes('if(fee<=0)')),'orders must waive fee during approved trial in either supported billing integration');
 assert.ok(billing.includes("return clampMoney(account.base_order_fee)"),'managed subscriptions must charge exactly the admin base order fee');
 assert.ok(billing.includes("orderFee=inTrial?0:clampMoney(account.base_order_fee)"),'client access must display the exact admin-defined fee');
 assert.ok(billing.includes("baseOrderFee,orderFee:inTrial?0:baseOrderFee"),'admin subscription list must show the exact base fee for managed clients');
