@@ -104,7 +104,7 @@ private object MobileChatApi {
     fun bootstrap(context: Context): ChatResult<ChatBootstrap> {
         val cookie = KunApi.sessionCookie(context) ?: return ChatResult(false, error = "سجّل الدخول أولاً")
         return runCatching {
-            val scope = resolveScope(cookie) ?: return ChatResult(false, error = "تعذر تحديد المتجر/الفرع")
+            val scope = resolveScope(context, cookie) ?: return ChatResult(false, error = "تعذر تحديد المتجر/الفرع")
             val response = request(
                 "GET",
                 "/api/collaboration/bootstrap?clientId=${enc(scope.clientId)}&storeId=${enc(scope.storeId)}",
@@ -200,8 +200,8 @@ private object MobileChatApi {
         }.getOrElse { ChatResult(false, error = "تعذر بدء المحادثة") }
     }
 
-    private fun resolveScope(cookie: String): Scope? {
-        val base = KunApi.resolveScope(cookie)
+    private fun resolveScope(context: Context, cookie: String): Scope? {
+        val base = KunApi.resolveScope(cookie, context)
         if (base.clientId.isBlank()) return null
         if (base.storeId.isNotBlank()) return Scope(base.clientId, base.storeId)
 

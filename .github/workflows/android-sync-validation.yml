@@ -6,6 +6,7 @@ on:
       - 'android/**'
       - 'src/mobile-state-sync.js'
       - 'scripts/mobile-state-sync-test.mjs'
+      - 'scripts/android-home-store-switcher-test.mjs'
       - '.github/workflows/android-sync-validation.yml'
 permissions:
   contents: read
@@ -23,6 +24,7 @@ jobs:
           node-version: 22
       - run: node scripts/mobile-state-sync-test.mjs
       - run: node scripts/auth-client-state-fallback-test.mjs
+      - run: node scripts/android-home-store-switcher-test.mjs
       - uses: actions/setup-java@v5
         with:
           distribution: temurin

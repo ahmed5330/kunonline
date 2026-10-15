@@ -116,16 +116,17 @@ object KunCustomerServiceApi {
         return CustomerServiceJsonResult(false, errorMessage(result, fallback))
     }
 
-    private fun resolveClientId(cookie: String): String = KunApi.resolveScope(cookie).clientId
+    private fun resolveClientId(context: Context, cookie: String): String = KunApi.resolveScope(cookie, context).clientId
 
     fun fetchBoard(context: Context, storeId: String = ""): CustomerServiceBoardResult {
         val cookie = cookie(context) ?: return CustomerServiceBoardResult(false, "سجّل الدخول أولاً")
         return runCatching {
-            val clientId = resolveClientId(cookie)
+            val clientId = resolveClientId(context, cookie)
             if (clientId.isBlank()) return CustomerServiceBoardResult(false, "تعذر تحديد حساب المتجر")
+            val selected = if (storeId.isNotBlank()) storeId else KunApi.resolveScope(cookie, context).storeId
             val path = buildString {
                 append("/api/customer-service?clientId=${enc(clientId)}")
-                if (storeId.isNotBlank()) append("&storeId=${enc(storeId)}")
+                if (selected.isNotBlank()) append("&storeId=${enc(selected)}")
             }
             val synced = MobileSyncClient.fetch(cookie, path)
             val response = HttpResult(synced.code, synced.body.toString())
@@ -219,7 +220,7 @@ object KunCustomerServiceApi {
     fun fetchEditorData(context: Context, orderId: String): CustomerServiceEditorData {
         val cookie = cookie(context) ?: return CustomerServiceEditorData(false, "سجّل الدخول أولاً")
         return runCatching {
-            val clientId = resolveClientId(cookie)
+            val clientId = resolveClientId(context, cookie)
             if (clientId.isBlank()) return CustomerServiceEditorData(false, "تعذر تحديد حساب المتجر")
             val detailsResponse = request("GET", "/api/orders/${enc(orderId)}/details?clientId=${enc(clientId)}", cookie)
             if (detailsResponse.code !in 200..299) return CustomerServiceEditorData(false, errorMessage(detailsResponse, "تعذر تحميل تفاصيل الأوردر"))
@@ -247,7 +248,7 @@ object KunCustomerServiceApi {
     private inline fun withClient(context: Context, block: (String, String) -> CustomerServiceJsonResult): CustomerServiceJsonResult {
         val cookie = cookie(context) ?: return CustomerServiceJsonResult(false, "سجّل الدخول أولاً")
         return runCatching {
-            val clientId = resolveClientId(cookie)
+            val clientId = resolveClientId(context, cookie)
             if (clientId.isBlank()) return CustomerServiceJsonResult(false, "تعذر تحديد حساب المتجر")
             block(cookie, clientId)
         }.getOrElse { CustomerServiceJsonResult(false, "تعذر الاتصال بكن أونلاين") }

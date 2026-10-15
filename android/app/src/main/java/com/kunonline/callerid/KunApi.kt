@@ -12,11 +12,25 @@ data class SyncResult(val ok: Boolean, val message: String, val customerCount: I
 data class StateResult(val ok: Boolean, val message: String, val snapshot: CommerceSnapshot? = null)
 data class ActionResult(val ok: Boolean, val message: String)
 data class ScopeInfo(val clientId: String = "", val storeId: String = "")
+data class MobileStoreOption(
+    val clientId: String,
+    val clientName: String,
+    val storeId: String,
+    val storeName: String,
+    val role: String
+)
+data class StoreOptionsResult(
+    val ok: Boolean,
+    val message: String,
+    val stores: List<MobileStoreOption> = emptyList(),
+    val current: ScopeInfo = ScopeInfo()
+)
 
 object KunApi {
     private const val BASE_URL = "https://app.kun-online.com"
     private const val AUTH_PREFS = "kun_auth"
     private const val SESSION_KEY = "session_cookie"
+    private const val SELECTED_STORE_KEY = "selected_store"
     private var scopeCookie = ""
     private var cachedScope: ScopeInfo? = null
     private var scopeExpiresAt = 0L
@@ -74,6 +88,7 @@ object KunApi {
             clearScope()
             MobileSyncClient.clear()
             CustomerCache.clear(context)
+            SecureStore.put(context, AUTH_PREFS, SELECTED_STORE_KEY, null)
             SecureStore.put(context, AUTH_PREFS, SESSION_KEY, cookie)
             val sync = syncWithCookie(context, cookie)
             // A new or empty store may not be ready for its initial data sync.
@@ -173,6 +188,73 @@ object KunApi {
         }.getOrElse { ActionResult(false, "تعذر الاتصال بكن أونلاين") }
     }
 
+    /** Only server-authorized and active stores are offered to the signed-in user. */
+    fun loadStoreOptions(context: Context): StoreOptionsResult {
+        val cookie = session(context) ?: return StoreOptionsResult(false, "سجّل الدخول أولاً")
+        return runCatching {
+            val me = request("GET", "/api/me", cookie = cookie)
+            if (me.code !in 200..299) return StoreOptionsResult(false, errorMessage(me).ifBlank { "تعذر التحقق من الجلسة" })
+            val identity = JSONObject(me.body)
+            val userClientId = identity.optString("clientId").ifBlank { identity.optString("client_id") }
+            val accessible = request("GET", "/api/my-client-context", cookie = cookie)
+            if (accessible.code !in 200..299) {
+                return StoreOptionsResult(false, errorMessage(accessible).ifBlank { "تعذر تحميل المتاجر المسموح بها" })
+            }
+            val clients = JSONObject(accessible.body).optJSONArray("clients") ?: JSONArray()
+            val options = mutableListOf<MobileStoreOption>()
+            for (index in 0 until clients.length()) {
+                val client = clients.optJSONObject(index) ?: continue
+                val clientId = client.optString("id").trim()
+                if (clientId.isBlank() || (userClientId.isNotBlank() && clientId != userClientId)) continue
+                val clientName = client.optString("name").ifBlank { clientId }
+                val result = request("GET", "/api/my-store-context?clientId=${enc(clientId)}", cookie = cookie)
+                if (result.code !in 200..299) continue
+                val stores = runCatching { JSONObject(result.body).optJSONArray("stores") }.getOrNull() ?: continue
+                for (i in 0 until stores.length()) {
+                    val store = stores.optJSONObject(i) ?: continue
+                    val storeId = store.optString("id").trim()
+                    if (storeId.isBlank()) continue
+                    options.add(
+                        MobileStoreOption(
+                            clientId = clientId,
+                            clientName = clientName,
+                            storeId = storeId,
+                            storeName = store.optString("name").ifBlank { "متجر بدون اسم" },
+                            role = store.optString("role").ifBlank { "member" }
+                        )
+                    )
+                }
+            }
+            if (session(context) != cookie) return StoreOptionsResult(false, "تغيّرت جلسة الحساب")
+            val current = resolveScope(cookie, context)
+            StoreOptionsResult(
+                ok = true,
+                message = if (options.isEmpty()) "لا توجد متاجر نشطة مخصصة لهذا الحساب" else "",
+                stores = options.distinctBy { "${it.clientId}:${it.storeId}" },
+                current = current
+            )
+        }.getOrElse { StoreOptionsResult(false, "تعذر تحميل قائمة المتاجر — تأكد من الاتصال") }
+    }
+
+    /** Validate a fresh assignment before persisting. Never trust a UI-provided store ID. */
+    @Synchronized fun selectStore(context: Context, choice: MobileStoreOption): ActionResult {
+        val verified = loadStoreOptions(context)
+        if (!verified.ok) return ActionResult(false, verified.message)
+        val option = verified.stores.find { it.clientId == choice.clientId && it.storeId == choice.storeId }
+            ?: return ActionResult(false, "ليس لديك صلاحية الوصول لهذا المتجر")
+        val current = resolveScope(session(context) ?: return ActionResult(false, "انتهت الجلسة"), context)
+        if (current.clientId == option.clientId && current.storeId == option.storeId) {
+            return ActionResult(true, "المتجر محدد بالفعل")
+        }
+        val value = JSONObject().put("clientId", option.clientId).put("storeId", option.storeId).toString()
+        SecureStore.put(context, AUTH_PREFS, SELECTED_STORE_KEY, value)
+        clearScope()
+        MobileSyncClient.clear()
+        CustomerCache.clear(context)
+        CallActivityStore.clear(context)
+        return ActionResult(true, "تم اختيار ${option.storeName}")
+    }
+
     fun hasSession(context: Context): Boolean = session(context) != null
 
     fun sessionCookie(context: Context): String? = session(context)
@@ -185,9 +267,11 @@ object KunApi {
     private fun scopedWrite(context: Context, path: String, values: JSONObject, success: String): ActionResult {
         val cookie = session(context) ?: return ActionResult(false, "سجّل الدخول أولاً")
         return runCatching {
-            val scope = resolveScope(cookie)
-            if (scope.clientId.isNotBlank() && !values.has("clientId")) values.put("clientId", scope.clientId)
-            if (scope.storeId.isNotBlank() && !values.has("storeId")) values.put("storeId", scope.storeId)
+            val scope = resolveScope(cookie, context)
+            // The active store is authoritative; stale form defaults must not
+            // silently send newly-created records to another selected store.
+            if (scope.clientId.isNotBlank()) values.put("clientId", scope.clientId)
+            if (scope.storeId.isNotBlank()) values.put("storeId", scope.storeId)
             val response = request("POST", path, values.toString(), cookie)
             if (response.code == 401) {
                 clearSession(context)
@@ -212,7 +296,7 @@ object KunApi {
     @Synchronized private fun fetchStateWithCookie(context: Context, cookie: String, forceFull: Boolean = false): StateResult {
         return runCatching {
             if (forceFull) clearScope()
-            val scope = resolveScope(cookie)
+            val scope = resolveScope(cookie, context)
             val query = buildList {
                 if (scope.clientId.isNotBlank()) add("clientId=${enc(scope.clientId)}")
                 if (scope.storeId.isNotBlank()) add("storeId=${enc(scope.storeId)}")
@@ -235,11 +319,17 @@ object KunApi {
         }.getOrElse { StateResult(false, "تعذر قراءة بيانات النظام") }
     }
 
-    @Synchronized internal fun resolveScope(cookie: String): ScopeInfo {
+    @Synchronized internal fun resolveScope(cookie: String, context: Context? = null): ScopeInfo {
         val cached = cachedScope
         if (scopeCookie == cookie && cached != null && SystemClock.elapsedRealtime() < scopeExpiresAt) return cached
         var clientId = ""
         var storeId = ""
+        val saved = context?.let {
+            SecureStore.get(it, AUTH_PREFS, SELECTED_STORE_KEY)
+                ?.let { raw -> runCatching { JSONObject(raw) }.getOrNull() }
+        }
+        val preferredClient = saved?.optString("clientId").orEmpty()
+        val preferredStore = saved?.optString("storeId").orEmpty()
 
         val me = request("GET", "/api/me", cookie = cookie)
         if (me.code in 200..299) {
@@ -249,10 +339,15 @@ object KunApi {
         }
 
         if (clientId.isBlank()) {
-            val context = request("GET", "/api/my-client-context", cookie = cookie)
-            if (context.code in 200..299) {
-                val clients = runCatching { JSONObject(context.body).optJSONArray("clients") }.getOrNull()
-                clientId = clients?.optJSONObject(0)?.optString("id").orEmpty()
+            val access = request("GET", "/api/my-client-context", cookie = cookie)
+            if (access.code in 200..299) {
+                val clients = runCatching { JSONObject(access.body).optJSONArray("clients") }.getOrNull()
+                val ids = buildList {
+                    if (clients != null) for (i in 0 until clients.length()) {
+                        clients.optJSONObject(i)?.optString("id")?.takeIf { it.isNotBlank() }?.let { add(it) }
+                    }
+                }
+                clientId = if (preferredClient in ids) preferredClient else ids.firstOrNull().orEmpty()
             }
         }
 
@@ -277,8 +372,16 @@ object KunApi {
             if (stores.code in 200..299) {
                 val root = runCatching { JSONObject(stores.body) }.getOrNull()
                 val allStores = root?.optBoolean("allStores", true) ?: true
-                if (!allStores) {
-                    storeId = root?.optJSONArray("stores")?.optJSONObject(0)?.optString("id").orEmpty()
+                val choices = root?.optJSONArray("stores")
+                val allowed = buildList {
+                    if (choices != null) for (index in 0 until choices.length()) {
+                        choices.optJSONObject(index)?.optString("id")?.takeIf { it.isNotBlank() }?.let { add(it) }
+                    }
+                }
+                storeId = when {
+                    preferredClient == clientId && preferredStore in allowed -> preferredStore
+                    !allStores -> allowed.firstOrNull().orEmpty()
+                    else -> ""
                 }
             }
         }
@@ -295,6 +398,7 @@ object KunApi {
     private fun clearSession(context: Context) {
         clearScope()
         MobileSyncClient.clear()
+        SecureStore.put(context, AUTH_PREFS, SELECTED_STORE_KEY, null)
         SecureStore.put(context, AUTH_PREFS, SESSION_KEY, null)
     }
     private fun enc(value: String): String = URLEncoder.encode(value, Charsets.UTF_8.name())

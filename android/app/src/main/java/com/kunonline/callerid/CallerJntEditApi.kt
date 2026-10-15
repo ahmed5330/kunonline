@@ -12,7 +12,7 @@ object CallerJntEditApi {
     fun save(context: Context, orderId: String, payload: JSONObject): CustomerServiceJsonResult {
         val cookie = KunApi.sessionCookie(context)
             ?: return CustomerServiceJsonResult(false, "سجّل الدخول أولاً")
-        val clientId = runCatching { KunApi.resolveScope(cookie).clientId }.getOrDefault("")
+        val clientId = runCatching { KunApi.resolveScope(cookie, context).clientId }.getOrDefault("")
         if (clientId.isBlank()) return CustomerServiceJsonResult(false, "تعذر تحديد حساب المتجر")
 
         return runCatching {

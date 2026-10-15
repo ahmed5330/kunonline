@@ -11,6 +11,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -80,6 +81,10 @@ fun KunNativeAppV25(
     var selected by remember { mutableStateOf(MobileV25Tab.HOME) }
     var newOrdersNotice by remember { mutableStateOf("") }
     var lastSyncAt by remember { mutableLongStateOf(CustomerCache.lastSyncedAt(context)) }
+    var storeOptions by remember { mutableStateOf<List<MobileStoreOption>>(emptyList()) }
+    var currentStore by remember { mutableStateOf(ScopeInfo()) }
+    var storeOptionsLoading by remember { mutableStateOf(false) }
+    var storeOptionsError by remember { mutableStateOf("") }
     val dateRevision = MobileDateFilterState.revision
 
     fun rawOrderIds(value: CommerceSnapshot?): Set<String> {
@@ -126,8 +131,23 @@ fun KunNativeAppV25(
     }
 
     LaunchedEffect(loggedIn) {
-        if (!loggedIn) return@LaunchedEffect
+        if (!loggedIn) {
+            storeOptions = emptyList()
+            currentStore = ScopeInfo()
+            storeOptionsError = ""
+            return@LaunchedEffect
+        }
         SyncJobService.schedule(context)
+        storeOptionsLoading = true
+        val result = withContext(Dispatchers.IO) { KunApi.loadStoreOptions(context) }
+        storeOptionsLoading = false
+        if (!loggedIn) return@LaunchedEffect
+        storeOptions = result.stores
+        currentStore = result.current
+        storeOptionsError = if (result.ok) result.message else result.message
+        // Show real data immediately after sign-in, rather than waiting for the
+        // next 15-second foreground poll to populate the dashboard.
+        if (snapshot == null) performRefresh(false)
     }
     // A period switch does one immediate delta refresh. It does not create a new
     // recurring timer, so normal Cloudflare request cadence stays unchanged.
@@ -263,6 +283,40 @@ fun KunNativeAppV25(
                                 MobileV25Tab.HOME -> V25Home(
                                     snapshot = snapshot ?: CommerceSnapshot(),
                                     newOrdersNotice = newOrdersNotice,
+                                    storeOptions = storeOptions,
+                                    currentStore = currentStore,
+                                    storeOptionsLoading = storeOptionsLoading,
+                                    storeOptionsError = storeOptionsError,
+                                    storeSwitching = loading,
+                                    onSelectStore = { option ->
+                                        if (!loading) {
+                                            loading = true
+                                            scope.launch {
+                                                val result = withContext(Dispatchers.IO) {
+                                                    KunApi.selectStore(context, option)
+                                                }
+                                                if (result.ok) {
+                                                    snapshot = null
+                                                    newOrdersNotice = ""
+                                                    lastSyncAt = 0L
+                                                    currentStore = ScopeInfo(option.clientId, option.storeId)
+                                                    message = result.message
+                                                    loading = false
+                                                    performRefresh(true)
+                                                } else {
+                                                    loading = false
+                                                    storeOptionsError = result.message
+                                                    val latest = withContext(Dispatchers.IO) {
+                                                        KunApi.loadStoreOptions(context)
+                                                    }
+                                                    if (latest.ok) {
+                                                        storeOptions = latest.stores
+                                                        currentStore = latest.current
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    },
                                     onOpenOrders = { selected = MobileV25Tab.ORDERS },
                                     onOpenCustomerService = { selected = MobileV25Tab.CUSTOMER_SERVICE }
                                 )
@@ -377,6 +431,12 @@ private fun V25Login(busy: Boolean, message: String, onLogin: (String, String) -
 private fun V25Home(
     snapshot: CommerceSnapshot,
     newOrdersNotice: String,
+    storeOptions: List<MobileStoreOption>,
+    currentStore: ScopeInfo,
+    storeOptionsLoading: Boolean,
+    storeOptionsError: String,
+    storeSwitching: Boolean,
+    onSelectStore: (MobileStoreOption) -> Unit,
     onOpenOrders: () -> Unit,
     onOpenCustomerService: () -> Unit
 ) {
@@ -393,6 +453,66 @@ private fun V25Home(
     ) {
         item {
             KunPageIntro("متابعة $periodLabel", "كل جديد في الطلبات والتواصل يظهر هنا تلقائيًا")
+        }
+        item {
+            KunSectionCard {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Outlined.Storefront, null, tint = KunColors.Pine)
+                    Spacer(Modifier.width(8.dp))
+                    Text("اختيار المتجر", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f))
+                    if (storeOptions.isNotEmpty()) {
+                        Text("${storeOptions.size} متجر", color = KunColors.Ink3, style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+                if (storeOptionsLoading) {
+                    LinearProgressIndicator(Modifier.fillMaxWidth(), color = KunColors.Pine)
+                    Text("جاري تحميل المتاجر المسموح بها…", color = KunColors.Ink2)
+                } else if (storeOptions.isEmpty()) {
+                    Text(storeOptionsError.ifBlank { "لا توجد متاجر متاحة لهذا الحساب" }, color = KunColors.Ink2)
+                } else {
+                    if (storeOptionsError.isNotBlank()) {
+                        Text(storeOptionsError, color = KunColors.Brick, style = MaterialTheme.typography.bodySmall)
+                    }
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        items(storeOptions, key = { "${it.clientId}:${it.storeId}" }) { option ->
+                            val active = currentStore.clientId == option.clientId && currentStore.storeId == option.storeId
+                            OutlinedCard(
+                                onClick = { if (!active) onSelectStore(option) },
+                                enabled = !storeSwitching,
+                                modifier = Modifier.widthIn(min = 195.dp, max = 270.dp),
+                                colors = CardDefaults.outlinedCardColors(
+                                    containerColor = if (active) KunColors.PineSoft else KunColors.Surface
+                                )
+                            ) {
+                                Column(
+                                    Modifier.padding(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(5.dp)
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            if (active) Icons.Outlined.CheckCircle else Icons.Outlined.Storefront,
+                                            null,
+                                            tint = KunColors.Pine,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Spacer(Modifier.width(7.dp))
+                                        Text(option.storeName, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Bold)
+                                    }
+                                    Text(option.clientName, style = MaterialTheme.typography.bodySmall, color = KunColors.Ink2, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(
+                                        if (active) "المتجر الحالي" else if (option.role == "viewer") "عرض فقط • اضغط للتبديل" else "اضغط لفتح المتجر",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = if (active) KunColors.Pine else KunColors.Ink3
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    if (storeOptions.size > 1) {
+                        Text("اختار المتجر عشان تشوف طلباته وعملاءه فقط. تغيير المتجر بيحدّث البيانات تلقائيًا.", style = MaterialTheme.typography.bodySmall, color = KunColors.Ink2)
+                    }
+                }
+            }
         }
         if (newOrdersNotice.isNotBlank()) {
             item {
