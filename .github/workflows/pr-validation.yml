@@ -28,6 +28,7 @@ jobs:
         run: |
           node scripts/preview-db-release-preflight-test.mjs
           node scripts/preview-db-preflight-command-test.mjs
+          node scripts/preview-live-schema-rehearsal-test.mjs
           node scripts/inventory-migrations-compatibility-test.mjs
           node scripts/preview-release-schema-contract-test.mjs
           node scripts/preview-d1-release-invariants-test.mjs
