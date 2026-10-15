@@ -1,6 +1,17 @@
 name: Shared Preview D1 read-only readiness
 # Runs on the protected review branch WITHOUT releasing any Worker or changing D1.
 on:
+  # This audit workflow is currently review-branch-only. GitHub requires a
+  # workflow on the default branch for UI workflow_dispatch, so keep this
+  # branch push trigger to make the audit executable before release.
+  push:
+    branches: [release/growth-wallet-preview-20261015]
+    paths:
+      - '.github/workflows/shared-preview-d1-readonly.yml'
+      - 'scripts/preview-live-readonly-availability.mjs'
+      - 'scripts/preview-wallet-finance-invariants.mjs'
+      - 'scripts/preview-d1-release-invariants.mjs'
+      - 'scripts/preview-release-schema-contract.mjs'
   workflow_dispatch:
 permissions:
   contents: read
