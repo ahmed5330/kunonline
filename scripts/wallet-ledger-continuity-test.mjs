@@ -62,5 +62,29 @@ const capped=auditWalletLedgerContinuity(long,1);
 assert.equal(capped.anomalyCount,2);
 assert.equal(capped.anomalies.length,1);
 assert.equal(capped.truncatedAnomalies,true);
+// NULL and missing monetary values are unknown, never a real zero balance.
+const missingCurrent=auditWalletLedgerContinuity([
+  {seq:2,id:'NEW',type:'deduct',amount:10,balance_after:null},
+  {seq:1,id:'OLD',type:'topup',amount:20,balance_after:20}
+]);
+assert.equal(missingCurrent.anomalyCount,1);
+assert.equal(missingCurrent.anomalies[0].reason,'non_numeric_balance');
+const missingPrevious=auditWalletLedgerContinuity([
+  {seq:2,id:'NEW2',type:'deduct',amount:10,balance_after:10},
+  {seq:1,id:'OLD2',type:'topup',amount:20,balance_after:null}
+]);
+assert.equal(missingPrevious.anomalyCount,1);
+db.prepare("UPDATE wallet_log SET balance_after=NULL WHERE id='TOPUP'").run();
+const missingTopup=await walletPaymentDiagnostics(env,'MERCHANT');
+assert.equal(missingTopup.lastApprovedCredit.balanceAfter,null);
+assert.equal(missingTopup.sinceLastCredit.expectedBalance,null);
+assert.equal(missingTopup.sinceLastCredit.drift,null);
+assert.equal(missingTopup.sinceLastCredit.reconstructionReliable,false);
+db.prepare("UPDATE wallet_log SET balance_after=NULL WHERE id='MONTH'").run();
+const missingLatest=await walletPaymentDiagnostics(env,'MERCHANT');
+assert.equal(missingLatest.lastLedgerBalance,null);
+assert.equal(missingLatest.ledgerBalanceMismatch,null);
+assert.ok(missingLatest.ledgerContinuity.anomalyCount>0);
+
 db.close();
 console.log('Wallet forensic ledger continuity PASS: sequential balance, debits by source, tenant isolation and hidden mid-ledger drift');
