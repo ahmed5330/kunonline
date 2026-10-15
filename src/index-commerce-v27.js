@@ -284,6 +284,11 @@ async function fetchV27(request,env,ctx={}){
   const url=new URL(request.url),path=url.pathname;
   try{
     if(path==='/api/preview/version')return json({ok:true,build:BUILD,environment:env.APP_ENV||'unknown',entrypoint:'index-commerce-v27.js'});
+    if(path==='/api/preview/growth-release'&&request.method.toUpperCase()==='GET')
+      return json({ok:true,release:'kun-growth-wallet-20261015-r1',
+        capabilities:['growth-scenario','stock-catalog','operating-evidence','accounting-cod-quality','wallet-ledger-integrity'],
+        environment:env.APP_ENV||'unknown'});
+
     if(['/api/me','/api/login','/api/setup','/api/logout','/api/preview-admin-recovery'].includes(path))return commerceV26.fetch(request,env,ctx);
     const bearer=(request.headers.get('authorization')||'').trim(),bearerToken=bearer.replace(/^Bearer\s+/i,'');
     if(env.INGEST_TOKEN&&/^Bearer\s+/i.test(bearer)&&safeEqual(bearerToken,env.INGEST_TOKEN)){
