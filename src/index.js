@@ -1313,37 +1313,10 @@ async function handleApi(request, env, url, path) {
         }
         if (refundAmount === null || refundAmount === undefined) refundAmount = Number(cur.total) || 0;
 
-        if (cur.product_id && !restocked) {
-          if (cur.variant_id) {
-            const variant = await env.DB.prepare('SELECT name, stock, product_id FROM product_variants WHERE id = ?').bind(cur.variant_id).first();
-            if (variant) {
-              const qty = Number(cur.qty) || 1;
-              const newStock = Math.max(0, (Number(variant.stock) || 0) + qty);
-              await env.DB.prepare('UPDATE product_variants SET stock = ? WHERE id = ?').bind(newStock, cur.variant_id).run();
-              const prodRow = await env.DB.prepare('SELECT name FROM products WHERE id = ?').bind(cur.product_id).first();
-              await env.DB.prepare(
-                `INSERT INTO stock_log (id, client_id, store_id, product_id, variant_id, product_name, delta, new_stock, note, supplier_id, supplier_name, created_at, created_by)
-                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`
-              ).bind('STK-' + crypto.randomUUID().slice(0, 8).toUpperCase(), cur.client_id, cur.store_id || null, cur.product_id, cur.variant_id,
-                `${(prodRow && prodRow.name) || ''} — ${variant.name}`, qty, newStock, `مرتجع من أوردر ${id}`,
-                null, null, new Date().toISOString(), user.email || user.role).run();
-              restocked = true;
-            }
-          } else {
-            const prod = await env.DB.prepare('SELECT name, stock FROM products WHERE id = ?').bind(cur.product_id).first();
-            if (prod) {
-              const qty = Number(cur.qty) || 1;
-              const newStock = Math.max(0, (Number(prod.stock) || 0) + qty);
-              await env.DB.prepare('UPDATE products SET stock = ? WHERE id = ?').bind(newStock, cur.product_id).run();
-              await env.DB.prepare(
-                `INSERT INTO stock_log (id, client_id, store_id, product_id, variant_id, product_name, delta, new_stock, note, supplier_id, supplier_name, created_at, created_by)
-                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`
-              ).bind('STK-' + crypto.randomUUID().slice(0, 8).toUpperCase(), cur.client_id, cur.store_id || null, cur.product_id, null, prod.name, qty,
-                newStock, `مرتجع من أوردر ${id}`, null, null, new Date().toISOString(), user.email || user.role).run();
-              restocked = true;
-            }
-          }
-        }
+        // v129: a carrier/customer return is not sellable stock until the physical unit
+        // is scanned and inspected in the Returns section. The unit-tracking disposition
+        // endpoint is now the only path that restores stock for new returns.
+        restocked = false;
       } else if (leavingReturn) {
         /* تصحيح غلطة: الأوردر كان متسجل مرتجع وبيرجع لحالة تانية — نلغي إضافة المخزون اللي كانت حصلت */
         if (cur.product_id && restocked) {
