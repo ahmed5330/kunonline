@@ -1,0 +1,189 @@
+/* Kun Online v150 — dashboard fidelity upgrade for the approved concept.
+ * Applies to the live dashboard and does not replace real data/behavior. */
+:root{--k150-brand:#10549a;--k150-green:#74d64e;--k150-ink:#173651;--k150-line:#e2ebf4;--k150-sky:#eef6fd}
+#root .v33-dashboard{gap:18px!important}
+#root .v33-dashboard .dash-hero.kun150-branded-hero{
+  display:flex;flex-wrap:wrap;align-items:center;gap:20px;
+  min-height:194px;padding:24px 27px!important;
+  border-radius:22px!important;
+  background:radial-gradient(circle at 17% 22%,rgba(116,214,78,.085) 0 12%,transparent 12.4%),
+    radial-gradient(circle at 23% 30%,transparent 0 20%,rgba(116,214,78,.12) 20.4% 20.7%,transparent 21%),
+    linear-gradient(115deg,#0b3967 0%,#0f5299 58%,#1a76aa 100%)!important;
+  border:1px solid rgba(51,140,204,.32)!important;
+  color:#fff!important;
+  box-shadow:0 15px 35px rgba(16,84,154,.14)!important;
+}
+#root .v33-dashboard .kun150-branded-hero>div:first-child{
+  position:relative;z-index:1;flex:1 1 420px;min-width:0
+}
+#root .v33-dashboard .kun150-branded-hero .dash-eyebrow{
+  display:inline-flex;align-items:center;gap:8px;
+  font:800 11px Cairo,Tajawal,sans-serif;color:#acfb85!important;letter-spacing:0
+}
+#root .v33-dashboard .kun150-branded-hero .dash-eyebrow:before{
+  content:"";width:7px;height:7px;border-radius:50%;
+  background:#91f169;box-shadow:0 0 0 5px rgba(137,232,114,.16)
+}
+#root .v33-dashboard .kun150-branded-hero .title{
+  font:900 clamp(21px,2vw,29px)/1.5 Cairo,Tajawal,sans-serif!important;
+  color:#fff!important;margin:6px 0!important;letter-spacing:0!important
+}
+#root .v33-dashboard .kun150-branded-hero .sub{
+  color:#e5f2ff!important;font-size:12px!important;line-height:1.8!important;max-width:680px
+}
+#root .v33-dashboard .kun150-branded-hero .dash-hero-side{
+  position:relative;z-index:1;flex:0 1 245px;min-width:170px;
+  display:grid;justify-items:center;text-align:center;gap:2px;
+  background:rgba(255,255,255,.09)!important;
+  border:1px solid rgba(224,243,255,.18)!important;border-radius:17px;
+  padding:13px 16px!important;box-shadow:none!important
+}
+#root .v33-dashboard .kun150-branded-hero .dash-hero-side span,
+#root .v33-dashboard .kun150-branded-hero .dash-hero-side small{color:#d0e5fa!important}
+#root .v33-dashboard .kun150-branded-hero .dash-hero-side strong{color:#fff!important;font-size:12px}
+#root .v33-dashboard .kun150-hero-logo{
+  display:block;width:76px;height:76px;object-fit:contain;
+  border-radius:50%;padding:4px;background:white;
+  border:2px solid #8ae15b;
+  box-shadow:0 0 0 6px rgba(116,214,78,.08),0 7px 17px rgba(1,17,38,.2)
+}
+#root .kun150-hero-tools{display:flex;flex-wrap:wrap;align-items:center;gap:11px;margin-top:15px}
+#root .kun150-hero-tools[hidden]{display:none!important}
+#root .kun150-hero-status{display:inline-flex;align-items:center;gap:7px;color:#d5efff;font-size:10px}
+#root .kun150-hero-status:before{content:"✓";display:grid;place-items:center;width:17px;height:17px;border-radius:50%;background:rgba(125,227,104,.18);color:#9eee8d}
+#root .kun150-hero-actions{display:flex;align-items:center;flex-wrap:wrap;gap:6px}
+#root .kun150-action{
+  display:inline-flex;justify-content:center;align-items:center;gap:6px;
+  min-height:35px;padding:7px 10px;
+  border:1px solid rgba(217,239,255,.28)!important;border-radius:9px;
+  color:#fff!important;background:rgba(255,255,255,.11)!important;
+  font:800 10px Cairo,Tajawal,sans-serif;cursor:pointer;
+  transition:background .15s,border-color .15s
+}
+#root .kun150-action:hover{background:rgba(255,255,255,.23)!important;border-color:rgba(255,255,255,.52)!important}
+#root .kun150-action:focus-visible{outline:3px solid #9ae97b;outline-offset:2px}
+#root .kun150-action-symbol{color:#aeed94;font-size:15px}
+#root .v33-dashboard .dash-period-toolbar{
+  border:1px solid #e1eaf4!important;background:rgba(255,255,255,.96)!important;
+  border-radius:14px!important;
+  box-shadow:0 6px 20px rgba(19,69,118,.04)!important
+}
+#root .v33-dashboard .dash-x-nav button{
+  border-radius:10px!important;padding:9px 13px;min-height:38px;
+  color:#446684;background:#f7fafe;border-color:#e3edf5;
+  font:800 11px Cairo,Tajawal,sans-serif
+}
+#root .v33-dashboard .dash-x-nav button:hover{color:#10549a;background:#ebf6fd;border-color:#b9d8ec}
+#root .v33-dashboard .dash-f126{
+  border:1px solid var(--k150-line)!important;
+  border-radius:19px!important;background:#fff!important;
+  box-shadow:0 11px 31px rgba(17,75,132,.052)!important;
+  padding:22px!important
+}
+#root .v33-dashboard .dash-f126 .dash-f126-headline{margin-bottom:20px}
+#root .v33-dashboard .dash-f126 .dash-f126-headline h2{
+  font:900 20px/1.5 Cairo,Tajawal,sans-serif;color:#173b5b
+}
+#root .v33-dashboard .dash-f126 .dash-f126-eyebrow{
+  color:#148964;font-weight:850;font-size:10px
+}
+#root .v33-dashboard .dash-f126 .dash-f126-grid{
+  gap:14px!important
+}
+#root .v33-dashboard .dash-f126 .dash-f126-card{
+  border:1px solid #deebf5!important;
+  border-radius:16px!important;
+  min-height:142px;padding:16px!important;
+  background:#fff!important;
+  box-shadow:0 6px 17px rgba(20,71,117,.045)!important
+}
+#root .v33-dashboard .dash-f126 .dash-f126-card:before{
+  inset:0 0 auto;height:3px;
+  background:var(--f126-accent,#10549a)!important
+}
+#root .v33-dashboard .dash-f126 .dash-f126-card.cpp{--f126-accent:#74ca42}
+#root .v33-dashboard .dash-f126 .dash-f126-card.orders{--f126-accent:#10549a}
+#root .v33-dashboard .dash-f126 .dash-f126-card.confirmation{--f126-accent:#0f9c79}
+#root .v33-dashboard .dash-f126 .dash-f126-card.delivery{--f126-accent:#36ae68}
+#root .v33-dashboard .dash-f126 .dash-f126-icon{
+  background:color-mix(in srgb,var(--f126-accent) 13%,white);
+  border-radius:11px;font-weight:900
+}
+#root .v33-dashboard .dash-f126 .dash-f126-copy span{
+  color:#6b8199;font:800 11px Cairo,Tajawal,sans-serif
+}
+#root .v33-dashboard .dash-f126 .dash-f126-value{
+  font-size:clamp(20px,2vw,26px)!important;
+  color:#183a59;letter-spacing:0;line-height:1.35;margin:12px 0
+}
+#root .v33-dashboard .dash-f126 .dash-f126-card.cpp .dash-f126-value{color:#0b7750}
+#root .v33-dashboard .dash-f126 .dash-f126-card.negative .dash-f126-value{color:#b42333}
+#root .v33-dashboard .dash-f126 .dash-f126-card.collected .dash-f126-value{color:#14815a}
+#root .v33-dashboard .dash-f126 .dash-f126-card:hover{border-color:#abd1e9!important;transform:translateY(-2px)}
+#root .v33-dashboard .dash-section[data-dash-section]{
+  border-radius:18px!important;border:1px solid #e1eaf3;
+  box-shadow:0 9px 25px rgba(21,75,127,.045)!important
+}
+#root .v33-dashboard .dash-section[data-dash-section]:before{
+  background:linear-gradient(90deg,#74d64e,#10549a 80%,transparent)!important;height:3px
+}
+#root .v33-dashboard .dash-v125-period-bar{
+  border:1px solid #dcebf5!important;
+  border-radius:11px!important;background:#f7fbff!important;
+  color:#284a68
+}
+#root .v33-dashboard .dash-v125-period-bar .dash-v125-period-copy span{color:#69849a}
+#root .v33-dashboard .dash-v125-period-bar select{
+  border-radius:9px!important;background:#fff!important;
+  min-height:38px;color:#1c4f77!important
+}
+#root .v33-dashboard .dash-chart-card,#root .v33-dashboard .dash-table-wrap{
+  background:#fff;border-radius:14px!important;border:1px solid #e0eaf4
+}
+#root .v33-dashboard .dash-trend-tab.active{background:#e9f5ff!important;color:#10549a!important;border-color:#c5dfed!important}
+#root .v33-dashboard .dash-province-track i{background:linear-gradient(90deg,#73d14b,#10549a)!important}
+body[data-theme="dark"] #root .v33-dashboard .dash-period-toolbar,
+body[data-theme="dark"] #root .v33-dashboard .dash-f126,
+body[data-theme="dark"] #root .v33-dashboard .dash-section[data-dash-section],
+body[data-theme="dark"] #root .v33-dashboard .dash-chart-card,
+body[data-theme="dark"] #root .v33-dashboard .dash-table-wrap{
+  background:#17283d!important;border-color:#36516c!important;
+  color:#ecf5ff!important
+}
+body[data-theme="dark"] #root .v33-dashboard .dash-f126 .dash-f126-card{
+  background:#1c3047!important;border-color:#3b536f!important;box-shadow:none!important
+}
+body[data-theme="dark"] #root .v33-dashboard .dash-f126 .dash-f126-value,
+body[data-theme="dark"] #root .v33-dashboard .dash-f126 .dash-f126-headline h2,
+body[data-theme="dark"] #root .v33-dashboard .dash-f126 .dash-f126-copy span{color:#ecf5ff!important}
+body[data-theme="dark"] #root .v33-dashboard .dash-f126 .dash-f126-card.negative .dash-f126-value{color:#ff9aa9!important}
+body[data-theme="dark"] #root .v33-dashboard .dash-v125-period-bar{
+  background:#1c3047!important;border-color:#38516a!important;color:#ecf5ff
+}
+body[data-theme="dark"] #root .v33-dashboard .dash-v125-period-bar select{
+  background:#203a55!important;border-color:#41627e!important;color:#fff!important
+}
+@media(max-width:1000px){
+  #root .v33-dashboard .dash-hero.kun150-branded-hero{gap:12px}
+  #root .v33-dashboard .kun150-branded-hero .dash-hero-side{flex-basis:205px}
+}
+@media(max-width:760px){
+  #root .v33-dashboard .dash-hero.kun150-branded-hero{padding:18px 15px!important;min-height:0}
+  #root .v33-dashboard .kun150-branded-hero>div:first-child{flex-basis:100%}
+  #root .v33-dashboard .kun150-branded-hero .dash-hero-side{flex-basis:100%;display:flex;justify-content:flex-start;text-align:right;flex-wrap:wrap;gap:9px;padding:11px!important}
+  #root .v33-dashboard .kun150-hero-logo{width:56px;height:56px;margin-inline-end:5px}
+  #root .v33-dashboard .kun150-hero-status{font-size:9px}
+  #root .v33-dashboard .dash-f126{padding:13px!important}
+  #root .v33-dashboard .dash-f126 .dash-f126-grid{gap:9px!important}
+  #root .v33-dashboard .dash-f126 .dash-f126-card{min-height:114px;padding:13px!important}
+  #root .v33-dashboard .dash-v125-period-bar{padding:9px!important}
+}
+@media(max-width:520px){
+  #root .v33-dashboard .kun150-hero-tools{align-items:flex-start;flex-direction:column}
+  #root .v33-dashboard .kun150-hero-actions{width:100%}
+  #root .v33-dashboard .kun150-action{flex:1 1 calc(50% - 7px)}
+  #root .v33-dashboard .dash-f126 .dash-f126-card{padding:12px!important}
+}
+@media(prefers-reduced-motion:reduce){
+  #root .v33-dashboard .dash-f126 .dash-f126-card{transition:none!important;transform:none!important}
+}

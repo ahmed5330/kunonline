@@ -106,6 +106,21 @@ jobs:
       - run: npm install --ignore-scripts
       - name: Deploy production Worker only — no migrations
         run: npx wrangler deploy --config wrangler.production.toml
+      - name: Verify live branded dashboard and isolated daisyUI design preview
+        run: |
+          set -euo pipefail
+          nonce="${GITHUB_RUN_ID}-${GITHUB_SHA}"
+          curl --fail --silent --show-error --location --retry 3 --retry-delay 2 "https://app.kun-online.com/v2/?design=${nonce}" -o /tmp/kun-design-live.html
+          curl --fail --silent --show-error --location --retry 3 --retry-delay 2 "https://app.kun-online.com/v2/kun-dashboard-polish-v150.css?v=${nonce}" -o /tmp/kun-design-live.css
+          curl --fail --silent --show-error --location --retry 3 --retry-delay 2 "https://app.kun-online.com/v2/kun-dashboard-brand-v150.js?v=${nonce}" -o /tmp/kun-design-live.js
+          curl --fail --silent --show-error --location --retry 3 --retry-delay 2 "https://app.kun-online.com/v2/design-preview/index.html?v=${nonce}" -o /tmp/kun-design-live-preview.html
+          grep -Fq '/v2/kun-dashboard-polish-v150.css?v=150.0' /tmp/kun-design-live.html
+          grep -Fq '/v2/kun-dashboard-brand-v150.js?v=150.0' /tmp/kun-design-live.html
+          grep -Fq 'kun150-hero-logo' /tmp/kun-design-live.css
+          grep -Fq "logo.src='/logo.png'" /tmp/kun-design-live.js
+          grep -Fq 'daisyui@5' /tmp/kun-design-live-preview.html
+          grep -Fq 'noindex,nofollow' /tmp/kun-design-live-preview.html
+          echo 'PASS: live branded dashboard assets and isolated daisyUI design preview are reachable'
       - name: Verify live Campaign comparison assets
         env:
           CAMPAIGN_LIVE_BASE: https://app.kun-online.com

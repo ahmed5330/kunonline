@@ -5,6 +5,7 @@ on:
     paths:
       - 'public/v2/**'
       - 'scripts/v2-ui-static-audit.mjs'
+      - 'scripts/kun-dashboard-brand-v150-test.mjs'
       - '.github/workflows/v2-ui-static-audit.yml'
   workflow_dispatch:
 
@@ -18,3 +19,5 @@ jobs:
           node-version: '20'
       - name: Audit V2 JavaScript runtime hazards
         run: node scripts/v2-ui-static-audit.mjs
+      - name: Test branded dashboard live-data and navigation contract
+        run: node scripts/kun-dashboard-brand-v150-test.mjs
