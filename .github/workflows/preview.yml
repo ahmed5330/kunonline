@@ -186,6 +186,11 @@ jobs:
         continue-on-error: true
         run: |
           npm run smoke:preview
+      - name: Validate canonical growth-wallet capability handshake
+        id: growth_release
+        if: steps.worker_ownership.outputs.is_current == 'true' && steps.smoke.outcome == 'success'
+        continue-on-error: true
+        run: node scripts/production-preview-release-gate.mjs
 
       - name: Live real Workers AI competitor analysis (synthetic QA store only)
         id: competitor_ai_live
@@ -235,6 +240,7 @@ jobs:
         if: always() && steps.worker_ownership.outputs.is_current == 'true'
         env:
           SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
+          GROWTH_RELEASE_OUTCOME: ${{ steps.growth_release.outcome }}
           STORE_B_OUTCOME: ${{ steps.live.outcome }}
           TEAM_OUTCOME: ${{ steps.team_live.outcome }}
           CUSTOMER_SERVICE_OUTCOME: ${{ steps.customer_service_live.outcome }}
@@ -245,7 +251,7 @@ jobs:
         run: |
           set -euo pipefail
           failed=0
-          for gate in SMOKE_OUTCOME COMPETITOR_AI_OUTCOME STORE_B_OUTCOME TEAM_OUTCOME CUSTOMER_SERVICE_OUTCOME EASYORDERS_OUTCOME DASHBOARD_OUTCOME BROWSER_OUTCOME; do
+          for gate in SMOKE_OUTCOME GROWTH_RELEASE_OUTCOME COMPETITOR_AI_OUTCOME STORE_B_OUTCOME TEAM_OUTCOME CUSTOMER_SERVICE_OUTCOME EASYORDERS_OUTCOME DASHBOARD_OUTCOME BROWSER_OUTCOME; do
             outcome="${!gate:-missing}"
             echo "$gate=$outcome"
             if [ "$outcome" != "success" ]; then failed=1; fi
