@@ -2,6 +2,9 @@ import app,{SyncEntrypoint as BaseSyncEntrypoint} from './index-commerce-v38-bas
 import {handleClarityApi,syncClarityScheduled} from './clarity-integration.js';
 import {handleAIMarketing} from './ai-marketing-analyst.js';
 import {handleCompetitorIntelligence} from './competitor-intelligence.js';
+import {handleSubscriptionControl} from './subscription-control.js';
+import {reconcileMonthlySubscriptions} from './subscription-billing.js';
+import {handleInventoryUnitTracking,syncInventoryTrackingAfterResponse,reconcileTrackedOrderLifecycles,reconcileAllClientsUnitCoverage} from './inventory-unit-tracking.js';
 import safety from './index-commerce-v38-safety.js';
 import core from './index-commerce-v38-core.js';
 import {requirePermission} from './access-control.js';
@@ -24,7 +27,14 @@ const V2_UI_SCRIPTS=[
   '<script src="/v2/modules-v117-collaboration-root.js?v=117.0" data-kun-collaboration-root="1"></script>',
   '<script src="/v2/modules-v117-collaboration.js?v=117.0" data-kun-collaboration="1"></script>',
   '<script src="/v2/modules-v117-collaboration-sidebar.js?v=117.3" data-kun-collaboration-sidebar="1"></script>',
-  '<script src="/v2/modules-v119-collaboration-order-link.js?v=119.0" data-kun-collaboration-order-link="1"></script>'
+  '<script src="/v2/modules-v119-collaboration-order-link.js?v=119.0" data-kun-collaboration-order-link="1"></script>',
+  '<script src="/v2/modules-v122-dashboard-experience.js?v=122.1" data-kun-dashboard-experience="1"></script>',
+  '<script src="/v2/modules-v123-dashboard-unified.js?v=123.0" data-kun-dashboard-unified="1"></script>',
+  '<script src="/v2/modules-v124-dashboard-periods-province.js?v=124.1" data-kun-dashboard-periods-v124="1"></script>',
+  '<script src="/v2/modules-v125-dashboard-section-periods.js?v=125.3" data-kun-dashboard-section-periods-v125="1"></script>',
+  '<script src="/v2/modules-v126-dashboard-finance-top.js?v=126.5" data-kun-dashboard-finance-top-v126="1"></script>',
+  '<script src="/v2/modules-v127-subscriptions.js?v=127.22" data-kun-subscriptions-v127="1"></script>',
+  '<script src="/v2/modules-v128-unit-tracking.js?v=128.4" data-kun-unit-tracking-v128="1"></script>'
 ];
 
 function redirectLegacyRoot(request){
@@ -105,12 +115,18 @@ export default {
   async fetch(request,env,ctx){
     const rootRedirect=redirectLegacyRoot(request);
     if(rootRedirect)return rootRedirect;
+    // Enforce subscription and balance state before AI, Clarity or competitor add-ons.
+    // Auth/login and topup recovery exemptions are defined centrally in subscription-control.
+    const subscription=await handleSubscriptionControl({request,env,ctx,delegate:app});
+    if(subscription)return subscription;
     const competitors=await handleCompetitorIntelligence({request,env,ctx,delegate:app});
     if(competitors)return competitors;
     const aiMarketing=await handleAIMarketing({request,env,ctx,delegate:app});
     if(aiMarketing)return aiMarketing;
     const clarity=await handleClarityApi({request,env,ctx,delegate:app});
     if(clarity)return clarity;
+    const tracking=await handleInventoryUnitTracking({request,env,ctx,delegate:app});
+    if(tracking)return tracking;
     const mobileUpdate=await handleMobileAppUpdate(request);
     if(mobileUpdate)return mobileUpdate;
     const collaborationDenied=await collaborationPermissionGuard(request,env,ctx);
@@ -130,19 +146,28 @@ export default {
     if(monthly)return monthly;
     const handled=await handleJtHistoryReconcile({request,env,ctx,delegate:app});
     if(handled)return handled;
-    return injectV2Ui(request,await app.fetch(request,env,ctx));
+    const baseResponse=await app.fetch(request,env,ctx);
+    return injectV2Ui(request,await syncInventoryTrackingAfterResponse({request,response:baseResponse,env,actor:'system'}));
   },
-  scheduled(event,env,ctx){return app.scheduled?.(event,env,ctx);}
+  scheduled(event,env,ctx){
+    ctx?.waitUntil?.(reconcileMonthlySubscriptions(env,{limit:1000}).catch(()=>[]));
+    ctx?.waitUntil?.(reconcileTrackedOrderLifecycles(env,{limit:1000,actor:'scheduled'}).catch(()=>({ok:false})));
+    if(String(event?.cron||'')==='0 */2 * * *')ctx?.waitUntil?.(reconcileAllClientsUnitCoverage(env,{limit:1000,actor:'scheduled'}).catch(()=>({ok:false})));
+    return app.scheduled?.(event,env,ctx);
+  }
 };
 
 export class SyncEntrypoint extends BaseSyncEntrypoint {
   async runCron(cron){
     const upstream=await super.runCron(cron);
+    const lifecycle=await reconcileTrackedOrderLifecycles(this.env,{limit:1000,actor:'sync-cron'}).catch(error=>({ok:false,error:String(error?.code||error?.message||error)}));
+    const monthly=await reconcileMonthlySubscriptions(this.env,{limit:1000}).catch(error=>({ok:false,error:String(error?.code||error?.message||error)}));
+    const coverage=String(cron||'')==='0 */2 * * *'?await reconcileAllClientsUnitCoverage(this.env,{limit:1000,actor:'sync-cron'}).catch(error=>({ok:false,error:String(error?.code||error?.message||error)})):null;
     if(String(cron||'')==='0 */2 * * *'){
       const clarity=await syncClarityScheduled(this.env,{limit:30}).catch(error=>({ok:false,code:error?.code||'CLARITY_SCHEDULED_FAILED'}));
-      return {...(upstream&&typeof upstream==='object'?upstream:{upstream}),clarity};
+      return {...(upstream&&typeof upstream==='object'?upstream:{upstream}),clarity,unitLifecycle:lifecycle,subscription:monthly,unitCoverage:coverage};
     }
-    return upstream;
+    return {...(upstream&&typeof upstream==='object'?upstream:{upstream}),unitLifecycle:lifecycle,subscription:monthly};
   }
   async health(){return {...await super.health(),clarity:'connected-store-snapshots-every-12h'};}
 }

@@ -1,0 +1,86 @@
+name: Shared Preview D1 read-only readiness
+# Runs on the protected review branch WITHOUT releasing any Worker or changing D1.
+on:
+  # This audit workflow is currently review-branch-only. GitHub requires a
+  # workflow on the default branch for UI workflow_dispatch, so keep this
+  # branch push trigger to make the audit executable before release.
+  push:
+    branches: [release/growth-wallet-preview-20261015]
+    paths:
+      - '.github/workflows/shared-preview-d1-readonly.yml'
+      - 'scripts/preview-live-readonly-availability.mjs'
+      - 'scripts/preview-pending-migrations.mjs'
+      - 'scripts/preview-wallet-finance-invariants.mjs'
+      - 'scripts/preview-d1-release-invariants.mjs'
+      - 'scripts/preview-release-schema-contract.mjs'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: kunonline-d1-readonly-readiness
+  cancel-in-progress: true
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Isolated, READ-ONLY environment. Never reuse the Preview deploy token.
+    # Configure environment secrets with a Cloudflare D1 Read-only token;
+    # restrict this environment to the single reviewed release branch.
+    environment:
+      name: kunonline-d1-readonly-audit
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: npm install --ignore-scripts
+      - name: Require dedicated read-only Cloudflare audit credentials
+        run: |
+          if [[ -z "${CLOUDFLARE_API_TOKEN:-}" || -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]]; then
+            echo "::error::Read-only Cloudflare audit blocked: configure both environment secrets in kunonline-d1-readonly-audit. Do not use the Preview deploy token."
+            exit 1
+          fi
+      - name: Confirm live shared D1 connection and pending migrations without writes
+        id: connectivity
+        continue-on-error: true
+        run: node scripts/preview-live-readonly-availability.mjs
+      - name: Inspect live finance ledger consistency without customer records
+        id: finance
+        continue-on-error: true
+        if: steps.connectivity.outcome == 'success'
+        run: node scripts/preview-wallet-finance-invariants.mjs
+      - name: Inspect live inventory conflicts without customer records
+        id: inventory
+        continue-on-error: true
+        if: steps.connectivity.outcome == 'success'
+        run: node scripts/preview-d1-release-invariants.mjs
+      - name: Inspect required live schema columns without customer records
+        id: schema
+        continue-on-error: true
+        if: steps.connectivity.outcome == 'success'
+        run: node scripts/preview-release-schema-contract.mjs
+      - name: Summarize actual Cloudflare read-only results
+        if: always()
+        env:
+          CONNECTIVITY: ${{ steps.connectivity.outcome }}
+          FINANCE: ${{ steps.finance.outcome }}
+          INVENTORY: ${{ steps.inventory.outcome }}
+          SCHEMA: ${{ steps.schema.outcome }}
+        run: |
+          {
+            echo '## Actual shared Preview D1 read-only readiness'
+            echo "- Connection/storage: $CONNECTIVITY"
+            echo "- Finance/ledger: $FINANCE"
+            echo "- Inventory uniqueness: $INVENTORY"
+            echo "- Required schema: $SCHEMA"
+            echo '- No remote writes, deployments, database exports, or customer rows.'
+            echo '- This is NOT approval to migrate or deploy: independent verified backup and live user QA remain required.'
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$CONNECTIVITY" != "success" || "$FINANCE" != "success" || "$INVENTORY" != "success" || "$SCHEMA" != "success" ]]; then
+            echo "::error::Read-only live D1 readiness is incomplete; release remains blocked."
+            exit 1
+          fi

@@ -4,6 +4,15 @@ on:
   push:
     branches: [develop/ux-system-upgrade]
   workflow_dispatch:
+    inputs:
+      shared_d1_approved_sha:
+        description: 'Type <exact HEAD SHA>:kunonline-preview after reviewing the shared database release'
+        required: false
+        type: string
+      verified_backup_reference:
+        description: 'Externally retained, verified backup reference (r2://, s3://, or backup-ticket:)'
+        required: false
+        type: string
 concurrency:
   group: kunonline-preview
   cancel-in-progress: true
@@ -26,6 +35,8 @@ jobs:
           node-version: 22
           package-manager-cache: false
       - run: npm install --ignore-scripts
+      - name: Reject high severity dependency vulnerabilities
+        run: npm audit --audit-level=high
       - run: npm test
       - run: npm run check:deploy
       - name: Verify Production remains migration-free
@@ -44,8 +55,24 @@ jobs:
             echo "Stale Preview run detected. Run=$GITHUB_SHA Latest=$latest. Preview mutation will be skipped."
           fi
 
-      - name: Apply preview migrations only
+      - name: Validate shared D1 release, backup and migration rehearsal before mutation
+        id: shared_d1_preflight
         if: steps.ownership.outputs.is_latest == 'true'
+        env:
+          PREVIEW_D1_APPROVAL: ${{ inputs.shared_d1_approved_sha }}
+          PREVIEW_D1_BACKUP_REF: ${{ inputs.verified_backup_reference }}
+        run: bash scripts/preview-db-release-preflight.sh
+
+      - name: Reject live inventory collisions before migrating production-backed Preview D1
+        if: steps.ownership.outputs.is_latest == 'true' && steps.shared_d1_preflight.outputs.apply_migrations == 'true'
+        run: node scripts/preview-d1-release-invariants.mjs
+
+      - name: Reject live wallet settlement anomalies before modifying shared D1
+        if: steps.ownership.outputs.is_latest == 'true' && steps.shared_d1_preflight.outputs.apply_migrations == 'true'
+        run: node scripts/preview-wallet-finance-invariants.mjs
+
+      - name: Apply preview migrations only after D1 preflight
+        if: steps.ownership.outputs.is_latest == 'true' && steps.shared_d1_preflight.outputs.apply_migrations == 'true'
         run: npm run db:migrate:preview
 
       - name: Reconfirm latest branch HEAD before deploy
@@ -59,6 +86,14 @@ jobs:
             echo "is_latest=false" >> "$GITHUB_OUTPUT"
             echo "Run became stale before deploy. Run=$GITHUB_SHA Latest=$latest. Deploy skipped."
           fi
+
+      - name: Fail closed if live Preview D1 is missing growth, wallet or inventory columns
+        if: steps.deploy_ownership.outputs.is_latest == 'true'
+        run: node scripts/preview-release-schema-contract.mjs
+
+      - name: Verify canonical wallet settlement has no missing or duplicate credits
+        if: steps.deploy_ownership.outputs.is_latest == 'true'
+        run: node scripts/preview-wallet-finance-invariants.mjs
 
       - name: Resolve verified stable Preview source
         id: stable_source
@@ -186,6 +221,11 @@ jobs:
         continue-on-error: true
         run: |
           npm run smoke:preview
+      - name: Validate canonical growth-wallet capability handshake
+        id: growth_release
+        if: steps.worker_ownership.outputs.is_current == 'true' && steps.smoke.outcome == 'success'
+        continue-on-error: true
+        run: node scripts/production-preview-release-gate.mjs
 
       - name: Live real Workers AI competitor analysis (synthetic QA store only)
         id: competitor_ai_live
@@ -235,6 +275,7 @@ jobs:
         if: always() && steps.worker_ownership.outputs.is_current == 'true'
         env:
           SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
+          GROWTH_RELEASE_OUTCOME: ${{ steps.growth_release.outcome }}
           STORE_B_OUTCOME: ${{ steps.live.outcome }}
           TEAM_OUTCOME: ${{ steps.team_live.outcome }}
           CUSTOMER_SERVICE_OUTCOME: ${{ steps.customer_service_live.outcome }}
@@ -245,7 +286,7 @@ jobs:
         run: |
           set -euo pipefail
           failed=0
-          for gate in SMOKE_OUTCOME COMPETITOR_AI_OUTCOME STORE_B_OUTCOME TEAM_OUTCOME CUSTOMER_SERVICE_OUTCOME EASYORDERS_OUTCOME DASHBOARD_OUTCOME BROWSER_OUTCOME; do
+          for gate in SMOKE_OUTCOME GROWTH_RELEASE_OUTCOME COMPETITOR_AI_OUTCOME STORE_B_OUTCOME TEAM_OUTCOME CUSTOMER_SERVICE_OUTCOME EASYORDERS_OUTCOME DASHBOARD_OUTCOME BROWSER_OUTCOME; do
             outcome="${!gate:-missing}"
             echo "$gate=$outcome"
             if [ "$outcome" != "success" ]; then failed=1; fi
