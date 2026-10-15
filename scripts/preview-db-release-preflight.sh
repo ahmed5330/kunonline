@@ -86,7 +86,8 @@ const d=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));
 if (d.version !== "production") throw new Error("D1 Time Travel recovery is not verified for this database");
 ' "$scratch/info.json"
 npx wrangler d1 time-travel info kunonline-preview --config wrangler.preview.toml > "$scratch/bookmark.txt"
-if ! grep -Eq '[0-9a-f]{8}-[0-9a-f-]{16,}' "$scratch/bookmark.txt"; then
+recovery_bookmark="$(grep -Eo '[0-9a-f]{8}-[0-9a-f-]{16,}' "$scratch/bookmark.txt" | head -n 1 || true)"
+if [[ -z "$recovery_bookmark" ]]; then
   echo "::error::Cloudflare D1 recovery bookmark was not returned"; exit 1
 fi
 
@@ -116,7 +117,7 @@ fi
   echo "- Reviewed external backup reference: `$PREVIEW_D1_BACKUP_REF`"
   echo "- Stable comparison: `$stable_sha`"
   echo "- Remote export and additive migrations rehearsed on ephemeral SQLite copy."
-  echo "- D1 Time Travel recovery point captured before remote migration (see restricted run log)."
+  echo "- D1 Time Travel recovery bookmark (before migration): \`$recovery_bookmark\` (restore requires a separate reviewed incident action)."
   echo "- **No remote database writes in this preflight.**"
 } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
 echo "apply_migrations=true" >> "${GITHUB_OUTPUT:-/dev/null}"
