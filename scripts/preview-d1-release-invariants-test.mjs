@@ -13,6 +13,7 @@ assert.equal(evaluateInvariants(liveTables,allOk).ok,true);
 const clash={...allOk,unit_code_collision:1};
 assert.deepEqual(evaluateInvariants(liveTables,clash).conflicts,['unit_code_collision']);
 assert.throws(()=>evaluateInvariants(liveTables,{...allOk,shipment_awb_collision:undefined}),/Invalid live invariant/);
+assert.throws(()=>evaluateInvariants(liveTables,{...allOk,shipment_awb_collision:null}),/Invalid live invariant/);
 assert.throws(()=>evaluateInvariants(liveTables,{...allOk,shipment_awb_collision:2}),/Invalid live invariant/);
 assert.throws(()=>evaluateInvariants(liveTables,{}),/not verified/);
 
