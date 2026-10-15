@@ -33,6 +33,8 @@ assert.equal(read().approved_topup_missing_credit,1,'Credit on another tenant mu
 await assert.rejects(inspect(),/approved_topup_missing_credit/);
 putLog('L3','FOREIGN','B');
 assert.equal(read().approved_topup_missing_credit,0);
+assert.equal(read().orphan_topup_credit,1,'Cross-tenant credit must also be treated as an orphan');
+db.prepare("DELETE FROM wallet_log WHERE id='L2'").run();
 db.prepare("UPDATE wallet_topup_requests SET status='rejected' WHERE id='APPROVED'").run();
 assert.equal(read().credited_topup_rejected,1);
 db.prepare("UPDATE wallet_topup_requests SET status='approved' WHERE id='APPROVED'").run();
