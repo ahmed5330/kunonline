@@ -772,9 +772,21 @@ function computeFinance(state, orders, clientId) {
   };
 }
 
-function scopeForClient(state, orders, clientId) {
-  const client = state.clients.find(c => c.id === clientId);
-  if (!client) return null;
+export async function scopeForClient(env, state, orders, clientId) {
+  let client = state.clients.find(c => c.id === clientId);
+  // Newly created tenants are authoritative in tenant_settings. A concurrent
+  // legacy state save must not make their valid accounts fail at /api/state.
+  if (!client) {
+    const tenant = await env.DB.prepare(
+      'SELECT display_name, status, plan, currency FROM tenant_settings WHERE client_id = ?'
+    ).bind(clientId).first();
+    if (!tenant) return null;
+    client = {
+      id: clientId, name: tenant.display_name || clientId,
+      status: tenant.status || 'active', plan: tenant.plan || 'starter',
+      currency: tenant.currency || 'EGP'
+    };
+  }
   const masked = maskClientSecrets({ clients: [client] }).clients[0];
   delete masked.code;
 
@@ -1150,7 +1162,7 @@ async function handleApi(request, env, url, path) {
     if (isStaff(user)) {
       const stateClientId = me.clientId || url.searchParams.get('clientId');
       if (stateClientId) {
-        const scoped = scopeForClient(state, await listOrders(env, stateClientId, activeStoreId), stateClientId);
+        const scoped = await scopeForClient(env, state, await listOrders(env, stateClientId, activeStoreId), stateClientId);
         if (!scoped) return json({ error: 'الحساب مش موجود' }, 404);
         scoped.products = await listProducts(env, stateClientId, activeStoreId);
         scoped.roles = ROLES;
@@ -1159,7 +1171,7 @@ async function handleApi(request, env, url, path) {
       const masked = maskClientSecrets(state);
       return json({ ...masked, orders: await listOrders(env), products: await listProducts(env), roles: ROLES });
     }
-    const scoped = scopeForClient(state, await listOrders(env, me.clientId, activeStoreId), me.clientId);
+    const scoped = await scopeForClient(env, state, await listOrders(env, me.clientId, activeStoreId), me.clientId);
     if (scoped) scoped.products = await listProducts(env, me.clientId, activeStoreId);
     return scoped ? json(scoped) : json({ error: 'الحساب مش موجود' }, 404);
   }
