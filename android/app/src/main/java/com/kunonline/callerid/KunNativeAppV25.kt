@@ -251,10 +251,10 @@ fun KunNativeAppV25(
                                 colors = colors
                             )
                             NavigationBarItem(
-                                selected = selected == MobileV25Tab.CUSTOMER_SERVICE,
-                                onClick = { selected = MobileV25Tab.CUSTOMER_SERVICE },
-                                icon = { Icon(Icons.Outlined.SupportAgent, contentDescription = null) },
-                                label = { Text("العملاء") },
+                                selected = false,
+                                onClick = onOpenCollaboration,
+                                icon = { Icon(Icons.Outlined.ChatBubbleOutline, contentDescription = null) },
+                                label = { Text("التواصل") },
                                 colors = colors
                             )
                             NavigationBarItem(
