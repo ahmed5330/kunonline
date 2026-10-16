@@ -263,10 +263,10 @@ fun KunNativeAppV25(
                                 colors = colors
                             )
                             NavigationBarItem(
-                                selected = selected == MobileV25Tab.CUSTOMER_SERVICE,
-                                onClick = { selected = MobileV25Tab.CUSTOMER_SERVICE },
-                                icon = { Icon(Icons.Outlined.SupportAgent, contentDescription = null) },
-                                label = { Text("خدمة العملاء") },
+                                selected = false,
+                                onClick = onOpenSystemSections,
+                                icon = { Icon(Icons.Outlined.GridView, contentDescription = null) },
+                                label = { Text("الأقسام") },
                                 colors = colors
                             )
                             NavigationBarItem(
