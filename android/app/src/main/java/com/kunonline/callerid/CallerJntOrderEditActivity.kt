@@ -290,7 +290,9 @@ private fun CallerJntOrderEditScreen(orderId: String, storeId: String, shippingO
                 payload.put("expectedLastEditAt", previous)
             }
             val result = withContext(Dispatchers.IO) {
-                if (shippingOnly) CallerJntEditApi.saveShipping(context, orderId, storeId, payload)
+                if (shippingOnly) CallerJntEditApi.saveShipping(context, orderId, storeId.ifBlank {
+                    editorData?.details?.optJSONObject("order")?.optString("storeId").orEmpty()
+                }, payload)
                 else CallerJntEditApi.save(context, orderId, payload)
             }
             saving = false
@@ -546,7 +548,7 @@ private fun callerJntSeed(data: CustomerServiceEditorData): CallerJntSeed {
     val item = details.optJSONArray("items")?.optJSONObject(0) ?: JSONObject()
     val summary = details.optJSONObject("summary") ?: JSONObject()
     val historyOrder = data.historyOrder
-    val jt = callerJntLatestAddress(historyOrder.optJSONArray("history"))
+    val jt = details.optJSONObject("order")?.optJSONObject("jntAddress")?.takeIf { it.optString("province").isNotBlank() } ?: callerJntLatestAddress(historyOrder.optJSONArray("history"))
     return CallerJntSeed(
         name = customer.optString("name"),
         phone = customer.optString("phone"),
