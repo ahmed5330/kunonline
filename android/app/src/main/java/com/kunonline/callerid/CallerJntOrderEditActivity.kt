@@ -185,7 +185,7 @@ private fun CallerJntOrderEditScreen(orderId: String, storeId: String, shippingO
 
     LaunchedEffect(orderId, storeId) {
         loading = true
-        val dataResult = withContext(Dispatchers.IO) { KunCustomerServiceApi.fetchEditorData(context, orderId, storeId) }
+        val dataResult = withContext(Dispatchers.IO) { KunCustomerServiceApi.fetchEditorData(context, orderId, storeId, requireHistory = shippingOnly) }
         val manifestResult = runCatching { CallerJntAddressRepository.manifest() }
         if (!dataResult.ok) {
             error = dataResult.message
@@ -286,7 +286,7 @@ private fun CallerJntOrderEditScreen(orderId: String, storeId: String, shippingO
         saving = true
         scope.launch {
             if (shippingOnly) {
-                val previous = editorData?.details?.optJSONObject("order")?.optString("jntEditAt").orEmpty()
+                val previous = callerJntLastShippingEditAt(editorData?.historyOrder?.optJSONArray("history"))
                 payload.put("expectedLastEditAt", previous)
             }
             val result = withContext(Dispatchers.IO) {
@@ -567,6 +567,17 @@ private fun callerJntSeed(data: CustomerServiceEditorData): CallerJntSeed {
         weight = jt.optDouble("weight", 1.0).takeIf { it > 0 } ?: 1.0,
         note = order.optString("customerNote").ifBlank { historyOrder.optString("customerNote") }
     )
+}
+
+/** Match the server's optimistic-lock baseline for repeat J&T shipping edits. */
+internal fun callerJntLastShippingEditAt(history: JSONArray?): String {
+    if (history == null) return ""
+    for (i in history.length() - 1 downTo 0) {
+        val event = history.optJSONObject(i) ?: continue
+        if (event.optString("type") == "order_edit" && event.optString("event") == "jnt_shipping_edit")
+            return event.optString("at")
+    }
+    return ""
 }
 
 private fun callerJntLatestAddress(history: JSONArray?): JSONObject {
