@@ -70,10 +70,37 @@ function style(){
  '@media(max-width:1050px){.cl136 .brief-cards{grid-template-columns:repeat(2,minmax(0,1fr))}}',
  '@media(max-width:720px){.cl136 .brief-signals,.cl136 .brief-guide,.cl136 .brief-definitions{grid-template-columns:1fr}}',
  '@media(max-width:600px){.cl136 .head h2{font-size:20px}.cl136 .grid{grid-template-columns:1fr}.cl136 .brief-cards{grid-template-columns:repeat(2,minmax(0,1fr))}.cl136 .brief-card{padding:12px}.cl136 .brief-card strong{font-size:21px}.cl136 .read-scope{gap:6px}.cl136 .read-scope .read-sep{display:none}}'
+".cl136 .head{background:linear-gradient(120deg,#0e2e47,#195e70);border-color:#326379;border-radius:19px}.cl136 .head h2{font-size:clamp(19px,2vw,25px)}.cl136 .head button,.cl136 .head select{min-height:42px}.cl136 .tabs{margin-bottom:8px;gap:7px}.cl136 .tabs button{min-height:43px;padding-inline:15px}.cl136 .tabs .sel{background:#185e74;border-color:#185e74}.cl136 .cl151-goal{font-size:13px;padding:10px 14px;margin:0 0 14px;border:1px solid var(--line,#d7e2eb);background:var(--surface,#fff);border-radius:10px;line-height:1.8}.cl136 .brief-card strong{font-size:clamp(23px,2.6vw,32px)}.cl136 .brief-card span{font-size:12px;font-weight:750}.cl136 .cl151-help{border-top:1px solid var(--line,#e3eaf0);margin-top:8px;padding-top:7px}.cl136 .cl151-help summary{cursor:pointer;color:#12687d;font-size:11px;font-weight:800;display:flex;justify-content:space-between;align-items:center;gap:8px}.cl136 .cl151-help summary span{font-size:12px!important;display:grid!important;place-items:center;background:#e9f5f7;border-radius:50%;width:20px;height:20px;color:#12687d}.cl136 .cl151-help p{margin:6px 0 0;font-size:11px;line-height:1.8}.cl136 .cl151-board{background:var(--surface,#fff);border:1px solid var(--line,#d7e2eb);border-radius:18px;padding:18px;margin:19px 0;box-shadow:0 8px 24px rgba(12,47,73,.04)}.cl136 .cl151-heading{display:flex;flex-wrap:wrap;justify-content:space-between;gap:9px;align-items:center;margin-bottom:14px}.cl136 .cl151-heading h3{margin:0;font-size:19px;font-weight:900}.cl136 .cl151-heading p{font-size:12px;color:var(--muted,#64748b);margin:4px 0}.cl136 .cl151-heading small{font-size:11px;background:var(--bg,#eef5f8);padding:7px 10px;border-radius:9px}.cl136 .cl151-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(250px,100%),1fr));gap:12px}.cl136 .cl151-decision{display:flex;flex-direction:column;gap:8px;border:1px solid var(--line,#d7e2eb);border-top:4px solid #137e8f;border-radius:13px;padding:15px;min-width:0}.cl136 .cl151-decision.high{border-top-color:#c76a32}.cl136 .cl151-decision.medium{border-top-color:#b18a33}.cl136 .cl151-decision h4{margin:4px 0;font-size:15px;line-height:1.65}.cl136 .cl151-decision p{font-size:12px;line-height:1.85;margin:0;overflow-wrap:anywhere}.cl136 .cl151-meta{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;font-size:11px;color:var(--muted,#64748b)}.cl136 .cl151-evidence,.cl136 .cl151-next{padding:10px;background:var(--bg,#f1f5f9);border-radius:9px}.cl136 .cl151-next{margin-top:auto}.cl136 .cl151-decision button{margin-top:6px;background:#176179;border-color:#176179;color:#fff;min-height:41px}.cl136 .cl151-caution{font-size:11px;line-height:1.8;color:var(--muted,#64748b);margin:11px 0 0}.cl136 button:focus-visible,.cl136 select:focus-visible,.cl136 summary:focus-visible{outline:3px solid #e2b364;outline-offset:3px}.cl136 table tr:hover td{background:rgba(29,97,121,.05)}body[data-theme=\"dark\"] .cl136 .cl151-evidence,body[data-theme=\"dark\"] .cl136 .cl151-next{background:var(--panel,#172033)}@media(max-width:600px){.cl136 .cl151-board{padding:12px}.cl136 .cl151-grid{grid-template-columns:1fr}.cl136 .head{padding:15px}.cl136 .head button{flex:1}.cl136 .cl151-heading small{display:none}}",
  ].join('');
  document.head.appendChild(st);
 }
 const hint=label=>window.KunHelpSafeV147?.icon(label)||'';
+
+const clHelp={
+ 'جلسات Clarity':['عدد جلسات التصفح، وليس عدد الأشخاص أو الطلبات.','تابع الحركة، ثم قارنها بالطلبات الحقيقية.'],
+ 'جلسات البوت':['جلسات يعتقد Clarity أنها آلية، وهي داخل الإجمالي.','انتبه لها عند قراءة جودة الزيارات.'],
+ 'جلسات مصدر Meta':['زيارات ظهر مصدرها Facebook أو Instagram، وقد تكون عضوية.','لا تعتبرها كلها زيارات إعلان مدفوع.'],
+ 'Meta بدون اسم حملة':['زيارات Meta التي لا يظهر معها اسم حملة.','راجع utm_campaign في روابط الإعلانات.']
+};
+function clExplain(label){
+ const p=clHelp[label];return p?'<details class="cl151-help"><summary>ما معنى الرقم؟ <span aria-hidden="true">؟</span></summary><p><b>ما هو؟</b> '+esc(p[0])+'</p><p><b>ما فائدته؟</b> '+esc(p[1])+'</p></details>':'';
+}
+const clGoals={overview:'القراءة السريعة، ثم اختيار إجراء واحد يمكن قياسه.',growth:'مقارنة أداء الحملات مع سلوك الزيارات بدون افتراض إسناد المبيعات.',pages:'معرفة الصفحات التي تحتاج فحصًا قبل تغييرها.',audience:'فهم المصادر والأجهزة الأكثر استخدامًا.',friction:'تحديد التفاعل الصعب المحتمل ومراجعته عبر التسجيلات.',health:'مراجعة حداثة البيانات واكتمال الربط.',metrics:'فهم الحقول الخام وحدود التصدير.'};
+function clDecisionBoard(d){
+ const m=d.latest?.metrics||{},c=m.coverage||{},all=numberOrNull(m.totals?.sessions),actions=[];
+ const problem=(m.pagesDetail||[]).filter(p=>numberOrNull(p.sessions)>=30&&(numberOrNull(p.rageRate)>=15||numberOrNull(p.deadRate)>=20))
+  .sort((a,b)=>Math.max(Number(b.rageRate)||0,Number(b.deadRate)||0)-Math.max(Number(a.rageRate)||0,Number(a.deadRate)||0))[0];
+ if(problem)actions.push({priority:'high',title:'افحص صفحة يحدث فيها تعثر متكرر',source:'Clarity · صفحات المتجر',evidence:tx(problem.name)+' — '+n(problem.sessions)+' جلسة؛ نقرات متكررة '+pct(problem.rageRate)+'؛ نقرات بلا استجابة '+pct(problem.deadRate),meaning:'قد يكون بعض الزوار غير قادرين على استخدام عنصر في الصفحة بسهولة. هذا ليس تشخيصًا نهائيًا.',next:'راجع تسجيلات الجلسات وخرائط الضغط، ثم اختبر تعديلًا واحدًا في الصفحة.',tab:'pages'});
+ const missing=numberOrNull(c.metaWithoutCampaignSessions),meta=numberOrNull(c.metaSourceSessions);
+ if(missing!==null&&missing>0)actions.push({priority:'medium',title:'حسّن تسمية الحملات في الروابط',source:'Clarity · UTM',evidence:n(missing)+' جلسة Meta بدون اسم حملة'+(meta>0?' من '+n(meta)+' جلسة مصدر Meta':''),meaning:'يصعب مقارنة سلوك زوار الحملات عندما لا يظهر اسم الحملة.',next:'راجع utm_source وutm_medium وutm_campaign ثم اجمع بيانات جديدة قبل الحكم.',tab:'health'});
+ const age=Date.now()-Date.parse(String(d.latest?.syncedAt||''));
+ if(Number.isFinite(age)&&age>86400000)actions.push({priority:'medium',title:'حدّث التقرير قبل القرار',source:'حالة بيانات Clarity',evidence:'آخر سحب: '+clockLabel(d.latest?.syncedAt),meaning:'البيانات قد لا تعكس السلوك الحالي بعد أي تعديل حديث.',next:'اضغط «مزامنة Clarity» مع مراعاة حد طلبات API المتاح.',tab:'health'});
+ if(!actions.length)actions.push({priority:'normal',title:'ابدأ بفحص رحلة الشراء',source:'Clarity · قراءة استكشافية',evidence:all===null?'حجم العينة غير متاح':n(all)+' جلسة في نافذة التقرير',meaning:all!==null&&all<30?'العينة صغيرة جدًا لبناء استنتاج موثوق.':'لم تظهر إشارة قوية وفق قواعد التنبيه الحالية.',next:'راجع تسجيلات صفحة المنتج وإتمام الطلب، ثم اختبر فرضية واحدة وقارن الأوردرات.',tab:'friction'});
+ return '<section class="cl151-board" data-clarity-decision-board aria-label="قرارات التحسين"><div class="cl151-heading"><div><h3>أولويات التحسين</h3><p>إيه اللي محتاج يتراجع؟ وليه؟ وإيه الخطوة التالية؟</p></div><small>توصيات تشخيصية وليست قرارات مؤكدة</small></div><div class="cl151-grid">'+
+  actions.slice(0,3).map((a,i)=>'<article class="cl151-decision '+esc(a.priority)+'"><div class="cl151-meta"><b>أولوية '+n(i+1)+'</b><span>'+esc(a.source)+'</span></div><h4>'+esc(a.title)+'</h4><p class="cl151-evidence"><b>الرقم والدليل:</b> '+esc(a.evidence)+'</p><p><b>ليه مهم؟</b> '+esc(a.meaning)+'</p><div class="cl151-next"><b>تعمل إيه؟</b><p>'+esc(a.next)+'</p></div><button type="button" data-cl136-jump="'+esc(a.tab)+'">افتح تفاصيل التحليل ←</button></article>').join('')+'</div>'+
+  '<p class="cl151-caution">لا تفترض أن مشاكل التفاعل تساوي مبيعات مفقودة؛ راجع التسجيلات وقِس النتيجة على طلبات كن أونلاين الفعلية.</p></section>';
+}
+
 const metric=(label,value,note)=>'<div class="metric"><span>'+esc(label)+hint(label)+'</span><strong>'+esc(value)+'</strong><span>'+esc(note||'')+'</span></div>';
 const table=(heads,rows)=>'<div class="scroll"><table><thead><tr>'+heads.map(x=>'<th>'+esc(x)+hint(x)+'</th>').join('')+'</tr></thead><tbody>'+(rows.length?rows.join(''):'<tr><td colspan="'+heads.length+'">لا توجد بيانات متاحة.</td></tr>')+'</tbody></table></div>';
 function breakdown(dim,rows,limit=25){
@@ -168,7 +195,7 @@ function briefStats(d){
   ['جلسات مصدر Meta',n(taggedMeta),'Facebook/Instagram حسب Clarity، ولا تعني بالضرورة زيارات مدفوعة'],
   ['Meta بدون اسم حملة',n(utmLoss),'جلسات تحتاج مراجعة UTM Campaign']
  ];
- return '<div class="brief-cards" data-clarity-kpis>'+items.map(x=>'<article class="brief-card"><span>'+esc(x[0])+hint(x[0])+'</span><strong>'+esc(x[1])+'</strong><small>'+esc(x[2])+'</small></article>').join('')+'</div>';
+ return '<div class="brief-cards" data-clarity-kpis>'+items.map(x=>'<article class="brief-card"><span>'+esc(x[0])+hint(x[0])+'</span><strong>'+esc(x[1])+'</strong><small>'+esc(x[2])+'</small>'+clExplain(x[0])+'</article>').join('')+'</div>';
 }
 function readingGuide(d){
  const limitations=(d.latest?.metrics?.limitations||[]).slice(0,3);
@@ -184,7 +211,7 @@ function caveats(d){return '<section class="box"><h3>حدود البيانات �
  '<div class="note">أرقام Clarity ليست زيارات Meta الفريدة أو أوردرات. لا يمكن حساب ROAS أو Funnel أو نسبة التحويل الصحيحة من جلسات Clarity وحدها.</div></section>';}
 function overview(d){
  const m=d.latest.metrics||{},v=m.dimensions||{},g=d.growth||{};
- return reportScope(d)+briefStats(d)+readingBrief(d)+readingGuide(d)+
+ return reportScope(d)+briefStats(d)+clDecisionBoard(d)+readingBrief(d)+readingGuide(d)+
  '<h3 class="read-title">من أين تأتي الجلسات؟</h3><p class="read-sub">جداول تفصيلية للمصادر والأجهزة. تختلف الجلسات عن عدد الأوردرات.</p>'+
  '<div class="grid">'+breakdown('Source',v.Source,8)+breakdown('Device',v.Device,8)+'</div>'+
  '<section class="box"><h3>ماذا نعرف عن الإعلانات والمبيعات؟</h3>'+
@@ -346,7 +373,7 @@ function render(){
  const d=V.data,missing=!d?.latest;
  el.innerHTML='<div class="cl136"><header class="head"><div><h2>◈ تحليل سلوك العملاء · Microsoft Clarity'+hint('Microsoft Clarity')+'</h2><p>من سلوك الزائر إلى قرار تحسين واضح: دليل ← تفسير محتمل ← إجراء قابل للاختبار</p></div><span class="space"></span>'+
  '<button id="cl136-system">التقارير العامة</button><label style="font-size:12px;font-weight:800">الفترة <select id="cl136-days" aria-label="فترة Clarity"><option value="1" '+(V.days===1?'selected':'')+'>24 ساعة</option><option value="2" '+(V.days===2?'selected':'')+'>48 ساعة</option><option value="3" '+(V.days===3?'selected':'')+'>72 ساعة</option></select></label><button id="cl136-sync">مزامنة Clarity</button><button id="cl136-csv">CSV</button></header>'+
- '<nav class="tabs">'+Object.entries(tabs).map(([id,label])=>'<button data-tab="'+esc(id)+'" class="'+(V.tab===id?'sel':'')+'">'+esc(label)+'</button>').join('')+'</nav>'+
+ '<nav class="tabs">'+Object.entries(tabs).map(([id,label])=>'<button data-tab="'+esc(id)+'" class="'+(V.tab===id?'sel':'')+'">'+esc(label)+'</button>').join('')+'</nav><div class="cl151-goal"><b>هدف القسم:</b> '+esc(clGoals[V.tab]||'تفسير البيانات المتاحة')+'</div>'+
  (missing?'<section class="box"><h3>لا توجد بيانات مخزنة لفترة '+(V.days*24)+' ساعة</h3><p>لو الربط متصل، اضغط مزامنة Clarity لسحب النافذة المختارة (3 طلبات API). وإن لم يكن متصلًا فراجعه داخل التكاملات.</p><button id="cl136-setup">فتح التكاملات</button></section>':
  (V.tab==='overview'?overview(d):V.tab==='growth'?growth(d):V.tab==='pages'?pages(d):V.tab==='audience'?audience(d):V.tab==='friction'?friction(d):V.tab==='health'?health(d)+'<details class="read-more"><summary>تاريخ المزامنات (عينات متداخلة)</summary>'+history(d)+'</details>':metrics(d)))+
  '<section class="box"><p>آخر مزامنة '+esc(d?.status?.lastSyncAt?new Date(d.status.lastSyncAt).toLocaleString('ar-EG'):'—')+
@@ -398,5 +425,5 @@ function hook(){
  setTimeout(shortcut,150);
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',hook,{once:true});else hook();
-window.KunClarityGrowthV136={open,version:'137.1'};
+window.KunClarityGrowthV136={open,version:'151.0'};
 })();
