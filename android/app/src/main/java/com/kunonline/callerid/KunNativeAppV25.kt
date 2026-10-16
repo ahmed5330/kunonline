@@ -193,83 +193,81 @@ fun KunNativeAppV25(
                     topBar = {
                         TopAppBar(
                             colors = TopAppBarDefaults.topAppBarColors(
-                                containerColor = KunColors.Chrome,
-                                titleContentColor = Color.White,
-                                actionIconContentColor = Color.White
+                                containerColor = KunColors.Surface,
+                                titleContentColor = KunColors.Ink,
+                                actionIconContentColor = KunColors.Chrome
                             ),
                             title = {
-                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                    KunBrandMark(Modifier.size(34.dp))
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                                    KunBrandMark(Modifier.size(50.dp))
                                     Column {
-                                        Text(selected.label, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
-                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                                            Box(Modifier.size(6.dp).background(if (loading) KunColors.Gold else Color(0xFF8EE36D), CircleShape))
-                                            Text(
-                                                if (loading) "جاري المزامنة…" else "مزامنة تلقائية • كل 15 ثانية",
-                                                fontSize = 10.sp,
-                                                color = Color.White.copy(alpha = .76f)
-                                            )
-                                        }
+                                        Text(selected.label, color = KunColors.Chrome, fontWeight = FontWeight.ExtraBold, fontSize = 17.sp)
+                                        val selectedStoreName = storeOptions.firstOrNull {
+                                            it.clientId == currentStore.clientId && it.storeId == currentStore.storeId
+                                        }?.storeName
+                                        Text(
+                                            selectedStoreName ?: "كن أونلاين • إدارة المتاجر",
+                                            fontSize = 11.sp,
+                                            color = KunColors.Ink2,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
                                     }
                                 }
                             },
                             actions = {
                                 if (selected != MobileV25Tab.SETTINGS) {
+                                    IconButton(onClick = { selected = MobileV25Tab.HOME }, enabled = !loading) {
+                                        Icon(Icons.Outlined.Storefront, contentDescription = "اختيار المتجر")
+                                    }
                                     IconButton(onClick = { refresh(true) }, enabled = !loading) {
-                                        Icon(Icons.Outlined.Refresh, contentDescription = "تحديث")
+                                        Icon(Icons.Outlined.Refresh, contentDescription = "تحديث البيانات")
                                     }
                                 }
                             }
                         )
                     },
                     bottomBar = {
-                        NavigationBar(containerColor = KunColors.Surface, tonalElevation = 8.dp) {
+                        NavigationBar(containerColor = KunColors.Surface, tonalElevation = 2.dp) {
                             val colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = KunColors.Pine,
-                                selectedTextColor = KunColors.Pine,
-                                indicatorColor = KunColors.PineSoft,
+                                selectedIconColor = KunColors.Chrome,
+                                selectedTextColor = KunColors.Chrome,
+                                indicatorColor = KunColors.ChromeSoft,
                                 unselectedIconColor = KunColors.Ink3,
                                 unselectedTextColor = KunColors.Ink2
                             )
                             NavigationBarItem(
                                 selected = selected == MobileV25Tab.HOME,
                                 onClick = { selected = MobileV25Tab.HOME },
-                                icon = { Icon(Icons.Outlined.Dashboard, null) },
+                                icon = { Icon(Icons.Outlined.Home, contentDescription = null) },
                                 label = { Text("الرئيسية") },
                                 colors = colors
                             )
                             NavigationBarItem(
                                 selected = selected == MobileV25Tab.ORDERS,
                                 onClick = { selected = MobileV25Tab.ORDERS },
-                                icon = { Icon(Icons.Outlined.Inbox, null) },
+                                icon = { Icon(Icons.Outlined.Inventory2, contentDescription = null) },
                                 label = { Text("الطلبات") },
                                 colors = colors
                             )
                             NavigationBarItem(
                                 selected = selected == MobileV25Tab.CUSTOMER_SERVICE,
                                 onClick = { selected = MobileV25Tab.CUSTOMER_SERVICE },
-                                icon = { Icon(Icons.Outlined.SupportAgent, null) },
-                                label = { Text("خدمة العملاء") },
-                                colors = colors
-                            )
-                            NavigationBarItem(
-                                selected = false,
-                                onClick = onOpenCollaboration,
-                                icon = { Icon(Icons.Outlined.ChatBubbleOutline, null) },
-                                label = { Text("التواصل") },
+                                icon = { Icon(Icons.Outlined.SupportAgent, contentDescription = null) },
+                                label = { Text("العملاء") },
                                 colors = colors
                             )
                             NavigationBarItem(
                                 selected = false,
                                 onClick = onOpenSystemSections,
-                                icon = { Icon(Icons.Outlined.GridView, null) },
+                                icon = { Icon(Icons.Outlined.GridView, contentDescription = null) },
                                 label = { Text("الأقسام") },
                                 colors = colors
                             )
                             NavigationBarItem(
                                 selected = selected == MobileV25Tab.SETTINGS,
                                 onClick = { selected = MobileV25Tab.SETTINGS },
-                                icon = { Icon(Icons.Outlined.Settings, null) },
+                                icon = { Icon(Icons.Outlined.Settings, contentDescription = null) },
                                 label = { Text("الإعدادات") },
                                 colors = colors
                             )
@@ -317,6 +315,7 @@ fun KunNativeAppV25(
                                             }
                                         }
                                     },
+                                    onOpenSections = onOpenSystemSections,
                                     onOpenOrders = { selected = MobileV25Tab.ORDERS },
                                     onOpenCustomerService = { selected = MobileV25Tab.CUSTOMER_SERVICE }
                                 )
@@ -378,11 +377,9 @@ private fun V25Login(busy: Boolean, message: String, onLogin: (String, String) -
                 verticalArrangement = Arrangement.spacedBy(15.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Box(Modifier.size(68.dp).clip(CircleShape).background(KunColors.Chrome), contentAlignment = Alignment.Center) {
-                    Text("كُن", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold)
-                }
+                KunBrandMark(Modifier.size(156.dp))
                 Text("كن أونلاين", style = MaterialTheme.typography.headlineMedium, color = KunColors.Ink)
-                Text("إدارة الطلبات وخدمة العملاء وCaller ID", color = KunColors.Ink2, style = MaterialTheme.typography.bodyMedium)
+                Text("إدارة متاجرك وكل عملياتك من مكان واحد", color = KunColors.Ink2, style = MaterialTheme.typography.bodyMedium)
                 OutlinedTextField(
                     value = email,
                     onValueChange = { email = it },
@@ -437,6 +434,7 @@ private fun V25Home(
     storeOptionsError: String,
     storeSwitching: Boolean,
     onSelectStore: (MobileStoreOption) -> Unit,
+    onOpenSections: () -> Unit,
     onOpenOrders: () -> Unit,
     onOpenCustomerService: () -> Unit
 ) {
@@ -447,101 +445,107 @@ private fun V25Home(
     val total = orders.sumOf { it.total }
     val activeLocal = CallActivityStore.active(LocalContext.current).size
     LazyColumn(
-        Modifier.fillMaxSize().padding(horizontal = 16.dp),
-        contentPadding = PaddingValues(top = 16.dp, bottom = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        Modifier.fillMaxSize().padding(horizontal = 14.dp),
+        contentPadding = PaddingValues(top = 16.dp, bottom = 28.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         item {
-            KunPageIntro("متابعة $periodLabel", "كل جديد في الطلبات والتواصل يظهر هنا تلقائيًا")
+            Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                Text("أهلاً بك في كن أونلاين 👋", style = MaterialTheme.typography.headlineSmall, color = KunColors.Chrome, fontWeight = FontWeight.ExtraBold)
+                Text("نظرة عامة على متجرك • $periodLabel", color = KunColors.Ink2, style = MaterialTheme.typography.bodyMedium)
+            }
         }
         item {
             KunSectionCard {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Outlined.Storefront, null, tint = KunColors.Pine)
+                    Icon(Icons.Outlined.Storefront, contentDescription = null, tint = KunColors.Chrome)
                     Spacer(Modifier.width(8.dp))
                     Text("اختيار المتجر", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f))
-                    if (storeOptions.isNotEmpty()) {
-                        Text("${storeOptions.size} متجر", color = KunColors.Ink3, style = MaterialTheme.typography.labelMedium)
-                    }
+                    if (storeOptions.isNotEmpty()) Text("${storeOptions.size} متجر", color = KunColors.Ink3, style = MaterialTheme.typography.labelMedium)
                 }
                 if (storeOptionsLoading) {
-                    LinearProgressIndicator(Modifier.fillMaxWidth(), color = KunColors.Pine)
-                    Text("جاري تحميل المتاجر المسموح بها…", color = KunColors.Ink2)
+                    LinearProgressIndicator(Modifier.fillMaxWidth(), color = KunColors.Chrome)
+                    Text("جاري تحميل المتاجر المتاحة…", color = KunColors.Ink2)
                 } else if (storeOptions.isEmpty()) {
-                    Text(storeOptionsError.ifBlank { "لا توجد متاجر متاحة لهذا الحساب" }, color = KunColors.Ink2)
+                    Text(storeOptionsError.ifBlank { "لا توجد متاجر متاحة للحساب" }, color = KunColors.Ink2)
                 } else {
-                    if (storeOptionsError.isNotBlank()) {
-                        Text(storeOptionsError, color = KunColors.Brick, style = MaterialTheme.typography.bodySmall)
-                    }
+                    if (storeOptionsError.isNotBlank()) Text(storeOptionsError, color = KunColors.Brick, style = MaterialTheme.typography.bodySmall)
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         items(storeOptions, key = { "${it.clientId}:${it.storeId}" }) { option ->
                             val active = currentStore.clientId == option.clientId && currentStore.storeId == option.storeId
                             OutlinedCard(
                                 onClick = { if (!active) onSelectStore(option) },
                                 enabled = !storeSwitching,
-                                modifier = Modifier.widthIn(min = 195.dp, max = 270.dp),
-                                colors = CardDefaults.outlinedCardColors(
-                                    containerColor = if (active) KunColors.PineSoft else KunColors.Surface
-                                )
+                                modifier = Modifier.widthIn(min = 185.dp, max = 250.dp),
+                                shape = KunRadius,
+                                colors = CardDefaults.outlinedCardColors(containerColor = if (active) KunColors.ChromeSoft else KunColors.Surface)
                             ) {
-                                Column(
-                                    Modifier.padding(12.dp),
-                                    verticalArrangement = Arrangement.spacedBy(5.dp)
-                                ) {
+                                Column(Modifier.padding(13.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(
-                                            if (active) Icons.Outlined.CheckCircle else Icons.Outlined.Storefront,
-                                            null,
-                                            tint = KunColors.Pine,
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                        Spacer(Modifier.width(7.dp))
+                                        Icon(if (active) Icons.Outlined.CheckCircle else Icons.Outlined.Storefront, contentDescription = null, tint = KunColors.Chrome, modifier = Modifier.size(19.dp))
+                                        Spacer(Modifier.width(6.dp))
                                         Text(option.storeName, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Bold)
                                     }
                                     Text(option.clientName, style = MaterialTheme.typography.bodySmall, color = KunColors.Ink2, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    Text(
-                                        if (active) "المتجر الحالي" else if (option.role == "viewer") "عرض فقط • اضغط للتبديل" else "اضغط لفتح المتجر",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = if (active) KunColors.Pine else KunColors.Ink3
-                                    )
+                                    Text(if (active) "المتجر النشط" else "اضغط للتبديل", color = if (active) KunColors.Pine else KunColors.Ink3, style = MaterialTheme.typography.labelSmall)
                                 }
                             }
                         }
                     }
-                    if (storeOptions.size > 1) {
-                        Text("اختار المتجر عشان تشوف طلباته وعملاءه فقط. تغيير المتجر بيحدّث البيانات تلقائيًا.", style = MaterialTheme.typography.bodySmall, color = KunColors.Ink2)
-                    }
+                    if (storeOptions.size > 1) Text("كل متجر يعرض بياناته وصلاحياته بشكل مستقل.", color = KunColors.Ink2, style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
         if (newOrdersNotice.isNotBlank()) {
             item {
-                Surface(color = KunColors.PineSoft, shape = KunRadius, modifier = Modifier.fillMaxWidth()) {
-                    Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Outlined.Sync, null, tint = KunColors.Pine)
-                        Spacer(Modifier.width(9.dp))
+                Surface(color = KunColors.PineSoft, shape = KunRadius) {
+                    Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Outlined.NotificationsActive, contentDescription = null, tint = KunColors.Pine)
+                        Spacer(Modifier.width(8.dp))
                         Text(newOrdersNotice, color = KunColors.Pine, fontWeight = FontWeight.Bold)
                     }
                 }
             }
         }
         item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = KunRadiusLarge,
-                colors = CardDefaults.cardColors(containerColor = KunColors.Chrome)
-            ) {
-                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                    Text("مبيعات $periodLabel", color = Color.White.copy(alpha = .7f), style = MaterialTheme.typography.labelLarge)
-                    Text(v25Money(total), color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.ExtraBold)
-                    Text("${orders.size} طلب", color = Color.White.copy(alpha = .86f))
-                }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                KunInfoCard("إجمالي قيمة الطلبات", v25Money(total), Modifier.weight(1f), KunColors.Chrome)
+                KunInfoCard("إجمالي الطلبات", orders.size.toString(), Modifier.weight(1f), KunColors.Pine)
             }
         }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                KunInfoCard("انتظار التأكيد", pending.toString(), Modifier.weight(1f), KunColors.Gold)
+                KunInfoCard("بانتظار التأكيد", pending.toString(), Modifier.weight(1f), KunColors.Gold)
                 KunInfoCard("تم التأكيد", confirmed.toString(), Modifier.weight(1f), KunColors.Pine)
+            }
+        }
+        item {
+            KunSevenDayOrdersTrend(snapshot.raw)
+        }
+        item {
+            KunSectionCard {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Outlined.Apps, contentDescription = null, tint = KunColors.Chrome)
+                    Spacer(Modifier.width(7.dp))
+                    Text("إجراءات سريعة", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = onOpenOrders, modifier = Modifier.weight(1f).heightIn(min = 50.dp), shape = KunRadius) {
+                        Icon(Icons.Outlined.ShoppingBag, contentDescription = null, modifier = Modifier.size(17.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("الطلبات", maxLines = 1)
+                    }
+                    OutlinedButton(onClick = onOpenCustomerService, modifier = Modifier.weight(1f).heightIn(min = 50.dp), shape = KunRadius) {
+                        Icon(Icons.Outlined.SupportAgent, contentDescription = null, modifier = Modifier.size(17.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("العملاء", maxLines = 1)
+                    }
+                }
+                OutlinedButton(onClick = onOpenSections, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), shape = KunRadius) {
+                    Icon(Icons.Outlined.GridView, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(7.dp))
+                    Text("المخزون • الطباعة • المالية • الحملات وباقي الأقسام")
+                }
             }
         }
         item {
@@ -551,28 +555,15 @@ private fun V25Home(
             }
         }
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Button(onClick = onOpenOrders, modifier = Modifier.weight(1f).heightIn(min = 52.dp)) {
-                    Icon(Icons.Outlined.Inbox, null)
-                    Spacer(Modifier.width(6.dp))
-                    Text("الطلبات")
-                }
-                OutlinedButton(onClick = onOpenCustomerService, modifier = Modifier.weight(1f).heightIn(min = 52.dp)) {
-                    Icon(Icons.Outlined.SupportAgent, null)
-                    Spacer(Modifier.width(6.dp))
-                    Text("خدمة العملاء")
-                }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("أحدث الطلبات • $periodLabel", modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                TextButton(onClick = onOpenOrders) { Text("عرض الكل") }
             }
-        }
-        item {
-            Text("أحدث طلبات $periodLabel", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
         }
         if (orders.isEmpty()) {
             item { V25Empty("لا توجد طلبات في الفترة المختارة") }
         } else {
-            items(orders.take(6), key = { it.id }) { order ->
-                V25CompactOrder(order)
-            }
+            items(orders.take(6), key = { it.id }) { order -> V25CompactOrder(order) }
         }
     }
 }
