@@ -60,10 +60,10 @@ export async function handlePublicSiteReviews(request,env,{authorizeAdmin}={}){
     if(body.website) return respond({ok:true,pending:true},202); // honeypot: silently discard
     const name=clean(body.name,70),comment=clean(body.text,900),rating=Number(body.rating),category=body.category;
     if(name.length<2||comment.length<15||!Number.isInteger(rating)||rating<1||rating>5||!['services','consultations'].includes(category)||body.consent!==true||!validPhoto(body.photo))return respond({error:'راجع الاسم والتقييم والنص والموافقة والصورة'},400);
-    if(!env.SESSION_SECRET)return respond({error:'خدمة التقييمات غير مهيأة مؤقتًا'},503);
     try{
       await ensureSchema(env.DB);
-      const {fingerprint,day}=await hashedIp(request,env.SESSION_SECRET);
+      const rateKey=env.REVIEW_RATE_KEY||env.SESSION_SECRET||env.TOKEN_ENC_KEY||'kun-online-reviews-daily-fallback-v1';
+      const {fingerprint,day}=await hashedIp(request,rateKey);
       await env.DB.prepare('INSERT OR IGNORE INTO site_review_rate (fingerprint,hits,day) VALUES (?,0,?)').bind(fingerprint,day).run();
       const rate=await env.DB.prepare('UPDATE site_review_rate SET hits=hits+1 WHERE fingerprint=? AND hits<3').bind(fingerprint).run();
       if(!rate?.meta?.changes)return respond({error:'تم بلوغ الحد اليومي لإرسال التقييمات، جرب لاحقًا'},429);
