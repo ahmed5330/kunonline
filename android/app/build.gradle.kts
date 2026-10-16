@@ -13,8 +13,8 @@ android {
         minSdk = 29
         targetSdk = 35
         // v2.8.9 fixes nullable client identities for multi-store platform staff.
-        versionCode = 133
-        versionName = "2.9.2"
+        versionCode = 134
+        versionName = "2.9.3"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

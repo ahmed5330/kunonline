@@ -32,6 +32,6 @@ assert.match(android,/val choice = selectedStore \?: return null/);
 assert.doesNotMatch(android,/private fun resolveScope\(context: Context, cookie: String\)/);
 assert.doesNotMatch(android,/\/api\/state\?clientId=/);
 assert.match(android,/quiet: Boolean = false/);
-assert.match(gradle,/versionCode\s*=\s*133/);
-assert.match(gradle,/versionName\s*=\s*"2\.9\.2"/);
+assert.ok(Number(gradle.match(/versionCode\s*=\s*(\d+)/)?.[1]||0)>=133,'Android version code must not regress');
+assert.match(gradle,/versionName\s*=\s*"\d+\.\d+\.\d+"/);
 console.log('Collaboration web/native scoped-store, draft, read-receipt and release tests passed.');

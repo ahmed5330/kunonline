@@ -4,6 +4,7 @@ import {handleMobileAppUpdate} from './mobile-app-update.js';
 import {handleProductionCustomerService} from './production-customer-service.js';
 import {handleProductionMobileOrderGuard} from './production-mobile-order-guard.js';
 import {handleProductionCallerJntEdit} from './production-caller-jnt-edit.js';
+import {handleProductionJntShippingEdit} from './production-jnt-shipping-edit.js';
 import {handleProductionPrintingQueue} from './production-printing-queue.js';
 import {handleInternalCollaboration} from './internal-collaboration.js';
 import {handleCollaborationOrderSearch} from './internal-collaboration-order-search.js';
@@ -173,6 +174,9 @@ export default {
 
     const mobileOrderGuard=await handleProductionMobileOrderGuard({request,env:dataEnv});
     if(mobileOrderGuard)return mobileOrderGuard;
+
+    const jntShippingEdit=await handleProductionJntShippingEdit({request,env:dataEnv,ctx,delegate});
+    if(jntShippingEdit)return jntShippingEdit;
 
     const callerJntEdit=await handleProductionCallerJntEdit({request,env:dataEnv,ctx,delegate});
     if(callerJntEdit)return callerJntEdit;

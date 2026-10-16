@@ -46,4 +46,44 @@ object CallerJntEditApi {
             CustomerServiceJsonResult(false, "تعذر الاتصال بكن أونلاين")
         }
     }
+
+    /** Shipping-only edit; does not modify products, quantities or customer collection. */
+    fun saveShipping(context: Context, orderId: String, storeId: String, payload: JSONObject): CustomerServiceJsonResult {
+        val cookie = KunApi.sessionCookie(context) ?: return CustomerServiceJsonResult(false, "سجّل الدخول أولًا")
+        val active = KunApi.resolveScope(cookie, context)
+        if (active.clientId.isBlank() || storeId.isBlank()) return CustomerServiceJsonResult(false, "حدد متجر الطلب أولًا")
+        val authorized = KunApi.loadStoreOptions(context)
+        if (!authorized.ok || authorized.stores.none { it.clientId == active.clientId && it.storeId == storeId })
+            return CustomerServiceJsonResult(false, "ليس لديك صلاحية تعديل الطلب بهذا المتجر")
+        payload.put("clientId", active.clientId).put("storeId", storeId)
+        return runCatching {
+            val encoded = URLEncoder.encode(orderId, Charsets.UTF_8.name()).replace("+", "%20")
+            val connection = (URL("$BASE_URL/api/orders/$encoded/shipping-jnt").openConnection() as HttpURLConnection).apply {
+                requestMethod = "PATCH"
+                connectTimeout = 10_000
+                readTimeout = 25_000
+                doOutput = true
+                setRequestProperty("Accept", "application/json")
+                setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                setRequestProperty("X-Kun-Mobile", "native-android/jnt-shipping")
+                setRequestProperty("Cookie", cookie)
+            }
+            val root: JSONObject
+            val code: Int
+            try {
+                connection.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
+                code = connection.responseCode
+                val stream = if (code in 200..299) connection.inputStream else connection.errorStream
+                val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                root = runCatching { JSONObject(text) }.getOrDefault(JSONObject())
+            } finally { connection.disconnect() }
+            if (code in 200..299 && root.optBoolean("ok"))
+                CustomerServiceJsonResult(true, root.optString("message").ifBlank { "تم تعديل شحن J&T" }, root)
+            else
+                CustomerServiceJsonResult(false, root.optString("error").ifBlank {
+                    if (code == 401) "انتهت الجلسة" else "تعذر تعديل الشحن"
+                }, root)
+        }.getOrElse { CustomerServiceJsonResult(false, "تعذر الاتصال بخدمة تعديل شحن J&T") }
+    }
+
 }

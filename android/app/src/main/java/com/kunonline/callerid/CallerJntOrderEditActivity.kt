@@ -36,6 +36,8 @@ class CallerJntOrderEditActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         CallerOverlay.dismiss()
         val orderId = intent.getStringExtra(EXTRA_ORDER_ID).orEmpty()
+        val shippingOnly = intent.getBooleanExtra(EXTRA_SHIPPING_ONLY, false)
+        val storeId = intent.getStringExtra(EXTRA_STORE_ID).orEmpty()
         if (orderId.isBlank()) {
             finish()
             return
@@ -43,7 +45,7 @@ class CallerJntOrderEditActivity : ComponentActivity() {
         setContent {
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
                 KunTheme {
-                    CallerJntOrderEditScreen(orderId = orderId, onClose = { finish() })
+                    CallerJntOrderEditScreen(orderId = orderId, storeId = storeId, shippingOnly = shippingOnly, onClose = { finish() })
                 }
             }
         }
@@ -51,6 +53,8 @@ class CallerJntOrderEditActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_ORDER_ID = "kun_caller_jnt_order_id"
+        const val EXTRA_STORE_ID = "kun_caller_jnt_store_id"
+        const val EXTRA_SHIPPING_ONLY = "kun_jnt_shipping_only"
     }
 }
 
@@ -150,7 +154,7 @@ private data class CallerJntSeed(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun CallerJntOrderEditScreen(orderId: String, onClose: () -> Unit) {
+private fun CallerJntOrderEditScreen(orderId: String, storeId: String, shippingOnly: Boolean, onClose: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var loading by remember { mutableStateOf(true) }
@@ -246,9 +250,9 @@ private fun CallerJntOrderEditScreen(orderId: String, onClose: () -> Unit) {
             selectedCity == null -> "اختر المدينة / الحي من قائمة J&T"
             selectedArea == null -> "اختر المنطقة من قائمة J&T"
             street.isBlank() -> "اكتب الشارع والعنوان التفصيلي"
-            product.isBlank() -> "اكتب اسم المنتج"
-            qty == null || qty < 1 -> "اكتب كمية صحيحة"
-            total == null || total < 0 -> "اكتب قيمة تحصيل صحيحة"
+            !shippingOnly && product.isBlank() -> "اكتب اسم المنتج"
+            !shippingOnly && (qty == null || qty < 1) -> "اكتب كمية صحيحة"
+            !shippingOnly && (total == null || total < 0) -> "اكتب قيمة تحصيل صحيحة"
             kg == null || kg <= 0 -> "اكتب وزن صحيح أكبر من صفر"
             else -> ""
         }
@@ -273,15 +277,24 @@ private fun CallerJntOrderEditScreen(orderId: String, onClose: () -> Unit) {
             .put("phone", phone.trim())
             .put("phone2", phone2.trim())
             .put("product", product.trim())
-            .put("quantity", qty!!)
-            .put("total", total!!)
+            .put("quantity", qty ?: 1)
+            .put("total", total ?: 0.0)
             .put("weight", kg)
             .put("customerNote", notes.trim())
             .put("jntAddress", jntAddress)
 
         saving = true
         scope.launch {
-            val result = withContext(Dispatchers.IO) { CallerJntEditApi.save(context, orderId, payload) }
+            if (shippingOnly) {
+                val previous = editorData?.details?.optJSONObject("order")?.optString("jntEditAt").orEmpty()
+                payload.put("expectedLastEditAt", previous)
+            }
+            val result = withContext(Dispatchers.IO) {
+                if (shippingOnly) CallerJntEditApi.saveShipping(context, orderId, storeId.ifBlank {
+                    editorData?.details?.optJSONObject("order")?.optString("storeId").orEmpty()
+                }, payload)
+                else CallerJntEditApi.save(context, orderId, payload)
+            }
             saving = false
             if (result.ok) {
                 withContext(Dispatchers.IO) { KunApi.syncWithStoredSession(context) }
@@ -304,8 +317,8 @@ private fun CallerJntOrderEditScreen(orderId: String, onClose: () -> Unit) {
                 ),
                 title = {
                     Column {
-                        Text("تعديل بيانات العميل وJ&T", fontWeight = FontWeight.Bold)
-                        Text("من شاشة المكالمة", style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = .72f))
+                        Text(if (shippingOnly) "تعديل تفاصيل شحن J&T" else "تعديل بيانات العميل وJ&T", fontWeight = FontWeight.Bold)
+                        Text(if (shippingOnly) "من قائمة الطلبات • نفس دليل J&T" else "من شاشة المكالمة", style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = .72f))
                     }
                 },
                 navigationIcon = { TextButton(onClick = onClose) { Text("إغلاق", color = Color.White) } }
@@ -372,20 +385,19 @@ private fun CallerJntOrderEditScreen(orderId: String, onClose: () -> Unit) {
                     )
                 }
 
-                CallerJntSection("بيانات الأوردر") {
-                    CallerJntTextField(product, { product = it }, "اسم المنتج *")
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        CallerJntTextField(quantity, { quantity = callerJntDigits(it) }, "الكمية *", KeyboardType.Number, Modifier.weight(1f))
-                        CallerJntTextField(weight, { weight = callerJntDecimal(it) }, "الوزن كجم *", KeyboardType.Decimal, Modifier.weight(1f))
+                CallerJntSection(if (shippingOnly) "تفاصيل الشحنة" else "بيانات الأوردر") {
+                    if (!shippingOnly) CallerJntTextField(product, { product = it }, "اسم المنتج *")
+                    if (!shippingOnly) CallerJntTextField(quantity, { quantity = callerJntDigits(it) }, "الكمية *", KeyboardType.Number)
+                    CallerJntTextField(weight, { weight = callerJntDecimal(it) }, "الوزن كجم *", KeyboardType.Decimal)
+                    if (!shippingOnly) {
+                        CallerJntTextField(codAmount, { codAmount = callerJntDecimal(it) }, "قيمة التحصيل / الإجمالي *", KeyboardType.Decimal)
+                        OutlinedTextField(
+                            value = notes, onValueChange = { notes = it }, label = { Text("ملاحظات") },
+                            minLines = 2, modifier = Modifier.fillMaxWidth()
+                        )
+                    } else {
+                        Text("سيتم تسجيل اسم الموظف وتاريخ تعديل الشحن على الطلب. لا تغيير للمنتجات أو قيمته.", color = KunColors.Ink2)
                     }
-                    CallerJntTextField(codAmount, { codAmount = callerJntDecimal(it) }, "قيمة التحصيل / الإجمالي *", KeyboardType.Decimal)
-                    OutlinedTextField(
-                        value = notes,
-                        onValueChange = { notes = it },
-                        label = { Text("ملاحظات") },
-                        minLines = 2,
-                        modifier = Modifier.fillMaxWidth()
-                    )
                 }
 
                 if (formError.isNotBlank()) {
@@ -536,7 +548,7 @@ private fun callerJntSeed(data: CustomerServiceEditorData): CallerJntSeed {
     val item = details.optJSONArray("items")?.optJSONObject(0) ?: JSONObject()
     val summary = details.optJSONObject("summary") ?: JSONObject()
     val historyOrder = data.historyOrder
-    val jt = callerJntLatestAddress(historyOrder.optJSONArray("history"))
+    val jt = details.optJSONObject("order")?.optJSONObject("jntAddress")?.takeIf { it.optString("province").isNotBlank() } ?: callerJntLatestAddress(historyOrder.optJSONArray("history"))
     return CallerJntSeed(
         name = customer.optString("name"),
         phone = customer.optString("phone"),
