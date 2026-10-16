@@ -84,7 +84,8 @@ must(androidNativeSectionsApi.includes('/api/inventory/unit-tracking/returns/dis
 must(androidGradle.includes('play-services-code-scanner:16.1.0'),'Android QR scanner dependency must stay pinned to the validated Google Code Scanner release');
 for(const label of ['اليوم','أمس','هذا الأسبوع','الأسبوع الماضي','الشهر الحالي','الشهر الماضي','مدة معينة'])must(androidDateFilter.includes(`"${label}"`),`Android period selector missing ${label}`);
 must(androidDateFilter.includes('DatePickerDialog')&&androidDateFilter.includes('selectCustom'),'Android custom period must allow a start/end date');
-must(androidGradle.includes('versionCode = 130')&&androidGradle.includes('versionName = "2.8.9"'),'Android current release must be v2.8.9 code 130');
+must(Number(androidGradle.match(/versionCode\s*=\s*(\d+)/)?.[1] || 0) >= 130,'Android versionCode must never regress below the previous stable release');
+must(/versionName\s*=\s*"\d+\.\d+\.\d+"/.test(androidGradle),'Android versionName must use semantic versioning');
 
 must(trackingUi.includes('PULL_INTERVAL=300000')&&trackingUi.includes('/track?clientId='),'J&T live tracking fallback must remain protected');
 must(jtWorker.includes("PRINT_ORDER_PATH='/webopenplatformapi/api/order/printOrder'"),'Legacy print route remains only for rollback compatibility behind v38 interception');

@@ -1,5 +1,8 @@
 package com.kunonline.callerid
 
+import androidx.compose.foundation.Image
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -28,35 +31,35 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 object KunColors {
-    val Ink = Color(0xFF12212B)
-    val Ink2 = Color(0xFF3D5563)
-    val Ink3 = Color(0xFF7C929E)
-    val Ground = Color(0xFFE9EFEC)
+    val Ink = Color(0xFF152B46)
+    val Ink2 = Color(0xFF4F6380)
+    val Ink3 = Color(0xFF8394A9)
+    val Ground = Color(0xFFF5F8FC)
     val Surface = Color(0xFFFFFFFF)
-    val Surface2 = Color(0xFFF5F8F7)
-    val Line = Color(0xFFD3DEDA)
-    val Pine = Color(0xFF3F8F2B)
-    val PineSoft = Color(0xFFE8F7E1)
-    val PineLine = Color(0xFFC3E8B0)
+    val Surface2 = Color(0xFFF9FBFE)
+    val Line = Color(0xFFE0E8F2)
+    val Pine = Color(0xFF329B3F)
+    val PineSoft = Color(0xFFEAF8E9)
+    val PineLine = Color(0xFFCBEEC5)
     val Gold = Color(0xFFC08A00)
     val GoldSoft = Color(0xFFFBF0D6)
     val Brick = Color(0xFFA8321D)
     val BrickSoft = Color(0xFFFAE6E1)
-    val Chrome = Color(0xFF0E5095)
-    val ChromeSoft = Color(0xFFE8F0F8)
+    val Chrome = Color(0xFF14559A)
+    val ChromeSoft = Color(0xFFEAF2FD)
 }
 
 val KunRadius = RoundedCornerShape(14.dp)
 val KunRadiusLarge = RoundedCornerShape(20.dp)
 
 private val KunLightColors = lightColorScheme(
-    primary = KunColors.Pine,
+    primary = KunColors.Chrome,
     onPrimary = Color.White,
-    primaryContainer = KunColors.PineSoft,
+    primaryContainer = KunColors.ChromeSoft,
     onPrimaryContainer = KunColors.Ink,
-    secondary = KunColors.Chrome,
+    secondary = KunColors.Pine,
     onSecondary = Color.White,
-    secondaryContainer = KunColors.ChromeSoft,
+    secondaryContainer = KunColors.PineSoft,
     onSecondaryContainer = KunColors.Ink,
     tertiary = KunColors.Gold,
     onTertiary = Color.White,
@@ -106,13 +109,14 @@ fun KunTheme(content: @Composable () -> Unit) {
 }
 
 @Composable
-fun KunBrandMark(modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier.size(34.dp).background(Color.White, CircleShape),
-        contentAlignment = Alignment.Center
-    ) {
-        Text("كُن", color = KunColors.Pine, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
-    }
+fun KunBrandMark(modifier: Modifier = Modifier.size(44.dp)) {
+    // Pixel-perfect project logo, reused from public/logo.png without redrawing it.
+    Image(
+        painter = painterResource(R.drawable.kun_logo),
+        contentDescription = "شعار كن أونلاين",
+        contentScale = ContentScale.Fit,
+        modifier = modifier
+    )
 }
 
 @Composable
