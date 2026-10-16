@@ -1,6 +1,7 @@
 package com.kunonline.callerid
 
 import android.Manifest
+import android.content.Intent
 import android.app.role.RoleManager
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -630,7 +631,14 @@ private fun V25Orders(snapshot: CommerceSnapshot, onRefresh: () -> Unit) {
                             }
                             v25Dial(context, order.phone)
                         },
-                        onWhatsApp = { v25WhatsApp(context, order.phone) }
+                        onWhatsApp = { v25WhatsApp(context, order.phone) },
+                        onEditShipping = {
+                            context.startActivity(Intent(context, CallerJntOrderEditActivity::class.java).apply {
+                                putExtra(CallerJntOrderEditActivity.EXTRA_ORDER_ID, order.id)
+                                putExtra(CallerJntOrderEditActivity.EXTRA_STORE_ID, order.storeId)
+                                putExtra(CallerJntOrderEditActivity.EXTRA_SHIPPING_ONLY, true)
+                            })
+                        }
                     )
                 }
             }
@@ -767,7 +775,7 @@ private fun V25ContactCard(order: CsOrderUi, direction: String, onCall: () -> Un
                 Spacer(Modifier.width(11.dp))
                 Column(Modifier.weight(1f)) {
                     Text(order.name.ifBlank { "عميل" }, fontWeight = FontWeight.ExtraBold, fontSize = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text("#${order.ref} • $direction", color = KunColors.Ink2, style = MaterialTheme.typography.bodySmall)
+                    Text(listOf(v25VisibleOrderRef(order.ref,order.source).takeIf { it.isNotBlank() }?.let { "#$it" },direction).filterNotNull().joinToString(" • "), color = KunColors.Ink2, style = MaterialTheme.typography.bodySmall)
                 }
                 V25StatusPill(order.state)
             }
@@ -792,7 +800,7 @@ private fun V25ContactCard(order: CsOrderUi, direction: String, onCall: () -> Un
 }
 
 @Composable
-private fun V25OrderCard(order: OrderUi, onCall: () -> Unit, onWhatsApp: () -> Unit) {
+private fun V25OrderCard(order: OrderUi, onCall: () -> Unit, onWhatsApp: () -> Unit, onEditShipping: () -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = KunRadiusLarge,
@@ -802,11 +810,12 @@ private fun V25OrderCard(order: OrderUi, onCall: () -> Unit, onWhatsApp: () -> U
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("#${order.ref}", color = KunColors.Ink3, style = MaterialTheme.typography.labelMedium)
+                    if (v25VisibleOrderRef(order.ref, order.source).isNotBlank()) Text("#${v25VisibleOrderRef(order.ref, order.source)}", color = KunColors.Ink3, style = MaterialTheme.typography.labelMedium)
                     Text(order.name.ifBlank { "عميل" }, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 V25StatusPill(order.state)
             }
+            if (order.lastEditBy.isNotBlank()) Text("تم التعديل بواسطة ${order.lastEditBy} ${order.lastEditAt.take(10)}", color = KunColors.Pine, style = MaterialTheme.typography.labelSmall)
             HorizontalDivider(color = KunColors.Line)
             V25Line(Icons.Outlined.Call, order.phone.ifBlank { "بدون رقم هاتف" })
             if (order.gov.isNotBlank() || order.address.isNotBlank()) V25Line(Icons.Outlined.LocationOn, listOf(order.gov, order.address).filter { it.isNotBlank() }.joinToString(" — "))
@@ -820,6 +829,15 @@ private fun V25OrderCard(order: OrderUi, onCall: () -> Unit, onWhatsApp: () -> U
                     if (order.date.isNotBlank()) Text(order.date.take(10), color = KunColors.Ink3, style = MaterialTheme.typography.bodySmall)
                     if (order.source.isNotBlank()) Text(order.source, color = KunColors.Ink3, style = MaterialTheme.typography.bodySmall)
                 }
+            }
+            OutlinedButton(
+                onClick = onEditShipping,
+                modifier = Modifier.fillMaxWidth(),
+                enabled = order.awb.isBlank() && order.state.lowercase() !in setOf("shipping","in_shipping","shipped","signed","collected","delivered","returned","cancelled","completed")
+            ) {
+                Icon(Icons.Outlined.EditLocationAlt, contentDescription = null)
+                Spacer(Modifier.width(7.dp))
+                Text("تعديل بيانات شحن J&T")
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = onCall, enabled = order.phone.isNotBlank(), modifier = Modifier.weight(1f)) {
@@ -849,7 +867,7 @@ private fun V25CompactOrder(order: OrderUi) {
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
                 Text(order.name.ifBlank { "عميل" }, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("#${order.ref} • ${v25State(order.state)}", color = KunColors.Ink2, style = MaterialTheme.typography.bodySmall)
+                Text(listOf(v25VisibleOrderRef(order.ref,order.source).takeIf { it.isNotBlank() }?.let { "#$it" },v25State(order.state)).filterNotNull().joinToString(" • "), color = KunColors.Ink2, style = MaterialTheme.typography.bodySmall)
             }
             Text(v25Money(order.total), fontWeight = FontWeight.Bold)
         }
@@ -987,6 +1005,12 @@ private fun v25WhatsApp(context: android.content.Context, phone: String) {
     if (digits.isBlank()) return
     runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://wa.me/$digits"))) }
         .onFailure { Toast.makeText(context, "تعذر فتح واتساب", Toast.LENGTH_SHORT).show() }
+}
+
+private fun v25VisibleOrderRef(ref: String, source: String): String {
+    // The full Easy Orders identifier remains available for API and search.
+    if (source.contains("easy", ignoreCase = true) || ref.contains("easyorders", ignoreCase = true) || ref.length > 28) return ""
+    return ref
 }
 
 private fun v25State(state: String): String = when (state) {
