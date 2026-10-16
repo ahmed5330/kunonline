@@ -63,6 +63,14 @@ assert.equal(queued.history[0].shipment.area,'حي السلام');
 assert.equal(queued.history[0].shipment.weight,2.5);
 assert.equal(queued.history[0].shipment.codAmount,510);
 assert.equal(queued.history[0].shipment.quantity,2);
+const staged=harness({...initial,history:JSON.stringify([{type:'jt_print_queued',shipment:{receiverName:'old',codAmount:510,itemName:'منتج',quantity:2}}])});
+const stagedResponse=await handleProductionJntShippingEdit({request:req(),env:staged.env,delegate,ctx:{},fetcher:mockFetch});
+assert.equal(stagedResponse.status,200);
+assert.equal(staged.history[0].shipment.receiverName,'اسم جديد');
+assert.equal(staged.history[0].shipment.area,'حي السلام');
+assert.equal(staged.history[0].shipment.weight,2.5);
+assert.equal(staged.history[0].shipment.codAmount,510);
+assert.equal(staged.history[0].shipment.quantity,2);
 const valid=harness();
 const ok=await handleProductionJntShippingEdit({request:req(),env:valid.env,delegate,ctx:{},fetcher:mockFetch});
 assert.equal(ok.status,200,await ok.text().catch(()=>'')); // status only
