@@ -70,8 +70,9 @@ export async function handleProductionJntShippingEdit({request,env,ctx,delegate,
       fields:[{key:'jntAddress',label:'بيانات شحن J&T'}],before,after,jtAddress,
       note:'تم تعديل بيانات شحن J&T بواسطة '+byName};
     history.push(event);
-    await env.DB.prepare('UPDATE orders SET name=?,phone=?,gov=?,address=?,history=? WHERE id=? AND client_id=? AND store_id=? AND COALESCE(awb,\'\')=\'\'')
-      .bind(name,phone,jtAddress.province,fullAddress,JSON.stringify(history),orderId,clientId,storeId).run();
+    const updated=await env.DB.prepare("UPDATE orders SET name=?,phone=?,gov=?,address=?,history=? WHERE id=? AND client_id=? AND store_id=? AND COALESCE(awb,'')='' AND COALESCE(history,'')=COALESCE(?,'')")
+      .bind(name,phone,jtAddress.province,fullAddress,JSON.stringify(history),orderId,clientId,storeId,row.history||'').run();
+    if(!updated.meta?.changes)throw error('الطلب تغير أثناء التعديل؛ حدثه وحاول مرة أخرى',409,'ORDER_EDIT_CONFLICT');
     try{await env.DB.prepare('INSERT INTO audit_log (id,client_id,store_id,actor_user_id,actor_email,action,entity_type,entity_id,before_json,after_json,metadata_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)')
       .bind('AUD-'+crypto.randomUUID().slice(0,10).toUpperCase(),clientId,storeId,byUserId,by,'order.shipping_jnt_edit','order',orderId,JSON.stringify(before),JSON.stringify(after),JSON.stringify({source:'kun-jnt-shipping'}),at).run();}catch{}
     return respond({ok:true,orderId,storeId,editedBy:byName,editedAt:at,jntAddress:jtAddress,message:'تم حفظ بيانات الشحن بواسطة '+byName});
