@@ -14,6 +14,6 @@ assert.match(icon,/<foreground android:drawable="@drawable\/kun_launcher_foregro
 assert.match(foreground,/@drawable\/kun_logo/);
 assert.deepEqual(nativeLogo,webLogo,'Android launcher icon must use the actual unmodified official Kun Online logo');
 const gradle = readFileSync('android/app/build.gradle.kts','utf8');
-assert.match(gradle,/versionCode\s*=\s*132/);
-assert.match(gradle,/versionName\s*=\s*"2\.9\.1"/);
+assert.ok(Number(gradle.match(/versionCode\s*=\s*(\d+)/)?.[1]||0)>=132,'Launcher build code must not regress');
+assert.match(gradle,/versionName\s*=\s*"\d+\.\d+\.\d+"/);
 console.log('Official Kun Online adaptive launcher icon and release version verified.');

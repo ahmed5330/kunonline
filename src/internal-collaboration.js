@@ -126,10 +126,12 @@ async function createConversation(env,{me,clientId,storeId,body}){
 }
 async function getMessages(env,{me,clientId,storeId,conversationId}){
   await scopeFor(env,me,clientId,storeId,{write:false});await requireSchema(env);const mine=actorId(me);await conversationFor(env,clientId,storeId,conversationId,mine);
-  const {results=[]}=await env.DB.prepare(`SELECT id,conversation_id,sender_user_id,sender_name,body,order_id,assigned_to_user_id,assigned_to_name,task_id,mentions_json,created_at FROM collab_messages WHERE conversation_id=? AND client_id=? AND store_id=? ORDER BY created_at DESC LIMIT 150`).bind(conversationId,clientId,storeId).all();
-  const ts=now();await env.DB.batch([
-    env.DB.prepare(`INSERT INTO collab_reads (conversation_id,user_id,last_read_at) VALUES (?,?,?) ON CONFLICT(conversation_id,user_id) DO UPDATE SET last_read_at=excluded.last_read_at`).bind(conversationId,mine,ts),
-    env.DB.prepare('UPDATE collab_message_mentions SET read_at=? WHERE conversation_id=? AND user_id=? AND read_at IS NULL').bind(ts,conversationId,mine)
+  const {results=[]}=await env.DB.prepare(`SELECT id,conversation_id,sender_user_id,sender_name,body,order_id,assigned_to_user_id,assigned_to_name,task_id,mentions_json,created_at FROM collab_messages WHERE conversation_id=? AND client_id=? AND store_id=? ORDER BY created_at DESC,id DESC LIMIT 150`).bind(conversationId,clientId,storeId).all();
+  // Only mark messages actually returned by this request as read; never consume newer arrivals.
+  const readThrough=results[0]?.created_at||null;
+  if(readThrough)await env.DB.batch([
+    env.DB.prepare(`INSERT INTO collab_reads (conversation_id,user_id,last_read_at) VALUES (?,?,?) ON CONFLICT(conversation_id,user_id) DO UPDATE SET last_read_at=MAX(collab_reads.last_read_at,excluded.last_read_at)`).bind(conversationId,mine,readThrough),
+    env.DB.prepare('UPDATE collab_message_mentions SET read_at=? WHERE conversation_id=? AND user_id=? AND read_at IS NULL AND created_at<=?').bind(now(),conversationId,mine,readThrough)
   ]);
   return {ok:true,messages:results.reverse().map(row=>({...row,mentions:JSON.parse(row.mentions_json||'[]')}))};
 }

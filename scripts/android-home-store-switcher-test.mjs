@@ -24,6 +24,8 @@ assert.ok(home.includes('performRefresh(true)'), 'Force reload after changing st
 assert.ok(home.includes('storeOptions'), 'Only populate store cards from API options');
 assert.ok(service.includes('KunApi.resolveScope(cookie, context).storeId'), 'Customer Service follows selected store');
 assert.ok(native.includes('KunApi.resolveScope(cookie, context)'), 'Other native modules follow selected store');
-assert.ok(collaboration.includes('KunApi.resolveScope(cookie, context)'), 'Collaboration follows selected store');
+assert.ok(collaboration.includes('KunApi.loadStoreOptions(context)')&&collaboration.includes('result.current.clientId')&&collaboration.includes('result.current.storeId'),'Collaboration follows the selected store from authorised options');
+assert.ok(collaboration.includes('result.stores.singleOrNull()')&&collaboration.includes('selectedStore == null ->'),'Multi-store chat must prompt before showing any conversation');
+assert.ok(!collaboration.includes('KunApi.resolveScope(cookie, context)'),'Chat must never pick an arbitrary first store');
 assert.ok(scope.includes('user_store_access') && scope.includes('STORE_ISOLATION'), 'Backend must enforce store ACL');
 console.log('Android home store-switcher contract: permissions, switching, isolation and sync PASS.');
