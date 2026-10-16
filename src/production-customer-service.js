@@ -1,4 +1,5 @@
-const ORDER_COLS='id, client_id, ref, customer_id, date, name, phone, gov, address, product, product_id, variant_id, product_note, unit_price, qty, total, discount_amount, coupon_code, product_cost, shipping_cost, other_cost, source, note, awb, state, checkpoint, signed_at, collected_at, defer_until, refund_amount, return_type, restocked, contact_log, history, created_at';
+import {listMyStores,resolveStoreScope} from './store-scope.js';
+const ORDER_COLS='id, client_id, store_id, ref, customer_id, date, name, phone, gov, address, product, product_id, variant_id, product_note, unit_price, qty, total, discount_amount, coupon_code, product_cost, shipping_cost, other_cost, source, note, awb, state, checkpoint, signed_at, collected_at, defer_until, refund_amount, return_type, restocked, contact_log, history, created_at';
 const STATES=['pending','no_answer','confirmed','preparing','shipped','signed','collected','returned','cancelled','deferred'];
 const BOARD_STATES=['pending','no_answer','confirmed','preparing','deferred'];
 const LABELS={pending:'في انتظار التأكيد',no_answer:'العميل لا يرد',confirmed:'تم التأكيد',preparing:'التجهيز والتغليف',shipped:'جاري الشحن',signed:'تم التسليم — تحصيل منتظر',collected:'تم التحصيل',returned:'مرتجع',cancelled:'تم إلغاء الطلب',deferred:'مؤجل'};
@@ -84,7 +85,7 @@ function clientIdFor(me,url,body={}){
 function mapOrder(r){
   const history=arr(r.history),contactLog=arr(r.contact_log);
   const notes=history.filter(x=>x?.type==='internal_note'&&clean(x.note));
-  return {id:r.id,clientId:r.client_id,storeId:'',storeName:'',storeCode:'',ref:r.ref||r.id,date:r.date||r.created_at||'',createdAt:r.created_at||'',name:r.name||'',phone:r.phone||'',gov:r.gov||'',address:r.address||'',product:r.product||'',productId:r.product_id||'',variantId:r.variant_id||'',productNote:r.product_note||'',qty:n(r.qty)||1,unitPrice:n(r.unit_price),total:n(r.total),source:r.source||'',customerNote:r.note||'',awb:r.awb||'',state:r.state||'pending',checkpoint:r.checkpoint||LABELS[r.state]||'',deferUntil:r.defer_until||'',stockBatchId:'',stockBatchName:'',stockAllocationStatus:'',contactLog,contactCount:contactLog.length,history,internalNotes:notes,latestInternalNote:notes.at(-1)?.note||'',returnedFromDeferredToday:false};
+  return {id:r.id,clientId:r.client_id,storeId:r.store_id||'',storeName:'',storeCode:'',ref:r.ref||r.id,date:r.date||r.created_at||'',createdAt:r.created_at||'',name:r.name||'',phone:r.phone||'',gov:r.gov||'',address:r.address||'',product:r.product||'',productId:r.product_id||'',variantId:r.variant_id||'',productNote:r.product_note||'',qty:n(r.qty)||1,unitPrice:n(r.unit_price),total:n(r.total),source:r.source||'',customerNote:r.note||'',awb:r.awb||'',state:r.state||'pending',checkpoint:r.checkpoint||LABELS[r.state]||'',deferUntil:r.defer_until||'',stockBatchId:'',stockBatchName:'',stockAllocationStatus:'',contactLog,contactCount:contactLog.length,history,internalNotes:notes,latestInternalNote:notes.at(-1)?.note||'',returnedFromDeferredToday:false};
 }
 async function getOrder(env,clientId,orderId){
   const row=await env.DB.prepare(`SELECT ${ORDER_COLS} FROM orders WHERE id=? AND client_id=? LIMIT 1`).bind(orderId,clientId).first();
@@ -97,18 +98,21 @@ async function saveArrays(env,row,{history,contactLog}){
 async function appendEvent(env,row,event,{contact=false}={}){
   const history=arr(row.history);history.push(event);const contactLog=arr(row.contact_log);if(contact)contactLog.push(event);await saveArrays(env,row,{history,contactLog});return {history,contactLog};
 }
-async function board(env,me,clientId,dateRange={key:'all',from:'',to:''}){
+async function board(env,me,clientId,storeId,dateRange={key:'all',from:'',to:''}){
+  const scope=await resolveStoreScope(env,me,clientId,storeId||null,{write:false});
+  const access=await listMyStores(env,me,clientId);
   const dateExpr="COALESCE(NULLIF(substr(date,1,10),''),substr(created_at,1,10))";
   const where=[`client_id=?`,`state IN (${BOARD_STATES.map(()=>'?').join(',')})`];
   const binds=[clientId,...BOARD_STATES];
+  if(scope.storeId){where.push('store_id=?');binds.push(scope.storeId);}
   if(dateRange.from&&dateRange.to){where.push(`${dateExpr} BETWEEN ? AND ?`);binds.push(dateRange.from,dateRange.to);}
   const {results=[]}=await env.DB.prepare(`SELECT ${ORDER_COLS} FROM orders WHERE ${where.join(' AND ')} ORDER BY ${dateExpr} DESC, created_at DESC LIMIT 1000`).bind(...binds).all();
-  return {ok:true,clientId,role:me.role,allStores:true,stores:[],selectedStoreId:null,today:cairoToday(),period:dateRange.key,periodFrom:dateRange.from||null,periodTo:dateRange.to||null,stages:BOARD_STATES.map(id=>({id,label:LABELS[id]})),stateLabels:LABELS,orders:results.map(mapOrder)};
+  return {ok:true,clientId,role:me.role,allStores:access.allStores,stores:access.stores,selectedStoreId:scope.storeId||null,today:cairoToday(),period:dateRange.key,periodFrom:dateRange.from||null,periodTo:dateRange.to||null,stages:BOARD_STATES.map(id=>({id,label:LABELS[id]})),stateLabels:LABELS,orders:results.map(mapOrder)};
 }
 async function details(env,clientId,orderId){
   const r=await getOrder(env,clientId,orderId),o=mapOrder(r);
   const item={productId:o.productId,variantId:o.variantId,name:o.product,productName:o.product,variantName:o.productNote,note:o.productNote,quantity:o.qty,qty:o.qty,price:o.unitPrice,unitPrice:o.unitPrice,sku:''};
-  return {ok:true,order:{id:o.id,ref:o.ref,clientId:o.clientId,storeId:'',state:o.state,couponCode:r.coupon_code||'',customerNote:o.customerNote,awb:o.awb},customer:{id:r.customer_id||'',name:o.name,phone:o.phone,government:o.gov,address:o.address},address:{government:o.gov,address:o.address},items:[item],summary:{total:o.total,qty:o.qty,discountAmount:n(r.discount_amount)},raw:o};
+  return {ok:true,order:{id:o.id,ref:o.ref,clientId:o.clientId,storeId:o.storeId,state:o.state,couponCode:r.coupon_code||'',customerNote:o.customerNote,awb:o.awb},customer:{id:r.customer_id||'',name:o.name,phone:o.phone,government:o.gov,address:o.address},address:{government:o.gov,address:o.address},items:[item],summary:{total:o.total,qty:o.qty,discountAmount:n(r.discount_amount)},raw:o};
 }
 async function catalog(delegate,request,env,ctx,clientId){
   // Keep the detailed catalog route and store scope. The basic products route
@@ -119,25 +123,33 @@ async function catalog(delegate,request,env,ctx,clientId){
   const products=Array.isArray(d)?d:(Array.isArray(d?.products)?d.products:[]);
   return json({ok:true,products});
 }
-async function myClientContext(delegate,request,env,ctx,me){
-  if(me.clientId)return json({ok:true,clients:[{id:me.clientId,name:me.name||me.email||me.clientId}]});
-  const {response,data}=await delegatedJson(delegate,request,env,ctx,'/api/state');if(!response.ok)return response;
-  const clients=Array.isArray(data?.clients)?data.clients:[];return json({ok:true,clients:clients.map(c=>({id:c.id,name:c.name||c.id}))});
-}
 export async function handleProductionCustomerService({request,env,ctx,delegate}){
   const url=new URL(request.url),path=url.pathname,method=request.method.toUpperCase();if(!isRoute(path))return null;
   try{
+    // Preview is the authoritative access-control source. The old fallback to
+    // unscoped /api/state returns CLIENT_ID_REQUIRED for multi-tenant staff and
+    // can incorrectly expose platform clients. Delegate the original request,
+    // preserving the session and the server-side user_store_access filtering.
+    if(path==='/api/my-client-context'&&method==='GET')return delegate.fetch(request,env,ctx);
     const me=await currentUser(delegate,request,env,ctx);
-    if(path==='/api/my-client-context'&&method==='GET')return await myClientContext(delegate,request,env,ctx,me);
     const body=['POST','PATCH','PUT'].includes(method)?await request.clone().json().catch(()=>({})):{};
     const clientId=clientIdFor(me,url,body);
-    if(path==='/api/customer-service'&&method==='GET')return json(await board(env,me,clientId,boardDateRange(url)));
+    if(path==='/api/customer-service'&&method==='GET')return json(await board(env,me,clientId,url.searchParams.get('storeId'),boardDateRange(url)));
     if(path==='/api/catalog/products'&&method==='GET')return await catalog(delegate,request,env,ctx,clientId);
     let m=path.match(/^\/api\/orders\/([^/]+)\/details$/);
-    if(m&&method==='GET')return json(await details(env,clientId,decodeURIComponent(m[1])));
+    if(m&&method==='GET'){
+      const row=await getOrder(env,clientId,decodeURIComponent(m[1]));
+      const requestedStore=clean(url.searchParams.get('storeId'));
+      if(requestedStore&&requestedStore!==clean(row.store_id))return json({error:'الأوردر خارج المتجر المختار',code:'STORE_ISOLATION'},404);
+      await resolveStoreScope(env,me,clientId,row.store_id||null,{write:false});
+      return json(await details(env,clientId,decodeURIComponent(m[1])));
+    }
     m=path.match(/^\/api\/customer-service\/orders\/([^/]+)\/(history|state|contact|notes|awb|whatsapp-log|delete|edit)$/);
     if(!m)return json({error:'مسار خدمة العملاء غير مدعوم',code:'CUSTOMER_SERVICE_ROUTE_NOT_FOUND'},404);
     const orderId=decodeURIComponent(m[1]),action=m[2],row=await getOrder(env,clientId,orderId),actor=me.name||me.email||me.role,stamp=now();
+    const selectedStore=clean(url.searchParams.get('storeId')||body.storeId);
+    if(selectedStore&&selectedStore!==clean(row.store_id))return json({error:'الأوردر خارج المتجر المختار',code:'STORE_ISOLATION'},404);
+    await resolveStoreScope(env,me,clientId,row.store_id||null,{write:method!=='GET'});
     if(action==='history'&&method==='GET')return json({ok:true,order:mapOrder(row)});
     if(action==='state'&&method==='PATCH'){
       const state=clean(body.state);if(!STATES.includes(state))return json({error:'حالة الأوردر غير معروفة',code:'ORDER_STATE_INVALID'},400);
