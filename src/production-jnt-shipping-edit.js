@@ -35,7 +35,7 @@ async function validatedAddress(source,fetcher){
   }
 }
 
-export async function handleProductionJntShippingEdit({request,env,ctx,delegate,fetcher=fetch}){
+export async function handleProductionJntShippingEdit({request,env,ctx,delegate,fetcher=null}){
   const url=new URL(request.url),match=url.pathname.match(/^\/api\/orders\/([^/]+)\/shipping-jnt$/);
   if(!match)return null;
   if(request.method!=='PATCH')return respond({error:'الطريقة غير مدعومة'},405);
@@ -56,7 +56,11 @@ export async function handleProductionJntShippingEdit({request,env,ctx,delegate,
       throw error('الطلب دخل مرحلة الشحن أو له بوليصة؛ تعديل بيانات J&T يجب أن يتم لدى شركة الشحن ولا يكفي تغييرها محليًا',409,'JNT_SHIPMENT_ALREADY_ISSUED');
     const name=clean(body.name,220),phone=clean(body.phone,80);
     if(!name||!phone)throw error('اسم المستلم ورقم هاتفه مطلوبان',400,'JNT_RECEIVER_REQUIRED');
-    const jtAddress=await validatedAddress(body.jntAddress,fetcher);
+    // Read the verified J&T directory via Cloudflare static assets, not a self-fetch
+    // of the running Worker (which may fail or recurse on a same-zone hostname).
+    const assetFetch=fetcher||((u)=>env.ASSETS.fetch(new Request(u)));
+    if(!fetcher&&!env.ASSETS)throw error('ملفات دليل عناوين J&T غير متاحة على هذا النشر',503,'JNT_DIRECTORY_UNAVAILABLE');
+    const jtAddress=await validatedAddress(body.jntAddress,assetFetch);
     const fullAddress=[jtAddress.street,jtAddress.area,jtAddress.city,jtAddress.province].join('، ');
     const history=parseHistory(row.history),prior=history.filter(x=>x?.type==='order_edit'&&x?.event==='jnt_shipping_edit').at(-1);
     if(body.expectedLastEditAt!==undefined&&clean(body.expectedLastEditAt,60)!==String(prior?.at||''))
