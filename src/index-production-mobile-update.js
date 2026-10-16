@@ -1,4 +1,5 @@
 import app from './index-production-jt-history.js';
+import {handlePublicSiteReviews} from './public-site-reviews.js';
 import {handleMobileSync} from './mobile-state-sync.js';
 import {handleMobileAppUpdate} from './mobile-app-update.js';
 import {handleProductionCustomerService} from './production-customer-service.js';
@@ -141,6 +142,19 @@ function collaborationSchemaFailure(){
 
 export default {
   async fetch(request,env,ctx){
+    // Public marketing reviews and admin moderation remain isolated from
+    // customer/store subscriptions and from Preview database forwarding.
+    const websiteReviews=await handlePublicSiteReviews(request,env,{
+      authorizeAdmin:async sourceRequest=>{
+        const identityUrl=new URL('/api/me',sourceRequest.url);
+        const identityRequest=new Request(identityUrl.toString(),{method:'GET',headers:sourceRequest.headers});
+        const identity=await previewFetch(identityRequest,env)||
+          await app.fetch(identityRequest,previewRuntimeEnv(env),ctx);
+        if(!identity.ok)return null;
+        return identity.json().catch(()=>null);
+      }
+    });
+    if(websiteReviews)return websiteReviews;
     const easyOrdersHealth=await handleProductionEasyOrdersHealth(request,env);
     if(easyOrdersHealth)return easyOrdersHealth;
     const parity=await handleProductionPreviewParity(request,env);
