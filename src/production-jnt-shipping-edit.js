@@ -73,6 +73,14 @@ export async function handleProductionJntShippingEdit({request,env,ctx,delegate,
     const event={type:'order_edit',event:'jnt_shipping_edit',source:'kun-jnt-shipping',at,by,byName,byUserId,
       fields:[{key:'jntAddress',label:'بيانات شحن J&T'}],before,after,jtAddress,
       note:'تم تعديل بيانات شحن J&T بواسطة '+byName};
+    const pendingShipment=[...history].reverse().find(x=>x?.type==='jt_print_queued'&&x?.shipment);
+    if(pendingShipment)Object.assign(pendingShipment.shipment,{
+      receiverName:name,receiverPhone:phone,receiverPhone2:jtAddress.phone2,
+      addressCountryCode:jtAddress.countryCode,province:jtAddress.province,
+      provinceCode:jtAddress.provinceCode,city:jtAddress.city,cityCode:jtAddress.cityCode,
+      area:jtAddress.area,districtCode:jtAddress.areaCode,street:jtAddress.street,
+      weight:jtAddress.weight
+    });
     history.push(event);
     const updated=await env.DB.prepare("UPDATE orders SET name=?,phone=?,gov=?,address=?,history=? WHERE id=? AND client_id=? AND store_id=? AND COALESCE(awb,'')='' AND state=? AND COALESCE(history,'')=COALESCE(?,'')")
       .bind(name,phone,jtAddress.province,fullAddress,JSON.stringify(history),orderId,clientId,storeId,row.state,row.history||'').run();
