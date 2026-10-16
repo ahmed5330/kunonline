@@ -1,0 +1,21 @@
+name: Public reviews API contract
+on:
+  pull_request:
+    paths:
+      - 'src/public-site-reviews.js'
+      - 'src/index-production-mobile-update.js'
+      - 'scripts/public-site-reviews-test.mjs'
+      - 'public/reviews-admin.html'
+      - '.github/workflows/marketing-public-reviews-contract.yml'
+  workflow_dispatch:
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - run: node --check src/public-site-reviews.js
+      - run: node --check src/index-production-mobile-update.js
+      - run: node scripts/public-site-reviews-test.mjs

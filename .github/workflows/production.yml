@@ -85,6 +85,10 @@ jobs:
         run: node scripts/qa-production-regression-test.mjs
       - name: Validate Production composition and sync policy
         run: node scripts/verify-production-config.mjs
+      - name: Public website reviews API security and moderation
+        run: |
+          node --check src/public-site-reviews.js
+          node scripts/public-site-reviews-test.mjs
       - name: Verify Worker builds without touching Production
         run: npx wrangler deploy --dry-run --config wrangler.production.toml
   deploy:
