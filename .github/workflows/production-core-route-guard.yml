@@ -23,7 +23,7 @@ jobs:
           grep -Fq '/v2/client-context-v24-fast.js' <<< "$page"
           grep -Fq '/v2/modules-v33-dashboard.js' <<< "$page"
           grep -Fq '/v2/modules-v47-post-shipping.js' <<< "$page"
-          grep -Fq '/v2/modules-v117-team-collaboration.js?v=117.1' <<< "$page"
+          grep -Fq '/v2/modules-v117-team-collaboration.js?v=117.2' <<< "$page"
           echo 'v2 shell verified.'
 
           check_guarded_route() {
