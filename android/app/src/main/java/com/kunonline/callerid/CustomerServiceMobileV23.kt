@@ -45,6 +45,15 @@ internal fun v23CanEditShipping(awb: String, state: String): Boolean =
     awb.isBlank() && state.lowercase() !in setOf("shipping","in_shipping","shipped",
         "signed","collected","delivered","returned","cancelled","completed")
 
+private fun v23OrderEditLabel(event: JSONObject): String {
+    val editor = event.optString("byName").ifBlank { event.optString("by") }.ifBlank { "غير معروف" }
+    val at = runCatching {
+        Instant.parse(event.optString("at")).atZone(ZoneId.of("Africa/Cairo"))
+            .format(DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm"))
+    }.getOrNull()
+    return "تم التعديل بواسطة: $editor" + (at?.let { " · $it" } ?: "")
+}
+
 private fun v23LastOrderEdit(history: JSONArray): JSONObject? {
     for (i in history.length()-1 downTo 0) {
         val e = history.optJSONObject(i) ?: continue
@@ -595,7 +604,7 @@ private fun V23CustomerServiceCard(
 
             val edited = v23LastOrderEdit(order.history)
             if (edited != null) {
-                Text("تم التعديل بواسطة ${edited.optString("byName").ifBlank { edited.optString("by") }}",
+                Text(v23OrderEditLabel(edited),
                     color = MaterialTheme.colorScheme.primary,
                     style = MaterialTheme.typography.labelSmall)
             }
@@ -679,6 +688,7 @@ private fun V23OrderDetailDialog(
                 V23DetailRow("الإجمالي", v23Money(order.total))
                 V23DetailRow("المصدر", order.source)
                 V23DetailRow("التاريخ", order.date)
+                v23LastOrderEdit(order.history)?.let { V23DetailRow("آخر تعديل", v23OrderEditLabel(it)) }
                 V23DetailRow("الحالة", labels[order.state] ?: v23StateLabel(order.state))
                 V23DetailRow("محاولات التواصل", order.contactCount.toString())
                 if (order.customerNote.isNotBlank()) V23DetailRow("ملاحظة العميل", order.customerNote)
