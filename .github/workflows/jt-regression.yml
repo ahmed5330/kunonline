@@ -15,6 +15,10 @@ on:
       - 'public/v2/modules-v81-jt-live-setup.js'
       - 'public/v2/modules-v84-jt-create-setup.js'
       - 'public/v2/index.html'
+      - 'src/production-jnt-shipping-edit.js'
+      - 'public/v2/modules-v40-order-details.js'
+      - 'android/app/src/main/java/com/kunonline/callerid/CallerJntOrderEditActivity.kt'
+      - 'scripts/jnt-order-shipping-edit-test.mjs'
       - 'scripts/jt-live-shipping-test.mjs'
       - 'scripts/integration-setup-test.mjs'
       - 'scripts/jt-eg-create-endpoint-contract-test.mjs'
@@ -35,6 +39,10 @@ on:
       - 'public/v2/modules-v81-jt-live-setup.js'
       - 'public/v2/modules-v84-jt-create-setup.js'
       - 'public/v2/index.html'
+      - 'src/production-jnt-shipping-edit.js'
+      - 'public/v2/modules-v40-order-details.js'
+      - 'android/app/src/main/java/com/kunonline/callerid/CallerJntOrderEditActivity.kt'
+      - 'scripts/jnt-order-shipping-edit-test.mjs'
       - 'scripts/jt-live-shipping-test.mjs'
       - 'scripts/integration-setup-test.mjs'
       - 'scripts/jt-eg-create-endpoint-contract-test.mjs'
@@ -53,6 +61,7 @@ jobs:
           node-version: 22
       - name: Validate J&T queue, Create Order, print isolation and cancellation contracts
         run: |
+          node scripts/jnt-order-shipping-edit-test.mjs
           node scripts/jt-live-shipping-test.mjs
           node scripts/integration-setup-test.mjs
           node scripts/jt-eg-create-endpoint-contract-test.mjs
