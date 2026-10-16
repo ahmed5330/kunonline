@@ -36,7 +36,7 @@ object KunApi {
     // Android org.json optString can stringify JSONObject.NULL as "null",
     // which used to filter out every authorized multi-tenant store.
     internal fun clientIdFromIdentity(identity: JSONObject): String {
-        for (key in arrayOf("clientId", "client_id")) {
+        for (key in arrayOf("clientId", "client_id", "id")) {
             if (identity.isNull(key)) continue
             val id = identity.optString(key, "").trim()
             if (id.isNotBlank() && !id.equals("null", ignoreCase = true)) return id
