@@ -17,7 +17,7 @@ for(const token of ['resolveStoreScope(env,me,clientId,storeId,{write:true})',"c
   assert.ok(api.includes(token),'Server isolation or audit missing: '+token);
 assert.ok(editor.includes('data-kod-jnt-edit')&&editor.includes('KunJntAddressesV80.enhance')&&editor.includes("expectedLastEditAt")&&editor.includes('edited.byName'));
 assert.ok(details.includes('latestJntEdit?order.address:null'),'Edited Kun address must override stale Easy Orders provider data');
-assert.ok(app.includes('EXTRA_SHIPPING_ONLY')&&app.includes('v25VisibleOrderRef'));
+assert.ok(app.includes('openCustomerServiceJntEditor')&&app.includes('v25VisibleOrderRef'));
 assert.ok(app.includes('lastEditBy'),'Order card must show editor identity');
 assert.ok(bridge.includes('/shipping-jnt'));
 assert.ok(native.includes('saveShipping(context, orderId')&&native.includes('shippingOnly'));
