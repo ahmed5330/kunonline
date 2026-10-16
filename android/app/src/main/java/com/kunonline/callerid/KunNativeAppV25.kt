@@ -636,13 +636,7 @@ private fun V25Orders(snapshot: CommerceSnapshot, onRefresh: () -> Unit) {
                             v25Dial(context, order.phone)
                         },
                         onWhatsApp = { v25WhatsApp(context, order.phone) },
-                        onEditShipping = {
-                            context.startActivity(Intent(context, CallerJntOrderEditActivity::class.java).apply {
-                                putExtra(CallerJntOrderEditActivity.EXTRA_ORDER_ID, order.id)
-                                putExtra(CallerJntOrderEditActivity.EXTRA_STORE_ID, order.storeId)
-                                putExtra(CallerJntOrderEditActivity.EXTRA_SHIPPING_ONLY, true)
-                            })
-                        }
+                        onEditShipping = { openCustomerServiceJntEditor(context, order.id, order.storeId) }
                     )
                 }
             }
