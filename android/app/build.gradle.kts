@@ -12,9 +12,9 @@ android {
         applicationId = "com.kunonline.callerid.stable"
         minSdk = 29
         targetSdk = 35
-        // v2.8.8 adds permission-scoped home store switching for multi-store staff.
-        versionCode = 129
-        versionName = "2.8.8"
+        // v2.8.9 fixes nullable client identities for multi-store platform staff.
+        versionCode = 130
+        versionName = "2.8.9"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
