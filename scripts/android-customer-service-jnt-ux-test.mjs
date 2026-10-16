@@ -24,8 +24,8 @@ assert.ok(!card.includes('"#${order.ref}"'), 'Customer service must not show ori
 assert.ok(card.includes('safeRef.isNotBlank()'), 'Do not leave an empty # when the reference is hidden');
 assert.ok(cs.includes('order.ref, order.product'), 'Full reference must remain searchable');
 
-assert.ok(app.includes('selected = selected == MobileV25Tab.CUSTOMER_SERVICE'));
-assert.ok(app.includes('label = { Text("خدمة العملاء") }'));
+assert.ok(app.includes('onClick = { selected = MobileV25Tab.CUSTOMER_SERVICE }'));
+assert.ok(app.includes('label = { Text("الأقسام") }'));
 assert.ok(app.includes('contentDescription = "خدمة العملاء"'));
 assert.ok(app.includes('MobileDateFilterBar(compact = selected == MobileV25Tab.CUSTOMER_SERVICE)'));
 assert.ok(app.includes('onEditShipping = { openCustomerServiceJntEditor(context, order.id, order.storeId) }'));
