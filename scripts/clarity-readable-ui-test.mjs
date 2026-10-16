@@ -3,9 +3,9 @@ import {readFileSync} from 'node:fs';
 import {runInNewContext} from 'node:vm';
 
 const source=readFileSync(new URL('../public/v2/modules-v136-clarity-growth.js',import.meta.url),'utf8');
-const inject="window.KunClarityGrowthV136={open,version:'137.1'};";
+const inject="window.KunClarityGrowthV136={open,version:'151.0'};";
 assert.ok(source.includes(inject),'production exports expected version');
-const compiled=source.replace(inject,`globalThis.__testClarity={overview,evidenceSignals,readSignal,growth,pages,friction,reportScope,readingBrief,numberOrNull};${inject}`);
+const compiled=source.replace(inject,`globalThis.__testClarity={overview,evidenceSignals,readSignal,growth,pages,friction,reportScope,readingBrief,numberOrNull,clDecisionBoard,clExplain};${inject}`);
 const sandbox={window:{},document:{readyState:'loading',addEventListener(){}},console,Intl,Date,Number,Math,URL};
 runInNewContext(compiled,sandbox,{timeout:2500});
 const api=sandbox.__testClarity;
@@ -47,6 +47,12 @@ assert.ok(signals.some(x=>x.title.includes('نقرات متكررة')&&x.evidenc
 assert.ok(signals.every(x=>x.action&&x.evidence&&x.meaning),'every item needs evidence, interpretation, and action');
 assert.ok(signals.length<=4,'do not overwhelm with a raw list of alerts');
 const html=api.overview(fixture);
+assert.ok(html.includes('أولويات التحسين')&&html.includes('ما معنى الرقم؟'),'overview should surface decisions and on-card help');
+const decision=api.clDecisionBoard(fixture);
+assert.ok(decision.includes('store.test/products/item')&&decision.includes('utm_campaign'),'decision board must link recommendations to evidence and measurable next steps');
+assert.ok(!decision.includes('store.test/cart'),'small-sample page cannot become high priority');
+assert.ok(api.clExplain('جلسات Clarity').includes('ما فائدته؟'),'KPI help explains practical purpose');
+
 for(const x of ['جلسات Clarity','جلسات البوت','ماذا تقول بيانات Clarity؟','الدليل من البيانات:','ماذا يعني؟','الخطوة المقترحة:','حدود التصدير'])assert.ok(html.includes(x),`overview missing ${x}`);
 assert.ok(html.includes(new Intl.NumberFormat('ar-EG').format(75))&&html.includes(new Intl.NumberFormat('ar-EG').format(55)),'must display real fixture figures, not invented values');
 assert.ok(!html.includes('—</strong><small>جلسات'),'available sessions must display a value');
