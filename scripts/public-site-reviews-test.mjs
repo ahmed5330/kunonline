@@ -77,3 +77,16 @@ test('OPTIONS preflight grants only expected marketing origin',async()=>{
  assert.equal(response.status,204);
  assert.equal(response.headers.get('access-control-allow-origin'),site);
 });
+
+test('review invitation links appear only after administrator authentication',async()=>{
+  const {readFileSync}=await import('node:fs');
+  const adminPage=readFileSync(new URL('../public/reviews-admin.html',import.meta.url),'utf8');
+  assert.match(adminPage,/<section id="inviteLinks"[^>]+hidden/);
+  assert.match(adminPage,/data-invite-type="services"/);
+  assert.match(adminPage,/data-invite-type="consultations"/);
+  assert.match(adminPage,/data-invite-type="all"/);
+  assert.match(adminPage,/url\.hash='write-review'/);
+  assert.match(adminPage,/if\(!response\.ok\|\|!data\.ok\)\{filters\.hidden=true;inviteLinks\.hidden=true/);
+  assert.match(adminPage,/records=data\.reviews;filters\.hidden=false;inviteLinks\.hidden=false;/);
+  assert.match(adminPage,/https:\/\/kun-online\.com\/reviews\//);
+});
