@@ -1,0 +1,97 @@
+<!doctype html><html lang="ar" dir="rtl"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>إدارة تقييمات الموقع | كن أونلاين</title>
+<style>
+:root{color-scheme:dark}*{box-sizing:border-box}
+body{background:#0a0f1e;color:#eef5f0;font-family:Tahoma,Arial,sans-serif;line-height:1.8;margin:0}
+header{background:#111e2f;border-bottom:1px solid #2b4254;padding:17px max(17px,5vw);display:flex;gap:15px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+header a{color:#aee384}main{max-width:1080px;margin:0 auto;padding:25px 18px}
+h1{font-size:clamp(23px,4vw,34px)}p{color:#c3d1dd}
+button{border:0;border-radius:9px;padding:9px 17px;background:#7dc242;color:#122111;cursor:pointer;font:700 14px Tahoma,Arial,sans-serif}
+button.secondary{background:#243e53;color:#fff}button.danger{background:#af403a;color:white}
+button:focus-visible{outline:3px solid white;outline-offset:2px}
+.tabs{display:flex;gap:8px;flex-wrap:wrap;margin:20px 0}
+.tabs button[aria-pressed=true]{outline:2px solid #b5ee7c}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:15px}
+.card{border:1px solid #355062;border-radius:15px;background:#122132;padding:20px;min-width:0}
+.card strong{font-size:18px;color:white}
+.card .stars{color:#fed168;font-size:20px;letter-spacing:1px}
+.card img{width:80px;height:80px;border-radius:100%;object-fit:cover}
+.card small{display:block;color:#b4c2d3}
+.card .body{white-space:pre-wrap;overflow-wrap:anywhere;color:#dce6ef}
+.actions{display:flex;gap:8px;flex-wrap:wrap}
+#status{padding:12px;background:#1b3548;border-radius:10px;min-height:52px}
+</style></head><body>
+<header><b>كن أونلاين — إدارة تقييمات الموقع</b><a href="/v2/">العودة للسيستم</a></header>
+<main><h1>إدارة التقييمات</h1>
+<p>لا يظهر أي تقييم علنًا قبل موافقة مدير كن أونلاين. يمكنك اعتماده أو إخفاؤه أو حذفه نهائيًا.</p>
+<div id="status" role="status" aria-live="polite">جاري التحقق من صلاحيات المدير…</div>
+<div class="tabs" id="filters" hidden>
+<button type="button" data-filter="pending" aria-pressed="true">بانتظار المراجعة</button>
+<button type="button" data-filter="approved" aria-pressed="false">المنشورة</button>
+<button type="button" data-filter="hidden" aria-pressed="false">المخفية</button>
+<button type="button" data-filter="all" aria-pressed="false">الكل</button>
+<button type="button" id="reload" class="secondary">تحديث</button>
+</div>
+<div class="grid" id="reviews"></div>
+</main>
+<script>
+(function(){
+'use strict';
+var list=document.getElementById('reviews'),status=document.getElementById('status'),filters=document.getElementById('filters');
+var records=[],chosen='pending';
+function elt(tag,cls,text){var el=document.createElement(tag);if(cls)el.className=cls;if(text!==undefined)el.textContent=text;return el;}
+function starText(n){return '★'.repeat(n)+'☆'.repeat(5-n);}
+async function send(id,method,payload){
+ var response=await fetch('/api/public-reviews/'+encodeURIComponent(id),{method:method,credentials:'same-origin',headers:payload?{'Content-Type':'application/json'}:{},body:payload?JSON.stringify(payload):undefined});
+ var body=await response.json().catch(()=>({}));
+ if(!response.ok||!body.ok)throw new Error(body.error||'فشلت العملية');return body;
+}
+function render(){
+ list.replaceChildren();
+ var visible=records.filter(function(r){return chosen==='all'||r.status===chosen;});
+ if(!visible.length){list.append(elt('p',null,'لا توجد تقييمات في هذا القسم.'));return;}
+ for(var review of visible){
+  var card=elt('article','card'),head=elt('div');
+  head.append(elt('strong',null,review.name+' — '+(review.category==='services'?'خدمات كن أونلاين':'استشارات كن أونلاين')));
+  head.append(elt('div','stars',starText(review.rating)));
+  head.append(elt('small',null,'الحالة: '+review.status+' • '+new Date(review.createdAt).toLocaleDateString('ar-EG')));
+  card.append(head);
+  if(review.photo&&/^data:image\/jpeg;base64,/.test(review.photo)){var img=elt('img');img.src=review.photo;img.alt='الصورة التي اختار صاحب التقييم نشرها';img.loading='lazy';card.append(img);}
+  card.append(elt('p','body',review.text));
+  var actions=elt('div','actions');
+  if(review.status!=='approved')addAction('نشر','',()=>send(review.id,'PATCH',{status:'approved'}),actions);
+  if(review.status!=='hidden')addAction('إخفاء','secondary',()=>send(review.id,'PATCH',{status:'hidden'}),actions);
+  addAction('حذف نهائي','danger',async()=>{if(confirm('هل تريد حذف هذا التقييم نهائيًا؟'))await send(review.id,'DELETE');else return false;},actions);
+  card.append(actions);list.append(card);
+ }
+}
+function addAction(label,css,action,actions){
+ var button=elt('button',css,label);button.type='button';
+ button.addEventListener('click',async function(){
+  button.disabled=true;
+  try{var result=await action();if(result!==false){status.textContent='تم تحديث التقييم.';await load();}}
+  catch(e){status.textContent=e.message;}
+  finally{button.disabled=false;}
+ });actions.append(button);
+}
+async function load(){
+ var response=await fetch('/api/public-reviews?admin=1',{credentials:'same-origin',cache:'no-store'});
+ var data=await response.json().catch(()=>({}));
+ if(!response.ok||!data.ok){filters.hidden=true;status.textContent=(data.error||'تسجيل الدخول كمدير مطلوب')+' — ادخل للسيستم بحساب الإدارة أولًا.';return;}
+ records=data.reviews;filters.hidden=false;
+ status.textContent='التقييمات: '+records.length+' | قيد المراجعة: '+records.filter(r=>r.status==='pending').length;
+ render();
+}
+filters.addEventListener('click',function(event){
+ var target=event.target.closest('button[data-filter]');if(!target)return;
+ chosen=target.dataset.filter;
+ for(var button of filters.querySelectorAll('button[data-filter]'))button.setAttribute('aria-pressed',button===target?'true':'false');
+ render();
+});
+document.getElementById('reload').addEventListener('click',()=>load().catch(e=>status.textContent=e.message));
+load().catch(e=>status.textContent='حدث خطأ في الاتصال: '+e.message);
+}());
+</script>
+</body></html>
