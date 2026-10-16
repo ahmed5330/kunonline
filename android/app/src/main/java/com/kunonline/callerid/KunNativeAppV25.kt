@@ -1,7 +1,6 @@
 package com.kunonline.callerid
 
 import android.Manifest
-import android.content.Intent
 import android.app.role.RoleManager
 import android.content.Intent
 import android.content.pm.PackageManager
