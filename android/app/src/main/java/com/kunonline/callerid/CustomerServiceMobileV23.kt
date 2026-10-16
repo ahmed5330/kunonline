@@ -35,6 +35,36 @@ import java.time.format.DateTimeFormatter
 import java.time.temporal.TemporalAdjusters
 import java.util.Locale
 
+
+/** Preserve full Easy Orders references for search/integrations; hide them in cards. */
+internal fun v23VisibleOrderRef(ref: String, source: String): String =
+    if (ref.startsWith("easyorders:", true) || ref.startsWith("sheet:easyorders:", true) ||
+        source.contains("easy", true) || ref.length > 28) "" else ref
+
+internal fun v23CanEditShipping(awb: String, state: String): Boolean =
+    awb.isBlank() && state.lowercase() !in setOf("shipping","in_shipping","shipped",
+        "signed","collected","delivered","returned","cancelled","completed")
+
+private fun v23LastOrderEdit(history: JSONArray): JSONObject? {
+    for (i in history.length()-1 downTo 0) {
+        val e = history.optJSONObject(i) ?: continue
+        if (e.optString("type") == "order_edit") return e
+    }
+    return null
+}
+
+internal fun openCustomerServiceJntEditor(context: android.content.Context, orderId: String, storeId: String) {
+    runCatching {
+        context.startActivity(Intent(context, CallerJntOrderEditActivity::class.java).apply {
+            putExtra(CallerJntOrderEditActivity.EXTRA_ORDER_ID, orderId)
+            putExtra(CallerJntOrderEditActivity.EXTRA_STORE_ID, storeId)
+            putExtra(CallerJntOrderEditActivity.EXTRA_SHIPPING_ONLY, true)
+        })
+    }.onFailure {
+        Toast.makeText(context, "تعذر فتح تعديل J&T: ${it.localizedMessage ?: "حاول مجددًا"}", Toast.LENGTH_LONG).show()
+    }
+}
+
 enum class DashboardRange(val label: String) {
     TODAY("اليوم"),
     YESTERDAY("أمس"),
@@ -313,6 +343,7 @@ fun V23CustomerService(snapshot: CommerceSnapshot, onGlobalRefresh: () -> Unit) 
                     V23CustomerServiceCard(
                         order = order,
                         onOpen = { selectedOrder = order },
+                        onEditShipping = { openCustomerServiceJntEditor(context, order.id, order.storeId) },
                         onCall = {
                             if (order.phone.isNotBlank()) {
                                 scope.launch {
@@ -367,6 +398,10 @@ fun V23CustomerService(snapshot: CommerceSnapshot, onGlobalRefresh: () -> Unit) 
                 refreshBoard(order.id)
                 onGlobalRefresh()
             },
+            onEditShipping = {
+                selectedOrder = null
+                openCustomerServiceJntEditor(context, order.id, order.storeId)
+            },
             onEdit = {
                 loading = true
                 scope.launch {
@@ -397,7 +432,8 @@ private fun V23CustomerServiceCard(
     order: CsOrderUi,
     onOpen: () -> Unit,
     onCall: () -> Unit,
-    onWhatsApp: () -> Unit
+    onWhatsApp: () -> Unit,
+    onEditShipping: () -> Unit
 ) {
     ElevatedCard(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onOpen),
@@ -430,11 +466,11 @@ private fun V23CustomerServiceCard(
                         fontWeight = FontWeight.ExtraBold,
                         style = MaterialTheme.typography.titleMedium
                     )
-                    Text(
-                        "#${order.ref}",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodySmall
-                    )
+                    val safeRef = v23VisibleOrderRef(order.ref, order.source)
+                    if (safeRef.isNotBlank()) {
+                        Text("#$safeRef", color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodySmall)
+                    }
                 }
                 Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(5.dp)) {
                     Text(
@@ -534,6 +570,19 @@ private fun V23CustomerServiceCard(
                 }
             }
 
+            val edited = v23LastOrderEdit(order.history)
+            if (edited != null) {
+                Text("تم التعديل بواسطة ${edited.optString("byName").ifBlank { edited.optString("by") }}",
+                    color = MaterialTheme.colorScheme.primary,
+                    style = MaterialTheme.typography.labelSmall)
+            }
+            if (v23CanEditShipping(order.awb, order.state)) {
+                OutlinedButton(onClick = onEditShipping, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Outlined.EditLocationAlt, contentDescription = null)
+                    Spacer(Modifier.width(6.dp))
+                    Text("تعديل شحن J&T")
+                }
+            }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
                     onClick = onCall,
@@ -561,7 +610,8 @@ private fun V23OrderDetailDialog(
     labels: Map<String, String>,
     onDismiss: () -> Unit,
     onChanged: () -> Unit,
-    onEdit: () -> Unit
+    onEdit: () -> Unit,
+    onEditShipping: () -> Unit
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -588,7 +638,7 @@ private fun V23OrderDetailDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("الأوردر #${order.ref}") },
+        title = { Text(v23VisibleOrderRef(order.ref, order.source).takeIf { it.isNotBlank() }?.let { "الأوردر #$it" } ?: "تفاصيل أوردر ${order.name}") },
         text = {
             Column(
                 modifier = Modifier.heightIn(max = 620.dp).verticalScroll(rememberScrollState()),
@@ -681,6 +731,13 @@ private fun V23OrderDetailDialog(
                 ) { Text("إضافة الملاحظة") }
 
                 HorizontalDivider()
+                if (v23CanEditShipping(order.awb, order.state)) {
+                    OutlinedButton(onClick = onEditShipping, modifier = Modifier.fillMaxWidth(), enabled = !actionBusy) {
+                        Icon(Icons.Outlined.EditLocationAlt, contentDescription = null)
+                        Spacer(Modifier.width(6.dp))
+                        Text("تعديل شحن J&T")
+                    }
+                }
                 Button(onClick = onEdit, modifier = Modifier.fillMaxWidth(), enabled = !actionBusy) {
                     Icon(Icons.Outlined.Edit, contentDescription = null)
                     Spacer(Modifier.width(6.dp))
@@ -706,7 +763,7 @@ private fun V23OrderDetailDialog(
         AlertDialog(
             onDismissRequest = { confirmDelete = false },
             title = { Text("تأكيد حذف الأوردر") },
-            text = { Text("الحذف نهائي ويخضع لنفس صلاحيات الويب. هل تريد حذف #${order.ref}؟") },
+            text = { Text("الحذف نهائي ويخضع لنفس صلاحيات الويب. هل تريد حذف طلب ${order.name}؟") },
             confirmButton = {
                 Button(
                     onClick = {
