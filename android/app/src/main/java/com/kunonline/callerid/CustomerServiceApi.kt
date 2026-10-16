@@ -217,7 +217,7 @@ object KunCustomerServiceApi {
         CustomerServiceJsonResult(true, "تم حذف الأوردر", json(response))
     }
 
-    fun fetchEditorData(context: Context, orderId: String, selectedStoreId: String = ""): CustomerServiceEditorData {
+    fun fetchEditorData(context: Context, orderId: String, selectedStoreId: String = "", requireHistory: Boolean = false): CustomerServiceEditorData {
         val cookie = cookie(context) ?: return CustomerServiceEditorData(false, "سجّل الدخول أولاً")
         return runCatching {
             val clientId = resolveClientId(context, cookie)
@@ -226,6 +226,7 @@ object KunCustomerServiceApi {
             val detailsResponse = request("GET", "/api/orders/${enc(orderId)}/details?clientId=${enc(clientId)}$storeParam", cookie)
             if (detailsResponse.code !in 200..299) return CustomerServiceEditorData(false, errorMessage(detailsResponse, "تعذر تحميل تفاصيل الأوردر"))
             val historyResponse = request("GET", "/api/customer-service/orders/${enc(orderId)}/history?clientId=${enc(clientId)}$storeParam", cookie)
+            if (requireHistory && historyResponse.code !in 200..299) return CustomerServiceEditorData(false, errorMessage(historyResponse, "تعذر تحميل سجل J&T؛ حاول مجددًا قبل تعديل الشحن"))
             val historyOrder = if (historyResponse.code in 200..299) json(historyResponse).optJSONObject("order") ?: JSONObject() else JSONObject()
             val details = json(detailsResponse)
             val storeId = details.optJSONObject("order")?.optString("storeId").orEmpty()
