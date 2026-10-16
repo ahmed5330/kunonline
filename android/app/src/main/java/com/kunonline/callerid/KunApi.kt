@@ -31,6 +31,18 @@ object KunApi {
     private const val AUTH_PREFS = "kun_auth"
     private const val SESSION_KEY = "session_cookie"
     private const val SELECTED_STORE_KEY = "selected_store"
+
+    // Platform staff accounts legitimately have clientId=null in /api/me.
+    // Android org.json optString can stringify JSONObject.NULL as "null",
+    // which used to filter out every authorized multi-tenant store.
+    internal fun clientIdFromIdentity(identity: JSONObject): String {
+        for (key in arrayOf("clientId", "client_id")) {
+            if (identity.isNull(key)) continue
+            val id = identity.optString(key, "").trim()
+            if (id.isNotBlank() && !id.equals("null", ignoreCase = true)) return id
+        }
+        return ""
+    }
     private var scopeCookie = ""
     private var cachedScope: ScopeInfo? = null
     private var scopeExpiresAt = 0L
@@ -195,7 +207,7 @@ object KunApi {
             val me = request("GET", "/api/me", cookie = cookie)
             if (me.code !in 200..299) return StoreOptionsResult(false, errorMessage(me).ifBlank { "تعذر التحقق من الجلسة" })
             val identity = JSONObject(me.body)
-            val userClientId = identity.optString("clientId").ifBlank { identity.optString("client_id") }
+            val userClientId = clientIdFromIdentity(identity)
             val accessible = request("GET", "/api/my-client-context", cookie = cookie)
             if (accessible.code !in 200..299) {
                 return StoreOptionsResult(false, errorMessage(accessible).ifBlank { "تعذر تحميل المتاجر المسموح بها" })
@@ -204,7 +216,7 @@ object KunApi {
             val options = mutableListOf<MobileStoreOption>()
             for (index in 0 until clients.length()) {
                 val client = clients.optJSONObject(index) ?: continue
-                val clientId = client.optString("id").trim()
+                val clientId = clientIdFromIdentity(client)
                 if (clientId.isBlank() || (userClientId.isNotBlank() && clientId != userClientId)) continue
                 val clientName = client.optString("name").ifBlank { clientId }
                 val result = request("GET", "/api/my-store-context?clientId=${enc(clientId)}", cookie = cookie)
@@ -334,8 +346,7 @@ object KunApi {
         val me = request("GET", "/api/me", cookie = cookie)
         if (me.code in 200..299) {
             val data = runCatching { JSONObject(me.body) }.getOrNull()
-            clientId = data?.optString("clientId").orEmpty()
-                .ifBlank { data?.optString("client_id").orEmpty() }
+            clientId = data?.let(::clientIdFromIdentity).orEmpty()
         }
 
         if (clientId.isBlank()) {
@@ -344,7 +355,7 @@ object KunApi {
                 val clients = runCatching { JSONObject(access.body).optJSONArray("clients") }.getOrNull()
                 val ids = buildList {
                     if (clients != null) for (i in 0 until clients.length()) {
-                        clients.optJSONObject(i)?.optString("id")?.takeIf { it.isNotBlank() }?.let { add(it) }
+                        clients.optJSONObject(i)?.let(::clientIdFromIdentity)?.takeIf { it.isNotBlank() }?.let { add(it) }
                     }
                 }
                 clientId = if (preferredClient in ids) preferredClient else ids.firstOrNull().orEmpty()
@@ -355,9 +366,9 @@ object KunApi {
             val state = request("GET", "/api/state", cookie = cookie)
             if (state.code in 200..299) {
                 val root = runCatching { JSONObject(state.body) }.getOrNull()
-                clientId = root?.optJSONArray("clients")?.optJSONObject(0)?.optString("id").orEmpty()
+                clientId = root?.optJSONArray("clients")?.optJSONObject(0)?.let(::clientIdFromIdentity).orEmpty()
                     .ifBlank {
-                        root?.optJSONArray("businessClients")?.optJSONObject(0)?.optString("id").orEmpty()
+                        root?.optJSONArray("businessClients")?.optJSONObject(0)?.let(::clientIdFromIdentity).orEmpty()
                     }
                     .ifBlank {
                         val order = root?.optJSONArray("orders")?.optJSONObject(0)
