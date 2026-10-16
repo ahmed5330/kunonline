@@ -199,9 +199,9 @@ fun KunNativeAppV25(
                             ),
                             title = {
                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                                    KunBrandMark(Modifier.size(50.dp))
+                                    KunBrandMark(Modifier.size(38.dp))
                                     Column {
-                                        Text(selected.label, color = KunColors.Chrome, fontWeight = FontWeight.ExtraBold, fontSize = 17.sp)
+                                        Text(selected.label, color = KunColors.Chrome, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
                                         val selectedStoreName = storeOptions.firstOrNull {
                                             it.clientId == currentStore.clientId && it.storeId == currentStore.storeId
                                         }?.storeName
@@ -216,6 +216,11 @@ fun KunNativeAppV25(
                                 }
                             },
                             actions = {
+                                if (selected != MobileV25Tab.CUSTOMER_SERVICE) {
+                                    IconButton(onClick = { selected = MobileV25Tab.CUSTOMER_SERVICE }, enabled = !loading) {
+                                        Icon(Icons.Outlined.SupportAgent, contentDescription = "خدمة العملاء")
+                                    }
+                                }
                                 if (selected != MobileV25Tab.SETTINGS) {
                                     IconButton(onClick = { selected = MobileV25Tab.HOME }, enabled = !loading) {
                                         Icon(Icons.Outlined.Storefront, contentDescription = "اختيار المتجر")
@@ -258,10 +263,10 @@ fun KunNativeAppV25(
                                 colors = colors
                             )
                             NavigationBarItem(
-                                selected = false,
-                                onClick = onOpenSystemSections,
-                                icon = { Icon(Icons.Outlined.GridView, contentDescription = null) },
-                                label = { Text("الأقسام") },
+                                selected = selected == MobileV25Tab.CUSTOMER_SERVICE,
+                                onClick = { selected = MobileV25Tab.CUSTOMER_SERVICE },
+                                icon = { Icon(Icons.Outlined.SupportAgent, contentDescription = null) },
+                                label = { Text("خدمة العملاء") },
                                 colors = colors
                             )
                             NavigationBarItem(
@@ -275,7 +280,7 @@ fun KunNativeAppV25(
                     }
                 ) { padding ->
                     Column(Modifier.fillMaxSize().padding(padding)) {
-                        MobileDateFilterBar()
+                        MobileDateFilterBar(compact = selected == MobileV25Tab.CUSTOMER_SERVICE)
                         Box(Modifier.fillMaxWidth().weight(1f)) {
                             when (selected) {
                                 MobileV25Tab.HOME -> V25Home(
@@ -651,7 +656,7 @@ private fun V25CustomerServiceHub(snapshot: CommerceSnapshot, onGlobalRefresh: (
     val dateRevision = MobileDateFilterState.revision
     Column(Modifier.fillMaxSize()) {
         Row(
-            Modifier.fillMaxWidth().background(KunColors.Surface).padding(horizontal = 16.dp, vertical = 10.dp),
+            Modifier.fillMaxWidth().background(KunColors.Surface).padding(horizontal = 12.dp, vertical = 2.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             FilterChip(
@@ -751,7 +756,8 @@ private fun V25Contacting(onGlobalRefresh: () -> Unit) {
                         }
                         v25Dial(context, order.phone)
                     },
-                    onWhatsApp = { v25WhatsApp(context, order.phone) }
+                    onWhatsApp = { v25WhatsApp(context, order.phone) },
+                    onEditShipping = { openCustomerServiceJntEditor(context, order.id, order.storeId) }
                 )
             }
         }
@@ -759,7 +765,7 @@ private fun V25Contacting(onGlobalRefresh: () -> Unit) {
 }
 
 @Composable
-private fun V25ContactCard(order: CsOrderUi, direction: String, onCall: () -> Unit, onWhatsApp: () -> Unit) {
+private fun V25ContactCard(order: CsOrderUi, direction: String, onCall: () -> Unit, onWhatsApp: () -> Unit, onEditShipping: () -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = KunRadiusLarge,
@@ -783,6 +789,13 @@ private fun V25ContactCard(order: CsOrderUi, direction: String, onCall: () -> Un
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(v25Money(order.total), fontWeight = FontWeight.ExtraBold, color = KunColors.Ink, modifier = Modifier.weight(1f))
                 if (order.contactCount > 0) Text("${order.contactCount} تواصل", color = KunColors.Ink3, style = MaterialTheme.typography.bodySmall)
+            }
+            if (order.awb.isBlank() && order.state.lowercase() !in setOf("shipping","in_shipping","shipped","signed","collected","delivered","returned","cancelled","completed")) {
+                OutlinedButton(onClick = onEditShipping, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Outlined.EditLocationAlt, contentDescription = null)
+                    Spacer(Modifier.width(6.dp))
+                    Text("تعديل شحن J&T")
+                }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = onCall, modifier = Modifier.weight(1f)) {
