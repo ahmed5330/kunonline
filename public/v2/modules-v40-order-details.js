@@ -68,15 +68,20 @@
     const parts=[field('المحافظة',a.government),field('المدينة',a.city),field('المنطقة / الحي',a.area),field('الشارع',a.street),field('رقم المبنى',a.building),field('الدور',a.floor),field('الشقة',a.apartment),field('علامة مميزة',a.landmark),field('الرقم البريدي',a.postalCode),field('العنوان بالتفصيل',a.address,{copy:true})].join('');
     return parts||'<div class="kod-empty">لا توجد تفاصيل عنوان إضافية مسجلة.</div>';
   }
+  let latestOrderDetails=null;
   function render(data){
     const o=data.order||{},s=data.summary||{},items=data.items||[],customer=data.customer||{},a=data.address||{};
     const payment=PAYMENT[value(s.paymentMethod).toLowerCase()]||s.paymentMethod||'غير مسجل';
+    const edited=o.lastEdit||null,shipmentLocked=Boolean(o.awb)||['shipping','in_shipping','shipped','signed','delivered','collected','returned','cancelled','completed'].includes(String(o.state||'').toLowerCase());
     return `<div class="kod-page"><div class="kod-head"><div class="kod-head-main"><div class="kod-order-id">الطلب ${esc(o.id||'')}</div><div class="kod-sub">${esc(o.storeName||'')} ${o.source?`· ${esc(o.source)}`:''} · ${fmtDate(o.date)}</div></div><div class="kod-spacer"></div><button type="button" class="btn soft" data-kod-close>إغلاق</button></div>
       <div class="kod-grid">
         ${data.provider?.warning?`<div class="kod-warning">تفاصيل Kun متاحة، لكن ${esc(data.provider.warning)}</div>`:''}
         <section class="kod-card kod-products-card"><h3>عناصر السلة</h3><div class="kod-products">${items.length?items.map(itemHtml).join(''):'<div class="kod-empty">لا توجد عناصر منتج مسجلة.</div>'}</div></section>
         <section class="kod-card kod-customer-card"><h3>بيانات العميل</h3>${customerHtml(customer)}</section>
-        <section class="kod-card kod-address"><h3>بيانات وعنوان الشحن</h3><div class="kod-field-grid">${addressHtml(a)}</div></section>
+        <section class="kod-card kod-address"><h3>بيانات وعنوان الشحن</h3><div class="kod-field-grid">${addressHtml(a)}</div>
+        ${edited?`<div class="kod-note">✎ تم التعديل بواسطة: ${esc(edited.byName||edited.by||'موظف')} · ${fmtDate(edited.at)}</div>`:''}
+        ${shipmentLocked?'<div class="kod-note">تم إصدار الشحنة أو إنهاء الطلب. تعديل شركة J&T يتم عن طريق شركة الشحن، وليس بتغيير السجل المحلي.</div>':`<div class="kod-actions"><button type="button" class="btn primary" data-kod-jnt-edit>تعديل بيانات الشحن حسب J&T</button></div>`}
+        </section>
         <section class="kod-card kod-summary"><h3>ملخص الطلب</h3><div class="kod-field-grid">${field('الحالة',STATE[o.state]||o.state||'—')}${field('وسيلة الدفع',payment)}${field('إجمالي الكمية',s.quantity)}${field('مجموع المنتجات',`${money(s.subtotal)} EGP`)}${field('رسوم التوصيل',`${money(s.shippingCost)} EGP`)}${Number(s.discountAmount)>0?field('الخصم',`${money(s.discountAmount)} EGP`):''}${field('الإجمالي المطلوب',`${money(s.total)} EGP`)}${field('كود الكوبون',o.couponCode)}${field('رقم البوليصة',o.awb,{copy:true})}${field('مصدر الطلب',o.source)}${field('رقم الطلب الأصلي',o.ref,{copy:true})}</div>${o.customerNote?`<div class="kod-note"><b>ملاحظة على الطلب:</b> ${esc(o.customerNote)}</div>`:''}</section>
       </div></div>`;
   }
@@ -85,9 +90,54 @@
     try{
       const clientId=await (window.kunClientId?.()||Promise.resolve(''));if(!clientId)throw new Error('تعذر تحديد المتجر');
       const r=await fetch(`/api/orders/${encodeURIComponent(orderId)}/details?clientId=${encodeURIComponent(clientId)}`,{credentials:'include'}),d=await r.json().catch(()=>({}));
-      if(!r.ok)throw new Error(d.error||'تعذر تحميل تفاصيل الطلب');show(render(d));
+      if(!r.ok)throw new Error(d.error||'تعذر تحميل تفاصيل الطلب');latestOrderDetails=d;show(render(d));
     }catch(error){show(`<div class="kod-page"><div class="kod-head"><div class="kod-order-id">تعذر فتح تفاصيل الطلب</div><div class="kod-spacer"></div><button class="btn soft" data-kod-close>إغلاق</button></div><div class="kod-card">${esc(error?.message||String(error))}</div></div>`);}
   }
+
+  async function editShipping(){
+    const details=latestOrderDetails;if(!details?.order?.id)return;
+    const order=details.order,customer=details.customer||{},address=details.address||{},j=order.jntAddress||{};
+    const input=(name,label,v='',required=true,type='text')=>`<label class="kod-field"><span class="kod-label">${esc(label)}</span><input class="input" name="${esc(name)}" value="${esc(v)}" type="${type}" ${required?'required':''} style="width:100%"></label>`;
+    show(`<div class="kod-page"><div class="kod-head"><b>تعديل شحن J&T للطلب</b><div class="kod-spacer"></div><button type="button" class="btn soft" data-kod-cancel-edit>رجوع</button></div>
+      <div class="kod-card"><p>اختار المحافظة والمدينة والمنطقة من دليل J&T. التعديل هنا محلي قبل إصدار البوليصة ولا يرسل الطلب لشركة الشحن.</p>
+      <form id="kodJntEditForm" data-jnt-address-form="1" class="kod-field-grid">
+      ${input('name','اسم المستلم',customer.name)}${input('phone','هاتف المستلم',customer.phone)}
+      ${input('phone2','هاتف إضافي',j.phone2||customer.alternatePhone||'',false)}
+      ${input('province','المحافظة',j.province||address.government||'')}
+      ${input('city','المدينة / الحي',j.city||address.city||'')}
+      ${input('area','المنطقة',j.area||address.area||'')}
+      ${input('street','الشارع والعنوان التفصيلي',j.street||address.street||address.address||'')}
+      ${input('weight','وزن الشحنة كجم',j.weight||1,true,'number')}
+      <div class="kod-actions" style="grid-column:1/-1"><button class="btn primary" type="submit" disabled>تحميل دليل J&T...</button></div>
+      <div class="kod-warning" id="kodJntError" role="alert" style="display:none"></div>
+      </form></div></div>`);
+    document.querySelector('[data-kod-cancel-edit]')?.addEventListener('click',()=>show(render(details)));
+    const form=drawer()?.querySelector('#kodJntEditForm');if(!form)return;
+    const button=form.querySelector('[type="submit"]'),errorBox=form.querySelector('#kodJntError');
+    try{
+      if(!window.KunJntAddressesV80?.enhance)await import('/v2/modules-v80-jnt-address-cascade-v805.js?v=80.5');
+      await window.KunJntAddressesV80.enhance(form);
+      button.disabled=false;button.textContent='حفظ بيانات الشحن';
+    }catch(e){errorBox.style.display='block';errorBox.textContent=e.message||'تعذر تحميل دليل J&T';}
+    form.addEventListener('submit',async event=>{
+      event.preventDefault();if(!form.reportValidity()||button.disabled)return;
+      const fd=new FormData(form),v=Object.fromEntries(fd.entries());
+      if(!v.provinceCode||!v.cityCode||!v.districtCode){errorBox.style.display='block';errorBox.textContent='اختر المحافظة والمدينة والمنطقة من دليل J&T';return;}
+      button.disabled=true;button.textContent='جارٍ الحفظ...';errorBox.style.display='none';
+      try{
+        const clientId=await (window.kunClientId?.()||Promise.resolve(''));
+        const payload={clientId,storeId:order.storeId,name:v.name,phone:v.phone,expectedLastEditAt:order.jntEditAt||'',
+          jntAddress:{province:v.province,provinceCode:v.provinceCode,city:v.city,cityCode:v.cityCode,cityKey:form.elements.city?.value,area:v.area,areaCode:v.districtCode,street:v.street,phone2:v.phone2,weight:Number(v.weight)}};
+        const response=await fetch(`/api/orders/${encodeURIComponent(order.id)}/shipping-jnt`,{method:'PATCH',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+        const result=await response.json().catch(()=>({}));
+        if(!response.ok)throw new Error(result.error||'تعذر حفظ بيانات J&T');
+        window.showToast?.(`تم تعديل الشحن بواسطة ${result.editedBy||'الموظف'}`);
+        window.dispatchEvent(new CustomEvent('kun:order-shipping-edited',{detail:{orderId:order.id,editedBy:result.editedBy}}));
+        await open(order.id);
+      }catch(e){errorBox.style.display='block';errorBox.textContent=e.message;button.disabled=false;button.textContent='حفظ بيانات الشحن';}
+    });
+  }
+
   function injectCustomerServiceButtons(){
     document.querySelectorAll('#root .cs-order[data-cs-order]').forEach(card=>{
       const actions=card.querySelector('.cs-actions');if(!actions||actions.querySelector('[data-kod-cs-details]'))return;
@@ -95,6 +145,7 @@
     });
   }
   document.addEventListener('click',event=>{
+    if(event.target.closest?.('[data-kod-jnt-edit]')){event.preventDefault();event.stopImmediatePropagation();editShipping();return;}
     const cs=event.target.closest?.('[data-kod-cs-details]');if(cs){event.preventDefault();event.stopImmediatePropagation();open(cs.dataset.kodCsDetails);return;}
     const order=event.target.closest?.('#root button[data-order]');if(order){event.preventDefault();event.stopImmediatePropagation();open(order.dataset.order);}
   },true);
