@@ -23,7 +23,8 @@ assert.ok(bridge.includes('/shipping-jnt'));
 assert.ok(native.includes('saveShipping(context, orderId')&&native.includes('shippingOnly'));
 assert.ok(models.includes('lastEditBy = lastEdit(o)'));
 assert.ok(index.includes('modules-v40-order-details.js?v=40.2'));
-assert.ok(gradle.includes('versionCode = 134')&&gradle.includes('versionName = "2.9.3"'));
+assert.ok(Number(gradle.match(/versionCode\s*=\s*(\d+)/)?.[1]||0)>=134,'Android build code must not regress');
+assert.match(gradle,/versionName\s*=\s*"\d+\.\d+\.\d+"/);
 
 const address={province:'القاهرة',provinceCode:'1011',city:'مدينة نصر',cityCode:'1011000',cityKey:'1011000:مدينة نصر',area:'حي السلام',areaCode:'A001',street:'شارع التحرير ١',phone2:'01123456789',weight:2.5};
 const mockFetch=async url=>new Response(JSON.stringify(url.includes('index.json')?
