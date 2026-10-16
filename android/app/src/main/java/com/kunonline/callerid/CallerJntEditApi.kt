@@ -52,9 +52,8 @@ object CallerJntEditApi {
         val cookie = KunApi.sessionCookie(context) ?: return CustomerServiceJsonResult(false, "سجّل الدخول أولًا")
         val active = KunApi.resolveScope(cookie, context)
         if (active.clientId.isBlank() || storeId.isBlank()) return CustomerServiceJsonResult(false, "حدد متجر الطلب أولًا")
-        val authorized = KunApi.loadStoreOptions(context)
-        if (!authorized.ok || authorized.stores.none { it.clientId == active.clientId && it.storeId == storeId })
-            return CustomerServiceJsonResult(false, "ليس لديك صلاحية تعديل الطلب بهذا المتجر")
+        // Leave permission decisions to the authenticated server. A transient
+        // store-options fetch failure must not make the save button appear broken.
         payload.put("clientId", active.clientId).put("storeId", storeId)
         return runCatching {
             val encoded = URLEncoder.encode(orderId, Charsets.UTF_8.name()).replace("+", "%20")
