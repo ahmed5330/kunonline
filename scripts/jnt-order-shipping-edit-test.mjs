@@ -17,13 +17,14 @@ for(const token of ['resolveStoreScope(env,me,clientId,storeId,{write:true})',"c
   assert.ok(api.includes(token),'Server isolation or audit missing: '+token);
 assert.ok(editor.includes('data-kod-jnt-edit')&&editor.includes('KunJntAddressesV80.enhance')&&editor.includes("expectedLastEditAt")&&editor.includes('edited.byName'));
 assert.ok(details.includes('latestJntEdit?order.address:null'),'Edited Kun address must override stale Easy Orders provider data');
-assert.ok(app.includes('EXTRA_SHIPPING_ONLY')&&app.includes('v25VisibleOrderRef'));
+assert.ok(app.includes('openCustomerServiceJntEditor')&&app.includes('v25VisibleOrderRef'));
 assert.ok(app.includes('lastEditBy'),'Order card must show editor identity');
 assert.ok(bridge.includes('/shipping-jnt'));
 assert.ok(native.includes('saveShipping(context, orderId')&&native.includes('shippingOnly'));
 assert.ok(models.includes('lastEditBy = lastEdit(o)'));
 assert.ok(index.includes('modules-v40-order-details.js?v=40.2'));
-assert.ok(gradle.includes('versionCode = 134')&&gradle.includes('versionName = "2.9.3"'));
+assert.ok(Number(gradle.match(/versionCode\s*=\s*(\d+)/)?.[1]||0)>=134,'Android build code must not regress');
+assert.match(gradle,/versionName\s*=\s*"\d+\.\d+\.\d+"/);
 
 const address={province:'القاهرة',provinceCode:'1011',city:'مدينة نصر',cityCode:'1011000',cityKey:'1011000:مدينة نصر',area:'حي السلام',areaCode:'A001',street:'شارع التحرير ١',phone2:'01123456789',weight:2.5};
 const mockFetch=async url=>new Response(JSON.stringify(url.includes('index.json')?

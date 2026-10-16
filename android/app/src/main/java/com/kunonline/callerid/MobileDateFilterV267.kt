@@ -3,15 +3,19 @@ package com.kunonline.callerid
 import android.app.DatePickerDialog
 import android.content.Context
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -165,11 +169,42 @@ object MobileDateFilterState {
 }
 
 @Composable
-fun MobileDateFilterBar(modifier: Modifier = Modifier) {
+fun MobileDateFilterBar(modifier: Modifier = Modifier, compact: Boolean = false) {
     val context = LocalContext.current
     val selected = MobileDateFilterState.preset
     val start = MobileDateFilterState.customStart
     val end = MobileDateFilterState.customEnd
+    var expanded by remember { mutableStateOf(false) }
+
+    if (compact) {
+        Surface(modifier = modifier.fillMaxWidth(), color = KunColors.Surface, tonalElevation = 1.dp) {
+            Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp)) {
+                Box {
+                    FilterChip(
+                        selected = true,
+                        onClick = { expanded = true },
+                        label = { Text("الفترة: ${MobileDateFilterState.periodLabel} ▾") },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = KunColors.PineSoft, selectedLabelColor = KunColors.Pine
+                        )
+                    )
+                    DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                        MobileDatePreset.entries.forEach { item ->
+                            DropdownMenuItem(text = { Text(item.label) }, onClick = {
+                                expanded = false
+                                if (item == MobileDatePreset.CUSTOM) {
+                                    showCustomRangePicker(context, start, end) { from, to ->
+                                        MobileDateFilterState.selectCustom(from, to)
+                                    }
+                                } else MobileDateFilterState.select(item)
+                            })
+                        }
+                    }
+                }
+            }
+        }
+        return
+    }
 
     Surface(modifier = modifier.fillMaxWidth(), color = KunColors.Surface, tonalElevation = 1.dp) {
         Row(
