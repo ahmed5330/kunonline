@@ -52,7 +52,7 @@ function harness(row={...initial}){
   return {env:{DB:db},get updates(){return updates;},get history(){return history;},get audits(){return audits;}};
 }
 const delegate={fetch:async()=>new Response(JSON.stringify({role:'client',clientId:'c1',uid:'u-7',email:'editor@kun.example',name:'مندوب المتجر'}),{status:200,headers:{'Content-Type':'application/json'}})};
-function req(jntAddress=address,storeId='s1'){return new Request('https://app.kun-online.com/api/orders/e-123/shipping-jnt',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({clientId:'c1',storeId,name:'اسم جديد',phone:'01011111',expectedLastEditAt:'',jntAddress})});}
+function req(jntAddress=address,storeId='s1',expectedLastEditAt=''){return new Request('https://app.kun-online.com/api/orders/e-123/shipping-jnt',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({clientId:'c1',storeId,name:'اسم جديد',phone:'01011111',expectedLastEditAt,jntAddress})});}
 // Updating a locally queued shipment also changes the exact payload that
 // the Printing workflow later sends to J&T.
 const queuedHistory=JSON.stringify([{type:'jt_print_queued',shipment:{receiverName:'old',province:'الجيزة',itemName:'قطعة',codAmount:510,quantity:2}}]);
@@ -79,6 +79,18 @@ assert.equal(valid.updates,1);
 assert.equal(valid.history[0].byName,'مندوب المتجر');
 assert.equal(valid.history[0].event,'jnt_shipping_edit');
 assert.equal(valid.audits,1);
+// A second edit should accept the latest J&T event timestamp; a stale edit must fail.
+const priorAt='2026-10-16T11:30:00.000Z';
+const previousEdit={type:'order_edit',event:'jnt_shipping_edit',at:priorAt,byName:'موظف سابق',jtAddress:{...address,street:'شارع قديم'}};
+const repeat=harness({...initial,history:JSON.stringify([previousEdit])});
+const second=await handleProductionJntShippingEdit({request:req(address,'s1',priorAt),env:repeat.env,delegate,ctx:{},fetcher:mockFetch});
+assert.equal(second.status,200,'Repeat J&T edit must succeed with the latest edit timestamp');
+assert.equal(repeat.history[1].event,'jnt_shipping_edit');
+assert.equal(repeat.history[1].byName,'مندوب المتجر');
+const stale=harness({...initial,history:JSON.stringify([previousEdit])});
+const conflict=await handleProductionJntShippingEdit({request:req(address,'s1',''),env:stale.env,delegate,ctx:{},fetcher:mockFetch});
+assert.equal(conflict.status,409,'A stale history baseline must fail safely');
+assert.equal(stale.updates,0);
 const wrong=harness();
 assert.equal((await handleProductionJntShippingEdit({request:req({...address,area:'منطقة غير مطابقة'}),env:wrong.env,delegate,ctx:{},fetcher:mockFetch})).status,400);
 assert.equal(wrong.updates,0);
