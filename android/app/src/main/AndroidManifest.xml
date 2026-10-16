@@ -8,6 +8,8 @@
     <application
         android:theme="@style/AppTheme"
         android:label="Kun Online"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
         android:allowBackup="false"
         android:usesCleartextTraffic="false">
         <meta-data

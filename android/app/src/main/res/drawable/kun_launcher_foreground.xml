@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Preserve the original Kun Online artwork. Fit its full green circle inside
+     the adaptive icon's safe area so no Android launcher mask cuts it off. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:drawable="@drawable/kun_logo"
+        android:gravity="center"
+        android:width="72dp"
+        android:height="72dp" />
+</layer-list>
