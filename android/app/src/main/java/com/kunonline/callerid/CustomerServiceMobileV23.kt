@@ -263,6 +263,7 @@ fun V23CustomerService(snapshot: CommerceSnapshot, onGlobalRefresh: () -> Unit) 
     var message by remember { mutableStateOf("") }
     var query by remember { mutableStateOf("") }
     var stateFilter by remember { mutableStateOf("all") }
+    var filtersExpanded by remember { mutableStateOf(false) }
     var storeFilter by remember { mutableStateOf("") }
     var selectedOrder by remember { mutableStateOf<CsOrderUi?>(null) }
     var editorData by remember { mutableStateOf<CustomerServiceEditorData?>(null) }
@@ -301,37 +302,59 @@ fun V23CustomerService(snapshot: CommerceSnapshot, onGlobalRefresh: () -> Unit) 
     }
 
     Column(Modifier.fillMaxSize()) {
-        OutlinedTextField(
-            value = query,
-            onValueChange = { query = it },
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-            leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
-            placeholder = { Text("ابحث بالعميل، الهاتف، الطلب، المنتج، العنوان أو AWB") },
-            singleLine = true
-        )
-        board?.stores?.takeIf { it.isNotEmpty() }?.let { stores ->
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 3.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                modifier = Modifier.weight(1f),
+                leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
+                placeholder = { Text("بحث بالعميل أو الهاتف أو الطلب") },
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodyMedium
+            )
+            IconButton(onClick = { filtersExpanded = !filtersExpanded }) {
+                Icon(if (filtersExpanded) Icons.Outlined.FilterAltOff else Icons.Outlined.Tune,
+                    contentDescription = if (filtersExpanded) "إخفاء الفلاتر" else "عرض الفلاتر")
+            }
+            IconButton(onClick = { refreshBoard() }, enabled = !loading) {
+                Icon(Icons.Outlined.Refresh, contentDescription = "تحديث")
+            }
+        }
+        if (filtersExpanded) {
+            board?.stores?.takeIf { it.isNotEmpty() }?.let { stores ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    FilterChip(selected = storeFilter.isBlank(), onClick = { storeFilter = "" },
+                        label = { Text("كل المتاجر") })
+                    stores.forEach { store ->
+                        FilterChip(selected = storeFilter == store.id, onClick = { storeFilter = store.id },
+                            label = { Text(store.name.ifBlank { store.code }) })
+                    }
+                }
+            }
             Row(
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                FilterChip(selected = storeFilter.isBlank(), onClick = { storeFilter = "" }, label = { Text("كل المتاجر") })
-                stores.forEach { store ->
-                    FilterChip(selected = storeFilter == store.id, onClick = { storeFilter = store.id }, label = { Text(store.name.ifBlank { store.code }) })
+                v23CustomerServiceStates().forEach { (key, label) ->
+                    FilterChip(selected = stateFilter == key, onClick = { stateFilter = key },
+                        label = { Text(label) })
                 }
             }
         }
-        Row(
-            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            v23CustomerServiceStates().forEach { (key, label) ->
-                FilterChip(selected = stateFilter == key, onClick = { stateFilter = key }, label = { Text(label) })
-            }
-        }
-        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("خدمة العملاء — ${filtered.size}", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            IconButton(onClick = { refreshBoard() }, enabled = !loading) { Icon(Icons.Outlined.Refresh, contentDescription = "تحديث") }
-        }
+        Text(
+            "خدمة العملاء · ${filtered.size} طلب" +
+                if (stateFilter != "all" || storeFilter.isNotBlank()) " · الفلاتر مفعلة" else "",
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
         if (message.isNotBlank() && board?.ok != true) Text(message, Modifier.padding(horizontal = 16.dp))
         if (loading && board == null) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
