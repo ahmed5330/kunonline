@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AddComment
@@ -26,6 +27,7 @@ import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Send
+import androidx.compose.material.icons.outlined.Storefront
 import androidx.compose.material3.Badge
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -99,15 +101,16 @@ private data class ChatResult<T>(val ok: Boolean, val value: T? = null, val erro
 
 private object MobileChatApi {
     private data class HttpResult(val code: Int, val body: JSONObject)
-    private data class Scope(val clientId: String, val storeId: String)
 
-    fun bootstrap(context: Context): ChatResult<ChatBootstrap> {
+    fun bootstrap(context: Context, selected: MobileStoreOption): ChatResult<ChatBootstrap> {
         val cookie = KunApi.sessionCookie(context) ?: return ChatResult(false, error = "سجّل الدخول أولاً")
         return runCatching {
-            val scope = resolveScope(context, cookie) ?: return ChatResult(false, error = "تعذر تحديد المتجر/الفرع")
+            val clientId = selected.clientId
+            val storeId = selected.storeId
+            if (clientId.isBlank() || storeId.isBlank()) return ChatResult(false, error = "اختار متجرًا متاحًا قبل فتح التواصل")
             val response = request(
                 "GET",
-                "/api/collaboration/bootstrap?clientId=${enc(scope.clientId)}&storeId=${enc(scope.storeId)}",
+                "/api/collaboration/bootstrap?clientId=${enc(clientId)}&storeId=${enc(storeId)}",
                 cookie
             )
             if (response.code !in 200..299) {
@@ -122,8 +125,8 @@ private object MobileChatApi {
                 true,
                 ChatBootstrap(
                     meId = meId,
-                    clientId = scope.clientId,
-                    storeId = scope.storeId,
+                    clientId = clientId,
+                    storeId = storeId,
                     members = members,
                     conversations = conversations
                 )
@@ -200,29 +203,6 @@ private object MobileChatApi {
         }.getOrElse { ChatResult(false, error = "تعذر بدء المحادثة") }
     }
 
-    private fun resolveScope(context: Context, cookie: String): Scope? {
-        val base = KunApi.resolveScope(cookie, context)
-        if (base.clientId.isBlank()) return null
-        if (base.storeId.isNotBlank()) return Scope(base.clientId, base.storeId)
-
-        val stores = request("GET", "/api/my-store-context?clientId=${enc(base.clientId)}", cookie)
-            .body.optJSONArray("stores") ?: JSONArray()
-        for (i in 0 until stores.length()) {
-            val row = stores.optJSONObject(i) ?: continue
-            val id = row.optString("id").ifBlank { row.optString("storeId") }.trim()
-            if (id.isNotBlank()) return Scope(base.clientId, id)
-        }
-
-        val state = request("GET", "/api/state?clientId=${enc(base.clientId)}", cookie).body
-        val orders = state.optJSONArray("orders") ?: JSONArray()
-        for (i in 0 until orders.length()) {
-            val row = orders.optJSONObject(i) ?: continue
-            val id = row.optString("storeId").ifBlank { row.optString("store_id") }.trim()
-            if (id.isNotBlank()) return Scope(base.clientId, id)
-        }
-        return null
-    }
-
     private fun parseMembers(array: JSONArray?): List<ChatMember> = buildList {
         val rows = array ?: JSONArray()
         for (i in 0 until rows.length()) {
@@ -273,7 +253,7 @@ private object MobileChatApi {
             setRequestProperty("Cookie", cookie)
             setRequestProperty("Accept", "application/json")
             setRequestProperty("Content-Type", "application/json; charset=utf-8")
-            setRequestProperty("X-Kun-Mobile", "native-android/2.6.8")
+            setRequestProperty("X-Kun-Mobile", "native-android/collaboration")
             if (body != null) doOutput = true
         }
         return try {
@@ -304,11 +284,16 @@ fun MobileCollaborationDialog(onDismiss: () -> Unit) {
     var busy by remember { mutableStateOf(false) }
     var sending by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
+    var availableStores by remember { mutableStateOf<List<MobileStoreOption>>(emptyList()) }
+    var selectedStore by remember { mutableStateOf<MobileStoreOption?>(null) }
+    var storesLoading by remember { mutableStateOf(true) }
+    val messageListState = rememberLazyListState()
 
-    suspend fun refreshBootstrap(): ChatBootstrap? {
-        busy = true
-        val result = withContext(Dispatchers.IO) { MobileChatApi.bootstrap(context) }
-        busy = false
+    suspend fun refreshBootstrap(quiet: Boolean = false): ChatBootstrap? {
+        val choice = selectedStore ?: return null
+        if (!quiet) busy = true
+        val result = withContext(Dispatchers.IO) { MobileChatApi.bootstrap(context, choice) }
+        if (!quiet) busy = false
         if (!result.ok || result.value == null) {
             error = result.error
             return null
@@ -318,11 +303,11 @@ fun MobileCollaborationDialog(onDismiss: () -> Unit) {
         return result.value
     }
 
-    suspend fun refreshMessages(conversationId: String, current: ChatBootstrap?) {
+    suspend fun refreshMessages(conversationId: String, current: ChatBootstrap?, quiet: Boolean = false) {
         val active = current ?: return
-        busy = true
+        if (!quiet) busy = true
         val result = withContext(Dispatchers.IO) { MobileChatApi.messages(context, active, conversationId) }
-        busy = false
+        if (!quiet) busy = false
         if (!result.ok || result.value == null) {
             error = result.error
             return
@@ -332,16 +317,31 @@ fun MobileCollaborationDialog(onDismiss: () -> Unit) {
     }
 
     LaunchedEffect(Unit) {
-        refreshBootstrap()
+        val result = withContext(Dispatchers.IO) { KunApi.loadStoreOptions(context) }
+        storesLoading = false
+        if (!result.ok) error = result.message
+        else {
+            availableStores = result.stores
+            selectedStore = result.stores.firstOrNull {
+                it.clientId == result.current.clientId && it.storeId == result.current.storeId
+            } ?: result.stores.singleOrNull()
+        }
     }
 
-    LaunchedEffect(selectedId) {
+    LaunchedEffect(selectedStore?.clientId, selectedStore?.storeId, selectedId) {
+        if (selectedStore == null) return@LaunchedEffect
+        var first = true
         while (isActive) {
-            val current = data
             val target = selectedId
-            if (target != null) refreshMessages(target, current) else refreshBootstrap()
+            if (target == null) refreshBootstrap(quiet = !first)
+            else refreshMessages(target, data, quiet = !first)
+            first = false
             delay(COLLAB_POLL_MS)
         }
+    }
+
+    LaunchedEffect(messages.lastOrNull()?.id, selectedId) {
+        if (selectedId != null && messages.isNotEmpty()) messageListState.animateScrollToItem(messages.lastIndex)
     }
 
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
@@ -377,6 +377,19 @@ fun MobileCollaborationDialog(onDismiss: () -> Unit) {
                             }
                         },
                         actions = {
+                            if (selectedStore != null) {
+                                IconButton(onClick = {
+                                    selectedStore = null
+                                    data = null
+                                    selectedId = null
+                                    showMembers = false
+                                    messages = emptyList()
+                                    draft = ""
+                                    error = ""
+                                }) {
+                                    Icon(Icons.Outlined.Storefront, contentDescription = "تغيير متجر التواصل")
+                                }
+                            }
                             if (!showMembers && selectedId == null) {
                                 IconButton(onClick = { showMembers = true }, enabled = data != null) {
                                     Icon(Icons.Outlined.AddComment, contentDescription = "محادثة جديدة")
@@ -410,6 +423,41 @@ fun MobileCollaborationDialog(onDismiss: () -> Unit) {
                     }
 
                     when {
+                        selectedStore == null -> {
+                            if (storesLoading) {
+                                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                    CircularProgressIndicator()
+                                }
+                            } else if (availableStores.isEmpty()) {
+                                Box(Modifier.fillMaxSize().padding(20.dp), contentAlignment = Alignment.Center) {
+                                    Text(error.ifBlank { "لا توجد متاجر مصرح بها لهذا الحساب" })
+                                }
+                            } else {
+                                Column(Modifier.fillMaxSize().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    Text("اختار المتجر لعرض محادثاته فقط", fontWeight = FontWeight.Bold, color = KunColors.Chrome)
+                                    LazyColumn(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                                        items(availableStores, key = { "${it.clientId}:${it.storeId}" }) { store ->
+                                            Card(
+                                                modifier = Modifier.fillMaxWidth().clickable {
+                                                    selectedStore = store
+                                                    data = null
+                                                    selectedId = null
+                                                    messages = emptyList()
+                                                    draft = ""
+                                                    error = ""
+                                                },
+                                                colors = CardDefaults.cardColors(containerColor = Color.White)
+                                            ) {
+                                                Column(Modifier.padding(16.dp)) {
+                                                    Text(store.storeName, fontWeight = FontWeight.Bold)
+                                                    Text(store.clientName, color = Color.Gray, style = MaterialTheme.typography.bodySmall)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                         showMembers -> {
                             val current = data
                             val members = current?.members.orEmpty().filter { it.id != current?.meId }
@@ -498,6 +546,7 @@ fun MobileCollaborationDialog(onDismiss: () -> Unit) {
                             Column(Modifier.fillMaxSize()) {
                                 LazyColumn(
                                     modifier = Modifier.fillMaxWidth().weight(1f),
+                                    state = messageListState,
                                     contentPadding = PaddingValues(12.dp),
                                     verticalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
