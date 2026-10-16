@@ -183,9 +183,9 @@ private fun CallerJntOrderEditScreen(orderId: String, storeId: String, shippingO
     var cityPicker by remember { mutableStateOf(false) }
     var areaPicker by remember { mutableStateOf(false) }
 
-    LaunchedEffect(orderId) {
+    LaunchedEffect(orderId, storeId) {
         loading = true
-        val dataResult = withContext(Dispatchers.IO) { KunCustomerServiceApi.fetchEditorData(context, orderId) }
+        val dataResult = withContext(Dispatchers.IO) { KunCustomerServiceApi.fetchEditorData(context, orderId, storeId) }
         val manifestResult = runCatching { CallerJntAddressRepository.manifest() }
         if (!dataResult.ok) {
             error = dataResult.message
