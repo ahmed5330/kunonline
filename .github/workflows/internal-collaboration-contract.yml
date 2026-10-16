@@ -13,6 +13,8 @@ on:
       - 'src/index-production-mobile-update.js'
       - 'migrations/0091_internal_collaboration.sql'
       - 'scripts/internal-collaboration-contract-test.mjs'
+      - 'scripts/collaboration-consistency-test.mjs'
+      - 'android/app/src/main/java/com/kunonline/callerid/MobileCollaboration.kt'
       - '.github/workflows/internal-collaboration-contract.yml'
   pull_request:
     paths:
@@ -44,4 +46,6 @@ jobs:
           node --check public/v2/modules-v118-collaboration-order-picker.js
           node --check scripts/internal-collaboration-contract-test.mjs
       - name: Collaboration isolation contract
-        run: node scripts/internal-collaboration-contract-test.mjs
+        run: |
+          node scripts/internal-collaboration-contract-test.mjs
+          node scripts/collaboration-consistency-test.mjs
