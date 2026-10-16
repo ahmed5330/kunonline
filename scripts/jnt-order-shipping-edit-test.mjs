@@ -52,6 +52,17 @@ function harness(row={...initial}){
 }
 const delegate={fetch:async()=>new Response(JSON.stringify({role:'client',clientId:'c1',uid:'u-7',email:'editor@kun.example',name:'مندوب المتجر'}),{status:200,headers:{'Content-Type':'application/json'}})};
 function req(jntAddress=address,storeId='s1'){return new Request('https://app.kun-online.com/api/orders/e-123/shipping-jnt',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({clientId:'c1',storeId,name:'اسم جديد',phone:'01011111',expectedLastEditAt:'',jntAddress})});}
+// Updating a locally queued shipment also changes the exact payload that
+// the Printing workflow later sends to J&T.
+const queuedHistory=JSON.stringify([{type:'jt_print_queued',shipment:{receiverName:'old',province:'الجيزة',itemName:'قطعة',codAmount:510,quantity:2}}]);
+const queued=harness({...initial,history:queuedHistory});
+const queuedResponse=await handleProductionJntShippingEdit({request:req(),env:queued.env,delegate,ctx:{},fetcher:mockFetch});
+assert.equal(queuedResponse.status,200);
+assert.equal(queued.history[0].shipment.receiverName,'اسم جديد');
+assert.equal(queued.history[0].shipment.area,'حي السلام');
+assert.equal(queued.history[0].shipment.weight,2.5);
+assert.equal(queued.history[0].shipment.codAmount,510);
+assert.equal(queued.history[0].shipment.quantity,2);
 const valid=harness();
 const ok=await handleProductionJntShippingEdit({request:req(),env:valid.env,delegate,ctx:{},fetcher:mockFetch});
 assert.equal(ok.status,200,await ok.text().catch(()=>'')); // status only
