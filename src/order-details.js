@@ -187,21 +187,23 @@ function cleanTags(value){try{const parsed=JSON.parse(value||'[]');return Array.
 export async function loadOrderDetails(env,{clientId,orderId,fetcher=fetch}){
   const order=await env.DB.prepare(`SELECT o.*,s.name store_name,s.code store_code FROM orders o LEFT JOIN stores s ON s.id=o.store_id AND s.client_id=o.client_id WHERE o.id=? AND o.client_id=?`).bind(orderId,clientId).first();
   if(!order)throw Object.assign(new Error('الأوردر غير موجود'),{status:404,code:'ORDER_NOT_FOUND'});
+  const history=parseArr(order.history),latestJntEdit=[...history].reverse().find(event=>event?.event==='jnt_shipping_edit'||event?.event==='caller_jnt_edit')||null;
+  const localJnt=latestJntEdit?.jtAddress||{};
   const customer=await customerRecord(env,order),stats=await customerStats(env,order,customer),providerResult=isEasyOrder(order)?await fetchEasyOrder(env,order,fetcher):{data:null,warning:null},provider=providerResult.data,importedItems=await importedOrderItems(env,order);
   const items=provider?.items?.length?provider.items:importedItems.length?importedItems:[await fallbackCatalogItem(env,order)],customerBase=provider?.customer||{},summaryProvider=provider?.summary||{};
   const subtotal=items.reduce((sum,item)=>sum+num(item.lineTotal),0),shippingCost=num(first(summaryProvider.shippingCost,order.shipping_cost)),discountAmount=num(first(summaryProvider.discountAmount,order.discount_amount)),total=num(first(summaryProvider.total,order.total));
   return {
     ok:true,
     order:{
-      id:order.id,ref:order.ref||null,date:order.date||order.created_at||null,createdAt:order.created_at||null,state:order.state||'pending',checkpoint:order.checkpoint||'',source:order.source||'',storeId:order.store_id||null,storeName:order.store_name||'',storeCode:order.store_code||'',awb:order.awb||'',couponCode:order.coupon_code||'',customerNote:order.note||'',productNote:order.product_note||''
+      id:order.id,ref:order.ref||null,date:order.date||order.created_at||null,createdAt:order.created_at||null,state:order.state||'pending',checkpoint:order.checkpoint||'',source:order.source||'',storeId:order.store_id||null,storeName:order.store_name||'',storeCode:order.store_code||'',awb:order.awb||'',couponCode:order.coupon_code||'',customerNote:order.note||'',productNote:order.product_note||'',lastEdit:history.filter(x=>x?.type==='order_edit').at(-1)||null,jntEditAt:history.filter(x=>x?.event==='jnt_shipping_edit').at(-1)?.at||'',jntAddress:localJnt
     },
     items,
     customer:{
-      id:customer?.id||order.customer_id||null,name:text(first(customerBase.name,order.name,customer?.name)),phone:cleanPhone(first(customerBase.phone,order.phone,customer?.phone)),alternatePhone:cleanPhone(customerBase.alternatePhone),email:text(customerBase.email),government:text(first(provider?.address?.government,order.gov,customer?.gov)),address:text(first(provider?.address?.address,order.address,customer?.address)),tags:cleanTags(customer?.tags),note:text(customer?.note),createdAt:customer?.created_at||stats.firstOrder||null,...stats
+      id:customer?.id||order.customer_id||null,name:text(first(latestJntEdit?order.name:null,customerBase.name,order.name,customer?.name)),phone:cleanPhone(first(latestJntEdit?order.phone:null,customerBase.phone,order.phone,customer?.phone)),alternatePhone:cleanPhone(first(localJnt.phone2,customerBase.alternatePhone)),email:text(customerBase.email),government:text(first(latestJntEdit?order.gov:null,provider?.address?.government,order.gov,customer?.gov)),address:text(first(latestJntEdit?order.address:null,provider?.address?.address,order.address,customer?.address)),tags:cleanTags(customer?.tags),note:text(customer?.note),createdAt:customer?.created_at||stats.firstOrder||null,...stats
     },
-    address:mergeAddress(provider?.address,order,customer),
+    address:{...mergeAddress(latestJntEdit?null:provider?.address,order,customer),...(latestJntEdit?{government:order.gov,city:localJnt.city||'',area:localJnt.area||'',street:localJnt.street||'',address:order.address}:{} )},
     summary:{paymentMethod:text(summaryProvider.paymentMethod),subtotal:subtotal||Math.max(0,total-shippingCost+discountAmount),shippingCost,discountAmount,total,quantity:items.reduce((sum,item)=>sum+Math.max(1,num(item.quantity)),0)},
-    history:parseArr(order.history),contactLog:parseArr(order.contact_log),
+    history,contactLog:parseArr(order.contact_log),
     provider:{id:isEasyOrder(order)?'easyorders':null,enriched:Boolean(provider),importedLineItems:!provider&&importedItems.length>0,warning:providerResult.warning||null}
   };
 }
