@@ -18,7 +18,10 @@ data class OrderUi(
     val awb: String,
     val date: String,
     val note: String,
-    val source: String
+    val source: String,
+    val storeId: String = "",
+    val lastEditBy: String = "",
+    val lastEditAt: String = ""
 )
 
 data class CustomerUi(
@@ -93,10 +96,27 @@ object CommerceParser {
                     awb = o.str("awb"),
                     date = o.str("date").ifBlank { o.str("createdAt") }.ifBlank { o.str("created_at") },
                     note = o.str("note"),
-                    source = o.str("source")
+                    source = o.str("source"),
+                    storeId = o.str("storeId").ifBlank { o.str("store_id") },
+                    lastEditBy = lastEdit(o).optString("byName").ifBlank { lastEdit(o).optString("by") },
+                    lastEditAt = lastEdit(o).optString("at")
                 )
             )
         }
+    }
+
+    private fun lastEdit(order: JSONObject): JSONObject {
+        val value = order.opt("history")
+        val history = when (value) {
+            is JSONArray -> value
+            is String -> runCatching { JSONArray(value) }.getOrDefault(JSONArray())
+            else -> JSONArray()
+        }
+        for (index in history.length() - 1 downTo 0) {
+            val event = history.optJSONObject(index) ?: continue
+            if (event.optString("type") == "order_edit") return event
+        }
+        return JSONObject()
     }
 
     private fun parseProducts(array: JSONArray): List<ProductUi> = buildList {
