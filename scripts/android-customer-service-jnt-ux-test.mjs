@@ -42,6 +42,6 @@ assert.ok(cs.includes('V23DetailRow("آخر تعديل", v23OrderEditLabel(it))'
 assert.ok(service.includes('val storeParam = if (selectedStoreId.isBlank())'));
 assert.ok(api.includes('/shipping-jnt'));
 assert.ok(!api.includes('authorized.stores.none'), 'Local store-list fetch must not gate server-authorized edits');
-assert.match(gradle, /versionCode\s*=\s*136/);
-assert.match(gradle, /versionName\s*=\s*"2\.9\.5"/);
+assert.match(gradle, /versionCode\s*=\s*137/);
+assert.match(gradle, /versionName\s*=\s*"2\.9\.6"/);
 console.log('Customer service compact UX, visible J&T actions, reference hiding and secure scoped editor verified.');
