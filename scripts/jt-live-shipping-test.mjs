@@ -97,7 +97,7 @@ assert.ok(printingUi.includes('/api/printing?clientId='),'Printing UI must load 
 assert.ok(printingUi.includes('إرسال إلى J&T وطباعة البوليصة'),'Printing UI must own the external carrier handoff');
 assert.ok(printingUi.includes('/api/jt/shipments/${encodeURIComponent(o.id)}')&&printingUi.includes('/api/jt/shipments/${encodeURIComponent(id)}/print'),'Printing must stage local data then perform governed J&T create/print');
 assert.ok(printingUi.includes("version:'79.9'"),'Printing runtime must be v79.9');
-assert.ok(printingRouting.includes("new Set(['confirmed','preparing'])")&&printingRouting.includes('تم تأكيد الأوردر ونقله تلقائيًا إلى قسم الطباعة'),'Web Customer Service must immediately hand confirmed orders to Printing');
+assert.ok(printingRouting.includes("new Set(['confirmed','preparing'])")&&printingRouting.includes('const moved=original?.(orderId,state,deferUntil)')&&printingRouting.includes("'kun:printing-ready'")&&!printingRouting.includes('card.remove()'),'Web Customer Service must keep confirmed orders visible while notifying Printing');
 assert.ok(!printingUi.includes('window.print')&&!printingUi.includes('fallbackPrint'),'Official carrier label must have no browser-generated fallback');
 
 assert.ok(!androidShell.includes('PrintingMobileV26'),'Android must not revive the deprecated native PrintingMobileV26 implementation');
