@@ -164,6 +164,37 @@ object KunApi {
         }.getOrElse { SyncResult(false, "تعذر إصلاح كلمة المرور من الجلسة الحالية") }
     }
 
+    /**
+     * Prefer a small authenticated live caller lookup during the screening callback.
+     * The normal order-list cache can be empty or limited to a selected store.
+     * Only server-authorized stores are searchable.
+     */
+    fun lookupCallerLive(context: Context, number: String): CallerCustomer? {
+        val cookie = session(context) ?: return null
+        return runCatching {
+            val scope = resolveScope(cookie, context)
+            if (scope.clientId.isBlank()) return null
+            val path = "/api/mobile/caller-lookup?clientId=${enc(scope.clientId)}&phone=${enc(number)}"
+            val result = request("GET", path, cookie = cookie)
+            if (result.code !in 200..299) return null
+            val data = JSONObject(result.body)
+            if (!data.optBoolean("found", false) || session(context) != cookie) return null
+            CallerCustomer(
+                name = data.optString("name"),
+                phone = PhoneNormalizer.normalize(data.optString("phone").ifBlank { number }),
+                orderId = data.optString("orderId").takeIf { it.isNotBlank() },
+                orderRef = data.optString("orderRef").takeIf { it.isNotBlank() },
+                status = data.optString("status").takeIf { it.isNotBlank() },
+                product = data.optString("product").takeIf { it.isNotBlank() },
+                total = data.optDouble("orderTotal", 0.0).takeIf { it > 0 },
+                gov = data.optString("gov").takeIf { it.isNotBlank() },
+                address = data.optString("address").takeIf { it.isNotBlank() },
+                note = data.optString("note").takeIf { it.isNotBlank() },
+                previousOrders = (data.optInt("totalOrders", 0) - 1).coerceAtLeast(0)
+            )
+        }.getOrNull()
+    }
+
     fun syncWithStoredSession(context: Context): SyncResult {
         val cookie = session(context) ?: return SyncResult(false, "سجّل الدخول أولاً")
         return syncWithCookie(context, cookie)
