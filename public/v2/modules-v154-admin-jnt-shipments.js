@@ -152,6 +152,7 @@
       if(typeof original==='function'){
         window.setView=function(v){if(v===VIEW)return open();return original.apply(this,arguments);};
       }
+      window.KunPermissionNavigationV51?.apply?.();
       window.KunSidebarGroupsV90?.sync?.();
       if(window.location.hash==='#'+VIEW)open();
     }).catch(()=>{});
