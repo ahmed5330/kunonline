@@ -64,7 +64,7 @@ must(!shippingUi.includes("moveState?.(orderId,'shipped')"),'Editing/preparing J
 must(printingUi.includes('/api/printing?clientId=')&&printingUi.includes('إرسال إلى J&T وطباعة البوليصة'),'Printing UI must own the external handoff action');
 must(printingUi.includes('/api/jt/shipments/${encodeURIComponent(o.id)}')&&printingUi.includes('/api/jt/shipments/${encodeURIComponent(id)}/print'),'Printing must stage locally then call J&T create/print');
 must(printingUi.includes("version:'79.9'"),'Printing runtime must identify v79.9');
-must(printingRouting.includes("new Set(['confirmed','preparing'])")&&printingRouting.includes('تم تأكيد الأوردر ونقله تلقائيًا إلى قسم الطباعة'),'Customer Service UI must immediately remove confirmed orders');
+must(printingRouting.includes("new Set(['confirmed','preparing'])")&&printingRouting.includes('const moved=original?.(orderId,state,deferUntil)')&&!printingRouting.includes('card.remove()'),'Customer Service must retain confirmed cards and inform Printing');
 
 const nativeLabels=['الطباعة','المالية','الحسابات والحركات','الحملات','المخزون','المحفظة','مركز التكاملات','الإعدادات'];
 for(const label of nativeLabels)must(androidSystemSections.includes(`("${label}"`)||androidSystemSections.includes(`"${label}"`),`Android native sections missing ${label}`);
