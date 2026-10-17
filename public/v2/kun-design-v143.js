@@ -16,7 +16,8 @@
     ["accounting","الحسابات والحركات","<rect x=\"5\" y=\"3\" width=\"14\" height=\"18\" rx=\"2\"/><path d=\"M8 7h8M8 11h8M8 15h3\"/>"],
     ["wallet","المحفظة","<rect x=\"3\" y=\"5\" width=\"18\" height=\"15\" rx=\"3\"/><path d=\"M16 11h5v5h-5a2 2 0 0 1 0-5ZM5 5V3h13\"/>"],
     ["integrations","مركز التكاملات","<path d=\"M8 3v5M16 3v5M6 8h12v3a6 6 0 0 1-12 0V8ZM12 17v4\"/>"],
-    ["settings","الإعدادات","<circle cx=\"12\" cy=\"12\" r=\"3\"/><path d=\"M12 2v3M12 19v3M4.9 4.9 7 7M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1\"/>"]
+    ["settings","الإعدادات","<circle cx=\"12\" cy=\"12\" r=\"3\"/><path d=\"M12 2v3M12 19v3M4.9 4.9 7 7M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1\"/>"],
+    ["subscriptions","الاشتراكات والمدفوعات","<rect x=\"3\" y=\"5\" width=\"18\" height=\"16\" rx=\"2\"/><path d=\"M7 3v4M17 3v4M3 10h18M7 14h5M7 18h8\"/>"]
   ];
   const icons=Object.fromEntries(NAV.map(function(n){return [n[0],'<svg viewBox="0 0 24 24" aria-hidden="true">'+n[2]+'</svg>'];}));
   let primary,details,dock,shade,nav,side,queued=false;
@@ -34,7 +35,8 @@
     ['المنتجات والمخزون',['products','inventory']],
     ['التسويق والنمو',['campaigns']],
     ['الإدارة المالية',['finance','accounting','wallet']],
-    ['إدارة النظام',['integrations','settings']]
+    ['إدارة النظام',['integrations','settings']],
+    ['إدارة المنصة',['subscriptions']]
   ];
   const MAIN_VIEWS=new Set(NAV.map(function(item){return item[0];}));
   function groupFor(view){
@@ -153,7 +155,7 @@
     watch.observe(nav,{subtree:true,childList:true,attributes:true,attributeFilter:['hidden','style','class','aria-hidden','disabled']});
     window.addEventListener('resize',function(){if(innerWidth>820)closeMenu();schedule();},{passive:true});
     document.addEventListener('keydown',function(e){if(e.key==='Escape'&&side.classList.contains('mobile-open'))closeMenu();});
-    window.KunDesignShellV143={version:'145.0',sync:schedule,navigate:routeTo};
+    window.KunDesignShellV143={version:'145.1',sync:schedule,navigate:routeTo};
     sync();
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
