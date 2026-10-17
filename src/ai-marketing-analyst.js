@@ -2,7 +2,7 @@
 import {requirePermission,resolveTenant} from './access-control.js';
 import {resolveStoreScope} from './store-scope.js';
 import {growthReport,clarityDays} from './clarity-integration.js';
-const MODEL='@cf/meta/llama-3.1-8b-instruct-fp8',DAILY_LIMIT=3;
+const MODEL='@cf/meta/llama-3.3-70b-instruct-fp8-fast',DAILY_LIMIT=3,REPORT_VERSION=2;
 const json=(x,status=200)=>new Response(JSON.stringify(x),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}});
 const str=(v,len=160)=>String(v??'').trim().slice(0,len);
 const num=v=>v===null||v===undefined||v===''?null:(Number.isFinite(Number(v))?Math.round(Number(v)*100)/100:null);
@@ -24,6 +24,12 @@ const instructions=[
  'لا تختلق أرقامًا ولا تنسب جلسة إلى أوردر ولا تعتبر مصدر Facebook دليل دفع. افصل الدليل عن الفرضية والثقة.',
  'التواريخ مختلفة ولا تساوي Real ROAS مع الربح. لا تنسب صافي ربح المتجر لحملة واحدة.',
  'أعط خطوات وأولويات وتجارب بمتغير واحد، ولا تنفذ تعديلات ميزانيات.',
+ 'لو المقياس غير متاح اكتبه غير متاح؛ لا تفترض وجود بيانات من Meta أو الربح لمجرد وجود Clarity.',
+ 'ابدأ بملخص تنفيذي من 3 إلى 5 جمل يذكر رقمين حقيقيين من JSON ومدى الثقة وماذا نراجع أولاً. لا تكتب نعم أو حسناً أو ملخص عام.',
+ 'أنشئ 2 إلى 4 تشخيصات مفصلة و2 إلى 4 إجراءات عملية واختبارًا واحدًا على الأقل. في كل دليل اذكر رقمًا فعليًا من المدخلات واسم المؤشر ونافذة القياس عندما تتوفر.',
+ 'كل فرضية اشرح احتمالًا يمكن التحقق منه، وليس تكرار عنوان المقياس. كل إجراء اكتب لماذا وكيف بوضوح ومقياس نجاح من بيانات كن أونلاين.',
+ 'لا تستخدم نصوصًا نائبة مثل عنوان، سبب، إجراء، التنفيذ، النفقات الإجمالية، حسنًا، أو شرح مُكرر.',
+
  'ارجع JSON عربي فقط بالمفاتيح التالية:',
  '{"summary":"ملخص","findings":[{"title":"العنوان","evidence":"دليل رقمي متاح","hypothesis":"تفسير محتمل","confidence":"low|medium|high"}],"actions":[{"priority":"high|medium|low","title":"إجراء","why":"سبب","how":"خطوات","successMetric":"مقياس نجاح","confidence":"low|medium|high"}],"experiments":[{"name":"اختبار","change":"متغير واحد","control":"الثابت","measurement":"المؤشر","guardrail":"منع التوسع"}],"caveats":["حد أو فجوة بيانات"]}',
  'حد أقصى 5 findings و6 actions و3 experiments و5 caveats. JSON فقط.'
@@ -40,7 +46,41 @@ export function parseMarketingReport(input){
     experiments:(Array.isArray(x.experiments)?x.experiments:[]).slice(0,3).map(v=>({name:clean(v.name),change:clean(v.change),control:clean(v.control),measurement:clean(v.measurement),guardrail:clean(v.guardrail)})),
     caveats:(Array.isArray(x.caveats)?x.caveats:[]).slice(0,5).map(clean)};
 }
-function publicRecord(r){if(!r)return null;let report=null;try{report=JSON.parse(r.report_json||'null')}catch{}return {id:r.id,model:r.model,status:r.status,days:r.window_days,createdAt:r.created_at,report:r.status==='ready'?report:null,realAI:r.status==='ready',errorCode:r.status==='failed'?r.error_code:null};}
+
+const containsValue=v=>typeof v==='string'&&v.trim().length>0;
+export function marketingReportQuality(report,facts=null){
+ const problems=[],r=report||{},summary=str(r.summary,1600);
+ const findings=Array.isArray(r.findings)?r.findings:[],actions=Array.isArray(r.actions)?r.actions:[];
+ if(summary.length<65||/^(?:حسن[ًاا]|حسنا|نعم|تمام|ملخص|لا يوجد|جيد)[\s.!؟]*$/i.test(summary))problems.push('summary_too_short');
+ const goodFinding=x=>str(x?.title).length>=8&&str(x?.evidence).length>=20&&str(x?.hypothesis).length>=30
+  &&str(x.title)!==str(x.hypothesis)&&!/^(?:الدليل|الأدلة|البيانات|النفقات الإجمالية|عنوان|فرضية)$/i.test(str(x.title));
+ const goodAction=x=>str(x?.title).length>=10&&str(x?.why).length>=25&&str(x?.how).length>=25&&str(x?.successMetric).length>=8
+  &&str(x.why)!==str(x.how)&&!/^(?:إجراء|التنفيذ|السبب|تحسين|تقييم النفقات)$/i.test(str(x.title));
+ if(findings.filter(goodFinding).length<1)problems.push('weak_findings');
+ if(actions.filter(goodAction).length<1)problems.push('weak_actions');
+ if(findings.length===0||actions.length===0)problems.push('missing_sections');
+ const hasNumbers=[facts?.meta?.spend,facts?.clarity?.sessions,facts?.business?.periodOrders].some(v=>v!==null&&v!==undefined&&Number.isFinite(Number(v)));
+ if(hasNumbers&&!findings.some(x=>/[\d٠-٩۰-۹]/.test(String(x.evidence||''))))problems.push('no_numeric_evidence');
+ const texts=[...findings.map(x=>str(x.evidence)),...findings.map(x=>str(x.hypothesis)),...actions.map(x=>str(x.how))].filter(containsValue);
+ if(texts.length>=3&&new Set(texts).size<Math.ceil(texts.length*.6))problems.push('repeated_placeholder_text');
+ return {valid:problems.length===0,problems};
+}
+function reportingFacts(facts){
+ return {
+  periodHours:facts.period?.clarityHours??null,
+  claritySessions:facts.clarity?.sessions??null,
+  botSessions:facts.clarity?.bots??null,
+  metaSourceSessions:facts.clarity?.metaSourceSessions??null,
+  spend:facts.meta?.connected?facts.meta?.spend??null:null,
+  realOrders:facts.meta?.connected?facts.meta?.orders??null:null,
+  delivered:facts.meta?.connected?facts.meta?.delivered??null:null,
+  realRoas:facts.meta?.connected?facts.meta?.realRoas??null:null,
+  profit:facts.business?.available?facts.business?.netProfit??null:null,
+  limitations:(facts.clarity?.limitations||[]).slice(0,3)
+ };
+}
+
+function publicRecord(r){if(!r)return null;let report=null;try{report=JSON.parse(r.report_json||'null')}catch{}const quality=r.status==='ready'?marketingReportQuality(report):{valid:false,problems:[]};return {id:r.id,model:r.model,status:r.status,days:r.window_days,createdAt:r.created_at,report:r.status==='ready'?report:null,realAI:r.status==='ready'&&quality.valid,qualityOk:quality.valid,errorCode:r.status==='failed'?r.error_code:null};}
 async function authenticated(request,env,ctx,delegate,body={}){
   const u=new URL(request.url);u.pathname='/api/me';u.search='';
   const response=await delegate.fetch(new Request(u,{method:'GET',headers:request.headers}),env,ctx),me=await response.json().catch(()=>({}));
@@ -60,17 +100,30 @@ async function financeSnapshot(request,delegate,env,ctx,c,s,days){
   try{const r=await delegate.fetch(new Request(u,{headers:request.headers}),env,ctx);if(!r.ok)return null;const x=await r.json();return {finance:x.finance,overview:x.overview,rates:x.rates};}catch{return null;}
 }
 async function inference(env,facts){
-  if(typeof env?.AI?.run!=='function')throw error('Cloudflare Workers AI مش متفعّل على السيرفر',503,'AI_NOT_CONFIGURED');
-  let result;try{result=await env.AI.run(MODEL,{messages:[{role:'system',content:instructions},{role:'user',content:'حلل بيانات هذا المتجر المجمعة فقط: '+JSON.stringify(facts).slice(0,12000)}],temperature:0.2,max_tokens:1600});}
-  catch{throw error('تعذر استدعاء نموذج Workers AI الحقيقي',503,'AI_PROVIDER_ERROR');}
+ if(typeof env?.AI?.run!=='function')throw error('Cloudflare Workers AI مش متفعّل على السيرفر',503,'AI_NOT_CONFIGURED');
+ const userInput='حلل بيانات هذا المتجر المجمعة فقط. لا تفترض أي بيانات غير موجودة: '+JSON.stringify(facts).slice(0,12000);
+ let reason='';
+ for(let attempt=0;attempt<2;attempt++){
+  let result;
+  try{
+   result=await env.AI.run(MODEL,{messages:[{role:'system',content:instructions},{role:'user',content:userInput+(attempt?'\\nمحاولة تصحيح: الرد السابق كان سطحيًا أو ناقصًا. التزم بملخص واضح وأدلة رقمية وسبب وخطوات تنفيذ لكل توصية.':'' )}],temperature:0.15,max_tokens:2600});
+  }catch{throw error('تعذر استدعاء نموذج Workers AI الحقيقي',503,'AI_PROVIDER_ERROR');}
   const output=typeof result==='string'?result:result?.response||result?.result?.response;
-  if(!output)throw error('لا يوجد رد من النموذج',502,'AI_EMPTY_RESPONSE');
-  return parseMarketingReport(output);
+  if(!output){reason='AI_EMPTY_RESPONSE';continue;}
+  try{
+   const report=parseMarketingReport(output);
+   const quality=marketingReportQuality(report,facts);
+   if(quality.valid)return report;
+   reason='AI_LOW_QUALITY_'+quality.problems.join('_');
+  }catch(e){reason=e?.code||'AI_INVALID_OUTPUT';}
+ }
+ throw error('نموذج AI رجّع تحليلًا مختصرًا أو غير مكتمل. لم يتم اعتماده كتقرير صالح؛ حاول مرة ثانية.',502,'AI_LOW_QUALITY');
 }
+
 async function generate(request,env,ctx,delegate,c,s,body){
   const days=clarityDays(body.days||1);
   const recent=await env.DB.prepare("SELECT * FROM ai_marketing_reports WHERE client_id=? AND store_id=? AND window_days=? AND status='ready' AND created_at>? ORDER BY created_at DESC LIMIT 1").bind(c,s,days,new Date(Date.now()-6*3600000).toISOString()).first();
-  if(recent&&!body.regenerate)return json({ok:true,cached:true,usedToday:await used(env,c,s),dailyLimit:DAILY_LIMIT,result:publicRecord(recent)});
+  if(recent&&!body.regenerate){const saved=publicRecord(recent);if(saved.qualityOk&&saved.model===MODEL&&saved.report?.sourceSnapshotVersion===REPORT_VERSION)return json({ok:true,cached:true,usedToday:await used(env,c,s),dailyLimit:DAILY_LIMIT,result:saved});}
   if(typeof env?.AI?.run!=='function')throw error('Cloudflare Workers AI غير متاح، مش هنعرض تحليلات قواعد على إنها AI',503,'AI_NOT_CONFIGURED');
   const id=crypto.randomUUID(),now=new Date().toISOString();let reserved=false;
   for(let slot=1;slot<=DAILY_LIMIT;slot++){const x=await env.DB.prepare("INSERT OR IGNORE INTO ai_marketing_reports(id,client_id,store_id,usage_day,slot,window_days,status,model,created_at,updated_at) VALUES(?,?,?,?,?,?,'running',?,?,?)").bind(id,c,s,today(),slot,days,MODEL,now,now).run();if(x.meta?.changes){reserved=true;break;}}
@@ -79,8 +132,9 @@ async function generate(request,env,ctx,delegate,c,s,body){
     const snapshot=await growthReport(env,c,s,days);
     if(!snapshot?.latest?.metrics)throw error('لا توجد بيانات Clarity لهذه الفترة، اعمل مزامنة أولاً.',409,'AI_DATA_MISSING');
     const finance=await financeSnapshot(request,delegate,env,ctx,c,s,days),facts=safeMarketingFacts(snapshot,finance,days),report=await inference(env,facts);
+    report.sourceSnapshot=reportingFacts(facts);report.sourceSnapshotVersion=REPORT_VERSION;
     await env.DB.prepare("UPDATE ai_marketing_reports SET status='ready',report_json=?,updated_at=? WHERE id=? AND client_id=? AND store_id=?").bind(JSON.stringify(report),new Date().toISOString(),id,c,s).run();
-    return json({ok:true,cached:false,usedToday:await used(env,c,s),dailyLimit:DAILY_LIMIT,result:{id,status:'ready',model:MODEL,days,createdAt:now,report,realAI:true}});
+    return json({ok:true,cached:false,usedToday:await used(env,c,s),dailyLimit:DAILY_LIMIT,result:{id,status:'ready',model:MODEL,days,createdAt:now,report,realAI:true,qualityOk:true}});
   }catch(e){await env.DB.prepare("UPDATE ai_marketing_reports SET status='failed',error_code=?,updated_at=? WHERE id=? AND client_id=? AND store_id=?").bind(e.code||'AI_FAILED',new Date().toISOString(),id,c,s).run().catch(()=>{});throw e;}
 }
 export async function handleAIMarketing({request,env,ctx,delegate}){
