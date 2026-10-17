@@ -450,7 +450,7 @@
   async function boot(){
     style();bind();
     try{state.me=await api('/api/me');}catch{return;}
-    if(state.me.role==='admin'){addAdminNav();return;}
+    if(state.me.role==='admin'){addAdminNav();window.KunPermissionNavigationV51?.apply?.();return;}
     if(state.me.clientId){installRouteGuard();installFetchGuard();await refreshAccess(false);scheduleAccessRefresh();}
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();
