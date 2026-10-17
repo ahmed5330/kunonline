@@ -1,4 +1,4 @@
-/* Kun Online v51.15 — permission-aware navigation + deterministic delegated routing. */
+/* Kun Online v51.16 — permission-aware navigation + deterministic delegated routing. */
 (function(){
   const OWNER_ROLES=new Set(['admin','client']);
   const VIEW_RULES=Object.freeze({
@@ -40,6 +40,7 @@
     audit:['audit.read'],
     wallet:['wallet.read'],
     'admin-clients':['admin'],
+    subscriptions:['admin'],
     control:['owner'],
     settings:['owner']
   });
@@ -56,7 +57,7 @@
   function has(target){return permissions().some(rule=>match(rule,target));}
   function allowedView(view,data=snapshot){
     view=text(view);if(!view||!data?.role)return false;
-    if(view==='admin-clients')return data.role==='admin';
+    if(view==='admin-clients'||view==='subscriptions')return data.role==='admin';
     if(OWNER_ROLES.has(data.role))return true;
     const rules=VIEW_RULES[view];if(!rules?.length)return false;
     if(rules.includes('owner')||rules.includes('admin'))return false;
@@ -147,5 +148,5 @@
   }
   loadFinanceTools();
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',loadAccess,{once:true});else loadAccess();
-  window.KunPermissionNavigationV51={load:()=>loadAccess(true),apply,allowedView,match,loadFinanceTools,loadEcommerceCalculator:loadFinanceTools,get snapshot(){return snapshot;},get allowed(){return [...allowed];},rules:VIEW_RULES,version:'51.15'};
+  window.KunPermissionNavigationV51={load:()=>loadAccess(true),apply,allowedView,match,loadFinanceTools,loadEcommerceCalculator:loadFinanceTools,get snapshot(){return snapshot;},get allowed(){return [...allowed];},rules:VIEW_RULES,version:'51.16'};
 })();
