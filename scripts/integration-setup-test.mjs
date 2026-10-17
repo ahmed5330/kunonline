@@ -49,9 +49,9 @@ for(const marker of ['createJtShipment({shipment,secrets})',"UPDATE orders SET a
 must(printBlock.indexOf('createJtShipment({shipment,secrets})')<printBlock.indexOf('signedPost(PRINT_ORDER_PATH'),'AWB creation must happen before printOrder');
 must(printBlock.indexOf('jt_label_printed')<printBlock.indexOf("UPDATE orders SET state='shipped'"),'Order may enter shipping only after official J&T label succeeds');
 
-must(printingRoute.includes("url.pathname!=='/api/printing'")&&printingRoute.includes("['confirmed','preparing','shipped']"),'Production must expose a dedicated Printing queue containing confirmed orders and legacy queued shipments');
+must(printingRoute.includes("url.pathname!=='/api/printing'")&&printingRoute.includes("o.state IN ('confirmed','preparing')")&&printingRoute.includes("hasMore:offset+limit<total"),'Production must expose paged confirmed orders to assigned stores through dedicated Printing queue');
 must(printingRoute.includes("order.state!=='shipped'||order.queuedForPrint||order.printed"),'Unrelated shipped orders must not leak into Printing');
-must(production.includes('routeConfirmedOrdersToPrinting')&&production.includes("new Set(['confirmed','preparing'])"),'Confirmed orders must disappear from Customer Service and route to Printing');
+must(production.includes('preserveCustomerServiceOrderVisibility')&&!production.includes('data.orders=data.orders.filter('),'Confirmed orders must remain in Customer Service and also be visible in Printing');
 for(const marker of ['modules-v51-permission-navigation.js?v=51.15','modules-v78-jt-shipping-order.js?v=78.5','modules-v79-printing.js?v=79.10','modules-v116-print-routing.js?v=116.1'])must(production.includes(marker),`Production HTML must cache-bust/load ${marker}`);
 
 for(const marker of ['/v2/modules-v51-permission-navigation.js?v=51.15','/v2/modules-v78-jt-shipping-order.js?v=78.5','/v2/modules-v79-printing.js?v=79.10','/v2/modules-v116-print-routing.js?v=116.1','/v2/modules-v117-team-collaboration.js?v=117.2'])must(v2Index.includes(marker),`Direct v2 index must load ${marker}`);
