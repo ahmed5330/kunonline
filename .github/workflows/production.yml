@@ -250,7 +250,8 @@ jobs:
               && grep -Fq 'طباعة باركود كل القطع الموجودة بالمخزن' <<< "$units" \
               && grep -Fq "version:'128.4'" <<< "$units" \
               && grep -Fq 'إرسال إلى J&T وطباعة البوليصة' <<< "$printing" \
-              && grep -Fq 'تم تأكيد الأوردر ونقله تلقائيًا إلى قسم الطباعة' <<< "$routing"; then ui_verified=1; break; fi
+              && grep -Fq "'kun:printing-ready'" <<< "$routing" \
+              && grep -Fq "new Set(['confirmed','preparing'])" <<< "$routing"; then ui_verified=1; break; fi
             sleep 3
           done
           test "$ui_verified" = 1
