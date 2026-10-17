@@ -59,14 +59,14 @@
   function currentPage(view){const r=root();if(!r)return null;if(view==='customer-service')return r.querySelector('.cs-page');if(view==='printing')return r.querySelector('.print79-page');if(view==='post-shipping')return r.querySelector('.ps-page');if(view==='returns-exchanges')return r.querySelector('.rx-page');if(view==='orders')return r;return null;}
   function syncToolbar(bar,view){
     const selected=stateFor(view);
-    for(const button of bar.querySelectorAll('[data-kun-period]')){
+    for(const button of (bar.querySelectorAll?.('[data-kun-period]')||[])){
       const on=button.dataset.kunPeriod===selected.period;
       button.classList.toggle('active',on);
-      button.setAttribute('aria-pressed',String(on));
-      button.style.setProperty('background-color',on?'var(--chrome-bg,#0e5095)':'','important');
-      button.style.setProperty('color',on?'#fff':'','important');
+      button.setAttribute?.('aria-pressed',String(on));
+      button.style?.setProperty?.('background-color',on?'var(--chrome-bg,#0e5095)':'','important');
+      button.style?.setProperty?.('color',on?'#fff':'','important');
     }
-    const custom=bar.querySelector('.kun-op-custom');if(custom)custom.hidden=selected.period!=='custom';
+    const custom=bar.querySelector?.('.kun-op-custom');if(custom)custom.hidden=selected.period!=='custom';
   }
   function toolbar(view,page){
     let bar=page.querySelector(':scope > .kun-op-date-filter');if(bar){syncToolbar(bar,view);return bar;}const state=stateFor(view);bar=document.createElement('div');bar.className='kun-op-date-filter';bar.dataset.kunOperationalPeriod=view;
