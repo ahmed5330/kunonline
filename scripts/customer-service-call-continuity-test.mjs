@@ -17,7 +17,7 @@ deny(filter,'scheduleRelease(id,2500)','do not release contact shortly after man
 deny(filter,'scheduleRelease(id,300000)','do not release contact on arbitrary call timeout');
 deny(filter,"window.addEventListener('focus',finishCall)",'no release on call focus');
 expect(filter,'syncToolbar(bar,view)','filter selection syncs on every apply');
-expect(filter,"button.setAttribute('aria-pressed',String(on))",'accessible selected filter');
+expect(filter,"button.setAttribute?.('aria-pressed',String(on))",'accessible selected filter');
 expect(board,'renderQueued=true','board must not drop filter selection while loading');
 expect(board,'queueMicrotask(()=>renderWorkspace())','queued render should refresh');
 for(const s of [claims,production]){
