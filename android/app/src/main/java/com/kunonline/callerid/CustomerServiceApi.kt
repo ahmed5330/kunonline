@@ -189,6 +189,14 @@ object KunCustomerServiceApi {
         CustomerServiceJsonResult(true, "تمت إضافة الملاحظة", json(response))
     }
 
+    fun claimContact(context: Context, orderId: String): CustomerServiceJsonResult =
+        withClient(context) { cookie, clientId ->
+            val payload = JSONObject().put("clientId", clientId)
+            val response = request("POST", "/api/customer-service/orders/${enc(orderId)}/claim-contact?clientId=${enc(clientId)}", cookie, payload)
+            if (response.code !in 200..299) return@withClient authFailure(context, response, "تعذر نقل الأوردر إلى جاري التواصل")
+            CustomerServiceJsonResult(true, "الأوردر في جاري التواصل حتى يتم التأكيد أو اختيار العميل لا يرد", json(response))
+        }
+
     fun logContact(context: Context, orderId: String, channel: String = "phone", intent: String = "contact"): CustomerServiceJsonResult =
         withClient(context) { cookie, clientId ->
             val payload = JSONObject().put("clientId", clientId).put("channel", channel).put("intent", intent)
