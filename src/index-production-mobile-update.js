@@ -20,7 +20,6 @@ import {handleInventoryUnitTracking,syncInventoryTrackingAfterResponse,reconcile
 
 const LEGACY_APK_URL='https://github.com/ahmed5330/kunonline/releases/download/android-latest/Kun-Online-Mobile.apk';
 const DIRECT_APK_PATH='/api/mobile/app-update/apk';
-const PRINTING_STATES=new Set(['confirmed','preparing']);
 const HTML_PATHS=new Set(['/','/index.html','/v2','/v2/','/v2/index.html']);
 // Auth endpoints must reach one signer/verifier, without billing, finance or UI response adapters.
 const AUTH_PATHS=new Set(['/api/login','/api/me','/api/logout']);
@@ -126,16 +125,9 @@ async function websiteWithDirectAndroidDownload(request,env){
   return new Response(html,{status:asset.status,headers});
 }
 
-async function routeConfirmedOrdersToPrinting(request,response){
-  const url=new URL(request.url);
-  if(request.method!=='GET'||url.pathname!=='/api/customer-service'||!response?.ok)return response;
-  const data=await response.clone().json().catch(()=>null);
-  if(!data||!Array.isArray(data.orders))return response;
-  data.orders=data.orders.filter(order=>!PRINTING_STATES.has(String(order?.state||'')));
-  if(Array.isArray(data.stages))data.stages=data.stages.filter(stage=>!PRINTING_STATES.has(String(stage?.id||'')));
-  const headers=new Headers(response.headers);headers.set('Content-Type','application/json; charset=utf-8');headers.set('Cache-Control','no-store');headers.set('X-Kun-Data-Source','preview');headers.delete('Content-Length');
-  return new Response(JSON.stringify(data),{status:response.status,headers});
-}
+// The same order must be readable in Customer Service and Printing.
+// Never hide confirmed/preparing records from the Customer Service response.
+function preserveCustomerServiceOrderVisibility(_request,response){return response;}
 
 function collaborationSchemaFailure(){
   return new Response(JSON.stringify({error:'تعذر تفعيل مخطط تواصل الفريق',code:'COLLAB_SCHEMA_BOOTSTRAP_FAILED'}),{status:503,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}});
@@ -187,7 +179,7 @@ export default {
 
     const mobileSync=await handleMobileSync({request,load:async sourceRequest=>{
       const board=await handleProductionCustomerService({request:sourceRequest,env:dataEnv,ctx,delegate});
-      return board?routeConfirmedOrdersToPrinting(sourceRequest,board):delegate.fetch(sourceRequest);
+      return board?preserveCustomerServiceOrderVisibility(sourceRequest,board):delegate.fetch(sourceRequest);
     }});
     if(mobileSync)return mobileSync;
 
@@ -205,7 +197,7 @@ export default {
 
     const customerService=await handleProductionCustomerService({request,env:dataEnv,ctx,delegate});
     if(customerService){
-      const routed=await routeConfirmedOrdersToPrinting(request,customerService);
+      const routed=await preserveCustomerServiceOrderVisibility(request,customerService);
       return syncInventoryTrackingAfterResponse({request,response:routed,env:dataEnv,actor:'production'});
     }
 
