@@ -85,9 +85,9 @@ assert.ok(printBlock.indexOf("UPDATE orders SET awb=?")<printBlock.indexOf('sign
 assert.ok(printBlock.indexOf('jt_label_printed')<printBlock.indexOf("UPDATE orders SET state='shipped'"),'Order must enter shipping only after the carrier label succeeds');
 assert.ok(printBlock.includes("if(!awb){"),'Existing AWB must skip shipment creation and continue printing');
 
-assert.ok(printingRoute.includes("url.pathname!=='/api/printing'")&&printingRoute.includes("const states=['confirmed','preparing','shipped']"),'Production must expose confirmed orders through the dedicated Printing queue');
+assert.ok(printingRoute.includes("url.pathname!=='/api/printing'")&&printingRoute.includes("o.state IN ('confirmed','preparing')")&&printingRoute.includes("hasMore:offset+limit<total"),'Production Printing must expose assigned-store confirmed orders through paged dedicated queue');
 assert.ok(printingRoute.includes("order.state!=='shipped'||order.queuedForPrint||order.printed"),'Unrelated shipped orders must stay out of Printing');
-assert.ok(production.includes("const PRINTING_STATES=new Set(['confirmed','preparing'])")&&production.includes('routeConfirmedOrdersToPrinting'),'Confirmed orders must be removed from Customer Service responses and routed to Printing');
+assert.ok(production.includes('preserveCustomerServiceOrderVisibility')&&!production.includes('data.orders=data.orders.filter('),'Confirmed orders must remain in Customer Service responses while also appearing in Printing');
 for(const marker of ['modules-v78-jt-shipping-order.js?v=78.5','modules-v79-printing.js?v=79.9','modules-v116-print-routing.js?v=116.0'])assert.ok(production.includes(marker),`Production must load/cache-bust ${marker}`);
 
 assert.ok(ui.includes('الإرسال الحقيقي وإنشاء AWB يتمان فقط')&&ui.includes('قسم الطباعة'),'J&T editor must explain that external sending belongs to Printing');
