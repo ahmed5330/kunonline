@@ -15,7 +15,7 @@ export function jntStatus(raw){
   if(/delivered|signed|تم التسليم|تم التوصيل|مستلم/.test(s))return 'delivered';
   if(/pickup|picked up|استلام المندوب|استلمت الشركة/.test(s))return 'picked_up';
   if(/transit|dispatch|shipping|shipped|out for delivery|in warehouse|في الطريق|جاري الشحن|التوزيع|في المخزن/.test(s))return 'in_transit';
-  if(/create|new|pending|printed|تم إنشاء|تم انشاء|تم طباعة/.test(s))return 'created';
+  if(/^(?:created?|new|pending|printed)(?:\b|$)|تم إنشاء|تم انشاء|تم طباعة/.test(s))return 'created';
   return 'unknown';
 }
 export function normalizeJntShipment(row){
