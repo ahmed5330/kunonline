@@ -75,7 +75,7 @@ async function websiteWithDirectAndroidDownload(request,env){
     .replace(/\/v2\/modules-v80-jnt-address-cascade-v805\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v80-jnt-address-cascade-v805.js?v=80.6')
     .replace(/\/v2\/modules-v121-dashboard-sync-guard\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v121-dashboard-sync-guard.js?v=121.1')
     .replaceAll(LEGACY_APK_URL,DIRECT_APK_PATH)
-    .replaceAll('/v2/modules-v51-permission-navigation.js?v=51.10','/v2/modules-v51-permission-navigation.js?v=51.15')
+    .replaceAll('/v2/modules-v51-permission-navigation.js?v=51.10','/v2/modules-v51-permission-navigation.js?v=51.16')
     .replace(/\/v2\/modules-v57-section-reload\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v57-section-reload.js?v=57.3')
     .replaceAll('/v2/modules-v78-jt-shipping-order.js?v=78.4','/v2/modules-v78-jt-shipping-order.js?v=78.5')
     .replaceAll('/v2/modules-v79-printing.js?v=79.7','/v2/modules-v79-printing.js?v=79.10')
@@ -111,7 +111,7 @@ async function websiteWithDirectAndroidDownload(request,env){
     html=html.replace('</body>','<script src="/v2/modules-v126-dashboard-finance-top.js?v=126.5" data-kun-dashboard-finance-top-v126="1"></script></body>');
   }
   if(!html.includes('/v2/modules-v127-subscriptions.js')){
-    html=html.replace('</body>','<script src="/v2/modules-v127-subscriptions.js?v=127.19" data-kun-subscriptions-v127="1"></script></body>');
+    html=html.replace('</body>','<script src="/v2/modules-v127-subscriptions.js?v=127.20" data-kun-subscriptions-v127="1"></script></body>');
   }
   if(!html.includes('/v2/modules-v128-unit-tracking.js')){
     html=html.replace('</body>','<script src="/v2/modules-v128-unit-tracking.js?v=128.4" data-kun-unit-tracking-v128="1"></script></body>');
