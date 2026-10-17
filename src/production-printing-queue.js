@@ -64,9 +64,14 @@ export async function handleProductionPrintingQueue({request,env,ctx,delegate}){
     else if(!access.allStores){where.push(`o.store_id IN (${storeIds.map(()=>'?').join(',')})`);binds.push(...storeIds);}
     const scopedWhere=where.join(' AND ');
     const source=`FROM orders o LEFT JOIN stores s ON s.id=o.store_id AND s.client_id=o.client_id WHERE ${scopedWhere}`;
+    // Use identical filters for counters, pages and the legacy Android response.
+    // A delayed marketplace callback may leave an already-printed order with a
+    // stale "confirmed" state; never let it vanish from both printing tabs.
+    const printedFilter="o.state IN ('confirmed','preparing','shipped') AND instr(COALESCE(o.history,''),'jt_label_printed')>0";
+    const waitingFilter="((o.state IN ('confirmed','preparing') OR (o.state='shipped' AND instr(COALESCE(o.history,''),'jt_print_queued')>0)) AND instr(COALESCE(o.history,''),'jt_label_printed')=0)";
     const counts=await env.DB.prepare(`SELECT
-      COALESCE(SUM(CASE WHEN o.state IN ('confirmed','preparing') THEN 1 ELSE 0 END),0) waiting,
-      COALESCE(SUM(CASE WHEN o.state='shipped' AND instr(COALESCE(o.history,''),'jt_label_printed')>0 THEN 1 ELSE 0 END),0) printed
+      COALESCE(SUM(CASE WHEN ${waitingFilter} THEN 1 ELSE 0 END),0) waiting,
+      COALESCE(SUM(CASE WHEN ${printedFilter} THEN 1 ELSE 0 END),0) printed
       ${source}`).bind(...binds).first();
     const normalizedCounts={waiting:Number(counts?.waiting)||0,printed:Number(counts?.printed)||0};
     const tab=clean(url.searchParams.get('tab'),20);
@@ -74,7 +79,7 @@ export async function handleProductionPrintingQueue({request,env,ctx,delegate}){
     if(tab==='waiting'||tab==='printed'){
       const limit=Math.min(200,Math.max(1,Math.floor(Number(url.searchParams.get('limit')))||100));
       const offset=Math.min(1000000,Math.max(0,Math.floor(Number(url.searchParams.get('offset')))||0));
-      const stateFilter=tab==='waiting'?"o.state IN ('confirmed','preparing')":"o.state='shipped' AND instr(COALESCE(o.history,''),'jt_label_printed')>0";
+      const stateFilter=tab==='waiting'?waitingFilter:printedFilter;
       const {results=[]}=await env.DB.prepare(`SELECT o.*,s.name store_name ${source} AND ${stateFilter} ORDER BY o.created_at DESC,o.id DESC LIMIT ? OFFSET ?`).bind(...binds,limit,offset).all();
       const orders=results.map(mapOrder).filter(order=>tab==='waiting'?!order.printed:order.printed);
       const total=normalizedCounts[tab];
@@ -82,9 +87,9 @@ export async function handleProductionPrintingQueue({request,env,ctx,delegate}){
     }
     // Backward-compatible response for older Android builds: shipping history cannot
     // crowd confirmed orders out of the first page.
-    const pending=await env.DB.prepare(`SELECT o.*,s.name store_name ${source} AND o.state IN ('confirmed','preparing') ORDER BY o.created_at DESC,o.id DESC LIMIT 1000`).bind(...binds).all();
-    const printed=await env.DB.prepare(`SELECT o.*,s.name store_name ${source} AND o.state='shipped' AND (instr(COALESCE(o.history,''),'jt_print_queued')>0 OR instr(COALESCE(o.history,''),'jt_label_printed')>0) ORDER BY o.created_at DESC,o.id DESC LIMIT 250`).bind(...binds).all();
-    const orders=[...(pending.results||[]),...(printed.results||[])].map(mapOrder).filter(order=>order.state!=='shipped'||order.queuedForPrint||order.printed);
+    const pending=await env.DB.prepare(`SELECT o.*,s.name store_name ${source} AND ${waitingFilter} ORDER BY o.created_at DESC,o.id DESC LIMIT 1000`).bind(...binds).all();
+    const printed=await env.DB.prepare(`SELECT o.*,s.name store_name ${source} AND ${printedFilter} ORDER BY o.created_at DESC,o.id DESC LIMIT 250`).bind(...binds).all();
+    const orders=[...(pending.results||[]),...(printed.results||[])].map(mapOrder);
     return json({ok:true,clientId,selectedStoreId:selectedStoreId||null,stores:storeOptions,orders,counts:normalizedCounts,truncated:normalizedCounts.waiting>1000});
   }catch(error){return json({error:error?.message||'تعذر تحميل قسم الطباعة',code:error?.code||'PRINTING_QUEUE_ERROR'},Number(error?.status)>=400&&Number(error.status)<600?Number(error.status):500);}
 }
