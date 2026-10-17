@@ -21,16 +21,23 @@ class KunCallScreeningService : CallScreeningService() {
             CallerOverlay.show(this, cached, incoming)
         }
 
-        // Every screened call is also a synchronization trigger. The cached overlay is immediate,
-        // then a freshly-arrived order can replace it as soon as the network refresh completes.
+        // A live lookup restores details when newer APKs have an empty/stale
+        // order-list cache. Network calls never block Android's screening response.
         if (!KunApi.hasSession(this)) return
-        thread(name = "kun-call-live-sync") {
-            val result = runCatching { KunApi.syncWithStoredSession(this) }.getOrNull()
-            if (result?.ok != true) return@thread
-            val fresh = CustomerCache.lookup(this, number) ?: return@thread
-            CallActivityStore.mark(this, fresh.orderId, number, incoming)
-            if (fresh != cached) {
-                CallerOverlay.show(this, fresh, incoming)
+        thread(name = "kun-call-live-lookup") {
+            val live = KunApi.lookupCallerLive(this, number)
+            val fresh = live ?: run {
+                runCatching { KunApi.syncWithStoredSession(this) }
+                CustomerCache.lookup(this, number)
+            }
+            if (fresh != null) {
+                CallActivityStore.mark(this, fresh.orderId, number, incoming)
+                if (fresh != cached) CallerOverlay.show(this, fresh, incoming)
+                // Claim is idempotent; it moves the order into "جاري الاتصال".
+                // Never auto-release on focus, call end, or timer.
+                fresh.orderId?.takeIf { it.isNotBlank() }?.let {
+                    runCatching { KunCustomerServiceApi.claimContact(this, it) }
+                }
             }
         }
     }
