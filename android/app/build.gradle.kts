@@ -12,9 +12,9 @@ android {
         applicationId = "com.kunonline.callerid.stable"
         minSdk = 29
         targetSdk = 35
-        // v2.8.9 fixes nullable client identities for multi-store platform staff.
-        versionCode = 136
-        versionName = "2.9.5"
+        // v2.9.6 restores caller details and contact decisions during customer calls.
+        versionCode = 137
+        versionName = "2.9.6"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
