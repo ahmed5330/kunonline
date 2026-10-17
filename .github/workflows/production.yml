@@ -19,6 +19,11 @@ jobs:
           node-version: 22
           package-manager-cache: false
       - run: npm install --ignore-scripts
+      - name: Admin J&T shipment access and import safety
+        run: |
+          node --check src/admin-jnt-shipments.js
+          node --check public/v2/modules-v154-admin-jnt-shipments.js
+          node scripts/admin-jnt-shipments-test.mjs
       - name: Campaign comparison loading and weekday regression
         run: |
           node scripts/campaign-weekday-regression-test.mjs

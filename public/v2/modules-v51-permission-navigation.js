@@ -41,6 +41,7 @@
     wallet:['wallet.read'],
     'admin-clients':['admin'],
     subscriptions:['admin'],
+    'admin-jnt-shipments':['admin'],
     control:['owner'],
     settings:['owner']
   });
@@ -59,6 +60,7 @@
     view=text(view);if(!view||!data?.role)return false;
     if(view==='admin-clients')return data.role==='admin';
     if(view==='subscriptions')return data.role==='admin';
+    if(view==='admin-jnt-shipments')return data.role==='admin';
     if(OWNER_ROLES.has(data.role))return true;
     const rules=VIEW_RULES[view];if(!rules?.length)return false;
     if(rules.includes('owner')||rules.includes('admin'))return false;
