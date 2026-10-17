@@ -121,8 +121,14 @@ export async function handleOperationalWorkflowV105({request,env,ctx={},delegate
     if(manual){const body=await request.clone().json().catch(()=>({}));return createManualJntOrder({request,env,ctx,delegate,me,url,body});}
     if(detailsMatch&&method==='GET')return enrichOrderDetails(request,env,ctx,delegate,url,me);
     if(stateMatch&&method==='PATCH'){
-      const body=await request.clone().json().catch(()=>({})),clientId=requestedClient(me,url,body),response=await delegate.fetch(request,env,ctx);
-      if(response.ok)await clearClaim(env,clientId,decodeURIComponent(stateMatch[1]));
+      const body=await request.clone().json().catch(()=>({})),clientId=requestedClient(me,url,body),orderId=decodeURIComponent(stateMatch[1]);
+      const order=await orderForAccess(env,me,clientId,orderId,{write:true});
+      if(order.contact_claim_user_id){
+        if(!['confirmed','no_answer'].includes(String(body.state||'')))return json({error:'الطلب جاري التواصل عليه ولا يخرج من القسم إلا بعد اختيار تم التأكيد أو العميل لا يرد',code:'CONTACT_DECISION_REQUIRED'},409);
+        if(actorId(me)!==String(order.contact_claim_user_id)&&me.role!=='admin')return json({error:'الطلب محجوز لعضو خدمة عملاء آخر',code:'CONTACT_OWNED_BY_OTHER'},409);
+      }
+      const response=await delegate.fetch(request,env,ctx);
+      if(response.ok&&['confirmed','no_answer'].includes(String(body.state||'')))await clearClaim(env,clientId,orderId);
       return response;
     }
     if(jtQueueMatch&&method==='POST'){
