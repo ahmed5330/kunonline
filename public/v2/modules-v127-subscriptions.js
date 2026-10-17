@@ -1,7 +1,7 @@
-/* Kun Online v127.19 — wallet payment audit, balance safety and topup history. */
+/* Kun Online v127.20 — wallet payment audit, balance safety and topup history. */
 (()=>{
   if(window.KunSubscriptionsV127)return;
-  const VERSION='127.19';
+  const VERSION='127.20';
   const $=(s,r=document)=>r?.querySelector?.(s)||null;
   const $$=(s,r=document)=>r?[...r.querySelectorAll(s)]:[];
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -221,8 +221,10 @@
   function addAdminNav(){
     if(state.me?.role!=='admin')return;
     const nav=$('.nav');if(!nav)return;
-    let b=$('button[data-view="subscriptions"]',nav);if(!b){b=document.createElement('button');b.type='button';b.dataset.view='subscriptions';b.className='v27-admin-only';b.textContent='الاشتراكات';const admin=$('button[data-view="admin-clients"]',nav);admin?admin.after(b):nav.appendChild(b);}
-    b.hidden=false;b.style.display='';
+    let b=$('button[data-view="subscriptions"]',nav);if(!b){b=document.createElement('button');b.type='button';b.dataset.view='subscriptions';b.className='v27-admin-only';b.textContent='الاشتراكات والمدفوعات';const admin=$('button[data-view="admin-clients"]',nav);admin?admin.after(b):nav.appendChild(b);}
+    b.hidden=false;b.style.display='';b.setAttribute('aria-hidden','false');b.tabIndex=0;
+    window.KunSidebarGroupsV90?.sync?.();
+    window.KunDesignShellV143?.sync?.();
     b.onclick=event=>{event?.preventDefault?.();event?.stopPropagation?.();setAdminActive();renderAdmin();};
   }
   function setAdminActive(){
