@@ -69,13 +69,13 @@ async function mobileCallerLookup(env,{me,clientId,phone}){
   const normalized=normalizePhone(phone);if(!normalized)throw Object.assign(new Error('رقم الهاتف غير صحيح'),{status:400,code:'PHONE_INVALID'});
   const access=await accessContext(env,me,clientId),binds=[clientId,normalized];let scope='';
   if(!access.allStores){scope=` AND o.store_id IN (${access.ids.map(()=>'?').join(',')})`;binds.push(...access.ids);}
-  const order=await env.DB.prepare(`SELECT o.id,o.store_id,o.customer_id,o.name,o.phone,o.gov,o.address,o.date,o.created_at,o.total,o.state FROM orders o WHERE o.client_id=? AND o.phone=?${scope} ORDER BY COALESCE(o.date,o.created_at) DESC,o.created_at DESC LIMIT 1`).bind(...binds).first();
+  const order=await env.DB.prepare(`SELECT o.id,o.ref,o.store_id,o.customer_id,o.name,o.phone,o.gov,o.address,o.date,o.created_at,o.total,o.state,o.product,o.note FROM orders o WHERE o.client_id=? AND o.phone=?${scope} ORDER BY COALESCE(o.date,o.created_at) DESC,o.created_at DESC LIMIT 1`).bind(...binds).first();
   const customerBinds=[clientId,normalized];let customerScope='';if(!access.allStores){customerScope=` AND c.store_id IN (${access.ids.map(()=>'?').join(',')})`;customerBinds.push(...access.ids);}
   const customer=await env.DB.prepare(`SELECT c.* FROM customers c WHERE c.client_id=? AND c.phone=?${customerScope} ORDER BY c.created_at DESC LIMIT 1`).bind(...customerBinds).first();
   if(!order&&!customer)return {ok:true,found:false,phone:normalized};
   const statBinds=[clientId,normalized];let statScope='';if(!access.allStores){statScope=` AND store_id IN (${access.ids.map(()=>'?').join(',')})`;statBinds.push(...access.ids);}
   const stats=await env.DB.prepare(`SELECT COUNT(*) total_orders,COALESCE(SUM(CASE WHEN state NOT IN ('cancelled','returned') THEN total ELSE 0 END),0) total_spent,MAX(COALESCE(date,created_at)) last_order_date FROM orders WHERE client_id=? AND phone=?${statScope}`).bind(...statBinds).first();
-  return {ok:true,found:true,name:clean(order?.name||customer?.name),phone:clean(order?.phone||customer?.phone||normalized),gov:clean(order?.gov||customer?.gov),address:clean(order?.address||customer?.address),totalOrders:Number(stats?.total_orders||0),totalSpent:Number(stats?.total_spent||0),lastOrderDate:stats?.last_order_date||'',customerId:customer?.id||order?.customer_id||'',orderId:order?.id||'',storeId:order?.store_id||customer?.store_id||''};
+  return {ok:true,found:true,name:clean(order?.name||customer?.name),phone:clean(order?.phone||customer?.phone||normalized),gov:clean(order?.gov||customer?.gov),address:clean(order?.address||customer?.address),totalOrders:Number(stats?.total_orders||0),totalSpent:Number(stats?.total_spent||0),lastOrderDate:stats?.last_order_date||'',customerId:customer?.id||order?.customer_id||'',orderId:order?.id||'',orderRef:order?.ref||order?.id||'',storeId:order?.store_id||customer?.store_id||'',product:clean(order?.product),orderTotal:Number(order?.total||0),status:order?.state||'',note:clean(order?.note,500)};
 }
 async function createManualJntOrder({request,env,ctx,delegate,me,url,body}){
   requirePermission(me,'orders','update');
