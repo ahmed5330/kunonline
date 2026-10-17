@@ -2,7 +2,7 @@
 (function(){
   if(window.KunOperationalDateContactV109)return;
   const ROOT_ID='root',TZ='Africa/Cairo',VIEWS=new Set(['orders','customer-service','printing','post-shipping','returns-exchanges']);
-  const PERIODS=[['today','اليوم'],['last7','آخر أسبوع'],['prevweek','الأسبوع الماضي'],['month','الشهر الحالي'],['prevmonth','الشهر الماضي'],['custom','مدة معينة']];
+  const PERIODS=[['all','كل الفترات'],['today','اليوم'],['last7','آخر أسبوع'],['prevweek','الأسبوع الماضي'],['month','الشهر الحالي'],['prevmonth','الشهر الماضي'],['custom','مدة معينة']];
   const claimNames=new Map(),releaseTimers=new Map();let scanQueued=false,mapCache={at:0,cid:'',orders:new Map()},claimsAt=0,pendingCall='',csReloadQueued=false,csInitialReloadDone=false;
   const nativeFetch=window.fetch.bind(window);
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -20,9 +20,19 @@
     const fallbackFrom=`${String(y).padStart(4,'0')}-${String(m).padStart(2,'0')}-01`;return [customFrom||fallbackFrom,customTo||today];
   }
   function key(view){return `kun:operational-period:${view}`;}
-  function stateFor(view){try{const saved=JSON.parse(localStorage.getItem(key(view))||'{}');return {period:PERIODS.some(x=>x[0]===saved.period)?saved.period:'today',from:saved.from||'',to:saved.to||''};}catch{return {period:'today',from:'',to:''};}}
-  function saveState(view,state){try{localStorage.setItem(key(view),JSON.stringify(state));}catch{}}
-  function customerServiceRange(){const state=stateFor('customer-service'),[from,to]=rangeFor(state.period,state.from,state.to);return {state,from,to};}
+  const UNFILTERED_WORKFLOW_VIEWS=new Set(['customer-service','printing']);
+  function stateFor(view){
+    const defaultPeriod=UNFILTERED_WORKFLOW_VIEWS.has(view)?'all':'today';
+    try{
+      const saved=JSON.parse(localStorage.getItem(key(view))||'{}');
+      // Upgrade the previous implicit "today" default, but respect newly chosen periods.
+      const staleDefault=UNFILTERED_WORKFLOW_VIEWS.has(view)&&saved.period==='today'&&!saved.explicitChoice;
+      const period=staleDefault?'all':PERIODS.some(x=>x[0]===saved.period)?saved.period:defaultPeriod;
+      return {period,from:saved.from||'',to:saved.to||''};
+    }catch{return {period:defaultPeriod,from:'',to:''};}
+  }
+  function saveState(view,state){try{localStorage.setItem(key(view),JSON.stringify({...state,explicitChoice:true}));}catch{}}
+  function customerServiceRange(){const state=stateFor('customer-service');if(state.period==='all')return {state,from:'',to:''};const [from,to]=rangeFor(state.period,state.from,state.to);return {state,from,to};}
   function isCustomerServiceBoardRequest(input,init){
     try{
       const method=String(init?.method||(input instanceof Request?input.method:'GET')||'GET').toUpperCase();if(method!=='GET'||activeView()!=='customer-service')return false;
@@ -33,6 +43,7 @@
     if(!isCustomerServiceBoardRequest(input,init))return nativeFetch(input,init);
     try{
       const {from,to}=customerServiceRange();
+      if(!from||!to)return nativeFetch(input,init);
       if(input instanceof Request){const url=new URL(input.url);url.searchParams.set('periodFrom',from);url.searchParams.set('periodTo',to);return nativeFetch(new Request(url.toString(),input),init);}
       const raw=String(input),url=new URL(raw,location.href);url.searchParams.set('periodFrom',from);url.searchParams.set('periodTo',to);
       const next=/^https?:\/\//i.test(raw)?url.toString():`${url.pathname}${url.search}${url.hash}`;return nativeFetch(next,init);
@@ -72,9 +83,9 @@
       for(const node of nodes){node.classList.remove('kun-op-date-hidden');visible++;}
     }else{
       const map=await orderMap();if(activeView()!==view||currentPage(view)!==page)return;
-      for(const node of nodesFor(view,page)){const id=orderIdFor(node),date=dateFromNode(node)||map.get(id)||'';if(date)node.dataset.orderDate=date;const show=!date||(date>=from&&date<=to);node.classList.toggle('kun-op-date-hidden',!show);if(show)visible++;}
+      for(const node of nodesFor(view,page)){const id=orderIdFor(node),date=dateFromNode(node)||map.get(id)||'';if(date)node.dataset.orderDate=date;const show=state.period==='all'||!date||(date>=from&&date<=to);node.classList.toggle('kun-op-date-hidden',!show);if(show)visible++;}
     }
-    refreshCounts(view,page);const counter=bar.querySelector('.kun-op-date-count');const text=`${visible} أوردر · ${from}${to!==from?` ← ${to}`:''}`;if(counter&&counter.textContent!==text)counter.textContent=text;
+    refreshCounts(view,page);const counter=bar.querySelector('.kun-op-date-count');const text=state.period==='all'?`${visible} أوردر · كل الفترات`:`${visible} أوردر · ${from}${to!==from?` ← ${to}`:''}`;if(counter&&counter.textContent!==text)counter.textContent=text;
   }
   async function release(orderId){if(!orderId)return;const client=await cid();if(!client)return;try{const response=await fetch(`/api/customer-service/orders/${encodeURIComponent(orderId)}/release-contact?clientId=${encodeURIComponent(client)}`,{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({clientId:client})}),data=await response.json().catch(()=>({}));if(!response.ok&&response.status!==409)throw new Error(data.error||`HTTP ${response.status}`);claimNames.delete(String(orderId));window.dispatchEvent(new CustomEvent('kun:customer-service-contact-released',{detail:{orderId,state:data.state||'',releasedAt:Date.now()}}));window.KunCustomerServiceClaimV105?.refresh?.();}catch(error){console.warn('Temporary Customer Service claim release failed',error);}}
   function scheduleRelease(orderId,delay){clearTimeout(releaseTimers.get(String(orderId)));releaseTimers.set(String(orderId),setTimeout(()=>{releaseTimers.delete(String(orderId));release(orderId);},delay));}
