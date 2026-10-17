@@ -135,8 +135,9 @@ jobs:
           grep -Fq '/v2/kun-dashboard-polish-v150.css?v=150.0' /tmp/kun-design-live.html
           grep -Fq '/v2/kun-dashboard-brand-v150.js?v=150.0' /tmp/kun-design-live.html
           grep -Fq '/v2/modules-v51-permission-navigation.js?v=51.16' /tmp/kun-design-live.html
-          fetch_live "V51 admin-only subscription loader" "https://app.kun-online.com/v2/modules-v51-permission-navigation.js?v=${nonce}" /tmp/kun-permissions-live.js
-          grep -Fq "appendScript('/v2/modules-v127-subscriptions.js?v=127.20','data-kun-admin-subscriptions')" /tmp/kun-permissions-live.js
+          grep -Fq '/v2/modules-v127-subscriptions.js?v=127.20' /tmp/kun-design-live.html
+          fetch_live "V51 platform-admin role guard" "https://app.kun-online.com/v2/modules-v51-permission-navigation.js?v=${nonce}" /tmp/kun-permissions-live.js
+          grep -Fq "if(view==='subscriptions')return data.role==='admin'" /tmp/kun-permissions-live.js
           grep -Fq '/v2/kun-design-v143.js?v=145.1' /tmp/kun-design-live.html
           grep -Fq 'data-view="subscriptions" hidden' /tmp/kun-design-live.html
           grep -Fq 'الاشتراكات والمدفوعات' /tmp/kun-subscriptions-live.js
