@@ -1,5 +1,6 @@
 import app from './index-production-jt-history.js';
 import {handlePublicSiteReviews} from './public-site-reviews.js';
+import {handleAIMarketing} from './ai-marketing-analyst.js';
 import {handleMobileSync} from './mobile-state-sync.js';
 import {handleMobileAppUpdate} from './mobile-app-update.js';
 import {handleProductionCustomerService} from './production-customer-service.js';
@@ -174,6 +175,10 @@ export default {
 
     const dataEnv=previewRuntimeEnv(env);
     const delegate=previewDelegate(env,dataEnv,ctx);
+    // Keep the actual AI analyst on this deployed version; the Preview backend can lag the UI.
+    // Authentication and store checks still use the same preview identity delegate.
+    const aiMarketing=await handleAIMarketing({request,env:dataEnv,ctx,delegate});
+    if(aiMarketing)return aiMarketing;
     const subscription=await handleSubscriptionControl({request,env:dataEnv,ctx,delegate});
     if(subscription)return subscription;
 
