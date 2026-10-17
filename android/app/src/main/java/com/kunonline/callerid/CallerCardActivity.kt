@@ -13,6 +13,8 @@ import android.view.View
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
+import kotlin.concurrent.thread
 
 class CallerCardActivity : Activity() {
     private val chrome = 0xFF0E5095.toInt()
@@ -110,32 +112,59 @@ class CallerCardActivity : Activity() {
         card.addView(body)
 
         val actions = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.END
-            setPadding(dp(14), dp(4), dp(14), dp(14))
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), dp(6), dp(12), dp(12))
+        }
+        fun action(label: String, bg: Int, fg: Int, click: (Button) -> Unit): Button =
+            Button(this).apply {
+                text = label
+                isAllCaps = false
+                textSize = 11f
+                maxLines = 2
+                setTextColor(fg)
+                backgroundTintList = ColorStateList.valueOf(bg)
+                minWidth = 0
+                minimumWidth = 0
+                minHeight = dp(52)
+                setPadding(dp(3), 0, dp(3), 0)
+                setOnClickListener { click(this) }
+            }
+        fun decision(button: Button, orderId: String, target: String) {
+            button.isEnabled = false
+            thread(name = "kun-fallback-call-decision") {
+                val result = KunCustomerServiceApi.updateState(this, orderId, target)
+                runOnUiThread {
+                    Toast.makeText(this, if (result.ok) {
+                        if (target == "confirmed") "تم تأكيد الطلب" else "تم نقل الأوردر إلى العميل لا يرد"
+                    } else result.message, Toast.LENGTH_LONG).show()
+                    if (result.ok) finish() else button.isEnabled = true
+                }
+            }
         }
         if (!locked) {
             customer.orderId?.takeIf { it.isNotBlank() }?.let { orderId ->
-                actions.addView(Button(this).apply {
-                    text = "تعديل الطلب"
-                    isAllCaps = false
-                    setTextColor(Color.WHITE)
-                    backgroundTintList = ColorStateList.valueOf(pine)
-                    setOnClickListener {
-                        startActivity(Intent(this@CallerCardActivity, CallerOrderEditActivity::class.java).apply {
-                            putExtra(CallerOrderEditActivity.EXTRA_ORDER_ID, orderId)
+                val row = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER
+                }
+                val buttons = listOf(
+                    action("العميل\nلا يرد", 0xFFB45309.toInt(), Color.WHITE) { decision(it, orderId, "no_answer") },
+                    action("تم\nالتأكيد", pine, Color.WHITE) { decision(it, orderId, "confirmed") },
+                    action("تعديل بيانات\nالشحن J&T", chrome, Color.WHITE) {
+                        startActivity(Intent(this@CallerCardActivity, CallerJntOrderEditActivity::class.java).apply {
+                            putExtra(CallerJntOrderEditActivity.EXTRA_ORDER_ID, orderId)
+                            putExtra(CallerJntOrderEditActivity.EXTRA_SHIPPING_ONLY, true)
                         })
                         finish()
                     }
-                })
+                )
+                buttons.forEach { row.addView(it, LinearLayout.LayoutParams(0, dp(54), 1f).apply { setMargins(dp(2), 0, dp(2), 0) }) }
+                actions.addView(row)
             }
         }
-        actions.addView(Button(this).apply {
-            text = "إغلاق"
-            isAllCaps = false
-            setTextColor(ink2)
-            setOnClickListener { finish() }
-        })
+        val secondary = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.END }
+        secondary.addView(action("إغلاق", ground, ink2) { finish() })
+        actions.addView(secondary)
         card.addView(actions)
         root.addView(card, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
         setContentView(root)

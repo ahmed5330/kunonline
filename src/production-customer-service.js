@@ -1,5 +1,5 @@
 import {listMyStores,resolveStoreScope} from './store-scope.js';
-const ORDER_COLS='id, client_id, store_id, ref, customer_id, date, name, phone, gov, address, product, product_id, variant_id, product_note, unit_price, qty, total, discount_amount, coupon_code, product_cost, shipping_cost, other_cost, source, note, awb, state, checkpoint, signed_at, collected_at, defer_until, refund_amount, return_type, restocked, contact_log, history, created_at';
+const ORDER_COLS='id, client_id, store_id, ref, customer_id, date, name, phone, gov, address, product, product_id, variant_id, product_note, unit_price, qty, total, discount_amount, coupon_code, product_cost, shipping_cost, other_cost, source, note, awb, state, checkpoint, signed_at, collected_at, defer_until, refund_amount, return_type, restocked, contact_log, history, created_at, contact_claim_user_id, contact_claim_name, contact_claimed_at';
 const STATES=['pending','no_answer','confirmed','preparing','shipped','signed','collected','returned','cancelled','deferred'];
 const BOARD_STATES=['pending','no_answer','confirmed','preparing','shipped','deferred'];
 const LABELS={pending:'في انتظار التأكيد',no_answer:'العميل لا يرد',confirmed:'تم التأكيد',preparing:'التجهيز والتغليف',shipped:'جاري الشحن',signed:'تم التسليم — تحصيل منتظر',collected:'تم التحصيل',returned:'مرتجع',cancelled:'تم إلغاء الطلب',deferred:'مؤجل'};
@@ -160,9 +160,12 @@ export async function handleProductionCustomerService({request,env,ctx,delegate}
     if(action==='history'&&method==='GET')return json({ok:true,order:mapOrder(row)});
     if(action==='state'&&method==='PATCH'){
       const state=clean(body.state);if(!STATES.includes(state))return json({error:'حالة الأوردر غير معروفة',code:'ORDER_STATE_INVALID'},400);
+      const claimOwner=clean(row.contact_claim_user_id),actorId=clean(me.uid||me.id||me.email||`${me.role}:${me.clientId||''}`);
+      if(claimOwner&&!['confirmed','no_answer'].includes(state))return json({error:'الطلب محجوز في جاري التواصل حتى تم التأكيد أو العميل لا يرد',code:'CONTACT_DECISION_REQUIRED'},409);
+      if(claimOwner&&claimOwner!==actorId&&me.role!=='admin')return json({error:'الطلب جارٍ التواصل معه بواسطة موظف آخر',code:'CONTACT_OWNED_BY_OTHER'},409);
       const deferUntil=state==='deferred'?clean(body.deferUntil):null;if(state==='deferred'&&!/^\d{4}-\d{2}-\d{2}$/.test(deferUntil))return json({error:'حدد تاريخ التأجيل',code:'DEFER_DATE_REQUIRED'},400);
       const history=arr(row.history);history.push({type:'state',state,at:stamp,by:actor,byName:actor,byUserId:me.uid||null});
-      await env.DB.prepare('UPDATE orders SET state=?, checkpoint=?, defer_until=?, history=? WHERE id=? AND client_id=?').bind(state,LABELS[state]||state,deferUntil,JSON.stringify(history),orderId,clientId).run();
+      await env.DB.prepare('UPDATE orders SET state=?, checkpoint=?, defer_until=?, history=?, contact_claim_user_id=CASE WHEN ? IN (\'confirmed\',\'no_answer\') THEN NULL ELSE contact_claim_user_id END,contact_claim_name=CASE WHEN ? IN (\'confirmed\',\'no_answer\') THEN NULL ELSE contact_claim_name END,contact_claimed_at=CASE WHEN ? IN (\'confirmed\',\'no_answer\') THEN NULL ELSE contact_claimed_at END WHERE id=? AND client_id=?').bind(state,LABELS[state]||state,deferUntil,JSON.stringify(history),state,state,state,orderId,clientId).run();
       return json({ok:true,state,checkpoint:LABELS[state]||state,deferUntil,history,contactCount:arr(row.contact_log).length});
     }
     if(action==='contact'&&method==='POST'){

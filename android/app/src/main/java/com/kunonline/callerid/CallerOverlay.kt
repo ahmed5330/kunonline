@@ -16,6 +16,8 @@ import android.view.WindowManager
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
+import kotlin.concurrent.thread
 
 object CallerOverlay {
     private var currentView: View? = null
@@ -127,34 +129,73 @@ object CallerOverlay {
             card.addView(body)
 
             val actions = LinearLayout(app).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.END
+                orientation = LinearLayout.VERTICAL
                 setPadding(app.dp(12), app.dp(4), app.dp(12), app.dp(12))
             }
-            fun actionButton(label: String, fill: Int?, textColor: Int, onClick: () -> Unit): Button = Button(app).apply {
-                text = label
-                isAllCaps = false
-                setTextColor(textColor)
-                textSize = 13f
-                minHeight = app.dp(44)
-                minimumHeight = app.dp(44)
-                setPadding(app.dp(12), 0, app.dp(12), 0)
-                backgroundTintList = ColorStateList.valueOf(fill ?: SURFACE2)
-                setOnClickListener { onClick() }
+            fun actionButton(label: String, fill: Int, textColor: Int, onClick: (Button) -> Unit): Button =
+                Button(app).apply {
+                    text = label
+                    isAllCaps = false
+                    setTextColor(textColor)
+                    textSize = 11f
+                    maxLines = 2
+                    minHeight = app.dp(52)
+                    minimumHeight = app.dp(52)
+                    minWidth = 0
+                    minimumWidth = 0
+                    setPadding(app.dp(4), 0, app.dp(4), 0)
+                    backgroundTintList = ColorStateList.valueOf(fill)
+                    setOnClickListener { onClick(this) }
+                }
+            fun decision(button: Button, orderId: String, target: String) {
+                button.isEnabled = false
+                thread(name = "kun-call-decision") {
+                    val result = KunCustomerServiceApi.updateState(app, orderId, target)
+                    handler.post {
+                        Toast.makeText(app, if (result.ok) {
+                            if (target == "confirmed") "تم تأكيد الأوردر" else "تم نقل الأوردر إلى العميل لا يرد"
+                        } else result.message, Toast.LENGTH_LONG).show()
+                        if (result.ok) dismiss() else button.isEnabled = true
+                    }
+                }
             }
             if (!locked) {
                 customer.orderId?.takeIf { it.isNotBlank() }?.let { orderId ->
-                    actions.addView(actionButton("تعديل بيانات J&T", PINE, Color.WHITE) {
+                    val choices = LinearLayout(app).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        gravity = Gravity.CENTER
+                    }
+                    val noAnswer = actionButton("العميل\nلا يرد", 0xFFB45309.toInt(), Color.WHITE) { button ->
+                        decision(button, orderId, "no_answer")
+                    }
+                    val confirmed = actionButton("تم\nالتأكيد", PINE, Color.WHITE) { button ->
+                        decision(button, orderId, "confirmed")
+                    }
+                    val edit = actionButton("تعديل بيانات\nالشحن J&T", CHROME, Color.WHITE) {
                         dismiss()
                         runCatching {
                             app.startActivity(Intent(app, CallerJntOrderEditActivity::class.java).apply {
                                 putExtra(CallerJntOrderEditActivity.EXTRA_ORDER_ID, orderId)
+                                putExtra(CallerJntOrderEditActivity.EXTRA_SHIPPING_ONLY, true)
                                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
                             })
-                        }
-                    })
+                        }.onFailure { Toast.makeText(app, "تعذر فتح بيانات J&T", Toast.LENGTH_SHORT).show() }
+                    }
+                    for (button in listOf(noAnswer, confirmed, edit)) {
+                        choices.addView(button, LinearLayout.LayoutParams(0, app.dp(54), 1f).apply {
+                            setMargins(app.dp(2), 0, app.dp(2), 0)
+                        })
+                    }
+                    actions.addView(choices)
                 }
-                actions.addView(actionButton("فتح التطبيق", CHROME, Color.WHITE) {
+            }
+            val secondary = LinearLayout(app).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.END
+                setPadding(0, app.dp(5), 0, 0)
+            }
+            if (!locked) {
+                secondary.addView(actionButton("فتح التطبيق", SURFACE2, INK) {
                     dismiss()
                     runCatching {
                         app.startActivity(Intent(app, MainActivity::class.java).apply {
@@ -163,7 +204,8 @@ object CallerOverlay {
                     }
                 })
             }
-            actions.addView(actionButton("إغلاق", null, INK2) { dismiss() })
+            secondary.addView(actionButton("إغلاق", SURFACE2, INK2) { dismiss() })
+            actions.addView(secondary)
             card.addView(actions)
 
             val maxWidth = app.resources.displayMetrics.widthPixels - app.dp(24)
@@ -177,7 +219,7 @@ object CallerOverlay {
                 PixelFormat.TRANSLUCENT
             ).apply {
                 gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-                y = app.dp(18)
+                y = app.dp(42)
             }
             runCatching {
                 wm.addView(card, params)

@@ -23,6 +23,13 @@ jobs:
           node --check src/admin-jnt-shipments.js
           node --check public/v2/modules-v154-admin-jnt-shipments.js
           node scripts/admin-jnt-shipments-test.mjs
+      - name: Customer Service call continuity and Android overlay contract
+        run: |
+          node --check src/operational-workflow-v105.js
+          node --check src/production-customer-service.js
+          node --check public/v2/modules-v109-operational-date-contact.js
+          node --check public/v2/modules-v31-customer-service.js
+          node scripts/customer-service-call-continuity-test.mjs
       - name: Run full contract and unit suite
         run: npm test
       - name: Inventory workspace UX browser regression

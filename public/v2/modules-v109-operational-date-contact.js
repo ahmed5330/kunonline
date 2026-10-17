@@ -3,7 +3,7 @@
   if(window.KunOperationalDateContactV109)return;
   const ROOT_ID='root',TZ='Africa/Cairo',VIEWS=new Set(['orders','customer-service','printing','post-shipping','returns-exchanges']);
   const PERIODS=[['all','كل الفترات'],['today','اليوم'],['last7','آخر أسبوع'],['prevweek','الأسبوع الماضي'],['month','الشهر الحالي'],['prevmonth','الشهر الماضي'],['custom','مدة معينة']];
-  const claimNames=new Map(),releaseTimers=new Map();let scanQueued=false,mapCache={at:0,cid:'',orders:new Map()},claimsAt=0,pendingCall='',csReloadQueued=false,csInitialReloadDone=false;
+  const claimNames=new Map();let scanQueued=false,mapCache={at:0,cid:'',orders:new Map()},claimsAt=0,csReloadQueued=false,csInitialReloadDone=false;
   const nativeFetch=window.fetch.bind(window);
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const root=()=>document.getElementById(ROOT_ID),activeView=()=>document.querySelector('.nav button.active[data-view]')?.dataset.view||'';
@@ -57,12 +57,23 @@
     .kun-op-date-filter{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 12px;border:1px solid var(--line,#d3deda);border-radius:12px;background:var(--surface,#fff);margin:0 0 12px}.kun-op-date-filter .label{font-size:11px;font-weight:900;opacity:.72}.kun-op-date-options{display:flex;gap:5px;flex-wrap:wrap}.kun-op-date-options button{width:auto;padding:7px 10px;font-size:11px;font-weight:800}.kun-op-date-options button.active{background:var(--chrome-bg,#0e5095);color:#fff;border-color:var(--chrome-bg,#0e5095)}.kun-op-custom{display:flex;align-items:center;gap:6px;flex-wrap:wrap}.kun-op-custom[hidden]{display:none!important}.kun-op-custom input{width:145px;min-height:34px}.kun-op-date-count{margin-inline-start:auto;font-size:11px;font-weight:900;opacity:.75}.kun-op-date-hidden{display:none!important}@media(max-width:620px){.kun-op-date-filter{align-items:stretch}.kun-op-date-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%}.kun-op-date-options button{width:100%}.kun-op-custom{width:100%}.kun-op-custom input{flex:1;min-width:130px}.kun-op-date-count{margin-inline-start:0;width:100%}}
   `;document.head.appendChild(style);}
   function currentPage(view){const r=root();if(!r)return null;if(view==='customer-service')return r.querySelector('.cs-page');if(view==='printing')return r.querySelector('.print79-page');if(view==='post-shipping')return r.querySelector('.ps-page');if(view==='returns-exchanges')return r.querySelector('.rx-page');if(view==='orders')return r;return null;}
+  function syncToolbar(bar,view){
+    const selected=stateFor(view);
+    for(const button of (bar.querySelectorAll?.('[data-kun-period]')||[])){
+      const on=button.dataset.kunPeriod===selected.period;
+      button.classList.toggle('active',on);
+      button.setAttribute?.('aria-pressed',String(on));
+      button.style?.setProperty?.('background-color',on?'var(--chrome-bg,#0e5095)':'','important');
+      button.style?.setProperty?.('color',on?'#fff':'','important');
+    }
+    const custom=bar.querySelector?.('.kun-op-custom');if(custom)custom.hidden=selected.period!=='custom';
+  }
   function toolbar(view,page){
-    let bar=page.querySelector(':scope > .kun-op-date-filter');if(bar)return bar;const state=stateFor(view);bar=document.createElement('div');bar.className='kun-op-date-filter';bar.dataset.kunOperationalPeriod=view;
+    let bar=page.querySelector(':scope > .kun-op-date-filter');if(bar){syncToolbar(bar,view);return bar;}const state=stateFor(view);bar=document.createElement('div');bar.className='kun-op-date-filter';bar.dataset.kunOperationalPeriod=view;
     bar.innerHTML=`<span class="label">الفترة</span><div class="kun-op-date-options">${PERIODS.map(([value,label])=>`<button type="button" class="btn soft ${state.period===value?'active':''}" data-kun-period="${value}">${label}</button>`).join('')}</div><div class="kun-op-custom" ${state.period==='custom'?'':'hidden'}><input class="input" type="date" data-kun-from value="${esc(state.from)}"><span>إلى</span><input class="input" type="date" data-kun-to value="${esc(state.to||cairoToday())}"></div><span class="kun-op-date-count"></span>`;
     const head=page.querySelector(':scope > .page-head')||page.querySelector('.page-head');head?.after(bar);if(!bar.isConnected)page.prepend(bar);
-    bar.querySelectorAll('[data-kun-period]').forEach(button=>button.onclick=()=>{const next=stateFor(view);next.period=button.dataset.kunPeriod||'today';saveState(view,next);bar.querySelectorAll('[data-kun-period]').forEach(x=>x.classList.toggle('active',x===button));bar.querySelector('.kun-op-custom').hidden=next.period!=='custom';if(view==='customer-service')reloadCustomerService();else apply(view);});
-    for(const input of bar.querySelectorAll('[data-kun-from],[data-kun-to]'))input.onchange=()=>{const next=stateFor(view);next.period='custom';next.from=bar.querySelector('[data-kun-from]')?.value||'';next.to=bar.querySelector('[data-kun-to]')?.value||'';saveState(view,next);if(view==='customer-service'&&next.from&&next.to)reloadCustomerService();else apply(view);};
+    bar.querySelectorAll('[data-kun-period]').forEach(button=>button.onclick=()=>{const next=stateFor(view);next.period=button.dataset.kunPeriod||'today';saveState(view,next);syncToolbar(bar,view);if(view==='customer-service')reloadCustomerService();else apply(view);});
+    for(const input of bar.querySelectorAll('[data-kun-from],[data-kun-to]'))input.onchange=()=>{const next=stateFor(view);next.period='custom';next.from=bar.querySelector('[data-kun-from]')?.value||'';next.to=bar.querySelector('[data-kun-to]')?.value||'';saveState(view,next);syncToolbar(bar,view);if(view==='customer-service'&&next.from&&next.to)reloadCustomerService();else apply(view);};
     return bar;
   }
   function orderIdFor(node){return String(node?.dataset?.csOrder||node?.dataset?.v47Order||node?.dataset?.v56Order||node?.dataset?.print79Order||node?.querySelector?.('[data-order-v27]')?.dataset?.orderV27||node?.querySelector?.('[data-order]')?.dataset?.order||'');}
@@ -87,17 +98,17 @@
     }
     refreshCounts(view,page);const counter=bar.querySelector('.kun-op-date-count');const text=state.period==='all'?`${visible} أوردر · كل الفترات`:`${visible} أوردر · ${from}${to!==from?` ← ${to}`:''}`;if(counter&&counter.textContent!==text)counter.textContent=text;
   }
+  // Claims persist until an explicit confirmed / no_answer transition.
+  // Only a deliberate release may call this administrative recovery endpoint.
   async function release(orderId){if(!orderId)return;const client=await cid();if(!client)return;try{const response=await fetch(`/api/customer-service/orders/${encodeURIComponent(orderId)}/release-contact?clientId=${encodeURIComponent(client)}`,{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({clientId:client})}),data=await response.json().catch(()=>({}));if(!response.ok&&response.status!==409)throw new Error(data.error||`HTTP ${response.status}`);claimNames.delete(String(orderId));window.dispatchEvent(new CustomEvent('kun:customer-service-contact-released',{detail:{orderId,state:data.state||'',releasedAt:Date.now()}}));window.KunCustomerServiceClaimV105?.refresh?.();}catch(error){console.warn('Temporary Customer Service claim release failed',error);}}
-  function scheduleRelease(orderId,delay){clearTimeout(releaseTimers.get(String(orderId)));releaseTimers.set(String(orderId),setTimeout(()=>{releaseTimers.delete(String(orderId));release(orderId);},delay));}
   function paintClaimNames(){root()?.querySelectorAll('[data-cs-order]').forEach(card=>{const id=String(card.dataset.csOrder||''),info=claimNames.get(id),badge=card.querySelector('.cs-claim-badge');if(!info||!badge)return;const html=`جاري الاتصال بواسطة: <b>${esc(info.name||'عضو من الفريق')}</b>${info.mine?' <span style="opacity:.7">(أنت)</span>':''}`;if(badge.innerHTML!==html)badge.innerHTML=html;});}
   async function syncClaimNames(){if(activeView()!=='customer-service'||Date.now()-claimsAt<4000)return;claimsAt=Date.now();const client=await cid();if(!client)return;const sid=String(root()?.querySelector('.cs-store-tab.active[data-cs-store]')?.dataset.csStore||'');try{const r=await fetch(`/api/customer-service/claims?clientId=${encodeURIComponent(client)}${sid?`&storeId=${encodeURIComponent(sid)}`:''}`,{credentials:'include'});if(!r.ok)return;const d=await r.json();for(const item of d.orders||[]){if(item.claim)claimNames.set(String(item.orderId),item.claim);else claimNames.delete(String(item.orderId));}paintClaimNames();}catch{}}
   function scan(){const view=activeView();if(view==='customer-service'&&!csInitialReloadDone&&window.KunCustomerServiceV31?.render){csInitialReloadDone=true;reloadCustomerService();return;}if(VIEWS.has(view))apply(view);if(view==='customer-service'){syncClaimNames();paintClaimNames();}}
   function scheduleScan(){if(scanQueued)return;scanQueued=true;setTimeout(()=>{scanQueued=false;scan();},40);}
   window.addEventListener('kun:customer-service-contact-claimed',event=>{const d=event.detail||{},id=String(d.orderId||'');if(id&&d.claim)claimNames.set(id,d.claim);paintClaimNames();});
-  window.addEventListener('kun:customer-service-contact-saved',event=>{const d=event.detail||{},id=String(d.orderId||'');if(!id)return;if(d.claim)claimNames.set(id,d.claim);paintClaimNames();if(d.intent==='call'){pendingCall=id;scheduleRelease(id,300000);}else scheduleRelease(id,2500);});
+  window.addEventListener('kun:customer-service-contact-saved',event=>{const d=event.detail||{},id=String(d.orderId||'');if(!id)return;if(d.claim)claimNames.set(id,d.claim);paintClaimNames();});
   window.addEventListener('kun:customer-service-contact-released',event=>{claimNames.delete(String(event.detail?.orderId||''));scheduleScan();});
-  const finishCall=()=>{if(!pendingCall)return;const id=pendingCall;pendingCall='';scheduleRelease(id,1200);};window.addEventListener('focus',finishCall);document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')finishCall();});
   document.addEventListener('click',event=>{if(event.target.closest?.('.nav button[data-view]'))setTimeout(scheduleScan,80);});
   new MutationObserver(scheduleScan).observe(document.body,{childList:true,subtree:true});ensureStyle();scan();
-  window.KunOperationalDateContactV109={version:'109.1',apply,rangeFor,stateFor,customerServiceRange,reloadCustomerService,release,syncClaimNames};document.documentElement.dataset.kunOperationalDateContact='v109.1-ready';
+  window.KunOperationalDateContactV109={version:'109.2',apply,rangeFor,stateFor,customerServiceRange,reloadCustomerService,release,syncClaimNames};document.documentElement.dataset.kunOperationalDateContact='v109.1-ready';
 })();
