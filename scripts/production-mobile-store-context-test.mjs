@@ -46,7 +46,7 @@ assert.match(rowQuery,/store_id IN \(\?,\?\)/);
 assert.equal(payload.orders[1].storeName,'فرع ب');
 
 
-response=await handleProductionCustomerService({request:scoped('https://app.kun-online.com/api/customer-service?clientId=client-a&storeId=store-b'),env,delegate});
+response=await handleProductionCustomerService({request:scoped('https://app.kun-online.com/api/customer-service?clientId=client-a&storeId=store-c'),env,delegate});
 assert.equal(response.status,403,'User cannot select an unassigned store');
 assert.equal((await response.json()).code,'STORE_ISOLATION');
 console.log('Production authorized client discovery and store-scoped customer-service regression PASS.');
