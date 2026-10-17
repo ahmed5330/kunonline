@@ -89,7 +89,7 @@ export async function handleProductionPrintingQueue({request,env,ctx,delegate}){
     // crowd confirmed orders out of the first page.
     const pending=await env.DB.prepare(`SELECT o.*,s.name store_name ${source} AND ${waitingFilter} ORDER BY o.created_at DESC,o.id DESC LIMIT 1000`).bind(...binds).all();
     const printed=await env.DB.prepare(`SELECT o.*,s.name store_name ${source} AND ${printedFilter} ORDER BY o.created_at DESC,o.id DESC LIMIT 250`).bind(...binds).all();
-    const orders=[...(pending.results||[]),...(printed.results||[])].map(mapOrder);
+    const orders=[...(pending.results||[]),...(printed.results||[])].map(mapOrder).filter(order=>order.state!=='shipped'||order.queuedForPrint||order.printed);
     return json({ok:true,clientId,selectedStoreId:selectedStoreId||null,stores:storeOptions,orders,counts:normalizedCounts,truncated:normalizedCounts.waiting>1000});
   }catch(error){return json({error:error?.message||'تعذر تحميل قسم الطباعة',code:error?.code||'PRINTING_QUEUE_ERROR'},Number(error?.status)>=400&&Number(error.status)<600?Number(error.status):500);}
 }
