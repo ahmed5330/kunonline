@@ -57,7 +57,8 @@
   function has(target){return permissions().some(rule=>match(rule,target));}
   function allowedView(view,data=snapshot){
     view=text(view);if(!view||!data?.role)return false;
-    if(view==='admin-clients'||view==='subscriptions')return data.role==='admin';
+    if(view==='admin-clients')return data.role==='admin';
+    if(view==='subscriptions')return data.role==='admin'&&Boolean(window.KunSubscriptionsV127);
     if(OWNER_ROLES.has(data.role))return true;
     const rules=VIEW_RULES[view];if(!rules?.length)return false;
     if(rules.includes('owner')||rules.includes('admin'))return false;
@@ -103,7 +104,9 @@
       if(force)window.KunPerformanceCore?.invalidate?.('/api/navigation-access');
       const response=await fetch('/api/navigation-access',{credentials:'include'}),data=await response.json().catch(()=>({}));
       if(!response.ok||!data?.role)throw new Error(data.error||`HTTP ${response.status}`);
-      snapshot=data;ready=true;apply();return data;
+      snapshot=data;ready=true;apply();
+      if(data.role==='admin')appendScript('/v2/modules-v127-subscriptions.js?v=127.20','data-kun-admin-subscriptions');
+      return data;
     }catch(error){console.warn('Permission navigation unavailable',error);return null;}
   }
   function targetView(element){return text(element?.dataset?.view||element?.dataset?.go);}
