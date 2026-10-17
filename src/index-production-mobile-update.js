@@ -17,6 +17,7 @@ import {reconcileFinancePresentation} from './production-finance-presentation.js
 import {reconcileMonthlySubscriptions} from './subscription-billing.js';
 import {handleSubscriptionControl} from './subscription-control.js';
 import {handleInventoryUnitTracking,syncInventoryTrackingAfterResponse,reconcileTrackedOrderLifecycles,reconcileAllClientsUnitCoverage} from './inventory-unit-tracking.js';
+import {handleAdminJntShipments} from './admin-jnt-shipments.js';
 
 const LEGACY_APK_URL='https://github.com/ahmed5330/kunonline/releases/download/android-latest/Kun-Online-Mobile.apk';
 const DIRECT_APK_PATH='/api/mobile/app-update/apk';
@@ -116,6 +117,9 @@ async function websiteWithDirectAndroidDownload(request,env){
   if(!html.includes('/v2/modules-v128-unit-tracking.js')){
     html=html.replace('</body>','<script src="/v2/modules-v128-unit-tracking.js?v=128.4" data-kun-unit-tracking-v128="1"></script></body>');
   }
+  if(!html.includes('/v2/modules-v154-admin-jnt-shipments.js')){
+    html=html.replace('</body>','<script src="/v2/modules-v154-admin-jnt-shipments.js?v=154.0" data-kun-admin-jnt-shipments="1"></script></body>');
+  }
   const headers=new Headers(asset.headers);
   headers.set('Content-Type','text/html; charset=utf-8');
   headers.set('Cache-Control','no-cache, no-store, must-revalidate');
@@ -167,6 +171,8 @@ export default {
 
     const dataEnv=previewRuntimeEnv(env);
     const delegate=previewDelegate(env,dataEnv,ctx);
+    const adminJntShipments=await handleAdminJntShipments({request,env:dataEnv,delegate});
+    if(adminJntShipments)return adminJntShipments;
     // Keep the actual AI analyst on this deployed version; the Preview backend can lag the UI.
     // Authentication and store checks still use the same preview identity delegate.
     const aiMarketing=await handleAIMarketing({request,env:dataEnv,ctx,delegate});
