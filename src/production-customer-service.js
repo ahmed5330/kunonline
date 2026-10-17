@@ -1,7 +1,7 @@
 import {listMyStores,resolveStoreScope} from './store-scope.js';
 const ORDER_COLS='id, client_id, store_id, ref, customer_id, date, name, phone, gov, address, product, product_id, variant_id, product_note, unit_price, qty, total, discount_amount, coupon_code, product_cost, shipping_cost, other_cost, source, note, awb, state, checkpoint, signed_at, collected_at, defer_until, refund_amount, return_type, restocked, contact_log, history, created_at';
 const STATES=['pending','no_answer','confirmed','preparing','shipped','signed','collected','returned','cancelled','deferred'];
-const BOARD_STATES=['pending','no_answer','confirmed','preparing','deferred'];
+const BOARD_STATES=['pending','no_answer','confirmed','preparing','shipped','deferred'];
 const LABELS={pending:'في انتظار التأكيد',no_answer:'العميل لا يرد',confirmed:'تم التأكيد',preparing:'التجهيز والتغليف',shipped:'جاري الشحن',signed:'تم التسليم — تحصيل منتظر',collected:'تم التحصيل',returned:'مرتجع',cancelled:'تم إلغاء الطلب',deferred:'مؤجل'};
 const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}});
 const clean=v=>String(v??'').trim();
@@ -99,15 +99,22 @@ async function appendEvent(env,row,event,{contact=false}={}){
   const history=arr(row.history);history.push(event);const contactLog=arr(row.contact_log);if(contact)contactLog.push(event);await saveArrays(env,row,{history,contactLog});return {history,contactLog};
 }
 async function board(env,me,clientId,storeId,dateRange={key:'all',from:'',to:''}){
-  const scope=await resolveStoreScope(env,me,clientId,storeId||null,{write:false});
-  const access=await listMyStores(env,me,clientId);
+  // Operational board is intentionally multi-store: a support agent may work
+  // in several assigned stores without selecting one before seeing orders.
+  const access=await listMyStores(env,me,clientId),stores=access.stores||[],ids=stores.map(x=>String(x.id)),selected=clean(storeId);
+  if(!access.allStores&&!ids.length)throw Object.assign(new Error('لا توجد متاجر مخصصة لهذا المستخدم'),{status:403,code:'CUSTOMER_SERVICE_STORE_ACCESS_REQUIRED'});
+  if(selected&&!ids.includes(selected))throw Object.assign(new Error('المتجر خارج المتاجر المسموح بها'),{status:403,code:'STORE_ISOLATION'});
   const dateExpr="COALESCE(NULLIF(substr(date,1,10),''),substr(created_at,1,10))";
-  const where=[`client_id=?`,`state IN (${BOARD_STATES.map(()=>'?').join(',')})`];
-  const binds=[clientId,...BOARD_STATES];
-  if(scope.storeId){where.push('store_id=?');binds.push(scope.storeId);}
+  const where=[`client_id=?`,`state IN (${BOARD_STATES.map(()=>'?').join(',')})`],binds=[clientId,...BOARD_STATES];
+  if(selected){where.push('store_id=?');binds.push(selected);}
+  else if(!access.allStores){where.push(`store_id IN (${ids.map(()=>'?').join(',')})`);binds.push(...ids);}
   if(dateRange.from&&dateRange.to){where.push(`${dateExpr} BETWEEN ? AND ?`);binds.push(dateRange.from,dateRange.to);}
-  const {results=[]}=await env.DB.prepare(`SELECT ${ORDER_COLS} FROM orders WHERE ${where.join(' AND ')} ORDER BY ${dateExpr} DESC, created_at DESC LIMIT 1000`).bind(...binds).all();
-  return {ok:true,clientId,role:me.role,allStores:access.allStores,stores:access.stores,selectedStoreId:scope.storeId||null,today:cairoToday(),period:dateRange.key,periodFrom:dateRange.from||null,periodTo:dateRange.to||null,stages:BOARD_STATES.map(id=>({id,label:LABELS[id]})),stateLabels:LABELS,orders:results.map(mapOrder)};
+  const {results=[]}=await env.DB.prepare(`SELECT ${ORDER_COLS} FROM orders WHERE ${where.join(' AND ')}
+    ORDER BY CASE state WHEN 'confirmed' THEN 0 WHEN 'preparing' THEN 1 WHEN 'pending' THEN 2 WHEN 'no_answer' THEN 3 WHEN 'deferred' THEN 4 ELSE 5 END,
+    ${dateExpr} DESC,created_at DESC LIMIT 5000`).bind(...binds).all();
+  const names=new Map(stores.map(x=>[String(x.id),x.name||'']));
+  const orders=results.map(row=>({...mapOrder(row),storeName:names.get(String(row.store_id||''))||'بدون متجر محدد',storeCode:stores.find(x=>String(x.id)===String(row.store_id||''))?.code||''}));
+  return {ok:true,clientId,role:me.role,allStores:access.allStores,stores,selectedStoreId:selected||null,today:cairoToday(),period:dateRange.key,periodFrom:dateRange.from||null,periodTo:dateRange.to||null,stages:BOARD_STATES.map(id=>({id,label:LABELS[id]})),stateLabels:LABELS,orders,truncated:results.length>=5000};
 }
 async function details(env,clientId,orderId){
   const r=await getOrder(env,clientId,orderId),o=mapOrder(r);
