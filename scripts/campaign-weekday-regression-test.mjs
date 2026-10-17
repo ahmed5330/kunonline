@@ -8,7 +8,7 @@ const worker=await read('src/index-production-mobile-update.js');
 const start=worker.indexOf('async function websiteWithDirectAndroidDownload(');
 const end=worker.indexOf('\nfunction preserveCustomerServiceOrderVisibility(',start);
 assert.ok(start>=0&&end>start,'Production HTML transformation boundaries must exist');
-const transform=vm.runInNewContext(`(function(){const HTML_PATHS=new Set(['/','/index.html','/v2/','/v2/index.html']);const LEGACY_APK_URL='legacy';const DIRECT_APK_PATH='/api/mobile/app-update/apk';${worker.slice(start,end)};return websiteWithDirectAndroidDownload;})()`,{URL,Headers,Response});
+const transform=vm.runInNewContext(`(function(){const HTML_PATHS=new Set(['/','/index.html','/v2/','/v2/index.html']);const LEGACY_APK_URL='legacy';const DIRECT_APK_PATH='/api/mobile/app-update/apk';${worker.slice(start,end)}\n;return websiteWithDirectAndroidDownload;})()`,{URL,Headers,Response});
 const source=await read('public/v2/index.html');
 for(const path of ['/v2/','/v2/index.html']){
   for(const version of ['57.1','57.2','57.3']){
