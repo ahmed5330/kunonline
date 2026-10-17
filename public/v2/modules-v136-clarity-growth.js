@@ -71,6 +71,7 @@ function style(){
  '@media(max-width:720px){.cl136 .brief-signals,.cl136 .brief-guide,.cl136 .brief-definitions{grid-template-columns:1fr}}',
  '@media(max-width:600px){.cl136 .head h2{font-size:20px}.cl136 .grid{grid-template-columns:1fr}.cl136 .brief-cards{grid-template-columns:repeat(2,minmax(0,1fr))}.cl136 .brief-card{padding:12px}.cl136 .brief-card strong{font-size:21px}.cl136 .read-scope{gap:6px}.cl136 .read-scope .read-sep{display:none}}',
 ".cl136 .head{background:linear-gradient(120deg,#0e2e47,#195e70);border-color:#326379;border-radius:19px}.cl136 .head h2{font-size:clamp(19px,2vw,25px)}.cl136 .head button,.cl136 .head select{min-height:42px}.cl136 .tabs{margin-bottom:8px;gap:7px}.cl136 .tabs button{min-height:43px;padding-inline:15px}.cl136 .tabs .sel{background:#185e74;border-color:#185e74}.cl136 .cl151-goal{font-size:13px;padding:10px 14px;margin:0 0 14px;border:1px solid var(--line,#d7e2eb);background:var(--surface,#fff);border-radius:10px;line-height:1.8}.cl136 .brief-card strong{font-size:clamp(23px,2.6vw,32px)}.cl136 .brief-card span{font-size:12px;font-weight:750}.cl136 .cl151-help{border-top:1px solid var(--line,#e3eaf0);margin-top:8px;padding-top:7px}.cl136 .cl151-help summary{cursor:pointer;color:#12687d;font-size:11px;font-weight:800;display:flex;justify-content:space-between;align-items:center;gap:8px}.cl136 .cl151-help summary span{font-size:12px!important;display:grid!important;place-items:center;background:#e9f5f7;border-radius:50%;width:20px;height:20px;color:#12687d}.cl136 .cl151-help p{margin:6px 0 0;font-size:11px;line-height:1.8}.cl136 .cl151-board{background:var(--surface,#fff);border:1px solid var(--line,#d7e2eb);border-radius:18px;padding:18px;margin:19px 0;box-shadow:0 8px 24px rgba(12,47,73,.04)}.cl136 .cl151-heading{display:flex;flex-wrap:wrap;justify-content:space-between;gap:9px;align-items:center;margin-bottom:14px}.cl136 .cl151-heading h3{margin:0;font-size:19px;font-weight:900}.cl136 .cl151-heading p{font-size:12px;color:var(--muted,#64748b);margin:4px 0}.cl136 .cl151-heading small{font-size:11px;background:var(--bg,#eef5f8);padding:7px 10px;border-radius:9px}.cl136 .cl151-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(250px,100%),1fr));gap:12px}.cl136 .cl151-decision{display:flex;flex-direction:column;gap:8px;border:1px solid var(--line,#d7e2eb);border-top:4px solid #137e8f;border-radius:13px;padding:15px;min-width:0}.cl136 .cl151-decision.high{border-top-color:#c76a32}.cl136 .cl151-decision.medium{border-top-color:#b18a33}.cl136 .cl151-decision h4{margin:4px 0;font-size:15px;line-height:1.65}.cl136 .cl151-decision p{font-size:12px;line-height:1.85;margin:0;overflow-wrap:anywhere}.cl136 .cl151-meta{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;font-size:11px;color:var(--muted,#64748b)}.cl136 .cl151-evidence,.cl136 .cl151-next{padding:10px;background:var(--bg,#f1f5f9);border-radius:9px}.cl136 .cl151-next{margin-top:auto}.cl136 .cl151-decision button{margin-top:6px;background:#176179;border-color:#176179;color:#fff;min-height:41px}.cl136 .cl151-caution{font-size:11px;line-height:1.8;color:var(--muted,#64748b);margin:11px 0 0}.cl136 button:focus-visible,.cl136 select:focus-visible,.cl136 summary:focus-visible{outline:3px solid #e2b364;outline-offset:3px}.cl136 table tr:hover td{background:rgba(29,97,121,.05)}body[data-theme=\"dark\"] .cl136 .cl151-evidence,body[data-theme=\"dark\"] .cl136 .cl151-next{background:var(--panel,#172033)}@media(max-width:600px){.cl136 .cl151-board{padding:12px}.cl136 .cl151-grid{grid-template-columns:1fr}.cl136 .head{padding:15px}.cl136 .head button{flex:1}.cl136 .cl151-heading small{display:none}}",
+".cl136 .cl152-panel{border:1px solid var(--line,#d9e3ea);background:var(--surface,#fff);padding:18px;border-radius:18px;margin:18px 0}.cl136 .cl152-panel-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}.cl136 .cl152-panel-head h3{font-size:19px;margin:0 0 6px;font-weight:900}.cl136 .cl152-panel-head p{font-size:12px;line-height:1.8;margin:0}.cl136 .cl152-panel-head>span{font-size:11px;padding:6px 10px;border-radius:8px;background:var(--bg,#ecf3f6);color:var(--ink,#1b2636)}.cl136 .cl152-small{font-size:11px;line-height:1.9;color:var(--muted,#64748b)}.cl136 .cl152-page-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(340px,100%),1fr));gap:12px;margin:13px 0}.cl136 .cl152-page{padding:15px;border:1px solid var(--line,#dce4ea);border-radius:13px;min-width:0}.cl136 .cl152-page-heading{display:flex;justify-content:space-between;align-items:center;gap:12px}.cl136 .cl152-name{display:flex;flex-direction:column;gap:7px;min-width:0}.cl136 .cl152-name b{font-size:11px;overflow-wrap:anywhere;line-height:1.6}.cl136 .cl152-badge{display:inline-flex;align-self:flex-start;border-radius:8px;background:var(--bg,#e8f3f6);padding:4px 8px;font-size:10px;font-weight:800}.cl136 .cl152-sessions{font-size:13px;font-weight:900;white-space:nowrap}.cl136 .cl152-page-bar{height:8px;border-radius:9px;overflow:hidden;margin:12px 0;background:var(--bg,#e9f0f3)}.cl136 .cl152-page-bar i{display:block;height:100%;border-radius:9px;background:#16839a}.cl136 .cl152-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.cl136 .cl152-metrics>div{border:1px solid var(--line,#dce4ea);border-radius:10px;padding:9px;min-width:0}.cl136 .cl152-metrics span,.cl136 .cl152-metrics small{font-size:10px;display:block;line-height:1.55;color:var(--muted,#64748b)}.cl136 .cl152-metrics b{display:block;font-size:19px;line-height:1.4;margin:3px 0;font-variant-numeric:tabular-nums}.cl136 .cl152-why{margin-top:12px;padding-top:8px;border-top:1px solid var(--line,#dce4ea)}.cl136 .cl152-why summary{cursor:pointer;font-weight:800;font-size:11px}.cl136 .cl152-why p{font-size:11px;line-height:1.8}.cl136 .cl152-footer{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:14px 0}.cl136 .cl152-footer>div{padding:12px;border-radius:11px;background:var(--bg,#f2f6f9)}.cl136 .cl152-footer b{font-size:12px}.cl136 .cl152-footer p{font-size:11px;line-height:1.85;margin:5px 0 0}.cl136 .cl152-cta{border-top:1px solid var(--line,#dce4ea);padding-top:13px;display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:10px}.cl136 .cl152-cta>button{background:#185e74;color:#fff;border-color:#185e74;min-height:42px}.cl136 .cl152-cta>details{max-width:520px;font-size:11px;line-height:1.8}.cl136 .cl152-cta>details summary{cursor:pointer;font-weight:800}.cl136 .cl152-cta>details .action{display:inline-block;margin:6px 0}@media(max-width:680px){.cl136 .cl152-footer{grid-template-columns:1fr}.cl136 .cl152-panel{padding:12px}.cl136 .cl152-page-list{grid-template-columns:1fr}}",
  ].join('');
  document.head.appendChild(st);
 }
@@ -287,9 +288,56 @@ function pages(d){
  '<div class="note warning">تقسيم URL ليس Funnel تحويلًا، ولا يعني جلسات فريدة. «—» تعني أن Clarity لم يُرجع قيمة قابلة للحساب.</div>'+
  table(['صفحة URL','جلسات','بوت','Scroll Depth','Engagement Time','Rage %','Dead %'],cells)+'</details>'+
  '<div class="grid">'+breakdown('Medium',dim.Medium,30)+breakdown('Channel',dim.Channel,30)+'</div>'+
- '<section class="box"><h3>الخطوة التالية لتطوير صفحة المنتج والشراء</h3><p>ابدأ بأكثر صفحات المنتج والشراء زيارة، وافحص أزرار إتمام الطلب وعناصر اختيار المقاس أو الكمية وأخطاء التحميل؛ قارن نتيجة أي تعديل بأوردرات حقيقية داخل كن أونلاين.</p>'+
- '<a class="action" href="https://clarity.microsoft.com/" target="_blank" rel="noopener noreferrer">افتح التسجيلات وخرائط الحرارة في Microsoft Clarity ↗</a></section>';
+ cl152PageInsightPanel(details);
 }
+
+function cl152PageKind(url){
+ const name=tx(url).toLowerCase();
+ if(/(?:^|[/?_-])(checkout|check-out|payment|الدفع|إتمام-الطلب)(?:[/?#_-]|$)/.test(name))return 'إتمام الطلب';
+ if(/(?:^|[/?_-])(cart|basket|السلة|سله)(?:[/?#_-]|$)/.test(name))return 'سلة التسوق';
+ if(/(?:^|[/?_-])(products?|item|items|المنتج|منتج)(?:[/?#_-]|$)/.test(name))return 'صفحة منتج';
+ return 'صفحة من المتجر';
+}
+function cl152PageInsightPanel(pages){
+ const ordered=(Array.isArray(pages)?pages:[])
+  .filter(x=>Number.isFinite(Number(x.sessions))&&Number(x.sessions)>0)
+  .sort((a,b)=>Number(b.sessions)-Number(a.sessions)).slice(0,6);
+ const maximum=Math.max(1,...ordered.map(x=>Number(x.sessions)));
+ const pieces=ordered.map((p,index)=>{
+  const sessions=Number(p.sessions);
+  const rage=numberOrNull(p.rageRate),dead=numberOrNull(p.deadRate),scroll=numberOrNull(p.scrollDepth),engagement=numberOrNull(p.engagementTime);
+  const percent=Math.max(0,Math.min(100,Math.round(sessions/maximum*100)));
+  const sampleEnough=sessions>=30;
+  const flagged=sampleEnough&&((rage!==null&&rage>=15)||(dead!==null&&dead>=20));
+  const tag=!sampleEnough?'عينة صغيرة · أقل من 30 جلسة':flagged?'يستحق مراجعة التفاعل':
+   rage===null&&dead===null?'مؤشرات الاحتكاك غير متاحة':'لا توجد إشارة فوق الحدود الاسترشادية';
+  const action=flagged?'راجع أزرار الشراء وتفاعل الزائر في هذه الصفحة؛ ثم قارن الأثر على الطلبات الفعلية.':
+   !sampleEnough?'انتظر بيانات أكثر قبل تحديد أولوية لهذه الصفحة.':
+   rage===null&&dead===null?'البيانات السلوكية لهذه الصفحة غير مكتملة؛ لا تفترض أن المعدلات صفر.':
+   'قارن هذه الصفحة بغيرها، وافحص مسار الشراء قبل اقتراح تعديل.';
+  return '<article class="cl152-page" data-clarity-native-page>'+
+   '<div class="cl152-page-heading"><div class="cl152-name"><span class="cl152-badge">'+esc(cl152PageKind(p.name))+'</span><b title="'+esc(p.name)+'">'+esc(p.name||'صفحة بدون عنوان')+'</b></div><span class="cl152-sessions">'+n(sessions)+' جلسة</span></div>'+
+   '<div class="cl152-page-bar" aria-label="حجم جلسات الصفحة مقارنة بأكثر الصفحات المعروضة"><i style="width:'+percent+'%"></i></div>'+
+   '<div class="cl152-metrics">'+
+    '<div><span>Rage Clicks</span><b>'+pct(rage)+'</b><small>نقرات متكررة</small></div>'+
+    '<div><span>Dead Clicks</span><b>'+pct(dead)+'</b><small>نقرات بلا استجابة</small></div>'+
+    '<div><span>Scroll Depth</span><b>'+pct(scroll)+'</b><small>عمق التمرير</small></div>'+
+    '<div><span>Engagement</span><b>'+n(engagement)+'</b><small>وفق وحدة التصدير</small></div>'+
+   '</div><details class="cl152-why"><summary>'+esc(tag)+' · افهم الرقم والخطوة المناسبة</summary><p>'+esc(action)+'</p></details></article>';
+ }).join('');
+ return '<section class="cl152-panel" data-clarity-native-insights>'+
+  '<header class="cl152-panel-head"><div><h3>تحليل صفحات المتجر داخل كن أونلاين</h3>'+
+  '<p>مؤشرات مستوردة بالفعل من Microsoft Clarity عبر Data Export API، من غير مغادرة السيستم.</p></div><span>تقارير مجمعة · ليست خرائط حرارية</span></header>'+
+  (ordered.length?'<p class="cl152-small">الصفحات الأكثر ظهورًا في عينة التصدير. طول الشريط مقارنة بأعلى عدد جلسات معروض فقط؛ جلسات الصفحات لا تُجمع كعدد زوار فريدين.</p><div class="cl152-page-list">'+pieces+'</div>':
+    '<div class="read-empty">لا توجد قياسات صفحات صالحة في العينة الحالية. راجع حالة الربط أو نفّذ مزامنة من أعلى التقرير.</div>')+
+  '<div class="cl152-footer"><div><b>ماذا نقدر نعرض هنا؟</b><p>جلسات الصفحات، عمق التمرير، وقت التفاعل، والنقرات المتكررة أو غير المستجيبة عند إرجاعها من Clarity.</p></div>'+
+  '<div><b>ماذا لا يمكن استيراده تلقائيًا من Export API؟</b><p>فيديو إعادة جلسة بعينها، أو مواضع النقر الفعلية على صورة الصفحة، أو خريطة حرارية مصورة. لن نعرض رسومات تقديرية على أنها بيانات Clarity حقيقية.</p></div></div>'+
+  '<div class="cl152-cta"><button type="button" data-cl136-jump="friction">اعرض تشخيص مشاكل التفاعل داخل السيستم ←</button>'+
+  '<details><summary>تحتاج التسجيلات والخرائط الأصلية؟</summary><p>متاحة حاليًا في لوحة Microsoft Clarity نفسها، وليست جزءًا من البيانات التي يتيحها Data Export API للربط التلقائي.</p>'+
+  '<a class="action" target="_blank" rel="noopener noreferrer" href="https://clarity.microsoft.com/">فتح التسجيلات والخرائط الأصلية ↗</a></details></div>'+
+  '</section>';
+}
+
 function audience(d){
  const dimsData=d.latest.metrics.dimensions||{};
  return '<div class="grid">'+['Source','Channel','Medium','Device','Browser','OS','Country/Region','Campaign'].map(x=>breakdown(x,dimsData[x],30)).join('')+'</div>';
@@ -425,5 +473,5 @@ function hook(){
  setTimeout(shortcut,150);
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',hook,{once:true});else hook();
-window.KunClarityGrowthV136={open,version:'151.0'};
+window.KunClarityGrowthV136={open,version:'152.0'};
 })();
