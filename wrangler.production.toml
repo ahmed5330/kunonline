@@ -34,5 +34,9 @@ APP_ENV = "production"
 TRACKING_PROVIDER = "track123"
 META_GRAPH_API_VERSION = "v25.0"
 
+# Real Workers AI for native, up-to-date marketing analysis on Production.
+[ai]
+binding = "AI"
+
 [observability]
 enabled = true
