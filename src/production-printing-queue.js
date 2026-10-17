@@ -32,7 +32,7 @@ function mapOrder(r){
   const history=arr(r.history),queued=latest(history,'jt_print_queued'),created=latest(history,'jt_shipment_created'),printed=latest(history,'jt_label_printed');
   const shipment=(created?.shipment&&typeof created.shipment==='object'?created.shipment:queued?.shipment&&typeof queued.shipment==='object'?queued.shipment:{})||{};
   return {
-    id:r.id,clientId:r.client_id,storeId:r.store_id||'',ref:r.ref||r.id,date:r.date||r.created_at||'',createdAt:r.created_at||'',
+    id:r.id,clientId:r.client_id,storeId:r.store_id||'',storeName:r.store_name||'',ref:r.ref||r.id,date:r.date||r.created_at||'',createdAt:r.created_at||'',
     name:r.name||'',phone:r.phone||'',phone2:shipment.receiverPhone2||r.jnt_phone2||'',gov:r.gov||'',address:r.address||'',
     product:r.product||'',qty:Number(r.qty)||1,total:Number(r.total)||0,note:r.note||'',awb:r.awb||created?.awb||'',state:r.state||'confirmed',checkpoint:r.checkpoint||'',
     province:shipment.province||r.jnt_province||r.gov||'',provinceCode:shipment.provinceCode||r.jnt_province_code||'',
@@ -45,20 +45,46 @@ function mapOrder(r){
   };
 }
 
+/**
+ * Keep the legacy combined response for Android callers, but let the web Printing
+ * queue page safely through ALL confirmed orders instead of silently dropping older
+ * work whenever recently shipped records fill the old LIMIT 1000.
+ */
 export async function handleProductionPrintingQueue({request,env,ctx,delegate}){
   const url=new URL(request.url);
   if(url.pathname!=='/api/printing'||request.method.toUpperCase()!=='GET')return null;
   try{
     const me=await currentUser(delegate,request,env,ctx),clientId=clientIdFor(me,url),access=await listMyStores(env,me,clientId);
-    const states=['confirmed','preparing','shipped'];
-    const where=[`client_id=?`,`state IN (${states.map(()=>'?').join(',')})`],binds=[clientId,...states];
-    if(!access.allStores){
-      const ids=(access.stores||[]).map(x=>String(x.id)).filter(Boolean);
-      if(!ids.length)return json({ok:true,clientId,orders:[]});
-      where.push(`store_id IN (${ids.map(()=>'?').join(',')})`);binds.push(...ids);
+    const stores=access.stores||[],storeIds=stores.map(store=>String(store.id)).filter(Boolean);
+    const selectedStoreId=clean(url.searchParams.get('storeId'),160);
+    if(selectedStoreId&&!storeIds.includes(selectedStoreId))throw Object.assign(new Error('المتجر خارج المتاجر المسموح بها'),{status:403,code:'STORE_ISOLATION'});
+    if(!access.allStores&&!storeIds.length)return json({ok:true,clientId,orders:[],stores:[],counts:{waiting:0,printed:0},total:0,hasMore:false});
+    const where=['o.client_id=?'],binds=[clientId];
+    if(selectedStoreId){where.push('o.store_id=?');binds.push(selectedStoreId);}
+    else if(!access.allStores){where.push(`o.store_id IN (${storeIds.map(()=>'?').join(',')})`);binds.push(...storeIds);}
+    const scopedWhere=where.join(' AND ');
+    const source=`FROM orders o LEFT JOIN stores s ON s.id=o.store_id AND s.client_id=o.client_id WHERE ${scopedWhere}`;
+    const counts=await env.DB.prepare(`SELECT
+      COALESCE(SUM(CASE WHEN o.state IN ('confirmed','preparing') THEN 1 ELSE 0 END),0) waiting,
+      COALESCE(SUM(CASE WHEN o.state='shipped' AND instr(COALESCE(o.history,''),'jt_label_printed')>0 THEN 1 ELSE 0 END),0) printed
+      ${source}`).bind(...binds).first();
+    const normalizedCounts={waiting:Number(counts?.waiting)||0,printed:Number(counts?.printed)||0};
+    const tab=clean(url.searchParams.get('tab'),20);
+    const storeOptions=stores.map(store=>({id:store.id,name:store.name,code:store.code||'',role:store.role||'owner'}));
+    if(tab==='waiting'||tab==='printed'){
+      const limit=Math.min(200,Math.max(1,Math.floor(Number(url.searchParams.get('limit')))||100));
+      const offset=Math.min(1000000,Math.max(0,Math.floor(Number(url.searchParams.get('offset')))||0));
+      const stateFilter=tab==='waiting'?"o.state IN ('confirmed','preparing')":"o.state='shipped' AND instr(COALESCE(o.history,''),'jt_label_printed')>0";
+      const {results=[]}=await env.DB.prepare(`SELECT o.*,s.name store_name ${source} AND ${stateFilter} ORDER BY o.created_at DESC,o.id DESC LIMIT ? OFFSET ?`).bind(...binds,limit,offset).all();
+      const orders=results.map(mapOrder).filter(order=>tab==='waiting'?!order.printed:order.printed);
+      const total=normalizedCounts[tab];
+      return json({ok:true,clientId,selectedStoreId:selectedStoreId||null,stores:storeOptions,orders,tab,limit,offset,total,hasMore:offset+limit<total,counts:normalizedCounts});
     }
-    const {results=[]}=await env.DB.prepare(`SELECT * FROM orders WHERE ${where.join(' AND ')} ORDER BY created_at DESC LIMIT 1000`).bind(...binds).all();
-    const orders=results.map(mapOrder).filter(order=>order.state!=='shipped'||order.queuedForPrint||order.printed);
-    return json({ok:true,clientId,orders});
+    // Backward-compatible response for older Android builds: shipping history cannot
+    // crowd confirmed orders out of the first page.
+    const pending=await env.DB.prepare(`SELECT o.*,s.name store_name ${source} AND o.state IN ('confirmed','preparing') ORDER BY o.created_at DESC,o.id DESC LIMIT 1000`).bind(...binds).all();
+    const printed=await env.DB.prepare(`SELECT o.*,s.name store_name ${source} AND o.state='shipped' AND (instr(COALESCE(o.history,''),'jt_print_queued')>0 OR instr(COALESCE(o.history,''),'jt_label_printed')>0) ORDER BY o.created_at DESC,o.id DESC LIMIT 250`).bind(...binds).all();
+    const orders=[...(pending.results||[]),...(printed.results||[])].map(mapOrder).filter(order=>order.state!=='shipped'||order.queuedForPrint||order.printed);
+    return json({ok:true,clientId,selectedStoreId:selectedStoreId||null,stores:storeOptions,orders,counts:normalizedCounts,truncated:normalizedCounts.waiting>1000});
   }catch(error){return json({error:error?.message||'تعذر تحميل قسم الطباعة',code:error?.code||'PRINTING_QUEUE_ERROR'},Number(error?.status)>=400&&Number(error.status)<600?Number(error.status):500);}
 }

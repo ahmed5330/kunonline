@@ -20,7 +20,6 @@ import {handleInventoryUnitTracking,syncInventoryTrackingAfterResponse,reconcile
 
 const LEGACY_APK_URL='https://github.com/ahmed5330/kunonline/releases/download/android-latest/Kun-Online-Mobile.apk';
 const DIRECT_APK_PATH='/api/mobile/app-update/apk';
-const PRINTING_STATES=new Set(['confirmed','preparing']);
 const HTML_PATHS=new Set(['/','/index.html','/v2','/v2/','/v2/index.html']);
 // Auth endpoints must reach one signer/verifier, without billing, finance or UI response adapters.
 const AUTH_PATHS=new Set(['/api/login','/api/me','/api/logout']);
@@ -79,13 +78,13 @@ async function websiteWithDirectAndroidDownload(request,env){
     .replaceAll('/v2/modules-v51-permission-navigation.js?v=51.10','/v2/modules-v51-permission-navigation.js?v=51.15')
     .replace(/\/v2\/modules-v57-section-reload\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v57-section-reload.js?v=57.3')
     .replaceAll('/v2/modules-v78-jt-shipping-order.js?v=78.4','/v2/modules-v78-jt-shipping-order.js?v=78.5')
-    .replaceAll('/v2/modules-v79-printing.js?v=79.7','/v2/modules-v79-printing.js?v=79.9')
+    .replaceAll('/v2/modules-v79-printing.js?v=79.7','/v2/modules-v79-printing.js?v=79.10')
     .replaceAll('/v2/modules-v117-team-collaboration.js?v=117.0','/v2/modules-v117-team-collaboration.js?v=117.2')
     .replaceAll('/v2/modules-v118-collaboration-order-picker.js?v=118.0','/v2/modules-v118-collaboration-order-picker.js?v=118.1.1');
   // v57 owns the ordered v66 -> v67 -> v68... chain. Injecting v66/v67 here
   // executes them twice and splits the hub state from its event handlers.
   if(!html.includes('/v2/modules-v116-print-routing.js')){
-    html=html.replace('</body>','<script src="/v2/modules-v116-print-routing.js?v=116.0" data-kun-print-routing="1"></script></body>');
+    html=html.replace('</body>','<script src="/v2/modules-v116-print-routing.js?v=116.1" data-kun-print-routing="1"></script></body>');
   }
   if(!html.includes('/v2/modules-v117-team-collaboration.js')){
     html=html.replace('</body>','<script src="/v2/modules-v117-team-collaboration.js?v=117.2" data-kun-team-collaboration="1"></script></body>');
@@ -126,16 +125,9 @@ async function websiteWithDirectAndroidDownload(request,env){
   return new Response(html,{status:asset.status,headers});
 }
 
-async function routeConfirmedOrdersToPrinting(request,response){
-  const url=new URL(request.url);
-  if(request.method!=='GET'||url.pathname!=='/api/customer-service'||!response?.ok)return response;
-  const data=await response.clone().json().catch(()=>null);
-  if(!data||!Array.isArray(data.orders))return response;
-  data.orders=data.orders.filter(order=>!PRINTING_STATES.has(String(order?.state||'')));
-  if(Array.isArray(data.stages))data.stages=data.stages.filter(stage=>!PRINTING_STATES.has(String(stage?.id||'')));
-  const headers=new Headers(response.headers);headers.set('Content-Type','application/json; charset=utf-8');headers.set('Cache-Control','no-store');headers.set('X-Kun-Data-Source','preview');headers.delete('Content-Length');
-  return new Response(JSON.stringify(data),{status:response.status,headers});
-}
+// The same order must be readable in Customer Service and Printing.
+// Never hide confirmed/preparing records from the Customer Service response.
+function preserveCustomerServiceOrderVisibility(_request,response){return response;}
 
 function collaborationSchemaFailure(){
   return new Response(JSON.stringify({error:'تعذر تفعيل مخطط تواصل الفريق',code:'COLLAB_SCHEMA_BOOTSTRAP_FAILED'}),{status:503,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}});
@@ -187,7 +179,7 @@ export default {
 
     const mobileSync=await handleMobileSync({request,load:async sourceRequest=>{
       const board=await handleProductionCustomerService({request:sourceRequest,env:dataEnv,ctx,delegate});
-      return board?routeConfirmedOrdersToPrinting(sourceRequest,board):delegate.fetch(sourceRequest);
+      return board?preserveCustomerServiceOrderVisibility(sourceRequest,board):delegate.fetch(sourceRequest);
     }});
     if(mobileSync)return mobileSync;
 
@@ -205,7 +197,7 @@ export default {
 
     const customerService=await handleProductionCustomerService({request,env:dataEnv,ctx,delegate});
     if(customerService){
-      const routed=await routeConfirmedOrdersToPrinting(request,customerService);
+      const routed=await preserveCustomerServiceOrderVisibility(request,customerService);
       return syncInventoryTrackingAfterResponse({request,response:routed,env:dataEnv,actor:'production'});
     }
 

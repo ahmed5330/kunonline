@@ -84,6 +84,12 @@ must(entry.includes("path==='/api/customer-service'")&&entry.includes("path.star
 
 await import('../src/inventory-fifo.js');
 assertBrowserModule(ui);assertBrowserModule(richUi);assertBrowserModule(editUi);assertBrowserModule(interactionsUi);assertBrowserModule(searchUi);assertBrowserModule(confirmUi);
+const printRouting=await readFile(new URL('../public/v2/modules-v116-print-routing.js',import.meta.url),'utf8');
+const periodUi=await readFile(new URL('../public/v2/modules-v109-operational-date-contact.js',import.meta.url),'utf8');
+const printingUi=await readFile(new URL('../public/v2/modules-v79-printing.js',import.meta.url),'utf8');
+must(printRouting.includes('const moved=original?.(orderId,state,deferUntil)')&&!printRouting.includes('card.remove()'),'Confirmed orders must remain in Customer Service after being routed to Printing');
+must(periodUi.includes("UNFILTERED_WORKFLOW_VIEWS=new Set(['customer-service','printing'])")&&periodUi.includes("if(!from||!to)return nativeFetch(input,init)"),'Operational queues must show all pending work by default, not only orders created today');
+must(printingUi.includes("'kun:order-workflow-updated'")&&printingUi.includes("result.state==='shipped'"),'A successful J&T print must broadcast the persisted shipping state');
 console.log('Customer Service contract passed: no-answer follow-up, name/phone search, unified Call + Contact attempts, in-place edits without board reload, inventory-backed confirmation, FIFO reservation and governed multi-store operations.');
 
 function assertBrowserModule(source){try{new Function(source);}catch(error){throw new Error(`Customer Service browser module must parse: ${error.message}`);}}

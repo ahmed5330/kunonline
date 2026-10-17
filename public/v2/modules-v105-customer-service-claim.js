@@ -35,8 +35,7 @@
   }
   function ensureContactingColumn(){
     const page=root()?.querySelector('.cs-page'),board=page?.querySelector('.cs-board');if(!board)return null;
-    board.querySelector('.cs-column[data-state="shipped"]')?.remove();
-    page.querySelectorAll('select[data-cs-state] option[value="shipped"]').forEach(option=>option.remove());
+    // Keep the shipped column and state option visible so the same order can be followed after printing.
     let column=board.querySelector('.cs-column[data-state="contacting"]');
     if(!column){
       column=document.createElement('section');column.className='cs-column';column.dataset.state='contacting';column.innerHTML='<div class="cs-column-head"><span>جاري الاتصال</span><span class="cs-count">0</span></div><div class="cs-list"><div class="cs-empty">لا يوجد أوردرات جاري التواصل عليها</div></div>';
