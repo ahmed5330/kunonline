@@ -10,6 +10,7 @@ import {handleProductionJntShippingEdit} from './production-jnt-shipping-edit.js
 import {handleProductionPrintingQueue} from './production-printing-queue.js';
 import {handleInternalCollaboration} from './internal-collaboration.js';
 import {handleCollaborationOrderSearch} from './internal-collaboration-order-search.js';
+import {handleMobileOrderSearch} from './mobile-global-order-search.js';
 import {ensureInternalCollaborationSchema} from './internal-collaboration-schema.js';
 import {handleProductionPreviewParity} from './production-preview-parity.js';
 import {handleProductionEasyOrdersHealth} from './production-easyorders-health.js';
@@ -206,6 +207,9 @@ export default {
       const routed=await preserveCustomerServiceOrderVisibility(request,customerService);
       return syncInventoryTrackingAfterResponse({request,response:routed,env:dataEnv,actor:'production'});
     }
+
+    const globalOrderSearch=await handleMobileOrderSearch({request,env:dataEnv,ctx,delegate});
+    if(globalOrderSearch)return globalOrderSearch;
 
     const collaborationOrderSearch=await handleCollaborationOrderSearch({request,env:dataEnv,ctx,delegate});
     if(collaborationOrderSearch)return collaborationOrderSearch;
