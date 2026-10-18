@@ -12,9 +12,9 @@ android {
         applicationId = "com.kunonline.callerid.stable"
         minSdk = 29
         targetSdk = 35
-        // v2.9.7: native historical order search, centered Home, delta parse optimisations.
-        versionCode = 138
-        versionName = "2.9.7"
+        // v2.9.8: single-request store discovery and silent cached background refresh.
+        versionCode = 139
+        versionName = "2.9.8"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
