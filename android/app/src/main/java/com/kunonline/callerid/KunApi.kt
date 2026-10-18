@@ -304,7 +304,7 @@ object KunApi {
             // The store picker and /api/state must use the same verified scope.
             // Previously the home screen could display a selected store while the
             // first successful state request still belonged to another client/store.
-            if (selectedStore == null) {
+            if (selectedStore == null && (active.storeId.isNotBlank() || selected != null)) {
                 if (active.clientId.isNotBlank() && active.storeId.isNotBlank()) {
                     SecureStore.put(context, AUTH_PREFS, SELECTED_STORE_KEY,
                         JSONObject().put("clientId", active.clientId).put("storeId", active.storeId).toString())
