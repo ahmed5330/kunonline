@@ -85,7 +85,7 @@ function clientIdFor(me,url,body={}){
 function mapOrder(r){
   const history=arr(r.history),contactLog=arr(r.contact_log);
   const notes=history.filter(x=>x?.type==='internal_note'&&clean(x.note));
-  return {id:r.id,clientId:r.client_id,storeId:r.store_id||'',storeName:'',storeCode:'',ref:r.ref||r.id,date:r.date||r.created_at||'',createdAt:r.created_at||'',name:r.name||'',phone:r.phone||'',gov:r.gov||'',address:r.address||'',product:r.product||'',productId:r.product_id||'',variantId:r.variant_id||'',productNote:r.product_note||'',qty:n(r.qty)||1,unitPrice:n(r.unit_price),total:n(r.total),source:r.source||'',customerNote:r.note||'',awb:r.awb||'',state:r.state||'pending',checkpoint:r.checkpoint||LABELS[r.state]||'',deferUntil:r.defer_until||'',stockBatchId:'',stockBatchName:'',stockAllocationStatus:'',contactLog,contactCount:contactLog.length,history,internalNotes:notes,latestInternalNote:notes.at(-1)?.note||'',returnedFromDeferredToday:false};
+  return {id:r.id,clientId:r.client_id,storeId:r.store_id||'',storeName:'',storeCode:'',ref:r.ref||r.id,date:r.date||r.created_at||'',createdAt:r.created_at||'',name:r.name||'',phone:r.phone||'',gov:r.gov||'',address:r.address||'',product:r.product||'',productId:r.product_id||'',variantId:r.variant_id||'',productNote:r.product_note||'',qty:n(r.qty)||1,unitPrice:n(r.unit_price),total:n(r.total),source:r.source||'',customerNote:r.note||'',awb:r.awb||'',state:r.state||'pending',checkpoint:r.checkpoint||LABELS[r.state]||'',deferUntil:r.defer_until||'',stockBatchId:'',stockBatchName:'',stockAllocationStatus:'',contactLog,contactCount:contactLog.filter(e=>e?.channel==='phone'&&e?.intent==='screened').length,history,internalNotes:notes,latestInternalNote:notes.at(-1)?.note||'',returnedFromDeferredToday:false};
 }
 async function getOrder(env,clientId,orderId){
   const row=await env.DB.prepare(`SELECT ${ORDER_COLS} FROM orders WHERE id=? AND client_id=? LIMIT 1`).bind(orderId,clientId).first();
@@ -183,12 +183,19 @@ export async function handleProductionCustomerService({request,env,ctx,delegate}
       if(claimOwner&&!['confirmed','no_answer','cancelled'].includes(state))return json({error:'الطلب محجوز في جاري التواصل حتى تم التأكيد أو العميل لا يرد أو العميل لغى',code:'CONTACT_DECISION_REQUIRED'},409);
       if(claimOwner&&claimOwner!==actorId&&me.role!=='admin')return json({error:'الطلب جارٍ التواصل معه بواسطة موظف آخر',code:'CONTACT_OWNED_BY_OTHER'},409);
       const deferUntil=state==='deferred'?clean(body.deferUntil):null;if(state==='deferred'&&!/^\d{4}-\d{2}-\d{2}$/.test(deferUntil))return json({error:'حدد تاريخ التأجيل',code:'DEFER_DATE_REQUIRED'},400);
-      const history=arr(row.history);history.push({type:'state',state,at:stamp,by:actor,byName:actor,byUserId:me.uid||null});
+      const cancelReason=clean(body.cancelReason||body.reason||body.note);
+      if(state==='cancelled'&&!cancelReason)return json({error:'اكتب سبب الإلغاء أولًا',code:'CANCEL_REASON_REQUIRED'},400);
+      if(cancelReason.length>2000)return json({error:'سبب الإلغاء طويل جدًا',code:'CANCEL_REASON_TOO_LONG'},400);
+      const history=arr(row.history);
+      history.push({type:'state',state,previousState:row.state,at:stamp,by:actor,byName:actor,byUserId:me.uid||me.id||null,
+        ...(state==='cancelled'?{note:cancelReason,reason:cancelReason}:{} )});
       await env.DB.prepare('UPDATE orders SET state=?, checkpoint=?, defer_until=?, history=?, contact_claim_user_id=CASE WHEN ? IN (\'confirmed\',\'no_answer\',\'cancelled\') THEN NULL ELSE contact_claim_user_id END,contact_claim_name=CASE WHEN ? IN (\'confirmed\',\'no_answer\',\'cancelled\') THEN NULL ELSE contact_claim_name END,contact_claimed_at=CASE WHEN ? IN (\'confirmed\',\'no_answer\',\'cancelled\') THEN NULL ELSE contact_claimed_at END WHERE id=? AND client_id=?').bind(state,LABELS[state]||state,deferUntil,JSON.stringify(history),state,state,state,orderId,clientId).run();
       return json({ok:true,state,checkpoint:LABELS[state]||state,deferUntil,history,contactCount:arr(row.contact_log).length});
     }
     if(action==='contact'&&method==='POST'){
-      const channel=['phone','whatsapp','messenger','instagram','tiktok'].includes(clean(body.channel).toLowerCase())?clean(body.channel).toLowerCase():'phone',intent=body.intent==='call'?'call':'contact',event={type:'contact',channel,intent,at:stamp,by:actor,byName:actor,byUserId:me.uid||null};
+      const channel=['phone','whatsapp','messenger','instagram','tiktok'].includes(clean(body.channel).toLowerCase())?clean(body.channel).toLowerCase():'phone',
+        intent=channel==='phone'&&body.intent==='screened'?'screened':body.intent==='call'?'call':'contact',
+        event={type:'contact',channel,intent,at:stamp,by:actor,byName:actor,byUserId:me.uid||me.id||null};
       const saved=await appendEvent(env,row,event,{contact:true});return json({ok:true,entry:event,history:saved.history,log:saved.contactLog,contactCount:saved.contactLog.length});
     }
     if(action==='notes'&&method==='POST'){
