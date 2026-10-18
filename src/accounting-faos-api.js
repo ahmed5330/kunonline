@@ -1,0 +1,126 @@
+import {requirePermission,resolveTenant} from './access-control.js';
+import {resolveStoreScope} from './store-scope.js';
+import {ACCOUNTS,ACCOUNT_BY_CODE,normalizeLines,syntheticCommerceScenario} from './accounting-faos-core.js';
+import {accountingOverview} from './accounting.js';
+
+const respond=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}});
+const clean=(s,max=250)=>String(s??'').trim().slice(0,max);
+const iso=/^\d{4}-\d{2}-\d{2}$/;
+const month=/^\d{4}-(0[1-9]|1[0-2])$/;
+function fail(message,status=400,code='FAOS_INVALID_REQUEST'){throw Object.assign(new Error(message),{status,code});}
+function period(url){
+  const date=new Intl.DateTimeFormat('en-CA',{year:'numeric',month:'2-digit',day:'2-digit',timeZone:'Africa/Cairo'}).format(new Date());
+  const from=clean(url.searchParams.get('from'))||date.slice(0,7)+'-01';
+  const to=clean(url.searchParams.get('to'))||date;
+  if(!iso.test(from)||!iso.test(to)||from>to)fail('نطاق التاريخ غير صحيح');
+  return {from,to};
+}
+async function meFor(req,env,ctx,delegate){
+  const url=new URL(req.url);url.pathname='/api/me';url.search='';
+  const r=await delegate.fetch(new Request(url,{method:'GET',headers:req.headers}),env,ctx);
+  const me=await r.json().catch(()=>({}));
+  if(!r.ok||!me?.role)fail('مطلوب تسجيل الدخول',401,'AUTH_REQUIRED');
+  return me;
+}
+async function scopeFor(req,env,me,body=null,write=false){
+  const url=new URL(req.url);
+  const clientId=resolveTenant(me,clean(body?.clientId||url.searchParams.get('clientId'))||null);
+  const requested=clean(body?.storeId||url.searchParams.get('storeId'))||null;
+  const scope=await resolveStoreScope(env,me,clientId,requested,{write});
+  if(write&&!scope.storeId)fail('يجب تحديد المتجر لإضافة القيود',400,'STORE_SELECTION_REQUIRED');
+  return {clientId,storeId:scope.storeId||null};
+}
+const dbFailure=error=>{
+  if(/no such table: faos_/i.test(String(error?.message||'')))return fail('لم يتم تطبيق ترحيل قاعدة بيانات FAOS بعد',503,'FAOS_MIGRATION_REQUIRED');
+  throw error;
+};
+async function balance(env,{clientId,storeId,from,to}){
+  const storeFilter=storeId?' AND j.store_id=?':'',bind=storeId?[clientId,storeId,from,to]:[clientId,from,to];
+  let rows;
+  try{
+    const data=await env.DB.prepare(`SELECT l.account_code code,SUM(l.debit_minor) debit_minor,SUM(l.credit_minor) credit_minor
+      FROM faos_journal_lines l JOIN faos_journals j ON j.id=l.journal_id AND j.client_id=l.client_id AND j.store_id=l.store_id
+      WHERE j.client_id=?${storeFilter} AND j.entry_date BETWEEN ? AND ? AND j.status='posted'
+      GROUP BY l.account_code ORDER BY l.account_code`).bind(...bind).all();
+    rows=data.results||[];
+  }catch(error){dbFailure(error)}
+  const accounts=rows.map(r=>{const a=ACCOUNT_BY_CODE.get(String(r.code)),dr=Number(r.debit_minor)||0,cr=Number(r.credit_minor)||0;return {code:r.code,name:a?.name||'حساب غير معروف',type:a?.type||'unknown',debit:dr/100,credit:cr/100,net:(dr-cr)/100};});
+  const debit=rows.reduce((s,r)=>s+(Number(r.debit_minor)||0),0),credit=rows.reduce((s,r)=>s+(Number(r.credit_minor)||0),0);
+  const rev=accounts.filter(x=>x.type==='revenue').reduce((s,x)=>s-x.net,0),
+        returns=accounts.filter(x=>x.type==='contra_revenue').reduce((s,x)=>s+x.net,0),
+        expenses=accounts.filter(x=>x.type==='expense').reduce((s,x)=>s+x.net,0);
+  return {accounts,balanced:debit===credit,totalDebit:debit/100,totalCredit:credit/100,netSales:(rev-returns),expenses,netProfit:rev-returns-expenses,source:'posted_faos_journals_only',includesLegacyOperationalEvents:false};
+}
+async function journals(env,{clientId,storeId,from,to}){
+  const filter=storeId?' AND store_id=?':'',args=storeId?[clientId,storeId,from,to,100]:[clientId,from,to,100];
+  try{const q=await env.DB.prepare(`SELECT id,store_id storeId,entry_date entryDate,currency,source_type sourceType,description,reversal_of reversalOf,created_by createdBy,created_at createdAt FROM faos_journals WHERE client_id=?${filter} AND entry_date BETWEEN ? AND ? ORDER BY entry_date DESC,created_at DESC LIMIT ?`).bind(...args).all();return q.results||[];}catch(error){dbFailure(error)}
+}
+async function ensureOpen(env,clientId,storeId,date){
+  let row;
+  try{row=await env.DB.prepare('SELECT status FROM faos_periods WHERE client_id=? AND store_id=? AND period_month=?').bind(clientId,storeId,date.slice(0,7)).first()}catch(error){dbFailure(error)}
+  if(row?.status==='closed')fail('الفترة المحاسبية مقفولة؛ يجب فتحها بصلاحية معتمدة',409,'FAOS_PERIOD_CLOSED');
+}
+async function writeJournal(env,{clientId,storeId,date,currency,description,sourceType,sourceKey,rows,actor,reversalOf=null}){
+  if(!iso.test(date)||Number.isNaN(Date.parse(date+'T12:00:00Z')))fail('التاريخ غير صحيح');
+  if(currency!=='EGP')fail('هذا الإصدار يدعم ترحيل القيود بالجنيه المصري فقط حتى اعتماد دفتر العملات',400,'FAOS_CURRENCY_NOT_SUPPORTED');
+  if(!sourceKey||sourceKey.length<8||sourceKey.length>120)fail('معرف العملية مطلوب لمنع التكرار');
+  const {lines}=normalizeLines(rows);
+  await ensureOpen(env,clientId,storeId,date);
+  const id='FAOS-'+crypto.randomUUID(),createdAt=new Date().toISOString();
+  const operations=[env.DB.prepare('INSERT INTO faos_journals (id,client_id,store_id,entry_date,currency,source_type,source_key,description,status,reversal_of,created_by,created_at) VALUES (?,?,?,?,?,?,?,? ,\'posted\',?,?,?)').bind(id,clientId,storeId,date,currency,sourceType,sourceKey,description,reversalOf,actor,createdAt)];
+  for(const row of lines){operations.push(env.DB.prepare('INSERT INTO faos_journal_lines(id,journal_id,client_id,store_id,account_code,debit_minor,credit_minor,memo) VALUES (?,?,?,?,?,?,?,?)').bind('FAL-'+crypto.randomUUID(),id,clientId,storeId,row.accountCode,row.debitMinor,row.creditMinor,row.memo));}
+  try{await env.DB.batch(operations);}
+  catch(error){
+    if(/UNIQUE constraint failed: faos_journals.client_id|faos_journals.client_id, faos_journals.source_type|constraint failed.*source_key/i.test(String(error?.message||''))){
+      const existing=await env.DB.prepare('SELECT id,store_id storeId,entry_date entryDate FROM faos_journals WHERE client_id=? AND source_type=? AND source_key=?').bind(clientId,sourceType,sourceKey).first();
+      if(existing){if(existing.storeId!==storeId)fail('المعرف مستخدم في متجر مختلف',409,'FAOS_IDEMPOTENCY_CONFLICT');return {ok:true,id:existing.id,deduplicated:true};}
+    }dbFailure(error);
+  }
+  return {ok:true,id,deduplicated:false};
+}
+export async function handleFinancialAccountingOS({request,env,ctx,delegate}){
+  const url=new URL(request.url),path=url.pathname,method=request.method.toUpperCase();
+  if(!path.startsWith('/api/accounting/faos/'))return null;
+  try{
+    const me=await meFor(request,env,ctx,delegate);
+    requirePermission(me,'finance',method==='GET'?'read':'write');
+    if(method==='GET'&&path==='/api/accounting/faos/catalog')return respond({ok:true,accounts:ACCOUNTS});
+    if(method==='GET'&&path==='/api/accounting/faos/simulation'){
+      // no D1 changes under any environment, intentionally mock-only.
+      return respond({ok:true,...syntheticCommerceScenario()});
+    }
+    const body=method==='POST'?await request.json().catch(()=>({})):{};
+    const scope=await scopeFor(request,env,me,body,method!=='GET');
+    if(method==='GET'&&path==='/api/accounting/faos/overview'){
+      const range=period(url);
+      const [ledger,legacy,latest]=await Promise.all([
+        balance(env,{...scope,...range}),
+        accountingOverview(env,{...scope,...range}),
+        journals(env,{...scope,...range})
+      ]);
+      const warnings=[];
+      if(legacy.unverifiedCollectedOrders>0)warnings.push({code:'UNVERIFIED_COD',count:legacy.unverifiedCollectedOrders,text:'توجد طلبات معلمة كمحصلة بدون مبلغ تحصيل مؤكّد؛ لا يجوز اعتبار قيمتها نقدًا محصلًا'});
+      warnings.push({code:'PARALLEL_LEDGER',text:'دفتر FAOS الجديد مستقل حاليًا عن الطلبات والمحفظة القديمة؛ لا يمكن اعتماد ميزانه كقوائم نهائية قبل ترحيل الأحداث والمطابقة'});
+      return respond({ok:true,scope,period:range,legacy,ledger,journals:latest,warnings});
+    }
+    if(method==='POST'&&path==='/api/accounting/faos/journals'){
+      const desc=clean(body.description,500),date=clean(body.date),currency=clean(body.currency||'EGP'),key=clean(body.idempotencyKey,120);
+      if(desc.length<3)fail('اكتب بيانًا واضحًا للقيد');
+      const result=await writeJournal(env,{...scope,date,currency,description:desc,sourceType:'manual',sourceKey:key,rows:body.lines,actor:clean(me.email||me.uid||me.role,200)});
+      return respond(result,result.deduplicated?200:201);
+    }
+    if(method==='POST'&&path==='/api/accounting/faos/reverse'){
+      const originalId=clean(body.journalId,100);
+      let row;
+      try{row=await env.DB.prepare('SELECT * FROM faos_journals WHERE id=? AND client_id=? AND store_id=?').bind(originalId,scope.clientId,scope.storeId).first()}catch(error){dbFailure(error)}
+      if(!row)fail('القيد غير موجود في المتجر',404,'FAOS_JOURNAL_NOT_FOUND');
+      if(row.source_type==='reversal')fail('لا يمكن عكس قيد عكسي آليًا',409);
+      const original=await env.DB.prepare('SELECT account_code accountCode,debit_minor debitMinor,credit_minor creditMinor FROM faos_journal_lines WHERE client_id=? AND store_id=? AND journal_id=?').bind(scope.clientId,scope.storeId,originalId).all();
+      const lines=(original.results||[]).map(l=>({accountCode:l.accountCode,debit:Number(l.creditMinor)/100,credit:Number(l.debitMinor)/100}));
+      const date=clean(body.date)||new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Cairo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+      const outcome=await writeJournal(env,{...scope,date,currency:row.currency,description:'عكس القيد '+originalId,sourceType:'reversal',sourceKey:'reversal:'+originalId,rows:lines,reversalOf:originalId,actor:clean(me.email||me.uid||me.role,200)});
+      return respond(outcome,outcome.deduplicated?200:201);
+    }
+    return respond({error:'المسار غير مدعوم',code:'FAOS_NOT_FOUND'},404);
+  }catch(error){return respond({error:error?.message||'حدث خطأ في نظام الحسابات',code:error?.code||'FAOS_ERROR'},Number(error?.status)||500);}
+}
