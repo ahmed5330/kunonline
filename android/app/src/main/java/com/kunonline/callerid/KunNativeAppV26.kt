@@ -87,7 +87,13 @@ fun KunNativeAppV26(activity: MainActivity) {
             }
 
             if (showCollaboration) {
-                MobileCollaborationDialog(onDismiss = { showCollaboration = false })
+                MobileCollaborationDialog(
+                    onDismiss = { showCollaboration = false },
+                    onHome = {
+                        showCollaboration = false
+                        homeRequest++
+                    }
+                )
             }
 
             if (showSystemSections) {
