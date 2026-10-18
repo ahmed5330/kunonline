@@ -6,6 +6,7 @@ import safety from './index-commerce-v38-safety.js';
 import core from './index-commerce-v38-core.js';
 import {handleJtHistoryReconcile} from './jt-history-reconcile.js';
 import {handleAccountingMonthly} from './accounting-monthly.js';
+import {handleFinancialAccountingOS} from './accounting-faos-api.js';
 import {handleAutomationWorkflowsV104} from './automation-workflows-v104.js';
 import {handleOperationalWorkflowV110} from './operational-workflow-v110.js';
 import {handleMobileAppUpdate} from './mobile-app-update.js';
@@ -25,6 +26,7 @@ const V2_UI_SCRIPTS=[
   '<script src="/v2/modules-v124-dashboard-periods-province.js?v=124.1" data-kun-dashboard-periods-v124="1"></script>',
   '<script src="/v2/modules-v125-dashboard-section-periods.js?v=125.3" data-kun-dashboard-section-periods-v125="1"></script>',
   '<script src="/v2/modules-v126-dashboard-finance-top.js?v=126.5" data-kun-dashboard-finance-top-v126="1"></script>',
+  '<script src="/v2/modules-v155-accounting-faos.js?v=155.1" data-kun-accounting-faos="1"></script>',
   '<script src="/v2/modules-v127-subscriptions.js?v=127.20" data-kun-subscriptions-v127="1"></script>',
   '<script src="/v2/modules-v128-unit-tracking.js?v=128.4" data-kun-unit-tracking-v128="1"></script>'
 ].join('');
@@ -113,6 +115,8 @@ export default {
     if(operational)return operational;
     const automation=await handleAutomationWorkflowsV104({request,env,ctx,delegate:app});
     if(automation)return automation;
+    const faos=await handleFinancialAccountingOS({request,env,ctx,delegate:app});
+    if(faos)return faos;
     const monthly=await handleAccountingMonthly({request,env,ctx,delegate:app});
     if(monthly)return monthly;
     const handled=await handleJtHistoryReconcile({request,env,ctx,delegate:app});
