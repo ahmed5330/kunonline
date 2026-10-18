@@ -34,6 +34,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -273,7 +274,7 @@ private object MobileChatApi {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MobileCollaborationDialog(onDismiss: () -> Unit) {
+fun MobileCollaborationDialog(onDismiss: () -> Unit, onHome: () -> Unit = onDismiss) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var data by remember { mutableStateOf<ChatBootstrap?>(null) }
@@ -422,8 +423,9 @@ fun MobileCollaborationDialog(onDismiss: () -> Unit) {
                         }
                     }
 
-                    when {
-                        selectedStore == null -> {
+                    Box(Modifier.weight(1f)) {
+                        when {
+                            selectedStore == null -> {
                             if (storesLoading) {
                                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                                     CircularProgressIndicator()
@@ -617,6 +619,19 @@ fun MobileCollaborationDialog(onDismiss: () -> Unit) {
                                         }
                                     }
                                 }
+                            }
+                        }
+                    }
+                    }
+                    Surface(color = Color.White, tonalElevation = 3.dp) {
+                        Row(
+                            Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            FilledTonalButton(onClick = onHome) {
+                                Icon(Icons.Outlined.Storefront, contentDescription = "الصفحة الرئيسية")
+                                Spacer(Modifier.width(8.dp))
+                                Text("الرئيسية", fontWeight = FontWeight.ExtraBold)
                             }
                         }
                     }
