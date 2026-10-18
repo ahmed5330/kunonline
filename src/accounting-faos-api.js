@@ -64,7 +64,7 @@ async function operationalQuality(env,{clientId,storeId,from,to}){
       AND NOT EXISTS(SELECT 1 FROM order_duplicate_links d WHERE d.duplicate_order_id=o.id)`).bind(...args).first(),
     env.DB.prepare(`SELECT
       COALESCE(SUM(CASE WHEN type='expense' AND category='مشتريات' THEN amount ELSE 0 END),0) inventory_purchases_expensed,
-      COALESCE(SUM(CASE WHEN type='expense' AND (category LIKE '%إعلان%' OR category LIKE '%اعلان%' OR category LIKE '%Ads%') THEN amount ELSE 0 END),0) manually_recorded_ad_cost
+      COALESCE(SUM(CASE WHEN type='expense' AND (category LIKE '%إعلان%' OR category LIKE '%اعلان%' OR category LIKE '%Ads%' OR category LIKE '%تسويق%' OR category LIKE '%marketing%') THEN amount ELSE 0 END),0) manually_recorded_ad_cost
       FROM transactions WHERE client_id=?${tw} AND date(COALESCE(date,created_at)) BETWEEN date(?) AND date(?)`).bind(...args).first(),
     env.DB.prepare(`SELECT COUNT(*) n FROM order_management_fees f JOIN orders o ON o.id=f.order_id AND o.client_id=f.client_id
       WHERE f.client_id=?${storeId?' AND f.store_id=?':''} AND f.status='active' AND o.state IN ('returned','cancelled')
@@ -131,6 +131,9 @@ export async function handleFinancialAccountingOS({request,env,ctx,delegate}){
         journals(env,{...scope,...range}),
         operationalQuality(env,{...scope,...range})
       ]);
+      // The legacy cash report groups by settlement date, while order-risk scans
+      // group by original order date. Preserve the larger warning count.
+      quality.unverifiedCollectedOrders=Math.max(quality.unverifiedCollectedOrders,Number(legacy.unverifiedCollectedOrders)||0);
       const warnings=[];
       if(quality.unverifiedCollectedOrders>0)warnings.push({code:'UNVERIFIED_COD',severity:'high',count:quality.unverifiedCollectedOrders,text:'توجد طلبات معلمة كمحصلة بدون مبلغ تحصيل مؤكّد؛ لا يجوز اعتبار قيمتها نقدًا محصلًا'});
       if(quality.unrecognizedPipelineValue>0)warnings.push({code:'PIPELINE_NOT_REVENUE',severity:'high',count:quality.unrecognizedPipelineValue,text:'قيمة طلبات مؤكدة/تجهيز/شحن لا تثبت بمفردها إيرادًا مُعترفًا به'});
