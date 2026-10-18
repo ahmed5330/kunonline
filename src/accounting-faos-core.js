@@ -83,9 +83,9 @@ export function syntheticCommerceScenario(){
   const find=(balance,code)=>balance.accounts.find(x=>x.code===code)?.balanceMinor||0;
   return {label:'بيانات اختبار افتراضية بالكامل — لا تُحفظ على قواعد بيانات المتاجر',
     fakeOrders,journalCount:journals.length,journals,
-    expected:{netProfit:490,storeAProfit:190,storeBProfit:300,openGatewayReceivable:200,openCourierReceivable:0,orderOnlyRevenue:0},
+    expected:{netProfit:590,storeAProfit:290,storeBProfit:300,openGatewayReceivable:200,openCourierReceivable:0,orderOnlyRevenue:0},
     actual:{netProfit:minorMoney(all.netProfitMinor),storeAProfit:minorMoney(storeA.netProfitMinor),storeBProfit:minorMoney(storeB.netProfitMinor),openGatewayReceivable:minorMoney(find(storeB,'1120')),openCourierReceivable:minorMoney(find(storeA,'1110')),orderOnlyRevenue:0},
     balanced:all.balanced&&storeA.balanced&&storeB.balanced,
     totals:{debit:minorMoney(all.debitMinor),credit:minorMoney(all.creditMinor)},
-    checks:[['journal_balanced',all.balanced],['store_isolation',storeA.netProfitMinor+storeB.netProfitMinor===all.netProfitMinor],['expected_profit',all.netProfitMinor===49000],['partial_settlement',find(storeB,'1120')===20000],['cod_settlement',find(storeA,'1110')===0],['confirmed_not_revenue',fakeOrders[0].recognizedRevenue===0],['return_neutralizes_revenue',fakeOrders[2].recognizedRevenue===0]].map(([id,pass])=>({id,pass}))};
+    checks:[['journal_balanced',all.balanced],['store_isolation',storeA.netProfitMinor+storeB.netProfitMinor===all.netProfitMinor],['expected_profit',all.netProfitMinor===59000],['partial_settlement',find(storeB,'1120')===20000],['cod_settlement',find(storeA,'1110')===0],['confirmed_not_revenue',fakeOrders[0].recognizedRevenue===0],['return_neutralizes_revenue',fakeOrders[2].recognizedRevenue===0]].map(([id,pass])=>({id,pass}))};
 }
