@@ -12,9 +12,9 @@ android {
         applicationId = "com.kunonline.callerid.stable"
         minSdk = 29
         targetSdk = 35
-        // v2.9.8: single-request store discovery and silent cached background refresh.
-        versionCode = 139
-        versionName = "2.9.8"
+        // v2.9.9: faster parallel order sync, cancellation notes and observed-call history.
+        versionCode = 140
+        versionName = "2.9.9"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

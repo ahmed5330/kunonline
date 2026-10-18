@@ -1,6 +1,7 @@
 package com.kunonline.callerid
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.app.KeyguardManager
 import android.content.Context
 import android.content.Intent
@@ -11,6 +12,7 @@ import android.os.Bundle
 import android.view.Gravity
 import android.view.View
 import android.widget.Button
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -42,6 +44,42 @@ class CallerCardActivity : Activity() {
         "cancelled" -> "ملغي"
         "deferred" -> "مؤجل"
         else -> state.orEmpty()
+    }
+
+    private fun showCancelReason(orderId: String) {
+        val field = EditText(this).apply {
+            hint = "اكتب سبب الإلغاء (إجباري)"
+            minLines = 2
+            maxLines = 5
+            setPadding(dp(18), dp(12), dp(18), dp(12))
+        }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("إلغاء طلب العميل")
+            .setMessage("لا يمكن إلغاء الطلب دون تسجيل السبب في سجل الموظف.")
+            .setView(field)
+            .setNegativeButton("رجوع", null)
+            .setPositiveButton("تأكيد الإلغاء", null)
+            .create()
+        dialog.setOnShowListener {
+            val confirm = dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+            confirm.setOnClickListener {
+                val reason = field.text.toString().trim()
+                if (reason.isEmpty()) {
+                    field.error = "سبب الإلغاء مطلوب"
+                    return@setOnClickListener
+                }
+                confirm.isEnabled = false
+                thread(name = "kun-call-cancel-with-note") {
+                    val result = KunCustomerServiceApi.updateState(this, orderId, "cancelled", cancelReason = reason)
+                    runOnUiThread {
+                        Toast.makeText(this, result.message, Toast.LENGTH_LONG).show()
+                        if (result.ok) { dialog.dismiss(); finish() }
+                        else confirm.isEnabled = true
+                    }
+                }
+            }
+        }
+        dialog.show()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -130,8 +168,8 @@ class CallerCardActivity : Activity() {
                 setOnClickListener { click(this) }
             }
         fun decision(button: Button, orderId: String, target: String) {
-            if (target == "cancelled" && button.text != "تأكيد الإلغاء") {
-                button.text = "تأكيد الإلغاء"
+            if (target == "cancelled") {
+                showCancelReason(orderId)
                 return
             }
             button.isEnabled = false
@@ -177,5 +215,8 @@ class CallerCardActivity : Activity() {
         card.addView(actions)
         root.addView(card, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
         setContentView(root)
+        if (!locked && intent.getBooleanExtra("start_cancel", false)) {
+            customer.orderId?.takeIf { it.isNotBlank() }?.let { showCancelReason(it) }
+        }
     }
 }

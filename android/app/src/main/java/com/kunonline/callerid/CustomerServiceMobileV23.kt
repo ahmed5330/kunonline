@@ -303,7 +303,7 @@ fun V23CustomerService(snapshot: CommerceSnapshot, onGlobalRefresh: () -> Unit) 
         scope.launch { performBoardRefresh(keepOrderId) }
     }
 
-    ForegroundPolling(storeFilter to stateFilter, intervalMillis = 15_000L) {
+    ForegroundPolling(storeFilter to stateFilter, intervalMillis = 30_000L) {
         performBoardRefresh(quiet = true)
     }
 
@@ -386,6 +386,11 @@ fun V23CustomerService(snapshot: CommerceSnapshot, onGlobalRefresh: () -> Unit) 
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         if (message.isNotBlank() && board?.ok != true) Text(message, Modifier.padding(horizontal = 16.dp))
+        if (loading && board != null) {
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            Text("جاري تحديث الطلبات… البيانات الحالية متاحة", modifier = Modifier.padding(horizontal = 16.dp),
+                style = MaterialTheme.typography.labelSmall)
+        }
         if (loading && board == null) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         } else if (filtered.isEmpty()) {
@@ -401,10 +406,9 @@ fun V23CustomerService(snapshot: CommerceSnapshot, onGlobalRefresh: () -> Unit) 
                             if (order.phone.isNotBlank()) {
                                 scope.launch {
                                     val result = withContext(Dispatchers.IO) {
-                                        KunCustomerServiceApi.logContact(context, order.id, "phone", "call")
+                                        KunCustomerServiceApi.claimContact(context, order.id)
                                     }
                                     if (result.ok) {
-                                        CallActivityStore.mark(context, order.id, order.phone, false)
                                         runCatching {
                                             context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:${order.phone}")))
                                         }
@@ -609,7 +613,7 @@ private fun V23CustomerServiceCard(
                     shape = MaterialTheme.shapes.small
                 ) {
                     Text(
-                        "محاولات التواصل: ${order.contactCount}",
+                        "مكالمات مرصودة: ${order.contactCount}",
                         modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
                         fontWeight = FontWeight.Bold,
                         style = MaterialTheme.typography.labelMedium
@@ -673,6 +677,7 @@ private fun V23OrderDetailDialog(
     var deferUntil by remember(order.id, order.deferUntil) { mutableStateOf(order.deferUntil) }
     var awb by remember(order.id, order.awb) { mutableStateOf(order.awb) }
     var note by remember(order.id) { mutableStateOf("") }
+    var cancelReason by remember(order.id) { mutableStateOf("") }
     var confirmDelete by remember { mutableStateOf(false) }
 
     fun runAction(block: suspend () -> CustomerServiceJsonResult, after: (() -> Unit)? = null) {
@@ -711,7 +716,7 @@ private fun V23OrderDetailDialog(
                 V23DetailRow("التاريخ", order.date)
                 v23LastOrderEdit(order.history)?.let { V23DetailRow("آخر تعديل", v23OrderEditLabel(it)) }
                 V23DetailRow("الحالة", labels[order.state] ?: v23StateLabel(order.state))
-                V23DetailRow("محاولات التواصل", order.contactCount.toString())
+                V23DetailRow("المكالمات التي رصدها الهاتف", order.contactCount.toString())
                 if (order.customerNote.isNotBlank()) V23DetailRow("ملاحظة العميل", order.customerNote)
                 if (order.latestInternalNote.isNotBlank()) V23DetailRow("آخر ملاحظة داخلية", order.latestInternalNote)
                 if (order.stockBatchName.isNotBlank()) V23DetailRow("دفعة المخزون", order.stockBatchName)
@@ -727,9 +732,15 @@ private fun V23OrderDetailDialog(
                 if (selectedState == "deferred") {
                     OutlinedTextField(value = deferUntil, onValueChange = { deferUntil = it }, label = { Text("تاريخ التأجيل YYYY-MM-DD") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
                 }
+                if (selectedState == "cancelled") {
+                    OutlinedTextField(value = cancelReason, onValueChange = { cancelReason = it },
+                        label = { Text("سبب الإلغاء (إجباري)") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
+                }
                 Button(
-                    onClick = { runAction({ KunCustomerServiceApi.updateState(context, order.id, selectedState, deferUntil, order.stockBatchId) }) },
-                    enabled = !actionBusy && selectedState.isNotBlank() && (selectedState != "deferred" || deferUntil.matches(Regex("^\\d{4}-\\d{2}-\\d{2}$"))),
+                    onClick = { runAction({ KunCustomerServiceApi.updateState(context, order.id, selectedState, deferUntil, order.stockBatchId, cancelReason) }) },
+                    enabled = !actionBusy && selectedState.isNotBlank() &&
+                        (selectedState != "deferred" || deferUntil.matches(Regex("^\\d{4}-\\d{2}-\\d{2}$"))) &&
+                        (selectedState != "cancelled" || cancelReason.isNotBlank()),
                     modifier = Modifier.fillMaxWidth()
                 ) { Text("حفظ الحالة") }
 
@@ -745,7 +756,7 @@ private fun V23OrderDetailDialog(
                         OutlinedButton(
                             onClick = {
                                 runAction(
-                                    { KunCustomerServiceApi.logContact(context, order.id, "phone", "call") },
+                                    { KunCustomerServiceApi.claimContact(context, order.id) },
                                     after = { context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:${order.phone}"))) }
                                 )
                             },
@@ -798,6 +809,17 @@ private fun V23OrderDetailDialog(
                     Text("تعديل بيانات الأوردر والمنتجات")
                 }
 
+                HorizontalDivider()
+                Text("سجل المكالمات المرصودة", fontWeight = FontWeight.Bold)
+                val calls = buildList {
+                    for (i in 0 until order.contactLog.length()) {
+                        val event = order.contactLog.optJSONObject(i) ?: continue
+                        if (event.optString("channel") == "phone" && event.optString("intent") == "screened") add(event)
+                    }
+                }
+                Text("عدد محاولات الاتصال التي رصدها Android: ${calls.size}", style = MaterialTheme.typography.bodySmall)
+                if (calls.isEmpty()) Text("لا توجد مكالمات مسجلة من خدمة Caller ID", style = MaterialTheme.typography.bodySmall)
+                calls.asReversed().forEach { event -> V23HistoryEvent(event) }
                 Text("سجل الأوردر", fontWeight = FontWeight.Bold)
                 if (order.history.length() == 0) Text("لا يوجد سجل بعد", style = MaterialTheme.typography.bodySmall)
                 for (i in order.history.length() - 1 downTo 0) {
@@ -839,18 +861,47 @@ private fun V23HistoryEvent(event: JSONObject) {
     val note = event.optString("note")
     val by = event.optString("byName").ifBlank { event.optString("by") }
     val at = event.optString("at")
+    val time = runCatching {
+        Instant.parse(at).atZone(ZoneId.of("Africa/Cairo"))
+            .format(DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm:ss"))
+    }.getOrDefault(at)
+    val changes = buildList {
+        val before = event.optJSONObject("before")
+        val after = event.optJSONObject("after")
+        if (before != null && after != null) {
+            listOf(
+                "name" to "الاسم", "phone" to "الهاتف", "gov" to "المحافظة",
+                "address" to "العنوان", "total" to "الإجمالي",
+                "product" to "المنتج", "qty" to "الكمية"
+            ).forEach { (key, label) ->
+                val previous = before.optString(key)
+                val current = after.optString(key)
+                if (previous != current) add("$label: $previous ← $current")
+            }
+        }
+    }
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(10.dp)) {
             Text(
                 when {
                     note.isNotBlank() -> note
                     state.isNotBlank() -> v23StateLabel(state)
+                    type == "contact" && event.optString("intent") == "screened" ->
+                        "مكالمة رصدها الهاتف" + when(event.optString("direction")) {
+                            "incoming" -> " (واردة)"
+                            "outgoing" -> " (صادرة)"
+                            else -> ""
+                        }
                     type.isNotBlank() -> v23EventLabel(type)
                     else -> "إجراء"
                 },
                 fontWeight = FontWeight.Bold
             )
-            Text(listOf(by, at).filter { it.isNotBlank() }.joinToString(" • "), style = MaterialTheme.typography.bodySmall)
+            Text(listOf(by, time).filter { it.isNotBlank() }.joinToString(" • "), style = MaterialTheme.typography.bodySmall)
+            event.optString("previousState").takeIf { it.isNotBlank() }?.let {
+                Text("الحالة قبل التغيير: ${v23StateLabel(it)}", style = MaterialTheme.typography.bodySmall)
+            }
+            changes.forEach { Text(it, style = MaterialTheme.typography.bodySmall) }
         }
     }
 }

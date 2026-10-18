@@ -9,7 +9,26 @@ import java.net.URLEncoder
 data class MobileSyncResponse(val code: Int, val body: JSONObject, val changed: Boolean = true)
 
 /** Session-scoped baselines shared by UI, background sync and caller ID. */
+/**
+ * Keep the state and customer-service transport pools independent.
+ * Previously one global monitor was held during all network reads (up to
+ * 30 seconds each), serializing two unrelated loading requests.
+ */
 object MobileSyncClient {
+    private val state = MobileSyncSession()
+    private val board = MobileSyncSession()
+
+    fun clear() {
+        state.clear()
+        board.clear()
+    }
+
+    fun fetch(cookie: String, source: String, forceFull: Boolean = false): MobileSyncResponse =
+        (if (source.substringBefore('?') == "/api/state") state else board)
+            .fetch(cookie, source, forceFull)
+}
+
+private class MobileSyncSession {
     private var activeCookie = ""
     private val states = linkedMapOf<String, MobileSyncAccumulator>()
     private var legacyUntil = 0L

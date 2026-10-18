@@ -379,11 +379,13 @@ fun KunNativeAppV25(
                                 )
                             }
                             if (loading) {
-                                LinearProgressIndicator(
-                                    modifier = Modifier.fillMaxWidth().align(Alignment.TopCenter),
-                                    color = KunColors.Pine,
-                                    trackColor = KunColors.PineSoft
-                                )
+                                Column(Modifier.fillMaxWidth().align(Alignment.TopCenter)) {
+                                    LinearProgressIndicator(Modifier.fillMaxWidth(), color = KunColors.Pine, trackColor = KunColors.PineSoft)
+                                    if (snapshot == null) {
+                                        Text("جاري تحميل طلبات المتجر…", modifier = Modifier.fillMaxWidth().padding(12.dp),
+                                            color = KunColors.Chrome, style = MaterialTheme.typography.labelLarge)
+                                    }
+                                }
                             }
                         }
                     }
@@ -486,9 +488,31 @@ private fun V25Home(
 ) {
     val orders = snapshot.orders
     val periodLabel = MobileDateFilterState.periodLabel
-    val pending = orders.count { it.state in setOf("pending", "new") }
-    val confirmed = orders.count { it.state in setOf("confirmed", "preparing") }
+    val contactClaimIds = remember(snapshot.raw) {
+        val active = mutableSetOf<String>()
+        val rawOrders = snapshot.raw.optJSONArray("orders")
+        if (rawOrders != null) for (index in 0 until rawOrders.length()) {
+            val raw = rawOrders.optJSONObject(index) ?: continue
+            val claim = raw.optString("contactClaimUserId").ifBlank { raw.optString("contact_claim_user_id") }
+            if (claim.isNotBlank() && raw.optString("state") in setOf("pending", "new"))
+                active.add(raw.optString("id"))
+        }
+        active
+    }
+    val contacting = orders.count { it.state == "contacting" || it.id in contactClaimIds }
+    val pending = orders.count { it.state in setOf("pending", "new") && it.id !in contactClaimIds }
+    val confirmed = orders.count { it.state == "confirmed" }
+    val noAnswer = orders.count { it.state == "no_answer" }
+    val cancelled = orders.count { it.state == "cancelled" }
     val total = orders.sumOf { it.total }
+    val countBase = orders.size.coerceAtLeast(1)
+    val statusRows = listOf(
+        "في انتظار التأكيد" to pending,
+        "جاري التأكيد" to contacting,
+        "تم التأكيد" to confirmed,
+        "لم يرد" to noAnswer,
+        "إلغاء" to cancelled
+    )
     val activeLocal = CallActivityStore.active(LocalContext.current).size
     LazyColumn(
         Modifier.fillMaxSize().padding(horizontal = 14.dp),
@@ -560,9 +584,26 @@ private fun V25Home(
             }
         }
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                KunInfoCard("بانتظار التأكيد", if (dataReady) pending.toString() else "—", Modifier.weight(1f), KunColors.Gold)
-                KunInfoCard("تم التأكيد", if (dataReady) confirmed.toString() else "—", Modifier.weight(1f), KunColors.Pine)
+            KunSectionCard {
+                Text("حالات الطلبات • العدد والنسبة من إجمالي الفترة", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                statusRows.forEach { (label, count) ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Text(label, modifier = Modifier.weight(1f), color = KunColors.Ink)
+                        Text(if (dataReady) "$count طلب" else "—", fontWeight = FontWeight.Bold, color = KunColors.Chrome)
+                        Spacer(Modifier.width(12.dp))
+                        Text(if (dataReady) String.format(Locale.US, "%.1f%%", count * 100.0 / countBase) else "—",
+                            color = KunColors.Ink2, style = MaterialTheme.typography.labelLarge)
+                    }
+                    if (dataReady) {
+                        LinearProgressIndicator(
+                            progress = { count.toFloat() / countBase },
+                            modifier = Modifier.fillMaxWidth().height(5.dp),
+                            color = KunColors.Pine,
+                            trackColor = KunColors.PineSoft
+                        )
+                    }
+                    Spacer(Modifier.height(7.dp))
+                }
             }
         }
         item {

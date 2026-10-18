@@ -20,9 +20,9 @@ for(const fragment of ['p.dataset.draftKey=draftKey','if(draft!==null','if(order
 }
 assert.match(web,/revision!==state.scopeRevision\|\|id!==state.selected/);
 assert.match(web,/previousScope!==/);
-assert.match(web,/version:'117\.2'/);
-assert.match(html,/modules-v117-team-collaboration\.js\?v=117\.2/);
-assert.match(entry,/modules-v117-team-collaboration\.js\?v=117\.2/);
+assert.match(web,/version:'117\.3'/);
+assert.match(html,/modules-v117-team-collaboration\.js\?v=117\.3/);
+assert.match(entry,/modules-v117-team-collaboration\.js\?v=117\.3/);
 
 // Never pick an arbitrary store based on the first order or first accessible store.
 assert.match(android,/KunApi\.loadStoreOptions\(context\)/);

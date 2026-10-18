@@ -188,9 +188,11 @@ object KunCustomerServiceApi {
         CustomerServiceJsonResult(true, "تم تحميل السجل", json(response))
     }
 
-    fun updateState(context: Context, orderId: String, state: String, deferUntil: String = "", stockBatchId: String = ""): CustomerServiceJsonResult =
+    fun updateState(context: Context, orderId: String, state: String, deferUntil: String = "", stockBatchId: String = "", cancelReason: String = ""): CustomerServiceJsonResult =
         withClient(context) { cookie, clientId ->
+            if (state == "cancelled" && cancelReason.isBlank()) return@withClient CustomerServiceJsonResult(false, "اكتب سبب إلغاء الطلب أولًا")
             val payload = JSONObject().put("clientId", clientId).put("state", state)
+            if (state == "cancelled") payload.put("cancelReason", cancelReason.trim())
             if (deferUntil.isNotBlank()) payload.put("deferUntil", deferUntil)
             if (stockBatchId.isNotBlank()) payload.put("stockBatchId", stockBatchId)
             val response = request("PATCH", "/api/customer-service/orders/${enc(orderId)}/state?clientId=${enc(clientId)}", cookie, payload)
@@ -213,9 +215,10 @@ object KunCustomerServiceApi {
             CustomerServiceJsonResult(true, "الأوردر في جاري التواصل حتى يتم التأكيد أو اختيار العميل لا يرد", json(response))
         }
 
-    fun logContact(context: Context, orderId: String, channel: String = "phone", intent: String = "contact"): CustomerServiceJsonResult =
+    fun logContact(context: Context, orderId: String, channel: String = "phone", intent: String = "contact", direction: String = ""): CustomerServiceJsonResult =
         withClient(context) { cookie, clientId ->
             val payload = JSONObject().put("clientId", clientId).put("channel", channel).put("intent", intent)
+             .put("direction", direction)
             val response = request("POST", "/api/customer-service/orders/${enc(orderId)}/contact?clientId=${enc(clientId)}", cookie, payload)
             if (response.code !in 200..299) return@withClient authFailure(context, response, "تعذر تسجيل التواصل")
             CustomerServiceJsonResult(true, "تم تسجيل التواصل", json(response))
