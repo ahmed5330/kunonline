@@ -89,6 +89,23 @@ async function ensureOpen(env,clientId,storeId,date){
   try{row=await env.DB.prepare('SELECT status FROM faos_periods WHERE client_id=? AND store_id=? AND period_month=?').bind(clientId,storeId,date.slice(0,7)).first()}catch(error){dbFailure(error)}
   if(row?.status==='closed')fail('الفترة المحاسبية مقفولة؛ يجب فتحها بصلاحية معتمدة',409,'FAOS_PERIOD_CLOSED');
 }
+// A repeated idempotency key is safe only when the entire economic payload matches.
+// Never acknowledge a modified amount/account/date as a successful retry.
+async function replayOf(env,{clientId,storeId,date,currency,description,sourceType,sourceKey,reversalOf,lines}){
+  let old;
+  try{old=await env.DB.prepare(`SELECT id,store_id storeId,entry_date entryDate,currency,description,reversal_of reversalOf
+    FROM faos_journals WHERE client_id=? AND source_type=? AND source_key=?`).bind(clientId,sourceType,sourceKey).first();}
+  catch(error){dbFailure(error)}
+  if(!old)return null;
+  if(old.storeId!==storeId)fail('معرف العملية مستخدم في متجر مختلف',409,'FAOS_IDEMPOTENCY_CONFLICT');
+  const stored=await env.DB.prepare(`SELECT account_code accountCode,debit_minor debitMinor,credit_minor creditMinor,memo
+    FROM faos_journal_lines WHERE client_id=? AND store_id=? AND journal_id=? ORDER BY rowid`).bind(clientId,storeId,old.id).all();
+  const current=lines.map(({accountCode,debitMinor,creditMinor,memo})=>[accountCode,debitMinor,creditMinor,memo||'']);
+  const previous=(stored.results||[]).map(({accountCode,debitMinor,creditMinor,memo})=>[accountCode,Number(debitMinor),Number(creditMinor),memo||'']);
+  if(old.entryDate!==date||old.currency!==currency||old.description!==description||(old.reversalOf||null)!==(reversalOf||null)||JSON.stringify(current)!==JSON.stringify(previous))
+    fail('تم استخدام معرف العملية سابقًا ببيانات مختلفة',409,'FAOS_IDEMPOTENCY_PAYLOAD_MISMATCH');
+  return {ok:true,id:old.id,deduplicated:true};
+}
 async function writeJournal(env,{clientId,storeId,date,currency,description,sourceType,sourceKey,rows,actor,reversalOf=null}){
   if(!iso.test(date)||Number.isNaN(Date.parse(date+'T12:00:00Z')))fail('التاريخ غير صحيح');
   if(currency!=='EGP')fail('هذا الإصدار يدعم ترحيل القيود بالجنيه المصري فقط حتى اعتماد دفتر العملات',400,'FAOS_CURRENCY_NOT_SUPPORTED');
@@ -97,6 +114,9 @@ async function writeJournal(env,{clientId,storeId,date,currency,description,sour
   if(!store)fail('المتجر غير موجود أو غير نشط',403,'STORE_SCOPE_INVALID');
   if(clean(store.currency||'EGP')!==currency)fail('عملة القيد لا تطابق العملة الأساسية للمتجر',400,'FAOS_CURRENCY_MISMATCH');
   let lines;try{lines=normalizeLines(rows).lines}catch(error){fail(error.message,400,error.message)}
+  const identity={clientId,storeId,date,currency,description,sourceType,sourceKey,reversalOf,lines};
+  const previouslyPosted=await replayOf(env,identity);
+  if(previouslyPosted)return previouslyPosted;
   await ensureOpen(env,clientId,storeId,date);
   const id='FAOS-'+crypto.randomUUID(),createdAt=new Date().toISOString();
   const operations=[env.DB.prepare('INSERT INTO faos_journals (id,client_id,store_id,entry_date,currency,source_type,source_key,description,status,reversal_of,created_by,created_at) VALUES (?,?,?,?,?,?,?,? ,\'posted\',?,?,?)').bind(id,clientId,storeId,date,currency,sourceType,sourceKey,description,reversalOf,actor,createdAt)];
@@ -104,8 +124,8 @@ async function writeJournal(env,{clientId,storeId,date,currency,description,sour
   try{await env.DB.batch(operations);}
   catch(error){
     if(/UNIQUE constraint failed: faos_journals.client_id|faos_journals.client_id, faos_journals.source_type|constraint failed.*source_key/i.test(String(error?.message||''))){
-      const existing=await env.DB.prepare('SELECT id,store_id storeId,entry_date entryDate FROM faos_journals WHERE client_id=? AND source_type=? AND source_key=?').bind(clientId,sourceType,sourceKey).first();
-      if(existing){if(existing.storeId!==storeId)fail('المعرف مستخدم في متجر مختلف',409,'FAOS_IDEMPOTENCY_CONFLICT');return {ok:true,id:existing.id,deduplicated:true};}
+      const committed=await replayOf(env,identity);
+      if(committed)return committed;
     }dbFailure(error);
   }
   return {ok:true,id,deduplicated:false};
