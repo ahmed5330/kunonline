@@ -177,6 +177,8 @@ export async function handleProductionCustomerService({request,env,ctx,delegate}
     if(action==='history'&&method==='GET')return json({ok:true,order:mapOrder(row)});
     if(action==='state'&&method==='PATCH'){
       const state=clean(body.state);if(!STATES.includes(state))return json({error:'حالة الأوردر غير معروفة',code:'ORDER_STATE_INVALID'},400);
+      if(state==='cancelled'&&!['pending','new','no_answer','confirmed','preparing','deferred'].includes(String(row.state||'')))
+        return json({error:'لا يمكن إلغاء الطلب بهذه الطريقة بعد الشحن أو التحصيل؛ استخدم إجراءات الشحن والمرتجعات',code:'ORDER_CANCEL_NOT_ALLOWED'},409);
       const claimOwner=clean(row.contact_claim_user_id),actorId=clean(me.uid||me.id||me.email||`${me.role}:${me.clientId||''}`);
       if(claimOwner&&!['confirmed','no_answer','cancelled'].includes(state))return json({error:'الطلب محجوز في جاري التواصل حتى تم التأكيد أو العميل لا يرد أو العميل لغى',code:'CONTACT_DECISION_REQUIRED'},409);
       if(claimOwner&&claimOwner!==actorId&&me.role!=='admin')return json({error:'الطلب جارٍ التواصل معه بواسطة موظف آخر',code:'CONTACT_OWNED_BY_OTHER'},409);
