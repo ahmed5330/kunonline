@@ -11,7 +11,8 @@ class KunCallScreeningService : CallScreeningService() {
         thread(name = "kun-observed-call-log") {
             val id = orderId ?: return@thread
             runCatching { KunCustomerServiceApi.claimContact(this, id) }
-            runCatching { KunCustomerServiceApi.logContact(this, id, "phone", "screened") }
+            runCatching { KunCustomerServiceApi.logContact(this, id, "phone", "screened",
+                if (incoming) "incoming" else "outgoing") }
         }
     }
 
