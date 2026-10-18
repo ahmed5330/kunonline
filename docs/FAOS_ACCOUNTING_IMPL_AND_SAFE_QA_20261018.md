@@ -23,7 +23,7 @@ Date: 2026-10-18. Reference: Kun Online Financial & Accounting OS v1 (23 chapter
 ## Manual checklist (isolated Preview only)
 1. Apply migration to preview D1 using the existing preview-specific CI/CD mechanism, after CI passes.
 2. Sign in to two test stores and open **الحسابات والحركات**.
-3. Open FAOS simulation; assert 4 fake orders, 17 journals, 7 checks passed.
+3. Open FAOS simulation; assert 4 fake orders, 17 journals, 8 checks passed.
 4. Open FAOS review: ensure warnings for unverified amounts and separate ledger vs legacy indicators.
 5. In an isolated QA store only, manually post debit Bank 1010 100 / credit Capital 3000 100.
 6. Replay identical request with same idempotency key: still one journal.
