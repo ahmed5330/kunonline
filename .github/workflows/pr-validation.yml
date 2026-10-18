@@ -30,6 +30,11 @@ jobs:
           node --check public/v2/modules-v109-operational-date-contact.js
           node --check public/v2/modules-v31-customer-service.js
           node scripts/customer-service-call-continuity-test.mjs
+      - name: Validate universal Android order search scope
+        run: |
+          node --check src/mobile-global-order-search.js
+          node --check src/index-production-mobile-update.js
+          node scripts/mobile-global-order-search-test.mjs
       - name: Run full contract and unit suite
         run: npm test
       - name: Inventory workspace UX browser regression
