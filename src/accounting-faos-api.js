@@ -54,11 +54,12 @@ async function balance(env,{clientId,storeId,from,to}){
   return {accounts,balanced:debit===credit,totalDebit:debit/100,totalCredit:credit/100,netSales:(rev-returns),expenses,netProfit:rev-returns-expenses,source:'posted_faos_journals_only',includesLegacyOperationalEvents:false};
 }
 // Read-only reconciliation probes against current operational data.
-async function operationalQuality(env,{clientId,storeId,from,to}){
+export async function operationalQuality(env,{clientId,storeId,from,to}){
   const sw=storeId?' AND o.store_id=?':'',tw=storeId?' AND store_id=?':'',args=storeId?[clientId,storeId,from,to]:[clientId,from,to];
   const [orders,manual,wrongFees]=await Promise.all([
     env.DB.prepare(`SELECT COUNT(*) order_count,
       COALESCE(SUM(CASE WHEN o.state IN ('confirmed','preparing','shipped') THEN o.total ELSE 0 END),0) pipeline_not_verified_revenue,
+      COALESCE(SUM(CASE WHEN o.state IN ('signed','collected') AND o.product_cost IS NULL THEN 1 ELSE 0 END),0) sale_missing_cost_snapshot,
       COALESCE(SUM(CASE WHEN o.state='collected' AND o.collected_amount IS NULL THEN 1 ELSE 0 END),0) unknown_collected_amounts
       FROM orders o WHERE o.client_id=?${sw} AND date(COALESCE(o.date,o.created_at)) BETWEEN date(?) AND date(?)
       AND NOT EXISTS(SELECT 1 FROM order_duplicate_links d WHERE d.duplicate_order_id=o.id)`).bind(...args).first(),
@@ -68,12 +69,14 @@ async function operationalQuality(env,{clientId,storeId,from,to}){
       FROM transactions WHERE client_id=?${tw} AND date(COALESCE(date,created_at)) BETWEEN date(?) AND date(?)`).bind(...args).first(),
     env.DB.prepare(`SELECT COUNT(*) n FROM order_management_fees f JOIN orders o ON o.id=f.order_id AND o.client_id=f.client_id
       WHERE f.client_id=?${storeId?' AND f.store_id=?':''} AND f.status='active' AND o.state IN ('returned','cancelled')
+      AND NOT EXISTS(SELECT 1 FROM order_duplicate_links d WHERE d.duplicate_order_id=o.id)
       AND date(COALESCE(o.date,o.created_at)) BETWEEN date(?) AND date(?)`).bind(...args).first()
   ]);
   return {
     orders:Number(orders?.order_count)||0,
     unrecognizedPipelineValue:Number(orders?.pipeline_not_verified_revenue)||0,
-    unverifiedCollectedOrders:Number(orders?.unknown_collected_amounts)||0,
+    unverifiedCollectedOrdersByOrderDate:Number(orders?.unknown_collected_amounts)||0,
+    missingSaleCostSnapshots:Number(orders?.sale_missing_cost_snapshot)||0,
     inventoryPurchasesExpensed:Number(manual?.inventory_purchases_expensed)||0,
     manualAdExpense:Number(manual?.manually_recorded_ad_cost)||0,
     unreversedManagementFees:Number(wrongFees?.n)||0,
@@ -151,12 +154,12 @@ export async function handleFinancialAccountingOS({request,env,ctx,delegate}){
         journals(env,{...scope,...range}),
         operationalQuality(env,{...scope,...range})
       ]);
-      // The legacy cash report groups by settlement date, while order-risk scans
-      // group by original order date. Preserve the larger warning count.
-      quality.unverifiedCollectedOrders=Math.max(quality.unverifiedCollectedOrders,Number(legacy.unverifiedCollectedOrders)||0);
+      // Collection-date and order-date metrics are deliberately distinct.
+      quality.unverifiedCollectedOrders=Number(legacy.unverifiedCollectedOrders)||0;
       const warnings=[];
       if(quality.unverifiedCollectedOrders>0)warnings.push({code:'UNVERIFIED_COD',severity:'high',count:quality.unverifiedCollectedOrders,text:'توجد طلبات معلمة كمحصلة بدون مبلغ تحصيل مؤكّد؛ لا يجوز اعتبار قيمتها نقدًا محصلًا'});
       if(quality.unrecognizedPipelineValue>0)warnings.push({code:'PIPELINE_NOT_REVENUE',severity:'high',count:quality.unrecognizedPipelineValue,text:'قيمة طلبات مؤكدة/تجهيز/شحن لا تثبت بمفردها إيرادًا مُعترفًا به'});
+      if(quality.missingSaleCostSnapshots>0)warnings.push({code:'MISSING_ORDER_COST',severity:'high',count:quality.missingSaleCostSnapshots,text:'طلبات تم تسليمها دون تكلفة منتج مثبتة داخل سجل الطلب؛ يلزم مطابقة تكلفة المخزون'});
       if(quality.inventoryPurchasesExpensed>0)warnings.push({code:'INVENTORY_EXPENSE_RISK',severity:'high',count:quality.inventoryPurchasesExpensed,text:'مشتريات مخزون مسجلة في المصروفات؛ راجع مخاطر الازدواج مع تكلفة البضاعة المباعة'});
       if(quality.unreversedManagementFees>0)warnings.push({code:'UNREVERSED_MANAGEMENT_FEES',severity:'high',count:quality.unreversedManagementFees,text:'رسوم إدارة نشطة على طلبات ملغاة أو مرتجعة وتحتاج مطابقة'});
       if(quality.manualAdExpense>0)warnings.push({code:'MANUAL_AD_RISK',severity:'medium',count:quality.manualAdExpense,text:'إنفاق إعلاني يدوي قد يتكرر مع صرف Meta المستورد؛ يلزم مطابقة مصدر الحملة والبنك'});
