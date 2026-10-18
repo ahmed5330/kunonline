@@ -33,7 +33,7 @@ object CallActivityStore {
         if (id.isBlank()) return false
         val normalized = PhoneNormalizer.normalize(phone)
         val duplicate = active(context, now).any {
-            it.orderId == id && it.phone == normalized && it.incoming == incoming &&
+            it.phone == normalized && it.incoming == incoming &&
                 now - it.startedAt in 0..15_000L
         }
         if (!duplicate) mark(context, id, normalized, incoming, now)
