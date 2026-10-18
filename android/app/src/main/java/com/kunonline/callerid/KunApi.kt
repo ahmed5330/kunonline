@@ -46,8 +46,16 @@ object KunApi {
     private var scopeCookie = ""
     private var cachedScope: ScopeInfo? = null
     private var scopeExpiresAt = 0L
+    // Reuse the parsed Compose snapshot when the authenticated delta is unchanged.
+    // Keys include the signed-in session, store scope and UI date-filter revision.
+    private var parsedKey = ""
+    private var parsedRevision = -1
+    private var parsedSnapshot: CommerceSnapshot? = null
 
     @Synchronized private fun clearScope() {
+        parsedKey = ""
+        parsedRevision = -1
+        parsedSnapshot = null
         scopeCookie = ""
         cachedScope = null
         scopeExpiresAt = 0L
@@ -355,10 +363,19 @@ object KunApi {
                 return StateResult(false, response.body.optString("error").ifBlank { "تعذر تحميل بيانات النظام" })
             }
             if (session(context) != cookie) return StateResult(false, "تغيّرت جلسة الحساب")
+            val revision = MobileDateFilterState.revision
+            val cacheKey = cookie + "|" + path
+            if (!response.changed && parsedKey == cacheKey && parsedRevision == revision && parsedSnapshot != null) {
+                return StateResult(true, "البيانات محدثة", parsedSnapshot)
+            }
             val root = response.body
             val orders = root.optJSONArray("orders") ?: JSONArray()
             if (response.changed) CustomerCache.replaceAll(context, orders)
-            StateResult(true, "تم تحديث البيانات", CommerceParser.parse(root))
+            val parsed = CommerceParser.parse(root)
+            parsedSnapshot = parsed
+            parsedKey = cacheKey
+            parsedRevision = revision
+            StateResult(true, "تم تحديث البيانات", parsed)
         }.getOrElse { StateResult(false, "تعذر قراءة بيانات النظام") }
     }
 
