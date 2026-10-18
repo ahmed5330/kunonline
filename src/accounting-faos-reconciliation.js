@@ -1,7 +1,7 @@
 /* Read-only reconciliation bridge for FAOS and Kun Online's legacy operational reports.
    Equal nominal values are NOT certified settlement or revenue recognition.
    This code never auto-posts and does not persist financial data. */
-const amount=v=>Number.isFinite(Number(v))?Math.round(Number(v)*100)/100:null;
+const amount=v=>v===null||v===undefined||v===''?null:Number.isFinite(Number(v))?Math.round(Number(v)*100)/100:null;
 const diff=(a,b)=>a===null||b===null?null:Math.round((a-b)*100)/100;
 export function reconcileAccountingSources({legacy={},ledger={},quality={}}={}){
   const operationalRevenue=amount(legacy.deliveredRevenue);
