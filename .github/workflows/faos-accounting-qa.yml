@@ -35,5 +35,7 @@ jobs:
         run: node scripts/faos-api-isolation-test.mjs
       - name: Real SQL API posting, idempotency and reversal regression
         run: node --no-warnings scripts/faos-posting-live-sql-test.mjs
+      - name: Read-only operational reconciliation on fake orders
+        run: node --no-warnings scripts/faos-operational-sql-test.mjs
       - name: In-memory SQLite schema constraints
         run: python3 scripts/faos-ledger-schema-test.py
