@@ -79,6 +79,7 @@ fun KunNativeAppV25(
     var loading by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf("") }
     var selected by remember { mutableStateOf(MobileV25Tab.HOME) }
+    var showGlobalSearch by remember { mutableStateOf(false) }
     var newOrdersNotice by remember { mutableStateOf("") }
     var lastSyncAt by remember { mutableLongStateOf(CustomerCache.lastSyncedAt(context)) }
     var storeOptions by remember { mutableStateOf<List<MobileStoreOption>>(emptyList()) }
@@ -216,18 +217,20 @@ fun KunNativeAppV25(
                                 }
                             },
                             actions = {
-                                if (selected != MobileV25Tab.CUSTOMER_SERVICE) {
-                                    IconButton(onClick = { selected = MobileV25Tab.CUSTOMER_SERVICE }, enabled = !loading) {
+                                if (selected == MobileV25Tab.HOME) {
+                                    IconButton(onClick = { selected = MobileV25Tab.SETTINGS }) {
+                                        Icon(Icons.Outlined.Settings, contentDescription = "الإعدادات")
+                                    }
+                                } else if (selected != MobileV25Tab.CUSTOMER_SERVICE) {
+                                    IconButton(onClick = { selected = MobileV25Tab.CUSTOMER_SERVICE }) {
                                         Icon(Icons.Outlined.SupportAgent, contentDescription = "خدمة العملاء")
                                     }
                                 }
-                                if (selected != MobileV25Tab.SETTINGS) {
-                                    IconButton(onClick = { selected = MobileV25Tab.HOME }, enabled = !loading) {
-                                        Icon(Icons.Outlined.Storefront, contentDescription = "اختيار المتجر")
-                                    }
-                                    IconButton(onClick = { refresh(true) }, enabled = !loading) {
-                                        Icon(Icons.Outlined.Refresh, contentDescription = "تحديث البيانات")
-                                    }
+                                IconButton(onClick = { showGlobalSearch = true }) {
+                                    Icon(Icons.Outlined.Search, contentDescription = "بحث شامل في كل الطلبات")
+                                }
+                                IconButton(onClick = { refresh(true) }, enabled = !loading) {
+                                    Icon(Icons.Outlined.Refresh, contentDescription = "تحديث البيانات")
                                 }
                             }
                         )
@@ -242,17 +245,24 @@ fun KunNativeAppV25(
                                 unselectedTextColor = KunColors.Ink2
                             )
                             NavigationBarItem(
-                                selected = selected == MobileV25Tab.HOME,
-                                onClick = { selected = MobileV25Tab.HOME },
-                                icon = { Icon(Icons.Outlined.Home, contentDescription = null) },
-                                label = { Text("الرئيسية") },
-                                colors = colors
-                            )
-                            NavigationBarItem(
                                 selected = selected == MobileV25Tab.ORDERS,
                                 onClick = { selected = MobileV25Tab.ORDERS },
                                 icon = { Icon(Icons.Outlined.Inventory2, contentDescription = null) },
                                 label = { Text("الطلبات") },
+                                colors = colors
+                            )
+                            NavigationBarItem(
+                                selected = selected == MobileV25Tab.CUSTOMER_SERVICE,
+                                onClick = { selected = MobileV25Tab.CUSTOMER_SERVICE },
+                                icon = { Icon(Icons.Outlined.SupportAgent, contentDescription = null) },
+                                label = { Text("العملاء") },
+                                colors = colors
+                            )
+                            NavigationBarItem(
+                                selected = selected == MobileV25Tab.HOME,
+                                onClick = { selected = MobileV25Tab.HOME },
+                                icon = { Icon(Icons.Outlined.Storefront, contentDescription = "الرئيسية", modifier = Modifier.size(32.dp), tint = KunColors.Chrome) },
+                                label = { Text("الرئيسية", fontWeight = FontWeight.ExtraBold) },
                                 colors = colors
                             )
                             NavigationBarItem(
@@ -267,13 +277,6 @@ fun KunNativeAppV25(
                                 onClick = onOpenSystemSections,
                                 icon = { Icon(Icons.Outlined.GridView, contentDescription = null) },
                                 label = { Text("الأقسام") },
-                                colors = colors
-                            )
-                            NavigationBarItem(
-                                selected = selected == MobileV25Tab.SETTINGS,
-                                onClick = { selected = MobileV25Tab.SETTINGS },
-                                icon = { Icon(Icons.Outlined.Settings, contentDescription = null) },
-                                label = { Text("الإعدادات") },
                                 colors = colors
                             )
                         }
@@ -356,6 +359,15 @@ fun KunNativeAppV25(
                             }
                         }
                     }
+                }
+                if (showGlobalSearch) {
+                    GlobalOrderSearchDialog(
+                        onDismiss = { showGlobalSearch = false },
+                        onHome = {
+                            showGlobalSearch = false
+                            selected = MobileV25Tab.HOME
+                        }
+                    )
                 }
             }
         }
