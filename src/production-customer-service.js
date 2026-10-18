@@ -94,7 +94,7 @@ async function getOrder(env,clientId,orderId){
 }
 // Atomic JSON appends prevent simultaneous staff writes from losing history.
 async function appendEvent(env,row,event,{contact=false}={}){
-  const valid=column=>`CASE WHEN json_valid(${column}) AND json_type(${column})='array' THEN ${column} ELSE '[]' END`;
+  const valid=column=>`CASE WHEN json_valid(${column}) THEN (CASE WHEN json_type(${column})='array' THEN ${column} ELSE '[]' END) ELSE '[]' END`;
   const set=contact
     ? `history=json_insert(${valid('history')},'$[#]',json(?)), contact_log=json_insert(${valid('contact_log')},'$[#]',json(?))`
     : `history=json_insert(${valid('history')},'$[#]',json(?))`;
@@ -197,7 +197,7 @@ export async function handleProductionCustomerService({request,env,ctx,delegate}
         ...(state==='cancelled'?{note:cancelReason,reason:cancelReason}:{} )});
       const entry=history.at(-1);
       await env.DB.batch([
-        env.DB.prepare("UPDATE orders SET state=?, checkpoint=?, defer_until=?, history=json_insert(CASE WHEN json_valid(history) AND json_type(history)='array' THEN history ELSE '[]' END,'$[#]',json(?)), contact_claim_user_id=CASE WHEN ? IN ('confirmed','no_answer','cancelled') THEN NULL ELSE contact_claim_user_id END,contact_claim_name=CASE WHEN ? IN ('confirmed','no_answer','cancelled') THEN NULL ELSE contact_claim_name END,contact_claimed_at=CASE WHEN ? IN ('confirmed','no_answer','cancelled') THEN NULL ELSE contact_claimed_at END WHERE id=? AND client_id=?")
+        env.DB.prepare("UPDATE orders SET state=?, checkpoint=?, defer_until=?, history=json_insert(CASE WHEN json_valid(history) THEN (CASE WHEN json_type(history)='array' THEN history ELSE '[]' END) ELSE '[]' END,'$[#]',json(?)), contact_claim_user_id=CASE WHEN ? IN ('confirmed','no_answer','cancelled') THEN NULL ELSE contact_claim_user_id END,contact_claim_name=CASE WHEN ? IN ('confirmed','no_answer','cancelled') THEN NULL ELSE contact_claim_name END,contact_claimed_at=CASE WHEN ? IN ('confirmed','no_answer','cancelled') THEN NULL ELSE contact_claimed_at END WHERE id=? AND client_id=?")
           .bind(state,LABELS[state]||state,deferUntil,JSON.stringify(entry),state,state,state,orderId,clientId),
         env.DB.prepare('INSERT INTO order_events (id,client_id,store_id,order_id,event_type,actor_user_id,actor_email,source,metadata_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)')
           .bind('OEV-'+crypto.randomUUID(),clientId,row.store_id||null,orderId,'state_changed',me.uid||me.id||null,actor,'android-customer-service',
