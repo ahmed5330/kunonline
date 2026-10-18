@@ -20,10 +20,10 @@ assert.ok(ACCOUNTS.length>=25);
 assert.equal(moneyMinor(102.34),10234);
 assert.throws(()=>moneyMinor(-1),/INVALID_AMOUNT_PRECISION/);
 assert.throws(()=>moneyMinor(1.001),/INVALID_AMOUNT_PRECISION/);
-assert.throws(()=>normalizeLines([{accountCode:'1010',debit:100},{accountCode:'4000',credit:99}]),/JOURNAL_NOT_BALANCED/);
-assert.throws(()=>normalizeLines([{accountCode:'BAD',debit:100},{accountCode:'4000',credit:100}]),/UNKNOWN_ACCOUNT_CODE/);
-assert.throws(()=>normalizeLines([{accountCode:'1010',debit:100,credit:100},{accountCode:'4000',credit:100}]),/ONE_SIDED_LINE_REQUIRED/);
-assert.throws(()=>normalizeLines([{accountCode:'1010',debit:100}]),/JOURNAL_LINES_REQUIRED/);
+assert.throws(()=>normalizeLines([{accountCode:'1120',debit:100},{accountCode:'4100',credit:99}]),/JOURNAL_NOT_BALANCED/);
+assert.throws(()=>normalizeLines([{accountCode:'BAD',debit:100},{accountCode:'4100',credit:100}]),/UNKNOWN_ACCOUNT_CODE/);
+assert.throws(()=>normalizeLines([{accountCode:'1120',debit:100,credit:100},{accountCode:'4100',credit:100}]),/ONE_SIDED_LINE_REQUIRED/);
+assert.throws(()=>normalizeLines([{accountCode:'1120',debit:100}]),/JOURNAL_LINES_REQUIRED/);
 
 const api=fs.readFileSync('src/accounting-faos-api.js','utf8'),
       route=fs.readFileSync('src/index-commerce-v38.js','utf8'),
