@@ -154,7 +154,17 @@ async function sendMessage(env,{me,clientId,storeId,conversationId,body}){
   const taskData=body.createTask&&typeof body.createTask==='object'?body.createTask:null;
   if(!text&&!orderId&&!taskData)throw Object.assign(new Error('اكتب رسالة أو اربط أوردر أو أنشئ تاسك'),{status:400,code:'MESSAGE_EMPTY'});
   const ts=now(),messageId=rid('MSG'),taskId=taskData?rid('TSK'):null,targetName=assignedTo?(storeMembers.get(assignedTo)?.name||assignedTo):'';
-  const statements=[env.DB.prepare('INSERT INTO collab_messages (id,conversation_id,client_id,store_id,sender_user_id,sender_name,body,order_id,assigned_to_user_id,assigned_to_name,task_id,mentions_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(messageId,conversationId,clientId,storeId,mine,mineName,text,orderId||null,assignedTo||null,targetName||null,taskId,JSON.stringify(mentions),ts),env.DB.prepare('UPDATE collab_conversations SET updated_at=? WHERE id=?').bind(ts,conversationId)];
+  // Existing D1 databases may have a legacy NOT NULL channel_id column.
+  // CREATE TABLE IF NOT EXISTS / ADD COLUMN cannot remove this constraint, so
+  // write the conversation identifier to the legacy column when it exists.
+  // New installations use the canonical conversation_id schema unchanged.
+  const {results:messageColumns=[]}=await env.DB.prepare('PRAGMA table_info(collab_messages)').all();
+  const legacyChannel=messageColumns.some(column=>column.name==='channel_id');
+  const messageSql=legacyChannel
+    ? 'INSERT INTO collab_messages (id,conversation_id,channel_id,client_id,store_id,sender_user_id,sender_name,body,order_id,assigned_to_user_id,assigned_to_name,task_id,mentions_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
+    : 'INSERT INTO collab_messages (id,conversation_id,client_id,store_id,sender_user_id,sender_name,body,order_id,assigned_to_user_id,assigned_to_name,task_id,mentions_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)';
+  const messageValues=[messageId,conversationId,...(legacyChannel?[conversationId]:[]),clientId,storeId,mine,mineName,text,orderId||null,assignedTo||null,targetName||null,taskId,JSON.stringify(mentions),ts];
+  const statements=[env.DB.prepare(messageSql).bind(...messageValues),env.DB.prepare('UPDATE collab_conversations SET updated_at=? WHERE id=?').bind(ts,conversationId)];
   for(const userId of mentions)statements.push(env.DB.prepare('INSERT OR IGNORE INTO collab_message_mentions (id,message_id,conversation_id,user_id,created_at,read_at) VALUES (?,?,?,?,?,NULL)').bind(rid('MEN'),messageId,conversationId,userId,ts));
   if(taskData){
     const title=clean(taskData.title||text,240);if(!title)throw Object.assign(new Error('عنوان التاسك مطلوب'),{status:400,code:'TASK_TITLE_REQUIRED'});
@@ -216,5 +226,5 @@ export async function handleInternalCollaboration({request,env,ctx={},delegate})
     const taskMatch=path.match(/^\/api\/collaboration\/tasks\/([^/]+)$/);if(taskMatch&&method==='PATCH')return json(await updateTask(env,{me,clientId,storeId,taskId:decodeURIComponent(taskMatch[1]),body}));
     const assignMatch=path.match(/^\/api\/collaboration\/orders\/([^/]+)\/assign$/);if(assignMatch&&method==='POST')return json(await directAssign(env,{me,clientId,storeId,orderId:decodeURIComponent(assignMatch[1]),body}));
     return json({error:'مسار تعاون غير معروف'},404);
-  }catch(error){if(schemaError(error))return json({error:'ميزة تواصل الفريق تحتاج تفعيل مخطط قاعدة البيانات',code:'COLLAB_SCHEMA_REQUIRED'},503);return json({error:error?.message||'تعذر تنفيذ طلب تواصل الفريق',code:error?.code||'COLLAB_ERROR'},error?.status||500);}
+  }catch(error){if(schemaError(error))return json({error:'ميزة تواصل الفريق تحتاج تفعيل مخطط قاعدة البيانات',code:'COLLAB_SCHEMA_REQUIRED'},503);if(/D1_ERROR|SQLITE_CONSTRAINT|SQLITE_ERROR/i.test(String(error?.message||'')))return json({error:'تعذر حفظ التغييرات مؤقتًا، حاول مرة أخرى',code:'COLLAB_STORAGE_ERROR'},500);return json({error:error?.message||'تعذر تنفيذ طلب تواصل الفريق',code:error?.code||'COLLAB_ERROR'},error?.status||500);}
 }
