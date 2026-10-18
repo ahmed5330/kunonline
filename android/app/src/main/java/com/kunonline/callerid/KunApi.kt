@@ -56,6 +56,7 @@ object KunApi {
     private var verifiedOptionsCookie = ""
     private var verifiedOptionsUntil = 0L
     private var verifiedOptions: List<MobileStoreOption> = emptyList()
+    private var verifiedOptionsCurrent = ScopeInfo()
 
     @Synchronized private fun clearScope() {
         parsedKey = ""
@@ -244,8 +245,64 @@ object KunApi {
         }.getOrElse { ActionResult(false, "تعذر الاتصال بكن أونلاين") }
     }
 
-    /** Only server-authorized and active stores are offered to the signed-in user. */
+    /** Returns a verified two-minute assignment without any network calls. */
+    fun cachedStoreOptions(context: Context): StoreOptionsResult? {
+        val cookie = session(context) ?: return null
+        if (verifiedOptionsCookie != cookie || SystemClock.elapsedRealtime() >= verifiedOptionsUntil) return null
+        val selected = SecureStore.get(context, AUTH_PREFS, SELECTED_STORE_KEY)
+            ?.let { runCatching { JSONObject(it) }.getOrNull() }
+        val saved = verifiedOptions.firstOrNull {
+            it.clientId == selected?.optString("clientId") && it.storeId == selected.optString("storeId")
+        }
+        val current = saved?.let { ScopeInfo(it.clientId, it.storeId) } ?: verifiedOptionsCurrent
+        return StoreOptionsResult(true, "", verifiedOptions, current)
+    }
+
+    /** One fast authenticated API read instead of one HTTP roundtrip per client. */
     fun loadStoreOptions(context: Context): StoreOptionsResult {
+        val cookie = session(context) ?: return StoreOptionsResult(false, "سجّل الدخول أولاً")
+        cachedStoreOptions(context)?.let { return it }
+        val fast = runCatching { request("GET", "/api/mobile/store-options", cookie = cookie) }.getOrNull()
+            ?: return StoreOptionsResult(false, "تعذر الاتصال بالمتاجر — اعرض البيانات السابقة وحاول التحديث")
+        if (fast.code == 404 || fast.code == 405) return loadStoreOptionsLegacy(context)
+        if (fast.code !in 200..299) {
+            if (fast.code == 401 && session(context) == cookie) clearSession(context)
+            return StoreOptionsResult(false, errorMessage(fast).ifBlank { "تعذر تحميل المتاجر المسموح بها" })
+        }
+        return runCatching {
+            val root = JSONObject(fast.body)
+            val arr = root.optJSONArray("stores") ?: JSONArray()
+            val stores = buildList {
+                for (i in 0 until arr.length()) {
+                    val item = arr.optJSONObject(i) ?: continue
+                    val client = item.optString("clientId").trim()
+                    val store = item.optString("storeId").trim()
+                    if (client.isEmpty() || store.isEmpty()) continue
+                    add(MobileStoreOption(client, item.optString("clientName").ifBlank { client }, store,
+                        item.optString("storeName").ifBlank { "متجر بدون اسم" }, item.optString("role").ifBlank { "member" }))
+                }
+            }.distinctBy { it.clientId + ":" + it.storeId }
+            if (session(context) != cookie) return StoreOptionsResult(false, "تغيّرت جلسة الحساب")
+            val selected = SecureStore.get(context, AUTH_PREFS, SELECTED_STORE_KEY)
+                ?.let { runCatching { JSONObject(it) }.getOrNull() }
+            val selectedStore = stores.firstOrNull {
+                it.clientId == selected?.optString("clientId") && it.storeId == selected.optString("storeId")
+            }
+            val owner = root.optString("role") in setOf("admin", "client")
+            val active = when {
+                selectedStore != null -> ScopeInfo(selectedStore.clientId, selectedStore.storeId)
+                owner -> ScopeInfo(root.optString("defaultClientId"), "")
+                else -> stores.firstOrNull()?.let { ScopeInfo(it.clientId, it.storeId) } ?: ScopeInfo()
+            }
+            verifiedOptionsCookie = cookie
+            verifiedOptions = stores
+            verifiedOptionsUntil = SystemClock.elapsedRealtime() + 120_000L
+            verifiedOptionsCurrent = active
+            StoreOptionsResult(true, if (stores.isEmpty()) "لا توجد متاجر نشطة مخصصة لهذا الحساب" else "", stores, active)
+        }.getOrElse { StoreOptionsResult(false, "تعذر قراءة قائمة المتاجر") }
+    }
+    /** Backwards-compatible discovery for older servers only. */
+    private fun loadStoreOptionsLegacy(context: Context): StoreOptionsResult {
         val cookie = session(context) ?: return StoreOptionsResult(false, "سجّل الدخول أولاً")
         return runCatching {
             val me = request("GET", "/api/me", cookie = cookie)
@@ -287,6 +344,7 @@ object KunApi {
             verifiedOptionsCookie = cookie
             verifiedOptions = authorized
             verifiedOptionsUntil = SystemClock.elapsedRealtime() + 120_000L
+            verifiedOptionsCurrent = current
             StoreOptionsResult(
                 ok = true,
                 message = if (authorized.isEmpty()) "لا توجد متاجر نشطة مخصصة لهذا الحساب" else "",
@@ -315,6 +373,7 @@ object KunApi {
         }
         val value = JSONObject().put("clientId", option.clientId).put("storeId", option.storeId).toString()
         SecureStore.put(context, AUTH_PREFS, SELECTED_STORE_KEY, value)
+        verifiedOptionsCurrent = ScopeInfo(option.clientId, option.storeId)
         clearScope()
         MobileSyncClient.clear()
         CustomerCache.clear(context)
@@ -475,6 +534,7 @@ object KunApi {
         verifiedOptionsCookie = ""
         verifiedOptionsUntil = 0L
         verifiedOptions = emptyList()
+        verifiedOptionsCurrent = ScopeInfo()
         MobileSyncClient.clear()
         SecureStore.put(context, AUTH_PREFS, SELECTED_STORE_KEY, null)
         SecureStore.put(context, AUTH_PREFS, SESSION_KEY, null)
