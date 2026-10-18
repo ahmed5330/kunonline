@@ -2,6 +2,7 @@ import {requirePermission,resolveTenant} from './access-control.js';
 import {resolveStoreScope} from './store-scope.js';
 import {ACCOUNTS,ACCOUNT_BY_CODE,normalizeLines,syntheticCommerceScenario} from './accounting-faos-core.js';
 import {accountingOverview} from './accounting.js';
+import {reconcileAccountingSources} from './accounting-faos-reconciliation.js';
 
 const respond=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}});
 const clean=(s,max=250)=>String(s??'').trim().slice(0,max);
@@ -189,7 +190,7 @@ export async function handleFinancialAccountingOS({request,env,ctx,delegate}){
       if(quality.unreversedManagementFees>0)warnings.push({code:'UNREVERSED_MANAGEMENT_FEES',severity:'high',count:quality.unreversedManagementFees,text:'رسوم إدارة نشطة على طلبات ملغاة أو مرتجعة وتحتاج مطابقة'});
       if(quality.manualAdExpense>0)warnings.push({code:'MANUAL_AD_RISK',severity:'medium',count:quality.manualAdExpense,text:'إنفاق إعلاني يدوي قد يتكرر مع صرف Meta المستورد؛ يلزم مطابقة مصدر الحملة والبنك'});
       warnings.push({code:'PARALLEL_LEDGER',text:'دفتر FAOS الجديد مستقل حاليًا عن الطلبات والمحفظة القديمة؛ لا يمكن اعتماد ميزانه كقوائم نهائية قبل ترحيل الأحداث والمطابقة'});
-      return respond({ok:true,scope,period:range,legacy,ledger,quality,journals:latest,warnings});
+      return respond({ok:true,scope,period:range,legacy,ledger,quality,reconciliation:reconcileAccountingSources({legacy,ledger,quality}),journals:latest,warnings});
     }
     if(method==='POST'&&path==='/api/accounting/faos/journals'){
       const desc=clean(body.description,500),date=clean(body.date),currency=clean(body.currency||'EGP'),key=clean(body.idempotencyKey,120);
