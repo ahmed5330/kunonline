@@ -52,10 +52,23 @@ async function balance(env,{clientId,storeId,from,to}){
   }catch(error){dbFailure(error)}
   const accounts=rows.map(r=>{const a=ACCOUNT_BY_CODE.get(String(r.code)),dr=Number(r.debit_minor)||0,cr=Number(r.credit_minor)||0;return {code:r.code,name:a?.name||'حساب غير معروف',type:a?.type||'unknown',debit:dr/100,credit:cr/100,net:(dr-cr)/100,periodNet:((Number(r.period_debit_minor)||0)-(Number(r.period_credit_minor)||0))/100};});
   const debit=rows.reduce((s,r)=>s+(Number(r.debit_minor)||0),0),credit=rows.reduce((s,r)=>s+(Number(r.credit_minor)||0),0);
-  const rev=accounts.filter(x=>x.type==='revenue').reduce((s,x)=>s-x.periodNet,0),
-        returns=accounts.filter(x=>x.type==='contra_revenue').reduce((s,x)=>s+x.periodNet,0),
-        expenses=accounts.filter(x=>x.type==='expense').reduce((s,x)=>s+x.periodNet,0);
-  return {accounts,balanced:debit===credit,totalDebit:debit/100,totalCredit:credit/100,netSales:(rev-returns),expenses,netProfit:rev-returns-expenses,source:'posted_faos_journals_only',includesLegacyOperationalEvents:false};
+  const sum=(type,field='periodNet')=>accounts.filter(x=>x.type===type).reduce((sum,x)=>sum+x[field],0);
+  const revenues=-sum('revenue'),returns=sum('contra_revenue'),expenses=sum('expense');
+  const assets=Math.round(sum('asset')*100),
+        liabilities=Math.round(-sum('liability')*100),
+        capitalAndRetained=Math.round(-sum('equity')*100),
+        cumulativeEarnings=Math.round((-sum('revenue','net')-sum('contra_revenue','net')-sum('expense','net'))*100);
+  const equity=capitalAndRetained+cumulativeEarnings;
+  return {
+    accounts,balanced:debit===credit,totalDebit:debit/100,totalCredit:credit/100,
+    revenues,returns,netSales:revenues-returns,expenses,netProfit:revenues-returns-expenses,
+    incomeStatement:{revenue:revenues,returns,netRevenue:revenues-returns,expenses,netProfit:revenues-returns-expenses,period:{from,to}},
+    balanceSheet:{asOf:to,assets:assets/100,liabilities:liabilities/100,equity:equity/100,
+      paidInCapitalAndRetained:capitalAndRetained/100,cumulativeEarnings:cumulativeEarnings/100,
+      difference:(assets-liabilities-equity)/100,balanced:assets===liabilities+equity,
+      accountingEvidenceOnly:true,completeSourceIntegration:false},
+    source:'posted_faos_journals_only',includesLegacyOperationalEvents:false
+  };
 }
 // Read-only reconciliation probes against current operational data.
 export async function operationalQuality(env,{clientId,storeId,from,to}){
