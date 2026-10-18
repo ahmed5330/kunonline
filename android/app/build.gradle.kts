@@ -12,9 +12,9 @@ android {
         applicationId = "com.kunonline.callerid.stable"
         minSdk = 29
         targetSdk = 35
-        // v2.9.9: faster parallel order sync, cancellation notes and observed-call history.
-        versionCode = 140
-        versionName = "2.9.9"
+        // v2.9.10: restore authorized order visibility and consistent square home KPIs.
+        versionCode = 141
+        versionName = "2.9.10"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

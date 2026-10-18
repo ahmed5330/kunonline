@@ -301,6 +301,20 @@ object KunApi {
                 owner -> ScopeInfo(root.optString("defaultClientId"), "")
                 else -> stores.firstOrNull()?.let { ScopeInfo(it.clientId, it.storeId) } ?: ScopeInfo()
             }
+            // The store picker and /api/state must use the same verified scope.
+            // Previously the home screen could display a selected store while the
+            // first successful state request still belonged to another client/store.
+            if (selectedStore == null && (active.storeId.isNotBlank() || selected != null)) {
+                if (active.clientId.isNotBlank() && active.storeId.isNotBlank()) {
+                    SecureStore.put(context, AUTH_PREFS, SELECTED_STORE_KEY,
+                        JSONObject().put("clientId", active.clientId).put("storeId", active.storeId).toString())
+                } else if (selected != null) {
+                    SecureStore.put(context, AUTH_PREFS, SELECTED_STORE_KEY, null)
+                }
+                clearScope()
+                MobileSyncClient.clear()
+                CustomerCache.clear(context)
+            }
             verifiedOptionsCookie = cookie
             verifiedOptions = stores
             verifiedOptionsUntil = SystemClock.elapsedRealtime() + 120_000L
@@ -451,6 +465,9 @@ object KunApi {
                 return StateResult(true, "البيانات محدثة", parsedSnapshot, changed = false)
             }
             val root = response.body
+            if (root.optJSONArray("orders") == null) {
+                return StateResult(false, "رد المزامنة لا يحتوي قائمة الطلبات — احتفظنا بالبيانات السابقة، وأعد المحاولة")
+            }
             val orders = root.optJSONArray("orders") ?: JSONArray()
             if (response.changed) CustomerCache.replaceAll(context, orders)
             val parsed = CommerceParser.parse(root)

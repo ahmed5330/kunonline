@@ -28,4 +28,15 @@ assert.ok(collaboration.includes('KunApi.loadStoreOptions(context)')&&collaborat
 assert.ok(collaboration.includes('result.stores.singleOrNull()')&&collaboration.includes('selectedStore == null ->'),'Multi-store chat must prompt before showing any conversation');
 assert.ok(!collaboration.includes('KunApi.resolveScope(cookie, context)'),'Chat must never pick an arbitrary first store');
 assert.ok(scope.includes('user_store_access') && scope.includes('STORE_ISOLATION'), 'Backend must enforce store ACL');
+const dates = source('MobileDateFilterV267.kt');
+const models = source('CommerceModels.kt');
+assert.match(dates, /var preset by mutableStateOf\(MobileDatePreset\.ALL\)/, 'Dashboard must not default to an empty today filter');
+assert.match(dates, /if \(preset == MobileDatePreset\.ALL\) return true/, 'Full-range orders include legacy dates');
+assert.match(models, /filterOrders\(allOrders\)/, 'Period filter is on the UI, not the source snapshot');
+assert.match(home, /rawOrderCount > 0/, 'Explain when selected period hides existing orders');
+assert.match(home, /V25StatusTile\(status, countBase, dataReady/, 'State counters must be equal square tiles');
+assert.match(home, /aspectRatio\(1f\)/, 'Home number cards must stay square');
+assert.match(home, /syncError = result\.message/, 'Network errors must not appear as genuine zero totals');
+assert.match(api, /if \(selectedStore == null && \(active\.storeId\.isNotBlank\(\) \|\| selected != null\)\)/, 'Persist verified store only when it changes; keep legitimate all-store scope');
+assert.match(api, /if \(root\.optJSONArray\("orders"\) == null\)/, 'Reject malformed state without order array');
 console.log('Android home store-switcher contract: permissions, switching, isolation and sync PASS.');

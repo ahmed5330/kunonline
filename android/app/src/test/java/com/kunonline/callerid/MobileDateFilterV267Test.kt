@@ -31,6 +31,16 @@ class MobileDateFilterV267Test {
     }
 
     @Test
+    fun allRangeShowsOrdersRegardlessOfTheirAgeOrLegacyDate() {
+        MobileDateFilterState.select(MobileDatePreset.ALL)
+        assertEquals(MobileDateBounds(LocalDate.MIN, LocalDate.MAX), MobileDateFilterState.bounds(today))
+        assertTrue(MobileDateFilterState.matches("2022-03-11"))
+        assertTrue(MobileDateFilterState.matches("2026-10-18T20:00:00Z"))
+        assertTrue(MobileDateFilterState.matches(""))
+        assertTrue(MobileDateFilterState.matches("legacy-unrecognized-date"))
+    }
+
+    @Test
     fun customRangeIsInclusiveAndNormalizesReverseSelection() {
         MobileDateFilterState.selectCustom(LocalDate.of(2026, 9, 15), LocalDate.of(2026, 9, 10))
         assertEquals(
