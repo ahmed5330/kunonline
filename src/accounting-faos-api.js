@@ -53,6 +53,33 @@ async function balance(env,{clientId,storeId,from,to}){
         expenses=accounts.filter(x=>x.type==='expense').reduce((s,x)=>s+x.periodNet,0);
   return {accounts,balanced:debit===credit,totalDebit:debit/100,totalCredit:credit/100,netSales:(rev-returns),expenses,netProfit:rev-returns-expenses,source:'posted_faos_journals_only',includesLegacyOperationalEvents:false};
 }
+// Read-only reconciliation probes against current operational data.
+async function operationalQuality(env,{clientId,storeId,from,to}){
+  const sw=storeId?' AND o.store_id=?':'',tw=storeId?' AND store_id=?':'',args=storeId?[clientId,storeId,from,to]:[clientId,from,to];
+  const [orders,manual,wrongFees]=await Promise.all([
+    env.DB.prepare(`SELECT COUNT(*) order_count,
+      COALESCE(SUM(CASE WHEN o.state IN ('confirmed','preparing','shipped') THEN o.total ELSE 0 END),0) pipeline_not_verified_revenue,
+      COALESCE(SUM(CASE WHEN o.state='collected' AND o.collected_amount IS NULL THEN 1 ELSE 0 END),0) unknown_collected_amounts
+      FROM orders o WHERE o.client_id=?${sw} AND date(COALESCE(o.date,o.created_at)) BETWEEN date(?) AND date(?)
+      AND NOT EXISTS(SELECT 1 FROM order_duplicate_links d WHERE d.duplicate_order_id=o.id)`).bind(...args).first(),
+    env.DB.prepare(`SELECT
+      COALESCE(SUM(CASE WHEN type='expense' AND category='مشتريات' THEN amount ELSE 0 END),0) inventory_purchases_expensed,
+      COALESCE(SUM(CASE WHEN type='expense' AND (category LIKE '%إعلان%' OR category LIKE '%اعلان%' OR category LIKE '%Ads%') THEN amount ELSE 0 END),0) manually_recorded_ad_cost
+      FROM transactions WHERE client_id=?${tw} AND date(COALESCE(date,created_at)) BETWEEN date(?) AND date(?)`).bind(...args).first(),
+    env.DB.prepare(`SELECT COUNT(*) n FROM order_management_fees f JOIN orders o ON o.id=f.order_id AND o.client_id=f.client_id
+      WHERE f.client_id=?${storeId?' AND f.store_id=?':''} AND f.status='active' AND o.state IN ('returned','cancelled')
+      AND date(COALESCE(o.date,o.created_at)) BETWEEN date(?) AND date(?)`).bind(...args).first()
+  ]);
+  return {
+    orders:Number(orders?.order_count)||0,
+    unrecognizedPipelineValue:Number(orders?.pipeline_not_verified_revenue)||0,
+    unverifiedCollectedOrders:Number(orders?.unknown_collected_amounts)||0,
+    inventoryPurchasesExpensed:Number(manual?.inventory_purchases_expensed)||0,
+    manualAdExpense:Number(manual?.manually_recorded_ad_cost)||0,
+    unreversedManagementFees:Number(wrongFees?.n)||0,
+    interpretation:'risk_flags_only_not_a_statutory_audit'
+  };
+}
 async function journals(env,{clientId,storeId,from,to}){
   const filter=storeId?' AND store_id=?':'',args=storeId?[clientId,storeId,from,to,100]:[clientId,from,to,100];
   try{const q=await env.DB.prepare(`SELECT id,store_id storeId,entry_date entryDate,currency,source_type sourceType,description,reversal_of reversalOf,created_by createdBy,created_at createdAt FROM faos_journals WHERE client_id=?${filter} AND entry_date BETWEEN ? AND ? ORDER BY entry_date DESC,created_at DESC LIMIT ?`).bind(...args).all();return q.results||[];}catch(error){dbFailure(error)}
@@ -95,15 +122,20 @@ export async function handleFinancialAccountingOS({request,env,ctx,delegate}){
     const scope=await scopeFor(request,env,me,body,method!=='GET');
     if(method==='GET'&&path==='/api/accounting/faos/overview'){
       const range=period(url);
-      const [ledger,legacy,latest]=await Promise.all([
+      const [ledger,legacy,latest,quality]=await Promise.all([
         balance(env,{...scope,...range}),
         accountingOverview(env,{...scope,...range}),
-        journals(env,{...scope,...range})
+        journals(env,{...scope,...range}),
+        operationalQuality(env,{...scope,...range})
       ]);
       const warnings=[];
-      if(legacy.unverifiedCollectedOrders>0)warnings.push({code:'UNVERIFIED_COD',count:legacy.unverifiedCollectedOrders,text:'توجد طلبات معلمة كمحصلة بدون مبلغ تحصيل مؤكّد؛ لا يجوز اعتبار قيمتها نقدًا محصلًا'});
+      if(quality.unverifiedCollectedOrders>0)warnings.push({code:'UNVERIFIED_COD',severity:'high',count:quality.unverifiedCollectedOrders,text:'توجد طلبات معلمة كمحصلة بدون مبلغ تحصيل مؤكّد؛ لا يجوز اعتبار قيمتها نقدًا محصلًا'});
+      if(quality.unrecognizedPipelineValue>0)warnings.push({code:'PIPELINE_NOT_REVENUE',severity:'high',count:quality.unrecognizedPipelineValue,text:'قيمة طلبات مؤكدة/تجهيز/شحن لا تثبت بمفردها إيرادًا مُعترفًا به'});
+      if(quality.inventoryPurchasesExpensed>0)warnings.push({code:'INVENTORY_EXPENSE_RISK',severity:'high',count:quality.inventoryPurchasesExpensed,text:'مشتريات مخزون مسجلة في المصروفات؛ راجع مخاطر الازدواج مع تكلفة البضاعة المباعة'});
+      if(quality.unreversedManagementFees>0)warnings.push({code:'UNREVERSED_MANAGEMENT_FEES',severity:'high',count:quality.unreversedManagementFees,text:'رسوم إدارة نشطة على طلبات ملغاة أو مرتجعة وتحتاج مطابقة'});
+      if(quality.manualAdExpense>0)warnings.push({code:'MANUAL_AD_RISK',severity:'medium',count:quality.manualAdExpense,text:'إنفاق إعلاني يدوي قد يتكرر مع صرف Meta المستورد؛ يلزم مطابقة مصدر الحملة والبنك'});
       warnings.push({code:'PARALLEL_LEDGER',text:'دفتر FAOS الجديد مستقل حاليًا عن الطلبات والمحفظة القديمة؛ لا يمكن اعتماد ميزانه كقوائم نهائية قبل ترحيل الأحداث والمطابقة'});
-      return respond({ok:true,scope,period:range,legacy,ledger,journals:latest,warnings});
+      return respond({ok:true,scope,period:range,legacy,ledger,quality,journals:latest,warnings});
     }
     if(method==='POST'&&path==='/api/accounting/faos/journals'){
       const desc=clean(body.description,500),date=clean(body.date),currency=clean(body.currency||'EGP'),key=clean(body.idempotencyKey,120);
