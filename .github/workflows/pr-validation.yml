@@ -30,6 +30,7 @@ jobs:
           node --check public/v2/modules-v109-operational-date-contact.js
           node --check public/v2/modules-v31-customer-service.js
           node scripts/customer-service-call-continuity-test.mjs
+          node scripts/android-customer-service-outcomes-test.mjs
       - name: Validate universal Android order search scope
         run: |
           node --check src/mobile-global-order-search.js
