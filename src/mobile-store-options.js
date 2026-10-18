@@ -37,7 +37,7 @@ export async function handleMobileStoreOptions({request,env,delegate}){
     if(scopedClient&&!allowed.has(scopedClient)){
       return unauthorized('لا توجد صلاحية على الحساب','TENANT_ISOLATION',403);
     }
-    if(!allowed.size)return json({ok:true,stores:[],clients:0});
+    if(!allowed.size)return json({ok:true,stores:[],clients:0,defaultClientId:scopedClient,role:clean(me.role)});
 
     const role=clean(me.role);
     const isOwner=role==='admin'||role==='client';
@@ -56,7 +56,7 @@ export async function handleMobileStoreOptions({request,env,delegate}){
       seen.add(key);
       stores.push({clientId,clientName:allowed.get(clientId),storeId,storeName:clean(item.name)||'متجر بدون اسم',role:clean(item.role)||'member'});
     }
-    return json({ok:true,stores,clients:allowed.size});
+    return json({ok:true,stores,clients:allowed.size,defaultClientId:scopedClient||[...allowed.keys()][0],role});
   }catch(e){
     return unauthorized('تعذر تحميل المتاجر المتاحة','MOBILE_STORES_LOAD_FAILED',503);
   }
