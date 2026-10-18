@@ -161,6 +161,18 @@ try{
   await waitFor(`!!document.getElementById('v28CreateMember')&&!!document.getElementById('v28MemberRole')`,'team create drawer');
   const roleCount=await evaluate(`document.querySelectorAll('#v28MemberRole option').length`);if(Number(roleCount)<5)throw new Error(`Team create drawer role catalog incomplete: ${roleCount}`);
   await evaluate(`document.getElementById('v23Close')?.click()`);await sleep(250);
+  // Verify the ledger shortcut is visible at first sidebar level to finance-authorized users.
+  await waitFor("!!document.querySelector('#kunFaosNavShortcut:not([hidden])')&&document.getElementById('kunFaosNavShortcut').getAttribute('aria-hidden')==='false'",'FAOS top-level accounting shortcut');
+  await evaluate("document.getElementById('kunFaosNavShortcut').click()");
+  await waitFor("!!document.getElementById('kunFaosWorkspace')&&!!document.getElementById('acc100FaosOpen')",'FAOS workspace and account header entry');
+  await evaluate("document.querySelector('#kunFaosWorkspace [data-faos-tab=sim]').click()");
+  await waitFor("document.getElementById('faosBody')?.innerText.includes('QA-A-DELIVERED')",'isolated FAOS test orders');
+  await evaluate("document.getElementById('acc100FaosOpen').click()");
+  await waitFor("document.querySelector('#kunFaosWorkspace [data-faos-tab=ledger]')?.classList.contains('active')",'ledger navigation from account header');
+  await evaluate("document.querySelector('[data-view=access]').click()");
+  await waitFor("!!document.getElementById('v28AddMember')",'return to access after FAOS navigation');
+  console.log('FAOS sidebar browser QA passed: top-level link, ledgers, safe fake orders and header route.');
+
 
   // Exercise actual Customer Service controls against an isolated disposable Preview order.
   interactionClientId=await evaluate("window.kunClientId()");
