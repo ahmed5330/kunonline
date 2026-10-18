@@ -5,6 +5,16 @@ import android.telecom.CallScreeningService
 import kotlin.concurrent.thread
 
 class KunCallScreeningService : CallScreeningService() {
+    private fun observed(orderId: String?, number: String, incoming: Boolean) {
+        if (!CallActivityStore.markObserved(this, orderId, number, incoming)) return
+        if (!KunApi.hasSession(this)) return
+        thread(name = "kun-observed-call-log") {
+            val id = orderId ?: return@thread
+            runCatching { KunCustomerServiceApi.claimContact(this, id) }
+            runCatching { KunCustomerServiceApi.logContact(this, id, "phone", "screened") }
+        }
+    }
+
     override fun onScreenCall(callDetails: Call.Details) {
         val incoming = callDetails.callDirection == Call.Details.DIRECTION_INCOMING
         val number = PhoneNormalizer.normalize(callDetails.handle?.schemeSpecificPart)
@@ -17,7 +27,7 @@ class KunCallScreeningService : CallScreeningService() {
         if (number.isBlank()) return
         val cached = CustomerCache.lookup(this, number)
         if (cached != null) {
-            CallActivityStore.mark(this, cached.orderId, number, incoming)
+            observed(cached.orderId, number, incoming)
             CallerOverlay.show(this, cached, incoming)
         }
 
@@ -31,13 +41,8 @@ class KunCallScreeningService : CallScreeningService() {
                 CustomerCache.lookup(this, number)
             }
             if (fresh != null) {
-                CallActivityStore.mark(this, fresh.orderId, number, incoming)
+                observed(fresh.orderId, number, incoming)
                 if (fresh != cached) CallerOverlay.show(this, fresh, incoming)
-                // Claim is idempotent; it moves the order into "جاري الاتصال".
-                // Never auto-release on focus, call end, or timer.
-                fresh.orderId?.takeIf { it.isNotBlank() }?.let {
-                    runCatching { KunCustomerServiceApi.claimContact(this, it) }
-                }
             }
         }
     }
