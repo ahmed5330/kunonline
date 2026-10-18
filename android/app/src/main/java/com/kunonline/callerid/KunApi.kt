@@ -252,7 +252,7 @@ object KunApi {
         val selected = SecureStore.get(context, AUTH_PREFS, SELECTED_STORE_KEY)
             ?.let { runCatching { JSONObject(it) }.getOrNull() }
         val saved = verifiedOptions.firstOrNull {
-            it.clientId == selected?.optString("clientId") && it.storeId == selected.optString("storeId")
+            it.clientId == selected?.optString("clientId") && it.storeId == selected?.optString("storeId")
         }
         val current = saved?.let { ScopeInfo(it.clientId, it.storeId) } ?: verifiedOptionsCurrent
         return StoreOptionsResult(true, "", verifiedOptions, current)
@@ -286,7 +286,7 @@ object KunApi {
             val selected = SecureStore.get(context, AUTH_PREFS, SELECTED_STORE_KEY)
                 ?.let { runCatching { JSONObject(it) }.getOrNull() }
             val selectedStore = stores.firstOrNull {
-                it.clientId == selected?.optString("clientId") && it.storeId == selected.optString("storeId")
+                it.clientId == selected?.optString("clientId") && it.storeId == selected?.optString("storeId")
             }
             val owner = root.optString("role") in setOf("admin", "client")
             val active = when {
