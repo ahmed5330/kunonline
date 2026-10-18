@@ -9,10 +9,12 @@ const server=read('src/production-customer-service.js');
 const claims=read('src/operational-workflow-v105.js');
 for(const src of [overlay,fallback]){
   assert.match(src, /decision\([^)]*orderId, "cancelled"\)/);
-  assert.match(src,/تأكيد الإلغاء/,'cancellation must require confirmation');
+
   assert.match(src,/العميل\\nلغى/,'call overlay must show customer cancelled');
   assert.match(src,/CallerJntOrderEditActivity.EXTRA_SHIPPING_ONLY/,'J&T editor must remain');
 }
+assert.match(overlay,/putExtra\("start_cancel", true\)/,'overlay routes cancellation to the editable reason dialog');
+assert.match(fallback,/تأكيد الإلغاء/,'fallback requires explicit cancellation confirmation');
 assert.match(board,/mutableStateOf\("pending"\)/,'pending is the default tab');
 assert.match(board,/ForegroundPolling\(storeFilter to stateFilter/,'switching tabs must fetch from API');
 assert.match(board,/Status tabs are ALWAYS visible/);
