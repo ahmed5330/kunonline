@@ -46,3 +46,34 @@ Date: 2026-10-18. Reference: Kun Online Financial & Accounting OS v1 (23 chapter
 - Automated contract tests against authentic anonymized operational datasets.
 - Actual Preview database migrations, browser E2E and permission tests.
 - Audit of cash account vs bank statements and independent QA signoff.
+
+
+## Continuation — stricter accounting controls (18 October 2026)
+- Idempotent posting now checks *all economic inputs*, not just the transaction key. A reused key with a different amount, accounts, date or description receives `409 FAOS_IDEMPOTENCY_PAYLOAD_MISMATCH`.
+- Identical retries succeed even after the underlying period closes. New entries for closed months are blocked; reversals are recorded in an open month, not by editing closed history.
+- Real API journal tests execute against SQLite in-memory using the FAOS D1 schema. They confirm atomic posting, two-store/tenant isolation, duplicate replays, reversal idempotency and period-close behavior.
+- The initial arbitrary 27 account numbers had important collisions with the project's **156-account reference chart**. The active subset is now remapped to the actual reference (1230 courier COD, 1240 gateway, 1120 bank, 1300 inventory, 5100 COGS, 6110 shipping, 6100 Meta, 6141 Kun Online management etc.). All 156 accounts are *not* enabled as posting accounts yet; each additional head requires explicit accounting-policy review.
+- The verified commerce event projector `src/accounting-faos-event-projector.js` emits **draft only** journals for verified delivery, inventory COGS snapshot, courier COD settlement, approved return, inspected return stock and bank-verified refunds. It refuses inconsistent amounts, missing approved evidence types and unsupported SaaS wallet transactions.
+- `operationalQuality` evaluates the real canonical order SQL (when Preview/Production is eventually connected) and reports unverified COD, pending shipping pipeline amounts, missing sold-item costs, wrong active management fees and manual purchases/ads requiring deduplication.
+- Legacy monthly accounting now exposes separate `verifiedCollectedRevenue` (recorded collection amount) and `estimatedCollectedRevenue` (fallback from order total); neither alone proves money arrived at the bank. The UI explicitly distinguishes them.
+
+### Important data-policy and implementation limits
+- Delivery status alone never proves COD cash remittance. `signed` may establish delivery, but `collected` requires a settlement file, carrier record and bank reconciliation before treating it as bank cash.
+- A `verified` flag supplied by client input is not cryptographic evidence. Before automatic posting, ingestion services must authenticate provider signatures, verify external references and prevent events from other tenants or stores.
+- Shipping revenue is included only when the merchant is entitled to recognize it (principal/agent assessment); tax treatments are entity-specific. The projector presently requires normalized externally approved accounting events and cannot decide policy itself.
+- There is **no event auto-posting**, **no live legacy reclassification/backfill**, **no production database migration**, **no production deploy**, and **no certified cash reconciliation** in this PR.
+- Full release requires an independently isolated Preview QA tenant/database with real schema, provider fixtures, source authenticity checks, legally approved chart and month-open/close procedures, then repeated zero-difference reconciliation by journal and store.
+
+### Required production acceptance report, per store and month
+| Check | Source A | Source B | Acceptance |
+|---|---|---|---|
+| Payment settlements | Carrier/PSP statement | COD and gateway clearing GL | Every receipt matched or flagged with owner |
+| Merchant cash | Bank ledger/statement | Bank GL | Zero unexplained variance |
+| Revenue | Delivery-confirmed events | Sales GL | No pre-delivery revenue, proper VAT |
+| COGS | Serialized stock/bundle cost at sale | Inventory and COGS GL | No missing or double-counted unit cost |
+| Returns | Refund/inspection/shipping statements | Return and stock GL | Reversals and remaining liabilities reconcile |
+| Marketing | Platform daily spend + invoice | Expense GL | No duplicate manual and API spend |
+| Kun SaaS wallet | Platform wallet order-billing | Platform ledger only | Separate from merchant books |
+| Period close | Approved close document | GL write guard + reversal history | Closed books immutable |
+
+No release may be represented as 'accounting fully integrated' until the above checks have been run against a real isolated environment and the decisions have been explicitly approved.
