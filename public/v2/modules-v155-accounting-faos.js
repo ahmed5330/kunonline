@@ -128,6 +128,7 @@
       '<p class="faos-muted">القيود الافتراضية: '+esc(s.journalCount)+' قيدًا · مدين '+money(s.totals?.debit)+' · دائن '+money(s.totals?.credit)+'</p>';
   }
   function entry(){
+    if(state.data?.capabilities?.financialPostingEnabled!==true)return '<div class="faos-note">إضافة القيود مغلقة حاليًا للحماية. الدفتر متاح للقراءة والمحاكاة فقط حتى تشغيل Preview المختبري والموافقة على المطابقة. لا يمكن إضافة قيود أو تغيير أرصدة العملاء في هذه الحالة.</div>';
     const accounts=state.catalog.filter(a=>a.code!=='4090'),opts=accounts.map(a=>'<option value="'+esc(a.code)+'">'+esc(a.code)+' — '+esc(a.name)+'</option>').join('');
     return '<div class="faos-note">تسجيل قيد حقيقي في دفتر FAOS المستقل. لا تعدل الأوامر أو رصيد المحفظة أو المبيعات القديمة. القيود المرحلة لا تُحذف وتصحح فقط بقيد عكسي.</div>'+
       '<form id="faosEntryForm" class="faos-form"><label>التاريخ<input type="date" name="date" required value="'+new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Cairo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date())+'"></label>'+
