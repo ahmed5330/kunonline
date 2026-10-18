@@ -208,7 +208,10 @@ export async function handleProductionCustomerService({request,env,ctx,delegate}
     if(action==='contact'&&method==='POST'){
       const channel=['phone','whatsapp','messenger','instagram','tiktok'].includes(clean(body.channel).toLowerCase())?clean(body.channel).toLowerCase():'phone',
         intent=channel==='phone'&&body.intent==='screened'?'screened':body.intent==='call'?'call':'contact',
-        event={type:'contact',channel,intent,at:stamp,by:actor,byName:actor,byUserId:me.uid||me.id||null};
+        event={type:'contact',channel,intent,at:stamp,by:actor,byName:actor,
+          byUserId:me.uid||me.id||null,
+          direction:intent==='screened'&&['incoming','outgoing'].includes(clean(body.direction))
+            ?clean(body.direction):null};
       const saved=await appendEvent(env,row,event,{contact:true});return json({ok:true,entry:event,history:saved.history,log:saved.contactLog,
         contactCount:saved.contactLog.filter(e=>e?.channel==='phone'&&e?.intent==='screened').length});
     }
