@@ -276,15 +276,22 @@ fun V23CustomerService(snapshot: CommerceSnapshot, onGlobalRefresh: () -> Unit) 
     var storeFilter by remember { mutableStateOf("") }
     var selectedOrder by remember { mutableStateOf<CsOrderUi?>(null) }
     var editorData by remember { mutableStateOf<CustomerServiceEditorData?>(null) }
+    var activeBoardKey by remember { mutableStateOf("") }
 
     suspend fun performBoardRefresh(keepOrderId: String? = selectedOrder?.id, quiet: Boolean = false) {
-        if (loading) return
+        val requestedStore = storeFilter
+        val requestedState = stateFilter
+        val requestKey = "$requestedStore|$requestedState"
+        if (loading && activeBoardKey == requestKey) return
+        activeBoardKey = requestKey
         loading = true
         val result = try {
-            withContext(Dispatchers.IO) { KunCustomerServiceApi.fetchBoard(context, storeFilter, stateFilter) }
+            withContext(Dispatchers.IO) { KunCustomerServiceApi.fetchBoard(context, requestedStore, requestedState) }
         } finally {
-            loading = false
+            if (activeBoardKey == requestKey) loading = false
         }
+        // A late response from another store/status must never overwrite the selected tab.
+        if (activeBoardKey != requestKey || storeFilter != requestedStore || stateFilter != requestedState) return
         if (!quiet || !result.ok) message = result.message
         if (result.ok) {
             board = result
