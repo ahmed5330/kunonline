@@ -27,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Storefront
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -95,7 +96,7 @@ private val NATIVE_CLIENT_SECTIONS = NativeClientSection.entries.toList()
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MobileSystemSectionsDialog(onDismiss: () -> Unit) {
+fun MobileSystemSectionsDialog(onDismiss: () -> Unit, onHome: () -> Unit = onDismiss) {
     var selected by remember { mutableStateOf<NativeClientSection?>(null) }
 
     BackHandler {
@@ -107,7 +108,9 @@ fun MobileSystemSectionsDialog(onDismiss: () -> Unit) {
         properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false)
     ) {
         Surface(modifier = Modifier.fillMaxSize(), color = KunColors.Ground) {
-            if (selected == null) {
+            Column(Modifier.fillMaxSize()) {
+                Box(Modifier.weight(1f)) {
+                    if (selected == null) {
                 Scaffold(
                     containerColor = KunColors.Ground,
                     topBar = {
@@ -165,12 +168,26 @@ fun MobileSystemSectionsDialog(onDismiss: () -> Unit) {
                         }
                     }
                 }
-            } else {
-                NativeClientSectionScreen(
-                    section = selected!!,
-                    onBack = { selected = null },
-                    onClose = onDismiss
-                )
+                    } else {
+                        NativeClientSectionScreen(
+                            section = selected!!,
+                            onBack = { selected = null },
+                            onClose = onDismiss
+                        )
+                    }
+                }
+                Surface(color = KunColors.Surface, tonalElevation = 4.dp) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        FilledTonalButton(onClick = onHome) {
+                            Icon(Icons.Outlined.Storefront, contentDescription = "الصفحة الرئيسية", modifier = Modifier.size(25.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("الرئيسية", fontWeight = FontWeight.ExtraBold)
+                        }
+                    }
+                }
             }
         }
     }

@@ -271,20 +271,27 @@ fun V23CustomerService(snapshot: CommerceSnapshot, onGlobalRefresh: () -> Unit) 
     var loading by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf("") }
     var query by remember { mutableStateOf("") }
-    var stateFilter by remember { mutableStateOf("all") }
+    var stateFilter by remember { mutableStateOf("pending") }
     var filtersExpanded by remember { mutableStateOf(false) }
     var storeFilter by remember { mutableStateOf("") }
     var selectedOrder by remember { mutableStateOf<CsOrderUi?>(null) }
     var editorData by remember { mutableStateOf<CustomerServiceEditorData?>(null) }
+    var activeBoardKey by remember { mutableStateOf("") }
 
     suspend fun performBoardRefresh(keepOrderId: String? = selectedOrder?.id, quiet: Boolean = false) {
-        if (loading) return
+        val requestedStore = storeFilter
+        val requestedState = stateFilter
+        val requestKey = "$requestedStore|$requestedState"
+        if (loading && activeBoardKey == requestKey) return
+        activeBoardKey = requestKey
         loading = true
         val result = try {
-            withContext(Dispatchers.IO) { KunCustomerServiceApi.fetchBoard(context, storeFilter) }
+            withContext(Dispatchers.IO) { KunCustomerServiceApi.fetchBoard(context, requestedStore, requestedState) }
         } finally {
-            loading = false
+            if (activeBoardKey == requestKey) loading = false
         }
+        // A late response from another store/status must never overwrite the selected tab.
+        if (activeBoardKey != requestKey || storeFilter != requestedStore || stateFilter != requestedState) return
         if (!quiet || !result.ok) message = result.message
         if (result.ok) {
             board = result
@@ -296,14 +303,18 @@ fun V23CustomerService(snapshot: CommerceSnapshot, onGlobalRefresh: () -> Unit) 
         scope.launch { performBoardRefresh(keepOrderId) }
     }
 
-    ForegroundPolling(storeFilter, intervalMillis = 15_000L) {
+    ForegroundPolling(storeFilter to stateFilter, intervalMillis = 15_000L) {
         performBoardRefresh(quiet = true)
     }
 
     val allOrders = board?.orders.orEmpty()
     val filtered = remember(allOrders, query, stateFilter) {
         allOrders.filter { order ->
-            val stateOk = stateFilter == "all" || order.state == stateFilter
+            val stateOk = when (stateFilter) {
+                "all", "contacting" -> true // The server has already applied the contact-claim filter.
+                "pending" -> order.state in setOf("pending", "new")
+                else -> order.state == stateFilter
+            }
             val queryOk = query.isBlank() || listOf(order.name, order.phone, order.ref, order.product, order.gov, order.address, order.storeName, order.awb)
                 .any { it.contains(query, true) }
             stateOk && queryOk
@@ -340,25 +351,35 @@ fun V23CustomerService(snapshot: CommerceSnapshot, onGlobalRefresh: () -> Unit) 
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     FilterChip(selected = storeFilter.isBlank(), onClick = { storeFilter = "" },
-                        label = { Text("كل المتاجر") })
+                        label = { Text("المتجر الحالي") })
                     stores.forEach { store ->
                         FilterChip(selected = storeFilter == store.id, onClick = { storeFilter = store.id },
                             label = { Text(store.name.ifBlank { store.code }) })
                     }
                 }
             }
-            Row(
-                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                v23CustomerServiceStates().forEach { (key, label) ->
-                    FilterChip(selected = stateFilter == key, onClick = { stateFilter = key },
-                        label = { Text(label) })
-                }
+        }
+        // Status tabs are ALWAYS visible. The waiting-confirmation queue is the
+        // only default queue; other lifecycle stages have dedicated lists.
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 5.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            v23CustomerServiceStates().forEach { (key, label) ->
+                FilterChip(
+                    selected = stateFilter == key,
+                    onClick = {
+                        if (stateFilter != key) {
+                            stateFilter = key
+                            selectedOrder = null
+                        }
+                    },
+                    label = { Text(label) }
+                )
             }
         }
         Text(
-            "خدمة العملاء · ${filtered.size} طلب" +
+            "خدمة العملاء · ${v23CustomerServiceStates().firstOrNull { it.first == stateFilter }?.second ?: "الطلبات"} · ${filtered.size} طلب" +
                 if (stateFilter != "all" || storeFilter.isNotBlank()) " · الفلاتر مفعلة" else "",
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
             style = MaterialTheme.typography.labelSmall,
@@ -1095,13 +1116,18 @@ private fun v23ParseCatalog(array: JSONArray): List<CsCatalogProduct> = buildLis
 }
 
 private fun v23CustomerServiceStates(): List<Pair<String, String>> = listOf(
-    "all" to "الكل",
     "pending" to "في انتظار التأكيد",
+    "contacting" to "جاري التواصل",
     "no_answer" to "لا يرد",
     "confirmed" to "تم التأكيد",
     "preparing" to "التجهيز",
     "shipped" to "جاري الشحن",
-    "deferred" to "مؤجل"
+    "signed" to "تم التسليم",
+    "collected" to "تم التحصيل",
+    "deferred" to "مؤجل",
+    "cancelled" to "العميل لغى",
+    "returned" to "مرتجع",
+    "all" to "كل الحالات"
 )
 
 private fun v23AllStates(): List<Pair<String, String>> = listOf(

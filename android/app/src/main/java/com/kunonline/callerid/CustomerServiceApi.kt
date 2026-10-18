@@ -78,6 +78,10 @@ data class CustomerServiceEditorData(
 
 object KunCustomerServiceApi {
     private const val BASE_URL = "https://app.kun-online.com"
+    // Preserve the already parsed board while the authenticated sync cursor is unchanged.
+    private var boardCacheKey = ""
+    private var boardCacheRevision = -1
+    private var boardCache: CustomerServiceBoardResult? = null
 
     private data class HttpResult(val code: Int, val body: String)
 
@@ -118,21 +122,29 @@ object KunCustomerServiceApi {
 
     private fun resolveClientId(context: Context, cookie: String): String = KunApi.resolveScope(cookie, context).clientId
 
-    fun fetchBoard(context: Context, storeId: String = ""): CustomerServiceBoardResult {
+    @Synchronized fun fetchBoard(context: Context, storeId: String = "", state: String = "pending"): CustomerServiceBoardResult {
         val cookie = cookie(context) ?: return CustomerServiceBoardResult(false, "سجّل الدخول أولاً")
         return runCatching {
             val clientId = resolveClientId(context, cookie)
             if (clientId.isBlank()) return CustomerServiceBoardResult(false, "تعذر تحديد حساب المتجر")
+            // Follow the currently selected store unless the agent chooses a
+            // different store explicitly in the Customer Service filters.
             val selected = if (storeId.isNotBlank()) storeId else KunApi.resolveScope(cookie, context).storeId
             val path = buildString {
                 append("/api/customer-service?clientId=${enc(clientId)}")
                 if (selected.isNotBlank()) append("&storeId=${enc(selected)}")
+                append("&state=${enc(state)}")
             }
             val synced = MobileSyncClient.fetch(cookie, path)
             val response = HttpResult(synced.code, synced.body.toString())
             if (KunApi.sessionCookie(context) != cookie) return CustomerServiceBoardResult(false, "تغيّرت جلسة الحساب")
             if (response.code == 401) return CustomerServiceBoardResult(false, "انتهت الجلسة — سجّل الدخول مرة أخرى")
             if (response.code !in 200..299) return CustomerServiceBoardResult(false, errorMessage(response, "تعذر تحميل خدمة العملاء"))
+            val key = cookie + "|" + path
+            val revision = MobileDateFilterState.revision
+            if (!synced.changed && boardCacheKey == key && boardCacheRevision == revision && boardCache != null) {
+                return requireNotNull(boardCache)
+            }
             val root = json(response)
             val stores = buildList {
                 val array = root.optJSONArray("stores") ?: JSONArray()
@@ -153,7 +165,7 @@ object KunCustomerServiceApi {
                 val array = root.optJSONArray("orders") ?: JSONArray()
                 for (i in 0 until array.length()) array.optJSONObject(i)?.let { add(parseOrder(it)) }
             })
-            CustomerServiceBoardResult(
+            val parsedBoard = CustomerServiceBoardResult(
                 ok = true,
                 message = "تم تحميل خدمة العملاء",
                 clientId = root.optString("clientId").ifBlank { clientId },
@@ -163,6 +175,10 @@ object KunCustomerServiceApi {
                 orders = orders,
                 stateLabels = labels
             )
+            boardCacheKey = key
+            boardCacheRevision = revision
+            boardCache = parsedBoard
+            parsedBoard
         }.getOrElse { CustomerServiceBoardResult(false, "تعذر الاتصال بخدمة العملاء") }
     }
 

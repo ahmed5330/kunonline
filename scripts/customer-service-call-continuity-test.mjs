@@ -37,6 +37,6 @@ for(const s of [native,nativeFallback]){
   expect(s,'CallerJntOrderEditActivity.EXTRA_SHIPPING_ONLY, true','open native J&T cascading shipping editor');
   expect(s,'تعديل بيانات','shipping button shown');
 }
-expect(build,'versionCode = 137','new build number');
-expect(build,'versionName = "2.9.6"','new version');
-console.log('PASS: Customer Service filter and call claim continuity / Android caller panel 2.9.6');
+expect(build,'versionCode = 138','new build number');
+expect(build,'versionName = "2.9.7"','new version');
+console.log('PASS: Customer Service filter and call claim continuity / Android caller panel 2.9.7');

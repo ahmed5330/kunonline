@@ -46,8 +46,21 @@ object KunApi {
     private var scopeCookie = ""
     private var cachedScope: ScopeInfo? = null
     private var scopeExpiresAt = 0L
+    // Reuse the parsed Compose snapshot when the authenticated delta is unchanged.
+    // Keys include the signed-in session, store scope and UI date-filter revision.
+    private var parsedKey = ""
+    private var parsedRevision = -1
+    private var parsedSnapshot: CommerceSnapshot? = null
+    // In-memory store assignment verification. The backend still authorizes
+    // every data read, so cached options never confer access on their own.
+    private var verifiedOptionsCookie = ""
+    private var verifiedOptionsUntil = 0L
+    private var verifiedOptions: List<MobileStoreOption> = emptyList()
 
     @Synchronized private fun clearScope() {
+        parsedKey = ""
+        parsedRevision = -1
+        parsedSnapshot = null
         scopeCookie = ""
         cachedScope = null
         scopeExpiresAt = 0L
@@ -270,22 +283,33 @@ object KunApi {
             }
             if (session(context) != cookie) return StoreOptionsResult(false, "تغيّرت جلسة الحساب")
             val current = resolveScope(cookie, context)
+            val authorized = options.distinctBy { "${it.clientId}:${it.storeId}" }
+            verifiedOptionsCookie = cookie
+            verifiedOptions = authorized
+            verifiedOptionsUntil = SystemClock.elapsedRealtime() + 120_000L
             StoreOptionsResult(
                 ok = true,
-                message = if (options.isEmpty()) "لا توجد متاجر نشطة مخصصة لهذا الحساب" else "",
-                stores = options.distinctBy { "${it.clientId}:${it.storeId}" },
+                message = if (authorized.isEmpty()) "لا توجد متاجر نشطة مخصصة لهذا الحساب" else "",
+                stores = authorized,
                 current = current
             )
         }.getOrElse { StoreOptionsResult(false, "تعذر تحميل قائمة المتاجر — تأكد من الاتصال") }
     }
 
-    /** Validate a fresh assignment before persisting. Never trust a UI-provided store ID. */
+    /** Reuse a recent server-verified assignment for quick switches; requests
+     *  are independently authorized against live server access rules. */
     @Synchronized fun selectStore(context: Context, choice: MobileStoreOption): ActionResult {
-        val verified = loadStoreOptions(context)
-        if (!verified.ok) return ActionResult(false, verified.message)
-        val option = verified.stores.find { it.clientId == choice.clientId && it.storeId == choice.storeId }
+        val cookie = session(context) ?: return ActionResult(false, "انتهت الجلسة")
+        val fresh = verifiedOptionsCookie == cookie &&
+            SystemClock.elapsedRealtime() < verifiedOptionsUntil
+        val serverOptions = if (fresh) verifiedOptions else {
+            val verified = loadStoreOptions(context)
+            if (!verified.ok) return ActionResult(false, verified.message)
+            verified.stores
+        }
+        val option = serverOptions.find { it.clientId == choice.clientId && it.storeId == choice.storeId }
             ?: return ActionResult(false, "ليس لديك صلاحية الوصول لهذا المتجر")
-        val current = resolveScope(session(context) ?: return ActionResult(false, "انتهت الجلسة"), context)
+        val current = resolveScope(cookie, context)
         if (current.clientId == option.clientId && current.storeId == option.storeId) {
             return ActionResult(true, "المتجر محدد بالفعل")
         }
@@ -355,10 +379,19 @@ object KunApi {
                 return StateResult(false, response.body.optString("error").ifBlank { "تعذر تحميل بيانات النظام" })
             }
             if (session(context) != cookie) return StateResult(false, "تغيّرت جلسة الحساب")
+            val revision = MobileDateFilterState.revision
+            val cacheKey = cookie + "|" + path
+            if (!response.changed && parsedKey == cacheKey && parsedRevision == revision && parsedSnapshot != null) {
+                return StateResult(true, "البيانات محدثة", parsedSnapshot)
+            }
             val root = response.body
             val orders = root.optJSONArray("orders") ?: JSONArray()
             if (response.changed) CustomerCache.replaceAll(context, orders)
-            StateResult(true, "تم تحديث البيانات", CommerceParser.parse(root))
+            val parsed = CommerceParser.parse(root)
+            parsedSnapshot = parsed
+            parsedKey = cacheKey
+            parsedRevision = revision
+            StateResult(true, "تم تحديث البيانات", parsed)
         }.getOrElse { StateResult(false, "تعذر قراءة بيانات النظام") }
     }
 
@@ -439,6 +472,9 @@ object KunApi {
     private fun session(context: Context): String? = SecureStore.get(context, AUTH_PREFS, SESSION_KEY)
     private fun clearSession(context: Context) {
         clearScope()
+        verifiedOptionsCookie = ""
+        verifiedOptionsUntil = 0L
+        verifiedOptions = emptyList()
         MobileSyncClient.clear()
         SecureStore.put(context, AUTH_PREFS, SELECTED_STORE_KEY, null)
         SecureStore.put(context, AUTH_PREFS, SESSION_KEY, null)

@@ -12,9 +12,9 @@ android {
         applicationId = "com.kunonline.callerid.stable"
         minSdk = 29
         targetSdk = 35
-        // v2.9.6 restores caller details and contact decisions during customer calls.
-        versionCode = 137
-        versionName = "2.9.6"
+        // v2.9.7: native historical order search, centered Home, delta parse optimisations.
+        versionCode = 138
+        versionName = "2.9.7"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

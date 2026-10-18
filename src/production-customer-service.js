@@ -98,14 +98,31 @@ async function saveArrays(env,row,{history,contactLog}){
 async function appendEvent(env,row,event,{contact=false}={}){
   const history=arr(row.history);history.push(event);const contactLog=arr(row.contact_log);if(contact)contactLog.push(event);await saveArrays(env,row,{history,contactLog});return {history,contactLog};
 }
-async function board(env,me,clientId,storeId,dateRange={key:'all',from:'',to:''}){
+async function board(env,me,clientId,storeId,dateRange={key:'all',from:'',to:''},requestedState=''){
   // Operational board is intentionally multi-store: a support agent may work
   // in several assigned stores without selecting one before seeing orders.
   const access=await listMyStores(env,me,clientId),stores=access.stores||[],ids=stores.map(x=>String(x.id)),selected=clean(storeId);
   if(!access.allStores&&!ids.length)throw Object.assign(new Error('لا توجد متاجر مخصصة لهذا المستخدم'),{status:403,code:'CUSTOMER_SERVICE_STORE_ACCESS_REQUIRED'});
   if(selected&&!ids.includes(selected))throw Object.assign(new Error('المتجر خارج المتاجر المسموح بها'),{status:403,code:'STORE_ISOLATION'});
   const dateExpr="COALESCE(NULLIF(substr(date,1,10),''),substr(created_at,1,10))";
-  const where=[`client_id=?`,`state IN (${BOARD_STATES.map(()=>'?').join(',')})`],binds=[clientId,...BOARD_STATES];
+  const mobileStates=new Set([...STATES,'new','shipping','in_shipping','contacting','all']);
+  const state=clean(requestedState);
+  if(state&&!mobileStates.has(state))throw Object.assign(new Error('فلتر حالة الطلب غير معروف'),{status:400,code:'CUSTOMER_SERVICE_STATE_FILTER_INVALID'});
+  const where=['client_id=?'],binds=[clientId];
+  if(state==='contacting'){
+    where.push("(contact_claim_user_id IS NOT NULL AND contact_claim_user_id!='')");
+    where.push("state IN ('pending','no_answer','confirmed','preparing','deferred')");
+  }else if(state==='pending'){
+    where.push("state IN ('pending','new')");
+    where.push("(contact_claim_user_id IS NULL OR contact_claim_user_id='')");
+  }else if(state&&state!=='all'){
+    where.push('state=?');binds.push(state);
+  }else if(state==='all'){
+    // Explicit "all" is opt-in. Keep every lifecycle category available.
+  }else{
+    where.push(`state IN (${BOARD_STATES.map(()=>'?').join(',')})`);
+    binds.push(...BOARD_STATES);
+  }
   if(selected){where.push('store_id=?');binds.push(selected);}
   else if(!access.allStores){where.push(`store_id IN (${ids.map(()=>'?').join(',')})`);binds.push(...ids);}
   if(dateRange.from&&dateRange.to){where.push(`${dateExpr} BETWEEN ? AND ?`);binds.push(dateRange.from,dateRange.to);}
@@ -141,7 +158,7 @@ export async function handleProductionCustomerService({request,env,ctx,delegate}
     const me=await currentUser(delegate,request,env,ctx);
     const body=['POST','PATCH','PUT'].includes(method)?await request.clone().json().catch(()=>({})):{};
     const clientId=clientIdFor(me,url,body);
-    if(path==='/api/customer-service'&&method==='GET')return json(await board(env,me,clientId,url.searchParams.get('storeId'),boardDateRange(url)));
+    if(path==='/api/customer-service'&&method==='GET')return json(await board(env,me,clientId,url.searchParams.get('storeId'),boardDateRange(url),url.searchParams.get('state')||''));
     if(path==='/api/catalog/products'&&method==='GET')return await catalog(delegate,request,env,ctx,clientId);
     let m=path.match(/^\/api\/orders\/([^/]+)\/details$/);
     if(m&&method==='GET'){
@@ -160,12 +177,14 @@ export async function handleProductionCustomerService({request,env,ctx,delegate}
     if(action==='history'&&method==='GET')return json({ok:true,order:mapOrder(row)});
     if(action==='state'&&method==='PATCH'){
       const state=clean(body.state);if(!STATES.includes(state))return json({error:'حالة الأوردر غير معروفة',code:'ORDER_STATE_INVALID'},400);
+      if(state==='cancelled'&&!['pending','new','no_answer','confirmed','preparing','deferred'].includes(String(row.state||'')))
+        return json({error:'لا يمكن إلغاء الطلب بهذه الطريقة بعد الشحن أو التحصيل؛ استخدم إجراءات الشحن والمرتجعات',code:'ORDER_CANCEL_NOT_ALLOWED'},409);
       const claimOwner=clean(row.contact_claim_user_id),actorId=clean(me.uid||me.id||me.email||`${me.role}:${me.clientId||''}`);
-      if(claimOwner&&!['confirmed','no_answer'].includes(state))return json({error:'الطلب محجوز في جاري التواصل حتى تم التأكيد أو العميل لا يرد',code:'CONTACT_DECISION_REQUIRED'},409);
+      if(claimOwner&&!['confirmed','no_answer','cancelled'].includes(state))return json({error:'الطلب محجوز في جاري التواصل حتى تم التأكيد أو العميل لا يرد أو العميل لغى',code:'CONTACT_DECISION_REQUIRED'},409);
       if(claimOwner&&claimOwner!==actorId&&me.role!=='admin')return json({error:'الطلب جارٍ التواصل معه بواسطة موظف آخر',code:'CONTACT_OWNED_BY_OTHER'},409);
       const deferUntil=state==='deferred'?clean(body.deferUntil):null;if(state==='deferred'&&!/^\d{4}-\d{2}-\d{2}$/.test(deferUntil))return json({error:'حدد تاريخ التأجيل',code:'DEFER_DATE_REQUIRED'},400);
       const history=arr(row.history);history.push({type:'state',state,at:stamp,by:actor,byName:actor,byUserId:me.uid||null});
-      await env.DB.prepare('UPDATE orders SET state=?, checkpoint=?, defer_until=?, history=?, contact_claim_user_id=CASE WHEN ? IN (\'confirmed\',\'no_answer\') THEN NULL ELSE contact_claim_user_id END,contact_claim_name=CASE WHEN ? IN (\'confirmed\',\'no_answer\') THEN NULL ELSE contact_claim_name END,contact_claimed_at=CASE WHEN ? IN (\'confirmed\',\'no_answer\') THEN NULL ELSE contact_claimed_at END WHERE id=? AND client_id=?').bind(state,LABELS[state]||state,deferUntil,JSON.stringify(history),state,state,state,orderId,clientId).run();
+      await env.DB.prepare('UPDATE orders SET state=?, checkpoint=?, defer_until=?, history=?, contact_claim_user_id=CASE WHEN ? IN (\'confirmed\',\'no_answer\',\'cancelled\') THEN NULL ELSE contact_claim_user_id END,contact_claim_name=CASE WHEN ? IN (\'confirmed\',\'no_answer\',\'cancelled\') THEN NULL ELSE contact_claim_name END,contact_claimed_at=CASE WHEN ? IN (\'confirmed\',\'no_answer\',\'cancelled\') THEN NULL ELSE contact_claimed_at END WHERE id=? AND client_id=?').bind(state,LABELS[state]||state,deferUntil,JSON.stringify(history),state,state,state,orderId,clientId).run();
       return json({ok:true,state,checkpoint:LABELS[state]||state,deferUntil,history,contactCount:arr(row.contact_log).length});
     }
     if(action==='contact'&&method==='POST'){

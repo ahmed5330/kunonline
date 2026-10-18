@@ -148,12 +148,20 @@ object CallerOverlay {
                     setOnClickListener { onClick(this) }
                 }
             fun decision(button: Button, orderId: String, target: String) {
+                if (target == "cancelled" && button.text != "تأكيد الإلغاء") {
+                    button.text = "تأكيد الإلغاء"
+                    return
+                }
                 button.isEnabled = false
                 thread(name = "kun-call-decision") {
                     val result = KunCustomerServiceApi.updateState(app, orderId, target)
                     handler.post {
                         Toast.makeText(app, if (result.ok) {
-                            if (target == "confirmed") "تم تأكيد الأوردر" else "تم نقل الأوردر إلى العميل لا يرد"
+                            when (target) {
+                                "confirmed" -> "تم تأكيد الأوردر"
+                                "cancelled" -> "تم إلغاء الأوردر بواسطة العميل"
+                                else -> "تم نقل الأوردر إلى العميل لا يرد"
+                            }
                         } else result.message, Toast.LENGTH_LONG).show()
                         if (result.ok) dismiss() else button.isEnabled = true
                     }
@@ -181,7 +189,10 @@ object CallerOverlay {
                             })
                         }.onFailure { Toast.makeText(app, "تعذر فتح بيانات J&T", Toast.LENGTH_SHORT).show() }
                     }
-                    for (button in listOf(noAnswer, confirmed, edit)) {
+                    val cancelled = actionButton("العميل\nلغى", 0xFFAE3446.toInt(), Color.WHITE) { button ->
+                        decision(button, orderId, "cancelled")
+                    }
+                    for (button in listOf(noAnswer, confirmed, cancelled, edit)) {
                         choices.addView(button, LinearLayout.LayoutParams(0, app.dp(54), 1f).apply {
                             setMargins(app.dp(2), 0, app.dp(2), 0)
                         })

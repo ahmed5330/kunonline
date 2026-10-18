@@ -33,6 +33,7 @@ fun KunNativeAppV26(activity: MainActivity) {
     var showAddOrder by remember { mutableStateOf(false) }
     var showCollaboration by remember { mutableStateOf(false) }
     var showSystemSections by remember { mutableStateOf(false) }
+    var homeRequest by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(Unit) {
         while (isActive) {
@@ -51,7 +52,8 @@ fun KunNativeAppV26(activity: MainActivity) {
             KunNativeAppV25(
                 activity = activity,
                 onOpenCollaboration = { showCollaboration = true },
-                onOpenSystemSections = { showSystemSections = true }
+                onOpenSystemSections = { showSystemSections = true },
+                homeRequest = homeRequest
             )
 
             if (hasSession && !showAddOrder && !showCollaboration && !showSystemSections) {
@@ -85,11 +87,23 @@ fun KunNativeAppV26(activity: MainActivity) {
             }
 
             if (showCollaboration) {
-                MobileCollaborationDialog(onDismiss = { showCollaboration = false })
+                MobileCollaborationDialog(
+                    onDismiss = { showCollaboration = false },
+                    onHome = {
+                        showCollaboration = false
+                        homeRequest++
+                    }
+                )
             }
 
             if (showSystemSections) {
-                MobileSystemSectionsDialog(onDismiss = { showSystemSections = false })
+                MobileSystemSectionsDialog(
+                    onDismiss = { showSystemSections = false },
+                    onHome = {
+                        showSystemSections = false
+                        homeRequest++
+                    }
+                )
             }
         }
     }
