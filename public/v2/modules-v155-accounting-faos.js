@@ -100,6 +100,11 @@
     const rows=accounts.map(a=>[esc(a.code),esc(a.name),money(a.debit),money(a.credit),money(a.net)]);
     const recent=(x.journals||[]).map(j=>[esc(j.entryDate),esc(j.description),esc(j.storeId),esc(j.sourceType)]);
     return '<div class="faos-kpis"><div class="faos-kpi"><span>إجمالي مدين</span><strong>'+money(l.totalDebit)+'</strong></div><div class="faos-kpi"><span>إجمالي دائن</span><strong>'+money(l.totalCredit)+'</strong></div><div class="faos-kpi"><span>الفرق</span><strong>'+money((l.totalDebit||0)-(l.totalCredit||0))+'</strong></div></div>'+
+      '<div class="faos-note">القوائم التالية من دفتر FAOS المُرحّل فقط، وليست القوائم النهائية للمتجر؛ لا تزال مطابقة الطلبات والمخزون وJ&T والبنوك غير معتمدة.</div>'+
+      '<h4>المركز المالي حتى '+esc(l.balanceSheet?.asOf||'—')+'</h4>'+
+      '<div class="faos-kpis"><div class="faos-kpi"><span>الأصول</span><strong>'+money(l.balanceSheet?.assets)+'</strong></div><div class="faos-kpi"><span>الالتزامات</span><strong>'+money(l.balanceSheet?.liabilities)+'</strong></div><div class="faos-kpi"><span>حقوق الملكية والأرباح</span><strong>'+money(l.balanceSheet?.equity)+'</strong></div></div>'+
+      '<p class="faos-muted">فرق معادلة الميزانية: '+money(l.balanceSheet?.difference)+' · '+(l.balanceSheet?.balanced?'متوازنة حسابيًا':'تحتاج مراجعة')+'</p>'+
+      '<h4>قائمة الدخل للفترة المختارة</h4>'+table(['البند','المبلغ'],[['إيرادات البيع',money(l.incomeStatement?.revenue)],['مردودات ومسموحات البيع',money(l.incomeStatement?.returns)],['صافي الإيراد',money(l.incomeStatement?.netRevenue)],['المصروفات وتكلفة البضاعة',money(l.incomeStatement?.expenses)],['صافي الربح/الخسارة',money(l.incomeStatement?.netProfit)]])+
       '<h4>ميزان المراجعة — القيود الجديدة فقط</h4>'+table(['الكود','الحساب','مدين','دائن','الصافي'],rows)+
       '<h4>آخر قيود اليومية</h4>'+table(['التاريخ','البيان','المتجر','المصدر'],recent);
   }
