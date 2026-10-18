@@ -10,7 +10,7 @@ db.exec('PRAGMA foreign_keys=ON');
 db.exec(fs.readFileSync('migrations/0098_financial_ledger_v1.sql','utf8'));
 db.exec("CREATE TABLE stores(id TEXT PRIMARY KEY,client_id TEXT,status TEXT,currency TEXT,name TEXT)");
 db.prepare('INSERT INTO stores VALUES(?,?,?,?,?)').run('QA_STORE','QA_CLIENT','active','EGP','متجر اختبار');
-const env={DB:{
+const env={APP_ENV:'preview',FAOS_WRITE_ENABLED:'1',DB:{
   prepare(sql){
     const stmt=db.prepare(sql);
     return {bind(...args){
@@ -40,6 +40,15 @@ async function call(path,{method='GET',body,role='client'}={}){
   const response=await handleFinancialAccountingOS({request,env,ctx:{},delegate:me(role)});
   return {status:response.status,data:await response.json()};
 }
+// Production cannot receive FAOS postings, including from a tenant owner.
+const guard={
+  storeId:'QA_STORE',date:'2026-10-18',currency:'EGP',description:'Safety guard test',
+  idempotencyKey:'QA-GUARD-100',lines:[{accountCode:'1120',debit:10},{accountCode:'3100',credit:10}]
+};
+const guardedReq=new Request('https://faos.test/api/accounting/faos/journals',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(guard)});
+const guardedResponse=await handleFinancialAccountingOS({request:guardedReq,env:{...env,APP_ENV:'production'},ctx:{},delegate:me()});
+assert.equal(guardedResponse.status,403);
+assert.equal((await guardedResponse.json()).code,'FAOS_WRITE_DISABLED');
 const core={storeId:'QA_STORE',date:'2026-09-20',currency:'EGP',description:'تمويل خزينة اختبار',
  idempotencyKey:'QA-FUNDING-100',lines:[{accountCode:'1120',debit:100},{accountCode:'3100',credit:100}]};
 const post=body=>call('/api/accounting/faos/journals',{method:'POST',body});
