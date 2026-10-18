@@ -55,10 +55,11 @@ export async function faosLedgerBalance(env,{clientId,storeId,from,to}){
   const sum=(type,field='periodNet')=>accounts.filter(x=>x.type===type).reduce((sum,x)=>sum+x[field],0);
   const totalRevenue=sum('revenue');
   const revenues=totalRevenue===0?0:-totalRevenue,returns=sum('contra_revenue'),expenses=sum('expense');
-  const assets=Math.round(sum('asset')*100),
-        liabilities=Math.round(-sum('liability')*100),
-        capitalAndRetained=Math.round(-sum('equity')*100),
-        cumulativeEarnings=Math.round((-sum('revenue','net')-sum('contra_revenue','net')-sum('expense','net'))*100);
+  const zero=value=>value===0?0:value;
+  const assets=zero(Math.round(sum('asset')*100)),
+        liabilities=zero(Math.round(-sum('liability')*100)),
+        capitalAndRetained=zero(Math.round(-sum('equity')*100)),
+        cumulativeEarnings=zero(Math.round((-sum('revenue','net')-sum('contra_revenue','net')-sum('expense','net'))*100));
   const equity=capitalAndRetained+cumulativeEarnings;
   return {
     accounts,balanced:debit===credit,totalDebit:debit/100,totalCredit:credit/100,
