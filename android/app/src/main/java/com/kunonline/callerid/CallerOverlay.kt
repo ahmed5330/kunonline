@@ -189,7 +189,7 @@ object CallerOverlay {
                             })
                         }.onFailure { Toast.makeText(app, "تعذر فتح بيانات J&T", Toast.LENGTH_SHORT).show() }
                     }
-                    val cancelled = actionButton("العميل\\nلغى", 0xFFAE3446.toInt(), Color.WHITE) { button ->
+                    val cancelled = actionButton("العميل\nلغى", 0xFFAE3446.toInt(), Color.WHITE) { button ->
                         decision(button, orderId, "cancelled")
                     }
                     for (button in listOf(noAnswer, confirmed, cancelled, edit)) {
