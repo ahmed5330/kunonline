@@ -29,5 +29,11 @@ for(const source of [server,claims]){
   assert.match(source,/CONTACT_DECISION_REQUIRED/,'must block unrelated state transitions');
   assert.match(source,/CONTACT_OWNED_BY_OTHER/,'must respect other agents claims');
 }
-assert.match(server,/byUserId:me.uid\|\|null/,'record actor on state transition');
-console.log('PASS: android cancellation confirmation, segregated queues, access & audit contract');
+assert.match(server,/byUserId:me\.uid\|\|(me\.id\|\|)?null/,'record actor on state transition');
+
+assert.match(server,/CANCEL_REASON_REQUIRED/,'server must reject cancellation without a reason');
+assert.match(client,/cancelReason: String = ""/,'Android must pass a cancellation reason');
+assert.match(fallback,/showCancelReason\(orderId\)/,'call card must provide a cancellation reason input');
+assert.match(board,/سجل المكالمات المرصودة/,'call logs must be visible in customer service');
+assert.match(server,/intent==='screened'/,'call counts must distinguish observed calls');
+console.log('PASS: android cancellation reason, screened call logs, separate queues and audit contract');
