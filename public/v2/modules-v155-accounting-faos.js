@@ -79,10 +79,19 @@
   function health(){
     const x=state.data;
     if(!x||x.__error)return '<div class="faos-note">'+esc(x?.__error||'لم يتم تحميل التقرير')+'</div><p class="faos-muted">اختبار الطلبات الوهمية يظل متاحًا حتى قبل تطبيق ترحيل قاعدة البيانات.</p>';
-    const old=x.legacy||{},ledger=x.ledger||{},q=x.warnings||[],quality=x.quality||{};
+    const old=x.legacy||{},ledger=x.ledger||{},q=x.warnings||[],quality=x.quality||{},recon=x.reconciliation||{};
     return '<div class="faos-kpis">'+
       [['طلبات محصلة دون مبلغ مؤكد',old.unverifiedCollectedOrders||0],['تحصيل بحركة مسجلة',money(old.verifiedCollectedRevenue,old.currency)],['تحصيل مُقدر داخل النظام القديم',money(Math.max(0,(old.collectedRevenue||0)-(old.verifiedCollectedRevenue||0)),old.currency)],['ميزان القيد الجديد',ledger.balanced?'متوازن':'غير متوازن']].map(([k,v])=>'<div class="faos-kpi"><span>'+esc(k)+'</span><strong>'+esc(v)+'</strong></div>').join('')+'</div>'+
       '<div class="faos-note">تنبيه محاسبي: قيمة الطلب أو حالة «تم التحصيل» وحدها لا تثبت انتقال الأموال للبنك. لا تتعامل مع صافي التدفق التشغيلي باعتباره رصيدًا بنكيًا أو مع الدفتر الجديد كقوائم نهائية قبل ترحيل كل الأحداث.</div>'+
+      '<h4>تقرير مطابقة المصادر — غير معتمد</h4>'+
+      '<p class="faos-muted">'+esc(recon.reason||'يجب تأكيد المستندات والتسويات قبل اعتماد الفروق.')+'</p>'+
+      table(['المؤشر','التشغيل','دفتر FAOS','فرق الحساب','حالة التحقق'],(recon.rows||[]).map(r=>[
+        esc(r.label),
+        r.operational===null?'غير متاح':money(r.operational),
+        r.ledger===null?'لم تتم المطابقة':money(r.ledger),
+        r.variance===null?'—':money(r.variance),
+        esc(r.status==='not_applicable'?'لا ينطبق':'بانتظار مطابقة المستندات')
+      ]))+
       '<h4>مؤشرات جودة البيانات والمطابقة</h4>'+table(['الفحص','النتيجة','المعنى'],[
       ['طلبات عليها نقص في التحصيل',esc(quality.unverifiedCollectedOrders||0),'تحتاج كشف تسوية'],
       ['طلبات لم يثبت الاعتراف بإيرادها',money(quality.unrecognizedPipelineValue),'Pipeline وليس إيرادًا'],
