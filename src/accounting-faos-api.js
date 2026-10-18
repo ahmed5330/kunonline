@@ -190,7 +190,7 @@ export async function handleFinancialAccountingOS({request,env,ctx,delegate}){
       if(quality.unreversedManagementFees>0)warnings.push({code:'UNREVERSED_MANAGEMENT_FEES',severity:'high',count:quality.unreversedManagementFees,text:'رسوم إدارة نشطة على طلبات ملغاة أو مرتجعة وتحتاج مطابقة'});
       if(quality.manualAdExpense>0)warnings.push({code:'MANUAL_AD_RISK',severity:'medium',count:quality.manualAdExpense,text:'إنفاق إعلاني يدوي قد يتكرر مع صرف Meta المستورد؛ يلزم مطابقة مصدر الحملة والبنك'});
       warnings.push({code:'PARALLEL_LEDGER',text:'دفتر FAOS الجديد مستقل حاليًا عن الطلبات والمحفظة القديمة؛ لا يمكن اعتماد ميزانه كقوائم نهائية قبل ترحيل الأحداث والمطابقة'});
-      return respond({ok:true,scope,period:range,legacy,ledger,quality,reconciliation:reconcileAccountingSources({legacy,ledger,quality}),journals:latest,warnings});
+      return respond({ok:true,scope,period:range,capabilities:{financialPostingEnabled:env.APP_ENV==='preview'&&env.FAOS_WRITE_ENABLED==='1',operationalAutoPostingEnabled:false,environment:env.APP_ENV==='preview'?'preview':'read_only'},legacy,ledger,quality,reconciliation:reconcileAccountingSources({legacy,ledger,quality}),journals:latest,warnings});
     }
     if(method==='POST'&&path==='/api/accounting/faos/journals'){
       const desc=clean(body.description,500),date=clean(body.date),currency=clean(body.currency||'EGP'),key=clean(body.idempotencyKey,120);
