@@ -344,7 +344,7 @@ fun V23CustomerService(snapshot: CommerceSnapshot, onGlobalRefresh: () -> Unit) 
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     FilterChip(selected = storeFilter.isBlank(), onClick = { storeFilter = "" },
-                        label = { Text("كل المتاجر") })
+                        label = { Text("المتجر الحالي") })
                     stores.forEach { store ->
                         FilterChip(selected = storeFilter == store.id, onClick = { storeFilter = store.id },
                             label = { Text(store.name.ifBlank { store.code }) })
