@@ -39,7 +39,7 @@ assert.equal(f.queries.length,1,'one D1 query for all staff assignments');
 assert.match(f.queries[0],/a.user_id=\?/,'filter staff by server-authenticated user');
 
 f=fake('admin',null,['c1']);res=await handleMobileStoreOptions({request,env:f.env,delegate:f.delegate});data=await res.json();
-assert.deepEqual(data.stores.map(s=>s.storeId),['s1'],'administrator's client context remains authoritative');
+assert.deepEqual(data.stores.map(s=>s.storeId),['s1'],"administrator client context remains authoritative");
 assert(f.queries[0].includes('s.client_id IN'),'owner store query must be client-scoped');
 f=fake('client','c2',['c1','c2']);res=await handleMobileStoreOptions({request,env:f.env,delegate:f.delegate});data=await res.json();
 assert.deepEqual(data.stores.map(s=>s.storeId),['s2'],'tenant-bound users cannot see another tenant');
