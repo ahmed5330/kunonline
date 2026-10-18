@@ -325,7 +325,7 @@ fun MobileCollaborationDialog(onDismiss: () -> Unit, onHome: () -> Unit = onDism
             availableStores = result.stores
             selectedStore = result.stores.firstOrNull {
                 it.clientId == result.current.clientId && it.storeId == result.current.storeId
-            } ?: result.stores.firstOrNull()
+            } ?: result.stores.singleOrNull()
         }
     }
 
@@ -444,7 +444,7 @@ fun MobileCollaborationDialog(onDismiss: () -> Unit, onHome: () -> Unit = onDism
                                                 availableStores = result.stores
                                                 selectedStore = result.stores.firstOrNull {
                                                     it.clientId == result.current.clientId && it.storeId == result.current.storeId
-                                                } ?: result.stores.firstOrNull()
+                                                } ?: result.stores.singleOrNull()
                                                 error = ""
                                             } else error = result.message
                                         }
