@@ -9,7 +9,7 @@ import java.net.URL
 import java.net.URLEncoder
 
 data class SyncResult(val ok: Boolean, val message: String, val customerCount: Int = 0)
-data class StateResult(val ok: Boolean, val message: String, val snapshot: CommerceSnapshot? = null)
+data class StateResult(val ok: Boolean, val message: String, val snapshot: CommerceSnapshot? = null, val changed: Boolean = true)
 data class ActionResult(val ok: Boolean, val message: String)
 data class ScopeInfo(val clientId: String = "", val storeId: String = "")
 data class MobileStoreOption(
@@ -212,6 +212,13 @@ object KunApi {
     fun syncWithStoredSession(context: Context): SyncResult {
         val cookie = session(context) ?: return SyncResult(false, "سجّل الدخول أولاً")
         return syncWithCookie(context, cookie)
+    }
+
+    /** Last successfully parsed state for instant home re-entry; session and date scoped. */
+    fun cachedSnapshot(context: Context): CommerceSnapshot? {
+        val cookie = session(context) ?: return null
+        return if (parsedKey.startsWith(cookie + "|") && parsedRevision == MobileDateFilterState.revision)
+            parsedSnapshot else null
     }
 
     fun fetchState(context: Context, forceFull: Boolean = false): StateResult {
@@ -441,7 +448,7 @@ object KunApi {
             val revision = MobileDateFilterState.revision
             val cacheKey = cookie + "|" + path
             if (!response.changed && parsedKey == cacheKey && parsedRevision == revision && parsedSnapshot != null) {
-                return StateResult(true, "البيانات محدثة", parsedSnapshot)
+                return StateResult(true, "البيانات محدثة", parsedSnapshot, changed = false)
             }
             val root = response.body
             val orders = root.optJSONArray("orders") ?: JSONArray()
