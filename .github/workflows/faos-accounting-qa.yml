@@ -31,5 +31,7 @@ jobs:
           node --check public/v2/modules-v155-accounting-faos.js
       - name: Synthetic order and accounting validation
         run: node scripts/faos-accounting-qa-test.mjs
+      - name: API runtime fixture isolation and authorization
+        run: node scripts/faos-api-isolation-test.mjs
       - name: In-memory SQLite schema constraints
         run: python3 scripts/faos-ledger-schema-test.py
