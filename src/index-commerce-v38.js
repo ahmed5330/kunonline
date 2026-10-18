@@ -16,7 +16,7 @@ import {handleInternalCollaborationV117} from './internal-collaboration-v117.js'
 import {handleCollaborationOrderInputV119} from './internal-collaboration-order-input-v119.js';
 
 const V2_UI_SCRIPTS=[
-  '<script src="/v2/modules-v155-accounting-faos.js?v=155.3" data-kun-accounting-faos="1"></script>',
+  '<script src="/v2/modules-v155-accounting-faos.js?v=155.4" data-kun-accounting-faos="1"></script>',
   '<script src="/v2/modules-v105-customer-service-claim.js?v=105.2" data-kun-customer-service-claim="1"></script>',
   '<script src="/v2/modules-v105-section-nav-actions.js?v=105.1" data-kun-section-nav-actions="1"></script>',
   '<script src="/v2/modules-v106-manual-jnt-order.js?v=106.0" data-kun-manual-jnt-order="1"></script>',
