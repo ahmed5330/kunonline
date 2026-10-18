@@ -53,7 +53,8 @@ export async function faosLedgerBalance(env,{clientId,storeId,from,to}){
   const accounts=rows.map(r=>{const a=ACCOUNT_BY_CODE.get(String(r.code)),dr=Number(r.debit_minor)||0,cr=Number(r.credit_minor)||0;return {code:r.code,name:a?.name||'حساب غير معروف',type:a?.type||'unknown',debit:dr/100,credit:cr/100,net:(dr-cr)/100,periodNet:((Number(r.period_debit_minor)||0)-(Number(r.period_credit_minor)||0))/100};});
   const debit=rows.reduce((s,r)=>s+(Number(r.debit_minor)||0),0),credit=rows.reduce((s,r)=>s+(Number(r.credit_minor)||0),0);
   const sum=(type,field='periodNet')=>accounts.filter(x=>x.type===type).reduce((sum,x)=>sum+x[field],0);
-  const revenues=-sum('revenue'),returns=sum('contra_revenue'),expenses=sum('expense');
+  const totalRevenue=sum('revenue');
+  const revenues=totalRevenue===0?0:-totalRevenue,returns=sum('contra_revenue'),expenses=sum('expense');
   const assets=Math.round(sum('asset')*100),
         liabilities=Math.round(-sum('liability')*100),
         capitalAndRetained=Math.round(-sum('equity')*100),
