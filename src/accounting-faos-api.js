@@ -152,6 +152,10 @@ export async function handleFinancialAccountingOS({request,env,ctx,delegate}){
     }
     const body=method==='POST'?await request.json().catch(()=>({})):{};
     const scope=await scopeFor(request,env,me,body,method!=='GET');
+    // Safety gate: never allow live financial mutation until separate signed-off
+    // Preview rollout explicitly opts in. Production remains read-only.
+    if(method!=='GET' && (env.APP_ENV!=='preview'||env.FAOS_WRITE_ENABLED!=='1'))
+      fail('الترحيل المالي التجريبي مغلق حتى اعتماد بيئة Preview',403,'FAOS_WRITE_DISABLED');
     if(method==='GET'&&path==='/api/accounting/faos/overview'){
       const range=period(url);
       const [ledger,legacy,latest,quality]=await Promise.all([
