@@ -215,9 +215,10 @@ object KunCustomerServiceApi {
             CustomerServiceJsonResult(true, "الأوردر في جاري التواصل حتى يتم التأكيد أو اختيار العميل لا يرد", json(response))
         }
 
-    fun logContact(context: Context, orderId: String, channel: String = "phone", intent: String = "contact"): CustomerServiceJsonResult =
+    fun logContact(context: Context, orderId: String, channel: String = "phone", intent: String = "contact", direction: String = ""): CustomerServiceJsonResult =
         withClient(context) { cookie, clientId ->
             val payload = JSONObject().put("clientId", clientId).put("channel", channel).put("intent", intent)
+             .put("direction", direction)
             val response = request("POST", "/api/customer-service/orders/${enc(orderId)}/contact?clientId=${enc(clientId)}", cookie, payload)
             if (response.code !in 200..299) return@withClient authFailure(context, response, "تعذر تسجيل التواصل")
             CustomerServiceJsonResult(true, "تم تسجيل التواصل", json(response))
