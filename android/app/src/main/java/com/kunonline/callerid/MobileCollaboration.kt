@@ -325,7 +325,7 @@ fun MobileCollaborationDialog(onDismiss: () -> Unit, onHome: () -> Unit = onDism
             availableStores = result.stores
             selectedStore = result.stores.firstOrNull {
                 it.clientId == result.current.clientId && it.storeId == result.current.storeId
-            } ?: result.stores.singleOrNull()
+            } ?: result.stores.firstOrNull()
         }
     }
 
@@ -431,8 +431,24 @@ fun MobileCollaborationDialog(onDismiss: () -> Unit, onHome: () -> Unit = onDism
                                     CircularProgressIndicator()
                                 }
                             } else if (availableStores.isEmpty()) {
-                                Box(Modifier.fillMaxSize().padding(20.dp), contentAlignment = Alignment.Center) {
+                                Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.Center,
+                                    horizontalAlignment = Alignment.CenterHorizontally) {
                                     Text(error.ifBlank { "لا توجد متاجر مصرح بها لهذا الحساب" })
+                                    Spacer(Modifier.height(12.dp))
+                                    OutlinedButton(onClick = {
+                                        scope.launch {
+                                            storesLoading = true
+                                            val result = withContext(Dispatchers.IO) { KunApi.loadStoreOptions(context) }
+                                            storesLoading = false
+                                            if (result.ok) {
+                                                availableStores = result.stores
+                                                selectedStore = result.stores.firstOrNull {
+                                                    it.clientId == result.current.clientId && it.storeId == result.current.storeId
+                                                } ?: result.stores.firstOrNull()
+                                                error = ""
+                                            } else error = result.message
+                                        }
+                                    }) { Text("إعادة تحميل المتاجر") }
                                 }
                             } else {
                                 Column(Modifier.fillMaxSize().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
