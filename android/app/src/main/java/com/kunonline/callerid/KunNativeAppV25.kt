@@ -70,7 +70,8 @@ private enum class V25OrderFilter(val label: String, val states: Set<String>) {
 fun KunNativeAppV25(
     activity: MainActivity,
     onOpenCollaboration: () -> Unit = {},
-    onOpenSystemSections: () -> Unit = {}
+    onOpenSystemSections: () -> Unit = {},
+    homeRequest: Int = 0
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -87,6 +88,10 @@ fun KunNativeAppV25(
     var storeOptionsLoading by remember { mutableStateOf(false) }
     var storeOptionsError by remember { mutableStateOf("") }
     val dateRevision = MobileDateFilterState.revision
+
+    LaunchedEffect(homeRequest) {
+        if (homeRequest > 0) selected = MobileV25Tab.HOME
+    }
 
     fun rawOrderIds(value: CommerceSnapshot?): Set<String> {
         val array = value?.raw?.optJSONArray("orders") ?: return emptySet()
