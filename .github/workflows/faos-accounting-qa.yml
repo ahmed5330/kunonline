@@ -40,5 +40,7 @@ jobs:
         run: node --no-warnings scripts/faos-operational-sql-test.mjs
       - name: Commerce verified event projection templates
         run: node scripts/faos-event-projection-test.mjs
+      - name: Active chart consistency with master accounting reference
+        run: node scripts/faos-coa-reference-contract-test.mjs
       - name: In-memory SQLite schema constraints
         run: python3 scripts/faos-ledger-schema-test.py
