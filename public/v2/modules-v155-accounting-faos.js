@@ -86,6 +86,7 @@
       '<h4>مؤشرات جودة البيانات والمطابقة</h4>'+table(['الفحص','النتيجة','المعنى'],[
       ['طلبات عليها نقص في التحصيل',esc(quality.unverifiedCollectedOrders||0),'تحتاج كشف تسوية'],
       ['طلبات لم يثبت الاعتراف بإيرادها',money(quality.unrecognizedPipelineValue),'Pipeline وليس إيرادًا'],
+      ['طلبات مباعة دون تكلفة مثبتة',esc(quality.missingSaleCostSnapshots||0),'التكلفة بحاجة إلى مطابقة مع المخزون'],
       ['مشتريات مصروفة يدويًا',money(quality.inventoryPurchasesExpensed),'احتمال تكرار COGS'],
       ['رسوم إدارة لم تُعكس',esc(quality.unreversedManagementFees||0),'لا يجوز تحميل المرتجع رسوم بيع'],
       ['إعلانات مدخلة يدويًا',money(quality.manualAdExpense),'تحتاج مطابقة مع مصدر Meta']
@@ -133,7 +134,7 @@
       const ctx=await scope();if(!ctx.storeId){feedback.textContent='اختار المتجر من القائمة العلوية أولًا';return;}
       if(!confirm('هل تؤكد ترحيل القيد إلى دفتر FAOS للمتجر الحالي؟'))return;
       const btn=form.querySelector('[type=submit]');btn.disabled=true;
-      try{const result=await api('/api/accounting/faos/journals',{method:'POST',body:{date:v.date,currency:'EGP',description:v.description,idempotencyKey:crypto.randomUUID(),lines:[{accountCode:v.debit,debit:amount},{accountCode:v.credit,credit:amount}]}});feedback.textContent='تم حفظ القيد '+result.id;await refresh();}
+      try{const result=await api('/api/accounting/faos/journals',{method:'POST',body:{date:v.date,currency:'EGP',description:v.description,idempotencyKey:(form.dataset.faosIdempotencyKey ||= crypto.randomUUID()),lines:[{accountCode:v.debit,debit:amount},{accountCode:v.credit,credit:amount}]}});feedback.textContent='تم حفظ القيد '+result.id;await refresh();}
       catch(error){feedback.textContent=error.message}finally{if(btn.isConnected)btn.disabled=false}
     };
   }
