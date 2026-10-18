@@ -31,7 +31,11 @@ async function scopeFor(req,env,me,body=null,write=false){
   return {clientId,storeId:scope.storeId||null};
 }
 const dbFailure=error=>{
-  if(/no such table: faos_/i.test(String(error?.message||'')))return fail('لم يتم تطبيق ترحيل قاعدة بيانات FAOS بعد',503,'FAOS_MIGRATION_REQUIRED');
+  const message=String(error?.message||'');
+  if(/no such table: faos_/i.test(message))return fail('لم يتم تطبيق ترحيل قاعدة بيانات FAOS بعد',503,'FAOS_MIGRATION_REQUIRED');
+  if(/FAOS_PERIOD_CLOSED/.test(message))return fail('لا يمكن الترحيل إلى فترة مقفولة',409,'FAOS_PERIOD_CLOSED');
+  if(/FAOS_JOURNAL_NOT_BALANCED/.test(message))return fail('القيد غير متوازن عند الترحيل',409,'FAOS_JOURNAL_NOT_BALANCED');
+  if(/FAOS_POSTED_IMMUTABLE|FAOS_LINE_IMMUTABLE/.test(message))return fail('القيود المرحلة لا تقبل التعديل أو الحذف',409,'FAOS_POSTED_IMMUTABLE');
   throw error;
 };
 async function balance(env,{clientId,storeId,from,to}){
@@ -96,10 +100,11 @@ async function ensureOpen(env,clientId,storeId,date){
 // Never acknowledge a modified amount/account/date as a successful retry.
 async function replayOf(env,{clientId,storeId,date,currency,description,sourceType,sourceKey,reversalOf,lines}){
   let old;
-  try{old=await env.DB.prepare(`SELECT id,store_id storeId,entry_date entryDate,currency,description,reversal_of reversalOf
+  try{old=await env.DB.prepare(`SELECT id,store_id storeId,entry_date entryDate,currency,description,reversal_of reversalOf,status
     FROM faos_journals WHERE client_id=? AND source_type=? AND source_key=?`).bind(clientId,sourceType,sourceKey).first();}
   catch(error){dbFailure(error)}
   if(!old)return null;
+  if(old.status!=='posted')fail('القيد السابق لم يُرحّل بالكامل',409,'FAOS_DRAFT_CONFLICT');
   if(old.storeId!==storeId)fail('معرف العملية مستخدم في متجر مختلف',409,'FAOS_IDEMPOTENCY_CONFLICT');
   const stored=await env.DB.prepare(`SELECT account_code accountCode,debit_minor debitMinor,credit_minor creditMinor,memo
     FROM faos_journal_lines WHERE client_id=? AND store_id=? AND journal_id=? ORDER BY rowid`).bind(clientId,storeId,old.id).all();
@@ -122,8 +127,9 @@ async function writeJournal(env,{clientId,storeId,date,currency,description,sour
   if(previouslyPosted)return previouslyPosted;
   await ensureOpen(env,clientId,storeId,date);
   const id='FAOS-'+crypto.randomUUID(),createdAt=new Date().toISOString();
-  const operations=[env.DB.prepare('INSERT INTO faos_journals (id,client_id,store_id,entry_date,currency,source_type,source_key,description,status,reversal_of,created_by,created_at) VALUES (?,?,?,?,?,?,?,? ,\'posted\',?,?,?)').bind(id,clientId,storeId,date,currency,sourceType,sourceKey,description,reversalOf,actor,createdAt)];
+  const operations=[env.DB.prepare('INSERT INTO faos_journals (id,client_id,store_id,entry_date,currency,source_type,source_key,description,status,reversal_of,created_by,created_at) VALUES (?,?,?,?,?,?,?,? ,\'draft\',?,?,?)').bind(id,clientId,storeId,date,currency,sourceType,sourceKey,description,reversalOf,actor,createdAt)];
   for(const row of lines){operations.push(env.DB.prepare('INSERT INTO faos_journal_lines(id,journal_id,client_id,store_id,account_code,debit_minor,credit_minor,memo) VALUES (?,?,?,?,?,?,?,?)').bind('FAL-'+crypto.randomUUID(),id,clientId,storeId,row.accountCode,row.debitMinor,row.creditMinor,row.memo));}
+  operations.push(env.DB.prepare("UPDATE faos_journals SET status='posted' WHERE id=? AND client_id=? AND store_id=? AND status='draft'").bind(id,clientId,storeId));
   try{await env.DB.batch(operations);}
   catch(error){
     if(/UNIQUE constraint failed: faos_journals.client_id|faos_journals.client_id, faos_journals.source_type|constraint failed.*source_key/i.test(String(error?.message||''))){
