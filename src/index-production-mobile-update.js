@@ -11,6 +11,7 @@ import {handleProductionPrintingQueue} from './production-printing-queue.js';
 import {handleInternalCollaboration} from './internal-collaboration.js';
 import {handleCollaborationOrderSearch} from './internal-collaboration-order-search.js';
 import {handleMobileOrderSearch} from './mobile-global-order-search.js';
+import {handleMobileStoreOptions} from './mobile-store-options.js';
 import {ensureInternalCollaborationSchema} from './internal-collaboration-schema.js';
 import {handleProductionPreviewParity} from './production-preview-parity.js';
 import {handleProductionEasyOrdersHealth} from './production-easyorders-health.js';
@@ -172,6 +173,8 @@ export default {
 
     const dataEnv=previewRuntimeEnv(env);
     const delegate=previewDelegate(env,dataEnv,ctx);
+    const mobileStoreOptions=await handleMobileStoreOptions({request,env:dataEnv,delegate});
+    if(mobileStoreOptions)return mobileStoreOptions;
     const adminJntShipments=await handleAdminJntShipments({request,env:dataEnv,delegate});
     if(adminJntShipments)return adminJntShipments;
     // Keep the actual AI analyst on this deployed version; the Preview backend can lag the UI.

@@ -36,6 +36,8 @@ jobs:
           node --check src/mobile-global-order-search.js
           node --check src/index-production-mobile-update.js
           node scripts/mobile-global-order-search-test.mjs
+          node --check src/mobile-store-options.js
+          node scripts/mobile-store-options-test.mjs
       - name: Run full contract and unit suite
         run: npm test
       - name: Inventory workspace UX browser regression

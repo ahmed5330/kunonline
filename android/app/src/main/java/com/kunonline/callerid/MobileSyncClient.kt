@@ -77,7 +77,10 @@ object MobileSyncClient {
             states[source] = fresh
             return MobileSyncResponse(200, JSONObject(requireNotNull(fresh.state).toString()))
         }
-        return MobileSyncResponse(200, JSONObject(requireNotNull(accumulator.state).toString()), changed)
+        // An unchanged cursor reuses its immutable-by-convention baseline.
+        // Cloning thousands of orders on every heartbeat was expensive.
+        val baseline = requireNotNull(accumulator.state)
+        return MobileSyncResponse(200, if (changed) JSONObject(baseline.toString()) else baseline, changed)
     }
 
     private fun get(cookie: String, path: String): MobileSyncResponse {

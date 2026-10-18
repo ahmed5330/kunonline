@@ -35,6 +35,8 @@ jobs:
           node scripts/mobile-state-sync-test.mjs
           node --check src/production-mobile-order-guard.js
           node --check src/production-customer-service.js
+          node --check src/mobile-store-options.js
+          node scripts/mobile-store-options-test.mjs
           node --check src/operational-workflow-v105.js
           node scripts/android-customer-service-outcomes-test.mjs
           node --check src/production-caller-jnt-edit.js
