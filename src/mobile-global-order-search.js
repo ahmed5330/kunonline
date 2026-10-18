@@ -29,6 +29,8 @@ export async function handleMobileOrderSearch({request,env,ctx,delegate}){
     const me=await identity.json().catch(()=>({}));
     if(!identity.ok||!me?.role)return json({error:'محتاج تسجّل دخول'},401);
     requirePermission(me,'orders','read');
+    if(me.role==='client'&&!me.clientId)
+      return json({error:'الحساب غير مربوط بمتجر'},403);
 
     const {q,limit,offset}=mobileOrderSearchParams(url);
     if(q.length<2)return json({ok:true,query:q,orders:[],hasMore:false,nextOffset:null});
