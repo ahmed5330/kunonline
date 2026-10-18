@@ -4,7 +4,7 @@
   if(window.KunFAOSAccountingV1)return;
   const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const money=(v,c='EGP')=>new Intl.NumberFormat('ar-EG',{minimumFractionDigits:2,maximumFractionDigits:2}).format(Number(v)||0)+' '+(c==='EGP'?'ج.م':esc(c));
-  const state={view:'health',data:null,simulation:null,catalog:[],busy:false};
+  const state={view:'health',data:null,simulation:null,catalog:[],busy:false,pendingTab:null};
   const root=()=>document.querySelector('.acc100');
   const active=()=>document.querySelector('.nav button.active[data-view]')?.dataset.view==='accounting';
   const currentMonth=()=>document.getElementById('acc100Month')?.value||new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Cairo',year:'numeric',month:'2-digit'}).format(new Date());
@@ -46,6 +46,9 @@
     .faos-form label{font-size:12px;display:grid;gap:5px}
     .faos-form input,.faos-form select{padding:9px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:#0f172a;width:100%}
     .faos-form .full{grid-column:1/-1}.faos-muted{color:#64748b;font-size:12px;line-height:1.9}
+    #kunFaosNavShortcut{width:calc(100% - 12px);margin:5px 6px 12px;display:flex;align-items:center;gap:10px;text-align:right;direction:rtl;justify-content:flex-start;border:1px solid #93c5fd;border-radius:12px;background:linear-gradient(120deg,#eff6ff,#f0fdfa);color:#164e63;font-weight:800;padding:11px 12px;cursor:pointer;box-sizing:border-box}
+    #kunFaosNavShortcut:hover,#kunFaosNavShortcut:focus-visible{background:#dbeafe;outline:2px solid #3b82f6;outline-offset:1px}
+    #kunFaosNavShortcut .faos-shortcut-icon{font-size:19px}
     @media(max-width:680px){.faos-v1{padding:12px}.faos-kpis{grid-template-columns:1fr 1fr}.faos-form{grid-template-columns:1fr}.faos-form .full{grid-column:auto}}
     `;document.head.appendChild(style);
   }
@@ -154,13 +157,81 @@
     };
   }
   function mount(){
-    if(!active())return;ensureCss();
-    const acc=root();if(!acc||document.getElementById('kunFaosWorkspace'))return;
-    const target=acc.querySelector('#acc100Body');if(!target)return;
-    const section=shell();target.before(section);refresh();
+    if(!active())return false;
+    ensureCss();
+    const acc=root(),target=acc?.querySelector('#acc100Body');
+    if(!target)return false;
+    let section=acc.querySelector('#kunFaosWorkspace');
+    if(!section){
+      section=shell();
+      target.before(section);
+      if(state.pendingTab){state.view=state.pendingTab;state.pendingTab=null;}
+      refresh();
+    }else if(state.pendingTab){
+      state.view=state.pendingTab;state.pendingTab=null;render();
+    }
+    return true;
   }
-  const observer=new MutationObserver(()=>{if(active()&&!document.getElementById('kunFaosWorkspace'))queueMicrotask(mount)});
-  function init(){observer.observe(document.getElementById('root')||document.body,{childList:true,subtree:true});document.addEventListener('click',e=>{if(e.target.closest?.('.nav button[data-view="accounting"]'))setTimeout(mount,150)});document.addEventListener('change',e=>{if(e.target?.id==='acc100Month')setTimeout(refresh,200)});mount();}
+  function accountingAllowed(){
+    const guard=window.KunPermissionNavigationV51;
+    if(!guard?.snapshot?.role)return false;
+    return typeof guard.allowedView==='function'&&guard.allowedView('accounting',guard.snapshot)===true;
+  }
+  function openWorkspace(tab='health'){
+    if(!accountingAllowed()){
+      window.showToast?.('قسم الحسابات يحتاج صلاحية الاطلاع على المالية');
+      return false;
+    }
+    if(!tabs.some(([id])=>id===tab))tab='health';
+    state.pendingTab=tab;
+    state.view=tab;
+    const account=document.querySelector('.nav button[data-view="accounting"]');
+    if(!account)return false;
+    if(!active()){
+      // Use the existing accounting route guard; do not bypass permission checks.
+      if(window.KunAccountingNavigationGuardV103?.navigate)window.KunAccountingNavigationGuardV103.navigate();
+      else account.click();
+    }
+    const show=()=>{if(!mount())return;const section=document.getElementById('kunFaosWorkspace');section?.scrollIntoView?.({behavior:'smooth',block:'start'});};
+    for(const delay of [0,120,360,800,1500,3000])setTimeout(show,delay);
+    return true;
+  }
+  function syncShortcut(){
+    const nav=document.querySelector('.nav');
+    if(!nav)return;
+    let button=nav.querySelector('#kunFaosNavShortcut');
+    if(!button){
+      button=document.createElement('button');
+      button.type='button';button.id='kunFaosNavShortcut';
+      button.setAttribute('aria-label','فتح الحسابات والدفاتر المحاسبية');
+      button.innerHTML='<span class="faos-shortcut-icon" aria-hidden="true">▤</span><span>الحسابات والدفاتر</span>';
+      button.addEventListener('click',()=>openWorkspace('health'));
+      const finance=nav.querySelector('[data-nav-group="finance"]')||nav.querySelector('button[data-view="finance"]');
+      if(finance)finance.before(button);else nav.appendChild(button);
+    }
+    const visible=accountingAllowed();
+    if(button.hidden===visible)button.hidden=!visible;
+    const display=visible?'':'none';
+    if(button.style.display!==display)button.style.display=display;
+    button.setAttribute('aria-hidden',visible?'false':'true');
+    button.tabIndex=visible?0:-1;
+  }
+  const observer=new MutationObserver(()=>{
+    if(active()&&!document.getElementById('kunFaosWorkspace'))queueMicrotask(mount);
+  });
+  function init(){
+    ensureCss();
+    observer.observe(document.getElementById('root')||document.body,{childList:true,subtree:true});
+    const nav=document.querySelector('.nav');
+    if(nav)new MutationObserver(()=>syncShortcut()).observe(nav,{childList:true,subtree:true});
+    for(const delay of [0,200,600,1200,2500])setTimeout(syncShortcut,delay);
+    document.addEventListener('click',event=>{
+      if(event.target.closest?.('.nav button[data-view="accounting"]'))setTimeout(mount,150);
+      if(event.target.closest?.('#acc100FaosOpen'))openWorkspace('ledger');
+    });
+    document.addEventListener('change',event=>{if(event.target?.id==='acc100Month')setTimeout(refresh,200)});
+    mount();
+  }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
-  window.KunFAOSAccountingV1={version:'1.0',mount,refresh,simulationOnly:true};
+  window.KunFAOSAccountingV1={version:'1.1',mount,refresh,open:openWorkspace,syncShortcut,simulationOnly:true};
 })();
