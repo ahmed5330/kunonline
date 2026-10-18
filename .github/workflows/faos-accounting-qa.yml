@@ -26,6 +26,7 @@ jobs:
       - name: Syntax checks
         run: |
           node --check src/accounting-faos-event-projector.js
+          node --check src/accounting-faos-reconciliation.js
           node --check src/accounting-faos-core.js
           node --check src/accounting-faos-api.js
           node --check src/index-commerce-v38.js
@@ -42,6 +43,8 @@ jobs:
         run: node scripts/faos-event-projection-test.mjs
       - name: Active chart consistency with master accounting reference
         run: node scripts/faos-coa-reference-contract-test.mjs
+      - name: Cross-source reconciliation and source-confidence controls
+        run: node scripts/faos-reconciliation-test.mjs
       - name: In-memory SQLite schema constraints
         run: python3 scripts/faos-ledger-schema-test.py
       - name: Verify migration with actual Wrangler local D1 (offline)
