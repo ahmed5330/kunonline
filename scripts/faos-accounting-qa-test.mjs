@@ -12,6 +12,7 @@ assert.equal(scenario.actual.storeAProfit+scenario.actual.storeBProfit,scenario.
 assert.equal(scenario.totals.debit,scenario.totals.credit,'debit and credit must balance');
 assert.equal(scenario.fakeOrders.find(o=>o.state==='confirmed').recognizedRevenue,0);
 assert.equal(scenario.fakeOrders.find(o=>o.state==='returned').recognizedRevenue,0);
+assert.equal(trialBalance(scenario.journals,{storeId:'QA-STORE-A'}).netProfitMinor,29000);
 assert.equal(trialBalance(scenario.journals,{storeId:'QA-STORE-B'}).netProfitMinor,30000);
 assert.ok(ACCOUNTS.length>=25);
 assert.equal(moneyMinor(102.34),10234);
