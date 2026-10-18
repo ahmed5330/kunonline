@@ -6,8 +6,8 @@ async function get(path,{method='GET'}={}){
   const text=await r.text();
   return {status:r.status,headers:r.headers,text};
 }
-const asset=await get('/v2/modules-v155-accounting-faos.js?v=155.3');
-if(asset.status!==200||!asset.text.includes('مركز الحسابات والدفتر المحاسبي'))
+const asset=await get('/v2/modules-v155-accounting-faos.js?v=155.4');
+if(asset.status!==200||(!asset.text.includes('مركز الحسابات والدفتر المحاسبي')||!asset.text.includes('kunFaosNavShortcut')))
   throw new Error('FAOS v155 Preview UI asset is not served by the deployed Worker');
 console.log('FAOS Preview asset served: 200; Arabic finance workspace present');
 for(const path of ['/api/accounting/faos/catalog','/api/accounting/faos/overview','/api/accounting/faos/simulation']){
