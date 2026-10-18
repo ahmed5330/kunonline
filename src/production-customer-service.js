@@ -238,7 +238,14 @@ export async function handleProductionCustomerService({request,env,ctx,delegate}
         before:{name:row.name,phone:row.phone,gov:row.gov,address:row.address,total:row.total,product:row.product,qty:row.qty},
         after:{name,phone,gov:clean(body.gov),address:clean(body.address),total:Math.max(0,n(body.total)),product,qty}
       });
-      await env.DB.prepare('UPDATE orders SET name=?,phone=?,gov=?,address=?,coupon_code=?,note=?,total=?,product=?,product_id=?,variant_id=?,product_note=?,qty=?,unit_price=?,history=? WHERE id=? AND client_id=?').bind(name,phone,clean(body.gov),clean(body.address),clean(body.couponCode)||null,clean(body.customerNote),Math.max(0,n(body.total)),product,productId,variantId,productNote,qty,unitPrice,JSON.stringify(history),orderId,clientId).run();
+      const change=history.at(-1);
+      await env.DB.batch([
+        env.DB.prepare("UPDATE orders SET name=?,phone=?,gov=?,address=?,coupon_code=?,note=?,total=?,product=?,product_id=?,variant_id=?,product_note=?,qty=?,unit_price=?,history=json_insert(CASE WHEN json_valid(history) THEN (CASE WHEN json_type(history)='array' THEN history ELSE '[]' END) ELSE '[]' END,'$[#]',json(?)) WHERE id=? AND client_id=?")
+          .bind(name,phone,clean(body.gov),clean(body.address),clean(body.couponCode)||null,clean(body.customerNote),Math.max(0,n(body.total)),product,productId,variantId,productNote,qty,unitPrice,JSON.stringify(change),orderId,clientId),
+        env.DB.prepare('INSERT INTO order_events (id,client_id,store_id,order_id,event_type,actor_user_id,actor_email,source,metadata_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)')
+          .bind('OEV-'+crypto.randomUUID(),clientId,row.store_id||null,orderId,'order_edited',me.uid||me.id||null,actor,'android-customer-service',
+            JSON.stringify({before:change.before,after:change.after,byName:actor}),stamp)
+      ]);
       return json({ok:true,order:mapOrder(await getOrder(env,clientId,orderId))});
     }
     return json({error:'الطريقة غير مدعومة',code:'METHOD_NOT_ALLOWED'},405);
