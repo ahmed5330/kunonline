@@ -92,11 +92,17 @@ async function getOrder(env,clientId,orderId){
   if(!row)throw Object.assign(new Error('الأوردر غير موجود'),{status:404,code:'ORDER_NOT_FOUND'});
   return row;
 }
-async function saveArrays(env,row,{history,contactLog}){
-  await env.DB.prepare('UPDATE orders SET history=?, contact_log=? WHERE id=? AND client_id=?').bind(JSON.stringify(history??arr(row.history)),JSON.stringify(contactLog??arr(row.contact_log)),row.id,row.client_id).run();
-}
+// Atomic JSON appends prevent simultaneous staff writes from losing history.
 async function appendEvent(env,row,event,{contact=false}={}){
-  const history=arr(row.history);history.push(event);const contactLog=arr(row.contact_log);if(contact)contactLog.push(event);await saveArrays(env,row,{history,contactLog});return {history,contactLog};
+  const valid=column=>`CASE WHEN json_valid(${column}) AND json_type(${column})='array' THEN ${column} ELSE '[]' END`;
+  const set=contact
+    ? `history=json_insert(${valid('history')},'$[#]',json(?)), contact_log=json_insert(${valid('contact_log')},'$[#]',json(?))`
+    : `history=json_insert(${valid('history')},'$[#]',json(?))`;
+  const query=env.DB.prepare(`UPDATE orders SET ${set} WHERE id=? AND client_id=?`);
+  await (contact ? query.bind(JSON.stringify(event),JSON.stringify(event),row.id,row.client_id)
+    : query.bind(JSON.stringify(event),row.id,row.client_id)).run();
+  const saved=await env.DB.prepare('SELECT history,contact_log FROM orders WHERE id=? AND client_id=?').bind(row.id,row.client_id).first();
+  return {history:arr(saved?.history),contactLog:arr(saved?.contact_log)};
 }
 async function board(env,me,clientId,storeId,dateRange={key:'all',from:'',to:''},requestedState=''){
   // Operational board is intentionally multi-store: a support agent may work
@@ -189,14 +195,22 @@ export async function handleProductionCustomerService({request,env,ctx,delegate}
       const history=arr(row.history);
       history.push({type:'state',state,previousState:row.state,at:stamp,by:actor,byName:actor,byUserId:me.uid||me.id||null,
         ...(state==='cancelled'?{note:cancelReason,reason:cancelReason}:{} )});
-      await env.DB.prepare('UPDATE orders SET state=?, checkpoint=?, defer_until=?, history=?, contact_claim_user_id=CASE WHEN ? IN (\'confirmed\',\'no_answer\',\'cancelled\') THEN NULL ELSE contact_claim_user_id END,contact_claim_name=CASE WHEN ? IN (\'confirmed\',\'no_answer\',\'cancelled\') THEN NULL ELSE contact_claim_name END,contact_claimed_at=CASE WHEN ? IN (\'confirmed\',\'no_answer\',\'cancelled\') THEN NULL ELSE contact_claimed_at END WHERE id=? AND client_id=?').bind(state,LABELS[state]||state,deferUntil,JSON.stringify(history),state,state,state,orderId,clientId).run();
+      const entry=history.at(-1);
+      await env.DB.batch([
+        env.DB.prepare("UPDATE orders SET state=?, checkpoint=?, defer_until=?, history=json_insert(CASE WHEN json_valid(history) AND json_type(history)='array' THEN history ELSE '[]' END,'$[#]',json(?)), contact_claim_user_id=CASE WHEN ? IN ('confirmed','no_answer','cancelled') THEN NULL ELSE contact_claim_user_id END,contact_claim_name=CASE WHEN ? IN ('confirmed','no_answer','cancelled') THEN NULL ELSE contact_claim_name END,contact_claimed_at=CASE WHEN ? IN ('confirmed','no_answer','cancelled') THEN NULL ELSE contact_claimed_at END WHERE id=? AND client_id=?")
+          .bind(state,LABELS[state]||state,deferUntil,JSON.stringify(entry),state,state,state,orderId,clientId),
+        env.DB.prepare('INSERT INTO order_events (id,client_id,store_id,order_id,event_type,actor_user_id,actor_email,source,metadata_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)')
+          .bind('OEV-'+crypto.randomUUID(),clientId,row.store_id||null,orderId,'state_changed',me.uid||me.id||null,actor,'android-customer-service',
+            JSON.stringify({from:row.state,to:state,reason:state==='cancelled'?cancelReason:null,byName:actor}),stamp)
+      ]);
       return json({ok:true,state,checkpoint:LABELS[state]||state,deferUntil,history,contactCount:arr(row.contact_log).length});
     }
     if(action==='contact'&&method==='POST'){
       const channel=['phone','whatsapp','messenger','instagram','tiktok'].includes(clean(body.channel).toLowerCase())?clean(body.channel).toLowerCase():'phone',
         intent=channel==='phone'&&body.intent==='screened'?'screened':body.intent==='call'?'call':'contact',
         event={type:'contact',channel,intent,at:stamp,by:actor,byName:actor,byUserId:me.uid||me.id||null};
-      const saved=await appendEvent(env,row,event,{contact:true});return json({ok:true,entry:event,history:saved.history,log:saved.contactLog,contactCount:saved.contactLog.length});
+      const saved=await appendEvent(env,row,event,{contact:true});return json({ok:true,entry:event,history:saved.history,log:saved.contactLog,
+        contactCount:saved.contactLog.filter(e=>e?.channel==='phone'&&e?.intent==='screened').length});
     }
     if(action==='notes'&&method==='POST'){
       const note=clean(body.note);if(!note)return json({error:'اكتب الملاحظة أولًا',code:'NOTE_REQUIRED'},400);if(note.length>2000)return json({error:'الملاحظة طويلة جدًا',code:'NOTE_TOO_LONG'},400);
@@ -215,7 +229,12 @@ export async function handleProductionCustomerService({request,env,ctx,delegate}
     if(action==='edit'&&method==='PATCH'){
       const name=clean(body.name),phone=clean(body.phone);if(!name||!phone)return json({error:'الاسم والهاتف مطلوبان',code:'ORDER_EDIT_REQUIRED_FIELDS'},400);
       const items=Array.isArray(body.items)?body.items:[],first=items[0]||{},product=items.map(x=>clean(x.productName)).filter(Boolean).join(' + ')||row.product||'',qty=items.length?items.reduce((s,x)=>s+Math.max(1,Number(x.qty)||1),0):n(row.qty)||1,unitPrice=items.length===1?n(first.unitPrice):n(row.unit_price),productId=items.length===1?(clean(first.productId)||null):null,variantId=items.length===1?(clean(first.variantId)||null):null,productNote=items.length===1?clean(first.variantLabel):row.product_note||'';
-      const history=arr(row.history);history.push({type:'order_edit',at:stamp,by:actor,byName:actor,byUserId:me.uid||null,source:'android-customer-service'});
+      const history=arr(row.history);history.push({
+        type:'order_edit',at:stamp,by:actor,byName:actor,byUserId:me.uid||me.id||null,
+        source:'android-customer-service',
+        before:{name:row.name,phone:row.phone,gov:row.gov,address:row.address,total:row.total,product:row.product,qty:row.qty},
+        after:{name,phone,gov:clean(body.gov),address:clean(body.address),total:Math.max(0,n(body.total)),product,qty}
+      });
       await env.DB.prepare('UPDATE orders SET name=?,phone=?,gov=?,address=?,coupon_code=?,note=?,total=?,product=?,product_id=?,variant_id=?,product_note=?,qty=?,unit_price=?,history=? WHERE id=? AND client_id=?').bind(name,phone,clean(body.gov),clean(body.address),clean(body.couponCode)||null,clean(body.customerNote),Math.max(0,n(body.total)),product,productId,variantId,productNote,qty,unitPrice,JSON.stringify(history),orderId,clientId).run();
       return json({ok:true,order:mapOrder(await getOrder(env,clientId,orderId))});
     }
