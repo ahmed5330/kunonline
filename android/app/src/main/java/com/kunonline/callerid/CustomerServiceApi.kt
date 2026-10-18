@@ -127,9 +127,9 @@ object KunCustomerServiceApi {
         return runCatching {
             val clientId = resolveClientId(context, cookie)
             if (clientId.isBlank()) return CustomerServiceBoardResult(false, "تعذر تحديد حساب المتجر")
-            // A blank selection means all server-authorized stores, not only
-            // the currently active home-dashboard store.
-            val selected = storeId.trim()
+            // Follow the currently selected store unless the agent chooses a
+            // different store explicitly in the Customer Service filters.
+            val selected = if (storeId.isNotBlank()) storeId else KunApi.resolveScope(cookie, context).storeId
             val path = buildString {
                 append("/api/customer-service?clientId=${enc(clientId)}")
                 if (selected.isNotBlank()) append("&storeId=${enc(selected)}")
