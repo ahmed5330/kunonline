@@ -25,6 +25,7 @@ jobs:
           node-version: '22'
       - name: Syntax checks
         run: |
+          node --check src/accounting-faos-event-projector.js
           node --check src/accounting-faos-core.js
           node --check src/accounting-faos-api.js
           node --check src/index-commerce-v38.js
@@ -37,5 +38,7 @@ jobs:
         run: node --no-warnings scripts/faos-posting-live-sql-test.mjs
       - name: Read-only operational reconciliation on fake orders
         run: node --no-warnings scripts/faos-operational-sql-test.mjs
+      - name: Commerce verified event projection templates
+        run: node scripts/faos-event-projection-test.mjs
       - name: In-memory SQLite schema constraints
         run: python3 scripts/faos-ledger-schema-test.py
