@@ -38,7 +38,7 @@ const dbFailure=error=>{
   if(/FAOS_POSTED_IMMUTABLE|FAOS_LINE_IMMUTABLE/.test(message))return fail('القيود المرحلة لا تقبل التعديل أو الحذف',409,'FAOS_POSTED_IMMUTABLE');
   throw error;
 };
-async function balance(env,{clientId,storeId,from,to}){
+export async function faosLedgerBalance(env,{clientId,storeId,from,to}){
   const storeFilter=storeId?' AND j.store_id=?':'',bind=storeId?[from,from,clientId,storeId,to]:[from,from,clientId,to];
   let rows;
   try{
@@ -172,7 +172,7 @@ export async function handleFinancialAccountingOS({request,env,ctx,delegate}){
     if(method==='GET'&&path==='/api/accounting/faos/overview'){
       const range=period(url);
       const [ledger,legacy,latest,quality]=await Promise.all([
-        balance(env,{...scope,...range}),
+        faosLedgerBalance(env,{...scope,...range}),
         accountingOverview(env,{...scope,...range}),
         journals(env,{...scope,...range}),
         operationalQuality(env,{...scope,...range})
