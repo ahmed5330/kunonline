@@ -44,10 +44,22 @@ export async function handleMobileStoreOptions({request,env,delegate}){
     const uid=clean(me.uid||me.id);
     if(!isOwner&&!uid)return unauthorized('تعذر تحديد هوية الموظف','USER_ID_REQUIRED',403);
     // One scoped indexed D1 query instead of many serial HTTP requests.
-    const statement=isOwner
-      ?env.DB.prepare("SELECT s.id store_id,s.client_id,s.name,s.is_default,'owner' role FROM stores s WHERE s.status='active' ORDER BY s.client_id,s.is_default DESC,s.name")
-      :env.DB.prepare("SELECT s.id store_id,s.client_id,s.name,s.is_default,a.role role FROM user_store_access a JOIN stores s ON s.id=a.store_id AND s.client_id=a.client_id WHERE a.user_id=? AND s.status='active' ORDER BY s.client_id,s.is_default DESC,s.name").bind(uid);
-    const {results=[]}=await statement.all();
+    const results=[];
+    if(isOwner){
+      // Bound IDs prevent a global admin query from scanning unrelated stores.
+      // Chunk to remain below SQLite bind-variable limits for large estates.
+      const ids=[...allowed.keys()];
+      for(let i=0;i<ids.length;i+=100){
+        const batch=ids.slice(i,i+100);
+        const marks=batch.map(()=>'?').join(',');
+        const query="SELECT s.id store_id,s.client_id,s.name,s.is_default,'owner' role FROM stores s WHERE s.status='active' AND s.client_id IN ("+marks+") ORDER BY s.client_id,s.is_default DESC,s.name";
+        const page=await env.DB.prepare(query).bind(...batch).all();
+        results.push(...(page.results||[]));
+      }
+    }else{
+      const page=await env.DB.prepare("SELECT s.id store_id,s.client_id,s.name,s.is_default,a.role role FROM user_store_access a JOIN stores s ON s.id=a.store_id AND s.client_id=a.client_id WHERE a.user_id=? AND s.status='active' ORDER BY s.client_id,s.is_default DESC,s.name").bind(uid).all();
+      results.push(...(page.results||[]));
+    }
     const seen=new Set(),stores=[];
     for(const item of results){
       const clientId=clean(item.client_id),storeId=clean(item.store_id);
