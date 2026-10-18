@@ -100,7 +100,10 @@
       if(token!==rendering||!active())return;
       let storeContext={stores:[]};if(clientId){try{const r=await fetch(`/api/my-store-context?clientId=${encodeURIComponent(clientId)}`,{credentials:'include'}),d=await r.json();if(r.ok)storeContext=d;}catch{}}
       const stores=storeContext.stores||[],storeMap=new Map(stores.map(s=>[String(s.id),s.name||s.code||s.id])),write=canWrite(me);
-      el.innerHTML=`<div class="acc100"><div class="page-head acc100-head"><div><div class="title">الحسابات والحركات</div><div class="sub">كل حركة تسمع في شهرها على الحسابات والمالية للسيستم، مع فصل المبيعات عن التحصيل النقدي.</div><div style="margin-top:7px"><span class="acc100-scope">${storeId?esc(storeMap.get(String(storeId))||'المتجر الحالي'):'كل المتاجر'}</span></div></div><div class="spacer"></div><div class="acc100-actions"><label>الشهر<input class="input" type="month" id="acc100Month" value="${currentMonth()}"></label><button class="btn soft" id="acc100Reload">تحديث</button></div></div><div id="acc100Body"></div></div>`;
+      el.innerHTML=`<div class="acc100"><div class="page-head acc100-head"><div><div class="title">الحسابات والحركات</div><div class="sub">كل حركة تسمع في شهرها على الحسابات والمالية للسيستم، مع فصل المبيعات عن التحصيل النقدي.</div><div style="margin-top:7px"><span class="acc100-scope">${storeId?esc(storeMap.get(String(storeId))||'المتجر الحالي'):'كل المتاجر'}</span></div></div><div class="spacer"></div><div class="acc100-actions"><button class="btn primary" id="acc100FaosOpen" type="button">فتح الحسابات والدفاتر</button><label>الشهر<input class="input" type="month" id="acc100Month" value="${currentMonth()}"></label><button class="btn soft" id="acc100Reload">تحديث</button></div></div><div id="acc100Body"></div></div>`;
+      // Directly mount the FAOS workspace when the monthly shell is created.
+      // MutationObserver remains a fallback if the FAOS script loads later.
+      window.KunFAOSAccountingV1?.mount?.();
       const load=async()=>{
         const body=document.getElementById('acc100Body'),month=document.getElementById('acc100Month')?.value||currentMonth();if(!body||!active())return;const localToken=++rendering;body.innerHTML='<div class="card">جارٍ تجميع حساب الشهر من كل مصادر السيستم...</div>';
         try{
