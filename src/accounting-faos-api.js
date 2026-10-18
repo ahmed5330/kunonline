@@ -93,6 +93,9 @@ async function writeJournal(env,{clientId,storeId,date,currency,description,sour
   if(!iso.test(date)||Number.isNaN(Date.parse(date+'T12:00:00Z')))fail('التاريخ غير صحيح');
   if(currency!=='EGP')fail('هذا الإصدار يدعم ترحيل القيود بالجنيه المصري فقط حتى اعتماد دفتر العملات',400,'FAOS_CURRENCY_NOT_SUPPORTED');
   if(!sourceKey||sourceKey.length<8||sourceKey.length>120)fail('معرف العملية مطلوب لمنع التكرار');
+  const store=await env.DB.prepare('SELECT currency FROM stores WHERE client_id=? AND id=? AND status=\'active\'').bind(clientId,storeId).first();
+  if(!store)fail('المتجر غير موجود أو غير نشط',403,'STORE_SCOPE_INVALID');
+  if(clean(store.currency||'EGP')!==currency)fail('عملة القيد لا تطابق العملة الأساسية للمتجر',400,'FAOS_CURRENCY_MISMATCH');
   let lines;try{lines=normalizeLines(rows).lines}catch(error){fail(error.message,400,error.message)}
   await ensureOpen(env,clientId,storeId,date);
   const id='FAOS-'+crypto.randomUUID(),createdAt=new Date().toISOString();
