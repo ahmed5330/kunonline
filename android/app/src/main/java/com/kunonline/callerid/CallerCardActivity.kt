@@ -130,12 +130,20 @@ class CallerCardActivity : Activity() {
                 setOnClickListener { click(this) }
             }
         fun decision(button: Button, orderId: String, target: String) {
+            if (target == "cancelled" && button.text != "تأكيد الإلغاء") {
+                button.text = "تأكيد الإلغاء"
+                return
+            }
             button.isEnabled = false
             thread(name = "kun-fallback-call-decision") {
                 val result = KunCustomerServiceApi.updateState(this, orderId, target)
                 runOnUiThread {
                     Toast.makeText(this, if (result.ok) {
-                        if (target == "confirmed") "تم تأكيد الطلب" else "تم نقل الأوردر إلى العميل لا يرد"
+                        when (target) {
+                            "confirmed" -> "تم تأكيد الطلب"
+                            "cancelled" -> "تم إلغاء الطلب بواسطة العميل"
+                            else -> "تم نقل الأوردر إلى العميل لا يرد"
+                        }
                     } else result.message, Toast.LENGTH_LONG).show()
                     if (result.ok) finish() else button.isEnabled = true
                 }
@@ -150,6 +158,7 @@ class CallerCardActivity : Activity() {
                 val buttons = listOf(
                     action("العميل\nلا يرد", 0xFFB45309.toInt(), Color.WHITE) { decision(it, orderId, "no_answer") },
                     action("تم\nالتأكيد", pine, Color.WHITE) { decision(it, orderId, "confirmed") },
+                    action("العميل\nلغى", 0xFFAE3446.toInt(), Color.WHITE) { decision(it, orderId, "cancelled") },
                     action("تعديل بيانات\nالشحن J&T", chrome, Color.WHITE) {
                         startActivity(Intent(this@CallerCardActivity, CallerJntOrderEditActivity::class.java).apply {
                             putExtra(CallerJntOrderEditActivity.EXTRA_ORDER_ID, orderId)
