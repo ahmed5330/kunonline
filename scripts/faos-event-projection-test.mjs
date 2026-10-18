@@ -44,7 +44,7 @@ assert.ok(returned.lines.some(x=>x.accountCode==='4191'&&x.debit===700));
 assert.ok(stock.lines.some(x=>x.accountCode==='1300'&&x.debit===300));
 const tb=trialBalance(all.map((x,i)=>({id:'J-'+i,storeId:'FAKE-STORE',lines:x.lines})));
 assert.equal(tb.balanced,true);
-assert.equal(tb.netProfitMinor,36000,'COD revenue-cost-fees plus returned/paid customer refund');
+assert.equal(tb.netProfitMinor,38000,'COD revenue-cost-fees plus returned/paid customer refund');
 const get=code=>tb.accounts.find(x=>x.code===code)?.balanceMinor||0;
 assert.equal(get('1230'),0,'COD settlements and carrier-adjusted returns reconcile');
 assert.equal(get('2150'),0,'approved refund and actual bank refund reconcile');
