@@ -108,7 +108,7 @@
     const checks=(s.checks||[]).map(c=>[esc(c.id),c.pass?'✓ اجتاز':'✕ فشل']);
     return '<div class="faos-note faos-ok"><strong>اختبار معزول 100٪:</strong> لا تُنشأ طلبات على Easy Order، ولا تُخصم رسوم محفظة، ولا تُرسل بوليصات J&T. كل النتائج من قيود وهمية في الذاكرة فقط.</div>'+
       '<div class="faos-kpis"><div class="faos-kpi"><span>صافي الربح المتوقع</span><strong>'+money(s.expected?.netProfit)+'</strong></div><div class="faos-kpi"><span>صافي الربح المحسوب</span><strong>'+money(s.actual?.netProfit)+'</strong></div><div class="faos-kpi"><span>اتزان اليومية</span><strong>'+(s.balanced?'سليم':'خطأ')+'</strong></div></div>'+
-      '<h4>طلبات وهمية (4)</h4>'+table(['الطلب','الحالة','قيمته','إيراد معترف به','التفسير'],cases)+
+      '<div class="faos-kpis"><div class="faos-kpi"><span>إجمالي الأصول</span><strong>'+money(s.actual?.assets)+'</strong></div><div class="faos-kpi"><span>إجمالي الالتزامات</span><strong>'+money(s.actual?.liabilities)+'</strong></div><div class="faos-kpi"><span>حقوق الملكية مع صافي الربح</span><strong>'+money(s.actual?.equity)+'</strong></div></div><p class="faos-muted">الأصول = الالتزامات + حقوق الملكية: '+(s.actual?.assets===s.actual?.liabilities+s.actual?.equity?'✓ متطابق':'✕ غير متطابق')+'</p>'+'<h4>طلبات وهمية (4)</h4>'+table(['الطلب','الحالة','قيمته','إيراد معترف به','التفسير'],cases)+
       '<h4>اختبارات المحاسبة</h4>'+table(['قاعدة الاختبار','النتيجة'],checks)+
       '<p class="faos-muted">القيود الافتراضية: '+esc(s.journalCount)+' قيدًا · مدين '+money(s.totals?.debit)+' · دائن '+money(s.totals?.credit)+'</p>';
   }
