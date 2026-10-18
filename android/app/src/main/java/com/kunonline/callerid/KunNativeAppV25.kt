@@ -5,6 +5,7 @@ import android.app.role.RoleManager
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.SystemClock
 import android.provider.Settings
 import android.widget.Toast
 import androidx.compose.foundation.background
@@ -44,7 +45,7 @@ import java.text.NumberFormat
 import java.time.Instant
 import java.util.Locale
 
-private const val V25_FOREGROUND_SYNC_MS = 15_000L
+private const val V25_FOREGROUND_SYNC_MS = 60_000L
 private const val V25_CONTACT_REFRESH_MS = 15_000L
 private const val V25_CONTACT_WINDOW_MS = 5L * 60L * 1000L
 
@@ -76,15 +77,18 @@ fun KunNativeAppV25(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var loggedIn by remember { mutableStateOf(KunApi.hasSession(context)) }
-    var snapshot by remember { mutableStateOf<CommerceSnapshot?>(null) }
+    var snapshot by remember { mutableStateOf(KunApi.cachedSnapshot(context)) }
     var loading by remember { mutableStateOf(false) }
+    var refreshing by remember { mutableStateOf(false) }
+    var lastRefreshElapsed by remember { mutableLongStateOf(0L) }
     var message by remember { mutableStateOf("") }
     var selected by remember { mutableStateOf(MobileV25Tab.HOME) }
     var showGlobalSearch by remember { mutableStateOf(false) }
     var newOrdersNotice by remember { mutableStateOf("") }
     var lastSyncAt by remember { mutableLongStateOf(CustomerCache.lastSyncedAt(context)) }
-    var storeOptions by remember { mutableStateOf<List<MobileStoreOption>>(emptyList()) }
-    var currentStore by remember { mutableStateOf(ScopeInfo()) }
+    val cachedStores = remember { KunApi.cachedStoreOptions(context) }
+    var storeOptions by remember { mutableStateOf(cachedStores?.stores.orEmpty()) }
+    var currentStore by remember { mutableStateOf(cachedStores?.current ?: ScopeInfo()) }
     var storeOptionsLoading by remember { mutableStateOf(false) }
     var storeOptionsError by remember { mutableStateOf("") }
     val dateRevision = MobileDateFilterState.revision
@@ -103,30 +107,44 @@ fun KunNativeAppV25(
         }
     }
 
-    suspend fun performRefresh(manual: Boolean = false) {
-        if (!loggedIn || loading) return
-        loading = true
-        val previousIds = rawOrderIds(snapshot)
-        val hadSnapshot = snapshot != null
+    suspend fun performRefresh(manual: Boolean = false, silent: Boolean = false) {
+        if (!loggedIn || refreshing) return
+        // A foreground resume or tab change must not request the whole order
+        // snapshot again while a recent successful refresh is still fresh.
+        val now = SystemClock.elapsedRealtime()
+        if (silent && snapshot != null && now - lastRefreshElapsed < V25_FOREGROUND_SYNC_MS) return
+        refreshing = true
+        if (!silent) loading = true
+        val previous = snapshot
+        val hadSnapshot = previous != null
+        val previousIds = if (hadSnapshot && !silent) rawOrderIds(previous) else emptySet()
         val result = try {
             withContext(Dispatchers.IO) { KunApi.fetchState(context, forceFull = manual) }
         } finally {
-            loading = false
+            refreshing = false
+            if (!silent) loading = false
         }
+        lastRefreshElapsed = SystemClock.elapsedRealtime()
         if (result.ok) {
+            lastSyncAt = CustomerCache.lastSyncedAt(context)
+            // No JSON changes: do not replace Compose state, parse the order
+            // list again or show loading on the screen.
+            if (!result.changed && hadSnapshot) {
+                if (manual) message = result.message
+                return
+            }
             val next = result.snapshot ?: CommerceSnapshot()
             snapshot = next
-            lastSyncAt = CustomerCache.lastSyncedAt(context)
-            val nextIds = rawOrderIds(next)
-            val added = if (hadSnapshot) nextIds.count { it !in previousIds } else 0
+            val nextIds = if (hadSnapshot && !silent) rawOrderIds(next) else emptySet()
+            val added = if (hadSnapshot && !silent) nextIds.count { it !in previousIds } else 0
             newOrdersNotice = when {
-                added > 0 -> if (added == 1) "وصل أوردر جديد وتمت مزامنته مع المكالمات" else "وصل $added أوردر جديد وتمت مزامنتهم مع المكالمات"
+                added > 0 -> if (added == 1) "وصل أوردر جديد وتمت مزامنته مع المكالمات" else "وصل $added أوردر جديد وتمت مزامنته مع المكالمات"
                 manual -> "تم تحديث الطلبات وCaller ID"
                 else -> ""
             }
             if (manual) message = result.message
         } else {
-            if (manual) message = result.message
+            if (manual || !hadSnapshot) message = result.message
             if (!KunApi.hasSession(context)) loggedIn = false
         }
     }
@@ -144,13 +162,17 @@ fun KunNativeAppV25(
             return@LaunchedEffect
         }
         SyncJobService.schedule(context)
-        storeOptionsLoading = true
+        storeOptionsLoading = storeOptions.isEmpty()
         val result = withContext(Dispatchers.IO) { KunApi.loadStoreOptions(context) }
         storeOptionsLoading = false
         if (!loggedIn) return@LaunchedEffect
-        storeOptions = result.stores
-        currentStore = result.current
-        storeOptionsError = if (result.ok) result.message else result.message
+        if (result.ok) {
+            storeOptions = result.stores
+            currentStore = result.current
+            storeOptionsError = result.message
+        } else {
+            storeOptionsError = result.message
+        }
         // Show real data immediately after sign-in, rather than waiting for the
         // next 15-second foreground poll to populate the dashboard.
         if (snapshot == null) performRefresh(false)
@@ -162,7 +184,7 @@ fun KunNativeAppV25(
     }
     // Keep the caller-ID cache current while customer service is visible too.
     ForegroundPolling(loggedIn, enabled = loggedIn && selected != MobileV25Tab.SETTINGS, intervalMillis = V25_FOREGROUND_SYNC_MS) {
-        performRefresh(false)
+        performRefresh(false, silent = true)
     }
 
     LaunchedEffect(newOrdersNotice) {
@@ -293,6 +315,7 @@ fun KunNativeAppV25(
                             when (selected) {
                                 MobileV25Tab.HOME -> V25Home(
                                     snapshot = snapshot ?: CommerceSnapshot(),
+                                    dataReady = snapshot != null,
                                     newOrdersNotice = newOrdersNotice,
                                     storeOptions = storeOptions,
                                     currentStore = currentStore,
@@ -449,6 +472,7 @@ private fun V25Login(busy: Boolean, message: String, onLogin: (String, String) -
 @Composable
 private fun V25Home(
     snapshot: CommerceSnapshot,
+    dataReady: Boolean,
     newOrdersNotice: String,
     storeOptions: List<MobileStoreOption>,
     currentStore: ScopeInfo,
@@ -485,7 +509,7 @@ private fun V25Home(
                     Text("اختيار المتجر", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f))
                     if (storeOptions.isNotEmpty()) Text("${storeOptions.size} متجر", color = KunColors.Ink3, style = MaterialTheme.typography.labelMedium)
                 }
-                if (storeOptionsLoading) {
+                if (storeOptionsLoading && storeOptions.isEmpty()) {
                     LinearProgressIndicator(Modifier.fillMaxWidth(), color = KunColors.Chrome)
                     Text("جاري تحميل المتاجر المتاحة…", color = KunColors.Ink2)
                 } else if (storeOptions.isEmpty()) {
@@ -531,18 +555,19 @@ private fun V25Home(
         }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                KunInfoCard("إجمالي قيمة الطلبات", v25Money(total), Modifier.weight(1f), KunColors.Chrome)
-                KunInfoCard("إجمالي الطلبات", orders.size.toString(), Modifier.weight(1f), KunColors.Pine)
+                KunInfoCard("إجمالي قيمة الطلبات", if (dataReady) v25Money(total) else "—", Modifier.weight(1f), KunColors.Chrome)
+                KunInfoCard("إجمالي الطلبات", if (dataReady) orders.size.toString() else "—", Modifier.weight(1f), KunColors.Pine)
             }
         }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                KunInfoCard("بانتظار التأكيد", pending.toString(), Modifier.weight(1f), KunColors.Gold)
-                KunInfoCard("تم التأكيد", confirmed.toString(), Modifier.weight(1f), KunColors.Pine)
+                KunInfoCard("بانتظار التأكيد", if (dataReady) pending.toString() else "—", Modifier.weight(1f), KunColors.Gold)
+                KunInfoCard("تم التأكيد", if (dataReady) confirmed.toString() else "—", Modifier.weight(1f), KunColors.Pine)
             }
         }
         item {
-            KunSevenDayOrdersTrend(snapshot.raw)
+            if (dataReady) KunSevenDayOrdersTrend(snapshot.raw)
+            else KunSectionCard { Text("جاري تجهيز بيانات الطلبات…", color = KunColors.Ink2) }
         }
         item {
             KunSectionCard {
