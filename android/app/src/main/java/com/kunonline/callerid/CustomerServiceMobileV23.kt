@@ -613,7 +613,7 @@ private fun V23CustomerServiceCard(
                     shape = MaterialTheme.shapes.small
                 ) {
                     Text(
-                        "محاولات التواصل: ${order.contactCount}",
+                        "مكالمات مرصودة: ${order.contactCount}",
                         modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
                         fontWeight = FontWeight.Bold,
                         style = MaterialTheme.typography.labelMedium
@@ -716,7 +716,7 @@ private fun V23OrderDetailDialog(
                 V23DetailRow("التاريخ", order.date)
                 v23LastOrderEdit(order.history)?.let { V23DetailRow("آخر تعديل", v23OrderEditLabel(it)) }
                 V23DetailRow("الحالة", labels[order.state] ?: v23StateLabel(order.state))
-                V23DetailRow("محاولات التواصل", order.contactCount.toString())
+                V23DetailRow("المكالمات التي رصدها الهاتف", order.contactCount.toString())
                 if (order.customerNote.isNotBlank()) V23DetailRow("ملاحظة العميل", order.customerNote)
                 if (order.latestInternalNote.isNotBlank()) V23DetailRow("آخر ملاحظة داخلية", order.latestInternalNote)
                 if (order.stockBatchName.isNotBlank()) V23DetailRow("دفعة المخزون", order.stockBatchName)
@@ -861,18 +861,47 @@ private fun V23HistoryEvent(event: JSONObject) {
     val note = event.optString("note")
     val by = event.optString("byName").ifBlank { event.optString("by") }
     val at = event.optString("at")
+    val time = runCatching {
+        Instant.parse(at).atZone(ZoneId.of("Africa/Cairo"))
+            .format(DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm:ss"))
+    }.getOrDefault(at)
+    val changes = buildList {
+        val before = event.optJSONObject("before")
+        val after = event.optJSONObject("after")
+        if (before != null && after != null) {
+            listOf(
+                "name" to "الاسم", "phone" to "الهاتف", "gov" to "المحافظة",
+                "address" to "العنوان", "total" to "الإجمالي",
+                "product" to "المنتج", "qty" to "الكمية"
+            ).forEach { (key, label) ->
+                val previous = before.optString(key)
+                val current = after.optString(key)
+                if (previous != current) add("$label: $previous ← $current")
+            }
+        }
+    }
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(10.dp)) {
             Text(
                 when {
                     note.isNotBlank() -> note
                     state.isNotBlank() -> v23StateLabel(state)
+                    type == "contact" && event.optString("intent") == "screened" ->
+                        "مكالمة رصدها الهاتف" + when(event.optString("direction")) {
+                            "incoming" -> " (واردة)"
+                            "outgoing" -> " (صادرة)"
+                            else -> ""
+                        }
                     type.isNotBlank() -> v23EventLabel(type)
                     else -> "إجراء"
                 },
                 fontWeight = FontWeight.Bold
             )
-            Text(listOf(by, at).filter { it.isNotBlank() }.joinToString(" • "), style = MaterialTheme.typography.bodySmall)
+            Text(listOf(by, time).filter { it.isNotBlank() }.joinToString(" • "), style = MaterialTheme.typography.bodySmall)
+            event.optString("previousState").takeIf { it.isNotBlank() }?.let {
+                Text("الحالة قبل التغيير: ${v23StateLabel(it)}", style = MaterialTheme.typography.bodySmall)
+            }
+            changes.forEach { Text(it, style = MaterialTheme.typography.bodySmall) }
         }
     }
 }
