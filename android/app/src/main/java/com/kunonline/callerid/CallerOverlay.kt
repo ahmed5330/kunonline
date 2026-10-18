@@ -148,8 +148,18 @@ object CallerOverlay {
                     setOnClickListener { onClick(this) }
                 }
             fun decision(button: Button, orderId: String, target: String) {
-                if (target == "cancelled" && button.text != "تأكيد الإلغاء") {
-                    button.text = "تأكيد الإلغاء"
+                if (target == "cancelled") {
+                    dismiss()
+                    runCatching {
+                        app.startActivity(Intent(app, CallerCardActivity::class.java).apply {
+                            putExtra("phone", customer.phone)
+                            putExtra("incoming", incoming)
+                            putExtra("start_cancel", true)
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        })
+                    }.onFailure {
+                        Toast.makeText(app, "تعذر فتح سبب الإلغاء", Toast.LENGTH_LONG).show()
+                    }
                     return
                 }
                 button.isEnabled = false
