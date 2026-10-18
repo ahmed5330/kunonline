@@ -23,6 +23,23 @@ object CallActivityStore {
             .apply()
     }
 
+    /**
+     * Only a call actually seen by Android's screening service is counted.
+     * Cached and live caller lookups may report the same event twice.
+     */
+    @Synchronized fun markObserved(context: Context, orderId: String?, phone: String, incoming: Boolean,
+                                    now: Long = System.currentTimeMillis()): Boolean {
+        val id = orderId.orEmpty().trim()
+        if (id.isBlank()) return false
+        val normalized = PhoneNormalizer.normalize(phone)
+        val duplicate = active(context, now).any {
+            it.orderId == id && it.phone == normalized && it.incoming == incoming &&
+                now - it.startedAt in 0..15_000L
+        }
+        if (!duplicate) mark(context, id, normalized, incoming, now)
+        return !duplicate
+    }
+
     fun active(context: Context, now: Long = System.currentTimeMillis()): List<ActiveCallActivity> {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val expired = mutableListOf<String>()
