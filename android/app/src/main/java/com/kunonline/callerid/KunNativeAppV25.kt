@@ -26,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
@@ -82,6 +83,7 @@ fun KunNativeAppV25(
     var refreshing by remember { mutableStateOf(false) }
     var lastRefreshElapsed by remember { mutableLongStateOf(0L) }
     var message by remember { mutableStateOf("") }
+    var syncError by remember { mutableStateOf("") }
     var selected by remember { mutableStateOf(MobileV25Tab.HOME) }
     var showGlobalSearch by remember { mutableStateOf(false) }
     var newOrdersNotice by remember { mutableStateOf("") }
@@ -124,8 +126,9 @@ fun KunNativeAppV25(
             refreshing = false
             if (!silent) loading = false
         }
-        lastRefreshElapsed = SystemClock.elapsedRealtime()
+        lastRefreshElapsed = if (result.ok) SystemClock.elapsedRealtime() else 0L
         if (result.ok) {
+            syncError = ""
             lastSyncAt = CustomerCache.lastSyncedAt(context)
             // No JSON changes: do not replace Compose state, parse the order
             // list again or show loading on the screen.
@@ -144,6 +147,7 @@ fun KunNativeAppV25(
             }
             if (manual) message = result.message
         } else {
+            syncError = result.message
             if (manual || !hadSnapshot) message = result.message
             if (!KunApi.hasSession(context)) loggedIn = false
         }
@@ -167,15 +171,17 @@ fun KunNativeAppV25(
         storeOptionsLoading = false
         if (!loggedIn) return@LaunchedEffect
         if (result.ok) {
+            val storeChanged = currentStore != result.current
             storeOptions = result.stores
             currentStore = result.current
+            if (storeChanged) snapshot = null
             storeOptionsError = result.message
         } else {
             storeOptionsError = result.message
         }
-        // Show real data immediately after sign-in, rather than waiting for the
-        // next 15-second foreground poll to populate the dashboard.
-        if (snapshot == null) performRefresh(false)
+        // Refresh with the now verified store, not an earlier pre-discovery scope.
+        // A failed initial fetch also remains retryable instead of showing fake zero totals.
+        if (snapshot == null || syncError.isNotBlank()) performRefresh(false)
     }
     // A period switch does one immediate delta refresh. It does not create a new
     // recurring timer, so normal Cloudflare request cadence stays unchanged.
@@ -316,6 +322,8 @@ fun KunNativeAppV25(
                                 MobileV25Tab.HOME -> V25Home(
                                     snapshot = snapshot ?: CommerceSnapshot(),
                                     dataReady = snapshot != null,
+                                    syncError = syncError,
+                                    onRefresh = { refresh(true) },
                                     newOrdersNotice = newOrdersNotice,
                                     storeOptions = storeOptions,
                                     currentStore = currentStore,
@@ -475,6 +483,8 @@ private fun V25Login(busy: Boolean, message: String, onLogin: (String, String) -
 private fun V25Home(
     snapshot: CommerceSnapshot,
     dataReady: Boolean,
+    syncError: String,
+    onRefresh: () -> Unit,
     newOrdersNotice: String,
     storeOptions: List<MobileStoreOption>,
     currentStore: ScopeInfo,
@@ -506,13 +516,16 @@ private fun V25Home(
     val cancelled = orders.count { it.state == "cancelled" }
     val total = orders.sumOf { it.total }
     val countBase = orders.size.coerceAtLeast(1)
+    val other = (orders.size - pending - contacting - confirmed - noAnswer - cancelled).coerceAtLeast(0)
     val statusRows = listOf(
-        "في انتظار التأكيد" to pending,
-        "جاري التأكيد" to contacting,
-        "تم التأكيد" to confirmed,
-        "لم يرد" to noAnswer,
-        "إلغاء" to cancelled
+        V25StatusStat("في انتظار التأكيد", pending, Icons.Outlined.Schedule, KunColors.Gold),
+        V25StatusStat("جاري التأكيد", contacting, Icons.Outlined.PhoneInTalk, KunColors.Chrome),
+        V25StatusStat("تم التأكيد", confirmed, Icons.Outlined.CheckCircle, KunColors.Pine),
+        V25StatusStat("العميل لا يرد", noAnswer, Icons.Outlined.PhoneMissed, KunColors.Gold),
+        V25StatusStat("العميل لغى", cancelled, Icons.Outlined.Cancel, KunColors.Brick),
+        V25StatusStat("باقي الحالات", other, Icons.Outlined.LocalShipping, KunColors.Ink2)
     )
+    val rawOrderCount = snapshot.raw.optJSONArray("orders")?.length() ?: 0
     val activeLocal = CallActivityStore.active(LocalContext.current).size
     LazyColumn(
         Modifier.fillMaxSize().padding(horizontal = 14.dp),
@@ -577,32 +590,41 @@ private fun V25Home(
                 }
             }
         }
-        item {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                KunInfoCard("إجمالي قيمة الطلبات", if (dataReady) v25Money(total) else "—", Modifier.weight(1f), KunColors.Chrome)
-                KunInfoCard("إجمالي الطلبات", if (dataReady) orders.size.toString() else "—", Modifier.weight(1f), KunColors.Pine)
+        if (syncError.isNotBlank()) {
+            item {
+                KunSectionCard {
+                    Text("تعذر تحديث بيانات الطلبات", color = KunColors.Brick, fontWeight = FontWeight.Bold)
+                    Text(syncError, color = KunColors.Ink2, style = MaterialTheme.typography.bodySmall)
+                    TextButton(onClick = onRefresh) { Text("إعادة محاولة التحميل") }
+                }
+            }
+        } else if (dataReady && orders.isEmpty() && rawOrderCount > 0) {
+            item {
+                KunSectionCard {
+                    Text("لا توجد طلبات في $periodLabel، لكن توجد $rawOrderCount طلب في الفترات الأخرى.", color = KunColors.Ink2)
+                    TextButton(onClick = { MobileDateFilterState.select(MobileDatePreset.ALL) }) { Text("عرض كل الطلبات") }
+                }
             }
         }
         item {
-            KunSectionCard {
-                Text("حالات الطلبات • العدد والنسبة من إجمالي الفترة", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                statusRows.forEach { (label, count) ->
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        Text(label, modifier = Modifier.weight(1f), color = KunColors.Ink)
-                        Text(if (dataReady) "$count طلب" else "—", fontWeight = FontWeight.Bold, color = KunColors.Chrome)
-                        Spacer(Modifier.width(12.dp))
-                        Text(if (dataReady) String.format(Locale.US, "%.1f%%", count * 100.0 / countBase) else "—",
-                            color = KunColors.Ink2, style = MaterialTheme.typography.labelLarge)
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                V25SummaryTile("إجمالي قيمة الطلبات", if (dataReady) v25Money(total) else "—",
+                    Icons.Outlined.Payments, KunColors.Chrome, Modifier.weight(1f))
+                V25SummaryTile("إجمالي الطلبات", if (dataReady) orders.size.toString() else "—",
+                    Icons.Outlined.Inventory2, KunColors.Pine, Modifier.weight(1f))
+            }
+        }
+        item {
+            Text("حالات الطلبات • العدد والنسبة من إجمالي الفترة", style = MaterialTheme.typography.titleMedium,
+                color = KunColors.Ink, fontWeight = FontWeight.Bold)
+        }
+        statusRows.chunked(2).forEach { row ->
+            item {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    row.forEach { status ->
+                        V25StatusTile(status, countBase, dataReady, Modifier.weight(1f))
                     }
-                    if (dataReady) {
-                        LinearProgressIndicator(
-                            progress = { count.toFloat() / countBase },
-                            modifier = Modifier.fillMaxWidth().height(5.dp),
-                            color = KunColors.Pine,
-                            trackColor = KunColors.PineSoft
-                        )
-                    }
-                    Spacer(Modifier.height(7.dp))
+                    if (row.size == 1) Spacer(Modifier.weight(1f))
                 }
             }
         }
@@ -638,8 +660,10 @@ private fun V25Home(
         }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                KunInfoCard("Caller ID", CustomerCache.count(LocalContext.current).toString(), Modifier.weight(1f), KunColors.Chrome)
-                KunInfoCard("جاري التواصل", activeLocal.toString(), Modifier.weight(1f), KunColors.Gold)
+                V25SummaryTile("Caller ID", CustomerCache.count(LocalContext.current).toString(),
+                    Icons.Outlined.ContactPhone, KunColors.Chrome, Modifier.weight(1f))
+                V25SummaryTile("جاري التواصل", activeLocal.toString(),
+                    Icons.Outlined.SupportAgent, KunColors.Gold, Modifier.weight(1f))
             }
         }
         item {
@@ -649,9 +673,55 @@ private fun V25Home(
             }
         }
         if (orders.isEmpty()) {
-            item { V25Empty("لا توجد طلبات في الفترة المختارة") }
+            item { V25Empty(if (syncError.isNotBlank()) "تعذر تحديث الطلبات — جرّب إعادة التحميل" else "لا توجد طلبات في الفترة المختارة") }
         } else {
             items(orders.take(6), key = { it.id }) { order -> V25CompactOrder(order) }
+        }
+    }
+}
+
+private data class V25StatusStat(val label: String, val count: Int, val icon: ImageVector, val tone: Color)
+
+@Composable
+private fun V25SummaryTile(
+    title: String, value: String, icon: ImageVector, tone: Color, modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier.aspectRatio(1f), shape = KunRadius,
+        colors = CardDefaults.cardColors(containerColor = KunColors.Surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Column(Modifier.fillMaxSize().padding(14.dp), verticalArrangement = Arrangement.SpaceBetween) {
+            Icon(icon, contentDescription = null, tint = tone, modifier = Modifier.size(23.dp))
+            Text(title, color = KunColors.Ink2, style = MaterialTheme.typography.labelMedium, maxLines = 2)
+            Text(value, color = KunColors.Ink, style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.ExtraBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Box(Modifier.width(36.dp).height(4.dp).clip(KunRadius).background(tone))
+        }
+    }
+}
+
+@Composable
+private fun V25StatusTile(
+    stat: V25StatusStat, base: Int, dataReady: Boolean, modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier.aspectRatio(1f), shape = KunRadius,
+        colors = CardDefaults.cardColors(containerColor = KunColors.Surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Column(Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.SpaceBetween) {
+            Icon(stat.icon, contentDescription = null, tint = stat.tone, modifier = Modifier.size(21.dp))
+            Text(stat.label, color = KunColors.Ink2, style = MaterialTheme.typography.labelMedium, maxLines = 2)
+            Text(if (dataReady) "${stat.count} طلب" else "—", fontWeight = FontWeight.Bold,
+                color = KunColors.Ink, style = MaterialTheme.typography.titleMedium)
+            Text(if (dataReady) String.format(Locale.US, "%.1f%%", stat.count * 100.0 / base) else "—",
+                color = stat.tone, style = MaterialTheme.typography.labelLarge)
+            LinearProgressIndicator(
+                progress = { if (dataReady) stat.count.toFloat() / base else 0f },
+                modifier = Modifier.fillMaxWidth().height(4.dp),
+                color = stat.tone, trackColor = KunColors.Ground
+            )
         }
     }
 }
