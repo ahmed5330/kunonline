@@ -79,10 +79,17 @@
   function health(){
     const x=state.data;
     if(!x||x.__error)return '<div class="faos-note">'+esc(x?.__error||'لم يتم تحميل التقرير')+'</div><p class="faos-muted">اختبار الطلبات الوهمية يظل متاحًا حتى قبل تطبيق ترحيل قاعدة البيانات.</p>';
-    const old=x.legacy||{},ledger=x.ledger||{},q=x.warnings||[];
+    const old=x.legacy||{},ledger=x.ledger||{},q=x.warnings||[],quality=x.quality||{};
     return '<div class="faos-kpis">'+
       [['طلبات محصلة دون مبلغ مؤكد',old.unverifiedCollectedOrders||0],['تحصيل التشغيل المسجل (غير معتمد)',money(old.collectedRevenue,old.currency)],['ميزان القيد الجديد',ledger.balanced?'متوازن':'غير متوازن']].map(([k,v])=>'<div class="faos-kpi"><span>'+esc(k)+'</span><strong>'+esc(v)+'</strong></div>').join('')+'</div>'+
       '<div class="faos-note">تنبيه محاسبي: قيمة الطلب أو حالة «تم التحصيل» وحدها لا تثبت انتقال الأموال للبنك. لا تتعامل مع صافي التدفق التشغيلي باعتباره رصيدًا بنكيًا أو مع الدفتر الجديد كقوائم نهائية قبل ترحيل كل الأحداث.</div>'+
+      '<h4>مؤشرات جودة البيانات والمطابقة</h4>'+table(['الفحص','النتيجة','المعنى'],[
+      ['طلبات عليها نقص في التحصيل',esc(quality.unverifiedCollectedOrders||0),'تحتاج كشف تسوية'],
+      ['طلبات لم يثبت الاعتراف بإيرادها',money(quality.unrecognizedPipelineValue),'Pipeline وليس إيرادًا'],
+      ['مشتريات مصروفة يدويًا',money(quality.inventoryPurchasesExpensed),'احتمال تكرار COGS'],
+      ['رسوم إدارة لم تُعكس',esc(quality.unreversedManagementFees||0),'لا يجوز تحميل المرتجع رسوم بيع'],
+      ['إعلانات مدخلة يدويًا',money(quality.manualAdExpense),'تحتاج مطابقة مع مصدر Meta']
+    ])+
       q.map(w=>'<p class="faos-muted">• '+esc(w.text)+(w.count?' ('+esc(w.count)+')':'')+'</p>').join('')+
       '<p class="faos-muted">صافي ربح دفتر FAOS المُرحّل فقط: '+money(ledger.netProfit,old.currency)+' — يختلف عن مؤشرات الحسابات القديمة لحين ربط الأحداث ومطابقتها.</p>';
   }
