@@ -37,6 +37,6 @@ assert.match(home, /rawOrderCount > 0/, 'Explain when selected period hides exis
 assert.match(home, /V25StatusTile\(status, countBase, dataReady/, 'State counters must be equal square tiles');
 assert.match(home, /aspectRatio\(1f\)/, 'Home number cards must stay square');
 assert.match(home, /syncError = result\.message/, 'Network errors must not appear as genuine zero totals');
-assert.match(api, /if \(selectedStore == null\)/, 'Persist verified selected store scope on first launch');
+assert.match(api, /if \(selectedStore == null && \(active\.storeId\.isNotBlank\(\) \|\| selected != null\)\)/, 'Persist verified store only when it changes; keep legitimate all-store scope');
 assert.match(api, /if \(root\.optJSONArray\("orders"\) == null\)/, 'Reject malformed state without order array');
 console.log('Android home store-switcher contract: permissions, switching, isolation and sync PASS.');
