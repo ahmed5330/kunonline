@@ -78,6 +78,6 @@
   function stopPoll(){if(state.poll){clearInterval(state.poll);state.poll=null;}}
   document.addEventListener('visibilitychange',()=>{if(document.hidden)stopPoll();else{if(state.open)load({quiet:true});else refreshBadge();startPoll();}});
   document.addEventListener('change',e=>{if(e.target?.id==='storeBtn'){setTimeout(()=>state.open?load():refreshBadge(),100);}});
-  window.KunTeamCollaborationV117={open:()=>{if(!state.open)toggle();},refresh:()=>state.open?load():refreshBadge(),version:'117.2'};
+  window.KunTeamCollaborationV117={open:()=>{if(!state.open)toggle();},refresh:()=>state.open?load():refreshBadge(),version:'117.3'};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',inject);else inject();
 })();
