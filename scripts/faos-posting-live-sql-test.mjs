@@ -8,8 +8,8 @@ import {handleFinancialAccountingOS} from '../src/accounting-faos-api.js';
 const db=new DatabaseSync(':memory:');
 db.exec('PRAGMA foreign_keys=ON');
 db.exec(fs.readFileSync('migrations/0098_financial_ledger_v1.sql','utf8'));
-db.exec("CREATE TABLE stores(id TEXT PRIMARY KEY,client_id TEXT,status TEXT,currency TEXT)");
-db.prepare('INSERT INTO stores VALUES(?,?,?,?)').run('QA_STORE','QA_CLIENT','active','EGP');
+db.exec("CREATE TABLE stores(id TEXT PRIMARY KEY,client_id TEXT,status TEXT,currency TEXT,name TEXT)");
+db.prepare('INSERT INTO stores VALUES(?,?,?,?,?)').run('QA_STORE','QA_CLIENT','active','EGP','متجر اختبار');
 const env={DB:{
   prepare(sql){
     const stmt=db.prepare(sql);
