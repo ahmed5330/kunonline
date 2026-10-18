@@ -41,7 +41,7 @@ async function call(path,{method='GET',body,role='client'}={}){
   return {status:response.status,data:await response.json()};
 }
 const core={storeId:'QA_STORE',date:'2026-09-20',currency:'EGP',description:'تمويل خزينة اختبار',
- idempotencyKey:'QA-FUNDING-100',lines:[{accountCode:'1010',debit:100},{accountCode:'3000',credit:100}]};
+ idempotencyKey:'QA-FUNDING-100',lines:[{accountCode:'1120',debit:100},{accountCode:'3100',credit:100}]};
 const post=body=>call('/api/accounting/faos/journals',{method:'POST',body});
 let first=await post(core);
 assert.equal(first.status,201,JSON.stringify(first.data));
@@ -50,7 +50,7 @@ let same=await post(core);
 assert.equal(same.status,200,JSON.stringify(same.data));
 assert.equal(same.data.id,first.data.id);
 assert.equal(same.data.deduplicated,true);
-let changed=await post({...core,lines:[{accountCode:'1010',debit:200},{accountCode:'3000',credit:200}]});
+let changed=await post({...core,lines:[{accountCode:'1120',debit:200},{accountCode:'3100',credit:200}]});
 assert.equal(changed.status,409,'same key changed amount must not silently succeed');
 assert.equal(changed.data.code,'FAOS_IDEMPOTENCY_PAYLOAD_MISMATCH');
 changed=await post({...core,description:'تمويل آخر'});
@@ -77,7 +77,7 @@ const total=db.prepare('SELECT SUM(debit_minor) debit,SUM(credit_minor) credit F
 assert.equal(total.debit,total.credit);
 const net=db.prepare('SELECT account_code,SUM(debit_minor-credit_minor) net FROM faos_journal_lines GROUP BY account_code ORDER BY account_code').all();
 assert.ok(net.every(x=>x.net===0),'reversal must neutralize balance');
-const bad=await post({...core,idempotencyKey:'QA-BAD-JOURNAL',date:'2026-10-18',lines:[{accountCode:'1010',debit:3},{accountCode:'3000',credit:4}]});
+const bad=await post({...core,idempotencyKey:'QA-BAD-JOURNAL',date:'2026-10-18',lines:[{accountCode:'1120',debit:3},{accountCode:'3100',credit:4}]});
 assert.equal(bad.status,400,'unbalanced journal must be rejected');
 const cross=await post({...core,clientId:'SOMEONE_ELSE',date:'2026-10-18',idempotencyKey:'QA-SPOOF-KEY'});
 assert.equal(cross.status,403,'cross-tenant blocked');
