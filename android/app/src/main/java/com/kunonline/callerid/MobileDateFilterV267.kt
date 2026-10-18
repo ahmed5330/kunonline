@@ -33,6 +33,7 @@ import java.time.format.DateTimeFormatter
 import java.time.temporal.TemporalAdjusters
 
 enum class MobileDatePreset(val label: String) {
+    ALL("كل الفترات"),
     TODAY("اليوم"),
     YESTERDAY("أمس"),
     CURRENT_WEEK("هذا الأسبوع"),
@@ -68,7 +69,7 @@ object MobileDateFilterState {
         DateTimeFormatter.ofPattern("d-M-yyyy")
     )
 
-    var preset by mutableStateOf(MobileDatePreset.TODAY)
+    var preset by mutableStateOf(MobileDatePreset.ALL)
         private set
     var customStart by mutableStateOf<LocalDate?>(null)
         private set
@@ -110,6 +111,7 @@ object MobileDateFilterState {
     }
 
     fun bounds(today: LocalDate = LocalDate.now(cairo)): MobileDateBounds = when (preset) {
+        MobileDatePreset.ALL -> MobileDateBounds(LocalDate.MIN, LocalDate.MAX)
         MobileDatePreset.TODAY -> MobileDateBounds(today, today)
         MobileDatePreset.YESTERDAY -> MobileDateBounds(today.minusDays(1), today.minusDays(1))
         MobileDatePreset.CURRENT_WEEK -> {
@@ -157,6 +159,8 @@ object MobileDateFilterState {
     }
 
     fun matches(value: String, fallback: String = ""): Boolean {
+        // An order with a legacy or missing date must stay visible in the full list.
+        if (preset == MobileDatePreset.ALL) return true
         val date = parseDate(value) ?: parseDate(fallback) ?: return false
         val range = bounds()
         return !date.isBefore(range.start) && !date.isAfter(range.end)
