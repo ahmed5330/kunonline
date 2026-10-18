@@ -1112,7 +1112,6 @@ private fun v23CustomerServiceStates(): List<Pair<String, String>> = listOf(
     "pending" to "في انتظار التأكيد",
     "contacting" to "جاري التواصل",
     "no_answer" to "لا يرد",
-    "no_answer" to "لا يرد",
     "confirmed" to "تم التأكيد",
     "preparing" to "التجهيز",
     "shipped" to "جاري الشحن",
