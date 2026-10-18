@@ -35,20 +35,22 @@ const dbFailure=error=>{
   throw error;
 };
 async function balance(env,{clientId,storeId,from,to}){
-  const storeFilter=storeId?' AND j.store_id=?':'',bind=storeId?[clientId,storeId,from,to]:[clientId,from,to];
+  const storeFilter=storeId?' AND j.store_id=?':'',bind=storeId?[from,from,clientId,storeId,to]:[from,from,clientId,to];
   let rows;
   try{
-    const data=await env.DB.prepare(`SELECT l.account_code code,SUM(l.debit_minor) debit_minor,SUM(l.credit_minor) credit_minor
+    const data=await env.DB.prepare(`SELECT l.account_code code,SUM(l.debit_minor) debit_minor,SUM(l.credit_minor) credit_minor,
+      SUM(CASE WHEN j.entry_date>=? THEN l.debit_minor ELSE 0 END) period_debit_minor,
+      SUM(CASE WHEN j.entry_date>=? THEN l.credit_minor ELSE 0 END) period_credit_minor
       FROM faos_journal_lines l JOIN faos_journals j ON j.id=l.journal_id AND j.client_id=l.client_id AND j.store_id=l.store_id
-      WHERE j.client_id=?${storeFilter} AND j.entry_date BETWEEN ? AND ? AND j.status='posted'
+      WHERE j.client_id=?${storeFilter} AND j.entry_date<=? AND j.status='posted'
       GROUP BY l.account_code ORDER BY l.account_code`).bind(...bind).all();
     rows=data.results||[];
   }catch(error){dbFailure(error)}
-  const accounts=rows.map(r=>{const a=ACCOUNT_BY_CODE.get(String(r.code)),dr=Number(r.debit_minor)||0,cr=Number(r.credit_minor)||0;return {code:r.code,name:a?.name||'حساب غير معروف',type:a?.type||'unknown',debit:dr/100,credit:cr/100,net:(dr-cr)/100};});
+  const accounts=rows.map(r=>{const a=ACCOUNT_BY_CODE.get(String(r.code)),dr=Number(r.debit_minor)||0,cr=Number(r.credit_minor)||0;return {code:r.code,name:a?.name||'حساب غير معروف',type:a?.type||'unknown',debit:dr/100,credit:cr/100,net:(dr-cr)/100,periodNet:((Number(r.period_debit_minor)||0)-(Number(r.period_credit_minor)||0))/100};});
   const debit=rows.reduce((s,r)=>s+(Number(r.debit_minor)||0),0),credit=rows.reduce((s,r)=>s+(Number(r.credit_minor)||0),0);
-  const rev=accounts.filter(x=>x.type==='revenue').reduce((s,x)=>s-x.net,0),
-        returns=accounts.filter(x=>x.type==='contra_revenue').reduce((s,x)=>s+x.net,0),
-        expenses=accounts.filter(x=>x.type==='expense').reduce((s,x)=>s+x.net,0);
+  const rev=accounts.filter(x=>x.type==='revenue').reduce((s,x)=>s-x.periodNet,0),
+        returns=accounts.filter(x=>x.type==='contra_revenue').reduce((s,x)=>s+x.periodNet,0),
+        expenses=accounts.filter(x=>x.type==='expense').reduce((s,x)=>s+x.periodNet,0);
   return {accounts,balanced:debit===credit,totalDebit:debit/100,totalCredit:credit/100,netSales:(rev-returns),expenses,netProfit:rev-returns-expenses,source:'posted_faos_journals_only',includesLegacyOperationalEvents:false};
 }
 async function journals(env,{clientId,storeId,from,to}){
@@ -64,7 +66,7 @@ async function writeJournal(env,{clientId,storeId,date,currency,description,sour
   if(!iso.test(date)||Number.isNaN(Date.parse(date+'T12:00:00Z')))fail('التاريخ غير صحيح');
   if(currency!=='EGP')fail('هذا الإصدار يدعم ترحيل القيود بالجنيه المصري فقط حتى اعتماد دفتر العملات',400,'FAOS_CURRENCY_NOT_SUPPORTED');
   if(!sourceKey||sourceKey.length<8||sourceKey.length>120)fail('معرف العملية مطلوب لمنع التكرار');
-  const {lines}=normalizeLines(rows);
+  let lines;try{lines=normalizeLines(rows).lines}catch(error){fail(error.message,400,error.message)}
   await ensureOpen(env,clientId,storeId,date);
   const id='FAOS-'+crypto.randomUUID(),createdAt=new Date().toISOString();
   const operations=[env.DB.prepare('INSERT INTO faos_journals (id,client_id,store_id,entry_date,currency,source_type,source_key,description,status,reversal_of,created_by,created_at) VALUES (?,?,?,?,?,?,?,? ,\'posted\',?,?,?)').bind(id,clientId,storeId,date,currency,sourceType,sourceKey,description,reversalOf,actor,createdAt)];
