@@ -1,0 +1,35 @@
+name: FAOS accounting isolated QA
+on:
+  pull_request:
+    paths:
+      - 'src/accounting-faos-*'
+      - 'migrations/0098_financial_ledger_v1.sql'
+      - 'public/v2/modules-v155-accounting-faos.js'
+      - 'scripts/faos-*'
+      - 'src/index-commerce-v38.js'
+      - '.github/workflows/faos-accounting-qa.yml'
+  push:
+    branches:
+      - 'feature/accounting-faos-*'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  fixture-and-ledger:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax checks
+        run: |
+          node --check src/accounting-faos-core.js
+          node --check src/accounting-faos-api.js
+          node --check src/index-commerce-v38.js
+          node --check public/v2/modules-v155-accounting-faos.js
+      - name: Synthetic order and accounting validation
+        run: node scripts/faos-accounting-qa-test.mjs
+      - name: In-memory SQLite schema constraints
+        run: python3 scripts/faos-ledger-schema-test.py
