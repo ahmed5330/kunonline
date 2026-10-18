@@ -122,7 +122,7 @@ object KunCustomerServiceApi {
 
     private fun resolveClientId(context: Context, cookie: String): String = KunApi.resolveScope(cookie, context).clientId
 
-    @Synchronized fun fetchBoard(context: Context, storeId: String = ""): CustomerServiceBoardResult {
+    @Synchronized fun fetchBoard(context: Context, storeId: String = "", state: String = "pending"): CustomerServiceBoardResult {
         val cookie = cookie(context) ?: return CustomerServiceBoardResult(false, "سجّل الدخول أولاً")
         return runCatching {
             val clientId = resolveClientId(context, cookie)
@@ -131,6 +131,7 @@ object KunCustomerServiceApi {
             val path = buildString {
                 append("/api/customer-service?clientId=${enc(clientId)}")
                 if (selected.isNotBlank()) append("&storeId=${enc(selected)}")
+                append("&state=${enc(state)}")
             }
             val synced = MobileSyncClient.fetch(cookie, path)
             val response = HttpResult(synced.code, synced.body.toString())
