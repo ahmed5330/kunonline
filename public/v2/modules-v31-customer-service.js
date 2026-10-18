@@ -83,7 +83,7 @@
   function orderByCard(card){return (data?.orders||[]).find(o=>String(o.id)===String(card.dataset.csOrder));}
   function bindCard(card){
     const select=card.querySelector('[data-cs-state]');
-    select.onchange=async()=>{const o=orderByCard(card),next=select.value;if(!o)return;if(next==='deferred'){select.value=select.dataset.current||o.state;openDefer(o);return;}try{await changeState(o,next);select.dataset.current=next;}catch(e){notify(e.message);select.value=select.dataset.current||o.state;}};
+    select.onchange=async()=>{const o=orderByCard(card),next=select.value;if(!o)return;if(next==='deferred'){select.value=select.dataset.current||o.state;openDefer(o);return;}if(next==='cancelled'){select.value=select.dataset.current||o.state;openCancel(o);return;}try{await changeState(o,next);select.dataset.current=next;}catch(e){notify(e.message);select.value=select.dataset.current||o.state;}};
   }
 
   const pendingActions=new Set();
@@ -152,12 +152,25 @@
     refreshContainerSummaries();window.KunCustomerServiceOrderEdit?.scan?.();window.KunConfirmInventoryV58?.scan?.();window.KunCustomerServiceRichCards?.scan?.();
     return true;
   }
-  async function changeState(o,state,deferUntil){
-    await api(urlFor(`/api/customer-service/orders/${encodeURIComponent(o.id)}/state`,o.storeId),{method:'PATCH',body:bodyFor({state,...(deferUntil?{deferUntil}: {})},o.storeId)});
+  async function changeState(o,state,deferUntil,cancelReason=''){
+    await api(urlFor(`/api/customer-service/orders/${encodeURIComponent(o.id)}/state`,o.storeId),{method:'PATCH',body:bodyFor({state,...(deferUntil?{deferUntil}: {}),...(state==='cancelled'?{cancelReason}: {})},o.storeId)});
     moveOrderState(o,state,deferUntil);notify(state==='deferred'?`تم تأجيل الأوردر حتى ${deferUntil}`:`تم نقل الأوردر إلى ${LABELS[state]||state}`);
   }
   function modal(html){closeModal();const back=document.createElement('div');back.className='cs-modal-back';back.id='csModalBack';back.innerHTML=`<div class="cs-modal" role="dialog" aria-modal="true">${html}</div>`;document.body.appendChild(back);back.addEventListener('click',e=>{if(e.target===back)closeModal();});back.querySelectorAll('[data-cs-close]').forEach(b=>b.onclick=closeModal);return back;}
   function closeModal(){document.getElementById('csModalBack')?.remove();}
+  function openCancel(o){
+    const m=modal(`<h2>إلغاء الطلب — ${esc(o.name)}</h2><div class="sub">سبب الإلغاء إجباري وبيتسجل باسم الموظف ووقت التغيير في سجل الطلب.</div><label class="cs-field" style="display:block;margin-top:15px">سبب الإلغاء<textarea class="input" id="csCancelReason" maxlength="2000" rows="3" style="display:block;width:100%" placeholder="اكتب سبب الإلغاء بالتفصيل" required></textarea></label><div class="cs-modal-actions"><button class="btn primary" id="csConfirmCancel">تأكيد إلغاء الطلب</button><button class="btn soft" data-cs-close>رجوع</button></div>`);
+    const field=m.querySelector('#csCancelReason');
+    m.querySelector('#csConfirmCancel').onclick=async e=>{
+      const reason=field.value.trim();
+      if(!reason){field.setCustomValidity('اكتب سبب الإلغاء أولًا');field.reportValidity();return;}
+      field.setCustomValidity('');e.currentTarget.disabled=true;
+      try{await changeState(o,'cancelled',undefined,reason);closeModal();}
+      catch(err){notify(err.message);e.currentTarget.disabled=false;}
+    };
+    field.addEventListener('input',()=>field.setCustomValidity(''));
+    field.focus();
+  }
   function openDefer(o){
     const m=modal(`<h2>تأجيل الأوردر — ${esc(o.name)}</h2><div class="sub">حدد اليوم اللي يرجع فيه الأوردر تلقائيًا إلى «في انتظار التأكيد».</div><label class="cs-field" style="display:block;margin-top:15px">تاريخ الرجوع<input class="input" id="csDeferDate" type="date" min="${cairoToday()}" value="${esc(o.deferUntil||cairoToday())}"></label><div class="cs-modal-actions"><button class="btn primary" id="csConfirmDefer">تأجيل</button><button class="btn soft" data-cs-close>إلغاء</button></div>`);
     m.querySelector('#csConfirmDefer').onclick=async e=>{const date=m.querySelector('#csDeferDate').value;if(!date){notify('حدد تاريخ الرجوع');return;}e.currentTarget.disabled=true;try{await changeState(o,'deferred',date);closeModal();}catch(err){notify(err.message);e.currentTarget.disabled=false;}};
