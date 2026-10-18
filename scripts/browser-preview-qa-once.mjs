@@ -193,7 +193,11 @@ try{
   const reloadedClientId=await evaluate("window.kunClientId()");
   if(String(reloadedClientId)!==String(interactionClientId))throw new Error(`Customer Service client context changed after full reload: ${reloadedClientId} != ${interactionClientId}`);
   await evaluate("document.querySelector('[data-view=customer-service]').click()");
-  await waitFor(`${cardExpr}?.querySelector('[data-cs-action=note]')`,'Customer Service fixture card after full reload');
+  try{await waitFor(`${cardExpr}?.querySelector('[data-cs-action=note]')`,'Customer Service fixture card after full reload');}
+  catch(error){
+    const diagnostic=await evaluate(`({activeView:document.querySelector('.nav button.active[data-view]')?.dataset.view||null,customerServiceVisible:!!document.querySelector('#root .cs-page'),loading:!!document.querySelector('#root .cs-loading'),customerServiceCards:document.querySelectorAll('#root [data-cs-order]').length,fixturePresent:!!${cardExpr},rootChildCount:document.getElementById('root')?.childElementCount||0})`);
+    throw new Error(error.message+'; non-PII view diagnostic='+JSON.stringify(diagnostic));
+  }
   await waitFor(`${cardExpr}?.querySelector('.cs-internal-latest')?.textContent.includes(${JSON.stringify(noteText)})`,'note persisted after full reload');
   await waitFor(`${cardExpr}?.querySelector('[data-cs-action=contact]')?.textContent==='تواصل (2)'`,'contact and call persisted after full reload');
   const savedEvents=await d1('SELECT event_type,actor_user_id,created_at,metadata_json FROM order_events WHERE order_id=? AND client_id=?',[interactionOrderId,interactionClientId]);

@@ -7,7 +7,7 @@
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const money=v=>new Intl.NumberFormat('ar-EG',{maximumFractionDigits:2}).format(Number(v)||0);
   const notify=msg=>typeof window.showToast==='function'?window.showToast(msg):console.log(msg);
-  let me=null,clientId='',selectedStore='',data=null,loading=false;
+  let me=null,clientId='',selectedStore='',data=null,loading=false,renderQueued=false;
 
   async function api(path,options={}){
     const r=await fetch(path,{credentials:'include',...options,headers:{...(options.body?{'Content-Type':'application/json'}:{}),...(options.headers||{})}});
@@ -67,13 +67,13 @@
     </div>`;
   }
   async function renderWorkspace(){
-    if(loading)return;loading=true;const r=root();if(!r){loading=false;return;}r.innerHTML='<div class="cs-loading">جارٍ تحميل أوردرات خدمة العملاء...</div>';
+    if(loading){renderQueued=true;return;}loading=true;const r=root();if(!r){loading=false;return;}r.innerHTML='<div class="cs-loading">جارٍ تحميل أوردرات خدمة العملاء...</div>';
     try{
       if(!clientId)clientId=await (window.kunClientId?.()||Promise.resolve(me?.clientId||''));
       if(!clientId)throw new Error('تعذر تحديد حساب المتجر');
       data=await api(urlFor('/api/customer-service'));
       r.innerHTML=workspace();bindWorkspace();
-    }catch(e){r.innerHTML=`<div class="card empty"><h3>تعذر فتح خدمة العملاء</h3><p>${esc(e.message)}</p></div>`;}finally{loading=false;}
+    }catch(e){r.innerHTML=`<div class="card empty"><h3>تعذر فتح خدمة العملاء</h3><p>${esc(e.message)}</p></div>`;}finally{loading=false;if(renderQueued){renderQueued=false;queueMicrotask(renderWorkspace);}}
   }
   function bindWorkspace(){
     document.getElementById('csReload')?.addEventListener('click',renderWorkspace);
