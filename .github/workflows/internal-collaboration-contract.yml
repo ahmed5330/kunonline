@@ -47,8 +47,10 @@ jobs:
           node --check public/v2/modules-v117-team-collaboration.js
           node --check public/v2/modules-v118-collaboration-order-picker.js
           node --check scripts/internal-collaboration-contract-test.mjs
+          node --check scripts/android-chat-schema-ux-test.mjs
           node --check scripts/collaboration-consistency-test.mjs
       - name: Collaboration isolation contract
         run: |
           node scripts/internal-collaboration-contract-test.mjs
+          node scripts/android-chat-schema-ux-test.mjs
           node scripts/collaboration-consistency-test.mjs
