@@ -74,6 +74,7 @@ function render(){
  for(var review of visible){
   var card=elt('article','card'),head=elt('div');
   head.append(elt('strong',null,review.name+' — '+(review.category==='services'?'خدمات كن أونلاين':'استشارات كن أونلاين')));
+  if(review.storeName)head.append(elt('small','store-name','اسم المتجر: '+review.storeName));
   head.append(elt('div','stars',starText(review.rating)));
   head.append(elt('small',null,'الحالة: '+review.status+' • '+new Date(review.createdAt).toLocaleDateString('ar-EG')));
   card.append(head);
