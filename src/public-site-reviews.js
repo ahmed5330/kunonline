@@ -11,7 +11,13 @@ let schemaReady=false;
 async function ensureSchema(db) {
   if(schemaReady)return;
   if(!db?.prepare)throw Object.assign(new Error('Database unavailable'),{status:503});
-  await db.prepare("CREATE TABLE IF NOT EXISTS site_reviews (id TEXT PRIMARY KEY, category TEXT NOT NULL CHECK(category IN ('services','consultations')), rating INTEGER NOT NULL CHECK(rating BETWEEN 1 AND 5), author TEXT NOT NULL, body TEXT NOT NULL, photo_jpeg TEXT, status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','hidden')), created_at TEXT NOT NULL, reviewed_at TEXT, reviewed_by TEXT)").run();
+  await db.prepare("CREATE TABLE IF NOT EXISTS site_reviews (id TEXT PRIMARY KEY, category TEXT NOT NULL CHECK(category IN ('services','consultations')), rating INTEGER NOT NULL CHECK(rating BETWEEN 1 AND 5), author TEXT NOT NULL, store_name TEXT, body TEXT NOT NULL, photo_jpeg TEXT, status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','hidden')), created_at TEXT NOT NULL, reviewed_at TEXT, reviewed_by TEXT)").run();
+  // Upgrade existing installations without touching saved reviews.
+  const columns=await db.prepare('PRAGMA table_info(site_reviews)').all();
+  if(!(columns.results||[]).some(column=>column.name==='store_name')){
+    try{await db.prepare('ALTER TABLE site_reviews ADD COLUMN store_name TEXT').run();}
+    catch(error){if(!/duplicate column name/i.test(String(error?.message||error)))throw error;}
+  }
   await db.prepare('CREATE INDEX IF NOT EXISTS idx_site_reviews_status_created ON site_reviews(status,created_at DESC)').run();
   await db.prepare('CREATE TABLE IF NOT EXISTS site_review_rate (fingerprint TEXT PRIMARY KEY, hits INTEGER NOT NULL DEFAULT 0, day TEXT NOT NULL)').run();
   schemaReady=true;
@@ -24,7 +30,7 @@ async function hashedIp(request,secret) {
   return {day,fingerprint:[...bytes].map(x=>x.toString(16).padStart(2,'0')).join('')};
 }
 function view(row) {
-  return {id:row.id,category:row.category,rating:row.rating,name:row.author,text:row.body,photo:row.photo_jpeg||null,status:row.status,createdAt:row.created_at};
+  return {id:row.id,category:row.category,rating:row.rating,name:row.author,storeName:row.store_name||null,text:row.body,photo:row.photo_jpeg||null,status:row.status,createdAt:row.created_at};
 }
 function validPhoto(value) {
   if(value===null||value===undefined||value==='')return true;
@@ -58,8 +64,8 @@ export async function handlePublicSiteReviews(request,env,{authorizeAdmin}={}){
     if(raw.length>MAX_UPLOAD)return respond({error:'الطلب أكبر من المسموح'},413);
     let body;try{body=JSON.parse(raw);}catch{return respond({error:'بيانات الطلب غير صحيحة'},400);}
     if(body.website) return respond({ok:true,pending:true},202); // honeypot: silently discard
-    const name=clean(body.name,70),comment=clean(body.text,900),rating=Number(body.rating),category=body.category;
-    if(name.length<2||comment.length<15||!Number.isInteger(rating)||rating<1||rating>5||!['services','consultations'].includes(category)||body.consent!==true||!validPhoto(body.photo))return respond({error:'راجع الاسم والتقييم والنص والموافقة والصورة'},400);
+    const name=clean(body.name,70),storeName=clean(body.storeName,80),comment=clean(body.text,900),rating=Number(body.rating),category=body.category;
+    if((body.storeName!=null&&typeof body.storeName!=='string')||name.length<2||comment.length<15||!Number.isInteger(rating)||rating<1||rating>5||!['services','consultations'].includes(category)||body.consent!==true||!validPhoto(body.photo))return respond({error:'راجع الاسم والتقييم والنص والموافقة والصورة'},400);
     try{
       await ensureSchema(env.DB);
       const rateKey=env.REVIEW_RATE_KEY||env.SESSION_SECRET||env.TOKEN_ENC_KEY||'kun-online-reviews-daily-fallback-v1';
@@ -67,8 +73,8 @@ export async function handlePublicSiteReviews(request,env,{authorizeAdmin}={}){
       await env.DB.prepare('INSERT OR IGNORE INTO site_review_rate (fingerprint,hits,day) VALUES (?,0,?)').bind(fingerprint,day).run();
       const rate=await env.DB.prepare('UPDATE site_review_rate SET hits=hits+1 WHERE fingerprint=? AND hits<3').bind(fingerprint).run();
       if(!rate?.meta?.changes)return respond({error:'تم بلوغ الحد اليومي لإرسال التقييمات، جرب لاحقًا'},429);
-      await env.DB.prepare("INSERT INTO site_reviews (id,category,rating,author,body,photo_jpeg,status,created_at) VALUES (?,?,?,?,?,?,'pending',?)")
-        .bind(crypto.randomUUID(),category,rating,name,comment,body.photo||null,new Date().toISOString()).run();
+      await env.DB.prepare("INSERT INTO site_reviews (id,category,rating,author,store_name,body,photo_jpeg,status,created_at) VALUES (?,?,?,?,?,?,?,'pending',?)")
+        .bind(crypto.randomUUID(),category,rating,name,storeName||null,comment,body.photo||null,new Date().toISOString()).run();
       return respond({ok:true,pending:true,message:'تم استلام تقييمك وسيظهر بعد مراجعته'},202);
     }catch(error){
       console.error('public review submission failed',error?.name||'Error');
@@ -79,7 +85,7 @@ export async function handlePublicSiteReviews(request,env,{authorizeAdmin}={}){
     try{
       await ensureSchema(env.DB);
       const category=url.searchParams.get('category');
-      let query="SELECT id,category,rating,author,body,photo_jpeg,status,created_at FROM site_reviews WHERE status='approved'";
+      let query="SELECT id,category,rating,author,store_name,body,photo_jpeg,status,created_at FROM site_reviews WHERE status='approved'";
       const args=[];
       if(['services','consultations'].includes(category)){query+=' AND category=?';args.push(category);}
       query+=' ORDER BY created_at DESC LIMIT 30';
@@ -95,7 +101,7 @@ export async function handlePublicSiteReviews(request,env,{authorizeAdmin}={}){
   try{
     await ensureSchema(env.DB);
     if(collection&&request.method==='GET'){
-      const result=await env.DB.prepare('SELECT id,category,rating,author,body,photo_jpeg,status,created_at FROM site_reviews ORDER BY created_at DESC LIMIT 100').all();
+      const result=await env.DB.prepare('SELECT id,category,rating,author,store_name,body,photo_jpeg,status,created_at FROM site_reviews ORDER BY created_at DESC LIMIT 100').all();
       return respond({ok:true,reviews:(result.results||[]).map(view)});
     }
     if(!collection&&request.method==='PATCH'){
