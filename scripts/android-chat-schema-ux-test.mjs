@@ -37,7 +37,10 @@ assert.equal(run.status, 0, (run.stderr || run.stdout).trim());
 for (const value of ['validText(', 'جاري تحميل الرسائل', 'جاري تحميل وتحديث بيانات التواصل', 'KunApi.cachedStoreOptions', 'Icons.Outlined.AddComment', 'Icons.Outlined.Refresh', 'Icons.Outlined.Storefront', 'Icons.Outlined.Send', 'FilledTonalButton(onClick = onHome)']) {
   assert.ok(chat.includes(value), 'Chat UI lost required affordance: '+value);
 }
-for (const value of ['KunApi.userDisplayName(context)', 'صباح الخير', 'مساء الخير', 'MobileV25Tab.CUSTOMER_SERVICE', 'MobileV25Tab.ORDERS', 'onOpenCollaboration', 'onOpenSystemSections']) {
+const design = readFileSync(new URL('../android/app/src/main/java/com/kunonline/callerid/KunDesignV3.kt', import.meta.url), 'utf8');
+assert.ok(home.includes('KunGreetingHero('), 'Home must delegate the time-aware greeting to its shared component');
+for (const greeting of ['صباح الخير', 'مساء الخير']) assert.ok(design.includes(greeting), 'Greeting must remain available: ' + greeting);
+for (const value of ['KunApi.userDisplayName(context)', 'MobileV25Tab.CUSTOMER_SERVICE', 'MobileV25Tab.ORDERS', 'onOpenCollaboration', 'onOpenSystemSections']) {
   assert.ok(home.includes(value), 'Android home lost required affordance: '+value);
 }
 console.log(run.stdout.trim());
