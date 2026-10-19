@@ -404,6 +404,15 @@ object KunApi {
 
     fun hasSession(context: Context): Boolean = session(context) != null
 
+    fun userDisplayName(context: Context): String {
+        return runCatching {
+            val response = request("GET", "/api/me", cookie = session(context))
+            if (response.code !in 200..299) return@runCatching ""
+            val identity = JSONObject(response.body)
+            identity.optString("name", "").trim().takeUnless { it == "null" }.orEmpty()
+        }.getOrDefault("")
+    }
+
     fun sessionCookie(context: Context): String? = session(context)
 
     fun logout(context: Context) {
