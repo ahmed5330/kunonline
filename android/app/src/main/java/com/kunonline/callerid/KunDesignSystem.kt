@@ -31,26 +31,26 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 object KunColors {
-    val Ink = Color(0xFF152B46)
-    val Ink2 = Color(0xFF4F6380)
-    val Ink3 = Color(0xFF8394A9)
-    val Ground = Color(0xFFF5F8FC)
+    val Ink = Color(0xFF183653)
+    val Ink2 = Color(0xFF597088)
+    val Ink3 = Color(0xFF8296AA)
+    val Ground = Color(0xFFF3F7FB)
     val Surface = Color(0xFFFFFFFF)
-    val Surface2 = Color(0xFFF9FBFE)
-    val Line = Color(0xFFE0E8F2)
-    val Pine = Color(0xFF329B3F)
-    val PineSoft = Color(0xFFEAF8E9)
-    val PineLine = Color(0xFFCBEEC5)
-    val Gold = Color(0xFFC08A00)
-    val GoldSoft = Color(0xFFFBF0D6)
-    val Brick = Color(0xFFA8321D)
-    val BrickSoft = Color(0xFFFAE6E1)
-    val Chrome = Color(0xFF14559A)
-    val ChromeSoft = Color(0xFFEAF2FD)
+    val Surface2 = Color(0xFFF7FAFF)
+    val Line = Color(0xFFE2EAF3)
+    val Pine = Color(0xFF16A773)
+    val PineSoft = Color(0xFFE8F8F1)
+    val PineLine = Color(0xFFCAEFDF)
+    val Gold = Color(0xFFE9A21F)
+    val GoldSoft = Color(0xFFFFF4DA)
+    val Brick = Color(0xFFDD5364)
+    val BrickSoft = Color(0xFFFFEDF0)
+    val Chrome = Color(0xFF15599B)
+    val ChromeSoft = Color(0xFFEAF4FF)
 }
 
-val KunRadius = RoundedCornerShape(14.dp)
-val KunRadiusLarge = RoundedCornerShape(20.dp)
+val KunRadius = RoundedCornerShape(16.dp)
+val KunRadiusLarge = RoundedCornerShape(22.dp)
 
 private val KunLightColors = lightColorScheme(
     primary = KunColors.Chrome,
@@ -98,8 +98,8 @@ fun KunTheme(content: @Composable () -> Unit) {
         colorScheme = KunLightColors,
         typography = KunTypography,
         shapes = MaterialTheme.shapes.copy(
-            extraSmall = RoundedCornerShape(8.dp),
-            small = RoundedCornerShape(10.dp),
+            extraSmall = RoundedCornerShape(10.dp),
+            small = RoundedCornerShape(12.dp),
             medium = KunRadius,
             large = KunRadiusLarge,
             extraLarge = RoundedCornerShape(24.dp)

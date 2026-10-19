@@ -24,13 +24,13 @@ object CallerOverlay {
     private var currentManager: WindowManager? = null
     private val handler = Handler(Looper.getMainLooper())
 
-    private const val CHROME = 0xFF0E5095.toInt()
-    private const val PINE = 0xFF3F8F2B.toInt()
-    private const val INK = 0xFF12212B.toInt()
-    private const val INK2 = 0xFF3D5563.toInt()
-    private const val LINE = 0xFFD3DEDA.toInt()
+    private const val CHROME = 0xFF15599B.toInt()
+    private const val PINE = 0xFF16A773.toInt()
+    private const val INK = 0xFF183653.toInt()
+    private const val INK2 = 0xFF597088.toInt()
+    private const val LINE = 0xFFE2EAF3.toInt()
     private const val SURFACE = 0xFFFFFFFF.toInt()
-    private const val SURFACE2 = 0xFFF5F8F7.toInt()
+    private const val SURFACE2 = 0xFFF3F7FB.toInt()
 
     private fun Context.dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
@@ -75,7 +75,7 @@ object CallerOverlay {
             val card = LinearLayout(app).apply {
                 orientation = LinearLayout.VERTICAL
                 layoutDirection = View.LAYOUT_DIRECTION_RTL
-                background = rounded(SURFACE, 18f, app, LINE)
+                background = rounded(SURFACE, 22f, app, LINE)
                 elevation = app.dp(12).toFloat()
                 clipToOutline = true
             }
@@ -83,7 +83,7 @@ object CallerOverlay {
             val header = LinearLayout(app).apply {
                 orientation = LinearLayout.VERTICAL
                 setPadding(app.dp(18), app.dp(14), app.dp(18), app.dp(12))
-                background = rounded(CHROME, 18f, app)
+                background = rounded(0xFF123A62.toInt(), 20f, app)
             }
             header.addView(TextView(app).apply {
                 text = if (incoming) "مكالمة واردة" else "مكالمة صادرة"
@@ -183,7 +183,7 @@ object CallerOverlay {
                         orientation = LinearLayout.HORIZONTAL
                         gravity = Gravity.CENTER
                     }
-                    val noAnswer = actionButton("العميل\nلا يرد", 0xFFB45309.toInt(), Color.WHITE) { button ->
+                    val noAnswer = actionButton("العميل\nلا يرد", 0xFFE9A21F.toInt(), Color.WHITE) { button ->
                         decision(button, orderId, "no_answer")
                     }
                     val confirmed = actionButton("تم\nالتأكيد", PINE, Color.WHITE) { button ->
@@ -199,7 +199,7 @@ object CallerOverlay {
                             })
                         }.onFailure { Toast.makeText(app, "تعذر فتح بيانات J&T", Toast.LENGTH_SHORT).show() }
                     }
-                    val cancelled = actionButton("العميل\nلغى", 0xFFAE3446.toInt(), Color.WHITE) { button ->
+                    val cancelled = actionButton("العميل\nلغى", 0xFFDD5364.toInt(), Color.WHITE) { button ->
                         decision(button, orderId, "cancelled")
                     }
                     for (button in listOf(noAnswer, confirmed, cancelled, edit)) {

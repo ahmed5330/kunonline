@@ -235,22 +235,27 @@ fun KunNativeAppV25(
                     topBar = {
                         TopAppBar(
                             colors = TopAppBarDefaults.topAppBarColors(
-                                containerColor = KunColors.Surface,
-                                titleContentColor = KunColors.Ink,
-                                actionIconContentColor = KunColors.Chrome
+                                containerColor = KunV3.Navy,
+                                titleContentColor = Color.White,
+                                actionIconContentColor = Color.White,
+                                navigationIconContentColor = Color.White
                             ),
                             title = {
                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                                    KunBrandMark(Modifier.size(38.dp))
+                                    Surface(color = Color.White, shape = RoundedCornerShape(12.dp),
+                                        modifier = Modifier.size(38.dp)) {
+                                        KunBrandMark(Modifier.padding(3.dp).size(32.dp))
+                                    }
                                     Column {
-                                        Text(selected.label, color = KunColors.Chrome, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
+                                        Text("كن أونلاين • ${selected.label}", color = Color.White,
+                                            fontWeight = FontWeight.ExtraBold, fontSize = 15.sp)
                                         val selectedStoreName = storeOptions.firstOrNull {
                                             it.clientId == currentStore.clientId && it.storeId == currentStore.storeId
                                         }?.storeName
                                         Text(
                                             selectedStoreName ?: "كن أونلاين • إدارة المتاجر",
                                             fontSize = 11.sp,
-                                            color = KunColors.Ink2,
+                                            color = Color.White.copy(alpha = .75f),
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis
                                         )
@@ -302,8 +307,8 @@ fun KunNativeAppV25(
                             NavigationBarItem(
                                 selected = selected == MobileV25Tab.HOME,
                                 onClick = { selected = MobileV25Tab.HOME },
-                                icon = { Icon(Icons.Outlined.Storefront, contentDescription = "الرئيسية", modifier = Modifier.size(32.dp), tint = KunColors.Chrome) },
-                                label = { Text("الرئيسية", fontWeight = FontWeight.ExtraBold) },
+                                icon = { KunRaisedHomeIcon(selected == MobileV25Tab.HOME) },
+                                label = { Text("الرئيسية", fontWeight = FontWeight.ExtraBold, maxLines = 1) },
                                 colors = colors
                             )
                             NavigationBarItem(
@@ -426,63 +431,85 @@ private fun V25Login(busy: Boolean, message: String, onLogin: (String, String) -
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var showPassword by remember { mutableStateOf(false) }
-    Box(
-        Modifier.fillMaxSize().background(KunColors.Ground).padding(20.dp),
-        contentAlignment = Alignment.Center
+    Column(
+        Modifier.fillMaxSize().background(KunV3.Background).verticalScroll(rememberScrollState()),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Card(
-            modifier = Modifier.fillMaxWidth().widthIn(max = 460.dp),
-            shape = RoundedCornerShape(26.dp),
-            colors = CardDefaults.cardColors(containerColor = KunColors.Surface),
-            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+        Box(
+            Modifier.fillMaxWidth().height(262.dp)
+                .clip(RoundedCornerShape(28.dp))
+                .background(androidx.compose.ui.graphics.Brush.horizontalGradient(
+                    listOf(KunV3.Navy, KunV3.Blue))),
+            contentAlignment = Alignment.Center
         ) {
             Column(
-                Modifier.padding(horizontal = 24.dp, vertical = 28.dp).verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(15.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(11.dp)
             ) {
-                KunBrandMark(Modifier.size(156.dp))
-                Text("كن أونلاين", style = MaterialTheme.typography.headlineMedium, color = KunColors.Ink)
-                Text("إدارة متاجرك وكل عملياتك من مكان واحد", color = KunColors.Ink2, style = MaterialTheme.typography.bodyMedium)
+                Surface(color = Color.White, shape = RoundedCornerShape(18.dp)) {
+                    KunBrandMark(Modifier.padding(10.dp).size(65.dp))
+                }
+                Text("كن أونلاين", style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.ExtraBold, color = Color.White)
+                Text("نظام إدارة التجارة الإلكترونية",
+                    style = MaterialTheme.typography.bodyMedium, color = Color.White.copy(alpha = .85f))
+            }
+        }
+        Card(
+            modifier = Modifier.padding(horizontal = 18.dp).offset(y = (-25).dp)
+                .fillMaxWidth().widthIn(max = 460.dp),
+            shape = RoundedCornerShape(22.dp),
+            colors = CardDefaults.cardColors(containerColor = KunColors.Surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        ) {
+            Column(Modifier.fillMaxWidth().padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Text("أهلاً بعودتك", color = KunColors.Ink,
+                    style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
+                Text("سجّل دخولك بحسابك المسجل في كن أونلاين",
+                    color = KunColors.Ink2, style = MaterialTheme.typography.bodySmall)
                 OutlinedTextField(
-                    value = email,
-                    onValueChange = { email = it },
+                    value = email, onValueChange = { email = it },
                     label = { Text("البريد الإلكتروني") },
-                    leadingIcon = { Icon(Icons.Outlined.Email, null) },
+                    leadingIcon = { Icon(Icons.Outlined.Email, contentDescription = null) },
                     modifier = Modifier.fillMaxWidth(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-                    singleLine = true,
-                    shape = KunRadius
+                    singleLine = true, shape = KunRadius
                 )
                 OutlinedTextField(
-                    value = password,
-                    onValueChange = { password = it },
+                    value = password, onValueChange = { password = it },
                     label = { Text("كلمة المرور") },
-                    leadingIcon = { Icon(Icons.Outlined.Lock, null) },
+                    leadingIcon = { Icon(Icons.Outlined.Lock, contentDescription = null) },
                     trailingIcon = {
                         IconButton(onClick = { showPassword = !showPassword }) {
-                            Icon(if (showPassword) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility, null)
+                            Icon(if (showPassword) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
+                                contentDescription = if (showPassword) "إخفاء كلمة المرور" else "إظهار كلمة المرور")
                         }
                     },
                     modifier = Modifier.fillMaxWidth(),
                     visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
-                    singleLine = true,
-                    shape = KunRadius
+                    singleLine = true, shape = KunRadius
                 )
                 Button(
                     onClick = { onLogin(email.trim(), password) },
                     enabled = !busy && email.isNotBlank() && password.isNotBlank(),
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp),
-                    shape = KunRadius
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp), shape = KunRadius
                 ) {
-                    if (busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = Color.White)
-                    else Text("دخول إلى النظام", fontWeight = FontWeight.Bold)
+                    if (busy) CircularProgressIndicator(Modifier.size(20.dp),
+                        strokeWidth = 2.dp, color = Color.White)
+                    else Text("تسجيل الدخول ←", fontWeight = FontWeight.ExtraBold)
                 }
                 if (message.isNotBlank()) {
-                    Surface(color = if (message.contains("تم")) KunColors.PineSoft else KunColors.BrickSoft, shape = KunRadius, modifier = Modifier.fillMaxWidth()) {
-                        Text(message, color = if (message.contains("تم")) KunColors.Pine else KunColors.Brick, modifier = Modifier.padding(12.dp))
+                    Surface(
+                        color = if (message.contains("تم")) KunColors.PineSoft else KunColors.BrickSoft,
+                        shape = KunRadius, modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(message, modifier = Modifier.padding(12.dp),
+                            color = if (message.contains("تم")) KunColors.Pine else KunColors.Brick)
                     }
                 }
+                Text("بيانات الموظفين وصلاحياتهم تدار من لوحة كن أونلاين",
+                    color = KunColors.Ink3, style = MaterialTheme.typography.labelSmall)
             }
         }
     }
@@ -544,10 +571,7 @@ private fun V25Home(
     ) {
         item {
             Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                val dayGreeting = if (java.time.LocalTime.now().hour in 5..11) "صباح الخير" else "مساء الخير"
-                val greeting = if (displayName.isBlank()) dayGreeting else "$dayGreeting يا $displayName"
-                Text("$greeting 👋", style = MaterialTheme.typography.headlineSmall, color = KunColors.Chrome, fontWeight = FontWeight.ExtraBold)
-                Text("أهلاً بك في كن أونلاين • نظرة عامة على متجرك • $periodLabel", color = KunColors.Ink2, style = MaterialTheme.typography.bodyMedium)
+                KunGreetingHero(name = displayName, period = periodLabel)
             }
         }
         item {
@@ -571,7 +595,7 @@ private fun V25Home(
                             OutlinedCard(
                                 onClick = { if (!active) onSelectStore(option) },
                                 enabled = !storeSwitching,
-                                modifier = Modifier.widthIn(min = 185.dp, max = 250.dp),
+                                modifier = Modifier.widthIn(min = 185.dp, max = 250.dp).heightIn(min = 104.dp),
                                 shape = KunRadius,
                                 colors = CardDefaults.outlinedCardColors(containerColor = if (active) KunColors.ChromeSoft else KunColors.Surface)
                             ) {
@@ -630,7 +654,7 @@ private fun V25Home(
             Text("حالات الطلبات • العدد والنسبة من إجمالي الفترة", style = MaterialTheme.typography.titleMedium,
                 color = KunColors.Ink, fontWeight = FontWeight.Bold)
         }
-        statusRows.chunked(2).forEach { row ->
+        statusRows.chunked(3).forEach { row ->
             item {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     row.forEach { status ->
@@ -729,11 +753,11 @@ private fun V25StatusTile(
 ) {
     Card(
         modifier = modifier.aspectRatio(1f), shape = KunRadius,
-        colors = CardDefaults.cardColors(containerColor = KunColors.Surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        colors = CardDefaults.cardColors(containerColor = stat.tone.copy(alpha = .085f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
-        Column(Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.SpaceBetween) {
-            Icon(stat.icon, contentDescription = null, tint = stat.tone, modifier = Modifier.size(21.dp))
+        Column(Modifier.fillMaxSize().padding(10.dp), verticalArrangement = Arrangement.SpaceBetween) {
+            Icon(stat.icon, contentDescription = null, tint = stat.tone, modifier = Modifier.size(20.dp))
             Text(stat.label, color = KunColors.Ink2, style = MaterialTheme.typography.labelMedium, maxLines = 2)
             Text(if (dataReady) "${stat.count} طلب" else "—", fontWeight = FontWeight.Bold,
                 color = KunColors.Ink, style = MaterialTheme.typography.titleMedium)

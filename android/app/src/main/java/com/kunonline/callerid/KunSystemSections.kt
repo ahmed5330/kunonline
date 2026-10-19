@@ -119,7 +119,7 @@ fun MobileSystemSectionsDialog(onDismiss: () -> Unit, onHome: () -> Unit = onDis
                                 Column {
                                     Text("أقسام التطبيق", fontWeight = FontWeight.ExtraBold)
                                     Text(
-                                        "9 أقسام Native مرتبطة مباشرة بالسيستم",
+                                        "9 أقسام تشغيلية • بيانات وصلاحيات حسابك",
                                         style = MaterialTheme.typography.labelMedium,
                                         color = Color.White.copy(alpha = .76f)
                                     )
@@ -131,7 +131,7 @@ fun MobileSystemSectionsDialog(onDismiss: () -> Unit, onHome: () -> Unit = onDis
                                 }
                             },
                             colors = TopAppBarDefaults.topAppBarColors(
-                                containerColor = KunColors.Chrome,
+                                containerColor = KunV3.Navy,
                                 titleContentColor = Color.White,
                                 navigationIconContentColor = Color.White
                             )
@@ -144,27 +144,12 @@ fun MobileSystemSectionsDialog(onDismiss: () -> Unit, onHome: () -> Unit = onDis
                         verticalArrangement = Arrangement.spacedBy(9.dp)
                     ) {
                         items(NATIVE_CLIENT_SECTIONS, key = { it.name }) { section ->
-                            Card(
-                                modifier = Modifier.fillMaxWidth().clickable { selected = section },
-                                shape = RoundedCornerShape(18.dp),
-                                colors = CardDefaults.cardColors(containerColor = KunColors.Surface)
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 15.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Surface(shape = RoundedCornerShape(13.dp), color = KunColors.PineSoft) {
-                                        Box(Modifier.size(43.dp), contentAlignment = Alignment.Center) {
-                                            Icon(Icons.Outlined.GridView, contentDescription = null, tint = KunColors.Pine)
-                                        }
-                                    }
-                                    Spacer(Modifier.width(12.dp))
-                                    Column(Modifier.weight(1f)) {
-                                        Text(section.label, fontWeight = FontWeight.Bold, color = KunColors.Ink)
-                                        Text(section.description, style = MaterialTheme.typography.bodySmall, color = KunColors.Ink2)
-                                    }
-                                }
-                            }
+                            KunSectionListCard(
+                                title = section.label,
+                                detail = section.description,
+                                glyph = kunSectionGlyph(section.name),
+                                onClick = { selected = section }
+                            )
                         }
                     }
                 }
@@ -182,7 +167,7 @@ fun MobileSystemSectionsDialog(onDismiss: () -> Unit, onHome: () -> Unit = onDis
                         horizontalArrangement = Arrangement.Center
                     ) {
                         FilledTonalButton(onClick = onHome) {
-                            Icon(Icons.Outlined.Storefront, contentDescription = "الصفحة الرئيسية", modifier = Modifier.size(25.dp))
+                            KunRaisedHomeIcon(active = true)
                             Spacer(Modifier.width(8.dp))
                             Text("الرئيسية", fontWeight = FontWeight.ExtraBold)
                         }
@@ -244,7 +229,7 @@ private fun NativeSectionScaffold(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = KunColors.Chrome,
+                    containerColor = KunV3.Navy,
                     titleContentColor = Color.White,
                     navigationIconContentColor = Color.White,
                     actionIconContentColor = Color.White
@@ -259,7 +244,7 @@ private fun NativeSectionScaffold(
 private fun NativeBusy(padding: PaddingValues, message: String = "جاري تحميل البيانات...") {
     Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            CircularProgressIndicator(color = KunColors.Pine)
+            CircularProgressIndicator(color = KunV3.Blue)
             Text(message, color = KunColors.Ink2)
         }
     }

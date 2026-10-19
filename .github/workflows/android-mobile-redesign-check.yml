@@ -31,5 +31,7 @@ jobs:
           node scripts/android-customer-service-outcomes-test.mjs
       - name: Chat legacy SQLite and Android UX regression
         run: node scripts/android-chat-schema-ux-test.mjs
+      - name: Reviewed Android design regression
+        run: node scripts/android-v3-ui-contract-test.mjs
       - name: Run unit tests and build debug APK
         run: gradle -p android test assembleDebug --stacktrace

@@ -16,6 +16,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -367,6 +368,10 @@ fun V23CustomerService(snapshot: CommerceSnapshot, onGlobalRefresh: () -> Unit) 
         ) {
             v23CustomerServiceStates().forEach { (key, label) ->
                 FilterChip(
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = KunV3.Blue,
+                        selectedLabelColor = Color.White
+                    ),
                     selected = stateFilter == key,
                     onClick = {
                         if (stateFilter != key) {
@@ -392,7 +397,7 @@ fun V23CustomerService(snapshot: CommerceSnapshot, onGlobalRefresh: () -> Unit) 
                 style = MaterialTheme.typography.labelSmall)
         }
         if (loading && board == null) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+            KunAsyncPanel("جاري تحميل طلبات خدمة العملاء من المتجر…")
         } else if (filtered.isEmpty()) {
             V23Empty(if (allOrders.isEmpty()) "لا توجد أوردرات خدمة عملاء متاحة" else "لا توجد نتائج مطابقة")
         } else {
