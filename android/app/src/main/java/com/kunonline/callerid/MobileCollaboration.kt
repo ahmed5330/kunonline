@@ -300,9 +300,11 @@ fun MobileCollaborationDialog(onDismiss: () -> Unit, onHome: () -> Unit = onDism
     val cachedStores = remember { KunApi.cachedStoreOptions(context) }
     var availableStores by remember { mutableStateOf(cachedStores?.stores.orEmpty()) }
     var selectedStore by remember {
-        mutableStateOf(cachedStores?.stores?.firstOrNull {
-            it.clientId == cachedStores.current.clientId && it.storeId == cachedStores.current.storeId
-        } ?: cachedStores?.stores?.singleOrNull())
+        mutableStateOf(cachedStores?.let { cached ->
+            cached.stores.firstOrNull {
+                it.clientId == cached.current.clientId && it.storeId == cached.current.storeId
+            } ?: cached.stores.singleOrNull()
+        })
     }
     var storesLoading by remember { mutableStateOf(cachedStores == null) }
     val messageListState = rememberLazyListState()
