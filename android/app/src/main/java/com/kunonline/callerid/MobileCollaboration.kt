@@ -101,6 +101,16 @@ private data class ChatBootstrap(
 )
 private data class ChatResult<T>(val ok: Boolean, val value: T? = null, val error: String = "")
 
+// org.json may render JSON null as the literal text "null".
+private fun JSONObject.validText(vararg keys: String): String {
+    for (key in keys) {
+        if (isNull(key)) continue
+        val text = optString(key, "").trim()
+        if (text.isNotBlank() && !text.equals("null", true) && !text.equals("undefined", true)) return text
+    }
+    return ""
+}
+
 private object MobileChatApi {
     private data class HttpResult(val code: Int, val body: JSONObject)
 
@@ -119,7 +129,7 @@ private object MobileChatApi {
                 return ChatResult(false, error = errorText(response.body).ifBlank { "تعذر تحميل التواصل" })
             }
             val root = response.body
-            val meId = root.optJSONObject("me")?.optString("id").orEmpty()
+            val meId = root.optJSONObject("me")?.validText("id").orEmpty()
             val members = parseMembers(root.optJSONArray("members"))
             val names = members.associate { it.id to it.name }
             val conversations = parseConversations(root.optJSONArray("conversations"), meId, names)
@@ -153,11 +163,11 @@ private object MobileChatApi {
                     val row = array.optJSONObject(i) ?: continue
                     add(
                         ChatMessage(
-                            id = row.optString("id"),
-                            senderId = row.optString("sender_user_id").ifBlank { row.optString("senderUserId") },
-                            senderName = row.optString("sender_name").ifBlank { row.optString("senderName") },
-                            body = row.optString("body"),
-                            orderId = row.optString("order_id").ifBlank { row.optString("orderId") }
+                            id = row.validText("id"),
+                            senderId = row.validText("sender_user_id", "senderUserId"),
+                            senderName = row.validText("sender_name", "senderName"),
+                            body = row.validText("body"),
+                            orderId = row.validText("order_id", "orderId")
                         )
                     )
                 }
@@ -200,7 +210,7 @@ private object MobileChatApi {
             if (response.code !in 200..299) {
                 return ChatResult(false, error = errorText(response.body).ifBlank { "تعذر بدء المحادثة" })
             }
-            val id = response.body.optString("id")
+            val id = response.body.validText("id")
             if (id.isBlank()) ChatResult(false, error = "تعذر قراءة المحادثة الجديدة") else ChatResult(true, id)
         }.getOrElse { ChatResult(false, error = "تعذر بدء المحادثة") }
     }
@@ -209,9 +219,9 @@ private object MobileChatApi {
         val rows = array ?: JSONArray()
         for (i in 0 until rows.length()) {
             val row = rows.optJSONObject(i) ?: continue
-            val id = row.optString("id").trim()
+            val id = row.validText("id")
             if (id.isBlank()) continue
-            add(ChatMember(id, row.optString("name").ifBlank { row.optString("email") }.ifBlank { "عضو الفريق" }))
+            add(ChatMember(id, row.validText("name", "email").ifBlank { "عضو الفريق" }))
         }
     }
 
@@ -219,22 +229,22 @@ private object MobileChatApi {
         val rows = array ?: JSONArray()
         for (i in 0 until rows.length()) {
             val row = rows.optJSONObject(i) ?: continue
-            val id = row.optString("id").trim()
+            val id = row.validText("id")
             if (id.isBlank()) continue
             val memberRows = row.optJSONArray("members") ?: JSONArray()
             val others = buildList {
                 for (m in 0 until memberRows.length()) {
                     val member = memberRows.optJSONObject(m) ?: continue
-                    val memberId = member.optString("id")
+                    val memberId = member.validText("id")
                     if (memberId == meId) continue
-                    add(member.optString("name").ifBlank { names[memberId].orEmpty() }.ifBlank { "عضو الفريق" })
+                    add(member.validText("name").ifBlank { names[memberId].orEmpty() }.ifBlank { "عضو الفريق" })
                 }
             }
-            val title = row.optString("name").trim().ifBlank {
+            val title = row.validText("name").ifBlank {
                 others.joinToString("، ").ifBlank { "محادثة الفريق" }
             }
-            val lastSender = row.optString("last_sender").ifBlank { row.optString("lastSender") }
-            val lastBody = row.optString("last_body").ifBlank { row.optString("lastBody") }
+            val lastSender = row.validText("last_sender", "lastSender")
+            val lastBody = row.validText("last_body", "lastBody")
             val preview = listOf(lastSender, lastBody).filter { it.isNotBlank() }.joinToString(": ")
             add(
                 ChatConversation(
@@ -348,7 +358,7 @@ fun MobileCollaborationDialog(onDismiss: () -> Unit, onHome: () -> Unit = onDism
 
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
-            Surface(modifier = Modifier.fillMaxSize(), color = Color(0xFFF2F6F3)) {
+            Surface(modifier = Modifier.fillMaxSize(), color = KunColors.Ground) {
                 Column(Modifier.fillMaxSize()) {
                     TopAppBar(
                         title = {
@@ -357,7 +367,14 @@ fun MobileCollaborationDialog(onDismiss: () -> Unit, onHome: () -> Unit = onDism
                                 selectedId != null -> data?.conversations?.firstOrNull { it.id == selectedId }?.title ?: "التواصل"
                                 else -> "التواصل"
                             }
-                            Text(title, fontWeight = FontWeight.Bold)
+                            Column {
+                                Text(title, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                selectedStore?.let {
+                                    Text(it.storeName, color = Color.White.copy(alpha = 0.85f),
+                                        style = MaterialTheme.typography.labelSmall, maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis)
+                                }
+                            }
                         },
                         navigationIcon = {
                             IconButton(
@@ -417,7 +434,11 @@ fun MobileCollaborationDialog(onDismiss: () -> Unit, onHome: () -> Unit = onDism
                         )
                     )
 
-                    if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+                    if (busy || storesLoading) {
+                        LinearProgressIndicator(Modifier.fillMaxWidth(), color = KunColors.Pine)
+                        Text("جاري تحميل وتحديث بيانات التواصل…", modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 7.dp),
+                            color = KunColors.Ink2, style = MaterialTheme.typography.labelMedium)
+                    }
                     if (error.isNotBlank()) {
                         Surface(color = Color(0xFFFFE8E6), modifier = Modifier.fillMaxWidth()) {
                             Text(error, color = Color(0xFF8A1C12), modifier = Modifier.padding(12.dp))
@@ -522,7 +543,11 @@ fun MobileCollaborationDialog(onDismiss: () -> Unit, onHome: () -> Unit = onDism
 
                         selectedId == null -> {
                             val conversations = data?.conversations.orEmpty()
-                            if (!busy && conversations.isEmpty()) {
+                            if (!busy && data == null && error.isNotBlank()) {
+                                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                    OutlinedButton(onClick = { scope.launch { refreshBootstrap() } }) { Text("إعادة محاولة تحميل المحادثات") }
+                                }
+                            } else if (!busy && conversations.isEmpty()) {
                                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                         Icon(Icons.Outlined.ChatBubbleOutline, null, modifier = Modifier.size(42.dp), tint = Color(0xFF0E5A98))
@@ -569,6 +594,15 @@ fun MobileCollaborationDialog(onDismiss: () -> Unit, onHome: () -> Unit = onDism
                                     contentPadding = PaddingValues(12.dp),
                                     verticalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
+                                    if (busy && messages.isEmpty()) {
+                                        item {
+                                            Column(Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                                CircularProgressIndicator(color = KunColors.Chrome)
+                                                Spacer(Modifier.height(10.dp))
+                                                Text("جاري تحميل الرسائل…", color = KunColors.Ink2)
+                                            }
+                                        }
+                                    }
                                     items(messages, key = { it.id }) { message ->
                                         val mine = message.senderId.isNotBlank() && message.senderId == current?.meId
                                         Row(
@@ -577,7 +611,7 @@ fun MobileCollaborationDialog(onDismiss: () -> Unit, onHome: () -> Unit = onDism
                                         ) {
                                             Surface(
                                                 modifier = Modifier.widthIn(max = 310.dp),
-                                                color = if (mine) Color(0xFFDDF4D7) else Color.White,
+                                                color = if (mine) KunColors.PineSoft else Color.White,
                                                 shape = RoundedCornerShape(16.dp)
                                             ) {
                                                 Column(Modifier.padding(horizontal = 12.dp, vertical = 9.dp)) {
@@ -609,6 +643,9 @@ fun MobileCollaborationDialog(onDismiss: () -> Unit, onHome: () -> Unit = onDism
                                         )
                                         Spacer(Modifier.width(8.dp))
                                         FilledIconButton(
+                                            colors = androidx.compose.material3.IconButtonDefaults.filledIconButtonColors(
+                                                containerColor = KunColors.Chrome, contentColor = Color.White
+                                            ),
                                             onClick = {
                                                 val target = selectedId ?: return@FilledIconButton
                                                 val active = data ?: return@FilledIconButton
@@ -631,7 +668,7 @@ fun MobileCollaborationDialog(onDismiss: () -> Unit, onHome: () -> Unit = onDism
                                             },
                                             enabled = draft.isNotBlank() && !sending
                                         ) {
-                                            if (sending) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                                            if (sending) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.White)
                                             else Icon(Icons.Outlined.Send, contentDescription = "إرسال")
                                         }
                                     }
