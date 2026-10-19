@@ -93,6 +93,7 @@ fun KunNativeAppV25(
     var currentStore by remember { mutableStateOf(cachedStores?.current ?: ScopeInfo()) }
     var storeOptionsLoading by remember { mutableStateOf(false) }
     var storeOptionsError by remember { mutableStateOf("") }
+    var displayName by remember { mutableStateOf("") }
     val dateRevision = MobileDateFilterState.revision
 
     LaunchedEffect(homeRequest) {
@@ -163,6 +164,7 @@ fun KunNativeAppV25(
             storeOptions = emptyList()
             currentStore = ScopeInfo()
             storeOptionsError = ""
+            displayName = ""
             return@LaunchedEffect
         }
         SyncJobService.schedule(context)
@@ -183,6 +185,10 @@ fun KunNativeAppV25(
         // A failed initial fetch also remains retryable instead of showing fake zero totals.
         if (snapshot == null || syncError.isNotBlank()) performRefresh(false)
     }
+    LaunchedEffect(loggedIn) {
+        if (loggedIn) displayName = withContext(Dispatchers.IO) { KunApi.userDisplayName(context) }
+    }
+
     // A period switch does one immediate delta refresh. It does not create a new
     // recurring timer, so normal Cloudflare request cadence stays unchanged.
     LaunchedEffect(loggedIn, dateRevision) {
@@ -321,6 +327,7 @@ fun KunNativeAppV25(
                             when (selected) {
                                 MobileV25Tab.HOME -> V25Home(
                                     snapshot = snapshot ?: CommerceSnapshot(),
+                                    displayName = displayName,
                                     dataReady = snapshot != null,
                                     syncError = syncError,
                                     onRefresh = { refresh(true) },
@@ -390,7 +397,7 @@ fun KunNativeAppV25(
                                 Column(Modifier.fillMaxWidth().align(Alignment.TopCenter)) {
                                     LinearProgressIndicator(Modifier.fillMaxWidth(), color = KunColors.Pine, trackColor = KunColors.PineSoft)
                                     if (snapshot == null) {
-                                        Text("جاري تحميل طلبات المتجر…", modifier = Modifier.fillMaxWidth().padding(12.dp),
+                                        Text("جاري جلب البيانات وتجهيز طلبات المتجر…", modifier = Modifier.fillMaxWidth().padding(12.dp),
                                             color = KunColors.Chrome, style = MaterialTheme.typography.labelLarge)
                                     }
                                 }
@@ -482,6 +489,7 @@ private fun V25Login(busy: Boolean, message: String, onLogin: (String, String) -
 @Composable
 private fun V25Home(
     snapshot: CommerceSnapshot,
+    displayName: String,
     dataReady: Boolean,
     syncError: String,
     onRefresh: () -> Unit,
@@ -534,8 +542,10 @@ private fun V25Home(
     ) {
         item {
             Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                Text("أهلاً بك في كن أونلاين 👋", style = MaterialTheme.typography.headlineSmall, color = KunColors.Chrome, fontWeight = FontWeight.ExtraBold)
-                Text("نظرة عامة على متجرك • $periodLabel", color = KunColors.Ink2, style = MaterialTheme.typography.bodyMedium)
+                val dayGreeting = if (java.time.LocalTime.now().hour in 5..11) "صباح الخير" else "مساء الخير"
+                val greeting = if (displayName.isBlank()) dayGreeting else "$dayGreeting يا $displayName"
+                Text("$greeting 👋", style = MaterialTheme.typography.headlineSmall, color = KunColors.Chrome, fontWeight = FontWeight.ExtraBold)
+                Text("أهلاً بك في كن أونلاين • نظرة عامة على متجرك • $periodLabel", color = KunColors.Ink2, style = MaterialTheme.typography.bodyMedium)
             }
         }
         item {
