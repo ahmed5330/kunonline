@@ -20,6 +20,15 @@ button:focus-visible{outline:3px solid white;outline-offset:2px}
 .card img{width:80px;height:80px;border-radius:100%;object-fit:cover}
 .card small{display:block;color:#b4c2d3}
 .card .body{white-space:pre-wrap;overflow-wrap:anywhere;color:#dce6ef}
+.store-upload{margin:14px 0;padding:12px;border:1px dashed #53705b;border-radius:12px;background:#101e28}
+.store-upload label{display:block;font-weight:700;color:#d2f1c5;margin-bottom:5px}
+.store-upload input{display:block;max-width:100%;margin-bottom:8px}
+.store-upload small{font-size:12px;color:#b5c5d5}
+.store-media{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:12px 0}
+.store-media img{width:92px;height:92px;border:1px solid #56745a;border-radius:14px;object-fit:contain;background:#fff;padding:5px}
+.card .customer-photo{width:72px;height:72px;object-fit:cover;border-radius:50%}
+.card .store-name{overflow-wrap:anywhere;color:#c6e6b4}
+button:disabled{opacity:.6;cursor:wait}
 .actions{display:flex;gap:8px;flex-wrap:wrap}
 #status{padding:12px;background:#1b3548;border-radius:10px;min-height:52px}
 .invite-panel{margin:18px 0;padding:18px;border:1px solid #456948;border-radius:14px;background:#142b24}
@@ -62,6 +71,29 @@ var inviteLinks=document.getElementById('inviteLinks'),inviteStatus=document.get
 var records=[],chosen='pending';
 function elt(tag,cls,text){var el=document.createElement(tag);if(cls)el.className=cls;if(text!==undefined)el.textContent=text;return el;}
 function starText(n){return '★'.repeat(n)+'☆'.repeat(5-n);}
+function jpegPhoto(value){return typeof value==='string'&&value.length<=120000&&new RegExp('^data:image/jpeg;base64,[A-Za-z0-9+/]+={0,2}
+async function resizeStorePhoto(file){
+ if(!file)return null;
+ if(!['image/jpeg','image/png','image/webp'].includes(file.type))throw Error('الصورة لازم تكون JPG أو PNG أو WebP');
+ if(file.size>5*1024*1024)throw Error('حجم الصورة يجب ألا يتجاوز 5 ميجابايت');
+ const bitmap=await createImageBitmap(file);
+ try{
+  let edge=380,quality=.81;
+  for(let attempt=0;attempt<6;attempt++){
+   const ratio=Math.min(1,edge/Math.max(bitmap.width,bitmap.height));
+   const canvas=document.createElement('canvas');
+   canvas.width=Math.max(1,Math.round(bitmap.width*ratio));
+   canvas.height=Math.max(1,Math.round(bitmap.height*ratio));
+   const ctx=canvas.getContext('2d');
+   ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);
+   ctx.drawImage(bitmap,0,0,canvas.width,canvas.height);
+   const data=canvas.toDataURL('image/jpeg',quality);
+   if(jpegPhoto(data))return data;
+   edge=Math.floor(edge*.78);quality=Math.max(.48,quality-.07);
+  }
+  throw Error('الصورة كبيرة بعد الضغط، اختار صورة أصغر');
+ }finally{bitmap.close?.();}
+}
 async function send(id,method,payload){
  var response=await fetch('/api/public-reviews/'+encodeURIComponent(id),{method:method,credentials:'same-origin',headers:payload?{'Content-Type':'application/json'}:{},body:payload?JSON.stringify(payload):undefined});
  var body=await response.json().catch(()=>({}));
@@ -78,10 +110,145 @@ function render(){
   head.append(elt('div','stars',starText(review.rating)));
   head.append(elt('small',null,'الحالة: '+review.status+' • '+new Date(review.createdAt).toLocaleDateString('ar-EG')));
   card.append(head);
-  if(review.photo&&/^data:image\/jpeg;base64,/.test(review.photo)){var img=elt('img');img.src=review.photo;img.alt='الصورة التي اختار صاحب التقييم نشرها';img.loading='lazy';card.append(img);}
+  if(jpegPhoto(review.photo)){var img=elt('img','customer-photo');img.src=review.photo;img.alt='صورة العميل';img.loading='lazy';card.append(img);}
+  if(jpegPhoto(review.storePhoto)){
+   const wrap=elt('div','store-media'),img=elt('img');
+   img.src=review.storePhoto;img.alt='صورة متجر '+(review.storeName||'العميل');img.loading='lazy';
+   wrap.append(img,elt('small',null,'صورة المتجر المحفوظة'));card.append(wrap);
+  }
   card.append(elt('p','body',review.text));
+  const upload=elt('div','store-upload'),label=elt('label',null,'صورة المتجر (اختياري — ترفعها الإدارة فقط)');
+  const photoInput=elt('input');photoInput.type='file';photoInput.accept='image/jpeg,image/png,image/webp';photoInput.setAttribute('aria-label','اختيار صورة متجر '+(review.storeName||review.name));
+  upload.append(label,photoInput,elt('small',null,'JPG أو PNG أو WebP حتى 5 ميجابايت — تُضغط تلقائيًا وتظهر بعد الاعتماد'));
+  card.append(upload);
   var actions=elt('div','actions');
-  if(review.status!=='approved')addAction('نشر','',()=>send(review.id,'PATCH',{status:'approved'}),actions);
+  async function approveWithPhoto(requireFile){
+   const file=photoInput.files?.[0];
+   if(requireFile&&!file)throw Error('اختار صورة المتجر أولًا');
+   const payload={status:'approved'};
+   if(file)payload.storePhoto=await resizeStorePhoto(file);
+   return send(review.id,'PATCH',payload);
+  }
+  if(review.status!=='approved')addAction('قبول ونشر التقييم','',()=>approveWithPhoto(false),actions);
+  if(review.status==='approved'){
+   addAction('حفظ / تغيير صورة المتجر','',()=>approveWithPhoto(true),actions);
+   if(review.storePhoto)addAction('إزالة صورة المتجر','secondary',()=>send(review.id,'PATCH',{status:'approved',storePhoto:null}),actions);
+  }
+  if(review.status!=='hidden')addAction('إخفاء','secondary',()=>send(review.id,'PATCH',{status:'hidden'}),actions);
+  addAction('حذف نهائي','danger',async()=>{if(confirm('هل تريد حذف هذا التقييم نهائيًا؟'))await send(review.id,'DELETE');else return false;},actions);
+  card.append(actions);list.append(card);
+ }
+}
+function addAction(label,css,action,actions){
+ var button=elt('button',css,label);button.type='button';
+ button.addEventListener('click',async function(){
+  button.disabled=true;
+  try{var result=await action();if(result!==false){status.textContent='تم تحديث التقييم.';await load();}}
+  catch(e){status.textContent=e.message;}
+  finally{button.disabled=false;}
+ });actions.append(button);
+}
+inviteLinks.addEventListener('click',async function(event){
+ const button=event.target.closest('button[data-invite-type]');
+ if(!button||inviteLinks.hidden)return;
+ const type=button.dataset.inviteType;
+ if(!['services','consultations','all'].includes(type))return;
+ const url=new URL('https://kun-online.com/reviews/');
+ if(type!=='all')url.searchParams.set('type',type);
+ url.hash='write-review';
+ inviteUrl.value=url.toString();
+ inviteUrl.hidden=false;
+ try {
+   if(navigator.clipboard && navigator.clipboard.writeText) {
+     await navigator.clipboard.writeText(inviteUrl.value);
+     inviteStatus.textContent='تم نسخ الرابط. شاركه مع العميل عن طريق الإدارة.';
+     return;
+   }
+ }catch(error){}
+ inviteUrl.focus();inviteUrl.select();
+ inviteStatus.textContent='الرابط ظاهر في الحقل المحدد؛ انسخه وأرسله للعميل.';
+});
+async function load(){
+ var response=await fetch('/api/public-reviews?admin=1',{credentials:'same-origin',cache:'no-store'});
+ var data=await response.json().catch(()=>({}));
+ if(!response.ok||!data.ok){filters.hidden=true;inviteLinks.hidden=true;inviteUrl.value='';inviteUrl.hidden=true;status.textContent=(data.error||'تسجيل الدخول كمدير مطلوب')+' — ادخل للسيستم بحساب الإدارة أولًا.';return;}
+ records=data.reviews;filters.hidden=false;inviteLinks.hidden=false;
+ status.textContent='التقييمات: '+records.length+' | قيد المراجعة: '+records.filter(r=>r.status==='pending').length;
+ render();
+}
+filters.addEventListener('click',function(event){
+ var target=event.target.closest('button[data-filter]');if(!target)return;
+ chosen=target.dataset.filter;
+ for(var button of filters.querySelectorAll('button[data-filter]'))button.setAttribute('aria-pressed',button===target?'true':'false');
+ render();
+});
+document.getElementById('reload').addEventListener('click',()=>load().catch(e=>status.textContent=e.message));
+load().catch(e=>status.textContent='حدث خطأ في الاتصال: '+e.message);
+}());
+</script>
+</body></html>).test(value);}
+async function resizeStorePhoto(file){
+ if(!file)return null;
+ if(!['image/jpeg','image/png','image/webp'].includes(file.type))throw Error('الصورة لازم تكون JPG أو PNG أو WebP');
+ if(file.size>5*1024*1024)throw Error('حجم الصورة يجب ألا يتجاوز 5 ميجابايت');
+ const bitmap=await createImageBitmap(file);
+ try{
+  let edge=380,quality=.81;
+  for(let attempt=0;attempt<6;attempt++){
+   const ratio=Math.min(1,edge/Math.max(bitmap.width,bitmap.height));
+   const canvas=document.createElement('canvas');
+   canvas.width=Math.max(1,Math.round(bitmap.width*ratio));
+   canvas.height=Math.max(1,Math.round(bitmap.height*ratio));
+   const ctx=canvas.getContext('2d');
+   ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);
+   ctx.drawImage(bitmap,0,0,canvas.width,canvas.height);
+   const data=canvas.toDataURL('image/jpeg',quality);
+   if(jpegPhoto(data))return data;
+   edge=Math.floor(edge*.78);quality=Math.max(.48,quality-.07);
+  }
+  throw Error('الصورة كبيرة بعد الضغط، اختار صورة أصغر');
+ }finally{bitmap.close?.();}
+}
+async function send(id,method,payload){
+ var response=await fetch('/api/public-reviews/'+encodeURIComponent(id),{method:method,credentials:'same-origin',headers:payload?{'Content-Type':'application/json'}:{},body:payload?JSON.stringify(payload):undefined});
+ var body=await response.json().catch(()=>({}));
+ if(!response.ok||!body.ok)throw new Error(body.error||'فشلت العملية');return body;
+}
+function render(){
+ list.replaceChildren();
+ var visible=records.filter(function(r){return chosen==='all'||r.status===chosen;});
+ if(!visible.length){list.append(elt('p',null,'لا توجد تقييمات في هذا القسم.'));return;}
+ for(var review of visible){
+  var card=elt('article','card'),head=elt('div');
+  head.append(elt('strong',null,review.name+' — '+(review.category==='services'?'خدمات كن أونلاين':'استشارات كن أونلاين')));
+  if(review.storeName)head.append(elt('small','store-name','اسم المتجر: '+review.storeName));
+  head.append(elt('div','stars',starText(review.rating)));
+  head.append(elt('small',null,'الحالة: '+review.status+' • '+new Date(review.createdAt).toLocaleDateString('ar-EG')));
+  card.append(head);
+  if(jpegPhoto(review.photo)){var img=elt('img','customer-photo');img.src=review.photo;img.alt='صورة العميل';img.loading='lazy';card.append(img);}
+  if(jpegPhoto(review.storePhoto)){
+   const wrap=elt('div','store-media'),img=elt('img');
+   img.src=review.storePhoto;img.alt='صورة متجر '+(review.storeName||'العميل');img.loading='lazy';
+   wrap.append(img,elt('small',null,'صورة المتجر المحفوظة'));card.append(wrap);
+  }
+  card.append(elt('p','body',review.text));
+  const upload=elt('div','store-upload'),label=elt('label',null,'صورة المتجر (اختياري — ترفعها الإدارة فقط)');
+  const photoInput=elt('input');photoInput.type='file';photoInput.accept='image/jpeg,image/png,image/webp';photoInput.setAttribute('aria-label','اختيار صورة متجر '+(review.storeName||review.name));
+  upload.append(label,photoInput,elt('small',null,'JPG أو PNG أو WebP حتى 5 ميجابايت — تُضغط تلقائيًا وتظهر بعد الاعتماد'));
+  card.append(upload);
+  var actions=elt('div','actions');
+  async function approveWithPhoto(requireFile){
+   const file=photoInput.files?.[0];
+   if(requireFile&&!file)throw Error('اختار صورة المتجر أولًا');
+   const payload={status:'approved'};
+   if(file)payload.storePhoto=await resizeStorePhoto(file);
+   return send(review.id,'PATCH',payload);
+  }
+  if(review.status!=='approved')addAction('قبول ونشر التقييم','',()=>approveWithPhoto(false),actions);
+  if(review.status==='approved'){
+   addAction('حفظ / تغيير صورة المتجر','',()=>approveWithPhoto(true),actions);
+   if(review.storePhoto)addAction('إزالة صورة المتجر','secondary',()=>send(review.id,'PATCH',{status:'approved',storePhoto:null}),actions);
+  }
   if(review.status!=='hidden')addAction('إخفاء','secondary',()=>send(review.id,'PATCH',{status:'hidden'}),actions);
   addAction('حذف نهائي','danger',async()=>{if(confirm('هل تريد حذف هذا التقييم نهائيًا؟'))await send(review.id,'DELETE');else return false;},actions);
   card.append(actions);list.append(card);

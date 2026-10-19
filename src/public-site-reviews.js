@@ -11,11 +11,15 @@ let schemaReady=false;
 async function ensureSchema(db) {
   if(schemaReady)return;
   if(!db?.prepare)throw Object.assign(new Error('Database unavailable'),{status:503});
-  await db.prepare("CREATE TABLE IF NOT EXISTS site_reviews (id TEXT PRIMARY KEY, category TEXT NOT NULL CHECK(category IN ('services','consultations')), rating INTEGER NOT NULL CHECK(rating BETWEEN 1 AND 5), author TEXT NOT NULL, store_name TEXT, body TEXT NOT NULL, photo_jpeg TEXT, status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','hidden')), created_at TEXT NOT NULL, reviewed_at TEXT, reviewed_by TEXT)").run();
+  await db.prepare("CREATE TABLE IF NOT EXISTS site_reviews (id TEXT PRIMARY KEY, category TEXT NOT NULL CHECK(category IN ('services','consultations')), rating INTEGER NOT NULL CHECK(rating BETWEEN 1 AND 5), author TEXT NOT NULL, store_name TEXT, store_photo_jpeg TEXT, body TEXT NOT NULL, photo_jpeg TEXT, status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','hidden')), created_at TEXT NOT NULL, reviewed_at TEXT, reviewed_by TEXT)").run();
   // Upgrade existing installations without touching saved reviews.
   const columns=await db.prepare('PRAGMA table_info(site_reviews)').all();
   if(!(columns.results||[]).some(column=>column.name==='store_name')){
     try{await db.prepare('ALTER TABLE site_reviews ADD COLUMN store_name TEXT').run();}
+    catch(error){if(!/duplicate column name/i.test(String(error?.message||error)))throw error;}
+  }
+  if(!(columns.results||[]).some(column=>column.name==='store_photo_jpeg')){
+    try{await db.prepare('ALTER TABLE site_reviews ADD COLUMN store_photo_jpeg TEXT').run();}
     catch(error){if(!/duplicate column name/i.test(String(error?.message||error)))throw error;}
   }
   await db.prepare('CREATE INDEX IF NOT EXISTS idx_site_reviews_status_created ON site_reviews(status,created_at DESC)').run();
@@ -30,7 +34,7 @@ async function hashedIp(request,secret) {
   return {day,fingerprint:[...bytes].map(x=>x.toString(16).padStart(2,'0')).join('')};
 }
 function view(row) {
-  return {id:row.id,category:row.category,rating:row.rating,name:row.author,storeName:row.store_name||null,text:row.body,photo:row.photo_jpeg||null,status:row.status,createdAt:row.created_at};
+  return {id:row.id,category:row.category,rating:row.rating,name:row.author,storeName:row.store_name||null,storePhoto:row.store_photo_jpeg||null,text:row.body,photo:row.photo_jpeg||null,status:row.status,createdAt:row.created_at};
 }
 function validPhoto(value) {
   if(value===null||value===undefined||value==='')return true;
@@ -85,7 +89,7 @@ export async function handlePublicSiteReviews(request,env,{authorizeAdmin}={}){
     try{
       await ensureSchema(env.DB);
       const category=url.searchParams.get('category');
-      let query="SELECT id,category,rating,author,store_name,body,photo_jpeg,status,created_at FROM site_reviews WHERE status='approved'";
+      let query="SELECT id,category,rating,author,store_name,store_photo_jpeg,body,photo_jpeg,status,created_at FROM site_reviews WHERE status='approved'";
       const args=[];
       if(['services','consultations'].includes(category)){query+=' AND category=?';args.push(category);}
       query+=' ORDER BY created_at DESC LIMIT 30';
@@ -101,17 +105,26 @@ export async function handlePublicSiteReviews(request,env,{authorizeAdmin}={}){
   try{
     await ensureSchema(env.DB);
     if(collection&&request.method==='GET'){
-      const result=await env.DB.prepare('SELECT id,category,rating,author,store_name,body,photo_jpeg,status,created_at FROM site_reviews ORDER BY created_at DESC LIMIT 100').all();
+      const result=await env.DB.prepare('SELECT id,category,rating,author,store_name,store_photo_jpeg,body,photo_jpeg,status,created_at FROM site_reviews ORDER BY created_at DESC LIMIT 100').all();
       return respond({ok:true,reviews:(result.results||[]).map(view)});
     }
     if(!collection&&request.method==='PATCH'){
       if(!/^application\/json\b/i.test(request.headers.get('Content-Type')||''))return respond({error:'JSON required'},415);
-      const raw=await request.text();if(raw.length>200)return respond({error:'Invalid request'},413);
+      const raw=await request.text();if(raw.length>MAX_UPLOAD)return respond({error:'Invalid request size'},413);
       let payload;try{payload=JSON.parse(raw)}catch{return respond({error:'Invalid JSON'},400)}
       if(!['approved','hidden'].includes(payload.status))return respond({error:'Invalid status'},400);
       const id=url.pathname.split('/').pop();
-      const updated=await env.DB.prepare('UPDATE site_reviews SET status=?,reviewed_at=?,reviewed_by=? WHERE id=?')
-        .bind(payload.status,new Date().toISOString(),clean(me.uid,80),id).run();
+      const hasStorePhoto=Object.prototype.hasOwnProperty.call(payload,'storePhoto');
+      if(hasStorePhoto&&(payload.status!=='approved'||!validPhoto(payload.storePhoto))){
+        return respond({error:'صورة المتجر غير صالحة أو لا يمكن إرفاقها قبل الموافقة'},400);
+      }
+      // The manager alone may set/replace/remove the store photo when approving.
+      // A status-only update never erases an image already saved.
+      const updated=hasStorePhoto
+        ? await env.DB.prepare('UPDATE site_reviews SET status=?,store_photo_jpeg=?,reviewed_at=?,reviewed_by=? WHERE id=?')
+          .bind(payload.status,payload.storePhoto||null,new Date().toISOString(),clean(me.uid,80),id).run()
+        : await env.DB.prepare('UPDATE site_reviews SET status=?,reviewed_at=?,reviewed_by=? WHERE id=?')
+          .bind(payload.status,new Date().toISOString(),clean(me.uid,80),id).run();
       return respond({ok:true,changed:Boolean(updated.meta?.changes)});
     }
     if(!collection&&request.method==='DELETE'){
