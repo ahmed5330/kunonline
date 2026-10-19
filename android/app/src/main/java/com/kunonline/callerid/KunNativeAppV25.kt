@@ -684,7 +684,17 @@ private fun V25Home(
                 TextButton(onClick = onOpenOrders) { Text("عرض الكل") }
             }
         }
-        if (orders.isEmpty()) {
+        if (!dataReady) {
+            item {
+                KunSectionCard {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp,
+                            color = KunColors.Chrome)
+                        Text("جاري جمع أحدث الطلبات من المتجر…", color = KunColors.Ink2)
+                    }
+                }
+            }
+        } else if (orders.isEmpty()) {
             item { V25Empty(if (syncError.isNotBlank()) "تعذر تحديث الطلبات — جرّب إعادة التحميل" else "لا توجد طلبات في الفترة المختارة") }
         } else {
             items(orders.take(6), key = { it.id }) { order -> V25CompactOrder(order) }
