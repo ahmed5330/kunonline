@@ -431,63 +431,85 @@ private fun V25Login(busy: Boolean, message: String, onLogin: (String, String) -
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var showPassword by remember { mutableStateOf(false) }
-    Box(
-        Modifier.fillMaxSize().background(KunColors.Ground).padding(20.dp),
-        contentAlignment = Alignment.Center
+    Column(
+        Modifier.fillMaxSize().background(KunV3.Background).verticalScroll(rememberScrollState()),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Card(
-            modifier = Modifier.fillMaxWidth().widthIn(max = 460.dp),
-            shape = RoundedCornerShape(26.dp),
-            colors = CardDefaults.cardColors(containerColor = KunColors.Surface),
-            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+        Box(
+            Modifier.fillMaxWidth().height(262.dp)
+                .clip(RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp))
+                .background(androidx.compose.ui.graphics.Brush.horizontalGradient(
+                    listOf(KunV3.Navy, KunV3.Blue))),
+            contentAlignment = Alignment.Center
         ) {
             Column(
-                Modifier.padding(horizontal = 24.dp, vertical = 28.dp).verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(15.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(11.dp)
             ) {
-                KunBrandMark(Modifier.size(156.dp))
-                Text("كن أونلاين", style = MaterialTheme.typography.headlineMedium, color = KunColors.Ink)
-                Text("إدارة متاجرك وكل عملياتك من مكان واحد", color = KunColors.Ink2, style = MaterialTheme.typography.bodyMedium)
+                Surface(color = Color.White, shape = RoundedCornerShape(18.dp)) {
+                    KunBrandMark(Modifier.padding(10.dp).size(65.dp))
+                }
+                Text("كن أونلاين", style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.ExtraBold, color = Color.White)
+                Text("نظام إدارة التجارة الإلكترونية",
+                    style = MaterialTheme.typography.bodyMedium, color = Color.White.copy(alpha = .85f))
+            }
+        }
+        Card(
+            modifier = Modifier.padding(horizontal = 18.dp).offset(y = (-25).dp)
+                .fillMaxWidth().widthIn(max = 460.dp),
+            shape = RoundedCornerShape(22.dp),
+            colors = CardDefaults.cardColors(containerColor = KunColors.Surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        ) {
+            Column(Modifier.fillMaxWidth().padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Text("أهلاً بعودتك", color = KunColors.Ink,
+                    style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
+                Text("سجّل دخولك بحسابك المسجل في كن أونلاين",
+                    color = KunColors.Ink2, style = MaterialTheme.typography.bodySmall)
                 OutlinedTextField(
-                    value = email,
-                    onValueChange = { email = it },
+                    value = email, onValueChange = { email = it },
                     label = { Text("البريد الإلكتروني") },
-                    leadingIcon = { Icon(Icons.Outlined.Email, null) },
+                    leadingIcon = { Icon(Icons.Outlined.Email, contentDescription = null) },
                     modifier = Modifier.fillMaxWidth(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-                    singleLine = true,
-                    shape = KunRadius
+                    singleLine = true, shape = KunRadius
                 )
                 OutlinedTextField(
-                    value = password,
-                    onValueChange = { password = it },
+                    value = password, onValueChange = { password = it },
                     label = { Text("كلمة المرور") },
-                    leadingIcon = { Icon(Icons.Outlined.Lock, null) },
+                    leadingIcon = { Icon(Icons.Outlined.Lock, contentDescription = null) },
                     trailingIcon = {
                         IconButton(onClick = { showPassword = !showPassword }) {
-                            Icon(if (showPassword) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility, null)
+                            Icon(if (showPassword) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
+                                contentDescription = if (showPassword) "إخفاء كلمة المرور" else "إظهار كلمة المرور")
                         }
                     },
                     modifier = Modifier.fillMaxWidth(),
                     visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
-                    singleLine = true,
-                    shape = KunRadius
+                    singleLine = true, shape = KunRadius
                 )
                 Button(
                     onClick = { onLogin(email.trim(), password) },
                     enabled = !busy && email.isNotBlank() && password.isNotBlank(),
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp),
-                    shape = KunRadius
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp), shape = KunRadius
                 ) {
-                    if (busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = Color.White)
-                    else Text("دخول إلى النظام", fontWeight = FontWeight.Bold)
+                    if (busy) CircularProgressIndicator(Modifier.size(20.dp),
+                        strokeWidth = 2.dp, color = Color.White)
+                    else Text("تسجيل الدخول ←", fontWeight = FontWeight.ExtraBold)
                 }
                 if (message.isNotBlank()) {
-                    Surface(color = if (message.contains("تم")) KunColors.PineSoft else KunColors.BrickSoft, shape = KunRadius, modifier = Modifier.fillMaxWidth()) {
-                        Text(message, color = if (message.contains("تم")) KunColors.Pine else KunColors.Brick, modifier = Modifier.padding(12.dp))
+                    Surface(
+                        color = if (message.contains("تم")) KunColors.PineSoft else KunColors.BrickSoft,
+                        shape = KunRadius, modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(message, modifier = Modifier.padding(12.dp),
+                            color = if (message.contains("تم")) KunColors.Pine else KunColors.Brick)
                     }
                 }
+                Text("بيانات الموظفين وصلاحياتهم تدار من لوحة كن أونلاين",
+                    color = KunColors.Ink3, style = MaterialTheme.typography.labelSmall)
             }
         }
     }
