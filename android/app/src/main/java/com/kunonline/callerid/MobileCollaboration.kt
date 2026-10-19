@@ -27,6 +27,7 @@ import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Send
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Storefront
 import androidx.compose.material3.Badge
 import androidx.compose.material3.Card
@@ -293,6 +294,7 @@ fun MobileCollaborationDialog(onDismiss: () -> Unit, onHome: () -> Unit = onDism
     var showMembers by remember { mutableStateOf(false) }
     var messages by remember { mutableStateOf<List<ChatMessage>>(emptyList()) }
     var draft by remember { mutableStateOf("") }
+    var chatQuery by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var sending by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
@@ -435,13 +437,22 @@ fun MobileCollaborationDialog(onDismiss: () -> Unit, onHome: () -> Unit = onDism
                             }
                         },
                         colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = Color(0xFF0E5A98),
+                            containerColor = KunV3.Navy,
                             titleContentColor = Color.White,
                             navigationIconContentColor = Color.White,
                             actionIconContentColor = Color.White
                         )
                     )
 
+                    if (selectedId == null && !showMembers && selectedStore != null) {
+                        OutlinedTextField(
+                            value = chatQuery, onValueChange = { chatQuery = it },
+                            placeholder = { Text("ابحث في المحادثات") },
+                            leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp),
+                            shape = RoundedCornerShape(15.dp), singleLine = true
+                        )
+                    }
                     if (busy || storesLoading) {
                         LinearProgressIndicator(Modifier.fillMaxWidth(), color = KunColors.Pine)
                         Text("جاري تحميل وتحديث بيانات التواصل…", modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 7.dp),
@@ -539,7 +550,7 @@ fun MobileCollaborationDialog(onDismiss: () -> Unit, onHome: () -> Unit = onDism
                                             colors = CardDefaults.cardColors(containerColor = Color.White)
                                         ) {
                                             Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                                                Icon(Icons.Outlined.ChatBubbleOutline, null, tint = Color(0xFF0E5A98))
+                                                Icon(Icons.Outlined.ChatBubbleOutline, null, tint = KunV3.Blue)
                                                 Spacer(Modifier.width(10.dp))
                                                 Text(member.name, fontWeight = FontWeight.Bold)
                                             }
@@ -550,7 +561,10 @@ fun MobileCollaborationDialog(onDismiss: () -> Unit, onHome: () -> Unit = onDism
                         }
 
                         selectedId == null -> {
-                            val conversations = data?.conversations.orEmpty()
+                            val conversations = data?.conversations.orEmpty().filter { conversation ->
+                                chatQuery.isBlank() || conversation.title.contains(chatQuery.trim(), ignoreCase = true) ||
+                                    conversation.preview.contains(chatQuery.trim(), ignoreCase = true)
+                            }
                             if (!busy && data == null && error.isNotBlank()) {
                                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                                     OutlinedButton(onClick = { scope.launch { refreshBootstrap() } }) { Text("إعادة محاولة تحميل المحادثات") }
@@ -558,7 +572,7 @@ fun MobileCollaborationDialog(onDismiss: () -> Unit, onHome: () -> Unit = onDism
                             } else if (!busy && conversations.isEmpty()) {
                                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                        Icon(Icons.Outlined.ChatBubbleOutline, null, modifier = Modifier.size(42.dp), tint = Color(0xFF0E5A98))
+                                        Icon(Icons.Outlined.ChatBubbleOutline, null, modifier = Modifier.size(42.dp), tint = KunV3.Blue)
                                         Spacer(Modifier.height(8.dp))
                                         Text("لا توجد محادثات بعد", fontWeight = FontWeight.Bold)
                                         Text("اضغط + لبدء محادثة", color = Color.Gray)
@@ -569,19 +583,33 @@ fun MobileCollaborationDialog(onDismiss: () -> Unit, onHome: () -> Unit = onDism
                                     items(conversations, key = { it.id }) { conversation ->
                                         Card(
                                             modifier = Modifier.fillMaxWidth().clickable { selectedId = conversation.id },
-                                            colors = CardDefaults.cardColors(containerColor = Color.White)
+                                            colors = CardDefaults.cardColors(containerColor = Color.White),
+                                            shape = RoundedCornerShape(17.dp),
+                                            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
                                         ) {
                                             Row(
                                                 Modifier.fillMaxWidth().padding(14.dp),
                                                 verticalAlignment = Alignment.CenterVertically
                                             ) {
-                                                Icon(Icons.Outlined.ChatBubbleOutline, null, tint = Color(0xFF0E5A98))
-                                                Spacer(Modifier.width(10.dp))
-                                                Column(Modifier.weight(1f)) {
-                                                    Text(conversation.title, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                                    if (conversation.preview.isNotBlank()) {
-                                                        Text(conversation.preview, color = Color.Gray, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                                Surface(
+                                                    color = KunV3.Sky,
+                                                    shape = RoundedCornerShape(14.dp),
+                                                    modifier = Modifier.size(45.dp)
+                                                ) {
+                                                    Box(contentAlignment = Alignment.Center) {
+                                                        Text(conversation.title.take(1), color = KunV3.Blue,
+                                                            style = MaterialTheme.typography.titleMedium,
+                                                            fontWeight = FontWeight.ExtraBold)
                                                     }
+                                                }
+                                                Spacer(Modifier.width(12.dp))
+                                                Column(Modifier.weight(1f)) {
+                                                    Text(conversation.title, color = KunColors.Ink, fontWeight = FontWeight.Bold,
+                                                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                                    Text(conversation.preview.ifBlank { "ابدأ المحادثة" },
+                                                        color = KunColors.Ink2, maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis,
+                                                        style = MaterialTheme.typography.bodySmall)
                                                 }
                                                 if (conversation.unread > 0) {
                                                     Badge { Text(conversation.unread.coerceAtMost(99).toString()) }
@@ -624,7 +652,7 @@ fun MobileCollaborationDialog(onDismiss: () -> Unit, onHome: () -> Unit = onDism
                                             ) {
                                                 Column(Modifier.padding(horizontal = 12.dp, vertical = 9.dp)) {
                                                     if (!mine && message.senderName.isNotBlank()) {
-                                                        Text(message.senderName, color = Color(0xFF0E5A98), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                                                        Text(message.senderName, color = KunV3.Blue, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
                                                     }
                                                     if (message.body.isNotBlank()) Text(message.body)
                                                     if (message.orderId.isNotBlank()) {
@@ -691,7 +719,7 @@ fun MobileCollaborationDialog(onDismiss: () -> Unit, onHome: () -> Unit = onDism
                             horizontalArrangement = Arrangement.Center
                         ) {
                             FilledTonalButton(onClick = onHome) {
-                                Icon(Icons.Outlined.Storefront, contentDescription = "الصفحة الرئيسية")
+                                KunRaisedHomeIcon(active = true)
                                 Spacer(Modifier.width(8.dp))
                                 Text("الرئيسية", fontWeight = FontWeight.ExtraBold)
                             }
