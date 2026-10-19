@@ -296,9 +296,15 @@ fun MobileCollaborationDialog(onDismiss: () -> Unit, onHome: () -> Unit = onDism
     var busy by remember { mutableStateOf(false) }
     var sending by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
-    var availableStores by remember { mutableStateOf<List<MobileStoreOption>>(emptyList()) }
-    var selectedStore by remember { mutableStateOf<MobileStoreOption?>(null) }
-    var storesLoading by remember { mutableStateOf(true) }
+    // A verified recent store selection can render immediately while revalidating.
+    val cachedStores = remember { KunApi.cachedStoreOptions(context) }
+    var availableStores by remember { mutableStateOf(cachedStores?.stores.orEmpty()) }
+    var selectedStore by remember {
+        mutableStateOf(cachedStores?.stores?.firstOrNull {
+            it.clientId == cachedStores.current.clientId && it.storeId == cachedStores.current.storeId
+        } ?: cachedStores?.stores?.singleOrNull())
+    }
+    var storesLoading by remember { mutableStateOf(cachedStores == null) }
     val messageListState = rememberLazyListState()
 
     suspend fun refreshBootstrap(quiet: Boolean = false): ChatBootstrap? {
