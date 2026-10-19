@@ -437,7 +437,7 @@ private fun V25Login(busy: Boolean, message: String, onLogin: (String, String) -
     ) {
         Box(
             Modifier.fillMaxWidth().height(262.dp)
-                .clip(RoundedCornerShape(0.dp, 0.dp, 28.dp, 28.dp))
+                .clip(RoundedCornerShape(28.dp))
                 .background(androidx.compose.ui.graphics.Brush.horizontalGradient(
                     listOf(KunV3.Navy, KunV3.Blue))),
             contentAlignment = Alignment.Center
