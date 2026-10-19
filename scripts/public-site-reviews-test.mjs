@@ -114,6 +114,7 @@ test('admin store photo is separate from customer photo, approved only and repla
  await call(request('DELETE',path,null,app),authorizeAdmin);
 });
 test('public POST has a strict daily rate cap',async()=>{
+ rates.clear(); // A fresh daily budget for this isolated rate-limit fixture.
  for(let i=0;i<2;i++)assert.equal((await call(request('POST','/api/public-reviews',i===0?{...entry,storeName:undefined}:entry))).status,202);
  assert.equal(reviewed[0].store_name,null); // Older forms remain compatible.
  assert.equal((await call(request('POST','/api/public-reviews',entry))).status,429);
