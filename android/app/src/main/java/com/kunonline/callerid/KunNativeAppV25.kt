@@ -122,7 +122,9 @@ fun KunNativeAppV25(
         val hadSnapshot = previous != null
         val previousIds = if (hadSnapshot && !silent) rawOrderIds(previous) else emptySet()
         val result = try {
-            withContext(Dispatchers.IO) { KunApi.fetchState(context, forceFull = manual) }
+            // Manual refresh also uses the authoritative delta endpoint. Clearing its baseline
+            // on every tap previously re-downloaded every order unnecessarily.
+            withContext(Dispatchers.IO) { KunApi.fetchState(context, forceFull = false) }
         } finally {
             refreshing = false
             if (!silent) loading = false
