@@ -42,6 +42,7 @@ assert.ok(cs.includes('V23DetailRow("آخر تعديل", v23OrderEditLabel(it))'
 assert.ok(service.includes('val storeParam = if (selectedStoreId.isBlank())'));
 assert.ok(api.includes('/shipping-jnt'));
 assert.ok(!api.includes('authorized.stores.none'), 'Local store-list fetch must not gate server-authorized edits');
-assert.match(gradle, /versionCode\s*=\s*141/);
-assert.match(gradle, /versionName\s*=\s*"2\.9\.10"/);
+const buildCode = Number(gradle.match(/versionCode\s*=\s*(\d+)/)?.[1] || 0);
+const patchVersion = Number(gradle.match(/versionName\s*=\s*"2\.9\.(\d+)"/)?.[1] || 0);
+assert.ok(buildCode >= 141 && patchVersion >= 10, 'Must preserve the minimum previously verified Android version');
 console.log('Customer service compact UX, visible J&T actions, reference hiding and secure scoped editor verified.');

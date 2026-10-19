@@ -12,9 +12,9 @@ android {
         applicationId = "com.kunonline.callerid.stable"
         minSdk = 29
         targetSdk = 35
-        // v2.9.10: restore authorized order visibility and consistent square home KPIs.
-        versionCode = 141
-        versionName = "2.9.10"
+        // v2.9.11: legacy chat D1 compatibility, personalized home and visible loading.
+        versionCode = 142
+        versionName = "2.9.11"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

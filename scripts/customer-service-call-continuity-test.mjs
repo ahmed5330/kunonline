@@ -37,6 +37,6 @@ for(const s of [native,nativeFallback]){
   expect(s,'CallerJntOrderEditActivity.EXTRA_SHIPPING_ONLY, true','open native J&T cascading shipping editor');
   expect(s,'تعديل بيانات','shipping button shown');
 }
-expect(build,'versionCode = 141','new build number');
-expect(build,'versionName = "2.9.10"','new version');
+assert.ok(Number(build.match(/versionCode\s*=\s*(\d+)/)?.[1] || 0) >= 141, 'Android build must not regress');
+assert.ok(Number(build.match(/versionName\s*=\s*"2\.9\.(\d+)"/)?.[1] || 0) >= 10, 'Android version must not regress');
 console.log('PASS: Customer Service filter and call claim continuity / Android caller panel 2.9.10');
