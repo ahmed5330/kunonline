@@ -146,12 +146,21 @@ fun GlobalOrderSearchDialog(onDismiss: () -> Unit, onHome: () -> Unit) {
         Surface(modifier = Modifier.fillMaxSize(), color = KunColors.Ground) {
             Column {
                 TopAppBar(
-                    title = { Text("البحث في كل الطلبات", fontWeight = FontWeight.Bold) },
+                    title = { Column {
+                        Text("البحث الشامل", fontWeight = FontWeight.ExtraBold)
+                        Text("كل المتاجر والتواريخ", style = MaterialTheme.typography.labelSmall,
+                            color = Color.White.copy(alpha = .8f))
+                    } },
                     navigationIcon = {
                         IconButton(onClick = onDismiss) {
                             Icon(Icons.Outlined.Close, contentDescription = "إغلاق البحث")
                         }
-                    }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = KunV3.Navy,
+                        titleContentColor = Color.White,
+                        navigationIconContentColor = Color.White
+                    )
                 )
                 OutlinedTextField(
                     value = query,
@@ -159,7 +168,8 @@ fun GlobalOrderSearchDialog(onDismiss: () -> Unit, onHome: () -> Unit) {
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                     placeholder = { Text("رقم الطلب، العميل، الهاتف أو البوليصة") },
                     leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
-                    singleLine = true
+                    singleLine = true,
+                    shape = KunRadius
                 )
                 Text(
                     "كل المتاجر المسموح بها • كل التواريخ • البحث لا يتأثر بفلاتر الأقسام",
@@ -169,7 +179,7 @@ fun GlobalOrderSearchDialog(onDismiss: () -> Unit, onHome: () -> Unit) {
                 )
                 Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                     when {
-                        busy -> CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                        busy -> KunAsyncPanel("جاري البحث في كل الطلبات…", Modifier.align(Alignment.Center))
                         query.trim().length < 2 -> Text(
                             "اكتب حرفين على الأقل للبحث في تاريخ الطلبات بالكامل",
                             modifier = Modifier.align(Alignment.Center).padding(20.dp)
@@ -193,7 +203,7 @@ fun GlobalOrderSearchDialog(onDismiss: () -> Unit, onHome: () -> Unit) {
                                 OutlinedCard(
                                     onClick = { selected = order },
                                     modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(14.dp)
+                                    shape = RoundedCornerShape(17.dp)
                                 ) {
                                     Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                                         Text(order.name.ifBlank { "عميل بدون اسم" }, fontWeight = FontWeight.Bold)
@@ -240,7 +250,7 @@ fun GlobalOrderSearchDialog(onDismiss: () -> Unit, onHome: () -> Unit) {
                     onClick = onHome,
                     modifier = Modifier.align(Alignment.CenterHorizontally).padding(8.dp)
                 ) {
-                    Icon(Icons.Outlined.Home, contentDescription = null)
+                    KunRaisedHomeIcon(active = true)
                     Spacer(Modifier.width(7.dp))
                     Text("الرئيسية")
                 }
