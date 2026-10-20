@@ -52,6 +52,8 @@ jobs:
           node --check public/v2/modules-v79-printing.js
           node --check public/v2/modules-v116-print-routing.js
           node scripts/integration-setup-test.mjs
+      - name: Historical mobile and web contact-count recovery
+        run: node scripts/contact-history-recovery-test.mjs
       - name: Customer Service board, periods and J&T void regression
         run: node scripts/customer-service-board-print-void-test.mjs
       - name: V2 login session gateway regression
