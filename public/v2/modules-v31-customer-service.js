@@ -46,7 +46,7 @@
   }
   function updateNotes(card,o){
     const fresh=notePreview(o),current=[...card.children].filter(el=>el.matches?.('.cs-customer-note,.cs-internal-latest,.cs-notes-more'));
-    const first=current[0]||card.querySelector('.cs-contact-attempts,.cs-note-field');
+    const first=card.querySelector('.cs-contact-attempts,.cs-note-field');
     for(const node of current)node.remove();
     if(!fresh)return;
     const fragment=document.createElement('div');fragment.innerHTML=fresh;
