@@ -8,6 +8,7 @@ import {handleProductionMobileOrderGuard} from './production-mobile-order-guard.
 import {handleProductionCallerJntEdit} from './production-caller-jnt-edit.js';
 import {handleProductionJntShippingEdit} from './production-jnt-shipping-edit.js';
 import {handleProductionPrintingQueue} from './production-printing-queue.js';
+import {handleJtPrintWorkflowV2} from './jt-print-workflow-v2.js';
 import {handleInternalCollaboration} from './internal-collaboration.js';
 import {handleCollaborationOrderSearch} from './internal-collaboration-order-search.js';
 import {handleMobileOrderSearch} from './mobile-global-order-search.js';
@@ -201,6 +202,21 @@ export default {
 
     const callerJntEdit=await handleProductionCallerJntEdit({request,env:dataEnv,ctx,delegate});
     if(callerJntEdit)return callerJntEdit;
+
+    // The live production gateway owns waybill voids even while the Preview
+    // service-binding backend is on an older deployment.
+    if(/^\/api\/jt\/shipments\/[^/]+\/void$/.test(new URL(request.url).pathname)&&request.method==='POST'){
+      try{
+        const identityUrl=new URL('/api/me',request.url);
+        const identityResponse=await delegate.fetch(new Request(identityUrl.toString(),{method:'GET',headers:request.headers}));
+        const me=await identityResponse.json().catch(()=>({}));
+        if(!identityResponse.ok||!me?.role)return new Response(JSON.stringify({error:'محتاج تسجّل دخول',code:'AUTH_REQUIRED'}),{status:401,headers:{'Content-Type':'application/json'}});
+        const result=await handleJtPrintWorkflowV2({request,env:dataEnv,ctx,delegate,me});
+        if(result)return result;
+      }catch(error){
+        return new Response(JSON.stringify({error:error?.message||'تعذر إلغاء البوليصة',code:error?.code||'JT_WAYBILL_VOID_ERROR'}),{status:Number(error?.status)>=400&&Number(error.status)<600?Number(error.status):500,headers:{'Content-Type':'application/json; charset=utf-8'}});
+      }
+    }
 
     const printing=await handleProductionPrintingQueue({request,env:dataEnv,ctx,delegate});
     if(printing)return syncInventoryTrackingAfterResponse({request,response:printing,env:dataEnv,actor:'production'});
