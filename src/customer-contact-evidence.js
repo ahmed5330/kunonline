@@ -10,6 +10,7 @@
  * event must never increment the count twice.
  */
 const clean=value=>String(value??'').trim();
+const legacyTimestamp=/^20\d{2}-\d{2}-\d{2}[T\s]\d{2}:\d{2}/;
 export function parseContactArray(value){
   if(Array.isArray(value))return value;
   try{const parsed=JSON.parse(value||'[]');return Array.isArray(parsed)?parsed:[];}catch{return [];}
@@ -17,6 +18,8 @@ export function parseContactArray(value){
 const eventTypes=new Set(['contact','contact_attempt','call','call_attempt','phone_call','customer_contact']);
 const intents=new Set(['screened','call','contact']);
 function evidence(entry){
+  // The earliest /api/orders/:id/contact endpoint saved ISO date strings.
+  if(typeof entry==='string'&&legacyTimestamp.test(entry))return {type:'contact',channel:'phone',intent:'contact',at:entry,legacy:true};
   if(!entry||typeof entry!=='object'||Array.isArray(entry))return null;
   const type=clean(entry.type).toLowerCase(),channel=clean(entry.channel||entry.kind).toLowerCase();
   const rawIntent=clean(entry.intent).toLowerCase();
@@ -29,11 +32,12 @@ function evidence(entry){
   return {...entry,type:'contact',channel:channel||'phone',intent};
 }
 const identity=entry=>{
-  const id=clean(entry.eventId||entry.event_id||entry.contactEventId);
-  if(id)return 'id:'+id;
   const at=clean(entry.at||entry.createdAt||entry.created_at||entry.timestamp);
-  if(!at)return '';
-  return 'stamp:'+JSON.stringify([at,clean(entry.channel),clean(entry.intent),clean(entry.byUserId||entry.userId||entry.byName||entry.by||'')]);
+  // Legacy log rows were timestamp strings, while the same event in history
+  // contained the employee name: match their shared timestamp and intent.
+  if(at)return 'stamp:'+JSON.stringify([at,clean(entry.channel),clean(entry.intent)]);
+  const id=clean(entry.eventId||entry.event_id||entry.contactEventId);
+  return id?'id:'+id:'';
 };
 export function recoverOrderContacts(rawLog,rawHistory){
   const log=parseContactArray(rawLog).map(evidence).filter(Boolean);
