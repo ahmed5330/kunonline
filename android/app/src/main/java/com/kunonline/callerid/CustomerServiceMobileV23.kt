@@ -42,6 +42,14 @@ internal fun v23VisibleOrderRef(ref: String, source: String): String =
     if (ref.startsWith("easyorders:", true) || ref.startsWith("sheet:easyorders:", true) ||
         source.contains("easy", true) || ref.length > 28) "" else ref
 
+/** Complete product identity on the list card: model + saved color/size/options. */
+internal fun v23ProductCardSummary(product: String, productNote: String): String {
+    val name = product.trim()
+    val options = productNote.trim()
+    if (options.isBlank() || name.contains(options, ignoreCase = true)) return name.ifBlank { "منتج بدون اسم" }
+    return listOf(name, options).filter { it.isNotBlank() }.joinToString(" — ")
+}
+
 internal fun v23CanEditShipping(awb: String, state: String): Boolean =
     awb.isBlank() && state.lowercase() !in setOf("shipping","in_shipping","shipped",
         "signed","collected","delivered","returned","cancelled","completed")
@@ -577,13 +585,46 @@ private fun V23CustomerServiceCard(
                 }
             }
 
-            if (order.product.isNotBlank()) {
+            if (order.product.isNotBlank() || order.productNote.isNotBlank()) {
                 Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Icon(Icons.Outlined.Inbox, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Icon(Icons.Outlined.Inbox, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            "المنتج • الموديل • اللون / المقاس",
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            v23ProductCardSummary(order.product, order.productNote),
+                            fontWeight = FontWeight.SemiBold,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Text(
+                            "الكمية: ${order.qty}",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+            if (order.date.isNotBlank() || order.awb.isNotBlank()) {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    if (order.date.isNotBlank()) Text("تاريخ الطلب: ${order.date.take(10)}",
+                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (order.awb.isNotBlank()) Text("البوليصة: ${order.awb}",
+                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            if (order.customerNote.isNotBlank()) {
+                Surface(
+                    color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = .6f),
+                    shape = MaterialTheme.shapes.small
+                ) {
                     Text(
-                        "${order.product} × ${order.qty}",
-                        modifier = Modifier.weight(1f),
-                        style = MaterialTheme.typography.bodyMedium
+                        "ملاحظة العميل: ${order.customerNote}",
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                        style = MaterialTheme.typography.bodySmall
                     )
                 }
             }
@@ -618,7 +659,7 @@ private fun V23CustomerServiceCard(
                     shape = MaterialTheme.shapes.small
                 ) {
                     Text(
-                        "مكالمات مرصودة: ${order.contactCount}",
+                        "مرات التواصل: ${order.contactCount}",
                         modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
                         fontWeight = FontWeight.Bold,
                         style = MaterialTheme.typography.labelMedium
@@ -712,7 +753,7 @@ private fun V23OrderDetailDialog(
                 V23DetailRow("المتجر", order.storeName)
                 V23DetailRow("المحافظة", order.gov)
                 V23DetailRow("العنوان", order.address)
-                V23DetailRow("المنتج", order.product)
+                V23DetailRow("المنتج والموديل واللون", v23ProductCardSummary(order.product, order.productNote))
                 if (order.productNote.isNotBlank()) V23DetailRow("اختيار/لون/مقاس", order.productNote)
                 V23DetailRow("الكمية", order.qty.toString())
                 V23DetailRow("سعر الوحدة", v23Money(order.unitPrice))
@@ -721,7 +762,7 @@ private fun V23OrderDetailDialog(
                 V23DetailRow("التاريخ", order.date)
                 v23LastOrderEdit(order.history)?.let { V23DetailRow("آخر تعديل", v23OrderEditLabel(it)) }
                 V23DetailRow("الحالة", labels[order.state] ?: v23StateLabel(order.state))
-                V23DetailRow("المكالمات التي رصدها الهاتف", order.contactCount.toString())
+                V23DetailRow("مرات التواصل المسجلة", order.contactCount.toString())
                 if (order.customerNote.isNotBlank()) V23DetailRow("ملاحظة العميل", order.customerNote)
                 if (order.latestInternalNote.isNotBlank()) V23DetailRow("آخر ملاحظة داخلية", order.latestInternalNote)
                 if (order.stockBatchName.isNotBlank()) V23DetailRow("دفعة المخزون", order.stockBatchName)
