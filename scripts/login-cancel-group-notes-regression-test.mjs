@@ -12,7 +12,7 @@ const collab=read('public/v2/modules-v117-team-collaboration.js');
 const html=read('public/v2/index.html');
 for(const p of ['public/v2/performance-core-v52.js','public/v2/modules-v31-customer-service.js','public/v2/modules-v117-team-collaboration.js'])new Function(read(p));
 let loggedIn=false,identityCalls=0,loginCalls=0;
-const headers={get:()=>''},json=async()=>({role:loggedIn?'support':null}),clone(){return this};
+
 const response=()=>({ok:true,status:200,headers,json:async()=>({role:loggedIn?'support':null}),clone(){return response()}});
 const window={fetch:async(input,init={})=>{
  const url=new URL(typeof input==='string'?input:input.url,'https://app.kun-online.com');
