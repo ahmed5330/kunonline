@@ -50,6 +50,19 @@ internal fun v23ProductCardSummary(product: String, productNote: String): String
     return listOf(name, options).filter { it.isNotBlank() }.joinToString(" — ")
 }
 
+internal fun v23ProductLines(product: String, productNote: String, qty: Int, lines: JSONArray): List<String> {
+    val values = buildList {
+        for (i in 0 until lines.length()) {
+            val item = lines.optJSONObject(i) ?: continue
+            val name = item.optString("name")
+            val variant = item.optString("variant")
+            val quantity = item.optInt("qty", 1).coerceAtLeast(1)
+            add("${v23ProductCardSummary(name, variant)} × $quantity")
+        }
+    }
+    return if (values.isNotEmpty()) values else listOf("${v23ProductCardSummary(product, productNote)} × ${qty.coerceAtLeast(1)}")
+}
+
 internal fun v23CanEditShipping(awb: String, state: String): Boolean =
     awb.isBlank() && state.lowercase() !in setOf("shipping","in_shipping","shipped",
         "signed","collected","delivered","returned","cancelled","completed")
@@ -595,13 +608,15 @@ private fun V23CustomerServiceCard(
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.primary
                         )
+                        v23ProductLines(order.product, order.productNote, order.qty, order.productLines).forEach { line ->
+                            Text(
+                                line,
+                                fontWeight = FontWeight.SemiBold,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
                         Text(
-                            v23ProductCardSummary(order.product, order.productNote),
-                            fontWeight = FontWeight.SemiBold,
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                        Text(
-                            "الكمية: ${order.qty}",
+                            "إجمالي القطع: ${order.qty}",
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -753,7 +768,7 @@ private fun V23OrderDetailDialog(
                 V23DetailRow("المتجر", order.storeName)
                 V23DetailRow("المحافظة", order.gov)
                 V23DetailRow("العنوان", order.address)
-                V23DetailRow("المنتج والموديل واللون", v23ProductCardSummary(order.product, order.productNote))
+                V23DetailRow("المنتجات والموديل واللون", v23ProductLines(order.product, order.productNote, order.qty, order.productLines).joinToString("\\n"))
                 if (order.productNote.isNotBlank()) V23DetailRow("اختيار/لون/مقاس", order.productNote)
                 V23DetailRow("الكمية", order.qty.toString())
                 V23DetailRow("سعر الوحدة", v23Money(order.unitPrice))
