@@ -74,7 +74,12 @@ class CallerCardActivity : Activity() {
                     runOnUiThread {
                         Toast.makeText(this, result.message, Toast.LENGTH_LONG).show()
                         if (result.ok) { dialog.dismiss(); finish() }
-                        else confirm.isEnabled = true
+                        else {
+                            // Keep the typed reason in place. Show the actual server
+                            // rejection inside the dialog rather than losing it in a toast.
+                            dialog.setMessage("تعذر إلغاء الطلب: ${result.message}\nسبب الإلغاء لن يُفقد، صحّح المشكلة واضغط تأكيد مجددًا.")
+                            confirm.isEnabled = true
+                        }
                     }
                 }
             }
