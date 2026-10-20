@@ -10,7 +10,7 @@ const mobile=read('android/app/src/main/java/com/kunonline/callerid/CallerCardAc
 const cs=read('public/v2/modules-v31-customer-service.js');
 const collab=read('public/v2/modules-v117-team-collaboration.js');
 const html=read('public/v2/index.html');
-for(const p of ['public/v2/performance-core-v52.js','public/v2/modules-v31-customer-service.js','public/v2/modules-v117-team-collaboration.js','src/production-customer-service.js','src/collaboration-order-board-notes.js']){const t=read(p);new Function(t.replace(/^import .*;\s*$/gm,''));}
+for(const p of ['public/v2/performance-core-v52.js','public/v2/modules-v31-customer-service.js','public/v2/modules-v117-team-collaboration.js'])new Function(read(p));
 let loggedIn=false,identityCalls=0,loginCalls=0;
 const headers={get:()=>''},json=async()=>({role:loggedIn?'support':null}),clone(){return this};
 const response=()=>({ok:true,status:200,headers,json:async()=>({role:loggedIn?'support':null}),clone(){return response()}});
