@@ -1,5 +1,6 @@
 import {requirePermission,resolveTenant} from './access-control.js';
 import {listMyStores} from './store-scope.js';
+import {recoverOrderContacts} from './customer-contact-evidence.js';
 
 const ALLOWED_ROLES=new Set(['admin','client','ops','support']);
 const BOARD_STATES=['pending','no_answer','confirmed','preparing','shipped'];
@@ -59,7 +60,7 @@ async function processDueDeferred(env,clientId,access){
   return results.length;
 }
 function mapOrder(row,today){
-  const history=parseArr(row.history),contactLog=parseArr(row.contact_log);
+  const history=parseArr(row.history),contacts=recoverOrderContacts(row.contact_log,history),contactLog=contacts.contactLog;
   const canonicalNote=clean(row.canonical_latest_note);
   if(canonicalNote&&!history.some(item=>(row.canonical_latest_note_id&&item?.noteId===row.canonical_latest_note_id)||(item?.type==='internal_note'&&clean(item.note)===canonicalNote&&String(item.at||'')===String(row.canonical_latest_note_at||'')))){
     const by=clean(row.canonical_latest_note_by)||'user';
@@ -74,7 +75,7 @@ function mapOrder(row,today){
     product:row.product||'',productId:row.product_id||null,variantId:row.variant_id||null,productNote:row.product_note||'',qty:Number(row.qty||1),unitPrice:Number(row.unit_price||0),total:Number(row.total||0),
     source:row.source||'',customerNote:row.note||'',awb:row.awb||'',state:row.state||'pending',checkpoint:row.checkpoint||'',deferUntil:row.defer_until||null,
     stockBatchId:row.stock_batch_id||null,stockBatchName:row.stock_batch_name||null,stockAllocationStatus:row.stock_allocation_status||null,
-    contactLog,contactCount:contactLog.length,history,internalNotes:notes,latestInternalNote:canonicalNote||notes.at(-1)?.note||'',returnedFromDeferredToday:returnedToday
+    contactLog,contactCount:contacts.contactCount,screenedContactCount:contacts.screenedContactCount,recoveredContactCount:contacts.recoveredContactCount,contactCountSource:contacts.contactCountSource,history,internalNotes:notes,latestInternalNote:canonicalNote||notes.at(-1)?.note||'',returnedFromDeferredToday:returnedToday
   };
 }
 
