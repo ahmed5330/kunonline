@@ -667,6 +667,29 @@ private fun V23CustomerServiceCard(
                 }
             }
 
+            if (order.groupNotes.length() > 0) {
+                Surface(
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .5f),
+                    shape = MaterialTheme.shapes.small
+                ) {
+                    Column(
+                        Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text("ملاحظات جروب الفريق المرتبطة بالأوردر",
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.labelMedium)
+                        for (i in 0 until minOf(order.groupNotes.length(), 3)) {
+                            val item = order.groupNotes.optJSONObject(i) ?: continue
+                            Text(
+                                "${item.optString("byName", "عضو الفريق")}: ${item.optString("note")}",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    }
+                }
+            }
+
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(
                     color = MaterialTheme.colorScheme.secondaryContainer,
