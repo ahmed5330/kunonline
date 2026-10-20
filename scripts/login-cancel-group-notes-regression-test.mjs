@@ -44,10 +44,11 @@ assert.match(cs,/class="cs-group-notes"/,'group notes appear on order card');
 assert.match(collab,/appendGroupNote/,'saved linked message updates service card');
 assert.match(html,/performance-core-v52\.js\?v=52\.2/,'auth cache is cache-busted');
 let selectedSQL='',args=[];
-const db={prepare(sql){selectedSQL=sql;return {bind(...binds){args=binds;return {async all(){return {results:[
-{id:'m-1',order_id:'order-a',store_id:'store-a',body:'اتصل بالعميل غدًا',sender_name:'رندا',created_at:'2026-10-20T12:00:00Z'},
-{id:'m-2',order_id:'order-a',store_id:'store-b',body:'from other store',sender_name:'X',created_at:'2026-10-20T12:01:00Z'}
-]}}};}}}}};
+const rows=[
+  {id:'m-1',order_id:'order-a',store_id:'store-a',body:'اتصل بالعميل غدًا',sender_name:'رندا',created_at:'2026-10-20T12:00:00Z'},
+  {id:'m-2',order_id:'order-a',store_id:'store-b',body:'from other store',sender_name:'X',created_at:'2026-10-20T12:01:00Z'}
+];
+const db={prepare(sql){selectedSQL=sql;return {bind(...values){args=values;return {all:async()=>({results:rows})};}};}};
 const orders=[{id:'order-a',storeId:'store-a'},{id:'order-b',storeId:'store-b'}];
 await attachVisibleGroupOrderNotes({DB:db},'client-a',{uid:'member-a'},orders);
 assert.match(selectedSQL,/JOIN collab_members member/,'only group members can see linked notes');
