@@ -768,7 +768,7 @@ private fun V23OrderDetailDialog(
                 V23DetailRow("المتجر", order.storeName)
                 V23DetailRow("المحافظة", order.gov)
                 V23DetailRow("العنوان", order.address)
-                V23DetailRow("المنتجات والموديل واللون", v23ProductLines(order.product, order.productNote, order.qty, order.productLines).joinToString("\\n"))
+                V23DetailRow("المنتجات والموديل واللون", v23ProductLines(order.product, order.productNote, order.qty, order.productLines).joinToString("\n"))
                 if (order.productNote.isNotBlank()) V23DetailRow("اختيار/لون/مقاس", order.productNote)
                 V23DetailRow("الكمية", order.qty.toString())
                 V23DetailRow("سعر الوحدة", v23Money(order.unitPrice))
