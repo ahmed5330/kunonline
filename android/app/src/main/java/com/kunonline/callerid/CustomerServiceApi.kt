@@ -47,7 +47,8 @@ data class CsOrderUi(
     val returnedFromDeferredToday: Boolean,
     val history: JSONArray,
     val contactLog: JSONArray,
-    val raw: JSONObject
+    val raw: JSONObject,
+    val productLines: JSONArray = JSONArray()
 )
 
 data class CustomerServiceBoardResult(
@@ -316,6 +317,7 @@ object KunCustomerServiceApi {
         returnedFromDeferredToday = o.optBoolean("returnedFromDeferredToday", false),
         history = o.optJSONArray("history") ?: JSONArray(),
         contactLog = o.optJSONArray("contactLog") ?: JSONArray(),
-        raw = o
+        raw = o,
+        productLines = o.optJSONArray("productLines") ?: JSONArray()
     )
 }
