@@ -48,7 +48,8 @@ data class CsOrderUi(
     val history: JSONArray,
     val contactLog: JSONArray,
     val raw: JSONObject,
-    val productLines: JSONArray = JSONArray()
+    val productLines: JSONArray = JSONArray(),
+    val groupNotes: JSONArray = JSONArray()
 )
 
 data class CustomerServiceBoardResult(
@@ -318,6 +319,7 @@ object KunCustomerServiceApi {
         history = o.optJSONArray("history") ?: JSONArray(),
         contactLog = o.optJSONArray("contactLog") ?: JSONArray(),
         raw = o,
-        productLines = o.optJSONArray("productLines") ?: JSONArray()
+        productLines = o.optJSONArray("productLines") ?: JSONArray(),
+        groupNotes = o.optJSONArray("groupNotes") ?: JSONArray()
     )
 }

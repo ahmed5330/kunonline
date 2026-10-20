@@ -77,3 +77,10 @@
 .cs-page .cs-notes-history{margin-top:9px;display:grid;gap:7px;max-height:230px;overflow:auto}
 .cs-page .cs-note-history-line{display:grid;gap:2px;padding:8px;border:1px solid #e3ecf4;border-radius:8px;white-space:pre-wrap;overflow-wrap:anywhere}
 .cs-page .cs-note-history-line small{opacity:.7}
+
+/* Internal group messages explicitly linked to an order. */
+.cs-page .cs-group-notes{border:1px solid #b8d5f1;background:#f1f7ff;border-radius:11px;padding:10px 11px;line-height:1.65;font-size:12px;overflow-wrap:anywhere}
+.cs-page .cs-group-notes summary{font-weight:850;color:#1a568a;cursor:pointer}
+.cs-page .cs-group-notes-list{display:grid;gap:7px;margin-top:8px;max-height:280px;overflow:auto}
+.cs-page .cs-group-note{display:grid;gap:2px;border:1px solid #dae8f6;background:white;border-radius:8px;padding:8px 9px;white-space:pre-wrap}
+.cs-page .cs-group-note small{font-size:10px;color:#597792}

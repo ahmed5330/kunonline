@@ -1,5 +1,6 @@
 import {listMyStores,resolveStoreScope} from './store-scope.js';
 import {recoverOrderContacts} from './customer-contact-evidence.js';
+import {attachVisibleGroupOrderNotes} from './collaboration-order-board-notes.js';
 const ORDER_COLS='id, client_id, store_id, ref, customer_id, date, name, phone, gov, address, product, product_id, variant_id, product_note, unit_price, qty, total, discount_amount, coupon_code, product_cost, shipping_cost, other_cost, source, note, awb, state, checkpoint, signed_at, collected_at, defer_until, refund_amount, return_type, restocked, contact_log, history, created_at, contact_claim_user_id, contact_claim_name, contact_claimed_at';
 const STATES=['pending','no_answer','confirmed','preparing','shipped','signed','collected','returned','cancelled','deferred'];
 const BOARD_STATES=['pending','no_answer','confirmed','preparing','shipped','deferred'];
@@ -172,6 +173,7 @@ async function board(env,me,clientId,storeId,dateRange={key:'all',from:'',to:''}
   const names=new Map(stores.map(x=>[String(x.id),x.name||'']));
   const orders=results.map(row=>({...mapOrder(row),storeName:names.get(String(row.store_id||''))||'بدون متجر محدد',storeCode:stores.find(x=>String(x.id)===String(row.store_id||''))?.code||''}));
   await attachOrderProductLines(env,clientId,orders);
+  await attachVisibleGroupOrderNotes(env,clientId,me,orders);
   return {ok:true,clientId,role:me.role,allStores:access.allStores,stores,selectedStoreId:selected||null,today:cairoToday(),period:dateRange.key,periodFrom:dateRange.from||null,periodTo:dateRange.to||null,stages:BOARD_STATES.map(id=>({id,label:LABELS[id]})),stateLabels:LABELS,orders,truncated:results.length>=5000};
 }
 async function details(env,clientId,orderId){
@@ -218,7 +220,7 @@ export async function handleProductionCustomerService({request,env,ctx,delegate}
     if(action==='history'&&method==='GET')return json({ok:true,order:mapOrder(row)});
     if(action==='state'&&method==='PATCH'){
       const state=clean(body.state);if(!STATES.includes(state))return json({error:'حالة الأوردر غير معروفة',code:'ORDER_STATE_INVALID'},400);
-      if(state==='cancelled'&&!['pending','new','no_answer','confirmed','preparing','deferred'].includes(String(row.state||'')))
+      if(state==='cancelled'&&!['pending','new','contacting','no_answer','confirmed','preparing','deferred'].includes(String(row.state||'')))
         return json({error:'لا يمكن إلغاء الطلب بهذه الطريقة بعد الشحن أو التحصيل؛ استخدم إجراءات الشحن والمرتجعات',code:'ORDER_CANCEL_NOT_ALLOWED'},409);
       const claimOwner=clean(row.contact_claim_user_id),actorId=clean(me.uid||me.id||me.email||`${me.role}:${me.clientId||''}`);
       if(claimOwner&&!['confirmed','no_answer','cancelled'].includes(state))return json({error:'الطلب محجوز في جاري التواصل حتى تم التأكيد أو العميل لا يرد أو العميل لغى',code:'CONTACT_DECISION_REQUIRED'},409);
