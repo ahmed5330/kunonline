@@ -140,3 +140,19 @@ test('review invitation links appear only after administrator authentication',as
   assert.match(adminPage,/storePhoto:null/);
   assert.match(adminPage,/photoInput\.type='file'/);
 });
+
+test('reviews admin HTML has one parseable script and no JavaScript leaking into page text',async()=>{
+  const {readFileSync}=await import('node:fs');
+  const {Script}=await import('node:vm');
+  const html=readFileSync(new URL('../public/reviews-admin.html',import.meta.url),'utf8');
+  const scripts=[...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi)];
+  assert.equal(scripts.length,1,'Exactly one complete inline script must be present');
+  assert.equal((html.match(/<script(?:\s|>)/gi)||[]).length,1,'No nested or duplicate scripts');
+  assert.equal((html.match(/<\/script>/gi)||[]).length,1,'No unpaired script closing tags');
+  assert.match(html,/<\/body><\/html>\s*$/i,'Nothing may follow HTML closure');
+  const visibleMarkup=html.replace(scripts[0][0],'').replace(/<style>[\s\S]*?<\/style>/gi,'');
+  assert.doesNotMatch(visibleMarkup,/async function resizeStorePhoto|async function send\(|function render\(|function jpegPhoto\(/);
+  assert.doesNotThrow(()=>new Script(scripts[0][1],{filename:'reviews-admin.html'}),'Inline admin JS must parse');
+  assert.match(scripts[0][1],/function jpegPhoto\(value\)/);
+  assert.match(scripts[0][1],/async function resizeStorePhoto\(file\)/);
+});
