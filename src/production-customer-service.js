@@ -1,4 +1,5 @@
 import {listMyStores,resolveStoreScope} from './store-scope.js';
+import {recoverOrderContacts} from './customer-contact-evidence.js';
 const ORDER_COLS='id, client_id, store_id, ref, customer_id, date, name, phone, gov, address, product, product_id, variant_id, product_note, unit_price, qty, total, discount_amount, coupon_code, product_cost, shipping_cost, other_cost, source, note, awb, state, checkpoint, signed_at, collected_at, defer_until, refund_amount, return_type, restocked, contact_log, history, created_at, contact_claim_user_id, contact_claim_name, contact_claimed_at';
 const STATES=['pending','no_answer','confirmed','preparing','shipped','signed','collected','returned','cancelled','deferred'];
 const BOARD_STATES=['pending','no_answer','confirmed','preparing','shipped','deferred'];
@@ -83,9 +84,9 @@ function clientIdFor(me,url,body={}){
   return requested;
 }
 function mapOrder(r){
-  const history=arr(r.history),contactLog=arr(r.contact_log);
+  const history=arr(r.history),contacts=recoverOrderContacts(r.contact_log,history),contactLog=contacts.contactLog;
   const notes=history.filter(x=>x?.type==='internal_note'&&clean(x.note));
-  return {id:r.id,clientId:r.client_id,storeId:r.store_id||'',storeName:'',storeCode:'',ref:r.ref||r.id,date:r.date||r.created_at||'',createdAt:r.created_at||'',name:r.name||'',phone:r.phone||'',gov:r.gov||'',address:r.address||'',product:r.product||'',productId:r.product_id||'',variantId:r.variant_id||'',productNote:r.product_note||'',qty:n(r.qty)||1,unitPrice:n(r.unit_price),total:n(r.total),source:r.source||'',customerNote:r.note||'',awb:r.awb||'',state:r.state||'pending',checkpoint:r.checkpoint||LABELS[r.state]||'',deferUntil:r.defer_until||'',stockBatchId:'',stockBatchName:'',stockAllocationStatus:'',contactLog,contactCount:contactLog.filter(e=>e?.channel==='phone'&&e?.intent==='screened').length,history,internalNotes:notes,latestInternalNote:notes.at(-1)?.note||'',returnedFromDeferredToday:false};
+  return {id:r.id,clientId:r.client_id,storeId:r.store_id||'',storeName:'',storeCode:'',ref:r.ref||r.id,date:r.date||r.created_at||'',createdAt:r.created_at||'',name:r.name||'',phone:r.phone||'',gov:r.gov||'',address:r.address||'',product:r.product||'',productId:r.product_id||'',variantId:r.variant_id||'',productNote:r.product_note||'',qty:n(r.qty)||1,unitPrice:n(r.unit_price),total:n(r.total),source:r.source||'',customerNote:r.note||'',awb:r.awb||'',state:r.state||'pending',checkpoint:r.checkpoint||LABELS[r.state]||'',deferUntil:r.defer_until||'',stockBatchId:'',stockBatchName:'',stockAllocationStatus:'',contactLog,contactCount:contacts.contactCount,screenedContactCount:contacts.screenedContactCount,recoveredContactCount:contacts.recoveredContactCount,contactCountSource:contacts.contactCountSource,history,internalNotes:notes,latestInternalNote:notes.at(-1)?.note||'',returnedFromDeferredToday:false};
 }
 async function getOrder(env,clientId,orderId){
   const row=await env.DB.prepare(`SELECT ${ORDER_COLS} FROM orders WHERE id=? AND client_id=? LIMIT 1`).bind(orderId,clientId).first();
@@ -203,7 +204,7 @@ export async function handleProductionCustomerService({request,env,ctx,delegate}
           .bind('OEV-'+crypto.randomUUID(),clientId,row.store_id||null,orderId,'state_changed',me.uid||me.id||null,actor,'android-customer-service',
             JSON.stringify({from:row.state,to:state,reason:state==='cancelled'?cancelReason:null,byName:actor}),stamp)
       ]);
-      return json({ok:true,state,checkpoint:LABELS[state]||state,deferUntil,history,contactCount:arr(row.contact_log).length});
+      return json({ok:true,state,checkpoint:LABELS[state]||state,deferUntil,history,contactCount:recoverOrderContacts(row.contact_log,history).contactCount});
     }
     if(action==='contact'&&method==='POST'){
       const channel=['phone','whatsapp','messenger','instagram','tiktok'].includes(clean(body.channel).toLowerCase())?clean(body.channel).toLowerCase():'phone',
@@ -213,7 +214,8 @@ export async function handleProductionCustomerService({request,env,ctx,delegate}
           direction:intent==='screened'&&['incoming','outgoing'].includes(clean(body.direction))
             ?clean(body.direction):null};
       const saved=await appendEvent(env,row,event,{contact:true});return json({ok:true,entry:event,history:saved.history,log:saved.contactLog,
-        contactCount:saved.contactLog.filter(e=>e?.channel==='phone'&&e?.intent==='screened').length});
+        contactCount:recoverOrderContacts(saved.contactLog,saved.history).contactCount,
+        screenedContactCount:saved.contactLog.filter(e=>e?.channel==='phone'&&e?.intent==='screened').length});
     }
     if(action==='notes'&&method==='POST'){
       const note=clean(body.note);if(!note)return json({error:'اكتب الملاحظة أولًا',code:'NOTE_REQUIRED'},400);if(note.length>2000)return json({error:'الملاحظة طويلة جدًا',code:'NOTE_TOO_LONG'},400);

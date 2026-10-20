@@ -1,5 +1,6 @@
 import {requirePermission,resolveTenant} from './access-control.js';
 import {listMyStores} from './store-scope.js';
+import {recoverOrderContacts} from './customer-contact-evidence.js';
 import {prepareOrderStockTransition,rollbackOrderStockTransition,finalizeOrderStockTransition} from './inventory-fifo.js';
 
 const ALLOWED_ROLES=new Set(['admin','client','ops','support']);
@@ -102,14 +103,14 @@ function canonicalNoteEvent(row){
 function mapOrder(row,today){
   const history=parseArr(row.history),canonical=canonicalNoteEvent(row);
   if(canonical&&!history.some(x=>(canonical.noteId&&x?.noteId===canonical.noteId)||(x?.type==='internal_note'&&clean(x.note)===canonical.note&&String(x.at||'')===String(canonical.at||''))))history.push(canonical);
-  const contactLog=parseArr(row.contact_log),meta=historyMeta(history),returnedToday=Boolean(meta.returnedAt&&cairoDate(new Date(meta.returnedAt))===today&&row.state==='pending');
+  const contacts=recoverOrderContacts(row.contact_log,history),contactLog=contacts.contactLog,meta=historyMeta(history),returnedToday=Boolean(meta.returnedAt&&cairoDate(new Date(meta.returnedAt))===today&&row.state==='pending');
   return {
     id:row.id,clientId:row.client_id,storeId:row.store_id||null,storeName:row.store_name||'بدون متجر محدد',storeCode:row.store_code||null,
     ref:row.ref||null,date:row.date||row.created_at||null,createdAt:row.created_at||null,name:row.name||'',phone:row.phone||'',gov:row.gov||'',address:row.address||'',
     product:row.product||'',productId:row.product_id||null,variantId:row.variant_id||null,productNote:row.product_note||'',qty:Number(row.qty||1),unitPrice:Number(row.unit_price||0),total:Number(row.total||0),
     source:row.source||'',customerNote:row.note||'',awb:row.awb||'',state:row.state||'pending',checkpoint:row.checkpoint||'',deferUntil:row.defer_until||null,
     stockBatchId:row.stock_batch_id||null,stockBatchName:row.stock_batch_name||null,stockAllocationStatus:row.stock_allocation_status||null,
-    contactLog,contactCount:contactLog.length,history,internalNotes:meta.internalNotes,latestInternalNote:canonical?.note||meta.latestInternalNote,returnedFromDeferredToday:returnedToday
+    contactLog,contactCount:contacts.contactCount,screenedContactCount:contacts.screenedContactCount,recoveredContactCount:contacts.recoveredContactCount,contactCountSource:contacts.contactCountSource,history,internalNotes:meta.internalNotes,latestInternalNote:canonical?.note||meta.latestInternalNote,returnedFromDeferredToday:returnedToday
   };
 }
 export async function board(request,env,me){
@@ -155,7 +156,8 @@ async function saveInteraction(env,row,me,{note=null,channel='phone',intent='con
   const saved=await env.DB.prepare('SELECT history,contact_log FROM orders WHERE id=? AND client_id=?').bind(orderId,clientId).first();
   if(!saved)fail('الأوردر غير موجود',404,'ORDER_NOT_FOUND');
   const history=parseArr(saved.history),log=parseArr(saved.contact_log);
-  return {ok:true,entry,note:note!==null?entry:undefined,history,log,contactCount:log.length,todayCount:log.filter(x=>x.at&&cairoDate(new Date(x.at))===cairoDate()).length};
+  const contacts=recoverOrderContacts(log,history);
+  return {ok:true,entry,note:note!==null?entry:undefined,history,log:contacts.contactLog,contactCount:contacts.contactCount,todayCount:contacts.contactLog.filter(x=>x.at&&cairoDate(new Date(x.at))===cairoDate()).length};
 }
 async function decorateLatestType(env,clientId,orderId,type,me,metadata={}){
   const row=await env.DB.prepare('SELECT history FROM orders WHERE id=? AND client_id=?').bind(orderId,clientId).first();if(!row)return;
@@ -196,8 +198,8 @@ export async function handleAction(request,env,me,delegate){
     if(state==='deferred'&&!/^\d{4}-\d{2}-\d{2}$/.test(clean(body.deferUntil)))fail('حدد تاريخ التأجيل',400,'DEFER_DATE_REQUIRED');
     if(state==='no_answer'){
       await env.DB.prepare('UPDATE orders SET state=?,checkpoint=?,defer_until=NULL WHERE id=? AND client_id=?').bind(state,STATE_LABELS.no_answer,orderId,clientId).run();
-      const history=await decorateLatestState(env,clientId,orderId,state,me,{contactCount:parseArr(row.contact_log).length});
-      return {data:{ok:true,state,checkpoint:STATE_LABELS.no_answer,deferUntil:null,history,contactCount:parseArr(row.contact_log).length},status:200};
+      const history=await decorateLatestState(env,clientId,orderId,state,me,{contactCount:recoverOrderContacts(row.contact_log,parseArr(row.history)).contactCount});
+      return {data:{ok:true,state,checkpoint:STATE_LABELS.no_answer,deferUntil:null,history,contactCount:recoverOrderContacts(row.contact_log,history).contactCount},status:200};
     }
     let stockTransition={kind:'none'};
     try{
