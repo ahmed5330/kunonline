@@ -28,7 +28,12 @@
   }
   async function copyValue(value){
     try{await navigator.clipboard.writeText(String(value??''));window.showToast?.('تم النسخ');}
-    catch{window.showToast?.('تعذر النسخ');}
+    catch{
+      const field=document.createElement('textarea');field.value=String(value??'');field.setAttribute('readonly','');
+      field.style.cssText='position:fixed;top:-9999px;opacity:0';document.body.appendChild(field);field.select();
+      const done=typeof document.execCommand==='function'&&document.execCommand('copy');field.remove();
+      window.showToast?.(done?'تم النسخ':'تعذر النسخ');
+    }
   }
   function delivery(c={}){
     const delivered=Number(c.deliveredOrders)||0,returned=Number(c.returnedOrders)||0,cancelled=Number(c.cancelledOrders)||0,finished=delivered+returned+cancelled;
@@ -57,7 +62,7 @@
     const c=d.customer||{},a=d.address||{},o=d.order||{},s=d.summary||{},items=Array.isArray(d.items)?d.items:[];
     const address=[a.government,a.city,a.area,a.street,a.address].map(val).filter(Boolean).filter((x,i,arr)=>arr.indexOf(x)===i).join(' — ');
     const date=val(o.date).slice(0,10),total=`${money(s.total)} جنيه`,qty=`الكمية ${Number(s.quantity)||items.reduce((x,it)=>x+(Number(it.quantity)||1),0)||1}`;
-    return `<div class="cs-rich-card"><div class="cs-rich-top">${o.storeName?`<span class="cs-rich-store">${esc(o.storeName)}</span>`:''}${row(c.name,{name:true})}${row(c.phone,{copy:true,label:'نسخ رقم الهاتف'})}${row(c.email,{copy:true,label:'نسخ البريد الإلكتروني'})}${row(address,{copy:true,label:'نسخ العنوان بالكامل'})}${delivery(c)}</div><div class="cs-rich-divider"></div><div class="cs-rich-products">${items.length?items.map(product).join(''):'<div class="cs-rich-loading">لا توجد تفاصيل منتجات إضافية.</div>'}</div><div class="cs-rich-meta"><span class="cs-rich-meta-item cs-rich-order-total">${total}</span><span class="cs-rich-meta-item">${qty}</span>${date?`<span class="cs-rich-meta-item">${esc(date)}</span>`:''}</div></div>`;
+    return `<div class="cs-rich-card"><div class="cs-rich-top">${o.storeName?`<span class="cs-rich-store">${esc(o.storeName)}</span>`:''}${row(c.name,{name:true,copy:true,label:'نسخ اسم العميل'})}${row(c.phone,{copy:true,label:'نسخ رقم الهاتف'})}${row(c.email,{copy:true,label:'نسخ البريد الإلكتروني'})}${row(address,{copy:true,label:'نسخ العنوان بالكامل'})}${delivery(c)}</div><div class="cs-rich-divider"></div><div class="cs-rich-products">${items.length?items.map(product).join(''):'<div class="cs-rich-loading">لا توجد تفاصيل منتجات إضافية.</div>'}</div><div class="cs-rich-meta"><span class="cs-rich-meta-item cs-rich-order-total">${total}</span><span class="cs-rich-meta-item">${qty}</span>${date?`<span class="cs-rich-meta-item">${esc(date)}</span>`:''}</div></div>`;
   }
   function basicFallback(card){
     if(card.dataset.csRichFallback==='1')return;card.dataset.csRichFallback='1';
@@ -94,5 +99,5 @@
   function scheduleScan(){if(!active()||scanQueued)return;scanQueued=true;queueMicrotask(()=>{scanQueued=false;scan();});}
   function boot(){ensureStyle();document.addEventListener('click',e=>{const b=e.target.closest?.('[data-cs-copy-value]');if(b){e.preventDefault();e.stopImmediatePropagation();copyValue(b.dataset.csCopyValue||'');return;}if(e.target.closest?.('.nav button[data-view="customer-service"]'))setTimeout(scheduleScan,0);},true);const root=document.getElementById('root')||document.body;new MutationObserver(scheduleScan).observe(root,{childList:true,subtree:true});scheduleScan();}
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
-  window.KunCustomerServiceRichCards={scan:scheduleScan,refresh,cache,version:'42.3'};
+  window.KunCustomerServiceRichCards={scan:scheduleScan,refresh,cache,version:'42.4'};
 })();
