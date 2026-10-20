@@ -105,6 +105,39 @@ async function appendEvent(env,row,event,{contact=false}={}){
   const saved=await env.DB.prepare('SELECT history,contact_log FROM orders WHERE id=? AND client_id=?').bind(row.id,row.client_id).first();
   return {history:arr(saved?.history),contactLog:arr(saved?.contact_log)};
 }
+/**
+ * Return the actual saved line items on Android's order card, including
+ * model/variant/color. Resolve in batches (not one HTTP request per card).
+ * An import without order_items still uses the order's product/product_note.
+ * This is read-only and never rewrites original order data.
+ */
+async function attachOrderProductLines(env,clientId,orders){
+  const byId=new Map(orders.map(order=>[String(order.id),order]));
+  const ids=[...byId.keys()];
+  const size=750;
+  for(let start=0;start<ids.length;start+=size){
+    const slice=ids.slice(start,start+size);
+    try{
+      const {results=[]}=await env.DB.prepare(`SELECT order_id,product_name,variant_label,qty
+        FROM order_items WHERE client_id=? AND order_id IN (SELECT value FROM json_each(?))
+        AND (TRIM(COALESCE(product_name,''))<>'' OR TRIM(COALESCE(variant_label,''))<>'')
+        ORDER BY created_at,id`).bind(clientId,JSON.stringify(slice)).all();
+      for(const item of results){
+        const o=byId.get(String(item.order_id));if(!o)continue;
+        if(!o.productLines)o.productLines=[];
+        if(o.productLines.length>=30)continue;
+        o.productLines.push({name:clean(item.product_name)||o.product||'منتج',variant:clean(item.variant_label),qty:Math.max(1,Math.floor(n(item.qty)||1))});
+      }
+    }catch(error){
+      // Some legacy tenants may lack order_items. A missing optional detail
+      // must never block orders, notes, or staff calls from loading.
+      console.warn('Optional order-item card enrichment skipped:',error?.message||error);
+      break;
+    }
+  }
+  return orders;
+}
+
 async function board(env,me,clientId,storeId,dateRange={key:'all',from:'',to:''},requestedState=''){
   // Operational board is intentionally multi-store: a support agent may work
   // in several assigned stores without selecting one before seeing orders.
@@ -138,6 +171,7 @@ async function board(env,me,clientId,storeId,dateRange={key:'all',from:'',to:''}
     ${dateExpr} DESC,created_at DESC LIMIT 5000`).bind(...binds).all();
   const names=new Map(stores.map(x=>[String(x.id),x.name||'']));
   const orders=results.map(row=>({...mapOrder(row),storeName:names.get(String(row.store_id||''))||'بدون متجر محدد',storeCode:stores.find(x=>String(x.id)===String(row.store_id||''))?.code||''}));
+  await attachOrderProductLines(env,clientId,orders);
   return {ok:true,clientId,role:me.role,allStores:access.allStores,stores,selectedStoreId:selected||null,today:cairoToday(),period:dateRange.key,periodFrom:dateRange.from||null,periodTo:dateRange.to||null,stages:BOARD_STATES.map(id=>({id,label:LABELS[id]})),stateLabels:LABELS,orders,truncated:results.length>=5000};
 }
 async function details(env,clientId,orderId){
