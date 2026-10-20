@@ -12,9 +12,9 @@ android {
         applicationId = "com.kunonline.callerid.stable"
         minSdk = 29
         targetSdk = 35
-        // v2.9.12: reviewed 36-screen native UX foundation, preserved store and call workflows.
-        versionCode = 143
-        versionName = "2.9.12"
+        // v2.9.13: customer-service cards show product model/color and all essential order information.
+        versionCode = 144
+        versionName = "2.9.13"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
