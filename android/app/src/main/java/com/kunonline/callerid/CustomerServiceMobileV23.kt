@@ -598,7 +598,7 @@ private fun V23CustomerServiceCard(
                 }
             }
 
-            if (order.product.isNotBlank() || order.productNote.isNotBlank()) {
+            if (order.product.isNotBlank() || order.productNote.isNotBlank() || order.productLines.length() > 0) {
                 Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Icon(Icons.Outlined.Inbox, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
