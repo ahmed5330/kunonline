@@ -42,10 +42,12 @@
     const notes=allInternalNotes(o),last=notes.at(-1),latest=String(o.latestInternalNote||last?.note||'').trim();
     const previous=latest&&last?.note===latest?notes.slice(0,-1):notes;
     const details=previous.length?`<details class="cs-notes-more"><summary>عرض الملاحظات السابقة (${previous.length})</summary><div class="cs-notes-history">${previous.slice().reverse().map(n=>`<div class="cs-note-history-line"><span>${esc(n.note)}</span>${n.byName||n.by?`<small>${esc(n.byName||n.by)}</small>`:''}</div>`).join('')}</div></details>`:'';
-    return `${o.customerNote?`<div class="cs-customer-note"><strong>📝 ملاحظة العميل:</strong> <span>${esc(o.customerNote)}</span></div>`:''}${latest?`<div class="cs-internal-latest"><b>📋 ملاحظة خدمة العملاء:</b> <span>${esc(latest)}</span></div>`:''}${details}`;
+    const groupNotes=Array.isArray(o.groupNotes)?o.groupNotes:[];
+    const linkedGroup=groupNotes.length?`<details class="cs-group-notes" open><summary>ملاحظات جروب الفريق المرتبطة بالأوردر (${groupNotes.length})</summary><div class="cs-group-notes-list">${groupNotes.map(entry=>`<div class="cs-group-note"><span>${esc(entry.note)}</span><small>${esc(entry.byName||'عضو الفريق')}${entry.at?' · '+esc(String(entry.at).slice(0,16).replace('T',' ')):''}</small></div>`).join('')}</div></details>`:'';
+    return `${o.customerNote?`<div class="cs-customer-note"><strong>📝 ملاحظة العميل:</strong> <span>${esc(o.customerNote)}</span></div>`:''}${latest?`<div class="cs-internal-latest"><b>📋 ملاحظة خدمة العملاء:</b> <span>${esc(latest)}</span></div>`:''}${linkedGroup}${details}`;
   }
   function updateNotes(card,o){
-    const fresh=notePreview(o),current=[...card.children].filter(el=>el.matches?.('.cs-customer-note,.cs-internal-latest,.cs-notes-more'));
+    const fresh=notePreview(o),current=[...card.children].filter(el=>el.matches?.('.cs-customer-note,.cs-internal-latest,.cs-notes-more,.cs-group-notes'));
     const first=card.querySelector('.cs-contact-attempts,.cs-note-field');
     for(const node of current)node.remove();
     if(!fresh)return;
@@ -160,6 +162,18 @@
       updateContactUi(card,o.contactCount);
       updateNotes(card,o);
     });
+  }
+  // Only messages explicitly linked to this order are shown. Scope and group
+  // membership are checked on the server; the event is a UI hint, not a trust boundary.
+  function appendGroupNote(orderId,note){
+    const o=(data?.orders||[]).find(x=>String(x.id)===String(orderId));
+    if(!o||!note||String(note.storeId||'')!==String(o.storeId||''))return false;
+    if(!Array.isArray(o.groupNotes))o.groupNotes=[];
+    if(o.groupNotes.some(x=>String(x.id)===String(note.id)))return false;
+    o.groupNotes.unshift({id:note.id,note:note.note,byName:note.byName,at:note.at});
+    o.groupNotes=o.groupNotes.slice(0,5);
+    cardsForOrder(orderId).forEach(card=>updateNotes(card,o));
+    return true;
   }
   function patchCardBasics(card,o){
     const name=card.querySelector('.cs-customer-name'),phone=card.querySelector('.cs-phone'),address=card.querySelector('.cs-address'),product=card.querySelector('.cs-product'),productNote=card.querySelector('.cs-product-note'),meta=card.querySelector('.cs-order-meta'),awb=card.querySelector('[data-cs-awb]'),call=card.querySelector('[data-cs-action="call"]'),select=card.querySelector('[data-cs-state]');
@@ -276,5 +290,5 @@
     try{me=await api('/api/me');if(!ALLOWED.has(me.role)){nav.remove();return;}nav.classList.add('is-visible');nav.onclick=()=>{document.querySelectorAll('.nav button').forEach(b=>b.classList.toggle('active',b===nav));renderWorkspace();};}catch{nav.remove();}
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
-  window.KunCustomerServiceV31={render:renderWorkspace,patchOrder,moveState:(orderId,state,deferUntil)=>{const o=(data?.orders||[]).find(item=>String(item.id)===String(orderId));return o?moveOrderState(o,state,deferUntil):false;},updateContactCount:(orderId,count)=>{const o=(data?.orders||[]).find(item=>String(item.id)===String(orderId));if(o)o.contactCount=Number(count)||0;cardsForOrder(orderId).forEach(card=>updateContactUi(card,count));},version:'31.2'};
+  window.KunCustomerServiceV31={render:renderWorkspace,patchOrder,appendGroupNote,moveState:(orderId,state,deferUntil)=>{const o=(data?.orders||[]).find(item=>String(item.id)===String(orderId));return o?moveOrderState(o,state,deferUntil):false;},updateContactCount:(orderId,count)=>{const o=(data?.orders||[]).find(item=>String(item.id)===String(orderId));if(o)o.contactCount=Number(count)||0;cardsForOrder(orderId).forEach(card=>updateContactUi(card,count));},version:'31.2'};
 })();
