@@ -13,7 +13,7 @@ const nativeApi=read('android/app/src/main/java/com/kunonline/callerid/CustomerS
 const html=read('public/v2/index.html');
 assert.match(cards,/aria-label="نسخ اسم العميل"/,'Base card offers accessible name copy');
 assert.match(cards,/data-cs-copy-value/,'Base card copies saved name');
-assert.match(rich,/row\(c.name,\{name:true,copy:true,label:'نسخ اسم العميل'\}\)/,'Rich loaded card must keep name copy');
+assert.match(rich,/row\(c.name(?:\|\|fallbackName)?,\{name:true,copy:true,label:'نسخ اسم العميل'\}\)/,'Rich loaded card must keep name copy even without customer record');
 assert.match(rich,/document\.execCommand\('copy'\)/,'Clipboard fallback');
 assert.match(cards,/function notePreview\(/,'Customer and internal note preview');
 assert.match(cards,/class="cs-customer-note"/,'Customer-provided note visible');
