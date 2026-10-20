@@ -51,7 +51,7 @@ async function injectV2Ui(request,response){
   // The public HTML now ships the live claim and period scripts directly.
   // Check each module independently: using one claim marker to skip the entire
   // V38 injection would silently remove unrelated operational features in Preview.
-  const scripts=[...V2_UI_SCRIPTS.matchAll(/<script\\b[^>]*src="([^"]+)"[^>]*><\\/script>/g)]
+  const scripts=[...V2_UI_SCRIPTS.matchAll(/<script\b[^>]*src="([^"]+)"[^>]*><\/script>/g)]
     .filter(match=>!html.includes(match[1].split('?')[0]))
     .map(match=>match[0]).join('');
   const body=scripts?(html.includes('</body>')?html.replace('</body>',`${scripts}</body>`):html+scripts):html;
