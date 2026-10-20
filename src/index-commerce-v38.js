@@ -48,8 +48,13 @@ async function injectV2Ui(request,response){
   let html=await response.text();
   html=html.replaceAll(LIVE_TEAM_ASSET_FROM,LIVE_TEAM_ASSET_TO);
   const headers=new Headers(response.headers);headers.delete('content-length');headers.set('Cache-Control','no-store');
-  if(html.includes('data-kun-customer-service-claim="1"'))return new Response(html,{status:response.status,statusText:response.statusText,headers});
-  const body=html.includes('</body>')?html.replace('</body>',`${V2_UI_SCRIPTS}</body>`):html+V2_UI_SCRIPTS;
+  // The public HTML now ships the live claim and period scripts directly.
+  // Check each module independently: using one claim marker to skip the entire
+  // V38 injection would silently remove unrelated operational features in Preview.
+  const scripts=[...V2_UI_SCRIPTS.matchAll(/<script\b[^>]*src="([^"]+)"[^>]*><\/script>/g)]
+    .filter(match=>!html.includes(match[1].split('?')[0]))
+    .map(match=>match[0]).join('');
+  const body=scripts?(html.includes('</body>')?html.replace('</body>',`${scripts}</body>`):html+scripts):html;
   return new Response(body,{status:response.status,statusText:response.statusText,headers});
 }
 

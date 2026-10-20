@@ -49,7 +49,46 @@ async function appendOrderEvent(env,row,type,metadata={},source='jt-print-workfl
   return entry;
 }
 
-function latestEvent(row,type){return [...parseArray(row?.history)].reverse().find(event=>event?.type===type)||null;}
+
+function activePrintHistory(row){
+  const history=parseArray(row?.history);
+  const lastReset=history.findLastIndex(event=>event?.type==='jt_print_voided');
+  return lastReset<0?history:history.slice(lastReset+1);
+}
+function activeEvent(row,type){return [...activePrintHistory(row)].reverse().find(event=>event?.type===type)||null;}
+
+async function voidWaybill(request,env,me,orderId){
+  if(!['admin','client','ops'].includes(me?.role))throw Object.assign(new Error('حذف البوليصة متاح للإدارة أو مدير المتجر فقط'),{status:403,code:'JT_WAYBILL_VOID_ROLE_DENIED'});
+  const body=await request.clone().json().catch(()=>({}));
+  const clientId=clientIdFor(me,request,body);
+  const row=await assertOrderAccess(env,me,clientId,orderId,{write:true});
+  if(body.storeId&&String(body.storeId)!==String(row.store_id||''))throw Object.assign(new Error('المتجر لا يطابق الأوردر'),{status:409,code:'STORE_MISMATCH'});
+  await assertNoPartialShipments(env,clientId,orderId);
+  if(['signed','collected','returned','cancelled'].includes(row.state))throw Object.assign(new Error('لا يمكن حذف بوليصة طلب تم تسليمه أو إرجاعه أو إلغاؤه'),{status:409,code:'JT_WAYBILL_VOID_STATE_DENIED'});
+  const queued=activeEvent(row,'jt_print_queued'),created=activeEvent(row,'jt_shipment_created');
+  const printed=activeEvent(row,'jt_label_printed');
+  const awb=clean(row.awb,160);
+  if(!queued&&!created&&!printed&&!awb)throw Object.assign(new Error('لا توجد بوليصة أو تجهيز شحن نشط للحذف'),{status:409,code:'JT_WAYBILL_NOT_FOUND'});
+  const reason=clean(body.reason,500);
+  if(reason.length<8)throw Object.assign(new Error('اكتب سبب حذف البوليصة (٨ حروف على الأقل)'),{status:400,code:'JT_WAYBILL_VOID_REASON_REQUIRED'});
+  const externalCreated=Boolean(awb||created?.awb);
+  const txlogisticId=clean(created?.txlogisticId||queued?.txlogisticId||row.ref||row.id,160);
+  if(externalCreated){
+    // Never silently erase a live J&T shipment from the system: cancel it with
+    // the carrier first, and preserve a full audit trail.
+    await jtWarehouseCarrier.cancel(env,clientId,txlogisticId,reason);
+  }
+  const state=row.state==='shipped'?'confirmed':row.state;
+  // CAS guard prevents a concurrent waybill change from being overwritten.
+  const result=await env.DB.prepare("UPDATE orders SET awb=NULL,state=?,checkpoint=? WHERE id=? AND client_id=? AND COALESCE(awb,'')=? AND state=?")
+    .bind(state,state==='confirmed'?'تم التأكيد':clean(row.checkpoint,200),row.id,clientId,awb,row.state).run();
+  if((result.meta?.changes??0)!==1)throw Object.assign(new Error('تم تغيير الشحنة بالتزامن. حدّث القسم قبل المحاولة مرة أخرى، وتحقق من نتيجة إلغاء J&T.'),{status:409,code:'JT_WAYBILL_VOID_CONCURRENT_CHANGE'});
+  const by=clean(me.name||me.email||me.role,200),byUserId=me.uid||me.id||null;
+  await appendOrderEvent(env,row,'jt_print_voided',{previousAwb:awb,txlogisticId,reason,externalCancelled:externalCreated,previousState:row.state,state,byName:by,byUserId},'printing');
+  return json({ok:true,orderId:row.id,state,waybillVoided:true,externalCancelled:externalCreated,previousAwb:awb,message:externalCreated?'تم إلغاء شحنة J&T وحذف البوليصة من قائمة الطباعة مع الحفاظ على سجلها.':'تم حذف تجهيز البوليصة من قسم الطباعة مع الحفاظ على السجل.'});
+}
+
+function latestEvent(row,type){return activeEvent(row,type);}
 function shipmentEvent(row){return latestEvent(row,'jt_shipment_created');}
 function queueEvent(row){return latestEvent(row,'jt_print_queued');}
 
@@ -105,7 +144,7 @@ async function createAndPrint(request,env,ctx,delegate,me,orderId){
   // validation is enforced at packing completion and warehouse handover.
   const {row:connection,secrets,cred}=await connectionFor(env,clientId);if(!cred.enterpriseReady)throw Object.assign(new Error('إصدار البوليصة الرسمية يحتاج Business Info الخاصة بحساب J&T'),{status:409,code:'JT_BUSINESS_CREDENTIALS_MISSING',enterpriseCredentialsRequired:true});
   let createdEvent=shipmentEvent(row),awb=clean(row.awb||createdEvent?.awb,160),sortingCode=clean(createdEvent?.sortingCode,160),txlogisticId=clean(createdEvent?.txlogisticId,160),shipmentCreatedNow=false;
-  const alreadyPrinted=parseArray(row.history).some(event=>event?.type==='jt_label_printed'&&(!awb||clean(event?.awb,160)===awb));
+  const alreadyPrinted=activePrintHistory(row).some(event=>event?.type==='jt_label_printed'&&(!awb||clean(event?.awb,160)===awb));
   if(alreadyPrinted)throw Object.assign(new Error('تم إرسال وطباعة هذه البوليصة بالفعل. استخدم إعادة الطباعة فقط عند الحاجة.'),{status:409,code:'JT_LABEL_ALREADY_PRINTED'});
   if(!awb){
     const queued=queueEvent(row);if(!queued?.shipment)throw Object.assign(new Error('بيانات الشحنة غير مجهزة. جهّز بيانات J&T من قسم الطباعة أولًا.'),{status:409,code:'JT_PRINT_QUEUE_DATA_MISSING'});
@@ -131,6 +170,7 @@ async function createAndPrint(request,env,ctx,delegate,me,orderId){
 
 export async function handleJtPrintWorkflowV2({request,env,ctx,delegate,me}){
   const url=new URL(request.url),method=request.method.toUpperCase();
+  const voidRoute=url.pathname.match(/^\/api\/jt\/shipments\/([^/]+)\/void$/);if(voidRoute&&method==='POST')return voidWaybill(request,env,me,decodeURIComponent(voidRoute[1]));
   const print=url.pathname.match(/^\/api\/jt\/shipments\/([^/]+)\/print$/);if(print&&method==='POST')return createAndPrint(request,env,ctx,delegate,me,decodeURIComponent(print[1]));
   const shipment=url.pathname.match(/^\/api\/jt\/shipments\/([^/]+)$/);if(shipment&&method==='POST')return queueForPrint(request,env,ctx,delegate,me,decodeURIComponent(shipment[1]));
   return null;

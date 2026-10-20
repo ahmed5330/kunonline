@@ -27,7 +27,8 @@ function clientIdFor(me,url){
   if(!requested)throw Object.assign(new Error('تعذر تحديد حساب المتجر'),{status:400,code:'CLIENT_ID_REQUIRED'});
   return requested;
 }
-function latest(history,type){return [...history].reverse().find(x=>x?.type===type)||null;}
+function activeHistory(history){const index=history.findLastIndex(e=>e?.type==='jt_print_voided');return index<0?history:history.slice(index+1);}
+function latest(history,type){return [...activeHistory(history)].reverse().find(x=>x?.type===type)||null;}
 function mapOrder(r){
   const history=arr(r.history),queued=latest(history,'jt_print_queued'),created=latest(history,'jt_shipment_created'),printed=latest(history,'jt_label_printed');
   const shipment=(created?.shipment&&typeof created.shipment==='object'?created.shipment:queued?.shipment&&typeof queued.shipment==='object'?queued.shipment:{})||{};
@@ -40,7 +41,7 @@ function mapOrder(r){
     area:shipment.area||r.jnt_area||'',districtCode:shipment.districtCode||r.jnt_district_code||r.jnt_area_code||'',
     street:shipment.street||r.jnt_street||r.address||'',countryCode:r.jnt_country_code||r.jnt_address_country_code||'100000',
     weight:Number(shipment.weight||r.parcel_weight||1)||1,history,
-    queuedForPrint:Boolean(queued),shipmentCreated:Boolean(r.awb||created?.awb),printed:Boolean(printed?.official!==false&&printed?.awb),
+    queuedForPrint:Boolean(queued),shipmentCreated:Boolean(r.awb||created?.awb),printed:Boolean(r.awb&&printed?.official!==false&&printed?.awb),
     sortingCode:clean(created?.sortingCode||printed?.sortingCode,160),txlogisticId:clean(created?.txlogisticId||queued?.txlogisticId,160)
   };
 }
@@ -67,8 +68,8 @@ export async function handleProductionPrintingQueue({request,env,ctx,delegate}){
     // Use identical filters for counters, pages and the legacy Android response.
     // A delayed marketplace callback may leave an already-printed order with a
     // stale "confirmed" state; never let it vanish from both printing tabs.
-    const printedFilter="o.state IN ('confirmed','preparing','shipped') AND instr(COALESCE(o.history,''),'jt_label_printed')>0";
-    const waitingFilter="((o.state IN ('confirmed','preparing') OR (o.state='shipped' AND instr(COALESCE(o.history,''),'jt_print_queued')>0)) AND instr(COALESCE(o.history,''),'jt_label_printed')=0)";
+    const printedFilter="o.state IN ('confirmed','preparing','shipped') AND length(trim(COALESCE(o.awb,'')))>0 AND instr(COALESCE(o.history,''),'jt_label_printed')>0";
+    const waitingFilter=`((o.state IN ('confirmed','preparing') OR (o.state='shipped' AND instr(COALESCE(o.history,''),'jt_print_queued')>0)) AND NOT (${printedFilter}))`;
     const counts=await env.DB.prepare(`SELECT
       COALESCE(SUM(CASE WHEN ${waitingFilter} THEN 1 ELSE 0 END),0) waiting,
       COALESCE(SUM(CASE WHEN ${printedFilter} THEN 1 ELSE 0 END),0) printed

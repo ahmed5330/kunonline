@@ -35,7 +35,7 @@
   }
   function orderCard(o,{deferred=false}={}){
     const attempts=Number(o.contactCount)||0;
-    return `<article class="cs-order ${o.returnedFromDeferredToday?'cs-returned-today':''}" data-cs-order="${esc(o.id)}">
+    return `<article class="cs-order ${o.returnedFromDeferredToday?'cs-returned-today':''}" data-cs-order="${esc(o.id)}" data-cs-order-date="${esc(String(o.date||o.createdAt||'').slice(0,10))}" draggable="true" aria-label="أوردر ${esc(o.name||'بدون اسم')} — قابل للسحب إلى عمود آخر">
       ${o.returnedFromDeferredToday?'<div class="cs-return-banner">⏰ رجع من التأجيل اليوم — يحتاج متابعة</div>':''}
       <div class="cs-order-head"><div><div class="cs-customer">${esc(o.name||'بدون اسم')}</div><div class="cs-phone">${esc(o.phone||'بدون رقم')}</div></div><span class="cs-store" title="${esc(o.storeName||'')}">${esc(o.storeName||'بدون متجر')}</span></div>
       <div class="cs-address">📍 ${esc([o.gov,o.address].filter(Boolean).join(' — ')||'لا يوجد عنوان')}</div>
@@ -62,18 +62,44 @@
     const deferred=(data?.orders||[]).filter(o=>o.state==='deferred').sort((a,b)=>String(a.deferUntil||'').localeCompare(String(b.deferUntil||'')));
     return `<div class="cs-page"><div class="page-head"><div><div class="title">خدمة العملاء</div><div class="sub">إدارة التأكيد والتجهيز والشحن لكل المتاجر المعيّنة لك، مع تسجيل كل إجراء باسم عضو الفريق.</div></div><div class="spacer"></div><button class="btn soft" id="csReload">تحديث</button></div>
       ${storeTabs()}
+      <div class="cs-board-hint" aria-label="تعليمات تغيير الحالة">اسحب كارت الأوردر للعمود المطلوب لتغيير حالته تلقائيًا، أو استخدم قائمة الحالة داخل الكارت. تأكيد الأوردر يفتح مراجعة المخزون؛ الشحن يتم من قسم الطباعة.</div>
+      ${data?.truncated?'<div class="cs-board-warning" role="status">النتائج كثيرة؛ يتم عرض أول ٥٠٠٠ أوردر فقط. حدّد متجرًا أو فترة أضيق لعرض باقي الطلبات.</div>':''}
       <div class="cs-board">${STAGES.map(column).join('')}</div>
       <section class="cs-deferred"><div class="cs-deferred-head"><div class="title">الطلبات المؤجلة</div><span class="cs-count">${deferred.length}</span></div><div class="cs-deferred-grid">${deferred.length?deferred.map(o=>orderCard(o,{deferred:true})).join(''):'<div class="cs-empty">لا توجد طلبات مؤجلة حاليًا</div>'}</div></section>
     </div>`;
   }
   async function renderWorkspace(){
-    if(loading){renderQueued=true;return;}loading=true;const r=root();if(!r){loading=false;return;}r.innerHTML='<div class="cs-loading">جارٍ تحميل أوردرات خدمة العملاء...</div>';
+    if(loading){renderQueued=true;return;}
+    loading=true;
+    const r=root();if(!r){loading=false;return;}
+    const oldPage=r.querySelector('.cs-page');
+    if(oldPage){oldPage.classList.add('cs-board-updating');oldPage.setAttribute('aria-busy','true');}
+    else r.innerHTML='<div class="cs-loading" role="status" aria-live="polite">جارٍ تحميل أوردرات خدمة العملاء...</div>';
     try{
       if(!clientId)clientId=await (window.kunClientId?.()||Promise.resolve(me?.clientId||''));
       if(!clientId)throw new Error('تعذر تحديد حساب المتجر');
-      data=await api(urlFor('/api/customer-service'));
+      const boardUrl=new URL(urlFor('/api/customer-service'),location.origin);
+      const range=window.KunOperationalDateContactV109?.customerServiceRange?.();
+      if(range?.from&&range?.to){
+        boardUrl.searchParams.set('periodFrom',range.from);
+        boardUrl.searchParams.set('periodTo',range.to);
+      }
+      const incoming=await api(boardUrl.pathname+boardUrl.search);
+      if(!r.isConnected||document.querySelector('.nav button.active[data-view]')?.dataset.view!=='customer-service')return;
+      data=incoming;
       r.innerHTML=workspace();bindWorkspace();
-    }catch(e){r.innerHTML=`<div class="card empty"><h3>تعذر فتح خدمة العملاء</h3><p>${esc(e.message)}</p></div>`;}finally{loading=false;if(renderQueued){renderQueued=false;queueMicrotask(()=>renderWorkspace());}}
+    }catch(e){
+      if(oldPage?.isConnected){
+        oldPage.classList.remove('cs-board-updating');
+        oldPage.removeAttribute('aria-busy');
+        let message=oldPage.querySelector('.cs-board-warning.cs-fetch-error');
+        if(!message){message=document.createElement('div');message.className='cs-board-warning cs-fetch-error';message.setAttribute('role','alert');oldPage.querySelector('.cs-board')?.before(message);}
+        if(message)message.textContent='تعذر تحديث البيانات: '+e.message+' — ما زالت النتائج السابقة ظاهرة.';
+      }else r.innerHTML=`<div class="card empty"><h3>تعذر فتح خدمة العملاء</h3><p>${esc(e.message)}</p><button class="btn soft" onclick="window.KunCustomerServiceV31?.render?.()">إعادة المحاولة</button></div>`;
+    }finally{
+      loading=false;
+      if(renderQueued){renderQueued=false;queueMicrotask(()=>renderWorkspace());}
+    }
   }
   function bindWorkspace(){
     document.getElementById('csReload')?.addEventListener('click',renderWorkspace);
