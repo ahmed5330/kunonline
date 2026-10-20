@@ -57,3 +57,8 @@
 @media(max-width:800px){.cs-page .cs-board{grid-template-columns:repeat(5,minmax(290px,1fr))!important}.cs-page .cs-column{scroll-snap-align:start}.cs-page .cs-board-hint{font-size:11px}.cs-page .cs-store-tabs{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:thin}}
 @media(max-width:430px){.cs-page .cs-board{grid-template-columns:repeat(5,minmax(85vw,1fr))!important;gap:8px!important}.cs-page .cs-order-head{display:flex!important}.cs-page .cs-note-field{grid-template-columns:minmax(0,1fr) auto!important}.print79-void-dialog{padding:17px}.cs-page .cs-actions{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
 @media(prefers-reduced-motion:reduce){.cs-page .cs-order{transition:none}}
+
+/* Claim ownership adds a sixth stage without wrapping or displacing the shipping column. */
+.cs-page .cs-board:has(.cs-column[data-state="contacting"]){grid-template-columns:repeat(6,minmax(275px,1fr))!important}
+.cs-page .cs-column[data-state="contacting"]{border-top:4px solid #d99747}
+@media(max-width:430px){.cs-page .cs-board:has(.cs-column[data-state="contacting"]){grid-template-columns:repeat(6,minmax(85vw,1fr))!important}}
