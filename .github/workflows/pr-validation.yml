@@ -38,6 +38,8 @@ jobs:
           node scripts/mobile-global-order-search-test.mjs
           node --check src/mobile-store-options.js
           node scripts/mobile-store-options-test.mjs
+      - name: Customer Service board, periods and J&T void regression
+        run: node scripts/customer-service-board-print-void-test.mjs
       - name: Run full contract and unit suite
         run: npm test
       - name: Inventory workspace UX browser regression
