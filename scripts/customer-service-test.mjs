@@ -43,7 +43,7 @@ must(ui.includes('https://wa.me/')&&ui.includes('/whatsapp-log')&&ui.includes('t
 for(const template of ['رسالة تأكيد الطلب','رسالة التجهيز والتغليف','رسالة جاري الشحن','رسالة طلب تقييم','متابعة الطلب المؤجل','متابعة عميل لا يرد'])must(ui.includes(template),`WhatsApp state template missing: ${template}`);
 
 must(backend.includes("type:'internal_note'")&&backend.includes('latestInternalNote'),'Internal Customer Service notes must be stored separately in order history');
-must(ui.includes('ملاحظة العميل عند الطلب')&&ui.includes('ملاحظة داخلية لخدمة العملاء'),'Customer note and internal staff note must be visibly separate');
+must((ui.includes('ملاحظة العميل عند الطلب')||ui.includes('ملاحظة العميل:'))&&ui.includes('ملاحظة داخلية لخدمة العملاء')&&ui.includes('cs-internal-latest'),'Customer note and internal staff note must be visibly separate');
 must(backend.includes('byName')&&backend.includes('byUserId')&&ui.includes('بواسطة:'),'Order history must identify the team member who performed actions');
 must(ui.includes('سجل الأوردر')&&ui.includes('/history'),'Every card must expose the auditable order timeline');
 must(ui.includes('رقم البوليصة')&&backend.includes("type:'awb'"),'Customer Service must allow AWB recording with audit history');
@@ -73,7 +73,7 @@ must(confirmUi.includes('productId')&&confirmUi.includes('variantId')&&confirmUi
 must(index.includes('/v2/modules-v55-customer-search-fifo.js?v=55.3'),'v55.3 name/phone shipping/search/date module must be loaded by v2');
 must(index.includes('/v2/modules-v58-confirm-inventory.js?v=58.1'),'v58.1 no-reload inventory confirmation module must be loaded by v2');
 must(index.includes('/v2/modules-v75-customer-service-interactions-v753.js'),'v75.3 unified interaction counter must be loaded from its cache-safe asset path by v2');
-must(index.includes('/v2/modules-v42-customer-service-rich-cards.js?v=42.3')&&index.includes('/v2/modules-v44-customer-service-order-edit.js?v=44.1'),'In-place Customer Service detail/edit assets must be cache-busted');
+must((index.includes('/v2/modules-v42-customer-service-rich-cards.js?v=42.3')||index.includes('/v2/modules-v42-customer-service-rich-cards.js?v=42.4'))&&index.includes('/v2/modules-v44-customer-service-order-edit.js?v=44.1'),'In-place Customer Service detail/edit assets must be cache-busted');
 must(index.indexOf('modules-v55-customer-search-fifo.js')<index.indexOf('modules-v39-stock-batches.js'),'State-only shipping capture must load before the legacy stock chooser interceptor');
 must(index.indexOf('modules-v58-confirm-inventory.js')>index.indexOf('modules-v57-section-reload.js'),'Confirmation module must load after the operational UI modules');
 
