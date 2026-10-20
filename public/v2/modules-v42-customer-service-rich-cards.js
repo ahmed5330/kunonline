@@ -28,7 +28,12 @@
   }
   async function copyValue(value){
     try{await navigator.clipboard.writeText(String(value??''));window.showToast?.('تم النسخ');}
-    catch{window.showToast?.('تعذر النسخ');}
+    catch{
+      const field=document.createElement('textarea');field.value=String(value??'');field.setAttribute('readonly','');
+      field.style.cssText='position:fixed;top:-9999px;opacity:0';document.body.appendChild(field);field.select();
+      const done=typeof document.execCommand==='function'&&document.execCommand('copy');field.remove();
+      window.showToast?.(done?'تم النسخ':'تعذر النسخ');
+    }
   }
   function delivery(c={}){
     const delivered=Number(c.deliveredOrders)||0,returned=Number(c.returnedOrders)||0,cancelled=Number(c.cancelledOrders)||0,finished=delivered+returned+cancelled;
@@ -53,11 +58,11 @@
     const image=present(item.image)?`<img class="cs-rich-thumb" src="${esc(item.image)}" alt="${esc(item.name||'المنتج')}" loading="lazy">`:'<div class="cs-rich-thumb cs-rich-thumb-fallback">📦</div>';
     return `<div class="cs-rich-product">${image}<div class="cs-rich-product-main"><div class="cs-rich-product-line"><div class="cs-rich-product-name">${esc(item.name||'منتج')}</div></div>${choice?`<div class="cs-rich-product-line"><div class="cs-rich-option">${esc(choice)}</div></div>`:''}<div class="cs-rich-product-price"><span class="cs-rich-qty">${qty}x ${money(price)} </span><span class="cs-rich-line-total">${money(total)} </span></div></div></div>`;
   }
-  function renderDetails(d={}){
+  function renderDetails(d={},fallbackName=''){
     const c=d.customer||{},a=d.address||{},o=d.order||{},s=d.summary||{},items=Array.isArray(d.items)?d.items:[];
     const address=[a.government,a.city,a.area,a.street,a.address].map(val).filter(Boolean).filter((x,i,arr)=>arr.indexOf(x)===i).join(' — ');
     const date=val(o.date).slice(0,10),total=`${money(s.total)} جنيه`,qty=`الكمية ${Number(s.quantity)||items.reduce((x,it)=>x+(Number(it.quantity)||1),0)||1}`;
-    return `<div class="cs-rich-card"><div class="cs-rich-top">${o.storeName?`<span class="cs-rich-store">${esc(o.storeName)}</span>`:''}${row(c.name,{name:true})}${row(c.phone,{copy:true,label:'نسخ رقم الهاتف'})}${row(c.email,{copy:true,label:'نسخ البريد الإلكتروني'})}${row(address,{copy:true,label:'نسخ العنوان بالكامل'})}${delivery(c)}</div><div class="cs-rich-divider"></div><div class="cs-rich-products">${items.length?items.map(product).join(''):'<div class="cs-rich-loading">لا توجد تفاصيل منتجات إضافية.</div>'}</div><div class="cs-rich-meta"><span class="cs-rich-meta-item cs-rich-order-total">${total}</span><span class="cs-rich-meta-item">${qty}</span>${date?`<span class="cs-rich-meta-item">${esc(date)}</span>`:''}</div></div>`;
+    return `<div class="cs-rich-card"><div class="cs-rich-top">${o.storeName?`<span class="cs-rich-store">${esc(o.storeName)}</span>`:''}${row(c.name||fallbackName,{name:true,copy:true,label:'نسخ اسم العميل'})}${row(c.phone,{copy:true,label:'نسخ رقم الهاتف'})}${row(c.email,{copy:true,label:'نسخ البريد الإلكتروني'})}${row(address,{copy:true,label:'نسخ العنوان بالكامل'})}${delivery(c)}</div><div class="cs-rich-divider"></div><div class="cs-rich-products">${items.length?items.map(product).join(''):'<div class="cs-rich-loading">لا توجد تفاصيل منتجات إضافية.</div>'}</div><div class="cs-rich-meta"><span class="cs-rich-meta-item cs-rich-order-total">${total}</span><span class="cs-rich-meta-item">${qty}</span>${date?`<span class="cs-rich-meta-item">${esc(date)}</span>`:''}</div></div>`;
   }
   function basicFallback(card){
     if(card.dataset.csRichFallback==='1')return;card.dataset.csRichFallback='1';
@@ -71,8 +76,8 @@
     const work=(async()=>{const cid=await clientId();if(!cid)throw new Error('تعذر تحديد الحساب');const r=await fetch(`/api/orders/${encodeURIComponent(orderId)}/details?clientId=${encodeURIComponent(cid)}`,{credentials:'include'}),d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||`HTTP ${r.status}`);cache.set(orderId,d);return d;})().finally(()=>pending.delete(orderId));pending.set(orderId,work);return work;
   }
   function placeDetails(card,details){
-    const existing=card.querySelector('.cs-rich-card');if(existing){existing.outerHTML=renderDetails(details);card.classList.add('cs-rich-loaded');return;}
-    card.querySelector('.cs-rich-loading')?.remove();const anchor=card.querySelector('.cs-customer-note,.cs-internal-latest,.cs-defer-chip,.cs-contact-attempts,.cs-field,.cs-actions'),box=document.createElement('div');box.innerHTML=renderDetails(details);const node=box.firstElementChild;if(anchor)card.insertBefore(node,anchor);else card.prepend(node);card.classList.add('cs-rich-loaded');card.dataset.csRichRequested='1';
+    const existing=card.querySelector('.cs-rich-card');if(existing){existing.outerHTML=renderDetails(details,card.querySelector('.cs-customer-name')?.textContent?.trim()||'');card.classList.add('cs-rich-loaded');return;}
+    card.querySelector('.cs-rich-loading')?.remove();const anchor=card.querySelector('.cs-customer-note,.cs-internal-latest,.cs-defer-chip,.cs-contact-attempts,.cs-field,.cs-actions'),box=document.createElement('div');box.innerHTML=renderDetails(details,card.querySelector('.cs-customer-name')?.textContent?.trim()||'');const node=box.firstElementChild;if(anchor)card.insertBefore(node,anchor);else card.prepend(node);card.classList.add('cs-rich-loaded');card.dataset.csRichRequested='1';
   }
   async function refresh(orderId){
     const id=String(orderId||'').trim();if(!id)return null;const details=await fetchDetails(id,{force:true});document.querySelectorAll('#root .cs-order[data-cs-order]').forEach(card=>{if(String(card.dataset.csOrder)===id)placeDetails(card,details);});return details;
@@ -82,7 +87,7 @@
     const orderId=card.dataset.csOrder;if(!orderId)return;
     const anchor=card.querySelector('.cs-customer-note,.cs-internal-latest,.cs-defer-chip,.cs-contact-attempts,.cs-field,.cs-actions');
     const box=document.createElement('div');box.className='cs-rich-loading';box.textContent='جارٍ تحميل بيانات العميل والمنتجات...';if(anchor)card.insertBefore(box,anchor);else card.appendChild(box);
-    try{const details=await fetchDetails(orderId);box.outerHTML=renderDetails(details);card.classList.add('cs-rich-loaded');}
+    try{const details=await fetchDetails(orderId);box.outerHTML=renderDetails(details,card.querySelector('.cs-customer-name')?.textContent?.trim()||'');card.classList.add('cs-rich-loaded');}
     catch{box.remove();basicFallback(card);}
   }
   function watchCard(card){
@@ -94,5 +99,5 @@
   function scheduleScan(){if(!active()||scanQueued)return;scanQueued=true;queueMicrotask(()=>{scanQueued=false;scan();});}
   function boot(){ensureStyle();document.addEventListener('click',e=>{const b=e.target.closest?.('[data-cs-copy-value]');if(b){e.preventDefault();e.stopImmediatePropagation();copyValue(b.dataset.csCopyValue||'');return;}if(e.target.closest?.('.nav button[data-view="customer-service"]'))setTimeout(scheduleScan,0);},true);const root=document.getElementById('root')||document.body;new MutationObserver(scheduleScan).observe(root,{childList:true,subtree:true});scheduleScan();}
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
-  window.KunCustomerServiceRichCards={scan:scheduleScan,refresh,cache,version:'42.3'};
+  window.KunCustomerServiceRichCards={scan:scheduleScan,refresh,cache,version:'42.4'};
 })();

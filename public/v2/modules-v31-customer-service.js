@@ -33,17 +33,36 @@
     const tabs=[{id:'',name:'كل المتاجر'},...(data?.stores||[])];
     return `<div class="cs-store-tabs" role="tablist" aria-label="المتاجر المسموحة">${tabs.map(s=>`<button class="cs-store-tab ${String(selectedStore)===String(s.id||'')?'active':''}" data-cs-store="${esc(s.id||'')}">${esc(s.name||s.id)}</button>`).join('')}</div>`;
   }
+
+  function allInternalNotes(o){
+    const notes=Array.isArray(o.internalNotes)?o.internalNotes:(o.history||[]).filter(h=>h?.type==='internal_note');
+    return notes.filter(h=>String(h?.note||'').trim());
+  }
+  function notePreview(o){
+    const notes=allInternalNotes(o),last=notes.at(-1),latest=String(o.latestInternalNote||last?.note||'').trim();
+    const previous=latest&&last?.note===latest?notes.slice(0,-1):notes;
+    const details=previous.length?`<details class="cs-notes-more"><summary>عرض الملاحظات السابقة (${previous.length})</summary><div class="cs-notes-history">${previous.slice().reverse().map(n=>`<div class="cs-note-history-line"><span>${esc(n.note)}</span>${n.byName||n.by?`<small>${esc(n.byName||n.by)}</small>`:''}</div>`).join('')}</div></details>`:'';
+    return `${o.customerNote?`<div class="cs-customer-note"><strong>📝 ملاحظة العميل:</strong> <span>${esc(o.customerNote)}</span></div>`:''}${latest?`<div class="cs-internal-latest"><b>📋 ملاحظة خدمة العملاء:</b> <span>${esc(latest)}</span></div>`:''}${details}`;
+  }
+  function updateNotes(card,o){
+    const fresh=notePreview(o),current=[...card.children].filter(el=>el.matches?.('.cs-customer-note,.cs-internal-latest,.cs-notes-more'));
+    const first=card.querySelector('.cs-contact-attempts,.cs-note-field');
+    for(const node of current)node.remove();
+    if(!fresh)return;
+    const fragment=document.createElement('div');fragment.innerHTML=fresh;
+    const nodes=[...fragment.children];
+    for(const node of nodes){if(first?.isConnected)first.before(node);else card.appendChild(node);}
+  }
   function orderCard(o,{deferred=false}={}){
     const attempts=Number(o.contactCount)||0;
     return `<article class="cs-order ${o.returnedFromDeferredToday?'cs-returned-today':''}" data-cs-order="${esc(o.id)}" data-cs-order-date="${esc(String(o.date||o.createdAt||'').slice(0,10))}" draggable="true" aria-label="أوردر ${esc(o.name||'بدون اسم')} — قابل للسحب إلى عمود آخر">
       ${o.returnedFromDeferredToday?'<div class="cs-return-banner">⏰ رجع من التأجيل اليوم — يحتاج متابعة</div>':''}
-      <div class="cs-order-head"><div><div class="cs-customer">${esc(o.name||'بدون اسم')}</div><div class="cs-phone">${esc(o.phone||'بدون رقم')}</div></div><span class="cs-store" title="${esc(o.storeName||'')}">${esc(o.storeName||'بدون متجر')}</span></div>
+      <div class="cs-order-head"><div><div class="cs-customer"><span class="cs-customer-name">${esc(o.name||'بدون اسم')}</span>${o.name?`<button type="button" class="cs-copy-btn cs-copy-name" data-cs-copy-value="${esc(o.name)}" title="نسخ اسم العميل" aria-label="نسخ اسم العميل">⧉</button>`:''}</div><div class="cs-phone">${esc(o.phone||'بدون رقم')}</div></div><span class="cs-store" title="${esc(o.storeName||'')}">${esc(o.storeName||'بدون متجر')}</span></div>
       <div class="cs-address">📍 ${esc([o.gov,o.address].filter(Boolean).join(' — ')||'لا يوجد عنوان')}</div>
       <div class="cs-product">${esc(o.product||'بدون منتج')}</div>
       ${o.productNote?`<div class="cs-product-note">${esc(o.productNote)}</div>`:''}
       <div class="cs-order-meta">${money(o.total)} جنيه · الكمية ${money(o.qty||1)} · ${esc(String(o.date||'').slice(0,10)||'بدون تاريخ')}</div>
-      ${o.customerNote?`<div class="cs-customer-note"><strong>ملاحظة العميل عند الطلب:</strong> ${esc(o.customerNote)}</div>`:''}
-      ${o.latestInternalNote?`<div class="cs-internal-latest"><b>آخر ملاحظة داخلية:</b> ${esc(o.latestInternalNote)}</div>`:''}
+      ${notePreview(o)}
       ${deferred&&o.deferUntil?`<div class="cs-defer-chip">⏰ مؤجل حتى ${esc(o.deferUntil)}</div>`:''}
       <div class="cs-contact-attempts" data-cs-contact-attempts><span>محاولات التواصل (مكالمة + تواصل)</span><b data-cs-contact-count>${attempts}</b></div>
       <div class="cs-field cs-note-field"><input class="input" data-cs-note placeholder="ملاحظة داخلية لخدمة العملاء"><button type="button" class="btn primary cs-note-add" data-cs-action="note">إضافة</button></div>
@@ -139,21 +158,12 @@
     if(Array.isArray(d.log)){o.contactLog=d.log;o.contactCount=d.contactCount??d.log.length;}
     cardsForOrder(o.id).forEach(card=>{
       updateContactUi(card,o.contactCount);
-      if(o.latestInternalNote){
-        let latest=card.querySelector('.cs-internal-latest');
-        if(!latest){latest=document.createElement('div');latest.className='cs-internal-latest';const field=card.querySelector('.cs-note-field');if(field)field.before(latest);else card.appendChild(latest);}
-        latest.innerHTML=`<b>آخر ملاحظة داخلية:</b> ${esc(o.latestInternalNote)}`;
-      }
+      updateNotes(card,o);
     });
   }
-  function ensureCustomerNote(card,note){
-    let box=card.querySelector('.cs-customer-note');
-    if(note){if(!box){box=document.createElement('div');box.className='cs-customer-note';const anchor=card.querySelector('.cs-contact-attempts,.cs-note-field');anchor?.before(box);}if(box)box.innerHTML=`<strong>ملاحظة العميل عند الطلب:</strong> ${esc(note)}`;}
-    else box?.remove();
-  }
   function patchCardBasics(card,o){
-    const name=card.querySelector('.cs-customer'),phone=card.querySelector('.cs-phone'),address=card.querySelector('.cs-address'),product=card.querySelector('.cs-product'),productNote=card.querySelector('.cs-product-note'),meta=card.querySelector('.cs-order-meta'),awb=card.querySelector('[data-cs-awb]'),call=card.querySelector('[data-cs-action="call"]'),select=card.querySelector('[data-cs-state]');
-    if(name)name.textContent=o.name||'بدون اسم';if(phone)phone.textContent=o.phone||'بدون رقم';if(address)address.textContent=`📍 ${[o.gov,o.address].filter(Boolean).join(' — ')||'لا يوجد عنوان'}`;if(product)product.textContent=o.product||'بدون منتج';if(productNote)productNote.textContent=o.productNote||'';if(meta)meta.textContent=`${money(o.total)} جنيه · الكمية ${money(o.qty||1)} · ${String(o.date||'').slice(0,10)||'بدون تاريخ'}`;if(awb&&document.activeElement!==awb)awb.value=o.awb||'';if(call)call.href=`tel:${o.phone||''}`;if(select){select.innerHTML=statusOptions(o.state,o.contactCount);select.value=o.state;select.dataset.current=o.state;}ensureCustomerNote(card,o.customerNote||'');updateContactUi(card,o.contactCount);
+    const name=card.querySelector('.cs-customer-name'),phone=card.querySelector('.cs-phone'),address=card.querySelector('.cs-address'),product=card.querySelector('.cs-product'),productNote=card.querySelector('.cs-product-note'),meta=card.querySelector('.cs-order-meta'),awb=card.querySelector('[data-cs-awb]'),call=card.querySelector('[data-cs-action="call"]'),select=card.querySelector('[data-cs-state]');
+    if(name)name.textContent=o.name||'بدون اسم';const copyName=card.querySelector('.cs-copy-name');if(copyName)copyName.dataset.csCopyValue=o.name||'';if(phone)phone.textContent=o.phone||'بدون رقم';if(address)address.textContent=`📍 ${[o.gov,o.address].filter(Boolean).join(' — ')||'لا يوجد عنوان'}`;if(product)product.textContent=o.product||'بدون منتج';if(productNote)productNote.textContent=o.productNote||'';if(meta)meta.textContent=`${money(o.total)} جنيه · الكمية ${money(o.qty||1)} · ${String(o.date||'').slice(0,10)||'بدون تاريخ'}`;if(awb&&document.activeElement!==awb)awb.value=o.awb||'';if(call)call.href=`tel:${o.phone||''}`;if(select){select.innerHTML=statusOptions(o.state,o.contactCount);select.value=o.state;select.dataset.current=o.state;}updateNotes(card,o);updateContactUi(card,o.contactCount);
   }
   function patchOrder(orderId,patch={}){
     const o=(data?.orders||[]).find(item=>String(item.id)===String(orderId));if(!o)return false;Object.assign(o,patch);cardsForOrder(orderId).forEach(card=>patchCardBasics(card,o));return true;

@@ -8,7 +8,8 @@ const [ui,customerService,index]=await Promise.all([
 for(const marker of ['/api/orders/','/details?clientId=','IntersectionObserver','data-cs-copy-value','navigator.clipboard','cs-rich-product','cs-rich-top','cs-rich-order-total','font-size:18px','border:2px solid','cs-note-field','نسبة التسليم للعميل','نسخ رقم الهاتف','نسخ البريد الإلكتروني','نسخ العنوان بالكامل','item.options','item.lineTotal'])assert.ok(ui.includes(marker),`rich Customer Service card UI missing ${marker}`);
 assert.ok(ui.includes("document.querySelectorAll('#root .cs-order[data-cs-order]')"),'rich cards must target Customer Service order cards');
 assert.ok(ui.includes("card.classList.add('cs-rich-loaded')"),'rich cards must replace the legacy summary only after details load');
-for(const removedLabel of ['نسخ اسم العميل','نسخ نسبة التسليم','نسخ اسم المنتج','نسخ اللون/المقاس/الاختيارات','نسخ الكمية والسعر','نسخ إجمالي المنتج','نسخ الإجمالي','نسخ الكمية','نسخ التاريخ'])assert.ok(!ui.includes(removedLabel),`redundant copy action still present: ${removedLabel}`);
+for(const removedLabel of ['نسخ نسبة التسليم','نسخ اسم المنتج','نسخ اللون/المقاس/الاختيارات','نسخ الكمية والسعر','نسخ إجمالي المنتج','نسخ الإجمالي','نسخ الكمية','نسخ التاريخ'])assert.ok(!ui.includes(removedLabel),`redundant copy action still present: ${removedLabel}`);
+assert.ok(ui.includes("label:'نسخ اسم العميل'"),'customer name must have a deliberate copy action');
 assert.ok(customerService.includes('class="cs-field cs-note-field"')&&customerService.includes('class="btn primary cs-note-add" data-cs-action="note">إضافة</button>'),'internal note must have a nearby Add button');
 assert.equal((customerService.match(/data-cs-action="note"/g)||[]).length,1,'internal note action must not be duplicated');
 assert.ok(index.includes('modules-v31-customer-service.js?v=31.3'),'Customer Service module is not loaded by the app shell');

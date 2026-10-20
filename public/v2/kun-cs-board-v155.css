@@ -62,3 +62,18 @@
 .cs-page .cs-board:has(.cs-column[data-state="contacting"]){grid-template-columns:repeat(6,minmax(275px,1fr))!important}
 .cs-page .cs-column[data-state="contacting"]{border-top:4px solid #d99747}
 @media(max-width:430px){.cs-page .cs-board:has(.cs-column[data-state="contacting"]){grid-template-columns:repeat(6,minmax(85vw,1fr))!important}}
+
+/* Customer Service: copy is a first-class action, and notes are visible before opening the order. */
+.cs-page .cs-customer{display:flex;align-items:center;gap:7px;min-width:0}
+.cs-page .cs-customer-name{min-width:0;overflow-wrap:anywhere}
+.cs-page .cs-copy-name,.cs-page .cs-rich-name+.cs-copy-btn{border:1px solid #c1d6eb;background:#eff6ff;color:#15589a;border-radius:8px;width:30px;height:30px;min-height:30px;flex:none;display:inline-grid;place-items:center;font-size:18px;opacity:1;cursor:pointer}
+.cs-page .cs-copy-name:hover,.cs-page .cs-rich-name+.cs-copy-btn:hover{background:#dbeafe}
+.cs-page .cs-customer-note,.cs-page .cs-internal-latest{display:grid!important;gap:5px!important;margin:0!important;padding:10px 11px!important;border-radius:11px!important;font-size:12px!important;line-height:1.75!important;white-space:pre-wrap;overflow-wrap:anywhere}
+.cs-page .cs-customer-note{background:#fff8e8!important;color:#764b10!important;border:1px solid #f3d6a0!important}
+.cs-page .cs-internal-latest{background:#ecf6ff!important;color:#234e7a!important;border:1px solid #c2dcf6!important}
+.cs-page .cs-customer-note strong,.cs-page .cs-internal-latest b{font-size:12px}
+.cs-page .cs-notes-more{margin:0;padding:8px 10px;border:1px solid #d2dfed;border-radius:10px;background:var(--surface,#fff);font-size:11px;line-height:1.7}
+.cs-page .cs-notes-more>summary{cursor:pointer;font-weight:800;color:#326399;user-select:none}
+.cs-page .cs-notes-history{margin-top:9px;display:grid;gap:7px;max-height:230px;overflow:auto}
+.cs-page .cs-note-history-line{display:grid;gap:2px;padding:8px;border:1px solid #e3ecf4;border-radius:8px;white-space:pre-wrap;overflow-wrap:anywhere}
+.cs-page .cs-note-history-line small{opacity:.7}

@@ -11,7 +11,7 @@ for(const p of ['public/v2/modules-v31-customer-service.js','public/v2/modules-v
 assert.match(html,/modules-v109-operational-date-contact\.js\?v=109\.4/,'Production loads period component');
 assert.match(html,/modules-v105-customer-service-claim\.js\?v=105\.4/,'Production loads live calling column');
 assert.match(html,/modules-v155-customer-service-board\.js\?v=155\.0/,'Production loads board');
-assert.match(html,/kun-cs-board-v155\.css\?v=155\.0/,'Production loads CSS');
+assert.match(html,/kun-cs-board-v155\.css\?v=155\.(0|1)/,'Production loads CSS');
 assert.match(cs,/boardUrl\.searchParams\.set\('periodFrom',range\.from\)/,'Board sends selected from date');
 assert.match(cs,/boardUrl\.searchParams\.set\('periodTo',range\.to\)/,'Board sends selected to date');
 assert.match(dates,/periodFrom/,'Dates are parsed from selected period');
