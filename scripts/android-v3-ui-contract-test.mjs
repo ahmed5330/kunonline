@@ -26,6 +26,8 @@ assert.ok(chat.includes('chatQuery') && chat.includes('جاري تحميل ال�
 assert.ok(search.includes('GlobalOrderSearchApi.search') && search.includes('كل المتاجر المسموح بها'));
 for(const k of ['"confirmed"','"no_answer"','"cancelled"','CallerJntOrderEditActivity.EXTRA_SHIPPING_ONLY']) assert.ok(calls.includes(k),'lost in-call action '+k);
 assert.ok(service.includes('KunCustomerServiceApi.claimContact') && service.includes('selected = stateFilter == key'));
-assert.match(version,/versionCode\s*=\s*143/);
-assert.match(version,/versionName\s*=\s*"2\.9\.12"/);
+const buildCode=Number(version.match(/versionCode\\s*=\\s*(\\d+)/)?.[1]||0);
+const patchVersion=Number(version.match(/versionName\\s*=\\s*"2\\.9\\.(\\d+)"/)?.[1]||0);
+assert.ok(buildCode>=143,'Do not regress signed Android build code');
+assert.ok(patchVersion>=12,'Do not regress native Android version');
 console.log('PASS: Kun Online Android reviewed UX navigation, features, statuses, themes and release contract');
