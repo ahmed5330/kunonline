@@ -35,5 +35,5 @@ assert.match(native,/تاريخ الطلب:/,'Order date visible');
 assert.match(native,/البوليصة:/,'AWB visible');
 assert.match(html,/modules-v31-customer-service.js\?v=31\.3\.[23]/,'Fresh copy JS on production');
 assert.match(html,/modules-v42-customer-service-rich-cards.js\?v=42\.4/,'Fresh loaded-card name-copy JS on production');
-assert.match(read('android/app/build.gradle.kts'),/versionCode = 145[\s\S]*versionName = "2\.9\.14"/,'Signed Android version increases');
-console.log('PASS Customer Service names/notes previews, saved item model/color details, and Android v2.9.14 contract');
+assert.match(read('android/app/build.gradle.kts'),/versionCode = 146[\s\S]*versionName = "2\.9\.15"/,'Signed Android version increases');
+console.log('PASS Customer Service names/notes previews, saved item model/color details, and Android v2.9.15 contract');
