@@ -40,6 +40,8 @@ jobs:
           node scripts/mobile-store-options-test.mjs
       - name: Historical mobile and web contact-count recovery
         run: node scripts/contact-history-recovery-test.mjs
+      - name: Android cancellation outcome field parity
+        run: node scripts/android-outcome-reason-contract-test.mjs
       - name: Login, cancellation and order-linked group notes regression
         run: node scripts/login-cancel-group-notes-regression-test.mjs
       - name: Customer Service notes, copy and model-color cards
