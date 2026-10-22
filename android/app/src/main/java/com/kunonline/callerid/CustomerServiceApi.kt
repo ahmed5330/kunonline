@@ -194,7 +194,16 @@ object KunCustomerServiceApi {
         withClient(context) { cookie, clientId ->
             if (state == "cancelled" && cancelReason.isBlank()) return@withClient CustomerServiceJsonResult(false, "اكتب سبب إلغاء الطلب أولًا")
             val payload = JSONObject().put("clientId", clientId).put("state", state)
-            if (state == "cancelled") payload.put("cancelReason", cancelReason.trim())
+            if (state == "cancelled") {
+                val reason = cancelReason.trim()
+                // Old Preview outcome middleware reads reason/outcomeReason; the
+                // native Customer Service endpoint historically used cancelReason.
+                // Send the same explicit staff reason to either backend version.
+                payload.put("cancelReason", reason)
+                    .put("reason", reason)
+                    .put("outcomeReason", reason)
+                    .put("sourceSection", "customer-service")
+            }
             if (deferUntil.isNotBlank()) payload.put("deferUntil", deferUntil)
             if (stockBatchId.isNotBlank()) payload.put("stockBatchId", stockBatchId)
             val response = request("PATCH", "/api/customer-service/orders/${enc(orderId)}/state?clientId=${enc(clientId)}", cookie, payload)
