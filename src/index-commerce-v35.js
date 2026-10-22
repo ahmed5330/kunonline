@@ -7,6 +7,7 @@ import {campaignPerformance} from './marketing-performance.js';
 import {decorateDashboardWithManagementFees} from './accounting.js';
 import {reconcileEasyOrdersDuplicates,duplicateIdsForOrders} from './order-deduplication-v2.js';
 import {returnsExchangesBoard,saveOutcomeReason} from './returns-exchanges.js';
+import {normalizeOutcomeReason} from './order-outcome-reason.js';
 import {syncEasyOrdersPrices} from './easyorders-price-sync.js';
 import {syncMetaAdsForClient} from './meta-ads-sync.js';
 import {syncMetaAdsGranular} from './meta-ads-granular.js';
@@ -37,9 +38,9 @@ async function persistOutcomeReason(env,{clientId,orderId,state,returnType,reaso
 }
 async function outcomeStateTransition(request,env,ctx,match){
   const body=await request.clone().json().catch(()=>({})),state=text(body.state);if(!['returned','cancelled'].includes(state))return commerceV34.fetch(request,env,ctx);
-  const reason=text(body.reason||body.outcomeReason);if(reason.length<2)return json({error:'اكتب سبب واضح للمرتجع أو الاستبدال أو الإلغاء قبل تحويل الأوردر',code:'ORDER_OUTCOME_REASON_REQUIRED'},400);if(reason.length>1000)return json({error:'سبب الحالة طويل جدًا',code:'ORDER_OUTCOME_REASON_TOO_LONG'},400);
+  const reason=normalizeOutcomeReason(body,state);if(reason.length<2)return json({error:'اكتب سبب واضح للمرتجع أو الاستبدال أو الإلغاء قبل تحويل الأوردر',code:'ORDER_OUTCOME_REASON_REQUIRED'},400);if(reason.length>1000)return json({error:'سبب الحالة طويل جدًا',code:'ORDER_OUTCOME_REASON_TOO_LONG'},400);
   const returnType=state==='returned'?(text(body.returnType||body.return_type)||'full'):null;if(returnType&&!['full','partial','exchange'].includes(returnType))return json({error:'نوع المرتجع غير صحيح',code:'RETURN_TYPE_INVALID'},400);
-  const me=await currentUser(request,env,ctx);requirePermission(me,'orders','update');const clientId=resolveTenant(me,body.clientId||new URL(request.url).searchParams.get('clientId')),orderId=decodeURIComponent(match[1]),forward={...body,state,...(state==='returned'?{returnType}:{}),reason,outcomeReason:reason};
+  const me=await currentUser(request,env,ctx);requirePermission(me,'orders','update');const clientId=resolveTenant(me,body.clientId||new URL(request.url).searchParams.get('clientId')),orderId=decodeURIComponent(match[1]),forward={...body,state,...(state==='returned'?{returnType}:{}),reason,outcomeReason:reason,...(state==='cancelled'?{cancelReason:reason}:{})};
   const response=await commerceV34.fetch(jsonRequest(request,forward),env,ctx);if(!response.ok)return response;
   if(state==='returned'&&returnType)await env.DB.prepare('UPDATE orders SET return_type=? WHERE id=? AND client_id=?').bind(returnType,orderId,clientId).run();
   await persistOutcomeReason(env,{clientId,orderId,state,returnType,reason,sourceSection:body.sourceSection,me});
