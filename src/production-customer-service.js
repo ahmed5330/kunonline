@@ -1,5 +1,6 @@
 import {listMyStores,resolveStoreScope} from './store-scope.js';
 import {recoverOrderContacts} from './customer-contact-evidence.js';
+import {normalizeOutcomeReason} from './order-outcome-reason.js';
 import {attachVisibleGroupOrderNotes} from './collaboration-order-board-notes.js';
 const ORDER_COLS='id, client_id, store_id, ref, customer_id, date, name, phone, gov, address, product, product_id, variant_id, product_note, unit_price, qty, total, discount_amount, coupon_code, product_cost, shipping_cost, other_cost, source, note, awb, state, checkpoint, signed_at, collected_at, defer_until, refund_amount, return_type, restocked, contact_log, history, created_at, contact_claim_user_id, contact_claim_name, contact_claimed_at';
 const STATES=['pending','no_answer','confirmed','preparing','shipped','signed','collected','returned','cancelled','deferred'];
@@ -226,7 +227,7 @@ export async function handleProductionCustomerService({request,env,ctx,delegate}
       if(claimOwner&&!['confirmed','no_answer','cancelled'].includes(state))return json({error:'الطلب محجوز في جاري التواصل حتى تم التأكيد أو العميل لا يرد أو العميل لغى',code:'CONTACT_DECISION_REQUIRED'},409);
       if(claimOwner&&claimOwner!==actorId&&me.role!=='admin')return json({error:'الطلب جارٍ التواصل معه بواسطة موظف آخر',code:'CONTACT_OWNED_BY_OTHER'},409);
       const deferUntil=state==='deferred'?clean(body.deferUntil):null;if(state==='deferred'&&!/^\d{4}-\d{2}-\d{2}$/.test(deferUntil))return json({error:'حدد تاريخ التأجيل',code:'DEFER_DATE_REQUIRED'},400);
-      const cancelReason=clean(body.cancelReason||body.reason||body.note);
+      const cancelReason=normalizeOutcomeReason(body,state)||clean(body.note);
       if(state==='cancelled'&&!cancelReason)return json({error:'اكتب سبب الإلغاء أولًا',code:'CANCEL_REASON_REQUIRED'},400);
       if(cancelReason.length>2000)return json({error:'سبب الإلغاء طويل جدًا',code:'CANCEL_REASON_TOO_LONG'},400);
       const history=arr(row.history);
