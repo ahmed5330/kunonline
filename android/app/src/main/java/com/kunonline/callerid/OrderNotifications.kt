@@ -21,7 +21,7 @@ import java.security.MessageDigest
 import java.text.NumberFormat
 import java.util.Locale
 
-internal data class NotificationOrderTarget(val orderId: String, val clientId: String, val storeId: String)
+data class NotificationOrderTarget(val orderId: String, val clientId: String, val storeId: String)
 
 internal data class NewOrderAlert(
     val orderId: String,
