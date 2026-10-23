@@ -66,7 +66,7 @@
   async function restoreNav({reloadPermissions=false}={}){
     delete document.documentElement.dataset.kunSubscriptionLocked;
     $$('[data-sub127-hidden="1"]').forEach(b=>{b.hidden=false;b.style.display='';delete b.dataset.sub127Hidden;});
-    $('.nav .nav-group').forEach(group=>{group.classList.remove('sub127-wallet-available');group.hidden=false;group.style.removeProperty('display');});
+    $$('.nav .nav-group').forEach(group=>{group.classList.remove('sub127-wallet-available');group.hidden=false;group.style.removeProperty('display');});
     try{
       if(reloadPermissions&&window.KunPermissionNavigationV51?.load)await window.KunPermissionNavigationV51.load();
       else window.KunPermissionNavigationV51?.apply?.();
