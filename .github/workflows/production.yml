@@ -142,8 +142,8 @@ jobs:
         run: |
           set -euo pipefail
           query='SELECT token_hash, expires_at, revoked_at FROM revoked_session_tokens LIMIT 0;'
-          npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "$query" --yes
-          npx wrangler d1 execute kunonline-preview --remote --config wrangler.preview.toml --command "$query" --yes
+          npx wrangler d1 execute DB --remote --config wrangler.production.toml --command "$query" --yes
+          npx wrangler d1 execute PREVIEW_DB --remote --config wrangler.production.toml --command "$query" --yes
       - name: Deploy production Worker only — no migrations
         run: npx wrangler deploy --config wrangler.production.toml
       - name: Verify live branded dashboard and isolated daisyUI design preview
