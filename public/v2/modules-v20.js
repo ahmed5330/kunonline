@@ -10,7 +10,7 @@
   // Keep legacy toolbar clicks, but never submit orders through /api/orders.
   function orderForm(){
     const create=window.KunActionsV23?.openCreateOrder;
-    if(typeof create!=='function')return toast('نموذج إنشاء الطلب غير جاهز، أعد تحميل الصفحة');
+    if(typeof create!=='function'||!window.KunManualJntOrderV106)return toast('نموذج إنشاء الطلب غير جاهز، أعد تحميل الصفحة');
     Promise.resolve().then(()=>create()).catch(error=>toast(error?.message||'تعذر فتح نموذج الطلب'));
   }
   function customerForm(){open('عميل جديد',`<div class="v5-form">${field('الاسم','v20CustomerName')}${field('الهاتف','v20CustomerPhone','tel')}${field('المحافظة','v20CustomerGov')}${field('العنوان','v20CustomerAddress')}<label class="v5-wide">ملاحظة<textarea class="input" id="v20CustomerNote" rows="3"></textarea></label></div>`,async()=>{const body={clientId:currentClient(),name:document.getElementById('v20CustomerName').value.trim(),phone:document.getElementById('v20CustomerPhone').value.trim(),gov:document.getElementById('v20CustomerGov').value.trim(),address:document.getElementById('v20CustomerAddress').value.trim(),note:document.getElementById('v20CustomerNote').value.trim()};if(!body.name||!body.phone)return toast('الاسم والهاتف مطلوبان');const b=document.getElementById('v20Save');b.disabled=true;try{await api('/api/customers',{method:'POST',body:JSON.stringify(body)});closeDrawer();toast('تم إنشاء العميل');await loadCustomers();setView('customers')}catch(e){toast(e.message);b.disabled=false}})}
