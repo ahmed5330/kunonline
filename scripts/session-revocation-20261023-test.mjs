@@ -46,6 +46,14 @@ const first=await makeToken('session-one'),other=await makeToken('session-two');
 assert.notEqual(first,other,'same user signs distinct sessions');
 assert.equal((await route('/api/me',first)).status,200,'valid synthetic login session');
 assert.equal((await route('/api/me',other)).status,200,'second session remains active');
+for(const modified of [first+'.suffix',first+'.',first+'..extra',first+'%2Eextra']){
+  const response=await route('/api/me',modified);
+  assert.equal(response.status,200);
+  assert.equal((await response.json()).role,null,'noncanonical session forms cannot authenticate');
+}
+// An invalid logout must not revoke the valid underlying signed session.
+assert.equal((await route('/api/logout',first+'.suffix','POST')).status,200);
+assert.equal((await (await route('/api/me',first)).json()).uid,user.id);
 const readsBefore= calls.reads;
 const forged=first.slice(0,-2)+'ff';
 assert.equal((await route('/api/me',forged)).status,200,'/api/me remains anonymous-envelope on bad signature');
@@ -57,6 +65,9 @@ assert.equal(revoked.has(await sessionTokenHash(first)),true,'only hash stored')
 assert.equal(revoked.has(first),false,'raw session bearer token never stored');
 assert.equal((await route('/api/me',first)).status,200);
 assert.equal((await (await route('/api/me',first)).json()).role,null,'old signed session cannot reauthenticate');
+for(const modified of [first+'.suffix',first+'.',first+'..extra']){
+  assert.equal((await (await route('/api/me',modified)).json()).role,null,'appended segments must not bypass logout revocation');
+}
 assert.equal((await (await route('/api/me',other)).json()).uid,user.id,'separate session stays valid');
 const repeat=await route('/api/logout',first,'POST');
 assert.equal(repeat.status,200,'already revoked logout is idempotent');
