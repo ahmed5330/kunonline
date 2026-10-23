@@ -40,6 +40,9 @@ assert.match(native,/state == "cancelled" && cancelReason\.isBlank\(\)/,
 assert.match(modal,/cancelReason\s*,\s*onValueChange\s*=\s*\{ cancelReason = it \}/,
   'Customer Service detail uses the reason input');
 assert.match(caller,/cancelReason = reason/,'Floating call overlay also sends a reason');
-assert.match(read('android/app/build.gradle.kts'),/versionCode = 146[\s\S]*versionName = "2\.9\.15"/,
-  'Release APK must be a newer version');
-console.log('PASS: Android v2.9.15 sends explicit cancellation reason compatible with Preview and Production; staff audit preserved.');
+const build=read('android/app/build.gradle.kts');
+const versionCode=Number(build.match(/versionCode\s*=\s*(\d+)/)?.[1]||0);
+const versionName=build.match(/versionName\s*=\s*"(\d+\.\d+\.\d+)"/)?.[1]||'';
+assert.ok(versionCode>=146 && /^2\.9\.(?:1[5-9]|[2-9]\d)$/.test(versionName),
+  'Release must not regress below Android v2.9.15 build 146');
+console.log('PASS: Android cancellation reason and non-regressing version contract; staff audit preserved.');
