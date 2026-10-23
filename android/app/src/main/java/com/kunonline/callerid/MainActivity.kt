@@ -5,6 +5,7 @@ import android.app.role.RoleManager
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
@@ -26,6 +27,15 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         AppUpdateManager.resumePending(this)
+    }
+
+    fun maybeRequestOrderNotifications() {
+        if (!KunApi.hasSession(this) || Build.VERSION.SDK_INT < 33 ||
+            OrderNotifications.permissionGranted(this)) return
+        val prefs = getSharedPreferences("kun_notification_permission", MODE_PRIVATE)
+        if (prefs.getBoolean("asked_once", false)) return
+        prefs.edit().putBoolean("asked_once", true).apply()
+        requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQUEST_ORDER_NOTIFICATIONS)
     }
 
     fun requestCallerRole() {
@@ -78,6 +88,7 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         private const val REQUEST_CALL_SCREENING = 100
+        private const val REQUEST_ORDER_NOTIFICATIONS = 103
         private const val REQUEST_CONTACTS = 101
         private const val REQUEST_CONTACTS_FOR_CALLER_ID = 102
     }
