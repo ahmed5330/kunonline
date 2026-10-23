@@ -1,0 +1,30 @@
+# ISOLATED AUDIT SANDBOX TEMPLATE — DO NOT DEPLOY AS IS.
+# Replace BOTH name and database ID with brand-new Cloudflare resources.
+# This template deliberately contains a non-UUID database_id so deployment
+# and scripts/verify-audit-sandbox-config.mjs refuse it until provisioned.
+#
+# NOT production, NOT existing preview. Never copy live secrets or seed live data.
+# This config does not alone block outbound HTTP; before ANY test capable
+# of mutating D1, independently verify the deployed Worker has mock-only
+# integrations and no provider credentials. See docs/audit-2026-10-23-safe-release.md.
+
+name = "REPLACE_WITH_UNIQUE_AUDIT_WORKER_NAME"
+main = "src/index-commerce-v38.js"
+compatibility_date = "2026-08-23"
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+run_worker_first = ["/", "/index.html", "/v2", "/v2/", "/v2/index.html"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "REPLACE_WITH_NEW_AUDIT_D1_NAME"
+database_id = "REPLACE_WITH_NEW_D1_UUID"
+migrations_dir = "migrations"
+
+[triggers]
+crons = []
+
+[vars]
+APP_ENV = "audit_sandbox"
