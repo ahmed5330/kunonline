@@ -18,6 +18,21 @@ export function verifyRevocationContract({moduleSource,migrations,productionWork
   if(migrationsWithTables.length!==1)fail('Multiple revocation migrations need deliberate reconciliation');
   if(migrationsWithTables[0].tables.length!==1||migrationsWithTables[0].tables[0]!==table)
     fail('Handler uses '+table+' while '+migrationsWithTables[0].path+' creates '+migrationsWithTables[0].tables.join(','));
+  // Check SQL column compatibility too. Matching table names with mismatched
+  // fingerprint/expiry columns would still break all authenticated sessions.
+  const selectedMigration=migrations[0].content;
+  const createPattern=new RegExp('CREATE\\s+TABLE\\s+(?:IF\\s+NOT\\s+EXISTS\\s+)?'+table+'\\s*\\(([^;]+)\\)','i');
+  const definition=selectedMigration.match(createPattern)?.[1]||'';
+  const insertPattern=new RegExp('INSERT\\s+(?:OR\\s+IGNORE\\s+)?INTO\\s+'+table+'\\s*\\(([^)]+)\\)','i');
+  const writeColumns=moduleSource.match(insertPattern)?.[1]?.split(',').map(x=>x.trim())||[];
+  const readPattern=new RegExp('SELECT\\s+([A-Za-z_]+)\\s+FROM\\s+'+table+'\\b','i');
+  const readColumn=moduleSource.match(readPattern)?.[1]||'';
+  if(!definition||!readColumn||!writeColumns.length)fail('Could not reconcile revocation read/write columns');
+  const declaredColumns=new Set([...definition.matchAll(/(?:^|,)\s*([A-Za-z_]+)\s+(?:TEXT|INTEGER|REAL|BLOB|NUMERIC)\b/gi)].map(x=>x[1]));
+  for(const column of new Set([readColumn,...writeColumns,'expires_at'])){
+    if(!declaredColumns.has(column))fail('Migration '+migrations[0].path+' does not define required column '+column);
+  }
+
   if(!/sessionTokenHash\s*\(/.test(moduleSource)||!/SHA-256/.test(moduleSource))
     fail('Revocation lookup must SHA-256 fingerprint the exact bearer token');
   if(!/jti:\s*crypto\.randomUUID\(\)/.test(sessionAuthSource))
