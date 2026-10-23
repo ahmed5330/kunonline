@@ -15,6 +15,7 @@ on:
       - 'src/business-intelligence.js'
       - 'scripts/admin-order-date-scope-test.mjs'
       - 'scripts/admin-finance-date-scope-test.mjs'
+      - 'scripts/admin-cod-verification-test.mjs'
       - 'scripts/admin-source-availability-test.mjs'
       - 'package.json'
       - '.github/workflows/audit-windows-compat.yml'
