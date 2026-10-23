@@ -113,10 +113,17 @@ private object GlobalOrderSearchApi {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun GlobalOrderSearchDialog(onDismiss: () -> Unit, onHome: () -> Unit) {
+fun GlobalOrderSearchDialog(
+    onDismiss: () -> Unit,
+    onHome: () -> Unit,
+    initialQuery: String = "",
+    initialOrderId: String = "",
+    initialClientId: String = "",
+    initialStoreId: String = ""
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var query by remember { mutableStateOf("") }
+    var query by remember(initialQuery) { mutableStateOf(initialQuery) }
     var items by remember { mutableStateOf<List<GlobalOrderSearchItem>>(emptyList()) }
     var busy by remember { mutableStateOf(false) }
     var loadingMore by remember { mutableStateOf(false) }
@@ -140,9 +147,16 @@ fun GlobalOrderSearchDialog(onDismiss: () -> Unit, onHome: () -> Unit) {
             items = page.items
             hasMore = page.hasMore
             offset = page.nextOffset
+            if (initialOrderId.isNotBlank() && q == initialQuery.trim()) {
+                selected = page.items.firstOrNull {
+                    it.id == initialOrderId &&
+                        it.clientId == initialClientId && it.storeId == initialStoreId
+                }
+            }
         } else error = page.error
     }
 
+    if (initialOrderId.isBlank()) {
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(modifier = Modifier.fillMaxSize(), color = KunColors.Ground) {
             Column {
@@ -259,18 +273,37 @@ fun GlobalOrderSearchDialog(onDismiss: () -> Unit, onHome: () -> Unit) {
         }
     }
 
+    } else if (selected == null) {
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            title = { Text("مراجعة الطلب") },
+            text = {
+                Text(
+                    when {
+                        busy -> "جاري تحميل تفاصيل الطلب…"
+                        error.isNotBlank() -> error
+                        else -> "لا يمكن عرض الطلب. تأكد من صلاحيتك على المتجر ثم حاول مجددًا."
+                    }
+                )
+            },
+            confirmButton = { TextButton(onClick = onDismiss) { Text("إغلاق") } }
+        )
+    }
+
     selected?.let { order ->
         AlertDialog(
-            onDismissRequest = { selected = null },
-            title = { Text(order.name.ifBlank { order.ref }) },
+            onDismissRequest = { if (initialOrderId.isNotBlank()) onDismiss() else selected = null },
+            title = { Text(order.name.ifBlank { "مراجعة الطلب" }) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("الطلب: ${order.ref}")
+                    if (initialOrderId.isBlank()) Text("الطلب: ${order.ref}")
                     Text("المتجر: ${order.storeName}")
                     Text("الحالة: ${order.state}")
                     Text("التاريخ: ${order.date.take(10)}")
                     Text("الهاتف: ${order.phone}")
                     if (order.product.isNotBlank()) Text("المنتج: ${order.product}")
+                    if (order.total.isNotBlank()) Text("الإجمالي: ${order.total} ج.م")
+                    if (order.gov.isNotBlank()) Text("المحافظة: ${order.gov}")
                     if (order.awb.isNotBlank()) Text("البوليصة: ${order.awb}")
                 }
             },
@@ -282,7 +315,11 @@ fun GlobalOrderSearchDialog(onDismiss: () -> Unit, onHome: () -> Unit) {
                     }
                 ) { Text("اتصال") }
             },
-            dismissButton = { TextButton(onClick = { selected = null }) { Text("إغلاق") } }
+            dismissButton = {
+                TextButton(onClick = { if (initialOrderId.isNotBlank()) onDismiss() else selected = null }) {
+                    Text("إغلاق")
+                }
+            }
         )
     }
 }
