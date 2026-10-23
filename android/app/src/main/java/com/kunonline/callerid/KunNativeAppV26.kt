@@ -115,6 +115,26 @@ fun KunNativeAppV26(activity: MainActivity) {
                     }
                 )
             }
+
+            // Opening a notification reviews its exact store-scoped order,
+            // regardless of the dashboard's current store or date filter.
+            if (hasSession) {
+                activity.notificationOrderTarget?.let { target ->
+                    key(target) {
+                        GlobalOrderSearchDialog(
+                            onDismiss = { activity.clearNotificationOrderTarget() },
+                            onHome = {
+                                activity.clearNotificationOrderTarget()
+                                homeRequest++
+                            },
+                            initialQuery = target.orderId,
+                            initialOrderId = target.orderId,
+                            initialClientId = target.clientId,
+                            initialStoreId = target.storeId
+                        )
+                    }
+                }
+            }
         }
     }
 }
