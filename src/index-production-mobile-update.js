@@ -1,3 +1,5 @@
+import {handleTenantEasyOrdersHealth} from './tenant-easyorders-health.js';
+import {routeProductionCodRead} from './production-cod-read-fallback.js';
 import app from './index-production-jt-history.js';
 import {handlePublicSiteReviews} from './public-site-reviews.js';
 import {handleAIMarketing} from './ai-marketing-analyst.js';
@@ -81,7 +83,7 @@ async function websiteWithDirectAndroidDownload(request,env){
     .replace(/\/v2\/modules-v19\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v19.js?v=20.3')
     .replace(/\/v2\/modules-v22\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v22.js?v=22.1')
     .replace(/\/v2\/modules-v80-jnt-address-cascade-v805\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v80-jnt-address-cascade-v805.js?v=80.6')
-    .replace(/\/v2\/modules-v121-dashboard-sync-guard\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v121-dashboard-sync-guard.js?v=121.1')
+    .replace(/\/v2\/modules-v121-dashboard-sync-guard\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v121-dashboard-sync-guard.js?v=121.2')
     .replaceAll(LEGACY_APK_URL,DIRECT_APK_PATH)
     .replaceAll('/v2/modules-v51-permission-navigation.js?v=51.10','/v2/modules-v51-permission-navigation.js?v=51.16')
     .replace(/\/v2\/modules-v57-section-reload\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v57-section-reload.js?v=57.3')
@@ -101,7 +103,7 @@ async function websiteWithDirectAndroidDownload(request,env){
     html=html.replace('</body>','<script src="/v2/modules-v118-collaboration-order-picker.js?v=118.1.1" data-kun-collaboration-order-picker="1"></script></body>');
   }
   if(!html.includes('/v2/modules-v121-dashboard-sync-guard.js')){
-    html=html.replace('</body>','<script src="/v2/modules-v121-dashboard-sync-guard.js?v=121.1" data-kun-dashboard-sync-guard="1"></script></body>');
+    html=html.replace('</body>','<script src="/v2/modules-v121-dashboard-sync-guard.js?v=121.2" data-kun-dashboard-sync-guard="1"></script></body>');
   }
   if(!html.includes('/v2/modules-v122-dashboard-experience.js')){
     html=html.replace('</body>','<script src="/v2/modules-v122-dashboard-experience.js?v=122.1" data-kun-dashboard-experience="1"></script></body>');
@@ -113,13 +115,13 @@ async function websiteWithDirectAndroidDownload(request,env){
     html=html.replace('</body>','<script src="/v2/modules-v124-dashboard-periods-province.js?v=124.1" data-kun-dashboard-periods-v124="1"></script></body>');
   }
   if(!html.includes('/v2/modules-v125-dashboard-section-periods.js')){
-    html=html.replace('</body>','<script src="/v2/modules-v125-dashboard-section-periods.js?v=125.3" data-kun-dashboard-section-periods-v125="1"></script></body>');
+    html=html.replace('</body>','<script src="/v2/modules-v125-dashboard-section-periods.js?v=125.4" data-kun-dashboard-section-periods-v125="1"></script></body>');
   }
   if(!html.includes('/v2/modules-v126-dashboard-finance-top.js')){
     html=html.replace('</body>','<script src="/v2/modules-v126-dashboard-finance-top.js?v=126.5" data-kun-dashboard-finance-top-v126="1"></script></body>');
   }
   if(!html.includes('/v2/modules-v127-subscriptions.js')){
-    html=html.replace('</body>','<script src="/v2/modules-v127-subscriptions.js?v=127.20" data-kun-subscriptions-v127="1"></script></body>');
+    html=html.replace('</body>','<script src="/v2/modules-v127-subscriptions.js?v=127.21" data-kun-subscriptions-v127="1"></script></body>');
   }
   if(!html.includes('/v2/modules-v128-unit-tracking.js')){
     html=html.replace('</body>','<script src="/v2/modules-v128-unit-tracking.js?v=128.4" data-kun-unit-tracking-v128="1"></script></body>');
@@ -161,7 +163,15 @@ export default {
     if(websiteReviews)return websiteReviews;
     const easyOrdersHealth=await handleProductionEasyOrdersHealth(request,env);
     if(easyOrdersHealth)return easyOrdersHealth;
-    const parity=await handleProductionPreviewParity(request,env);
+    const parity=await handleProductionPreviewParity(request,env,{
+      authorizeAdmin:async sourceRequest=>{
+        const identityUrl=new URL('/api/me',sourceRequest.url);
+        const identityRequest=new Request(identityUrl.toString(),{method:'GET',headers:sourceRequest.headers});
+        const identity=await previewFetch(identityRequest,env)||await app.fetch(identityRequest,previewRuntimeEnv(env),ctx);
+        if(!identity.ok)return null;
+        return identity.json().catch(()=>null);
+      }
+    });
     if(parity)return parity;
 
     const mobileUpdate=await handleMobileAppUpdate(request);
@@ -178,6 +188,12 @@ export default {
 
     const dataEnv=previewRuntimeEnv(env);
     const delegate=previewDelegate(env,dataEnv,ctx);
+    // Safe GET-only compatibility. Authentication and tenant scoping remain in the
+    // local COD handler. Do not replay writes or bypass any Preview 401/403 response.
+    const codRead=await routeProductionCodRead({request,
+      fetchPreview:source=>previewFetch(source,env),
+      fetchLocal:source=>app.fetch(source,dataEnv,ctx)});
+    if(codRead)return codRead;
     const mcpAuth=await handleKunMcpOAuth({request,env:dataEnv,delegate});
     if(mcpAuth)return mcpAuth;
     const mcpTools=await handleKunMcpServer({request,env:dataEnv});
@@ -196,6 +212,14 @@ export default {
     if(aiMarketing)return aiMarketing;
     const subscription=await handleSubscriptionControl({request,env:dataEnv,ctx,delegate});
     if(subscription)return subscription;
+    const tenantSync=await handleTenantEasyOrdersHealth(request,dataEnv,{
+      authorize:async sourceRequest=>{
+        const identityUrl=new URL('/api/me',sourceRequest.url);
+        const identity=await delegate.fetch(new Request(identityUrl,{method:'GET',headers:sourceRequest.headers}));
+        return identity.ok?identity.json().catch(()=>null):null;
+      }
+    });
+    if(tenantSync)return tenantSync;
 
     const unitTracking=await handleInventoryUnitTracking({request,env:dataEnv,ctx,delegate});
     if(unitTracking)return unitTracking;

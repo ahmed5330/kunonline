@@ -48,7 +48,9 @@ requireText(packageJson,'"dev:scheduled": "wrangler dev --config wrangler.sync.p
 requireText(packageJson,'node scripts/verify-cloudflare-crons.mjs kunonline-preview --none','app live Cron check must require zero schedules.');
 requireText(packageJson,'node scripts/verify-cloudflare-crons.mjs kunonline-sync-preview','sync live Cron verification is missing.');
 requireText(packageJson,'node scripts/browser-preview-breakdown-controls-test.mjs','live Breakdown browser interaction must remain a hard Preview smoke gate.');
-requireText(packageJson,'wrangler d1 migrations apply kunonline-preview --remote --config wrangler.preview.toml','migration command must be pinned to Preview D1/config.');
+requireText(packageJson,'"db:migrate:preview": "node scripts/reject-bulk-preview-migrations.mjs"','legacy bulk Preview migration command must fail closed.');
+requireText(packageJson,'"db:migrations:preview:list": "wrangler d1 migrations list DB --remote --config wrangler.preview.toml"','read-only Preview migration inventory is required.');
+forbidPattern(packageJson,/wrangler\s+d1\s+migrations\s+apply/i,'unattended all-pending Preview migration command is forbidden in npm scripts.');
 requireText(packageJson,'wrangler deploy --config wrangler.preview.toml','Preview deployment command is not pinned.');
 requireText(packageJson,'wrangler deploy --config wrangler.sync.preview.toml','sync Preview deployment command is not pinned.');
 requireText(packageJson,'wrangler rollback --config wrangler.preview.toml','manual rollback command is not pinned to Preview.');
@@ -69,7 +71,12 @@ for(const [label,pattern] of [
 requirePattern(workflow,/environment:\s*\n\s*name:\s*preview\b/m,'workflow must use the preview GitHub Environment.');
 requirePattern(workflow,/permissions:\s*\n\s*contents:\s*write\b/m,'workflow needs contents:write to maintain preview-stable after full validation.');
 requireText(workflow,'git ls-remote origin refs/heads/develop/ux-system-upgrade','latest-HEAD ownership guard is missing.');
-requireText(workflow,'npm run db:migrate:preview','Preview migration gate is missing.');
+// Ordinary CI must NEVER apply arbitrary pending migrations to the live-adjacent
+// Preview D1. The additive auth migration requires a separately approved
+// maintenance window before changing the Preview Worker.
+forbidPattern(workflow,/npm run db:migrate:preview|wrangler\s+d1\s+migrations\s+apply/i,'unattended Preview D1 migration is forbidden in CI.');
+requireText(workflow,'name: Verify Preview revocation schema read-only before deployment','read-only SEC-02 gate is missing.');
+requireText(workflow,"npx wrangler d1 execute DB --remote --config wrangler.preview.toml --command 'SELECT token_hash, expires_at, revoked_at FROM revoked_session_tokens LIMIT 0;' --yes",'Preview must validate the chosen session revocation table without writing.');
 requireText(workflow,"if: steps.ownership.outputs.is_latest == 'true'",'Preview mutations must be gated by latest branch ownership.');
 requireText(workflow,'id: deploy_ownership','deploy ownership recheck is missing.');
 

@@ -44,12 +44,12 @@ assert.ok(!scheduler.includes('o.updated_at'),'Scheduled reconciliation must onl
 
 for(const marker of ['/api/accounting/monthly','requirePermission(me,\'finance\',\'read\')','accountingOverview','categoryBreakdown','accountingNetProfit','manualExpenses','collectedRevenue','finalDashboard'])assert.ok(monthly.includes(marker),`Monthly accounting service missing ${marker}`);
 for(const marker of ['handleAccountingMonthly','if(monthly)return monthly','handleJtHistoryReconcile'])assert.ok(entry.includes(marker),`v38 monthly accounting routing missing ${marker}`);
-for(const marker of ['الحسابات والحركات','تسجيل حركة','الحساب الشهري P&amp;L','إيراد المبيعات','المحصل فعليًا','صافي الربح المحاسبي للشهر','المتجر / الفرع','رقم المستند','الجهة / الطرف المقابل','الضريبة','رسوم الإدارة الآلية','المصروف اليدوي يدخل ضمن التشغيل مرة واحدة','kun:accounting-changed'])assert.ok(ui.includes(marker),`Accounting UI missing ${marker}`);
+for(const marker of ['الحسابات والحركات','تسجيل حركة','الحساب الشهري P&amp;L','إيراد المبيعات','تحصيل يشمل تقديرات','صافي الربح المحاسبي للشهر','المتجر / الفرع','رقم المستند','الجهة / الطرف المقابل','الضريبة','رسوم الإدارة الآلية','المصروف اليدوي يدخل ضمن التشغيل مرة واحدة','kun:accounting-changed'])assert.ok(ui.includes(marker),`Accounting UI missing ${marker}`);
 assert.ok(ui.includes('/api/accounting/monthly?month='),'Accounting UI must load the unified monthly summary');
 assert.ok(ui.includes("api('/api/accounting/entries',{method:'POST'"),'Accounting UI must create manual entries');
 assert.ok(ui.includes("method:'DELETE'"),'Accounting UI must support deleting manual entries');
 assert.ok(index.includes('data-view="accounting">الحسابات والحركات</button>'),'Accounting navigation must be present before the base router binds click handlers');
-assert.ok(index.includes('modules-v36-accounting.js?v=100.2'),'Accounting v100.2 module is not cache-busted in v2');
+assert.ok(index.includes('modules-v36-accounting.js?v=100.3'),'Accounting v100.3 module is not cache-busted in v2');
 assert.ok(index.includes('modules-v97-view-persistence-v976.js?v=97.6'),'View persistence v97.6 must use a versioned asset path so stale navigation/bootstrap state cannot win');
 assert.ok(index.includes('modules-v51-permission-navigation.js?v=51.16'),'Permission navigation v51.16 must be cache-busted for the accounting guard loader');
 assert.ok(index.includes('modules-v103-accounting-navigation-guard.js?v=103.1'),'Accounting deterministic navigation guard must be directly loaded by v2');

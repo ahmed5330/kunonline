@@ -30,8 +30,8 @@ assert.ok(ui.includes('customModal(section)')&&ui.includes('calendarDate('),'cus
 assert.ok(ui.includes("MutationObserver(()=>schedule(80))"),'section period bars must be restored after dashboard rerenders');
 assert.ok(ui.includes('.dash-section-actions .dash-v124-period-control{display:none!important}'),'old volatile section controls must not create duplicates');
 
-assert.ok(preview.includes('/v2/modules-v125-dashboard-section-periods.js?v=125.3'),'preview must inject dashboard v125');
-assert.ok(production.includes('/v2/modules-v125-dashboard-section-periods.js?v=125.3'),'production must inject dashboard v125');
+assert.ok(preview.includes('/v2/modules-v125-dashboard-section-periods.js?v=125.4'),'preview must inject dashboard v125');
+assert.ok(production.includes('/v2/modules-v125-dashboard-section-periods.js?v=125.4'),'production must inject dashboard v125');
 assert.ok(preview.indexOf('modules-v125-dashboard-section-periods.js')>preview.indexOf('modules-v124-dashboard-periods-province.js'),'preview must load v125 after v124');
 assert.ok(production.indexOf('modules-v125-dashboard-section-periods.js')>production.indexOf('modules-v124-dashboard-periods-province.js'),'production must load v125 after v124');
 

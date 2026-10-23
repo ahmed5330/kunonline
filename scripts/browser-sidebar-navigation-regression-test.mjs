@@ -117,6 +117,31 @@ try{
  await openGroup('finance');await routeClick('finance');assert.equal(await active(),'finance');
  await routeClick('dashboard');assert.equal(await active(),'dashboard');
 
+ // Rapid parent/child clicks must not re-open a stale parent or lose the
+ // last requested route. Execute the entire burst synchronously so no pause
+ // artificially fixes race conditions in class observers and navigation.
+ for(let repetition=0;repetition<6;repetition++){
+  const result=await evalJs('(()=>{const steps=[["stock","inventory"],["sales","orders"],["growth","campaigns"],["finance","wallet"]];'+
+    'for(const [group,route] of steps){'+
+    'const toggle=document.querySelector(".nav-group[data-nav-group="+group+"] > .nav-group-toggle");'+
+    'const panel=toggle?.closest(".nav-group");'+
+    'if(panel&&!panel.classList.contains("is-open"))toggle.click();'+
+    'const button=document.querySelector(".nav button[data-view="+route+"]");'+
+    'if(!button)throw Error("Missing rapid route "+route);button.click();}'+
+    'return {active:document.querySelector(".nav button.active[data-view]")?.dataset.view,'+
+    'open:[...document.querySelectorAll(".nav-group.is-open")].map(g=>g.dataset.navGroup)};})()');
+  assert.equal(result.active,'wallet','Last rapid destination must win immediately');
+  await sleep(180);
+  assert.equal(await active(),'wallet','Last rapid destination must remain active after MutationObserver ticks');
+  assert.equal(await groupOpen('finance'),true,'Last destination parent must remain expanded');
+  assert.deepEqual(await evalJs('[...document.querySelectorAll(".nav-group.is-open")].map(g=>g.dataset.navGroup)'),['finance'],'No stale parent should reopen after burst');
+ }
+ // Expanding another group alone must not trigger a stale navigation event.
+ await evalJs('document.querySelector(".nav-group[data-nav-group=stock]>.nav-group-toggle").click()');
+ await sleep(180);
+ assert.equal(await active(),'wallet','Changing parent expansion must not navigate away');
+ assert.equal(await groupOpen('stock'),true,'New parent must remain open during rapid interactions');
+
  // Mobile-sized layout uses the same parent/child routing semantics.
  await cdp.send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
  await openGroup('stock');await routeClick('inventory');
@@ -125,7 +150,7 @@ try{
  assert.equal(await groupOpen('growth'),true);
  assert.equal(await groupOpen('stock'),false);
  assert.deepEqual(await evalJs('window.__navErrors'),[]);
- console.log('Sidebar navigation browser fixture PASSED: inventory→sales and every grouped subsection ('+examined+' routes), independent accordion toggles, permissions, dashboard, mobile.');
+ console.log('Sidebar navigation browser fixture PASSED: inventory→sales and every grouped subsection ('+examined+' routes), independent accordion toggles, six rapid route bursts, permissions, dashboard, mobile.');
 }finally{
  try{cdp?.close();}catch{}
  if(chrome&&!chrome.killed)chrome.kill('SIGTERM');

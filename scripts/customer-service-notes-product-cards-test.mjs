@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {execFileSync} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
 const read=path=>fs.readFileSync(new URL('../'+path,import.meta.url),'utf8');
-const check=path=>execFileSync(process.execPath,['--check',new URL('../'+path,import.meta.url).pathname],{stdio:'pipe'});
+// URL.pathname is not a Windows filesystem path (e.g. /C:/...).
+const check=path=>execFileSync(process.execPath,['--check',fileURLToPath(new URL('../'+path,import.meta.url))],{stdio:'pipe'});
 for(const path of ['public/v2/modules-v31-customer-service.js','public/v2/modules-v42-customer-service-rich-cards.js','src/production-customer-service.js'])check(path);
 const cards=read('public/v2/modules-v31-customer-service.js');
 const rich=read('public/v2/modules-v42-customer-service-rich-cards.js');

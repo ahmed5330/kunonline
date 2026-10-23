@@ -55,7 +55,48 @@
   function showSession(me){
     removeGate();let box=document.getElementById('v28SessionBox');if(!box){box=document.createElement('div');box.id='v28SessionBox';top.appendChild(box)};
     box.innerHTML=`<span class="v28-session-name" title="${esc(me.email||me.name||'')}">${esc(me.name||me.email||'الحساب')}</span><button class="btn soft" id="v28LogoutBtn" type="button">تسجيل الخروج</button>`;
-    document.getElementById('v28LogoutBtn').onclick=async()=>{const btn=document.getElementById('v28LogoutBtn');try{btn.disabled=true;btn.textContent='جاري الخروج...';await request('/api/logout',{method:'POST'});}catch{}showAuth('login')};
+    document.getElementById('v28LogoutBtn').onclick=async()=>{
+      const btn=document.getElementById('v28LogoutBtn');
+      btn.disabled=true;btn.textContent='جاري الخروج...';
+      let failure=null;
+      try{await request('/api/logout',{method:'POST'});}catch(error){failure=error;}
+      // Never leave the user's private dashboard visible after an attempted
+      // logout, but never pretend that server-side revocation succeeded.
+      showAuth('login');
+      if(failure){
+        const notice=document.getElementById('v28LoginError');
+        if(notice){
+          notice.textContent='تعذر تأكيد إبطال الجلسة على الخادم. تم إخفاء الحساب على هذا الجهاز، لكن الجلسة القديمة قد تظل صالحة. أعد المحاولة لإبطال الجلسة نفسها أو تواصل مع الإدارة.';
+          notice.classList.add('show');notice.setAttribute('role','alert');
+          // On server failure the HttpOnly cookie remains intact. Do not
+          // retry with a new login or copy the bearer token into JavaScript.
+          // Clicking below resends the original cookie in a POST and keeps
+          // all sensitive dashboard content hidden.
+          if(failure.status===400){
+            // Duplicate ko_session cookies are ambiguous. The server cleared
+            // only the host cookie; retrying without the original bearer
+            // cannot prove that every conflicting cookie was revoked.
+            notice.textContent='تم اكتشاف أكثر من كوكي جلسة، لذلك لا يمكن تأكيد إبطال أي منها. تم إخفاء بيانات الحساب؛ تواصل مع الإدارة لإيقاف الجلسات القديمة.';
+            return;
+          }
+          const retry=document.createElement('button');
+          retry.type='button';retry.id='v28LogoutRetryBtn';
+          retry.className='btn soft';retry.textContent='إعادة محاولة تسجيل الخروج';
+          retry.onclick=async()=>{
+            retry.disabled=true;retry.textContent='جاري إعادة المحاولة...';
+            try{
+              await request('/api/logout',{method:'POST'});
+              showAuth('login');
+            }catch{
+              notice.textContent='تعذر تأكيد إبطال الجلسة مرة أخرى. قد تظل الجلسة القديمة صالحة. يمكنك إعادة المحاولة أو التواصل مع الإدارة.';
+              notice.classList.add('show');notice.setAttribute('role','alert');
+              retry.disabled=false;retry.textContent='إعادة محاولة تسجيل الخروج';
+            }
+          };
+          notice.insertAdjacentElement('afterend',retry);
+        }
+      }
+    };
     document.documentElement.dataset.v28Auth='authenticated';
   }
 

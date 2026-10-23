@@ -1,3 +1,4 @@
+import {sessionTokenFromRequest,hasDuplicateSessionCookies,isSessionRevoked,revokeSession} from './session-revocation.js';
 /**
  * كن أونلاين — Cloudflare Worker
  * ---------------------------------------------------------------------------
@@ -154,22 +155,29 @@ async function countUsers(env) {
 }
 
 async function makeSession(payload, secret) {
-  const body = b64url.enc(JSON.stringify({ ...payload, exp: Math.floor(Date.now() / 1000) + WEEK }));
+  const body = b64url.enc(JSON.stringify({ ...payload, jti: crypto.randomUUID(), exp: Math.floor(Date.now() / 1000) + WEEK }));
   return `${body}.${await hmac(body, secret)}`;
 }
 
-async function readSession(request, secret) {
-  const raw = (request.headers.get('Cookie') || '')
-    .split(';').map(c => c.trim()).find(c => c.startsWith(COOKIE + '='));
-  if (!raw) return null;
-  const [body, sig] = raw.slice(COOKIE.length + 1).split('.');
-  if (!body || !sig) return null;
+async function readSession(request, secret, env) {
+  // The hash used for logout revocation MUST cover the exact same token that
+  // authentication verifies. Splitting and ignoring a trailing segment would
+  // allow a signed, revoked token to be replayed as "body.signature.extra".
+  const token = sessionTokenFromRequest(request);
+  const parts = token.split('.');
+  if (parts.length !== 2) return null;
+  const [body, sig] = parts;
+  if (!/^[A-Za-z0-9_-]+$/.test(body) || !/^[0-9a-f]{64}$/.test(sig)) return null;
   if (!safeEqual(sig, await hmac(body, secret))) return null;
-  try {
-    const p = JSON.parse(b64url.dec(body));
-    if (!p.exp || p.exp < Math.floor(Date.now() / 1000)) return null;
-    return p;
-  } catch { return null; }
+  let p;
+  try { p = JSON.parse(b64url.dec(body)); } catch { return null; }
+  // Require a canonical integer expiry and reject at the exact expiry second.
+  // Signed but malformed/legacy payloads must never extend a browser session.
+  if (!p || !Number.isSafeInteger(p.exp) || p.exp <= Math.floor(Date.now() / 1000)) return null;
+  // Database failures propagate; the caller must not treat this as a valid
+  // session or issue a successful logout response when revocation failed.
+  if (await isSessionRevoked(env, token)) return null;
+  return p;
 }
 
 /* ---------- تشفير توكنز التكامل (Meta / EasyOrders / كلمة سر الإيميل) ----------
@@ -184,7 +192,10 @@ async function encKeyFrom(env) {
 async function encryptSecret(plain, env) {
   if (!plain) return plain;
   const key = await encKeyFrom(env);
-  if (!key) return plain; /* المفتاح مش متظبط لسه — نسيبها زي ما هي بدل ما نفشل الحفظ */
+  // Never persist provider tokens/passwords as plaintext on a missing key.
+  // Fail the whole state write before DB.run(); an operator must provision
+  // TOKEN_ENC_KEY on the actual backend Worker used by this account.
+  if (!key) throw Object.assign(new Error('TOKEN_ENC_KEY is required to store secrets'), { status: 503, code: 'TOKEN_ENC_KEY_MISSING' });
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const buf = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(plain));
   return 'enc$' + toB64(iv) + '$' + toB64(new Uint8Array(buf));
@@ -193,14 +204,19 @@ async function encryptSecret(plain, env) {
 async function decryptSecret(value, env) {
   if (!value || !String(value).startsWith('enc$')) return value; /* مش مشفّرة (أو المفتاح ناقص) */
   const parts = String(value).split('$');
-  if (parts.length !== 3) return null;
+  // Never silently replace an encrypted legacy credential with null.
+  // A later saveState() would persist that null and destroy the credential.
+  if (parts.length !== 3) throw Object.assign(new Error('Encrypted credential envelope is invalid'), {status:503,code:'TOKEN_DECRYPT_FAILED'});
   const key = await encKeyFrom(env);
-  if (!key) return null;
+  if (!key) throw Object.assign(new Error('TOKEN_ENC_KEY is required to read existing encrypted credentials'), {status:503,code:'TOKEN_ENC_KEY_MISSING'});
   try {
     const iv = fromB64(parts[1]);
     const buf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, fromB64(parts[2]));
     return new TextDecoder().decode(buf);
-  } catch { return null; }
+  } catch {
+    // Do not reveal ciphertext, secret values or crypto stack traces.
+    throw Object.assign(new Error('Encrypted credential cannot be decrypted'), {status:503,code:'TOKEN_DECRYPT_FAILED'});
+  }
 }
 
 /** آخر ٤ حروف بس — كفاية للعميل يتأكد إنه سجّل التوكن الصح من غير ما نعرضه كامل */
@@ -992,7 +1008,7 @@ async function handleApi(request, env, url, path) {
     /* بيقبل التوكن أو جلسة عندها صلاحية الإدخال اليومي */
     let allowed = isIngest;
     if (!allowed) {
-      const sess = await readSession(request, secret);
+      const sess = await readSession(request, secret, env);
       if (sess && sess.uid) {
         const u = await env.DB.prepare('SELECT role, status FROM users WHERE id = ?').bind(sess.uid).first();
         allowed = u && u.status === 'active' && permsOf(u.role).includes('entries');
@@ -1055,10 +1071,15 @@ async function handleApi(request, env, url, path) {
   /* أول تشغيل: إنشاء حساب الإدارة — متاح بس لما الجدول يكون فاضي */
   if (path === '/api/setup' && request.method === 'POST') {
     if (await countUsers(env) > 0) return json({ error: 'النظام متظبط بالفعل' }, 403);
-    const { email = '', password = '' } = await request.json().catch(() => ({}));
-    const mail = String(email).trim().toLowerCase();
-    if (!mail.includes('@')) return json({ error: 'اكتب إيميل صحيح' }, 400);
-    if (String(password).length < MIN_PASSWORD) {
+    const credentials = await request.json().catch(() => null);
+    if (!credentials || typeof credentials !== 'object' || Array.isArray(credentials) ||
+        typeof credentials.email !== 'string' || typeof credentials.password !== 'string') {
+      return json({ error: 'اكتب الإيميل وكلمة المرور بشكل صحيح' }, 400);
+    }
+    const mail = credentials.email.trim().toLowerCase();
+    const password = credentials.password;
+    if (!mail.includes('@') || mail.length > 254) return json({ error: 'اكتب إيميل صحيح' }, 400);
+    if (password.length < MIN_PASSWORD || password.length > 4096) {
       return json({ error: `كلمة المرور لازم تكون ${MIN_PASSWORD} حروف على الأقل` }, 400);
     }
     const uid = crypto.randomUUID();
@@ -1079,9 +1100,19 @@ async function handleApi(request, env, url, path) {
 
   /* تسجيل الدخول — الإيميل وكلمة المرور بيتطابقوا مع جدول users */
   if (path === '/api/login' && request.method === 'POST') {
-    const { email = '', password = '' } = await request.json().catch(() => ({}));
-    const mail = String(email).trim().toLowerCase();
-    if (!mail || !password) return json({ error: 'اكتب الإيميل وكلمة المرور' }, 400);
+    const credentials = await request.json().catch(() => null);
+    // Reject null, arrays, nested objects and non-string values before
+    // converting input or querying login_attempts. Bad clients must get 400,
+    // never an internal 500 or an accidental authentication side effect.
+    if (!credentials || typeof credentials !== 'object' || Array.isArray(credentials) ||
+        typeof credentials.email !== 'string' || typeof credentials.password !== 'string') {
+      return json({ error: 'اكتب الإيميل وكلمة المرور بشكل صحيح' }, 400);
+    }
+    const mail = credentials.email.trim().toLowerCase();
+    const password = credentials.password;
+    if (!mail || !password || mail.length > 254 || password.length > 4096) {
+      return json({ error: 'اكتب الإيميل وكلمة المرور بشكل صحيح' }, 400);
+    }
 
     const lockedFor = await checkLock(env, mail);
     if (lockedFor) {
@@ -1116,10 +1147,27 @@ async function handleApi(request, env, url, path) {
   }
 
   if (path === '/api/logout') {
-    return json({ ok: true }, 200, { 'Set-Cookie': `${COOKIE}=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0` });
+    // Logout mutates session revocation state; never allow navigation/GET to do it.
+    if (request.method !== 'POST') return json({error:'METHOD_NOT_ALLOWED'},405,{'Allow':'POST'});
+    const cleared={ 'Set-Cookie': `${COOKIE}=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0` };
+    // Cookie-tossing ambiguity must not claim a particular token was revoked.
+    // Clear the local cookie, but report a failed logout until retried safely.
+    if (hasDuplicateSessionCookies(request)) return json({ok:false,error:'AMBIGUOUS_SESSION_COOKIE'},400,cleared);
+    try {
+      const valid=await readSession(request,secret,env);
+      if(valid)await revokeSession(env,sessionTokenFromRequest(request),valid.exp);
+      return json({ok:true},200,cleared);
+    }catch(error){
+      console.error('Logout session revocation failed',error?.code||error?.name||'database_failure');
+      // Never claim server-side revocation succeeded on a D1 failure.
+      // Keep the HttpOnly cookie on a transient D1 failure so an authorized
+      // retry can revoke this *same* token. The UI hides private data while
+      // the server-side session remains unconfirmed, then offers retry.
+      return json({ok:false,error:'SESSION_REVOCATION_UNAVAILABLE'},503,{'Cache-Control':'no-store'});
+    }
   }
 
-  const session = await readSession(request, secret);
+  const session = await readSession(request, secret, env);
   if (!session) {
     if (path === '/api/me') return json({ role: null, needsSetup: (await countUsers(env)) === 0 });
     return json({ error: 'محتاج تسجّل دخول' }, 401);

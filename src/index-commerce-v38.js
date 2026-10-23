@@ -1,3 +1,4 @@
+import {handleTenantEasyOrdersHealth} from './tenant-easyorders-health.js';
 import app,{SyncEntrypoint as BaseSyncEntrypoint} from './index-commerce-v38-base.js';
 import {handleClarityApi,syncClarityScheduled} from './clarity-integration.js';
 import {handleAIMarketing} from './ai-marketing-analyst.js';
@@ -23,9 +24,9 @@ const V2_UI_SCRIPTS=[
   '<script src="/v2/modules-v122-dashboard-experience.js?v=122.1" data-kun-dashboard-experience="1"></script>',
   '<script src="/v2/modules-v123-dashboard-unified.js?v=123.0" data-kun-dashboard-unified="1"></script>',
   '<script src="/v2/modules-v124-dashboard-periods-province.js?v=124.1" data-kun-dashboard-periods-v124="1"></script>',
-  '<script src="/v2/modules-v125-dashboard-section-periods.js?v=125.3" data-kun-dashboard-section-periods-v125="1"></script>',
+  '<script src="/v2/modules-v125-dashboard-section-periods.js?v=125.4" data-kun-dashboard-section-periods-v125="1"></script>',
   '<script src="/v2/modules-v126-dashboard-finance-top.js?v=126.5" data-kun-dashboard-finance-top-v126="1"></script>',
-  '<script src="/v2/modules-v127-subscriptions.js?v=127.20" data-kun-subscriptions-v127="1"></script>',
+  '<script src="/v2/modules-v127-subscriptions.js?v=127.21" data-kun-subscriptions-v127="1"></script>',
   '<script src="/v2/modules-v128-unit-tracking.js?v=128.4" data-kun-unit-tracking-v128="1"></script>'
 ].join('');
 const LIVE_TEAM_ASSET_FROM='/v2/modules-v117-team-collaboration.js?v=117.0';
@@ -104,6 +105,14 @@ export default {
     // so a paused/empty paid wallet cannot bypass the central 402 gate.
     const subscription=await handleSubscriptionControl({request,env,ctx,delegate:app});
     if(subscription)return subscription;
+    const tenantSync=await handleTenantEasyOrdersHealth(request,env,{
+      authorize:async sourceRequest=>{
+        const identityUrl=new URL('/api/me',sourceRequest.url);
+        const identity=await app.fetch(new Request(identityUrl,{method:'GET',headers:sourceRequest.headers}),env,ctx);
+        return identity.ok?identity.json().catch(()=>null):null;
+      }
+    });
+    if(tenantSync)return tenantSync;
     const competitors=await handleCompetitorIntelligence({request,env,ctx,delegate:app});
     if(competitors)return competitors;
     const aiMarketing=await handleAIMarketing({request,env,ctx,delegate:app});

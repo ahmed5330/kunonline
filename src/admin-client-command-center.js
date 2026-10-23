@@ -14,7 +14,13 @@ function cairoParts(date=new Date()){
 function utcDay(ymd){const [y,m,d]=String(ymd).split('-').map(Number);return new Date(Date.UTC(y,m-1,d));}
 function ymd(date){return date.toISOString().slice(0,10);}
 function shift(ymdValue,days){const d=utcDay(ymdValue);d.setUTCDate(d.getUTCDate()+Number(days||0));return ymd(d);}
-function validYmd(value){return /^\d{4}-\d{2}-\d{2}$/.test(String(value||''))&&!Number.isNaN(utcDay(value).getTime());}
+function validYmd(value){
+  // Date.UTC normalizes invalid calendar dates (e.g. February 31) instead of throwing.
+  // A custom report must reject such a date rather than silently shift its scope.
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(String(value||'')))return false;
+  const day=utcDay(value);
+  return !Number.isNaN(day.getTime())&&ymd(day)===value;
+}
 function daysInclusive(from,to){return Math.floor((utcDay(to)-utcDay(from))/86400000)+1;}
 
 export function resolveAdminBriefRange({preset='today',from='',to='',now=new Date()}={}){
@@ -35,10 +41,10 @@ export function resolveAdminBriefRange({preset='today',from='',to='',now=new Dat
 
 function mapBy(rows,key='client_id'){return new Map((rows||[]).map(row=>[String(row[key]||''),row]));}
 function riskCount({orders={},inventory={},walletBalance=0,marketing={}}={}){
-  let count=0;if(n(orders.pending)>0)count++;if(n(orders.total)>=5&&pct(orders.cancelled,orders.total)>20)count++;if(n(orders.total)>=5&&pct(orders.returned,orders.total)>15)count++;if(n(inventory.low_stock)>0)count++;if(n(inventory.out_of_stock)>0)count++;if(n(walletBalance)<=0)count++;if(n(marketing.spend)>0&&n(marketing.realRoas)<1)count++;return count;
+  let count=0;if(n(orders.pending)>0)count++;if(n(orders.total)>=5&&pct(orders.cancelled,orders.total)>20)count++;if(n(orders.total)>=5&&pct(orders.returned,orders.total)>15)count++;if(n(inventory.lowStock)>0)count++;if(n(inventory.outOfStock)>0)count++;if(n(walletBalance)<=0)count++;if(n(marketing.spend)>0&&n(marketing.realRoas)<1)count++;return count;
 }
 function compactHomeClient(base,order={},inventory={},ads={},finance={}){
-  const orders={total:n(order.total),gmv:r2(order.gmv),pending:n(order.pending),confirmed:n(order.confirmed),shipped:n(order.shipped),delivered:n(order.delivered),collected:n(order.collected),collectedAmount:r2(order.collected_amount),cancelled:n(order.cancelled),returned:n(order.returned),deliveredRevenue:r2(order.delivered_revenue),customers:n(order.customers),aov:n(order.total)?r2(n(order.gmv)/n(order.total)):0};
+  const orders={total:n(order.total),gmv:r2(order.gmv),pending:n(order.pending),confirmed:n(order.confirmed),shipped:n(order.shipped),delivered:n(order.delivered),collected:n(order.collected),collectedAmount:r2(order.collected_amount),verifiedCollectedAmount:r2(order.verified_collected_amount),estimatedUnverifiedCollection:r2(order.estimated_unverified_collection),unverifiedCollectedOrders:n(order.unverified_collected_orders),cancelled:n(order.cancelled),returned:n(order.returned),deliveredRevenue:r2(order.delivered_revenue),customers:n(order.customers),aov:n(order.total)?r2(n(order.gmv)/n(order.total)):0};
   orders.deliveryRate=pct(orders.delivered,orders.total);orders.cancellationRate=pct(orders.cancelled,orders.total);orders.returnRate=pct(orders.returned,Math.max(1,orders.delivered+orders.returned));
   const marketing={spend:r2(ads.spend),impressions:n(ads.impressions),clicks:n(ads.clicks),ctr:pct(ads.clicks,ads.impressions),cpc:n(ads.clicks)?r2(n(ads.spend)/n(ads.clicks)):0,realOrderCost:orders.total?r2(n(ads.spend)/orders.total):0,deliveredOrderCost:orders.delivered?r2(n(ads.spend)/orders.delivered):0,realRoas:n(ads.spend)?r2(orders.deliveredRevenue/n(ads.spend)):0};
   const stock={products:n(inventory.products),lowStock:n(inventory.low_stock),outOfStock:n(inventory.out_of_stock)};
@@ -52,33 +58,38 @@ export async function adminClientCommandCenter(env,{me,range}={}){
   const [orderRows,inventoryRows,adRows,financeRows]=await Promise.all([
     env.DB.prepare(`SELECT client_id,COUNT(*) total,COALESCE(SUM(total),0) gmv,
       SUM(CASE WHEN state='pending' THEN 1 ELSE 0 END) pending,
-      SUM(CASE WHEN state IN ('confirmed','preparing') THEN 1 ELSE 0 END) confirmed,
+      SUM(CASE WHEN state IN ('confirmed','preparing','shipped','signed','collected') THEN 1 ELSE 0 END) confirmed,
       SUM(CASE WHEN state='shipped' THEN 1 ELSE 0 END) shipped,
       SUM(CASE WHEN state IN ('signed','collected') THEN 1 ELSE 0 END) delivered,
       SUM(CASE WHEN state='collected' THEN 1 ELSE 0 END) collected,
       COALESCE(SUM(CASE WHEN state='collected' THEN COALESCE(collected_amount,total,0) ELSE 0 END),0) collected_amount,
+      COALESCE(SUM(CASE WHEN state='collected' AND collected_amount IS NOT NULL THEN collected_amount ELSE 0 END),0) verified_collected_amount,
+      COALESCE(SUM(CASE WHEN state='collected' AND collected_amount IS NULL THEN COALESCE(total,0) ELSE 0 END),0) estimated_unverified_collection,
+      SUM(CASE WHEN state='collected' AND collected_amount IS NULL THEN 1 ELSE 0 END) unverified_collected_orders,
       SUM(CASE WHEN state='cancelled' THEN 1 ELSE 0 END) cancelled,
       SUM(CASE WHEN state='returned' THEN 1 ELSE 0 END) returned,
       COALESCE(SUM(CASE WHEN state IN ('signed','collected') THEN total ELSE 0 END),0) delivered_revenue,
       COUNT(DISTINCT customer_id) customers
-      FROM orders WHERE date(date) BETWEEN date(?) AND date(?) GROUP BY client_id`).bind(period.from,period.to).all(),
+      FROM orders WHERE date(COALESCE(NULLIF(TRIM(date),''),created_at)) BETWEEN date(?) AND date(?) AND NOT EXISTS (SELECT 1 FROM order_duplicate_links dup WHERE dup.duplicate_order_id=orders.id) GROUP BY client_id`).bind(period.from,period.to).all(),
     env.DB.prepare(`SELECT client_id,COUNT(*) products,
       SUM(CASE WHEN stock<=low_stock_threshold THEN 1 ELSE 0 END) low_stock,
       SUM(CASE WHEN stock<=0 THEN 1 ELSE 0 END) out_of_stock
       FROM products WHERE active=1 GROUP BY client_id`).all(),
     env.DB.prepare(`SELECT client_id,COALESCE(SUM(spend),0) spend,COALESCE(SUM(impressions),0) impressions,COALESCE(SUM(clicks),0) clicks
-      FROM campaign_daily_metrics WHERE metric_date BETWEEN ? AND ? GROUP BY client_id`).bind(period.from,period.to).all().catch(()=>({results:[]})),
+      FROM campaign_daily_metrics WHERE metric_date BETWEEN ? AND ? GROUP BY client_id`).bind(period.from,period.to).all().catch(()=>({results:[],unavailable:true})),
     env.DB.prepare(`SELECT client_id,
       COALESCE(SUM(CASE WHEN type='income' THEN amount ELSE 0 END),0) income,
       COALESCE(SUM(CASE WHEN type='expense' THEN amount ELSE 0 END),0) expenses
-      FROM transactions WHERE date(date) BETWEEN date(?) AND date(?) AND client_id IS NOT NULL GROUP BY client_id`).bind(period.from,period.to).all().catch(()=>({results:[]}))
+      FROM transactions WHERE date(COALESCE(NULLIF(TRIM(date),''),created_at)) BETWEEN date(?) AND date(?) AND client_id IS NOT NULL GROUP BY client_id`).bind(period.from,period.to).all().catch(()=>({results:[],unavailable:true}))
   ]);
   const om=mapBy(orderRows.results),im=mapBy(inventoryRows.results),am=mapBy(adRows.results),fm=mapBy(financeRows.results);
   const rows=clients.map(c=>compactHomeClient(c,om.get(String(c.clientId))||{},im.get(String(c.clientId))||{},am.get(String(c.clientId))||{},fm.get(String(c.clientId))||{}));
   rows.sort((a,b)=>Number(b.status==='active')-Number(a.status==='active')||n(b.alerts)-n(a.alerts)||n(b.orders.total)-n(a.orders.total)||String(b.lastOrderAt||'').localeCompare(String(a.lastOrderAt||'')));
-  const totals=rows.reduce((a,c)=>{a.orders+=c.orders.total;a.gmv+=c.orders.gmv;a.deliveredRevenue+=c.orders.deliveredRevenue;a.collectedAmount+=c.orders.collectedAmount;a.spend+=c.marketing.spend;a.alerts+=c.alerts;if(c.status==='active')a.activeClients++;return a;},{clients:rows.length,activeClients:0,orders:0,gmv:0,deliveredRevenue:0,collectedAmount:0,spend:0,alerts:0});
-  for(const k of ['gmv','deliveredRevenue','collectedAmount','spend'])totals[k]=r2(totals[k]);
-  return {ok:true,period,totals,clients:rows};
+  const totals=rows.reduce((a,c)=>{a.orders+=c.orders.total;a.gmv+=c.orders.gmv;a.deliveredRevenue+=c.orders.deliveredRevenue;a.collectedAmount+=c.orders.collectedAmount;a.verifiedCollectedAmount+=c.orders.verifiedCollectedAmount;a.estimatedUnverifiedCollection+=c.orders.estimatedUnverifiedCollection;a.unverifiedCollectedOrders+=c.orders.unverifiedCollectedOrders;a.spend+=c.marketing.spend;a.alerts+=c.alerts;if(c.status==='active')a.activeClients++;return a;},{clients:rows.length,activeClients:0,orders:0,gmv:0,deliveredRevenue:0,collectedAmount:0,verifiedCollectedAmount:0,estimatedUnverifiedCollection:0,unverifiedCollectedOrders:0,spend:0,alerts:0});
+  for(const k of ['gmv','deliveredRevenue','collectedAmount','verifiedCollectedAmount','estimatedUnverifiedCollection','spend'])totals[k]=r2(totals[k]);
+  // An unavailable data source is not a verified zero. Expose status without SQL details.
+  const sourceAvailability={ads:adRows.unavailable?'unavailable':'ok',finance:financeRows.unavailable?'unavailable':'ok'};
+  return {ok:true,period,totals,clients:rows,sourceAvailability};
 }
 
 async function commercePeriodStats(env,{clientId,from,to}){
@@ -89,17 +100,20 @@ async function commercePeriodStats(env,{clientId,from,to}){
     SUM(CASE WHEN state IN ('signed','collected') THEN 1 ELSE 0 END) delivered,
     SUM(CASE WHEN state='collected' THEN 1 ELSE 0 END) collected,
     COALESCE(SUM(CASE WHEN state='collected' THEN COALESCE(collected_amount,total,0) ELSE 0 END),0) collected_amount,
+      COALESCE(SUM(CASE WHEN state='collected' AND collected_amount IS NOT NULL THEN collected_amount ELSE 0 END),0) verified_collected_amount,
+      COALESCE(SUM(CASE WHEN state='collected' AND collected_amount IS NULL THEN COALESCE(total,0) ELSE 0 END),0) estimated_unverified_collection,
+      SUM(CASE WHEN state='collected' AND collected_amount IS NULL THEN 1 ELSE 0 END) unverified_collected_orders,
     SUM(CASE WHEN state='cancelled' THEN 1 ELSE 0 END) cancelled,
     SUM(CASE WHEN state='returned' THEN 1 ELSE 0 END) returned,
     COALESCE(SUM(CASE WHEN state IN ('signed','collected') THEN total ELSE 0 END),0) delivered_revenue,
     COUNT(DISTINCT customer_id) customers
-    FROM orders WHERE client_id=? AND date(date) BETWEEN date(?) AND date(?)`).bind(clientId,from,to).first();
-  const total=n(row?.total),delivered=n(row?.delivered),returned=n(row?.returned);return {total,gmv:r2(row?.gmv),pending:n(row?.pending),confirmed:n(row?.confirmed),shipped:n(row?.shipped),delivered,collected:n(row?.collected),collectedAmount:r2(row?.collected_amount),cancelled:n(row?.cancelled),returned,deliveredRevenue:r2(row?.delivered_revenue),customers:n(row?.customers),aov:total?r2(n(row?.gmv)/total):0,confirmationRate:pct(row?.confirmed,total),deliveryRate:pct(delivered,total),cancellationRate:pct(row?.cancelled,total),returnRate:pct(returned,Math.max(1,delivered+returned))};
+    FROM orders WHERE client_id=? AND date(COALESCE(NULLIF(TRIM(date),''),created_at)) BETWEEN date(?) AND date(?) AND NOT EXISTS (SELECT 1 FROM order_duplicate_links dup WHERE dup.duplicate_order_id=orders.id)`).bind(clientId,from,to).first();
+  const total=n(row?.total),delivered=n(row?.delivered),returned=n(row?.returned);return {total,gmv:r2(row?.gmv),pending:n(row?.pending),confirmed:n(row?.confirmed),shipped:n(row?.shipped),delivered,collected:n(row?.collected),collectedAmount:r2(row?.collected_amount),verifiedCollectedAmount:r2(row?.verified_collected_amount),estimatedUnverifiedCollection:r2(row?.estimated_unverified_collection),unverifiedCollectedOrders:n(row?.unverified_collected_orders),cancelled:n(row?.cancelled),returned,deliveredRevenue:r2(row?.delivered_revenue),customers:n(row?.customers),aov:total?r2(n(row?.gmv)/total):0,confirmationRate:pct(row?.confirmed,total),deliveryRate:pct(delivered,total),cancellationRate:pct(row?.cancelled,total),returnRate:pct(returned,Math.max(1,delivered+returned))};
 }
 function change(current,previous){current=n(current);previous=n(previous);if(previous===0)return current===0?0:null;return r2((current-previous)/Math.abs(previous)*100);}
 function compareBrief(current,previous){
   const cm=current.metrics||{},pm=previous.metrics||{},co=current.commerce||{},po=previous.commerce||{};
-  return {ordersPct:change(co.total,po.total),gmvPct:change(co.gmv,po.gmv),deliveredRevenuePct:change(co.deliveredRevenue,po.deliveredRevenue),collectedAmountPct:change(co.collectedAmount,po.collectedAmount),aovPct:change(co.aov,po.aov),spendPct:change(cm.marketing?.spend,pm.marketing?.spend),netPct:change(cm.finance?.net,pm.finance?.net),realRoasDelta:r2(n(cm.marketing?.realRoas)-n(pm.marketing?.realRoas)),deliveryRateDelta:r2(n(co.deliveryRate)-n(po.deliveryRate)),cancellationRateDelta:r2(n(co.cancellationRate)-n(po.cancellationRate)),returnRateDelta:r2(n(co.returnRate)-n(po.returnRate))};
+  return {ordersPct:change(co.total,po.total),gmvPct:change(co.gmv,po.gmv),deliveredRevenuePct:change(co.deliveredRevenue,po.deliveredRevenue),collectedAmountPct:change(co.collectedAmount,po.collectedAmount),verifiedCollectedAmountPct:change(co.verifiedCollectedAmount,po.verifiedCollectedAmount),aovPct:change(co.aov,po.aov),spendPct:change(cm.marketing?.spend,pm.marketing?.spend),netPct:change(cm.finance?.net,pm.finance?.net),realRoasDelta:r2(n(cm.marketing?.realRoas)-n(pm.marketing?.realRoas)),deliveryRateDelta:r2(n(co.deliveryRate)-n(po.deliveryRate)),cancellationRateDelta:r2(n(co.cancellationRate)-n(po.cancellationRate)),returnRateDelta:r2(n(co.returnRate)-n(po.returnRate))};
 }
 
 export async function adminClientCommandBrief(env,{me,clientId,range}={}){

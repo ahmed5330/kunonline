@@ -21,6 +21,6 @@
 {
   const id='kunAdminClientCommandV74Loader';
   if(!document.getElementById(id)){
-    const script=document.createElement('script');script.id=id;script.src='/v2/modules-v74-admin-client-command-center.js?v=74.0';script.async=false;document.head.appendChild(script);
+    const script=document.createElement('script');script.id=id;script.src='/v2/modules-v74-admin-client-command-center.js?v=74.1';script.async=false;document.head.appendChild(script);
   }
 }
