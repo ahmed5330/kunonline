@@ -24,6 +24,12 @@ In the current repository configuration, the Production Worker binds both `DB` (
 - **ANA-01, UX-01/02:** Empty Meta Ads does not claim healthy performance; procurement labels match functions; team counts explicitly exclude owner.
 - **TST-01:** Run relevant Node tests on Linux and Windows; validate sidebar browser fixture and full `npm test`.
 
+## Additional auth/secret release hardening — 23 Oct 2026
+- **SEC-03 legacy secret state:** `src/index.js` must NEVER persist `metaToken`, `easyOrdersToken` or `emailPassword` as plaintext when `TOKEN_ENC_KEY` is missing. The revised writer rejects the save before the DB operation, while operations that contain no secrets can still be saved. Existing legacy plaintext rows may already exist; this patch does not prove they are absent, retroactively re-encrypt old data or rotate provider credentials. Audit those records separately without exposing their values in logs.
+- **Critical environment dependency:** Require `SESSION_SECRET` and `TOKEN_ENC_KEY` as Worker secrets **on both Production and the current Preview authorization backend**. CI's read-only `wrangler secret list --format json` preflight checks *names and secret_text types only*; it does **not** verify secret value contents, identical signatures across services, D1 isolation or secret rotation. A missing key blocks Production rollout until deliberately provisioned and approved.
+- **Session expiry boundary:** Session verification now accepts only an integer `exp` strictly greater than the current Unix second. Tests cover invalid, string, unsafe-integer, and exact-expiry cases. No live session replay was run.
+- **Revocation retention:** `revoked_session_tokens` rows older than their `expires_at` are safe to consider for separately approved, bounded maintenance once clock drift and API use are verified; no automatic live data deletion is authorized by this PR.
+
 ## Release protocol (separate explicit approval required)
 1. Verify CI on the **exact commit SHA** proposed for release. Attach the sandbox test results, environment isolation evidence and review decision to PR #209.
 2. Obtain explicit Production change approval. Merge only after completing all checks and reviewing the exact diff (especially Cloudflare routing and billing/security code).
