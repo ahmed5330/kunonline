@@ -23,6 +23,8 @@ const database=new DatabaseSync(':memory:');
 database.exec('PRAGMA foreign_keys=ON');
 const names=(await readdir(new URL('../migrations/',import.meta.url))).filter(name=>/^00(0[1-9]|1[0-3])_.*\.sql$/.test(name)).sort();
 for(const name of names)database.exec(await readFile(new URL(`../migrations/${name}`,import.meta.url),'utf8'));
+// Auth revocation is an additive migration, applied explicitly to the isolated fixture.
+database.exec(await readFile(new URL('../migrations/2026-10-23-session-revocation.sql',import.meta.url),'utf8'));
 
 const env={APP_ENV:'preview',SESSION_SECRET:'store-isolation-integration-secret',DB:new D1Database(database)};
 let cookie='';
