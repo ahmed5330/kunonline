@@ -41,10 +41,14 @@ actual auth Worker and verify the deployed version before releasing the new UI.
 2. Inspect migration state on all effective authentication D1 bindings using
    authorized Cloudflare read-only migration-list operations and inspect
    table names/schema only. Do not select or log session fingerprints/cookies.
-3. Review all pending migrations. Existing .github/workflows/preview.yml
-   automatically invokes npm run db:migrate:preview; that can apply more than
-   one pending migration. An approved specific-migration procedure must replace
-   blanket application for this release; pause conflicting automation first.
+3. Review all pending migrations. As part of this Draft PR, the formerly
+   automatic Preview CI migration step has been replaced with a read-only
+   revocation-table schema check. The former npm db:migrate:preview command
+   deliberately fails, and npm run db:migrations:preview:list only lists
+   migration state. These guards are NOT yet in the deployed Preview workflow;
+   existing branch automation may still be active until a separately approved
+   change is rolled out. Reconcile any pending migration ledger entries and
+   approve one explicit, verified migration before any Worker changes.
 4. Provision a NEW Worker and D1 containing synthetic data, with no carrier,
    payment, advertising, WhatsApp, push or live account credentials, Cron
    triggers or service bindings. Test the exact selected migration there.
@@ -64,6 +68,21 @@ actual auth Worker and verify the deployed version before releasing the new UI.
    Schedule bounded deletion of expired revocation hashes separately and
    only with approved expiry-unit-aware maintenance. Retention of expired
    hashes does not re-authorize sessions.
+
+## Logout retry behavior (Draft PR implementation)
+
+- The legacy Worker now returns 503 WITHOUT Set-Cookie when the D1 revocation
+  read or write fails. This retains the original HttpOnly browser cookie so
+  a retry POST can revoke the exact same bearer. It does not declare logout
+  success; a failing read rejects authenticated requests.
+- The UI hides the private app immediately and displays a retry control;
+  the browser forwards the original cookie using credentials=include without
+  allowing JavaScript to read or copy its value. Successful retry clears the
+  cookie server-side; another 503 leaves the warning visible.
+- On ambiguous duplicate session cookies the backend returns 400 and clears
+  its local cookie; the UI must NOT claim a successful token-specific retry.
+- Failures can leave the bearer potentially valid until its expiry or a
+  successful revocation. Do not treat UI hiding as server-side logout.
 
 ## Automated source guard vs live release gate
 
