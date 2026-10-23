@@ -62,6 +62,7 @@ jobs:
         run: |
           node scripts/admin-order-date-scope-test.mjs
           node scripts/admin-finance-date-scope-test.mjs
+          node scripts/admin-cod-verification-test.mjs
           node scripts/admin-source-availability-test.mjs
       - name: Run full contract and unit suite
         run: npm test
