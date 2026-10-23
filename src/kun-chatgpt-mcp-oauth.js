@@ -144,8 +144,8 @@ export async function handleKunMcpOAuth({request,env,delegate}){
  try{
   if(p==='/.well-known/oauth-protected-resource'||p==='/.well-known/oauth-protected-resource/mcp')return j({resource:KUN_MCP_RESOURCE,authorization_servers:[KUN_MCP_ORIGIN],scopes_supported:[SCOPE],resource_documentation:KUN_MCP_ORIGIN+'/v2/'});
   if(p==='/.well-known/oauth-authorization-server')return j({issuer:KUN_MCP_ORIGIN,authorization_endpoint:KUN_MCP_ORIGIN+'/oauth/authorize',token_endpoint:KUN_MCP_ORIGIN+'/oauth/token',client_id_metadata_document_supported:true,authorization_response_iss_parameter_supported:true,response_types_supported:['code'],grant_types_supported:['authorization_code','refresh_token'],scopes_supported:[SCOPE],code_challenge_methods_supported:['S256'],token_endpoint_auth_methods_supported:['none']});
-  if(p==='/oauth/authorize')return authorize(request,env,delegate);
-  if(p==='/oauth/token')return token(request,env);
-  return integrationSettings(request,env,delegate);
+  if(p==='/oauth/authorize')return await authorize(request,env,delegate);
+  if(p==='/oauth/token')return await token(request,env);
+  return await integrationSettings(request,env,delegate);
  }catch(error){return j({error:error?.message||'خطأ في ربط حساب ChatGPT',code:error?.code||'MCP_OAUTH_ERROR'},error?.status||500);}
 }
