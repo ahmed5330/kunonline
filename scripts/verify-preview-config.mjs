@@ -69,7 +69,12 @@ for(const [label,pattern] of [
 requirePattern(workflow,/environment:\s*\n\s*name:\s*preview\b/m,'workflow must use the preview GitHub Environment.');
 requirePattern(workflow,/permissions:\s*\n\s*contents:\s*write\b/m,'workflow needs contents:write to maintain preview-stable after full validation.');
 requireText(workflow,'git ls-remote origin refs/heads/develop/ux-system-upgrade','latest-HEAD ownership guard is missing.');
-requireText(workflow,'npm run db:migrate:preview','Preview migration gate is missing.');
+// Ordinary CI must NEVER apply arbitrary pending migrations to the live-adjacent
+// Preview D1. The additive auth migration requires a separately approved
+// maintenance window before changing the Preview Worker.
+forbidPattern(workflow,/npm run db:migrate:preview|wrangler\s+d1\s+migrations\s+apply/i,'unattended Preview D1 migration is forbidden in CI.');
+requireText(workflow,'name: Verify Preview revocation schema read-only before deployment','read-only SEC-02 gate is missing.');
+requireText(workflow,"npx wrangler d1 execute DB --remote --config wrangler.preview.toml --command 'SELECT token_hash, expires_at, revoked_at FROM revoked_session_tokens LIMIT 0;' --yes",'Preview must validate the chosen session revocation table without writing.');
 requireText(workflow,"if: steps.ownership.outputs.is_latest == 'true'",'Preview mutations must be gated by latest branch ownership.');
 requireText(workflow,'id: deploy_ownership','deploy ownership recheck is missing.');
 
