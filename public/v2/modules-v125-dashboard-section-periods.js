@@ -1,7 +1,7 @@
-/* Kun Online v125.3 — visible top-of-section date bars, including narrow RTL layouts */
+/* Kun Online v125.4 — date bars with inline validation for invalid custom ranges */
 (()=>{
   if(window.KunDashboardSectionPeriodsV125)return;
-  const VERSION='125.3';
+  const VERSION='125.4';
   const MAIN_SECTIONS=new Set(['overview','trend','finance','ads','rates','provinces','ai','summary']);
   const PRESETS=[
     ['today','اليوم'],
@@ -61,6 +61,7 @@
       .dash-v125-period-reset,.dash-v125-unify{border:1px solid var(--line,#cbd5e1);border-radius:9px;background:var(--card,#fff);color:var(--ink,#0f172a);font:inherit;font-size:10px;font-weight:800;cursor:pointer;padding:8px 10px}
       .dash-v125-period-status{color:var(--muted,#64748b);font-size:9px;font-weight:700}
       .dash-v125-period-error{color:#b91c1c;font-size:9px;flex:1 0 100%}
+      .dash-v125-custom-error{margin:8px 0 0;color:#b91c1c;font-size:12px;font-weight:800;line-height:1.6}
       .dash-v125-unify{margin-inline-start:8px}
       body[data-theme="dark"] .v33-dashboard .dash-section>.dash-v125-period-bar{background:#172b42;border-color:#31517b}
       body[data-theme="dark"] .dash-v125-period-select{background:var(--card);border-color:var(--line)}
@@ -152,13 +153,19 @@
     const existing=scoped.get(section)?.range||rangeFor(selected())||{};
     const today=rangeFor('today')?.to||'';
     const box=document.createElement('div');box.id='dashV125CustomModal';box.className='dash-v124-modal';
-    box.innerHTML='<div class="dash-v124-dialog" role="dialog" aria-modal="true" aria-label="تخصيص فترة القسم"><div class="dash-v124-dialog-head"><h3>فترة مستقلة: '+esc(LABELS[section]||section)+'</h3><button type="button" class="dash-v124-close" data-v125-close aria-label="إغلاق">×</button></div><div class="dash-v124-fields"><label>من<input class="input" type="date" data-v125-from value="'+esc(existing.from==='2000-01-01'?today:existing.from||today)+'"></label><label>إلى<input class="input" type="date" data-v125-to value="'+esc(existing.to||today)+'"></label></div><div class="dash-v124-actions"><button class="btn soft" type="button" data-v125-close>إلغاء</button><button class="btn primary" type="button" data-v125-apply-custom>تطبيق</button></div></div>';
+    box.innerHTML='<div class="dash-v124-dialog" role="dialog" aria-modal="true" aria-label="تخصيص فترة القسم"><div class="dash-v124-dialog-head"><h3>فترة مستقلة: '+esc(LABELS[section]||section)+'</h3><button type="button" class="dash-v124-close" data-v125-close aria-label="إغلاق">×</button></div><div class="dash-v124-fields"><label>من<input class="input" type="date" data-v125-from value="'+esc(existing.from==='2000-01-01'?today:existing.from||today)+'"></label><label>إلى<input class="input" type="date" data-v125-to value="'+esc(existing.to||today)+'"></label></div><p class="dash-v125-custom-error" data-v125-custom-error role="alert" aria-live="polite" hidden></p><div class="dash-v124-actions"><button class="btn soft" type="button" data-v125-close>إلغاء</button><button class="btn primary" type="button" data-v125-apply-custom>تطبيق</button></div></div>';
     document.body.appendChild(box);
     box.addEventListener('click',e=>{
       if(e.target===box||e.target.closest('[data-v125-close]')){closeCustom();schedule(0);return;}
       if(e.target.closest('[data-v125-apply-custom]')){
         const from=$('[data-v125-from]',box)?.value,to=$('[data-v125-to]',box)?.value;
-        if(!calendarDate(from)||!calendarDate(to)||from>to){window.showToast?.('حدد تاريخ بداية ونهاية صحيحين');return;}
+        if(!calendarDate(from)||!calendarDate(to)||from>to){
+          const message='حدد تاريخ بداية ونهاية صحيحين، وتأكد أن البداية لا تأتي بعد النهاية';
+          const error=$('[data-v125-custom-error]',box);
+          if(error){error.textContent=message;error.hidden=false;}
+          window.showToast?.(message);
+          return;
+        }
         closeCustom();apply('custom',section,{from,to});
       }
     });
