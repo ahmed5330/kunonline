@@ -132,12 +132,14 @@ object OrderNotifications {
             listOf(alert.customerName.ifBlank { "عميل جديد" }, alert.productName)
                 .filter { it.isNotBlank() }.joinToString(" • ").take(160)
         val reviewIntent = Intent(context, MainActivity::class.java).apply {
-            action = ACTION_OPEN_ORDER
-            data = Uri.parse("kunonline://order-notification/${Uri.encode(key)}")
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
-            putExtra(EXTRA_ORDER_ID, alert.orderId)
-            putExtra(EXTRA_CLIENT_ID, clientId)
-            putExtra(EXTRA_STORE_ID, storeId)
+            if (!alert.isTest) {
+                action = ACTION_OPEN_ORDER
+                data = Uri.parse("kunonline://order-notification/${Uri.encode(key)}")
+                putExtra(EXTRA_ORDER_ID, alert.orderId)
+                putExtra(EXTRA_CLIENT_ID, clientId)
+                putExtra(EXTRA_STORE_ID, storeId)
+            }
         }
         val review = PendingIntent.getActivity(
             context, (key + ":review").hashCode().and(0x7fffffff), reviewIntent,
