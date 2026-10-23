@@ -12,7 +12,7 @@ function query(sql,a){
  if(sql.includes('SELECT * FROM kun_mcp_codes'))return codes.get(a[0])||null;
  if(sql.includes('UPDATE kun_mcp_codes')){const r=codes.get(a[1]);if(!r||r.used_at)return {meta:{changes:0}};r.used_at=a[0];return {meta:{changes:1}};}
  if(sql.includes('INSERT INTO kun_mcp_access')||sql.includes('INSERT INTO kun_mcp_refresh')){const table=sql.includes('access')?tokens:refreshes;table.set(a[0],{token_hash:a[0],client_id:a[1],store_id:a[2],user_id:a[3],oauth_client_id:a[4],resource:a[5],scope:a[6],expires_at:a[7],revoked_at:null});return {meta:{changes:1}};}
- if(sql.includes('SELECT * FROM kun_mcp_access'))return tokens.get(a[0])||null;
+ if(sql.includes('SELECT * FROM kun_mcp_access')){const r=tokens.get(a[0]);return r&&!r.revoked_at&&r.expires_at>a[1]&&r.resource===a[2]&&r.scope===a[3]?r:null;}
  if(sql.includes('SELECT * FROM kun_mcp_refresh'))return refreshes.get(a[0])||null;
  if(sql.includes('UPDATE kun_mcp_refresh SET revoked_at=? WHERE token_hash')){const r=refreshes.get(a[1]);if(!r||r.revoked_at)return {meta:{changes:0}};r.revoked_at=a[0];return {meta:{changes:1}};}
  if(sql.includes('SELECT store_id,COUNT(*)'))return {results:[{store_id:'s1',active_links:1}]};
