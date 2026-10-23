@@ -16,8 +16,20 @@ assert.equal(reads,0);
 r=await handleProductionPreviewParity(req,env,{authorizeAdmin:async()=>({role:'client'})});
 assert.equal(r.status,403,'client role rejected');
 assert.equal(reads,0);
-r=await handleProductionPreviewParity(req,{},{authorizeAdmin:async()=>({role:'admin'})});
-assert.equal(r.status,503,'admin reaches binding validation only after auth');
+for(const identity of [{role:'admin'},{role:'admin',uid:''},{role:'admin',uid:null},{role:'admin',uid:42},{role:'admin',uid:'  '}]){
+  r=await handleProductionPreviewParity(req,env,{authorizeAdmin:async()=>identity});
+  assert.equal(r.status,403,'admin role without real user id must be denied');
+  assert.equal((await r.json()).error,'ADMIN_IDENTITY_REQUIRED');
+  assert.equal(reads,0,'incomplete admin identity must not read either database');
+}
+r=await handleProductionPreviewParity(req,{},{authorizeAdmin:async()=>({role:'admin',uid:'admin-fixture'})});
+assert.equal(r.status,503,'authenticated admin reaches binding validation only after auth');
+let validReads=0;
+const syntheticDb={prepare(){validReads++;return {bind(){return this;},async first(){return null;},async all(){return {results:[]};}};}};
+r=await handleProductionPreviewParity(req,{DB:syntheticDb,PREVIEW_DB:syntheticDb},{authorizeAdmin:async()=>({role:'admin',uid:'admin-fixture'})});
+assert.equal(r.status,200,'full admin identity may access read-only synthetic snapshot');
+assert.ok(validReads>0,'authorized snapshot should query fake D1');
+assert.equal((await r.json()).ok,true);
 r=await handleProductionPreviewParity(new Request('https://kun.example/health/not-parity'),env);
 assert.equal(r,null,'unrelated routes are untouched');
 
