@@ -52,6 +52,8 @@ jobs:
           node --check public/v2/modules-v79-printing.js
           node --check public/v2/modules-v116-print-routing.js
           node scripts/integration-setup-test.mjs
+      - name: Kun Online ChatGPT MCP OAuth and read-only fake tests
+        run: node scripts/kun-chatgpt-mcp-fake-test.mjs
       - name: AI provider integration fake tests and secure tenancy
         run: node scripts/ai-integrations-fake-test.mjs
       - name: Historical mobile and web contact-count recovery
