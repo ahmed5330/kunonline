@@ -1,3 +1,4 @@
+import {handleTenantEasyOrdersHealth} from './tenant-easyorders-health.js';
 import app,{SyncEntrypoint as BaseSyncEntrypoint} from './index-commerce-v38-base.js';
 import {handleClarityApi,syncClarityScheduled} from './clarity-integration.js';
 import {handleAIMarketing} from './ai-marketing-analyst.js';
@@ -104,6 +105,14 @@ export default {
     // so a paused/empty paid wallet cannot bypass the central 402 gate.
     const subscription=await handleSubscriptionControl({request,env,ctx,delegate:app});
     if(subscription)return subscription;
+    const tenantSync=await handleTenantEasyOrdersHealth(request,env,{
+      authorize:async sourceRequest=>{
+        const identityUrl=new URL('/api/me',sourceRequest.url);
+        const identity=await app.fetch(new Request(identityUrl,{method:'GET',headers:sourceRequest.headers}),env,ctx);
+        return identity.ok?identity.json().catch(()=>null):null;
+      }
+    });
+    if(tenantSync)return tenantSync;
     const competitors=await handleCompetitorIntelligence({request,env,ctx,delegate:app});
     if(competitors)return competitors;
     const aiMarketing=await handleAIMarketing({request,env,ctx,delegate:app});
