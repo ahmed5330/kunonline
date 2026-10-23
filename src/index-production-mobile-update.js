@@ -1,3 +1,4 @@
+import {routeProductionCodRead} from './production-cod-read-fallback.js';
 import app from './index-production-jt-history.js';
 import {handlePublicSiteReviews} from './public-site-reviews.js';
 import {handleAIMarketing} from './ai-marketing-analyst.js';
@@ -31,7 +32,6 @@ const DIRECT_APK_PATH='/api/mobile/app-update/apk';
 const HTML_PATHS=new Set(['/','/index.html','/v2','/v2/','/v2/index.html']);
 // Auth endpoints must reach one signer/verifier, without billing, finance or UI response adapters.
 const AUTH_PATHS=new Set(['/api/login','/api/me','/api/logout']);
-const COD_READ_PATHS=new Set(['/api/cod-reconciliation/summary','/api/cod-reconciliation/candidates','/api/cod-reconciliation']);
 
 function previewRuntimeEnv(env){
   if(!env?.PREVIEW_DB)return env;
@@ -187,16 +187,12 @@ export default {
 
     const dataEnv=previewRuntimeEnv(env);
     const delegate=previewDelegate(env,dataEnv,ctx);
-    // The deployed Preview service can lag the bundled COD handlers. Only
-    // fall back on an explicit unknown GET route; never retry financial writes.
-    if(request.method==='GET'&&COD_READ_PATHS.has(new URL(request.url).pathname)){
-      const upstream=await previewFetch(request,env);
-      if(upstream){
-        const body=await upstream.clone().json().catch(()=>null);
-        if(body?.error!=='مسار غير معروف')return upstream;
-      }
-      return app.fetch(request,dataEnv,ctx);
-    }
+    // Safe GET-only compatibility. Authentication and tenant scoping remain in the
+    // local COD handler. Do not replay writes or bypass any Preview 401/403 response.
+    const codRead=await routeProductionCodRead({request,
+      fetchPreview:source=>previewFetch(source,env),
+      fetchLocal:source=>app.fetch(source,dataEnv,ctx)});
+    if(codRead)return codRead;
     const mcpAuth=await handleKunMcpOAuth({request,env:dataEnv,delegate});
     if(mcpAuth)return mcpAuth;
     const mcpTools=await handleKunMcpServer({request,env:dataEnv});
