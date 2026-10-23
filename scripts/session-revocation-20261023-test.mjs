@@ -47,6 +47,11 @@ const first=await makeToken('session-one'),other=await makeToken('session-two');
 assert.notEqual(first,other,'same user signs distinct sessions');
 assert.equal((await route('/api/me',first)).status,200,'valid synthetic login session');
 assert.equal((await route('/api/me',other)).status,200,'second session remains active');
+const getLogout=await route('/api/logout',first,'GET');
+assert.equal(getLogout.status,405,'GET must never invalidate a session');
+assert.equal(getLogout.headers.get('Allow'),'POST');
+assert.equal(getLogout.headers.get('Set-Cookie'),null,'read-only GET must not clear browser session');
+assert.equal((await (await route('/api/me',first)).json()).uid,user.id,'GET must preserve a valid authenticated session');
 // Cookie tossing: neither duplicate ordering may authenticate or claim a logout.
 for(const values of [first+'; ko_session=invalid', 'invalid; ko_session='+first]){
   const request=new Request('https://test.invalid/api/me',{headers:{Cookie:'ko_session='+values}});
@@ -104,4 +109,4 @@ rejectReads=false;
 assert.equal((await (await route('/api/me',other)).json()).uid,user.id,'failed logout did not silently invalidate other session');
 assert.equal((await route('/api/logout',other,'POST')).status,200);
 assert.equal((await (await route('/api/me',other)).json()).role,null);
-console.log('SEC-02 synthetic session replay test PASS: per-token invalidation, duplicate cookie rejection, nonthrowing write failure, no bearer storage, fail-closed read and logout.');
+console.log('SEC-02 synthetic session replay test PASS: per-token invalidation, POST-only logout, duplicate cookie rejection, nonthrowing write failure, no bearer storage, fail-closed read and logout.');
