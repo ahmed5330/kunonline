@@ -31,6 +31,7 @@ const DIRECT_APK_PATH='/api/mobile/app-update/apk';
 const HTML_PATHS=new Set(['/','/index.html','/v2','/v2/','/v2/index.html']);
 // Auth endpoints must reach one signer/verifier, without billing, finance or UI response adapters.
 const AUTH_PATHS=new Set(['/api/login','/api/me','/api/logout']);
+const COD_READ_PATHS=new Set(['/api/cod-reconciliation/summary','/api/cod-reconciliation/candidates','/api/cod-reconciliation']);
 
 function previewRuntimeEnv(env){
   if(!env?.PREVIEW_DB)return env;
@@ -161,7 +162,15 @@ export default {
     if(websiteReviews)return websiteReviews;
     const easyOrdersHealth=await handleProductionEasyOrdersHealth(request,env);
     if(easyOrdersHealth)return easyOrdersHealth;
-    const parity=await handleProductionPreviewParity(request,env);
+    const parity=await handleProductionPreviewParity(request,env,{
+      authorizeAdmin:async sourceRequest=>{
+        const identityUrl=new URL('/api/me',sourceRequest.url);
+        const identityRequest=new Request(identityUrl.toString(),{method:'GET',headers:sourceRequest.headers});
+        const identity=await previewFetch(identityRequest,env)||await app.fetch(identityRequest,previewRuntimeEnv(env),ctx);
+        if(!identity.ok)return null;
+        return identity.json().catch(()=>null);
+      }
+    });
     if(parity)return parity;
 
     const mobileUpdate=await handleMobileAppUpdate(request);
@@ -178,6 +187,16 @@ export default {
 
     const dataEnv=previewRuntimeEnv(env);
     const delegate=previewDelegate(env,dataEnv,ctx);
+    // The deployed Preview service can lag the bundled COD handlers. Only
+    // fall back on an explicit unknown GET route; never retry financial writes.
+    if(request.method==='GET'&&COD_READ_PATHS.has(new URL(request.url).pathname)){
+      const upstream=await previewFetch(request,env);
+      if(upstream){
+        const body=await upstream.clone().json().catch(()=>null);
+        if(upstream.status!==404&&body?.error!=='مسار غير معروف')return upstream;
+      }
+      return app.fetch(request,dataEnv,ctx);
+    }
     const mcpAuth=await handleKunMcpOAuth({request,env:dataEnv,delegate});
     if(mcpAuth)return mcpAuth;
     const mcpTools=await handleKunMcpServer({request,env:dataEnv});
