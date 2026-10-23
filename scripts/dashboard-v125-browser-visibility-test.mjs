@@ -51,7 +51,23 @@ try{
     results.navigationIndependence=isVisible('finance');
     results.count=document.querySelectorAll('.dash-v125-period-bar').length;
     results.noDocumentOverflow=document.documentElement.scrollWidth<=window.innerWidth+1;
-    results.ok=results.finance&&results.ads&&results.summary&&results.navigationIndependence&&results.count===3&&results.noDocumentOverflow;
+    // Error feedback must still be visible if showToast is undefined.
+    window.__v125NetworkCalls=0;
+    const NativeXHR=window.XMLHttpRequest;
+    window.XMLHttpRequest=class extends NativeXHR{constructor(){super();window.__v125NetworkCalls++;}};
+    window.KunDashboardSectionPeriodsV125.apply('custom','ads');
+    const modal=document.getElementById('dashV125CustomModal');
+    modal.querySelector('[data-v125-from]').value='2026-10-20';
+    modal.querySelector('[data-v125-to]').value='2026-10-10';
+    modal.querySelector('[data-v125-apply-custom]').click();
+    const inline=modal.querySelector('[data-v125-custom-error]');
+    results.invertedDatesRejected=!!inline&&!inline.hidden&&inline.getAttribute('role')==='alert'
+      &&inline.textContent.includes('البداية')&&!!document.getElementById('dashV125CustomModal');
+    results.invalidDateNoFetch=window.__v125NetworkCalls===0;
+    results.invalidDateNoScopeMutation=['finance','ads','summary'].every(id=>
+      document.querySelector('#'+id+' select[data-v125-period]')?.value==='today');
+    results.ok=results.finance&&results.ads&&results.summary&&results.navigationIndependence&&results.count===3
+      &&results.noDocumentOverflow&&results.invertedDatesRejected&&results.invalidDateNoFetch&&results.invalidDateNoScopeMutation;
     document.getElementById('test-result').textContent=JSON.stringify(results);
   },750);
   </script></body></html>`;
