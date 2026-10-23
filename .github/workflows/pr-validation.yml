@@ -58,6 +58,8 @@ jobs:
         run: |
           node scripts/android-order-notifications-fake-test.mjs
           node scripts/android-accounting-fake-test.mjs
+      - name: Admin 30-day order-scope SQLite regression (no live DB)
+        run: node scripts/admin-order-date-scope-test.mjs
       - name: Run full contract and unit suite
         run: npm test
       - name: Inventory workspace UX browser regression
