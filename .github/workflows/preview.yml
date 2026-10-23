@@ -4,6 +4,12 @@ on:
   push:
     branches: [develop/ux-system-upgrade]
   workflow_dispatch:
+    inputs:
+      apply_reviewed_migrations:
+        description: 'Apply the reviewed pending Preview D1 migration queue only after checking every pending migration'
+        required: false
+        type: boolean
+        default: false
 concurrency:
   group: kunonline-preview
   cancel-in-progress: true
@@ -44,8 +50,10 @@ jobs:
             echo "Stale Preview run detected. Run=$GITHUB_SHA Latest=$latest. Preview mutation will be skipped."
           fi
 
-      - name: Apply preview migrations only
-        if: steps.ownership.outputs.is_latest == 'true'
+      - name: Apply preview migrations only with explicit schema approval
+        # Ordinary UI/Worker pushes must never apply unrelated pending migrations.
+        # This boolean is intentionally false for all automatic push deployments.
+        if: steps.ownership.outputs.is_latest == 'true' && github.event_name == 'workflow_dispatch' && inputs.apply_reviewed_migrations == true
         run: npm run db:migrate:preview
 
       - name: Reconfirm latest branch HEAD before deploy
