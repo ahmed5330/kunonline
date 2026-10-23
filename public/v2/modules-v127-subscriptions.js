@@ -26,7 +26,7 @@
       .sub127-status{display:inline-flex;padding:4px 7px;border-radius:999px;font-size:8px;font-weight:900;background:#eaf8ee;color:#15803d}.sub127-status.locked{background:#fee2e2;color:#b91c1c}.sub127-status.trial{background:#dcfce7;color:#15803d}.sub127-status.unmanaged{background:#f1f5f9;color:#64748b}
       .sub127-payment{display:grid;grid-template-columns:72px minmax(140px,1fr) repeat(3,minmax(100px,.7fr)) auto;gap:9px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line,#e2e8f0)}.sub127-proof{width:68px;height:54px;object-fit:cover;border-radius:8px;border:1px solid var(--line,#e2e8f0);background:#f8fafc;cursor:zoom-in}.sub127-actions{display:flex;gap:5px}.sub127-payment-cell{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.sub127-payment-cell .btn{padding:6px 9px;font-size:8px}.sub127-payment-phone{font-weight:900;direction:ltr;display:inline-block}.sub127-proof-large{display:block;width:min(100%,680px);max-height:68vh;object-fit:contain;margin:14px auto 0;border-radius:14px;border:1px solid var(--line,#e2e8f0);background:#0f172a}.sub127-payment-details{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:14px}.sub127-payment-detail{padding:10px;border:1px solid var(--line,#e2e8f0);border-radius:10px}.sub127-payment-detail span{display:block;color:var(--muted,#64748b);font-size:8px}.sub127-payment-detail b{display:block;margin-top:4px;font-size:11px}
       .sub127-modal-back{position:fixed;inset:0;z-index:99999;background:rgba(15,23,42,.48);display:grid;place-items:center;padding:16px}.sub127-modal{width:min(720px,96vw);max-height:92vh;overflow:auto;background:var(--card,#fff);border-radius:18px;padding:18px;box-shadow:0 26px 80px rgba(15,23,42,.28)}.sub127-modal-head{display:flex;align-items:flex-start;gap:10px}.sub127-modal-head h2{margin:0}.sub127-form{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:15px}.sub127-form label{display:grid;gap:5px;font-size:9px;font-weight:800;color:var(--muted,#64748b)}.sub127-modal-actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:15px}
-      html[data-kun-subscription-locked="1"] .nav .nav-group,html[data-kun-subscription-locked="1"] .nav button[data-view]:not([data-view="dashboard"]):not([data-view="wallet"]),html[data-kun-subscription-locked="1"] .nav [data-kun-shortcuts-nav],html[data-kun-subscription-locked="1"] #quickBtn{display:none!important}
+      html[data-kun-subscription-locked="1"] .nav .nav-group:not(.sub127-wallet-available),html[data-kun-subscription-locked="1"] .nav button[data-view]:not([data-view="dashboard"]):not([data-view="wallet"]),html[data-kun-subscription-locked="1"] .nav [data-kun-shortcuts-nav],html[data-kun-subscription-locked="1"] #quickBtn{display:none!important}
       body[data-theme="dark"] .sub127-client-panel,body[data-theme="dark"] .sub127-kpi,body[data-theme="dark"] .sub127-modal{background:var(--card);border-color:var(--line)}body[data-theme="dark"] .sub127-table th{background:#172033}
       @media(max-width:850px){.sub127-kpis,.sub127-summary{grid-template-columns:1fr 1fr}.sub127-topup{grid-template-columns:1fr 1fr}.sub127-topup .btn{grid-column:1/-1}.sub127-payment{grid-template-columns:64px 1fr auto}.sub127-payment>:nth-child(3),.sub127-payment>:nth-child(4),.sub127-payment>:nth-child(5){display:none}}
       @media(max-width:520px){.sub127-kpis,.sub127-summary,.sub127-form,.sub127-topup{grid-template-columns:1fr}.sub127-client-head{flex-wrap:wrap}.sub127-badge{margin-inline-start:0}.sub127-toolbar .input{min-width:0;width:100%}.sub127-payment{grid-template-columns:58px 1fr}.sub127-actions{grid-column:1/-1}.sub127-proof{width:56px;height:50px}.sub127-payment-details{grid-template-columns:1fr 1fr}}
@@ -66,7 +66,7 @@
   async function restoreNav({reloadPermissions=false}={}){
     delete document.documentElement.dataset.kunSubscriptionLocked;
     $$('[data-sub127-hidden="1"]').forEach(b=>{b.hidden=false;b.style.display='';delete b.dataset.sub127Hidden;});
-    $$('.nav .nav-group').forEach(group=>{group.hidden=false;group.style.removeProperty('display');});
+    $('.nav .nav-group').forEach(group=>{group.classList.remove('sub127-wallet-available');group.hidden=false;group.style.removeProperty('display');});
     try{
       if(reloadPermissions&&window.KunPermissionNavigationV51?.load)await window.KunPermissionNavigationV51.load();
       else window.KunPermissionNavigationV51?.apply?.();
@@ -81,8 +81,17 @@
     if(!state.access?.locked)return;
     document.documentElement.dataset.kunSubscriptionLocked='1';
     $$('.nav button[data-view]').forEach(b=>{if(b.dataset.view==='dashboard'||b.dataset.view==='wallet')return;b.dataset.sub127Hidden='1';b.hidden=true;b.style.display='none';});
+    // Wallet is inside the Finance nav group; leave its parent visible while locked.
+    const walletGroup=$('.nav button[data-view="wallet"]')?.closest('.nav-group');
+    if(walletGroup){
+      walletGroup.classList.add('sub127-wallet-available','is-open');
+      walletGroup.hidden=false;
+      walletGroup.querySelector(':scope > .nav-group-toggle')?.setAttribute('aria-expanded','true');
+    }
     window.KunSidebarGroupsV90?.sync?.();
-    const active=$('.nav button.active[data-view]');if(active&&active.dataset.view!=='dashboard')$('.nav button[data-view="dashboard"]')?.click();
+    // Never bounce a locked customer's wallet screen back to the dashboard.
+    const active=$('.nav button.active[data-view]');
+    if(active&&!['dashboard','wallet'].includes(active.dataset.view))$('.nav button[data-view="dashboard"]')?.click();
   }
 
   function topupHistoryHtml(){
@@ -429,6 +438,7 @@
     if(window.__kunSubscriptionRouteGuard127)return;window.__kunSubscriptionRouteGuard127=true;
     const original=window.setView;
     if(typeof original==='function')window.setView=function(view,...rest){
+      if(String(view)==='wallet'&&state.me?.role==='client'){showWalletPage();return;}
       if(state.locked&&!['dashboard','wallet'].includes(String(view))){window.showToast?.('الحساب موقوف حاليًا من إعدادات الاشتراك أو المحفظة.');return original.call(this,'dashboard',...rest);}
       return original.call(this,view,...rest);
     };
