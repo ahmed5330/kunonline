@@ -14,7 +14,7 @@ const [help,css,index]=await Promise.all(
     .map(name=>readFile(new URL(name,base),'utf8'))
 );
 assert.match(index,/kun-help-safe-v147\.js\?v=147\.0/,'Current V2 must load safe opt-in help');
-assert.match(index,/kun-help-safe-v147\.css\?v=147\.1/,'Current V2 must load safe help CSS');
+assert.match(index,/kun-help-safe-v147\.css\?v=147\.2/,'Current V2 must load safe help CSS');
 assert.doesNotMatch(index,/kun-context-help-v146\.(?:js|css)/,'Old auto-injecting v146 help must not return');
 assert.match(help,/ONLY explicitly-authored hint buttons/,'Help must remain opt-in, not scan all page elements');
 new Function(help);
