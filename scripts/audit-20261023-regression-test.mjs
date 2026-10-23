@@ -52,6 +52,43 @@ const suppliersUi=read('public/v2/modules-v4.js');
 assert.ok(!suppliersUi.includes("kpi('Purchase Orders','قريبًا'"),'purchase orders must not be marked coming soon');
 assert.ok(suppliersUi.includes("kpi('استلام المشتريات','متاح'"),'purchases section must be described as available');
 
+const subscriptionUi=read('public/v2/modules-v127-subscriptions.js');
+assert.match(subscriptionUi,/\.nav-group:not\(\.sub127-wallet-available\)/,'locked state must not hide the wallet nav group');
+assert.match(subscriptionUi,/String\(view\)==='wallet'&&state\.me\?\.role==='client'/,'programmatic wallet routes must render the wallet page');
+const start=subscriptionUi.indexOf('  function lockNav(){');
+const end=subscriptionUi.indexOf('\n\n  function topupHistoryHtml()',start);
+assert.ok(start>=0&&end>start,'locked navigation handler must be present');
+const lockFunctionBody=subscriptionUi.slice(start,end);
+function exerciseLockedWallet(activeView){
+  let redirects=0,synced=0,expanded=null;
+  const classes=new Set();
+  const walletGroup={hidden:true,classList:{add(...names){names.forEach(name=>classes.add(name));}},querySelector(){return {setAttribute(k,v){if(k==='aria-expanded')expanded=v;}}}};
+  const walletButton={dataset:{view:'wallet'},hidden:false,style:{display:''},closest(sel){assert.equal(sel,'.nav-group');return walletGroup;}};
+  const dashboardButton={dataset:{view:'dashboard'},hidden:false,style:{display:''},click(){redirects++;}};
+  const ordersButton={dataset:{view:'orders'},hidden:false,style:{display:''}};
+  const buttons=[dashboardButton,walletButton,ordersButton];
+  const selector=key=>key==='.nav button[data-view="wallet"]'?walletButton:key==='.nav button[data-view="dashboard"]'?dashboardButton:key==='.nav button.active[data-view]'?buttons.find(b=>b.dataset.view===activeView):null;
+  const multiple=key=>key==='.nav button[data-view]'?buttons:[];
+  const doc={documentElement:{dataset:{}}};
+  const browser={KunSidebarGroupsV90:{sync(){synced++;}}};
+  const lock=new Function('state','document','$','
+assert.match(windows,/fileURLToPath\(new URL/,'Windows-compatible file paths');
+console.log('Audit regression PASS: SEC-01, ORD-01, FIN-01, FIN-02, ANA-01, UX-02, WAL-01, TST-01.');
+,'window',lockFunctionBody+';return lockNav;')({access:{locked:true}},doc,multiple,selector,browser);
+  lock();
+  assert.equal(doc.documentElement.dataset.kunSubscriptionLocked,'1');
+  assert.equal(walletButton.hidden,false,'wallet nav must stay visible');
+  assert.equal(ordersButton.hidden,true,'locked workspace must still hide operational routes');
+  assert.equal(walletGroup.hidden,false,'wallet parent group must be visible');
+  assert.equal(classes.has('sub127-wallet-available'),true);
+  assert.equal(classes.has('is-open'),true);
+  assert.equal(expanded,'true');
+  assert.equal(synced,1);
+  return redirects;
+}
+assert.equal(exerciseLockedWallet('wallet'),0,'periodic lock checks must not redirect an open wallet');
+assert.equal(exerciseLockedWallet('orders'),1,'operational screens still redirect to dashboard while locked');
+
 const windows=read('scripts/customer-service-board-print-void-test.mjs');
 assert.match(windows,/fileURLToPath\(new URL/,'Windows-compatible file paths');
 console.log('Audit regression PASS: SEC-01, ORD-01, FIN-01, FIN-02, ANA-01, UX-02, TST-01.');
