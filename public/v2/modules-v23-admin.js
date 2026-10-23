@@ -66,21 +66,33 @@
       $('v23ToggleClient').onclick=async()=>{try{const next=c.status==='suspended'?'active':'suspended';await K.api(`/api/admin/clients/${encodeURIComponent(clientKey)}/status`,{method:'PATCH',body:JSON.stringify({status:next})});K.notify(next==='active'?'تم تفعيل الحساب':'تم تعليق الحساب');K.close();document.querySelector('[data-view="admin-clients"]')?.click()}catch(e){K.notify(e.message)}};
       resetBtn.onclick=async event=>{
         event?.preventDefault?.();
-        if(resetBtn.disabled)return;
+        if(resetBtn.dataset.busy==='1'||resetBtn.disabled)return;
         const password=String(resetInput.value||'');
         if(password.length<8){passwordMessage('كلمة المرور لازم تكون 8 حروف على الأقل',true);resetInput.focus();return}
-        const idleText=resetBtn.textContent;
+        const idleText=resetBtn.textContent,controller=new AbortController(),timer=setTimeout(()=>controller.abort(),15000);
+        resetBtn.dataset.busy='1';
         resetBtn.disabled=true;
         resetBtn.setAttribute('aria-busy','true');
         resetBtn.textContent='جاري تغيير كلمة المرور...';
+        resetInput.blur();
         passwordMessage('جاري حفظ كلمة المرور الجديدة...');
         try{
-          const result=await K.api(`/api/admin/clients/${encodeURIComponent(clientKey)}/reset-owner-password`,{method:'POST',body:JSON.stringify({password})});
+          const result=await K.api(`/api/admin/clients/${encodeURIComponent(clientKey)}/reset-owner-password`,{method:'POST',body:JSON.stringify({password}),signal:controller.signal});
           if(result?.ok!==true)throw new Error('لم يؤكد السيرفر تغيير كلمة المرور');
-          passwordMessage('تم تغيير كلمة المرور بنجاح. انسخها وأرسلها لصاحب الحساب بطريقة آمنة.');
+          resetInput.value='';
+          passwordMessage('تم تغيير كلمة المرور بنجاح. استخدم النسخة التي نسختها قبل الحفظ وأرسلها لصاحب الحساب بطريقة آمنة.');
           K.notify('تم تغيير كلمة مرور صاحب الحساب');
-        }catch(e){passwordMessage(e?.message||'تعذر تغيير كلمة المرور',true);K.notify(e?.message||'تعذر تغيير كلمة المرور')}
-        finally{resetBtn.disabled=false;resetBtn.removeAttribute('aria-busy');resetBtn.textContent=idleText}
+        }catch(e){
+          const message=e?.name==='AbortError'?'انتهت مهلة الاتصال ولم نتمكن من التأكد من نتيجة التغيير. تحقق قبل إعادة المحاولة.':(e?.message||'تعذر تغيير كلمة المرور');
+          passwordMessage(message,true);
+          K.notify(message);
+        }finally{
+          clearTimeout(timer);
+          resetBtn.dataset.busy='0';
+          resetBtn.disabled=false;
+          resetBtn.removeAttribute('aria-busy');
+          resetBtn.textContent=idleText;
+        }
       };
       $('v23CreditWallet').onclick=async()=>{try{await K.api('/api/wallet/topup',{method:'POST',body:JSON.stringify({clientId:clientKey,amount:Number($('v23AdminCredit').value||0),note:'Admin direct credit'})});K.notify('تم شحن المحفظة')}catch(e){K.notify(e.message)}};
       $('v23SaveOrderFee').onclick=async()=>{try{const fee=Number($('v23OrderFee').value);if(!Number.isFinite(fee)||fee<0)throw new Error('اكتب رسوم إدارة صحيحة');await K.api(`/api/admin/clients/${encodeURIComponent(clientKey)}/billing`,{method:'PATCH',body:JSON.stringify({baseOrderFee:fee})});K.notify(`تم حفظ رسوم الإدارة: ${fee} جنيه لكل أوردر`)}catch(e){K.notify(e.message)}};
