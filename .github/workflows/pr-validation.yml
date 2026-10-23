@@ -66,6 +66,14 @@ jobs:
         run: npm run check:production-config
       - name: Read-only production login health probe
         run: node scripts/live-production-login-route-probe.mjs
+      - name: Build reviewable Kun Online ChatGPT plugin draft
+        run: node scripts/build-kun-chatgpt-plugin.mjs
+      - name: Attach ChatGPT plugin draft package
+        uses: actions/upload-artifact@v4
+        with:
+          name: kun-online-chatgpt-plugin-draft
+          path: dist/kun-online-chatgpt-plugin-draft.zip
+          if-no-files-found: error
       - name: Validate V2 login gateway and browser asset references
         run: |
           node --check public/v2/modules-v142-login-gateway.js
