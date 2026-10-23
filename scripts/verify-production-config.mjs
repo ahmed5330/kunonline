@@ -44,18 +44,33 @@ const readOnlyPreflightBindings=['DB','PREVIEW_DB'];
 const readOnlySql='SELECT token_hash, expires_at, revoked_at FROM revoked_session_tokens LIMIT 0;';
 const allowedPreflightCommands=readOnlyPreflightBindings.map(binding=>
   `npx wrangler d1 execute ${binding} --remote --config wrangler.production.toml --command '${readOnlySql}' --yes`);
+const allowedSecretNameCommands=[
+  'node scripts/verify-cloudflare-secret-names.mjs wrangler.production.toml',
+  'node scripts/verify-cloudflare-secret-names.mjs wrangler.preview.toml'
+];
 for(const [label,workflow] of [['Production deploy',deployWorkflow],['Production rollback',rollbackWorkflow]]){
   // Allow ONLY the two audited schema SELECTs; all other d1/database commands,
   // including migrations, remain forbidden in the Worker deploy workflow.
   const withoutAllowedReadOnlyChecks=label==='Production deploy'
     ?allowedPreflightCommands.reduce((text,command)=>text.replace(command,''),workflow):workflow;
   if(/wrangler\s+d1|npm\s+run\s+db:/i.test(withoutAllowedReadOnlyChecks))throw new Error(`${label} safety check failed: database mutations or unapproved database commands are forbidden.`);
-  if(/wrangler\.preview\.toml|kunonline-preview/i.test(workflow))throw new Error(`${label} safety check failed: Preview resources are forbidden.`);
+  // The only permitted reference to Preview in a Production workflow is
+  // this audited, read-only secret-NAME check. Preview deployments, D1 writes,
+  // migrations and any other Preview commands remain categorically forbidden.
+  const withoutApprovedSecretNames=label==='Production deploy'
+    ?allowedSecretNameCommands.reduce((text,command)=>text.replace(command,''),workflow):workflow;
+  if(/wrangler\.preview\.toml|kunonline-preview/i.test(withoutApprovedSecretNames))throw new Error(`${label} safety check failed: Preview resources are forbidden.`);
   if(/\bwrangler\s+secret\s+(?:put|bulk|delete)\b/i.test(workflow))throw new Error(`${label} safety check failed: secret mutation is forbidden.`);
   if(!/environment:\s*\n\s*name:\s*production\b/m.test(workflow))throw new Error(`${label} safety check failed: production GitHub Environment is required.`);
 }
 if(!/wrangler\s+deploy\s+--config\s+wrangler\.production\.toml/.test(deployWorkflow))throw new Error('Production safety check failed: deployment is not pinned to wrangler.production.toml.');
 const deploymentIndex=deployWorkflow.indexOf('run: npx wrangler deploy --config wrangler.production.toml');
+for(const command of allowedSecretNameCommands){
+  const occurrences=deployWorkflow.split(command).length-1;
+  const index=deployWorkflow.indexOf(command);
+  if(occurrences!==1||index<0||deploymentIndex<0||index>=deploymentIndex)
+    throw new Error('SEC-03 safety: both exact read-only Worker secret-name checks must precede Production deploy.');
+}
 for(const command of allowedPreflightCommands){
   const occurrences=deployWorkflow.split(command).length-1;
   const index=deployWorkflow.indexOf(command);
