@@ -18,6 +18,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 
@@ -45,6 +47,14 @@ fun KunNativeAppV26(activity: MainActivity) {
             }
             delay(800)
         }
+    }
+
+    LaunchedEffect(hasSession) {
+        if (hasSession) activity.maybeRequestOrderNotifications()
+    }
+
+    ForegroundPolling(key = "new-order-alerts", enabled = hasSession, intervalMillis = 30_000L) {
+        withContext(Dispatchers.IO) { OrderNotifications.poll(context) }
     }
 
     MaterialTheme {
