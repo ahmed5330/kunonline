@@ -18,7 +18,7 @@ const fakeDB={
    throw Error('Unexpected all SQL '+sql);
   },
   async first(){
-   if(sql.includes('FROM campaign_daily_metrics'))return {spend:225,reportedDays:10};
+   if(sql.includes('FROM meta_ad_daily_metrics')){assert.equal(args[0],'tenant-a');assert.equal(args[1],'store-a');assert.match(sql,/level='adset'/);return {spend:225,reportedDays:10,metricRows:14};}
    if(sql.includes('FROM stores WHERE id=? AND client_id=?'))return {id:'store-a',name:'Store A',status:'active'};
    if(sql.includes('FROM users WHERE id=? AND client_id=?'))return {id:'user-a',status:'active',role:'client'};
    return null;
@@ -68,7 +68,12 @@ const overview=await runKunMcpTool(env,auth,'get_store_overview',{days:30});
 assert.equal(overview.orders.total,15);assert.equal(overview.orders.grossOrderValue,1500);
 assert.equal(overview.orders.cancellationRate,20);
 assert.equal(overview.advertising.reportedSpend,225);
+assert.equal(overview.advertising.available,true);
+assert.equal(Object.hasOwn(overview.store,'id'),false,'never disclose internal store IDs to ChatGPT');
 assert.equal(overview.orders.notFinancialRevenue,true);
+const missingSpend=await runKunMcpTool({...env,DB:{prepare:sql=>({bind:(...args)=>({first:async()=>({spend:0,reportedDays:0,metricRows:0})})})}},auth,'get_ads_spend',{days:7});
+assert.equal(missingSpend.advertising.available,false);
+assert.equal(missingSpend.advertising.reportedSpend,null,'no imported rows must not be represented as actual zero spend');
 const funnel=await runKunMcpTool(env,auth,'get_order_funnel',{days:7});
 assert.equal(funnel.states[0].state,'pending');
 const product=await runKunMcpTool(env,auth,'get_top_products',{days:14});
