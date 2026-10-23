@@ -7,6 +7,7 @@ import {resolveAdminBriefRange,adminClientCommandCenter} from '../src/admin-clie
 
 const source=await readFile(new URL('../src/admin-client-command-center.js',import.meta.url),'utf8');
 const businessSource=await readFile(new URL('../src/business-intelligence.js',import.meta.url),'utf8');
+const adminControlSource=await readFile(new URL('../src/admin-control.js',import.meta.url),'utf8');
 assert.match(businessSource,/FROM orders WHERE client_id=\? \$\{storeSql\} AND date\(COALESCE\(NULLIF\(TRIM\(date\),''\),created_at\)\)/,'business brief order date must agree with admin 30d metric');
 assert.match(businessSource,/AND NOT EXISTS \(SELECT 1 FROM order_duplicate_links dup WHERE dup.duplicate_order_id=orders.id\)/,'business brief must exclude linked duplicates');
 const tick=String.fromCharCode(96);
@@ -56,6 +57,21 @@ try{
   assert.equal(clients.get('tenant-b').confirmed,1);
   assert.equal(clients.get('tenant-a').gmv,600,'linked duplicates must not inflate GMV');
   assert.equal(clients.get('tenant-b').gmv,400,'linked duplicates must not inflate other tenant GMV');
+  const lifetimeSql=adminControlSource.match(/SELECT COUNT\(\*\) orders,COALESCE\(SUM\(total\),0\) gm,MAX\(COALESCE\(created_at,date\)\) last_order_at FROM orders WHERE client_id=\? AND NOT EXISTS \(SELECT 1 FROM order_duplicate_links dup WHERE dup.duplicate_order_id=orders.id\)/)?.[0];
+  const overviewSql=adminControlSource.match(/SELECT COUNT\(\*\) total,SUM\(CASE WHEN state='pending'[\s\S]*?FROM orders WHERE client_id=\? AND NOT EXISTS \(SELECT 1 FROM order_duplicate_links dup WHERE dup.duplicate_order_id=orders.id\)/)?.[0];
+  assert.ok(lifetimeSql&&overviewSql,'both Admin lifetime summary queries must exclude duplicates');
+  const lifetimeA=db.prepare(lifetimeSql).get('tenant-a');
+  const lifetimeB=db.prepare(lifetimeSql).get('tenant-b');
+  assert.equal(lifetimeA.orders,5,'lifetime canonical count includes valid out-of-range orders, excludes duplicate');
+  assert.equal(lifetimeA.gm,2043,'Admin lifetime GMV excludes duplicated 1200 EGP');
+  assert.equal(lifetimeB.orders,1,'tenant B lifetime summary excludes its duplicate');
+  const overviewA=db.prepare(overviewSql).get('tenant-a');
+  const overviewB=db.prepare(overviewSql).get('tenant-b');
+  assert.equal(overviewA.total,5,'admin Client drawer matches canonical lifetime');
+  assert.equal(overviewA.delivered,1);
+  assert.equal(overviewA.delivered_revenue,300);
+  assert.equal(overviewB.total,1,'overview isolation matches owner tenant');
+
   const businessWhere=businessSource.match(/FROM orders WHERE client_id=\? \$\{storeSql\} AND date\(COALESCE\(NULLIF\(TRIM\(date\),''\),created_at\)\) BETWEEN date\(\?\) AND date\(\?\) AND NOT EXISTS \(SELECT 1 FROM order_duplicate_links dup WHERE dup.duplicate_order_id=orders.id\)/)?.[0];
   assert.ok(businessWhere,'exact Business Brief order filter must be located');
   const businessTotal=db.prepare('SELECT COUNT(*) total '+businessWhere.replace('${storeSql}','')).get('tenant-a',period.from,period.to);
@@ -86,5 +102,5 @@ try{
   assert.equal(riskCount(safe),0,'healthy inventory and positive wallet must not alert');
   assert.equal(riskCount({...safe,inventory:{lowStock:2,outOfStock:1}}),2,'low and out-of-stock alerts must both contribute');
   assert.equal(riskCount({...safe,inventory:{lowStock:2,outOfStock:0}}),1,'low-stock alert must count independently');
-  console.log('Admin orders30days scope PASS: duplicate suppression, KPI/Business Brief parity, inventory risk, store/tenant isolation, strict calendar, SQLite-only.');
+  console.log('Admin orders30days scope PASS: duplicate suppression, Admin lifetime/period/Business Brief parity, inventory risk, store/tenant isolation, strict calendar, SQLite-only.');
 }finally{db.close();}
