@@ -1,6 +1,9 @@
 package com.kunonline.callerid
 
 import android.content.Context
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import android.provider.Settings
 import org.json.JSONArray
 import org.json.JSONObject
@@ -73,17 +76,48 @@ object NativeSectionsApi {
         "collected" to get(context, "/api/accounting/collected-profit", scoped = true)
     )
 
-    fun accounting(context: Context): Map<String, NativeSectionResult> = linkedMapOf(
-        "overview" to get(context, "/api/accounting/overview", scoped = true),
-        "entries" to get(context, "/api/accounting/entries?limit=150", scoped = true),
-        "catalog" to get(context, "/api/accounting/catalog", scoped = true)
-    )
+    // Fetch independent accounting resources concurrently, with one verified tenant/store scope.
+    // The backend defaults to *today* when from/to are omitted, so always send a range.
+    suspend fun accounting(context: Context, fromDate: String, toDate: String): Map<String, NativeSectionResult> = coroutineScope {
+        val selected = scope(context)
+        if (selected.clientId.isBlank()) {
+            val error = NativeSectionResult(false, "اختر حساب العميل والمتجر أولًا", 400)
+            return@coroutineScope linkedMapOf("overview" to error, "entries" to error, "catalog" to error)
+        }
+        val dates = "from=${enc(fromDate)}&to=${enc(toDate)}"
+        val overview = async(Dispatchers.IO) {
+            get(context, scopedPath(selected, "/api/accounting/overview?$dates"))
+        }
+        val entries = async(Dispatchers.IO) {
+            get(context, scopedPath(selected, "/api/accounting/entries?limit=150&$dates"))
+        }
+        val catalog = async(Dispatchers.IO) {
+            get(context, "/api/accounting/catalog")
+        }
+        linkedMapOf(
+            "overview" to overview.await(),
+            "entries" to entries.await(),
+            "catalog" to catalog.await()
+        )
+    }
 
-    fun addAccountingEntry(context: Context, payload: JSONObject): NativeSectionResult =
-        post(context, "/api/accounting/entries", payload)
+    fun addAccountingEntry(context: Context, payload: JSONObject): NativeSectionResult {
+        val selected = scope(context)
+        if (selected.clientId.isBlank()) return NativeSectionResult(false, "اختر حساب العميل أولًا", 400)
+        // Non-owner employee sessions need an explicit clientId in POST requests.
+        val scopedPayload = JSONObject(payload.toString()).put("clientId", selected.clientId)
+        return post(context, "/api/accounting/entries", scopedPayload)
+    }
 
-    fun deleteAccountingEntry(context: Context, id: String, storeId: String): NativeSectionResult =
-        delete(context, "/api/accounting/entries/${enc(id)}", JSONObject().put("storeId", storeId))
+    fun deleteAccountingEntry(context: Context, id: String, storeId: String): NativeSectionResult {
+        val selected = scope(context)
+        if (selected.clientId.isBlank()) return NativeSectionResult(false, "اختر حساب العميل أولًا", 400)
+        return delete(
+            context,
+            "/api/accounting/entries/${enc(id)}",
+            JSONObject().put("storeId", storeId).put("clientId", selected.clientId)
+        )
+    }
 
     fun inventory(context: Context): Map<String, NativeSectionResult> = linkedMapOf(
         "state" to get(context, "/api/state", scoped = true),
@@ -218,8 +252,9 @@ object NativeSectionsApi {
         return get(context, "/api/my-store-context?clientId=${enc(scope.clientId)}")
     }
 
-    private fun scopedPath(context: Context, path: String): String {
-        val scope = scope(context)
+    private fun scopedPath(context: Context, path: String): String = scopedPath(scope(context), path)
+
+    private fun scopedPath(scope: ScopeInfo, path: String): String {
         if (scope.clientId.isBlank()) return path
         val separator = if (path.contains("?")) "&" else "?"
         return buildString {
