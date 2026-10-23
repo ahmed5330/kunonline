@@ -1137,6 +1137,8 @@ async function handleApi(request, env, url, path) {
   }
 
   if (path === '/api/logout') {
+    // Logout mutates session revocation state; never allow navigation/GET to do it.
+    if (request.method !== 'POST') return json({error:'METHOD_NOT_ALLOWED'},405,{'Allow':'POST'});
     const cleared={ 'Set-Cookie': `${COOKIE}=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0` };
     // Cookie-tossing ambiguity must not claim a particular token was revoked.
     // Clear the local cookie, but report a failed logout until retried safely.
