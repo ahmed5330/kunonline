@@ -155,7 +155,7 @@ async function countUsers(env) {
 }
 
 async function makeSession(payload, secret) {
-  const body = b64url.enc(JSON.stringify({ ...payload, exp: Math.floor(Date.now() / 1000) + WEEK }));
+  const body = b64url.enc(JSON.stringify({ ...payload, jti: crypto.randomUUID(), exp: Math.floor(Date.now() / 1000) + WEEK }));
   return `${body}.${await hmac(body, secret)}`;
 }
 
