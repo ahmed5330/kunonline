@@ -171,7 +171,9 @@ async function readSession(request, secret, env) {
   if (!safeEqual(sig, await hmac(body, secret))) return null;
   let p;
   try { p = JSON.parse(b64url.dec(body)); } catch { return null; }
-  if (!p.exp || p.exp < Math.floor(Date.now() / 1000)) return null;
+  // Require a canonical integer expiry and reject at the exact expiry second.
+  // Signed but malformed/legacy payloads must never extend a browser session.
+  if (!p || !Number.isSafeInteger(p.exp) || p.exp <= Math.floor(Date.now() / 1000)) return null;
   // Database failures propagate; the caller must not treat this as a valid
   // session or issue a successful logout response when revocation failed.
   if (await isSessionRevoked(env, token)) return null;
@@ -190,7 +192,10 @@ async function encKeyFrom(env) {
 async function encryptSecret(plain, env) {
   if (!plain) return plain;
   const key = await encKeyFrom(env);
-  if (!key) return plain; /* المفتاح مش متظبط لسه — نسيبها زي ما هي بدل ما نفشل الحفظ */
+  // Never persist provider tokens/passwords as plaintext on a missing key.
+  // Fail the whole state write before DB.run(); an operator must provision
+  // TOKEN_ENC_KEY on the actual backend Worker used by this account.
+  if (!key) throw Object.assign(new Error('TOKEN_ENC_KEY is required to store secrets'), { status: 503, code: 'TOKEN_ENC_KEY_MISSING' });
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const buf = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(plain));
   return 'enc$' + toB64(iv) + '$' + toB64(new Uint8Array(buf));
