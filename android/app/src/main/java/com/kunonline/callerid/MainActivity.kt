@@ -10,10 +10,25 @@ import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 
 class MainActivity : ComponentActivity() {
+    var notificationOrderTarget by mutableStateOf<NotificationOrderTarget?>(null)
+        private set
+
+    fun clearNotificationOrderTarget() { notificationOrderTarget = null }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        notificationOrderTarget = OrderNotifications.notificationTarget(intent)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        notificationOrderTarget = OrderNotifications.notificationTarget(intent)
         if (KunApi.hasSession(this)) {
             SyncJobService.schedule(this)
         }
