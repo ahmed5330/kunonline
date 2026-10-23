@@ -13,8 +13,8 @@ android {
         minSdk = 29
         targetSdk = 35
         // v2.9.13: customer-service cards show product model/color and all essential order information.
-        versionCode = 146
-        versionName = "2.9.15"
+        versionCode = 147
+        versionName = "2.9.16"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
