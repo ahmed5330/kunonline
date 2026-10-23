@@ -1,3 +1,4 @@
+import {handleTenantEasyOrdersHealth} from './tenant-easyorders-health.js';
 import {routeProductionCodRead} from './production-cod-read-fallback.js';
 import app from './index-production-jt-history.js';
 import {handlePublicSiteReviews} from './public-site-reviews.js';
@@ -211,6 +212,14 @@ export default {
     if(aiMarketing)return aiMarketing;
     const subscription=await handleSubscriptionControl({request,env:dataEnv,ctx,delegate});
     if(subscription)return subscription;
+    const tenantSync=await handleTenantEasyOrdersHealth(request,dataEnv,{
+      authorize:async sourceRequest=>{
+        const identityUrl=new URL('/api/me',sourceRequest.url);
+        const identity=await delegate.fetch(new Request(identityUrl,{method:'GET',headers:sourceRequest.headers}));
+        return identity.ok?identity.json().catch(()=>null):null;
+      }
+    });
+    if(tenantSync)return tenantSync;
 
     const unitTracking=await handleInventoryUnitTracking({request,env:dataEnv,ctx,delegate});
     if(unitTracking)return unitTracking;
