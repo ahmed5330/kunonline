@@ -1,0 +1,23 @@
+/* Kun Online — AI integrations are a separate, per-store section inside Integrations. */
+.kun-ai-integrations{margin-block:24px;direction:rtl}
+.kun-ai-integrations .ai-intro{display:flex;align-items:end;justify-content:space-between;gap:18px;flex-wrap:wrap;padding:18px;border:1px solid var(--line,#dce6f1);background:var(--card,#fff);border-radius:16px;margin-bottom:14px}
+.kun-ai-integrations .ai-intro h3{font-size:20px;margin:0 0 6px;font-weight:900}
+.kun-ai-integrations .ai-intro p{font-size:12px;color:var(--muted,#64748b);line-height:1.75;max-width:700px;margin:0}
+.kun-ai-integrations .ai-intro label{display:grid;gap:7px;min-width:min(100%,245px);font-weight:800;font-size:12px}
+.kun-ai-integrations .ai-provider-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,285px),1fr));gap:13px}
+.kun-ai-integrations .ai-provider-card{display:flex;flex-direction:column;gap:10px;background:var(--card,#fff);border:1px solid var(--line,#dce6f1);border-radius:16px;padding:16px;min-width:0}
+.kun-ai-integrations .ai-provider-head{display:flex;align-items:start;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.kun-ai-integrations .ai-provider-head h4{font-size:17px;font-weight:850;margin:0}
+.kun-ai-integrations .ai-provider-code,.kun-ai-integrations .ai-provider-meta{font-size:11px;color:var(--muted,#64748b);overflow-wrap:anywhere}
+.kun-ai-integrations .ai-provider-status{border:1px solid #d0dbea;border-radius:999px;padding:5px 10px;font-size:11px;background:#f0f5fb;color:#285179;font-weight:800}
+.kun-ai-integrations .ai-provider-status[data-ai-status="connected"]{border-color:#86c4a8;background:#edf9f1;color:#236b4b}
+.kun-ai-integrations .ai-provider-help{font-size:12px;line-height:1.75;color:var(--muted,#64748b);margin:0}
+.kun-ai-integrations .ai-provider-key{display:grid;gap:7px;font-size:12px;font-weight:800;margin:0}
+.kun-ai-integrations .ai-provider-key input{min-height:43px;width:100%;min-width:0;box-sizing:border-box;direction:ltr;text-align:left}
+.kun-ai-integrations .ai-provider-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:auto}
+.kun-ai-integrations .ai-provider-actions .btn{min-height:38px;font-size:12px}
+.kun-ai-integrations .ai-provider-actions .ai-remove{color:#a23535;border-color:#f1c9c9}
+.kun-ai-integrations .ai-result{min-height:16px;font-size:12px;line-height:1.65;overflow-wrap:anywhere;margin:0}
+.kun-ai-integrations .ai-result[data-kind="ok"]{color:#287352}
+.kun-ai-integrations .ai-result[data-kind="error"]{color:#a22d30}
+@media(max-width:580px){.kun-ai-integrations .ai-intro{padding:14px}.kun-ai-integrations .ai-provider-card{padding:13px}.kun-ai-integrations .ai-intro label{width:100%}}

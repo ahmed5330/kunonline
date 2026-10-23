@@ -2,6 +2,7 @@ import commerceV18 from './index-commerce-v18.js';
 import {requirePermission} from './access-control.js';
 import {providerById} from './provider-registry.js';
 import {readConnectionSecrets,validateProviderConnection} from './integration-provider-validation.js';
+import {handleAiIntegrations} from './ai-integrations.js';
 
 const json=(d,s=200)=>new Response(JSON.stringify(d),{status:s,headers:{'Content-Type':'application/json; charset=utf-8'}});
 const now=()=>new Date().toISOString();
@@ -27,6 +28,7 @@ async function persistValidation(env,clientId,connection,result,currentConfig){
   await env.DB.prepare(`UPDATE store_connections SET status=?,store_name=COALESCE(?,store_name),external_store_id=COALESCE(?,external_store_id),config_json=?,last_sync_at=?,last_error=?,updated_at=? WHERE id=? AND client_id=?`).bind(status,connected?(result.storeName||null):null,connected?(result.externalStoreId||null):null,JSON.stringify(nextConfig),connected?ts:(connection.last_sync_at||null),result.ok?null:(result.message||'Validation failed'),ts,connection.id,clientId).run();
 }
 async function fetchV19(request,env,ctx){
+  if(new URL(request.url).pathname.startsWith('/api/integrations/ai'))return handleAiIntegrations({request,env,delegate:{fetch:source=>commerceV18.fetch(source,env,ctx)}});
   const u=new URL(request.url),p=u.pathname,method=request.method.toUpperCase(),x=p.match(/^\/api\/integrations\/connections\/([^/]+)\/validate$/);
   try{
     if(!x||method!=='POST')return commerceV18.fetch(request,env,ctx);

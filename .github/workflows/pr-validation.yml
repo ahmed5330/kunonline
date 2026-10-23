@@ -38,6 +38,8 @@ jobs:
           node scripts/mobile-global-order-search-test.mjs
           node --check src/mobile-store-options.js
           node scripts/mobile-store-options-test.mjs
+      - name: AI provider integration fake tests and secure tenancy
+        run: node scripts/ai-integrations-fake-test.mjs
       - name: Historical mobile and web contact-count recovery
         run: node scripts/contact-history-recovery-test.mjs
       - name: Android cancellation outcome field parity
