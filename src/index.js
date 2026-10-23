@@ -160,18 +160,21 @@ async function makeSession(payload, secret) {
 }
 
 async function readSession(request, secret, env) {
-  const raw = (request.headers.get('Cookie') || '')
-    .split(';').map(c => c.trim()).find(c => c.startsWith(COOKIE + '='));
-  if (!raw) return null;
-  const [body, sig] = raw.slice(COOKIE.length + 1).split('.');
-  if (!body || !sig) return null;
+  // The hash used for logout revocation MUST cover the exact same token that
+  // authentication verifies. Splitting and ignoring a trailing segment would
+  // allow a signed, revoked token to be replayed as "body.signature.extra".
+  const token = sessionTokenFromRequest(request);
+  const parts = token.split('.');
+  if (parts.length !== 2) return null;
+  const [body, sig] = parts;
+  if (!/^[A-Za-z0-9_-]+$/.test(body) || !/^[0-9a-f]{64}$/.test(sig)) return null;
   if (!safeEqual(sig, await hmac(body, secret))) return null;
   let p;
   try { p = JSON.parse(b64url.dec(body)); } catch { return null; }
   if (!p.exp || p.exp < Math.floor(Date.now() / 1000)) return null;
   // Database failures propagate; the caller must not treat this as a valid
   // session or issue a successful logout response when revocation failed.
-  if (await isSessionRevoked(env, sessionTokenFromRequest(request))) return null;
+  if (await isSessionRevoked(env, token)) return null;
   return p;
 }
 
