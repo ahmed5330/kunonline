@@ -59,18 +59,20 @@ object OrderNotifications {
         if (alert.isTest) return "اختبار صوت إشعار المتجر"
         val lines = mutableListOf<String>()
         lines += "العميل: ${alert.customerName.trim().ifBlank { "عميل جديد" }}"
+        if (alert.customerPhone.isNotBlank()) lines += "الهاتف: ${alert.customerPhone.trim()}"
         if (alert.productName.isNotBlank())
             lines += "المنتج: ${alert.productName.trim()} × ${alert.quantity.coerceAtLeast(1)}"
         if (alert.productNote.isNotBlank()) lines += "التفاصيل: ${alert.productNote.trim()}"
         if (alert.total != null && alert.total.isFinite())
             lines += "الإجمالي: ${NumberFormat.getNumberInstance(Locale("ar", "EG")).format(alert.total)} ج.م"
         if (alert.governorate.isNotBlank()) lines += "المحافظة: ${alert.governorate.trim()}"
-        return lines.joinToString("\\n")
+        return lines.joinToString("\n")
     }
 
     private fun safeDialNumber(value: String): String {
-        val phone = value.trim().replace(Regex("[\\\\s()\\\\-]"), "")
-        return phone.takeIf { it.matches(Regex("\\\\+?[0-9]{7,15}")) }.orEmpty()
+        val digits = value.filter { it.isDigit() }
+        if (digits.length !in 7..15) return ""
+        return if (value.trim().startsWith("+")) "+$digits" else digits
     }
 
     internal fun channelId(clientId: String, storeId: String): String {
