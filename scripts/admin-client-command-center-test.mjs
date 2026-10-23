@@ -46,7 +46,7 @@ has(ui,'التسويق والإعلانات','marketing brief');
 has(ui,'المالية والمخزون','finance/inventory brief');
 has(ui,'ما يحتاج انتباهك','recommendations');
 has(ui,'ملخص الحملات في الفترة','campaign summary');
-has(loader,'modules-v74-admin-client-command-center.js?v=74.0','v74 loader');
+has(loader,'modules-v74-admin-client-command-center.js?v=74.1','v74 loader');
 has(loader,'id="v23ResetOwner" type="button"','client-owner password reset action is an explicit non-submit button');
 has(loader,'autocomplete="new-password" autocapitalize="none" spellcheck="false"','mobile password input avoids keyboard transformations');
 has(loader,"if(resetBtn.dataset.busy==='1')return",'duplicate password-reset taps are blocked');
