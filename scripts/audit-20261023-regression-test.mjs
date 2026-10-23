@@ -24,8 +24,8 @@ assert.equal(r,null,'unrelated routes are untouched');
 const gateway=read('src/index-production-mobile-update.js');
 assert.match(gateway,/handleProductionPreviewParity\(request,env,\{/,'gateway must supply authenticated identity');
 assert.match(gateway,/new URL\('\/api\/me',sourceRequest\.url\)/,'gateway authorizer uses server session');
-assert.match(gateway,/COD_READ_PATHS/,'COD route fallback handles legacy preview');
-assert.match(gateway,/request\.method==='GET'&&COD_READ_PATHS/,'no financial writes may be replayed');
+assert.match(gateway,/routeProductionCodRead\(/,'COD route fallback handles legacy preview');
+assert.match(gateway,/production-cod-read-fallback/,'COD fallback is constrained by a separately tested helper');
 
 const legacy=read('public/v2/modules-v20.js');
 assert.match(legacy,/function orderForm\(\)\{[\s\S]*?KunActionsV23\?\.openCreateOrder/,'legacy toolbar delegates to J&T form');
