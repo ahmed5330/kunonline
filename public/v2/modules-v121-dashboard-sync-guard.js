@@ -24,7 +24,7 @@
     try{const r=await fetch('/api/integrations/easyorders/dashboard-health?'+params,{credentials:'include',cache:'no-store'});const data=await r.json().catch(()=>null);if(!r.ok)return null;cached=data;return data;}catch{return null;}
   }
   function openView(view){const b=document.querySelector(`.nav button[data-view="${view}"]`);if(b)b.click();}
-  function currentScopeNote(){const s=document.getElementById('storeBtn');return !s||s.value?'':' العرض الحالي على «كل الفروع»؛ عند مقارنة Preview وProduction اختر نفس الفرع في الاثنين.';}
+  function currentScopeNote(){const s=document.getElementById('storeBtn');return !s||s.value?'':' الحالة المعروضة تخص فروع حسابك فقط، ولا تشمل أي متجر تابع لعميل آخر.';}
   function box(kind){
     if(kind==='invalid')return `<div id="${BOX_ID}"><div class="kdsg-copy"><strong>تعذر مزامنة بعض اتصالات Easy Orders — الأرقام قد تكون ناقصة</strong><p>Easy Orders يرفض بيانات الوصول لأحد الاتصالات في مصدر البيانات المستخدم حاليًا. افتح مركز التكاملات وأعد ربط Easy Orders بمفتاح Public API صالح. لا ترسل المفتاح في الشات؛ أدخله داخل النظام فقط.${currentScopeNote()}</p></div><div class="kdsg-actions"><button class="primary" data-kdsg="integrations">فتح مركز التكاملات</button><button data-kdsg="orders">فتح الطلبات</button></div></div>`;
     if(kind==='unreadable')return `<div id="${BOX_ID}"><div class="kdsg-copy"><strong>تعذر قراءة بيانات ربط Easy Orders</strong><p>تعذر قراءة بيانات أحد اتصالات Easy Orders في مصدر البيانات المستخدم حاليًا. أعد حفظ API Key من مركز التكاملات ثم شغّل إصلاح المزامنة من الطلبات.${currentScopeNote()}</p></div><div class="kdsg-actions"><button class="primary" data-kdsg="integrations">فتح مركز التكاملات</button></div></div>`;
