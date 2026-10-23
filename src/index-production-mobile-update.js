@@ -193,7 +193,7 @@ export default {
       const upstream=await previewFetch(request,env);
       if(upstream){
         const body=await upstream.clone().json().catch(()=>null);
-        if(upstream.status!==404&&body?.error!=='مسار غير معروف')return upstream;
+        if(body?.error!=='مسار غير معروف')return upstream;
       }
       return app.fetch(request,dataEnv,ctx);
     }
