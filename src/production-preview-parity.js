@@ -69,6 +69,9 @@ export async function handleProductionPreviewParity(request,env,{authorizeAdmin}
   try{identity=await authorizeAdmin(request);}catch{return json({ok:false,error:'AUTH_REQUIRED'},401);}
   if(!identity?.role)return json({ok:false,error:'AUTH_REQUIRED'},401);
   if(identity.role!=='admin')return json({ok:false,error:'ADMIN_ONLY'},403);
+  // /api/me must identify an actual authenticated admin account, not only a role.
+  // An incomplete or stale upstream identity must never unlock D1-wide diagnostics.
+  if(typeof identity.uid!=='string'||!identity.uid.trim())return json({ok:false,error:'ADMIN_IDENTITY_REQUIRED'},403);
   if(!env?.DB||!env?.PREVIEW_DB)return json({ok:false,error:'PARITY_BINDING_UNAVAILABLE'},503);
   try{const [production,preview,keyCompatibility]=await Promise.all([snapshot(env.DB),snapshot(env.PREVIEW_DB),previewSecretCompatibility(env.PREVIEW_DB,env)]);return json({ok:true,mode:'read-only-no-secret-values',production,preview,keyCompatibility,generatedAt:new Date().toISOString()});}
   catch(error){console.error('[preview-parity]',error?.code||error?.name||'error');return json({ok:false,error:'PARITY_READ_FAILED'},500);}
