@@ -37,7 +37,9 @@ export async function handleMobileOrderAlerts({request,env,delegate,clock=()=>ne
     const chunk=assignments.slice(i,i+80);
     const where=chunk.map(()=>'(o.client_id=? AND o.store_id=?)').join(' OR ');
     const bindings=chunk.flatMap(s=>[s.clientId,s.storeId]);
-    const query=`SELECT o.id,o.ref,o.store_id storeId,o.client_id clientId,o.created_at createdAt
+    const query=`SELECT o.id,o.ref,o.store_id storeId,o.client_id clientId,o.created_at createdAt,
+        o.name AS customerName,o.phone AS customerPhone,o.product AS productName,
+        o.product_note AS productNote,o.qty AS quantity,o.total AS total,o.gov AS governorate
       FROM orders o WHERE (${where})
       AND (o.created_at > ? OR (o.created_at = ? AND o.id > ?))
       AND o.created_at <= ?
@@ -51,7 +53,14 @@ export async function handleMobileOrderAlerts({request,env,delegate,clock=()=>ne
   return json({
     ok:true,
     orders:next.map(r=>({id:clean(r.id),ref:clean(r.ref),storeId:clean(r.storeId),clientId:clean(r.clientId),
-      storeName:clean(names.get(`${r.clientId}:${r.storeId}`))||'متجر',createdAt:clean(r.createdAt)})),
+      storeName:clean(names.get(`${r.clientId}:${r.storeId}`))||'متجر',createdAt:clean(r.createdAt),
+      customerName:clean(r.customerName).slice(0,80),
+      customerPhone:clean(r.customerPhone).slice(0,32),
+      productName:clean(r.productName).slice(0,110),
+      productNote:clean(r.productNote).slice(0,100),
+      quantity:Math.max(1,Math.min(9999,Number(r.quantity)||1)),
+      total:Number(r.total)||0,
+      governorate:clean(r.governorate).slice(0,70)})),
     nextAfter:last?clean(last.createdAt):until,
     nextId:last?clean(last.id):'',
     hasMore

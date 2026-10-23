@@ -11,6 +11,13 @@ const gateway=await readFile(new URL('../src/index-production-mobile-update.js',
 for(const marker of ['NotificationChannel(', 'ACTION_CHANNEL_NOTIFICATION_SETTINGS','openStoreSoundSettings','POST_NOTIFICATIONS','notify(identifier, notification)','@Synchronized fun poll','nextAfter','getSharedPreferences','KunApi.sessionCookie(context) != cookie'])
   assert.ok(native.includes(marker), 'Missing Android alert guard: '+marker);
 assert.ok(manifest.includes('android.permission.POST_NOTIFICATIONS'));
+for (const marker of ['NewOrderAlert(', 'customerName', 'customerPhone', 'productName',
+  'governorate', 'BigTextStyle()', 'addAction(', '"اتصال"', '"مراجعة"',
+  'Intent.ACTION_DIAL', 'EXTRA_ORDER_ID', 'EXTRA_CLIENT_ID', 'EXTRA_STORE_ID',
+  'NotificationCompat.VISIBILITY_PRIVATE']) {
+  assert.ok(native.includes(marker), 'Missing rich Android order notification guard: '+marker);
+}
+assert.ok(!native.includes('val ref = row.optString("ref")'), 'The notification must never show a long Easy Orders reference');
 assert.ok(settings.includes('تخصيص صوت إشعار المتجر')&&settings.includes('تجربة إشعار لهذا المتجر'));
 assert.ok(job.includes('OrderNotifications.poll(this)'));
 assert.ok(shell.includes('ForegroundPolling(key = "new-order-alerts"')&&shell.includes('30_000L'));
@@ -30,7 +37,9 @@ const env={DB:{prepare(sql){return {bind(...values){return {
     assert.equal(values[1],'S1');
     const after=values.at(-4),afterId=values.at(-2);
     const orders=[
-      {id:'O1',ref:'101',clientId:'C1',storeId:'S1',createdAt:'2026-10-23T03:00:00.000Z'},
+      {id:'O1',ref:'101',clientId:'C1',storeId:'S1',createdAt:'2026-10-23T03:00:00.000Z',
+        customerName:'مريم',customerPhone:'01012345678',productName:'جيبة بليسيه',productNote:'برجاندي',
+        quantity:2,total:890,governorate:'أسيوط'},
       {id:'O2',ref:'102',clientId:'C1',storeId:'S1',createdAt:'2026-10-23T03:05:00.000Z'}
     ];
     return {results:orders.filter(x=>x.createdAt>after||(x.createdAt===after&&x.id>afterId))};
@@ -56,6 +65,15 @@ const full=await handleMobileOrderAlerts({request:mk('?after=2026-10-23T02%3A00%
 const data=await full.json();
 assert.equal(data.orders.length,2);
 assert.equal(data.orders[0].storeName,'متجر ألف');
+assert.equal(data.orders[0].customerName,'مريم');
+assert.equal(data.orders[0].customerPhone,'01012345678');
+assert.equal(data.orders[0].productName,'جيبة بليسيه');
+assert.equal(data.orders[0].productNote,'برجاندي');
+assert.equal(data.orders[0].quantity,2);
+assert.equal(data.orders[0].total,890);
+assert.equal(data.orders[0].governorate,'أسيوط');
+assert.equal(data.orders[1].customerName,'');
+assert.equal(data.orders[1].quantity,1);
 assert.equal(data.orders[1].id,'O2');
 assert.equal(data.nextAfter,'2026-10-23T03:05:00.000Z');
 assert.equal(data.nextId,'O2');
@@ -67,4 +85,4 @@ const malformed=await handleMobileOrderAlerts({request:mk('?after=tomorrow'),env
 assert.equal(malformed.status,400);
 const unauthorized=await handleMobileOrderAlerts({request:mk('',false),env,delegate:{fetch:async()=>new Response(JSON.stringify({error:'login'}),{status:401})},clock});
 assert.equal(unauthorized.status,401);
-console.log('PASS: new-order feed authorization, store isolation, cursor bootstrap/pagination, Android channels and polling wiring');
+console.log('PASS: rich Android order alert details/actions, tenant isolation, cursor bootstrap/pagination, notification privacy and channels');

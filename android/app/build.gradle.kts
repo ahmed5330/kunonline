@@ -12,9 +12,9 @@ android {
         applicationId = "com.kunonline.callerid.stable"
         minSdk = 29
         targetSdk = 35
-        // v2.9.13: customer-service cards show product model/color and all essential order information.
-        versionCode = 147
-        versionName = "2.9.16"
+        // v2.9.17: customer-rich new-order alerts with call and direct order review.
+        versionCode = 148
+        versionName = "2.9.17"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

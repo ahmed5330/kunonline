@@ -8,6 +8,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.content.pm.PackageManager
 import android.os.Build
 import android.provider.Settings
@@ -17,6 +18,22 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 import java.security.MessageDigest
+import java.text.NumberFormat
+import java.util.Locale
+
+data class NotificationOrderTarget(val orderId: String, val clientId: String, val storeId: String)
+
+internal data class NewOrderAlert(
+    val orderId: String,
+    val customerName: String = "",
+    val customerPhone: String = "",
+    val productName: String = "",
+    val productNote: String = "",
+    val quantity: Int = 1,
+    val total: Double? = null,
+    val governorate: String = "",
+    val isTest: Boolean = false
+)
 
 /** Notification channels are stable per (client, store). Users pick each sound in Android settings. */
 object OrderNotifications {
@@ -24,6 +41,39 @@ object OrderNotifications {
     private const val PREFS = "kun_order_alerts"
     private const val PREFIX = "kun_orders_"
     private const val MAX_PAGES = 4
+    private const val ACTION_OPEN_ORDER = "com.kunonline.callerid.OPEN_ORDER_NOTIFICATION"
+    const val EXTRA_ORDER_ID = "kun_notification_order_id"
+    const val EXTRA_CLIENT_ID = "kun_notification_client_id"
+    const val EXTRA_STORE_ID = "kun_notification_store_id"
+
+    fun notificationTarget(intent: Intent?): NotificationOrderTarget? {
+        if (intent?.action != ACTION_OPEN_ORDER) return null
+        val orderId = intent.getStringExtra(EXTRA_ORDER_ID).orEmpty()
+        val clientId = intent.getStringExtra(EXTRA_CLIENT_ID).orEmpty()
+        val storeId = intent.getStringExtra(EXTRA_STORE_ID).orEmpty()
+        return if (orderId.isBlank() || clientId.isBlank() || storeId.isBlank()) null
+        else NotificationOrderTarget(orderId, clientId, storeId)
+    }
+
+    internal fun displayText(alert: NewOrderAlert): String {
+        if (alert.isTest) return "اختبار صوت إشعار المتجر"
+        val lines = mutableListOf<String>()
+        lines += "العميل: ${alert.customerName.trim().ifBlank { "عميل جديد" }}"
+        if (alert.customerPhone.isNotBlank()) lines += "الهاتف: ${alert.customerPhone.trim()}"
+        if (alert.productName.isNotBlank())
+            lines += "المنتج: ${alert.productName.trim()} × ${alert.quantity.coerceAtLeast(1)}"
+        if (alert.productNote.isNotBlank()) lines += "التفاصيل: ${alert.productNote.trim()}"
+        if (alert.total != null && alert.total.isFinite())
+            lines += "الإجمالي: ${NumberFormat.getNumberInstance(Locale("ar", "EG")).format(alert.total)} ج.م"
+        if (alert.governorate.isNotBlank()) lines += "المحافظة: ${alert.governorate.trim()}"
+        return lines.joinToString("\n")
+    }
+
+    private fun safeDialNumber(value: String): String {
+        val digits = value.filter { it.isDigit() }
+        if (digits.length !in 7..15) return ""
+        return if (value.trim().startsWith("+")) "+$digits" else digits
+    }
 
     internal fun channelId(clientId: String, storeId: String): String {
         val bytes = MessageDigest.getInstance("SHA-256")
@@ -67,30 +117,61 @@ object OrderNotifications {
     }
 
     fun sendTest(context: Context, store: MobileStoreOption) {
-        show(context, store.clientId, store.storeId, store.storeName, "اختبار صوت إشعار المتجر", "اختبار")
+        show(context, store.clientId, store.storeId, store.storeName,
+            NewOrderAlert(orderId = "test", isTest = true))
     }
 
-    private fun show(context: Context, clientId: String, storeId: String, storeName: String, message: String, orderId: String) {
-        val id = channel(context, clientId, storeId, storeName)
+    private fun show(
+        context: Context, clientId: String, storeId: String, storeName: String, alert: NewOrderAlert
+    ) {
+        val channel = channel(context, clientId, storeId, storeName)
         if (!permissionGranted(context)) return
-        val open = PendingIntent.getActivity(
-            context, 0, Intent(context, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            }, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        val key = "$clientId:$storeId:${alert.orderId}"
+        val title = if (alert.isTest) "اختبار الإشعارات • $storeName" else "طلب جديد • $storeName"
+        val preview = if (alert.isTest) "اختبار صوت إشعار المتجر" else
+            listOf(alert.customerName.ifBlank { "عميل جديد" }, alert.productName)
+                .filter { it.isNotBlank() }.joinToString(" • ").take(160)
+        val reviewIntent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            if (!alert.isTest) {
+                action = ACTION_OPEN_ORDER
+                data = Uri.parse("kunonline://order-notification/${Uri.encode(key)}")
+                putExtra(EXTRA_ORDER_ID, alert.orderId)
+                putExtra(EXTRA_CLIENT_ID, clientId)
+                putExtra(EXTRA_STORE_ID, storeId)
+            }
+        }
+        val review = PendingIntent.getActivity(
+            context, (key + ":review").hashCode().and(0x7fffffff), reviewIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        val notification = NotificationCompat.Builder(context, id)
+        val builder = NotificationCompat.Builder(context, channel)
             .setSmallIcon(android.R.drawable.stat_notify_more)
-            .setContentTitle(storeName)
-            .setContentText(message)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(message))
+            .setContentTitle(title)
+            .setContentText(preview)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(displayText(alert)))
+            .setSubText(storeName)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+            .setCategory(NotificationCompat.CATEGORY_STATUS)
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .setAutoCancel(true)
-            .setContentIntent(open)
-            .build()
-        val key = "$clientId:$storeId:$orderId"
+            .setContentIntent(review)
+        if (!alert.isTest) {
+            val phone = safeDialNumber(alert.customerPhone)
+            if (phone.isNotBlank()) {
+                val dialIntent = Intent(Intent.ACTION_DIAL, Uri.fromParts("tel", phone, null)).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                val call = PendingIntent.getActivity(
+                    context, (key + ":call").hashCode().and(0x7fffffff), dialIntent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+                builder.addAction(android.R.drawable.ic_menu_call, "اتصال", call)
+            }
+            builder.addAction(android.R.drawable.ic_menu_view, "مراجعة", review)
+        }
         val identifier = key.hashCode().and(0x7fffffff)
+        val notification = builder.build()
         context.getSystemService(NotificationManager::class.java)?.notify(identifier, notification)
     }
 
@@ -131,9 +212,18 @@ object OrderNotifications {
                     val storeId = row.optString("storeId")
                     if (orderId.isBlank() || clientId.isBlank() || storeId.isBlank()) continue
                     val storeName = row.optString("storeName").ifBlank { "متجر" }
-                    val ref = row.optString("ref").take(50)
+                    val total = row.optDouble("total", Double.NaN).takeIf { it.isFinite() }
                     show(context, clientId, storeId, storeName,
-                        if (ref.isBlank()) "وصل طلب جديد إلى $storeName" else "طلب جديد #$ref في $storeName", orderId)
+                        NewOrderAlert(
+                            orderId = orderId,
+                            customerName = row.optString("customerName").take(80),
+                            customerPhone = row.optString("customerPhone").take(32),
+                            productName = row.optString("productName").take(110),
+                            productNote = row.optString("productNote").take(100),
+                            quantity = row.optInt("quantity", 1).coerceIn(1, 9999),
+                            total = total,
+                            governorate = row.optString("governorate").take(70)
+                        ))
                 }
             }
             // Commit only after a successfully authenticated server response.
