@@ -1,4 +1,4 @@
-import {sessionTokenFromRequest,isSessionRevoked,revokeSession} from './session-revocation.js';
+import {sessionTokenFromRequest,hasDuplicateSessionCookies,isSessionRevoked,revokeSession} from './session-revocation.js';
 /**
  * كن أونلاين — Cloudflare Worker
  * ---------------------------------------------------------------------------
@@ -1138,6 +1138,9 @@ async function handleApi(request, env, url, path) {
 
   if (path === '/api/logout') {
     const cleared={ 'Set-Cookie': `${COOKIE}=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0` };
+    // Cookie-tossing ambiguity must not claim a particular token was revoked.
+    // Clear the local cookie, but report a failed logout until retried safely.
+    if (hasDuplicateSessionCookies(request)) return json({ok:false,error:'AMBIGUOUS_SESSION_COOKIE'},400,cleared);
     try {
       const valid=await readSession(request,secret,env);
       if(valid)await revokeSession(env,sessionTokenFromRequest(request),valid.exp);
