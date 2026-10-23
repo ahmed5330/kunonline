@@ -69,6 +69,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.google.mlkit.vision.barcode.common.Barcode
@@ -832,16 +833,28 @@ private fun NativeAccountingScreen(onBack: () -> Unit) {
     var data by remember { mutableStateOf<Map<String, NativeSectionResult>>(emptyMap()) }
     var stores by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
     var showAdd by remember { mutableStateOf(false) }
+    val initialPeriod = remember { AccountingDateFilter.lastDays(30) }
+    var fromDate by remember { mutableStateOf(initialPeriod.from) }
+    var toDate by remember { mutableStateOf(initialPeriod.to) }
+    var filterError by remember { mutableStateOf("") }
 
-    fun load() { refresh++ }
+    fun load() {
+        val problem = AccountingDateFilter.validate(fromDate, toDate)
+        if (problem != null) { filterError = problem; return }
+        filterError = ""
+        refresh++
+    }
     LaunchedEffect(refresh) {
         loading = true
         val pair = withContext(Dispatchers.IO) {
-            NativeSectionsApi.accounting(context) to NativeSectionsApi.stores(context)
+            val accounting = async { NativeSectionsApi.accounting(context, fromDate, toDate) }
+            val availableStores = async { NativeSectionsApi.stores(context) }
+            accounting.await() to availableStores.await()
         }
         data = pair.first
         stores = pair.second.obj?.optJSONArray("stores")?.objects().orEmpty()
-        error = pair.first.values.firstOrNull { !it.ok }?.message.orEmpty()
+        // A missing optional catalog must not blank an otherwise usable accounting screen.
+        error = pair.first["overview"]?.takeUnless { it.ok }?.message.orEmpty()
         loading = false
     }
 
@@ -872,6 +885,43 @@ private fun NativeAccountingScreen(onBack: () -> Unit) {
                     verticalArrangement = Arrangement.spacedBy(9.dp)
                 ) {
                     item {
+                        KunSectionCard {
+                            Text("فترة التقرير والحركات", fontWeight = FontWeight.Bold)
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                listOf(1 to "اليوم", 7 to "7 أيام", 30 to "30 يوم").forEach { (days, label) ->
+                                    FilledTonalButton(
+                                        onClick = {
+                                            val period = AccountingDateFilter.lastDays(days)
+                                            fromDate = period.from
+                                            toDate = period.to
+                                            load()
+                                        },
+                                        modifier = Modifier.weight(1f),
+                                        contentPadding = PaddingValues(horizontal = 3.dp)
+                                    ) { Text(label) }
+                                }
+                            }
+                            OutlinedTextField(
+                                value = fromDate,
+                                onValueChange = { fromDate = it },
+                                label = { Text("من YYYY-MM-DD") },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true
+                            )
+                            OutlinedTextField(
+                                value = toDate,
+                                onValueChange = { toDate = it },
+                                label = { Text("إلى YYYY-MM-DD") },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true
+                            )
+                            if (filterError.isNotBlank()) Text(filterError, color = KunColors.Brick)
+                            OutlinedButton(onClick = ::load, modifier = Modifier.fillMaxWidth()) {
+                                Text("عرض الفترة")
+                            }
+                        }
+                    }
+                    item {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Button(onClick = { showAdd = true }, modifier = Modifier.weight(1f)) { Text("+ تسجيل حركة") }
                             OutlinedButton(onClick = ::load, modifier = Modifier.weight(1f)) { Text("تحديث") }
@@ -886,7 +936,15 @@ private fun NativeAccountingScreen(onBack: () -> Unit) {
                         ))
                     }
                     item { Text("الحركات", style = MaterialTheme.typography.titleMedium) }
-                    if (entries.isEmpty()) item { KunSectionCard { Text("لا توجد حركات مسجلة.", color = KunColors.Ink2) } }
+                    if (data["entries"]?.ok == false) item {
+                        KunSectionCard {
+                            Text("تعذر تحميل الحركات: ${data["entries"]?.message.orEmpty()}", color = KunColors.Brick)
+                            OutlinedButton(onClick = ::load) { Text("إعادة المحاولة") }
+                        }
+                    }
+                    if (entries.isEmpty() && data["entries"]?.ok == true) item {
+                        KunSectionCard { Text("لا توجد حركات خلال الفترة المحددة.", color = KunColors.Ink2) }
+                    }
                     items(entries, key = { it.str("id").ifBlank { it.toString() } }) { entry ->
                         NativeSimpleRow(
                             title = entry.str("category").ifBlank { if (entry.str("type") == "income") "إيراد" else "مصروف" },
