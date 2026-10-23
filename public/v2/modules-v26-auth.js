@@ -55,7 +55,7 @@
   function showSession(me){
     removeGate();let box=document.getElementById('v28SessionBox');if(!box){box=document.createElement('div');box.id='v28SessionBox';top.appendChild(box)};
     box.innerHTML=`<span class="v28-session-name" title="${esc(me.email||me.name||'')}">${esc(me.name||me.email||'الحساب')}</span><button class="btn soft" id="v28LogoutBtn" type="button">تسجيل الخروج</button>`;
-    document.getElementById('v28LogoutBtn').onclick=async()=>{const btn=document.getElementById('v28LogoutBtn');try{btn.disabled=true;btn.textContent='جاري الخروج...';await request('/api/logout',{method:'POST'});}catch{}showAuth('login')};
+    document.getElementById('v28LogoutBtn').onclick=async()=>{const btn=document.getElementById('v28LogoutBtn');try{btn.disabled=true;btn.textContent='جاري الخروج...';await request('/api/logout',{method:'POST'});showAuth('login');}catch{btn.disabled=false;btn.textContent='تسجيل الخروج';const message='تعذر تأكيد تسجيل الخروج. حاول مرة أخرى.';if(window.showToast)window.showToast(message);else alert(message)}};
     document.documentElement.dataset.v28Auth='authenticated';
   }
 

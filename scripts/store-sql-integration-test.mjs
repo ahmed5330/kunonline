@@ -1,3 +1,4 @@
+import {readFileSync as readSessionSchema} from 'node:fs';
 import {DatabaseSync} from 'node:sqlite';
 import {readFile,readdir} from 'node:fs/promises';
 import worker from '../src/index-commerce-v26.js';
@@ -20,6 +21,7 @@ class D1Database{
 }
 
 const database=new DatabaseSync(':memory:');
+database.exec(readSessionSchema(new URL('../migrations/0099_revoked_sessions.sql',import.meta.url),'utf8'));
 database.exec('PRAGMA foreign_keys=ON');
 const names=(await readdir(new URL('../migrations/',import.meta.url))).filter(name=>/^00(0[1-9]|1[0-3])_.*\.sql$/.test(name)).sort();
 for(const name of names)database.exec(await readFile(new URL(`../migrations/${name}`,import.meta.url),'utf8'));
