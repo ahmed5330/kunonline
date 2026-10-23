@@ -34,8 +34,8 @@ const env={
     };return statement;
   }}
 };
-async function makeToken(jti){
-  const payload=Buffer.from(JSON.stringify({uid:user.id,role:'admin',jti,exp:Math.floor(Date.now()/1000)+3600})).toString('base64url');
+async function makeToken(jti,exp=Math.floor(Date.now()/1000)+3600){
+  const payload=Buffer.from(JSON.stringify({uid:user.id,role:'admin',jti,exp})).toString('base64url');
   const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(secret),{name:'HMAC',hash:'SHA-256'},false,['sign']);
   const signature=Buffer.from(await crypto.subtle.sign('HMAC',key,new TextEncoder().encode(payload))).toString('hex');
   return payload+'.'+signature;
@@ -45,6 +45,13 @@ async function route(path,token,method='GET'){
 }
 const first=await makeToken('session-one'),other=await makeToken('session-two');
 assert.notEqual(first,other,'same user signs distinct sessions');
+for(const [i,exp] of [null,0,'not-a-time',String(Math.floor(Date.now()/1000)+3600),{},[],Number.MAX_SAFE_INTEGER+1,Math.floor(Date.now()/1000)].entries()){
+  const malformed=await makeToken('bad-exp-'+i,exp);
+  const response=await route('/api/me',malformed);
+  assert.equal(response.status,200,'bad signed session must produce anonymous identity envelope');
+  assert.equal((await response.json()).role,null,'invalid or exactly expired timestamp must never authenticate');
+}
+
 assert.equal((await route('/api/me',first)).status,200,'valid synthetic login session');
 assert.equal((await route('/api/me',other)).status,200,'second session remains active');
 const getLogout=await route('/api/logout',first,'GET');
@@ -109,4 +116,4 @@ rejectReads=false;
 assert.equal((await (await route('/api/me',other)).json()).uid,user.id,'failed logout did not silently invalidate other session');
 assert.equal((await route('/api/logout',other,'POST')).status,200);
 assert.equal((await (await route('/api/me',other)).json()).role,null);
-console.log('SEC-02 synthetic session replay test PASS: per-token invalidation, POST-only logout, duplicate cookie rejection, nonthrowing write failure, no bearer storage, fail-closed read and logout.');
+console.log('SEC-02 synthetic session replay test PASS: per-token invalidation, strict expiry, POST-only logout, duplicate cookie rejection, nonthrowing write failure, no bearer storage, fail-closed read and logout.');
