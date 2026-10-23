@@ -12,6 +12,7 @@ class Input{
   setAttribute(k,v){this.attributes[k]=v}
   removeAttribute(k){delete this.attributes[k]}
   focus(){}
+  blur(){}
 }
 const drawer={
   classList:{contains:k=>k==='open'&&open},
