@@ -16,6 +16,14 @@ CREATE TABLE IF NOT EXISTS users (
 
 CREATE INDEX IF NOT EXISTS idx_users_client ON users (client_id);
 
+-- استدعاءات تسجيل الخروج تبطل بصمة رمز بعينه دون تخزين رمز الجلسة.
+CREATE TABLE IF NOT EXISTS revoked_session_tokens (
+  token_hash TEXT PRIMARY KEY NOT NULL,
+  expires_at INTEGER NOT NULL,
+  revoked_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_revoked_session_expiry ON revoked_session_tokens (expires_at);
+
 -- محاولات الدخول الفاشلة — لقفل الحساب مؤقتاً بعد تكرار الخطأ
 CREATE TABLE IF NOT EXISTS login_attempts (
   email         TEXT PRIMARY KEY,
