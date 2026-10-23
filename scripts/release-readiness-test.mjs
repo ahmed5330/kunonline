@@ -39,7 +39,11 @@ for(const header of ['Content-Security-Policy','X-Content-Type-Options','X-Frame
 must(security.includes("Cache-Control','no-store"),'API no-store cache policy missing');
 must(security.includes("legacy-state:${env.INTEGRATION_ENCRYPTION_KEY}"),'Legacy integration secrets must derive encryption from the integration key when TOKEN_ENC_KEY is absent');
 must(customerApi.includes("u.pathname!=='/api/customers'")&&customerApi.includes("method.toUpperCase()!=='POST'"),'Customer create API missing');
-for(const marker of ["'/api/orders'","'/api/products'","'/api/suppliers'","/stock/add","data-v20-theme"])must(actions.includes(marker),`Core action wiring missing: ${marker}`);
+for(const marker of ["'/api/products'","'/api/suppliers'","/stock/add","data-v20-theme"])must(actions.includes(marker),`Core action wiring missing: ${marker}`);
+const modernOrder=await readFile(new URL('../public/v2/modules-v106-manual-jnt-order.js',import.meta.url),'utf8');
+must(actions.includes('KunActionsV23?.openCreateOrder'),'Old New Order button must delegate to modern manual form');
+must(modernOrder.includes('/api/orders/manual-jnt'),'Authoritative manual order route must remain wired');
+must(!actions.includes("api('/api/orders',{method:'POST'"),'Legacy order creation must not bypass J&T address requirements');
 must(recovery.includes("env.APP_ENV!=='preview'"),'Admin recovery must be Preview-only');
 must(recovery.includes("__preview_admin_recovery_used__"),'Admin recovery must be one-time');
 must(recovery.includes("UPDATE users SET status='disabled' WHERE role='admin'"),'Admin recovery must disable stale Preview admins');
