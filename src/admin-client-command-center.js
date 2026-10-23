@@ -77,7 +77,7 @@ export async function adminClientCommandCenter(env,{me,range}={}){
     env.DB.prepare(`SELECT client_id,
       COALESCE(SUM(CASE WHEN type='income' THEN amount ELSE 0 END),0) income,
       COALESCE(SUM(CASE WHEN type='expense' THEN amount ELSE 0 END),0) expenses
-      FROM transactions WHERE date(date) BETWEEN date(?) AND date(?) AND client_id IS NOT NULL GROUP BY client_id`).bind(period.from,period.to).all().catch(()=>({results:[],unavailable:true}))
+      FROM transactions WHERE date(COALESCE(NULLIF(TRIM(date),''),created_at)) BETWEEN date(?) AND date(?) AND client_id IS NOT NULL GROUP BY client_id`).bind(period.from,period.to).all().catch(()=>({results:[],unavailable:true}))
   ]);
   const om=mapBy(orderRows.results),im=mapBy(inventoryRows.results),am=mapBy(adRows.results),fm=mapBy(financeRows.results);
   const rows=clients.map(c=>compactHomeClient(c,om.get(String(c.clientId))||{},im.get(String(c.clientId))||{},am.get(String(c.clientId))||{},fm.get(String(c.clientId))||{}));
