@@ -62,7 +62,7 @@ export async function listAdminClients(env){
   const rows=[];
   for(const clientId of all){
     const [orders,team,stores,wallet,modules,integrations,owner]=await Promise.all([
-      env.DB.prepare(`SELECT COUNT(*) orders,COALESCE(SUM(total),0) gm,MAX(COALESCE(created_at,date)) last_order_at FROM orders WHERE client_id=?`).bind(clientId).first(),
+      env.DB.prepare(`SELECT COUNT(*) orders,COALESCE(SUM(total),0) gm,MAX(COALESCE(created_at,date)) last_order_at FROM orders WHERE client_id=? AND NOT EXISTS (SELECT 1 FROM order_duplicate_links dup WHERE dup.duplicate_order_id=orders.id)`).bind(clientId).first(),
       env.DB.prepare(`SELECT COUNT(*) n FROM users WHERE client_id=? AND status='active'`).bind(clientId).first(),
       env.DB.prepare(`SELECT COUNT(*) n FROM stores WHERE client_id=? AND status='active'`).bind(clientId).first(),
       env.DB.prepare(`SELECT balance,billing_version,status FROM wallet_accounts WHERE client_id=?`).bind(clientId).first(),
@@ -80,7 +80,7 @@ export async function listAdminClients(env){
 export async function clientOverview(env,clientId){
   const clients=await listAdminClients(env),base=clients.find(x=>String(x.clientId)===String(clientId));if(!base)throw Object.assign(new Error('العميل غير موجود'),{status:404});
   const [orders,inventory,topups,notes,features,wallet]=await Promise.all([
-    env.DB.prepare(`SELECT COUNT(*) total,SUM(CASE WHEN state='pending' THEN 1 ELSE 0 END) pending,SUM(CASE WHEN state='cancelled' THEN 1 ELSE 0 END) cancelled,SUM(CASE WHEN state='returned' THEN 1 ELSE 0 END) returned,SUM(CASE WHEN state IN ('signed','collected') THEN 1 ELSE 0 END) delivered,COALESCE(SUM(CASE WHEN state IN ('signed','collected') THEN total ELSE 0 END),0) delivered_revenue FROM orders WHERE client_id=?`).bind(clientId).first(),
+    env.DB.prepare(`SELECT COUNT(*) total,SUM(CASE WHEN state='pending' THEN 1 ELSE 0 END) pending,SUM(CASE WHEN state='cancelled' THEN 1 ELSE 0 END) cancelled,SUM(CASE WHEN state='returned' THEN 1 ELSE 0 END) returned,SUM(CASE WHEN state IN ('signed','collected') THEN 1 ELSE 0 END) delivered,COALESCE(SUM(CASE WHEN state IN ('signed','collected') THEN total ELSE 0 END),0) delivered_revenue FROM orders WHERE client_id=? AND NOT EXISTS (SELECT 1 FROM order_duplicate_links dup WHERE dup.duplicate_order_id=orders.id)`).bind(clientId).first(),
     env.DB.prepare(`SELECT COUNT(*) products,SUM(CASE WHEN stock<=low_stock_threshold THEN 1 ELSE 0 END) low_stock,SUM(CASE WHEN stock<=0 THEN 1 ELSE 0 END) out_of_stock FROM products WHERE client_id=? AND active=1`).bind(clientId).first(),
     env.DB.prepare("SELECT COUNT(*) n,COALESCE(SUM(amount),0) amount FROM wallet_topup_requests WHERE client_id=? AND status='pending'").bind(clientId).first(),
     env.DB.prepare("SELECT * FROM platform_client_notes WHERE client_id=? AND status='open' ORDER BY updated_at DESC LIMIT 30").bind(clientId).all(),
