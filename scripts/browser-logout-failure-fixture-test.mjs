@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {readFileSync,mkdtempSync,writeFileSync,rmSync,existsSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {fileURLToPath} from 'node:url';
+import {fileURLToPath,pathToFileURL} from 'node:url';
 import {spawnSync} from 'node:child_process';
 
 const root=fileURLToPath(new URL('../',import.meta.url));
@@ -39,7 +39,7 @@ try{
     const file=join(dir,'case-'+status+'.html');
     writeFileSync(file,html);
     const result=spawnSync(chrome,['--headless=new','--no-sandbox','--disable-gpu','--disable-dev-shm-usage',
-      '--no-first-run','--virtual-time-budget=1700','--dump-dom','file://'+file],{
+      '--no-first-run','--virtual-time-budget=1700','--dump-dom',pathToFileURL(file).href],{
       encoding:'utf8',timeout:35000,maxBuffer:2_000_000
     });
     assert.equal(result.status,0,'Chrome fixture failed: '+result.stderr?.slice(-1000));
