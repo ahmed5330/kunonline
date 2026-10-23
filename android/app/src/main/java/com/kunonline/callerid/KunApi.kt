@@ -416,6 +416,8 @@ object KunApi {
     fun sessionCookie(context: Context): String? = session(context)
 
     fun logout(context: Context) {
+        OrderNotifications.clearForLogout(context)
+        SyncJobService.cancel(context)
         clearSession(context)
         CustomerCache.clear(context)
     }

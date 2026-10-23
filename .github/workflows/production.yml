@@ -29,6 +29,8 @@ jobs:
           node scripts/campaign-weekday-regression-test.mjs
           node scripts/meta-ads-expert-contract-test.mjs
           node scripts/browser-campaign-weekday-fixture-test.mjs
+      - name: Authorized order alert feed and store isolation
+        run: node scripts/android-order-notifications-fake-test.mjs
       - name: Validate Android update, Printing/J&T guard and Customer Service sources
         run: |
           node --check src/mobile-app-update.js

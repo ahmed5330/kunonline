@@ -69,6 +69,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.google.mlkit.vision.barcode.common.Barcode
@@ -832,16 +833,28 @@ private fun NativeAccountingScreen(onBack: () -> Unit) {
     var data by remember { mutableStateOf<Map<String, NativeSectionResult>>(emptyMap()) }
     var stores by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
     var showAdd by remember { mutableStateOf(false) }
+    val initialPeriod = remember { AccountingDateFilter.lastDays(30) }
+    var fromDate by remember { mutableStateOf(initialPeriod.from) }
+    var toDate by remember { mutableStateOf(initialPeriod.to) }
+    var filterError by remember { mutableStateOf("") }
 
-    fun load() { refresh++ }
+    fun load() {
+        val problem = AccountingDateFilter.validate(fromDate, toDate)
+        if (problem != null) { filterError = problem; return }
+        filterError = ""
+        refresh++
+    }
     LaunchedEffect(refresh) {
         loading = true
         val pair = withContext(Dispatchers.IO) {
-            NativeSectionsApi.accounting(context) to NativeSectionsApi.stores(context)
+            val accounting = async { NativeSectionsApi.accounting(context, fromDate, toDate) }
+            val availableStores = async { NativeSectionsApi.stores(context) }
+            accounting.await() to availableStores.await()
         }
         data = pair.first
         stores = pair.second.obj?.optJSONArray("stores")?.objects().orEmpty()
-        error = pair.first.values.firstOrNull { !it.ok }?.message.orEmpty()
+        // A missing optional catalog must not blank an otherwise usable accounting screen.
+        error = pair.first["overview"]?.takeUnless { it.ok }?.message.orEmpty()
         loading = false
     }
 
@@ -872,6 +885,43 @@ private fun NativeAccountingScreen(onBack: () -> Unit) {
                     verticalArrangement = Arrangement.spacedBy(9.dp)
                 ) {
                     item {
+                        KunSectionCard {
+                            Text("فترة التقرير والحركات", fontWeight = FontWeight.Bold)
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                listOf(1 to "اليوم", 7 to "7 أيام", 30 to "30 يوم").forEach { (days, label) ->
+                                    FilledTonalButton(
+                                        onClick = {
+                                            val period = AccountingDateFilter.lastDays(days)
+                                            fromDate = period.from
+                                            toDate = period.to
+                                            load()
+                                        },
+                                        modifier = Modifier.weight(1f),
+                                        contentPadding = PaddingValues(horizontal = 3.dp)
+                                    ) { Text(label) }
+                                }
+                            }
+                            OutlinedTextField(
+                                value = fromDate,
+                                onValueChange = { fromDate = it },
+                                label = { Text("من YYYY-MM-DD") },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true
+                            )
+                            OutlinedTextField(
+                                value = toDate,
+                                onValueChange = { toDate = it },
+                                label = { Text("إلى YYYY-MM-DD") },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true
+                            )
+                            if (filterError.isNotBlank()) Text(filterError, color = KunColors.Brick)
+                            OutlinedButton(onClick = ::load, modifier = Modifier.fillMaxWidth()) {
+                                Text("عرض الفترة")
+                            }
+                        }
+                    }
+                    item {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Button(onClick = { showAdd = true }, modifier = Modifier.weight(1f)) { Text("+ تسجيل حركة") }
                             OutlinedButton(onClick = ::load, modifier = Modifier.weight(1f)) { Text("تحديث") }
@@ -886,7 +936,15 @@ private fun NativeAccountingScreen(onBack: () -> Unit) {
                         ))
                     }
                     item { Text("الحركات", style = MaterialTheme.typography.titleMedium) }
-                    if (entries.isEmpty()) item { KunSectionCard { Text("لا توجد حركات مسجلة.", color = KunColors.Ink2) } }
+                    if (data["entries"]?.ok == false) item {
+                        KunSectionCard {
+                            Text("تعذر تحميل الحركات: ${data["entries"]?.message.orEmpty()}", color = KunColors.Brick)
+                            OutlinedButton(onClick = ::load) { Text("إعادة المحاولة") }
+                        }
+                    }
+                    if (entries.isEmpty() && data["entries"]?.ok == true) item {
+                        KunSectionCard { Text("لا توجد حركات خلال الفترة المحددة.", color = KunColors.Ink2) }
+                    }
                     items(entries, key = { it.str("id").ifBlank { it.toString() } }) { entry ->
                         NativeSimpleRow(
                             title = entry.str("category").ifBlank { if (entry.str("type") == "income") "إيراد" else "مصروف" },
@@ -1705,6 +1763,16 @@ private fun NativeSettingsScreen(onBack: () -> Unit, onClose: () -> Unit) {
     var syncing by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("") }
     var confirmLogout by remember { mutableStateOf(false) }
+    var notificationStores by remember { mutableStateOf<List<MobileStoreOption>>(emptyList()) }
+    var notificationStoresError by remember { mutableStateOf("") }
+    var notificationStoresLoading by remember { mutableStateOf(true) }
+
+    LaunchedEffect(Unit) {
+        val options = withContext(Dispatchers.IO) { KunApi.loadStoreOptions(context) }
+        notificationStores = if (options.ok) options.stores else emptyList()
+        notificationStoresError = if (options.ok) "" else options.message
+        notificationStoresLoading = false
+    }
 
     if (confirmLogout) {
         AlertDialog(
@@ -1733,6 +1801,48 @@ private fun NativeSettingsScreen(onBack: () -> Unit, onClose: () -> Unit) {
                     Text("حالة الاتصال", fontWeight = FontWeight.Bold)
                     KunStatusDot(KunApi.hasSession(context), if (KunApi.hasSession(context)) "الجلسة متصلة بالسيستم" else "لا توجد جلسة")
                     if (status.isNotBlank()) Text(status, color = KunColors.Ink2)
+                }
+            }
+            item {
+                KunSectionCard {
+                    Text("إشعارات الأوردرات الجديدة", fontWeight = FontWeight.Bold)
+                    Text(
+                        "لكل متجر صوت إشعار مستقل. اختر المتجر ثم غيّر «الصوت» من إعدادات إشعارات Android. تحديث الطلبات كل 30 ثانية أثناء فتح التطبيق، وفي الخلفية حسب جدول Android.",
+                        color = KunColors.Ink2,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    if (!OrderNotifications.permissionGranted(context)) {
+                        Text("الإشعارات غير مسموحة حاليًا لهذا التطبيق.", color = KunColors.Brick)
+                        OutlinedButton(onClick = { OrderNotifications.openPermissionSettings(context) }) {
+                            Text("تفعيل إذن الإشعارات")
+                        }
+                    }
+                    if (notificationStoresLoading) {
+                        Text("جاري تحميل المتاجر المسموح بها…", color = KunColors.Ink2)
+                    } else if (notificationStoresError.isNotBlank()) {
+                        Text(notificationStoresError, color = KunColors.Brick)
+                    } else if (notificationStores.isEmpty()) {
+                        Text("لا توجد متاجر مخصصة للحساب.", color = KunColors.Ink2)
+                    }
+                }
+            }
+            items(notificationStores, key = { "order_alert_" + it.clientId + "_" + it.storeId }) { store ->
+                KunSectionCard {
+                    Text(store.storeName, fontWeight = FontWeight.Bold)
+                    Text(store.clientName, style = MaterialTheme.typography.bodySmall, color = KunColors.Ink2)
+                    OutlinedButton(
+                        onClick = { OrderNotifications.openStoreSoundSettings(context, store) },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("تخصيص صوت إشعار المتجر") }
+                    OutlinedButton(
+                        onClick = {
+                            OrderNotifications.sendTest(context, store)
+                            if (!OrderNotifications.permissionGranted(context)) {
+                                Toast.makeText(context, "فعّل إذن الإشعارات أولاً", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("تجربة إشعار لهذا المتجر") }
                 }
             }
             item {

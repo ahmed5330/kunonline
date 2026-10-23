@@ -13,6 +13,7 @@ import {handleInternalCollaboration} from './internal-collaboration.js';
 import {handleCollaborationOrderSearch} from './internal-collaboration-order-search.js';
 import {handleMobileOrderSearch} from './mobile-global-order-search.js';
 import {handleMobileStoreOptions} from './mobile-store-options.js';
+import {handleMobileOrderAlerts} from './mobile-order-alerts.js';
 import {ensureInternalCollaborationSchema} from './internal-collaboration-schema.js';
 import {handleProductionPreviewParity} from './production-preview-parity.js';
 import {handleProductionEasyOrdersHealth} from './production-easyorders-health.js';
@@ -185,6 +186,8 @@ export default {
     if(aiIntegrations)return aiIntegrations;
     const mobileStoreOptions=await handleMobileStoreOptions({request,env:dataEnv,delegate});
     if(mobileStoreOptions)return mobileStoreOptions;
+    const newOrderAlerts=await handleMobileOrderAlerts({request,env:dataEnv,delegate});
+    if(newOrderAlerts)return newOrderAlerts;
     const adminJntShipments=await handleAdminJntShipments({request,env:dataEnv,delegate});
     if(adminJntShipments)return adminJntShipments;
     // Keep the actual AI analyst on this deployed version; the Preview backend can lag the UI.
