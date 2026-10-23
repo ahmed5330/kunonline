@@ -12,9 +12,11 @@ const random=()=>b64url(crypto.getRandomValues(new Uint8Array(32)));
 export const sha256=async s=>b64url(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(String(s)))));
 const die=(message,status=400,code='MCP_OAUTH_INVALID')=>{throw Object.assign(new Error(message),{status,code});};
 function authorizedClient(id,redirect){
- const client=/^https:\/\/chatgpt\.com\/oauth\/(?:client\.json|[A-Za-z0-9_-]{6,128}\/client\.json)$/.test(id||'');
- const callback=/^https:\/\/chatgpt\.com\/(?:connector_platform_oauth_redirect|connector\/oauth\/[A-Za-z0-9_-]{6,128})$/.test(redirect||'');
- return client&&callback;
+ const stable=id==='https://chatgpt.com/oauth/client.json'
+   && redirect==='https://chatgpt.com/connector_platform_oauth_redirect';
+ const idMatch=/^https:\/\/chatgpt\.com\/oauth\/([A-Za-z0-9_-]{6,128})\/client\.json$/.exec(id||'');
+ const cbMatch=/^https:\/\/chatgpt\.com\/connector\/oauth\/([A-Za-z0-9_-]{6,128})$/.exec(redirect||'');
+ return stable||!!(idMatch&&cbMatch&&idMatch[1]===cbMatch[1]);
 }
 function oauthParams(q){
  const client_id=q.get('client_id')||'',redirect_uri=q.get('redirect_uri')||'',resource=q.get('resource')||'',
@@ -75,7 +77,7 @@ async function token(request,env){
  if(request.method!=='POST')return j({error:'invalid_request'},405);
  if(!/^application\/x-www-form-urlencoded(?:;|$)/i.test(request.headers.get('content-type')||''))return j({error:'invalid_request'},400);
  const q=new URLSearchParams(await request.text()),clientId=q.get('client_id')||'',resource=q.get('resource')||'';
- if(resource!==KUN_MCP_RESOURCE||!/chatgpt\.com\/oauth\//.test(clientId))return j({error:'invalid_client'},401);
+ if(resource!==KUN_MCP_RESOURCE||!authorizedClient(clientId,clientId==='https://chatgpt.com/oauth/client.json'?'https://chatgpt.com/connector_platform_oauth_redirect':clientId.replace('/oauth/','/connector/oauth/').replace('/client.json','')))return j({error:'invalid_client'},401);
  await ensureKunMcpSchema(env);
  const now=stamp();
  if(q.get('grant_type')==='authorization_code'){
