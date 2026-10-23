@@ -47,6 +47,14 @@ for(const [label,workflow] of [['Production deploy',deployWorkflow],['Production
   if(!/environment:\s*\n\s*name:\s*production\b/m.test(workflow))throw new Error(`${label} safety check failed: production GitHub Environment is required.`);
 }
 if(!/wrangler\s+deploy\s+--config\s+wrangler\.production\.toml/.test(deployWorkflow))throw new Error('Production safety check failed: deployment is not pinned to wrangler.production.toml.');
+const deploymentIndex=deployWorkflow.indexOf('run: npx wrangler deploy --config wrangler.production.toml');
+for(const binding of ['DB','PREVIEW_DB']){
+  const command=`npx wrangler d1 execute ${binding} --remote --config wrangler.production.toml --command "$query" --yes`;
+  const index=deployWorkflow.indexOf(command);
+  if(index<0||deploymentIndex<0||index>deploymentIndex)throw new Error(`SEC-02 safety: read-only revocation schema preflight on ${binding} must precede production deploy.`);
+}
+if(!deployWorkflow.includes("query='SELECT token_hash, expires_at, revoked_at FROM revoked_session_tokens LIMIT 0;'"))throw new Error('SEC-02 safety: preflight must compile a read-only query against the revocation schema.');
+
 if(!/wrangler\s+rollback\s+"\$\{\{ inputs\.version_id \}\}"\s+--config\s+wrangler\.production\.toml/.test(rollbackWorkflow))throw new Error('Production rollback safety check failed: rollback is not pinned to a requested version and Production config.');
 
 const syncGuards=[
