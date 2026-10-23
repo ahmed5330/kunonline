@@ -135,6 +135,15 @@ jobs:
           node-version: 22
           package-manager-cache: false
       - run: npm install --ignore-scripts
+      # Read-only preflight: the SEC-02 implementation fails closed if either
+      # D1 database used by the Production/Preview authorization chain is not
+      # migrated. The deployment job MUST stop before replacing live Workers.
+      - name: Verify remote D1 revocation schemas before any Worker deployment
+        run: |
+          set -euo pipefail
+          query='SELECT token_hash, expires_at, revoked_at FROM revoked_session_tokens LIMIT 0;'
+          npx wrangler d1 execute kunonline --remote --config wrangler.production.toml --command "$query" --yes
+          npx wrangler d1 execute kunonline-preview --remote --config wrangler.preview.toml --command "$query" --yes
       - name: Deploy production Worker only — no migrations
         run: npx wrangler deploy --config wrangler.production.toml
       - name: Verify live branded dashboard and isolated daisyUI design preview
@@ -162,7 +171,7 @@ jobs:
           grep -Fq '/v2/kun-dashboard-polish-v150.css?v=150.0' /tmp/kun-design-live.html
           grep -Fq '/v2/kun-dashboard-brand-v150.js?v=150.0' /tmp/kun-design-live.html
           grep -Fq '/v2/modules-v51-permission-navigation.js?v=51.16' /tmp/kun-design-live.html
-          grep -Fq '/v2/modules-v127-subscriptions.js?v=127.20' /tmp/kun-design-live.html
+          grep -Fq '/v2/modules-v127-subscriptions.js?v=127.21' /tmp/kun-design-live.html
           fetch_live "V51 platform-admin role guard" "https://app.kun-online.com/v2/modules-v51-permission-navigation.js?v=${nonce}" /tmp/kun-permissions-live.js
           grep -Fq "if(view==='subscriptions')return data.role==='admin'" /tmp/kun-permissions-live.js
           grep -Fq '/v2/kun-design-v143.js?v=145.1' /tmp/kun-design-live.html
