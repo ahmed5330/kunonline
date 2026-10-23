@@ -12,8 +12,7 @@ function actualSql(prefix,closing){
   assert.ok(start>=0&&end>start,'Missing real admin SQL '+prefix);
   return source.slice(start+prefix.length,end);
 }
-const globalSql=actualSql('env.DB.prepare('+tick,'GROUP BY client_id'+tick+').bind(period.from,period.to).all()');
-const globalOrders=globalSql.slice(0,globalSql.indexOf('GROUP BY client_id')+'GROUP BY client_id'.length);
+const globalOrders=actualSql('env.DB.prepare('+tick,tick+').bind(period.from,period.to).all()');
 assert.match(globalOrders,/FROM orders/);
 const briefSql=actualSql('env.DB.prepare('+tick+'SELECT COUNT(*) total',tick+').bind(clientId,from,to).first()');
 const clientOrders='SELECT COUNT(*) total'+briefSql;
