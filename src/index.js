@@ -1161,7 +1161,10 @@ async function handleApi(request, env, url, path) {
       console.error('Logout session revocation failed',error?.code||error?.name||'database_failure');
       // The browser cookie is cleared, but do not claim server invalidation
       // succeeded when the database rejected the revocation write.
-      return json({ok:false,error:'SESSION_REVOCATION_UNAVAILABLE'},503,cleared);
+      // Keep the HttpOnly cookie on a transient D1 failure so an authorized
+      // retry can revoke this *same* token. The UI hides private data while
+      // the server-side session remains unconfirmed, then offers retry.
+      return json({ok:false,error:'SESSION_REVOCATION_UNAVAILABLE'},503,{'Cache-Control':'no-store'});
     }
   }
 
