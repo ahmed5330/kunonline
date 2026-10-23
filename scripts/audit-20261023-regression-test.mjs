@@ -41,6 +41,13 @@ const finance=read('public/v2/modules-v96-finance-command-center.js');
 assert.match(finance,/pendingCod===null\?'غير متاح'/,'COD error must not render as zero');
 assert.match(finance,/d\.errors\?\.codSummary/,'missing COD summary must be reported');
 
+const ads=read('src/meta-ads-expert.js');
+assert.match(ads,/البيانات غير كافية لتحليل الأداء/,'missing ad data is not a healthy-performance signal');
+assert.match(ads,/اربط حساب Meta Ads ثم زامن/,'explain how to obtain usable campaign data');
+const team=read('public/v2/modules-v24-team.js');
+assert.match(team,/أعضاء الفريق \(دون المالك\)/,'team counts explain owner exclusion');
+assert.match(team,/نشطون \(دون المالك\)/,'active counts explain owner exclusion');
+
 const windows=read('scripts/customer-service-board-print-void-test.mjs');
 assert.match(windows,/fileURLToPath\(new URL/,'Windows-compatible file paths');
-console.log('Audit regression PASS: SEC-01, ORD-01, FIN-01, FIN-02, TST-01.');
+console.log('Audit regression PASS: SEC-01, ORD-01, FIN-01, FIN-02, ANA-01, UX-02, TST-01.');
