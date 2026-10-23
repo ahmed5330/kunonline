@@ -21,6 +21,7 @@ import {reconcileMonthlySubscriptions} from './subscription-billing.js';
 import {handleSubscriptionControl} from './subscription-control.js';
 import {handleInventoryUnitTracking,syncInventoryTrackingAfterResponse,reconcileTrackedOrderLifecycles,reconcileAllClientsUnitCoverage} from './inventory-unit-tracking.js';
 import {handleAdminJntShipments} from './admin-jnt-shipments.js';
+import {handleAiIntegrations} from './ai-integrations.js';
 
 const LEGACY_APK_URL='https://github.com/ahmed5330/kunonline/releases/download/android-latest/Kun-Online-Mobile.apk';
 const DIRECT_APK_PATH='/api/mobile/app-update/apk';
@@ -174,6 +175,8 @@ export default {
 
     const dataEnv=previewRuntimeEnv(env);
     const delegate=previewDelegate(env,dataEnv,ctx);
+    const aiIntegrations=await handleAiIntegrations({request,env:dataEnv,delegate});
+    if(aiIntegrations)return aiIntegrations;
     const mobileStoreOptions=await handleMobileStoreOptions({request,env:dataEnv,delegate});
     if(mobileStoreOptions)return mobileStoreOptions;
     const adminJntShipments=await handleAdminJntShipments({request,env:dataEnv,delegate});
