@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import worker from '../src/index.js';
-import {sessionTokenHash} from '../src/session-revocation.js';
+import {sessionTokenHash,sessionTokenFromRequest,hasDuplicateSessionCookies} from '../src/session-revocation.js';
 
 const secret='isolated-test-session-key';
 const revoked=new Map(),calls={reads:0,writes:0};
 const user={id:'fake-viewer',email:'viewer@test.invalid',role:'viewer',status:'active',name:'Fake Tester',client_id:'fake-tenant'};
-let rejectWrites=false,rejectReads=false;
+let rejectWrites=false,rejectReads=false,reportWriteFailure=false;
 const env={
   SESSION_SECRET:secret,
   DB:{prepare(sql){
@@ -24,6 +24,7 @@ const env={
       async run(){
         calls.writes++;
         if(rejectWrites)throw Error('Synthetic D1 write outage');
+        if(reportWriteFailure)return {success:false,meta:{changes:0}};
         if(sql.startsWith('INSERT OR IGNORE INTO revoked_session_tokens')){
           revoked.set(this.params[0],{expires:this.params[1],at:this.params[2]});
           return {meta:{changes:1}};
@@ -46,6 +47,20 @@ const first=await makeToken('session-one'),other=await makeToken('session-two');
 assert.notEqual(first,other,'same user signs distinct sessions');
 assert.equal((await route('/api/me',first)).status,200,'valid synthetic login session');
 assert.equal((await route('/api/me',other)).status,200,'second session remains active');
+// Cookie tossing: neither duplicate ordering may authenticate or claim a logout.
+for(const values of [first+'; ko_session=invalid', 'invalid; ko_session='+first]){
+  const request=new Request('https://test.invalid/api/me',{headers:{Cookie:'ko_session='+values}});
+  assert.equal(hasDuplicateSessionCookies(request),true);
+  assert.equal(sessionTokenFromRequest(request),'','duplicated token extraction must be ambiguous');
+  const who=await worker.fetch(request,env);
+  assert.equal((await who.json()).role,null,'duplicate cookies must not authenticate');
+  const logoutAttempt=await worker.fetch(new Request('https://test.invalid/api/logout',{method:'POST',headers:{Cookie:'ko_session='+values}}),env);
+  assert.equal(logoutAttempt.status,400,'duplicate cookies cannot produce successful logout');
+  assert.equal((await logoutAttempt.json()).error,'AMBIGUOUS_SESSION_COOKIE');
+  assert.match(logoutAttempt.headers.get('Set-Cookie'),/Max-Age=0/);
+  assert.equal((await (await route('/api/me',first)).json()).uid,user.id,'duplicate logout must not invalidate valid underlying token');
+}
+assert.equal(hasDuplicateSessionCookies(new Request('https://test.invalid',{headers:{Cookie:'ko_session_back=ignored; ko_session='+first}})),false,'unrelated cookie names are not duplicates');
 for(const modified of [first+'.suffix',first+'.',first+'..extra',first+'%2Eextra']){
   const response=await route('/api/me',modified);
   assert.equal(response.status,200);
@@ -76,10 +91,17 @@ const failed=await route('/api/logout',other,'POST');
 assert.equal(failed.status,503,'cannot claim logout succeeded when revocation write failed');
 assert.match(failed.headers.get('Set-Cookie'),/Max-Age=0/);
 rejectWrites=false;
+reportWriteFailure=true;
+const quietFailure=await route('/api/logout',other,'POST');
+assert.equal(quietFailure.status,503,'nonthrowing D1 result.success=false must reject logout');
+assert.equal((await quietFailure.json()).ok,false);
+assert.match(quietFailure.headers.get('Set-Cookie'),/Max-Age=0/);
+reportWriteFailure=false;
+assert.equal((await (await route('/api/me',other)).json()).uid,user.id,'nonthrowing DB write failure must not mark token revoked');
 rejectReads=true;
 assert.equal((await route('/api/me',other)).status,500,'database read outage must fail closed');
 rejectReads=false;
 assert.equal((await (await route('/api/me',other)).json()).uid,user.id,'failed logout did not silently invalidate other session');
 assert.equal((await route('/api/logout',other,'POST')).status,200);
 assert.equal((await (await route('/api/me',other)).json()).role,null);
-console.log('SEC-02 synthetic session replay test PASS: per-token invalidation, no bearer storage, fail-closed read and logout.');
+console.log('SEC-02 synthetic session replay test PASS: per-token invalidation, duplicate cookie rejection, nonthrowing write failure, no bearer storage, fail-closed read and logout.');
