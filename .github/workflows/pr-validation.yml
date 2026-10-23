@@ -38,6 +38,8 @@ jobs:
           node scripts/mobile-global-order-search-test.mjs
           node --check src/mobile-store-options.js
           node scripts/mobile-store-options-test.mjs
+      - name: Kun Online MCP full authorization-code and revocation contract
+        run: node scripts/kun-chatgpt-mcp-full-flow-test.mjs
       - name: Kun Online ChatGPT MCP OAuth and read-only fake tests
         run: node scripts/kun-chatgpt-mcp-fake-test.mjs
       - name: AI provider integration fake tests and secure tenancy
