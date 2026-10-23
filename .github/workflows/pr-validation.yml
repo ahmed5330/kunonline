@@ -54,6 +54,10 @@ jobs:
         run: node scripts/customer-service-notes-product-cards-test.mjs
       - name: Customer Service board, periods and J&T void regression
         run: node scripts/customer-service-board-print-void-test.mjs
+      - name: Multi-store order alerts and accounting regression
+        run: |
+          node scripts/android-order-notifications-fake-test.mjs
+          node scripts/android-accounting-fake-test.mjs
       - name: Run full contract and unit suite
         run: npm test
       - name: Inventory workspace UX browser regression
