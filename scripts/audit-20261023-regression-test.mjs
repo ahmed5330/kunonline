@@ -71,10 +71,7 @@ function exerciseLockedWallet(activeView){
   const multiple=key=>key==='.nav button[data-view]'?buttons:[];
   const doc={documentElement:{dataset:{}}};
   const browser={KunSidebarGroupsV90:{sync(){synced++;}}};
-  const lock=new Function('state','document','$','
-assert.match(windows,/fileURLToPath\(new URL/,'Windows-compatible file paths');
-console.log('Audit regression PASS: SEC-01, ORD-01, FIN-01, FIN-02, ANA-01, UX-02, WAL-01, TST-01.');
-,'window',lockFunctionBody+';return lockNav;')({access:{locked:true}},doc,multiple,selector,browser);
+  const lock=new Function('state','document','$$','$','window',lockFunctionBody+';return lockNav;')({access:{locked:true}},doc,multiple,selector,browser);
   lock();
   assert.equal(doc.documentElement.dataset.kunSubscriptionLocked,'1');
   assert.equal(walletButton.hidden,false,'wallet nav must stay visible');
@@ -91,4 +88,4 @@ assert.equal(exerciseLockedWallet('orders'),1,'operational screens still redirec
 
 const windows=read('scripts/customer-service-board-print-void-test.mjs');
 assert.match(windows,/fileURLToPath\(new URL/,'Windows-compatible file paths');
-console.log('Audit regression PASS: SEC-01, ORD-01, FIN-01, FIN-02, ANA-01, UX-02, TST-01.');
+console.log('Audit regression PASS: SEC-01, ORD-01, FIN-01, FIN-02, ANA-01, UX-02, WAL-01, TST-01.');
