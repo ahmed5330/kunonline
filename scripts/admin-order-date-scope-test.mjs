@@ -6,6 +6,8 @@ import {DatabaseSync} from 'node:sqlite';
 import {resolveAdminBriefRange,adminClientCommandCenter} from '../src/admin-client-command-center.js';
 
 const source=await readFile(new URL('../src/admin-client-command-center.js',import.meta.url),'utf8');
+const businessSource=await readFile(new URL('../src/business-intelligence.js',import.meta.url),'utf8');
+assert.match(businessSource,/FROM orders WHERE client_id=\? \$\{storeSql\} AND date\(COALESCE\(NULLIF\(TRIM\(date\),''\),created_at\)\)/,'business brief order date must agree with admin 30d metric');
 const tick=String.fromCharCode(96);
 function actualSql(prefix,closing){
   const start=source.indexOf(prefix),end=source.indexOf(closing,start);
