@@ -143,6 +143,14 @@ jobs:
           set -euo pipefail
           npx wrangler d1 execute DB --remote --config wrangler.production.toml --command 'SELECT token_hash, expires_at, revoked_at FROM revoked_session_tokens LIMIT 0;' --yes
           npx wrangler d1 execute PREVIEW_DB --remote --config wrangler.production.toml --command 'SELECT token_hash, expires_at, revoked_at FROM revoked_session_tokens LIMIT 0;' --yes
+      # Read-only metadata checks; no secret values, no PUT/POST and no mutations.
+      # The current production API may delegate auth to Preview, so both
+      # effective workers must have their own SESSION_SECRET and TOKEN_ENC_KEY.
+      - name: Verify backend Worker secret names before deploying
+        run: |
+          set -euo pipefail
+          node scripts/verify-cloudflare-secret-names.mjs wrangler.production.toml
+          node scripts/verify-cloudflare-secret-names.mjs wrangler.preview.toml
       - name: Deploy production Worker only — no migrations
         run: npx wrangler deploy --config wrangler.production.toml
       - name: Verify live branded dashboard and isolated daisyUI design preview
