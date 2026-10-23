@@ -10,7 +10,7 @@ import {spawnSync} from 'node:child_process';
 const root=fileURLToPath(new URL('../',import.meta.url));
 const app=readFileSync(join(root,'public/v2/modules-v26-auth.js'),'utf8');
 const index=readFileSync(join(root,'public/v2/index.html'),'utf8');
-assert.ok(index.includes('/v2/modules-v26-auth.js?v=26.1'),'auth browser must load refreshed UI code');
+assert.ok(index.includes('/v2/modules-v26-auth.js?v=26.2'),'auth browser must load refreshed UI code');
 const chrome=[
   process.env.KUN_CHROME_PATH,process.env.CHROME_PATH,
   '/usr/bin/google-chrome','/usr/bin/google-chrome-stable',
