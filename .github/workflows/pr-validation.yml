@@ -61,6 +61,7 @@ jobs:
       - name: Admin 30-day order-scope and missing-data safety (synthetic only)
         run: |
           node scripts/admin-order-date-scope-test.mjs
+          node scripts/admin-finance-date-scope-test.mjs
           node scripts/admin-source-availability-test.mjs
       - name: Run full contract and unit suite
         run: npm test
