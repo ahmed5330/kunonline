@@ -72,6 +72,13 @@
           // retry with a new login or copy the bearer token into JavaScript.
           // Clicking below resends the original cookie in a POST and keeps
           // all sensitive dashboard content hidden.
+          if(failure.status===400){
+            // Duplicate ko_session cookies are ambiguous. The server cleared
+            // only the host cookie; retrying without the original bearer
+            // cannot prove that every conflicting cookie was revoked.
+            notice.textContent='تم اكتشاف أكثر من كوكي جلسة، لذلك لا يمكن تأكيد إبطال أي منها. تم إخفاء بيانات الحساب؛ تواصل مع الإدارة لإيقاف الجلسات القديمة.';
+            return;
+          }
           const retry=document.createElement('button');
           retry.type='button';retry.id='v28LogoutRetryBtn';
           retry.className='btn soft';retry.textContent='إعادة محاولة تسجيل الخروج';
