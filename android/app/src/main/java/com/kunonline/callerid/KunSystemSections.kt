@@ -1763,6 +1763,16 @@ private fun NativeSettingsScreen(onBack: () -> Unit, onClose: () -> Unit) {
     var syncing by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("") }
     var confirmLogout by remember { mutableStateOf(false) }
+    var notificationStores by remember { mutableStateOf<List<MobileStoreOption>>(emptyList()) }
+    var notificationStoresError by remember { mutableStateOf("") }
+    var notificationStoresLoading by remember { mutableStateOf(true) }
+
+    LaunchedEffect(Unit) {
+        val options = withContext(Dispatchers.IO) { KunApi.loadStoreOptions(context) }
+        notificationStores = if (options.ok) options.stores else emptyList()
+        notificationStoresError = if (options.ok) "" else options.message
+        notificationStoresLoading = false
+    }
 
     if (confirmLogout) {
         AlertDialog(
@@ -1791,6 +1801,48 @@ private fun NativeSettingsScreen(onBack: () -> Unit, onClose: () -> Unit) {
                     Text("حالة الاتصال", fontWeight = FontWeight.Bold)
                     KunStatusDot(KunApi.hasSession(context), if (KunApi.hasSession(context)) "الجلسة متصلة بالسيستم" else "لا توجد جلسة")
                     if (status.isNotBlank()) Text(status, color = KunColors.Ink2)
+                }
+            }
+            item {
+                KunSectionCard {
+                    Text("إشعارات الأوردرات الجديدة", fontWeight = FontWeight.Bold)
+                    Text(
+                        "لكل متجر صوت إشعار مستقل. اختر المتجر ثم غيّر «الصوت» من إعدادات إشعارات Android. تحديث الطلبات كل 30 ثانية أثناء فتح التطبيق، وفي الخلفية حسب جدول Android.",
+                        color = KunColors.Ink2,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    if (!OrderNotifications.permissionGranted(context)) {
+                        Text("الإشعارات غير مسموحة حاليًا لهذا التطبيق.", color = KunColors.Brick)
+                        OutlinedButton(onClick = { OrderNotifications.openPermissionSettings(context) }) {
+                            Text("تفعيل إذن الإشعارات")
+                        }
+                    }
+                    if (notificationStoresLoading) {
+                        Text("جاري تحميل المتاجر المسموح بها…", color = KunColors.Ink2)
+                    } else if (notificationStoresError.isNotBlank()) {
+                        Text(notificationStoresError, color = KunColors.Brick)
+                    } else if (notificationStores.isEmpty()) {
+                        Text("لا توجد متاجر مخصصة للحساب.", color = KunColors.Ink2)
+                    }
+                }
+            }
+            items(notificationStores, key = { "order_alert_" + it.clientId + "_" + it.storeId }) { store ->
+                KunSectionCard {
+                    Text(store.storeName, fontWeight = FontWeight.Bold)
+                    Text(store.clientName, style = MaterialTheme.typography.bodySmall, color = KunColors.Ink2)
+                    OutlinedButton(
+                        onClick = { OrderNotifications.openStoreSoundSettings(context, store) },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("تخصيص صوت إشعار المتجر") }
+                    OutlinedButton(
+                        onClick = {
+                            OrderNotifications.sendTest(context, store)
+                            if (!OrderNotifications.permissionGranted(context)) {
+                                Toast.makeText(context, "فعّل إذن الإشعارات أولاً", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("تجربة إشعار لهذا المتجر") }
                 }
             }
             item {
