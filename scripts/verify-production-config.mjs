@@ -40,20 +40,28 @@ for(const path of ['src/mobile-app-update.js','src/production-customer-service.j
   try{execFileSync(process.execPath,['--check',path],{stdio:'pipe'});}catch(error){throw new Error(`Production syntax check failed for ${path}: ${String(error?.stderr||error?.message||error).trim()}`);}
 }
 
+const readOnlyPreflightBindings=['DB','PREVIEW_DB'];
+const readOnlySql='SELECT token_hash, expires_at, revoked_at FROM revoked_session_tokens LIMIT 0;';
+const allowedPreflightCommands=readOnlyPreflightBindings.map(binding=>
+  `npx wrangler d1 execute ${binding} --remote --config wrangler.production.toml --command '${readOnlySql}' --yes`);
 for(const [label,workflow] of [['Production deploy',deployWorkflow],['Production rollback',rollbackWorkflow]]){
-  if(/wrangler\s+d1|npm\s+run\s+db:/i.test(workflow))throw new Error(`${label} safety check failed: database commands are forbidden.`);
+  // Allow ONLY the two audited schema SELECTs; all other d1/database commands,
+  // including migrations, remain forbidden in the Worker deploy workflow.
+  const withoutAllowedReadOnlyChecks=label==='Production deploy'
+    ?allowedPreflightCommands.reduce((text,command)=>text.replace(command,''),workflow):workflow;
+  if(/wrangler\s+d1|npm\s+run\s+db:/i.test(withoutAllowedReadOnlyChecks))throw new Error(`${label} safety check failed: database mutations or unapproved database commands are forbidden.`);
   if(/wrangler\.preview\.toml|kunonline-preview/i.test(workflow))throw new Error(`${label} safety check failed: Preview resources are forbidden.`);
   if(/\bwrangler\s+secret\s+(?:put|bulk|delete)\b/i.test(workflow))throw new Error(`${label} safety check failed: secret mutation is forbidden.`);
   if(!/environment:\s*\n\s*name:\s*production\b/m.test(workflow))throw new Error(`${label} safety check failed: production GitHub Environment is required.`);
 }
 if(!/wrangler\s+deploy\s+--config\s+wrangler\.production\.toml/.test(deployWorkflow))throw new Error('Production safety check failed: deployment is not pinned to wrangler.production.toml.');
 const deploymentIndex=deployWorkflow.indexOf('run: npx wrangler deploy --config wrangler.production.toml');
-for(const binding of ['DB','PREVIEW_DB']){
-  const command=`npx wrangler d1 execute ${binding} --remote --config wrangler.production.toml --command "$query" --yes`;
+for(const command of allowedPreflightCommands){
+  const occurrences=deployWorkflow.split(command).length-1;
   const index=deployWorkflow.indexOf(command);
-  if(index<0||deploymentIndex<0||index>deploymentIndex)throw new Error(`SEC-02 safety: read-only revocation schema preflight on ${binding} must precede production deploy.`);
+  if(occurrences!==1||index<0||deploymentIndex<0||index>=deploymentIndex)
+    throw new Error('SEC-02 safety: both exact read-only D1 revocation schema checks must precede Production deploy.');
 }
-if(!deployWorkflow.includes("query='SELECT token_hash, expires_at, revoked_at FROM revoked_session_tokens LIMIT 0;'"))throw new Error('SEC-02 safety: preflight must compile a read-only query against the revocation schema.');
 
 if(!/wrangler\s+rollback\s+"\$\{\{ inputs\.version_id \}\}"\s+--config\s+wrangler\.production\.toml/.test(rollbackWorkflow))throw new Error('Production rollback safety check failed: rollback is not pinned to a requested version and Production config.');
 
