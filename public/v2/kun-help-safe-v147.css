@@ -7,7 +7,7 @@
 .kh147-inline:focus-visible,.kh147-guide-button:focus-visible,.kh147-close:focus-visible{outline:3px solid #4c9ee9;outline-offset:2px}
 .kh147-overlay{position:fixed;inset:0;z-index:214000;direction:rtl;font-family:Tajawal,Cairo,system-ui,sans-serif}
 .kh147-backdrop{position:absolute;inset:0;background:rgba(14,28,46,.42)}
-.kh147-panel{position:absolute;left:0;top:0;bottom:0;width:min(430px,100%);display:flex;flex-direction:column;background:var(--card,#fff);border-inline-end:1px solid var(--line,#dbe5ed);color:var(--ink,#172c43);box-shadow:5px 0 38px rgba(13,28,49,.19)}
+.kh147-panel{box-sizing:border-box;position:absolute;left:0;top:0;bottom:0;width:min(430px,100%);display:flex;flex-direction:column;background:var(--card,#fff);border-inline-end:1px solid var(--line,#dbe5ed);color:var(--ink,#172c43);box-shadow:5px 0 38px rgba(13,28,49,.19)}
 .kh147-header{padding:18px 20px 14px;display:flex;align-items:center;justify-content:space-between;gap:14px;border-bottom:1px solid var(--line,#e2eaf4)}
 .kh147-header h2{font-size:18px;line-height:1.55;font-weight:900;margin:0;color:var(--ink,#172c43)}
 .kh147-close{min-width:40px;min-height:40px;border:1px solid var(--line,#dbe5ed);background:var(--card,#fff);color:var(--ink,#172c43);border-radius:11px;cursor:pointer;font:900 24px Tajawal,Cairo,sans-serif}
