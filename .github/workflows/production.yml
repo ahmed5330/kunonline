@@ -341,6 +341,24 @@ jobs:
             cat "$body"; exit 1
           fi
           echo 'PASS live: AI interface/CSS/JS served, anonymous reads/writes rejected, no provider API used.'
+      - name: Verify live ChatGPT MCP discovery and unauthorized access protection
+        run: |
+          set -euo pipefail
+          base="https://app.kun-online.com"
+          resource="$(curl -fsS "$base/.well-known/oauth-protected-resource")"
+          metadata="$(curl -fsS "$base/.well-known/oauth-authorization-server")"
+          node -e 'const r=JSON.parse(process.argv[1]),a=JSON.parse(process.argv[2]);if(r.resource!=="https://app.kun-online.com/mcp"||!r.authorization_servers.includes("https://app.kun-online.com")||a.issuer!=="https://app.kun-online.com"||!a.code_challenge_methods_supported.includes("S256"))process.exit(1);' "$resource" "$metadata"
+          body="$(mktemp)" headers="$(mktemp)"
+          status="$(curl -sS -D "$headers" -o "$body" -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' "$base/mcp")"
+          test "$status" = 401
+          grep -Fiq 'www-authenticate: Bearer resource_metadata=' "$headers"
+          status="$(curl -sS -o "$body" -w '%{http_code}' "$base/api/integrations/chatgpt")"
+          test "$status" = 401
+          page="$(curl -fsSL "$base/v2/index.html")"
+          script="$(curl -fsSL "$base/v2/modules-v161-chatgpt-mcp.js?v=161.0")"
+          grep -Fq 'modules-v161-chatgpt-mcp.js?v=161.0' <<< "$page"
+          grep -Fq '/api/integrations/chatgpt' <<< "$script"
+          echo "PASS: OAuth PKCE discovery, protected MCP, integrations access gate and dashboard asset published"
       - name: Verify live V2 login gateway and session endpoints
         run: |
           set -euo pipefail
