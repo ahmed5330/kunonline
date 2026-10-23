@@ -125,7 +125,7 @@ fun GlobalOrderSearchDialog(
     val scope = rememberCoroutineScope()
     var query by remember(initialQuery) { mutableStateOf(initialQuery) }
     var items by remember { mutableStateOf<List<GlobalOrderSearchItem>>(emptyList()) }
-    var busy by remember { mutableStateOf(false) }
+    var busy by remember { mutableStateOf(initialOrderId.isNotBlank()) }
     var loadingMore by remember { mutableStateOf(false) }
     var hasMore by remember { mutableStateOf(false) }
     var offset by remember { mutableIntStateOf(0) }
