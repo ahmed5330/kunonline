@@ -79,7 +79,7 @@ passwordCalls[0].p.resolve({ok:true,email:'owner@example.com'});
 await Promise.all([req1,req2]);
 assert.equal(reset.disabled,false);
 assert.match(status.textContent,/نجاح/);
-assert.equal(input.value,'LongSecret#2026','password remains available to copy securely');
+assert.equal(input.value,'','password field clears after success');
 const copy=card.querySelector('#v23ToggleResetVisibility');
 copy.onclick();
 assert.equal(input.type,'text');
