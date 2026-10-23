@@ -82,7 +82,8 @@ for(const modified of [first+'.suffix',first+'.',first+'..extra',first+'%2Eextra
 assert.equal((await route('/api/logout',first+'.suffix','POST')).status,200);
 assert.equal((await (await route('/api/me',first)).json()).uid,user.id);
 const readsBefore= calls.reads;
-const forged=first.slice(0,-2)+'ff';
+const forged=first.slice(0,-1)+(first.endsWith('0')?'1':'0');
+assert.notEqual(forged,first,'forged test signature must always differ from original');
 assert.equal((await route('/api/me',forged)).status,200,'/api/me remains anonymous-envelope on bad signature');
 assert.equal(calls.reads,readsBefore+1,'only user count read for rejected cookie');
 const logout=await route('/api/logout',first,'POST');
