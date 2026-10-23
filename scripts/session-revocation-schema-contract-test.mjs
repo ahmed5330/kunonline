@@ -24,6 +24,7 @@ const otherTable='CREATE TABLE IF NOT EXISTS revoked_sessions (fingerprint TEXT 
 const mismatches=[
   ['local 0098 migration paired with PR #209 code',{migrations:[{path:'migrations/0098_revoked_sessions.sql',content:otherTable}]}],
   ['both competing migrations',{migrations:[...base.migrations,{path:'migrations/0098_revoked_sessions.sql',content:otherTable}]}],
+  ['table name matches but fingerprint column differs',{migrations:[{path:'migrations/2026-10-23-session-revocation.sql',content:'CREATE TABLE IF NOT EXISTS revoked_session_tokens (fingerprint TEXT PRIMARY KEY,expires_at INTEGER NOT NULL,revoked_at TEXT NOT NULL);'}]}],
   ['code switched without matching migration',{moduleSource:base.moduleSource.replaceAll('revoked_session_tokens','revoked_sessions')}],
   ['empty migrations',{migrations:[]}],
   ['stale Preview deployment/routing',{productionEntry:base.productionEntry.replace('AUTH_PATHS.has(new URL(request.url).pathname)','false')}],
