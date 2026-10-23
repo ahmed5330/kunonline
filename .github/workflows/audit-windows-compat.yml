@@ -7,6 +7,10 @@ on:
       - 'scripts/customer-service-board-print-void-test.mjs'
       - 'scripts/android-chat-schema-ux-test.mjs'
       - 'scripts/session-revocation-20261023-test.mjs'
+      - 'scripts/session-revocation-sqlite-integration-test.mjs'
+      - 'public/v2/modules-v26-auth.js'
+      - '.github/workflows/preview.yml'
+      - 'scripts/verify-preview-config.mjs'
       - 'scripts/session-revocation-schema-contract.mjs'
       - 'scripts/session-revocation-schema-contract-test.mjs'
       - 'migrations/2026-10-23-session-revocation.sql'
@@ -45,6 +49,8 @@ jobs:
         run: node scripts/android-chat-schema-ux-test.mjs
       - name: Signed session logout and revocation contracts
         run: node scripts/session-revocation-20261023-test.mjs
+      - name: Real SQLite session migration and Worker replay contract
+        run: node scripts/session-revocation-sqlite-integration-test.mjs
       - name: Detect incompatible revocation migration before rollout
         run: |
           node scripts/session-revocation-schema-contract.mjs
