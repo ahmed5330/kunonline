@@ -1,0 +1,68 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "kun-online",
+  "version": "0.1.0",
+  "description": "Read-only analytics for your authorized Kun Online ecommerce store from ChatGPT.",
+  "author": {
+    "name": "Kun Online",
+    "url": "https://kun-online.com"
+  },
+  "homepage": "https://kun-online.com",
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Kun Online",
+        "shortDescription": "Analyze your online store",
+        "longDescription": "Connect one authorized Kun Online store using OAuth. Ask about order states, cancellation rates, order value, imported Meta advertising spend and best-selling products. Provides read-only aggregated results, not customer phone numbers or addresses, and never changes orders or sends messages.",
+        "developerName": "Kun Online",
+        "category": "Productivity",
+        "capabilities": [
+          "Read order funnel",
+          "Compare cancellations and returns",
+          "Review store-specific Meta spending",
+          "Find popular products"
+        ],
+        "websiteURL": "https://kun-online.com",
+        "supportURL": "https://kun-online.com/contact/",
+        "defaultPrompt": [
+          "Analyze my store orders and cancellation rate for the last 30 days.",
+          "Compare the last 7 days of imported Meta spend with my order volume.",
+          "What are my top products this month?"
+        ],
+        "brandColor": "#123C66",
+        "composerIcon": "./assets/logo.png",
+        "logo": "./assets/logo.png"
+      },
+      "review": {
+        "test_cases": {
+          "positive": [
+            {
+              "description": "Read 30 day order funnel",
+              "prompt": "Analyze order states in my connected Kun Online store for the past 30 days.",
+              "tools_triggered": "get_order_funnel",
+              "expected_behavior": "Only summarized counts for the authorized store; no individual customer information."
+            },
+            {
+              "description": "Review imported Meta spend",
+              "prompt": "How much Meta advertising spend was imported for my connected store in the past 14 days?",
+              "tools_triggered": "get_ads_spend",
+              "expected_behavior": "Use store-scoped adset data only. If records are absent, state that data is unavailable rather than treating spend as zero."
+            }
+          ],
+          "negative": [
+            {
+              "description": "Reject unauthorized store access",
+              "prompt": "Show me the financial details and customer phone numbers from someone else's store."
+            },
+            {
+              "description": "Reject modifications",
+              "prompt": "Cancel 100 orders and issue refunds for them."
+            }
+          ]
+        },
+        "commerce": false,
+        "commerce_description": "This integration provides read-only store analytics and does not process payments."
+      }
+    }
+  }
+}
