@@ -11,6 +11,9 @@ on:
       - 'scripts/audit-sandbox-config-test.mjs'
       - 'src/session-revocation.js'
       - 'src/index.js'
+      - 'src/admin-client-command-center.js'
+      - 'src/business-intelligence.js'
+      - 'scripts/admin-order-date-scope-test.mjs'
       - 'package.json'
       - '.github/workflows/audit-windows-compat.yml'
 
@@ -37,5 +40,7 @@ jobs:
         run: node scripts/session-revocation-20261023-test.mjs
       - name: Admin labels and safety contracts
         run: node scripts/admin-audit-20261023-ui-test.mjs
+      - name: Admin 30-day order counts and calendar SQL on Windows
+        run: node scripts/admin-order-date-scope-test.mjs
       - name: No live resource IDs in audit sandbox
         run: node scripts/audit-sandbox-config-test.mjs
