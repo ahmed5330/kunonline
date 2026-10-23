@@ -204,14 +204,19 @@ async function encryptSecret(plain, env) {
 async function decryptSecret(value, env) {
   if (!value || !String(value).startsWith('enc$')) return value; /* مش مشفّرة (أو المفتاح ناقص) */
   const parts = String(value).split('$');
-  if (parts.length !== 3) return null;
+  // Never silently replace an encrypted legacy credential with null.
+  // A later saveState() would persist that null and destroy the credential.
+  if (parts.length !== 3) throw Object.assign(new Error('Encrypted credential envelope is invalid'), {status:503,code:'TOKEN_DECRYPT_FAILED'});
   const key = await encKeyFrom(env);
-  if (!key) return null;
+  if (!key) throw Object.assign(new Error('TOKEN_ENC_KEY is required to read existing encrypted credentials'), {status:503,code:'TOKEN_ENC_KEY_MISSING'});
   try {
     const iv = fromB64(parts[1]);
     const buf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, fromB64(parts[2]));
     return new TextDecoder().decode(buf);
-  } catch { return null; }
+  } catch {
+    // Do not reveal ciphertext, secret values or crypto stack traces.
+    throw Object.assign(new Error('Encrypted credential cannot be decrypted'), {status:503,code:'TOKEN_DECRYPT_FAILED'});
+  }
 }
 
 /** آخر ٤ حروف بس — كفاية للعميل يتأكد إنه سجّل التوكن الصح من غير ما نعرضه كامل */
