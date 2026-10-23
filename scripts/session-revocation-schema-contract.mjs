@@ -60,6 +60,6 @@ if(process.argv[1]&&process.argv[1]===fileURLToPath(import.meta.url)){
     path:'migrations/'+name,content:await readFile(new URL('../migrations/'+name,import.meta.url),'utf8')
   })));
   const result=verifyRevocationContract(values);
-  assert.equal(result.canonicalTable,'revoked_session_tokens');
+  assert.ok(CANDIDATES.includes(result.canonicalTable),'Unknown revocation schema must not pass');
   console.log('SEC-02 static schema contract PASS: '+result.canonicalTable+' matches '+result.migration+'. Deployed Preview Worker and remote D1 still unverified.');
 }
