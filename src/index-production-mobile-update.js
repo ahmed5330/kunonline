@@ -21,6 +21,8 @@ import {reconcileMonthlySubscriptions} from './subscription-billing.js';
 import {handleSubscriptionControl} from './subscription-control.js';
 import {handleInventoryUnitTracking,syncInventoryTrackingAfterResponse,reconcileTrackedOrderLifecycles,reconcileAllClientsUnitCoverage} from './inventory-unit-tracking.js';
 import {handleAdminJntShipments} from './admin-jnt-shipments.js';
+import {handleKunMcpOAuth} from './kun-chatgpt-mcp-oauth.js';
+import {handleKunMcpServer} from './kun-chatgpt-mcp-server.js';
 import {handleAiIntegrations} from './ai-integrations.js';
 
 const LEGACY_APK_URL='https://github.com/ahmed5330/kunonline/releases/download/android-latest/Kun-Online-Mobile.apk';
@@ -175,6 +177,10 @@ export default {
 
     const dataEnv=previewRuntimeEnv(env);
     const delegate=previewDelegate(env,dataEnv,ctx);
+    const mcpAuth=await handleKunMcpOAuth({request,env:dataEnv,delegate});
+    if(mcpAuth)return mcpAuth;
+    const mcpTools=await handleKunMcpServer({request,env:dataEnv});
+    if(mcpTools)return mcpTools;
     const aiIntegrations=await handleAiIntegrations({request,env:dataEnv,delegate});
     if(aiIntegrations)return aiIntegrations;
     const mobileStoreOptions=await handleMobileStoreOptions({request,env:dataEnv,delegate});
