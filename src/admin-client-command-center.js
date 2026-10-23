@@ -14,7 +14,13 @@ function cairoParts(date=new Date()){
 function utcDay(ymd){const [y,m,d]=String(ymd).split('-').map(Number);return new Date(Date.UTC(y,m-1,d));}
 function ymd(date){return date.toISOString().slice(0,10);}
 function shift(ymdValue,days){const d=utcDay(ymdValue);d.setUTCDate(d.getUTCDate()+Number(days||0));return ymd(d);}
-function validYmd(value){return /^\d{4}-\d{2}-\d{2}$/.test(String(value||''))&&!Number.isNaN(utcDay(value).getTime());}
+function validYmd(value){
+  // Date.UTC normalizes invalid calendar dates (e.g. February 31) instead of throwing.
+  // A custom report must reject such a date rather than silently shift its scope.
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(String(value||'')))return false;
+  const day=utcDay(value);
+  return !Number.isNaN(day.getTime())&&ymd(day)===value;
+}
 function daysInclusive(from,to){return Math.floor((utcDay(to)-utcDay(from))/86400000)+1;}
 
 export function resolveAdminBriefRange({preset='today',from='',to='',now=new Date()}={}){
@@ -52,7 +58,7 @@ export async function adminClientCommandCenter(env,{me,range}={}){
   const [orderRows,inventoryRows,adRows,financeRows]=await Promise.all([
     env.DB.prepare(`SELECT client_id,COUNT(*) total,COALESCE(SUM(total),0) gmv,
       SUM(CASE WHEN state='pending' THEN 1 ELSE 0 END) pending,
-      SUM(CASE WHEN state IN ('confirmed','preparing') THEN 1 ELSE 0 END) confirmed,
+      SUM(CASE WHEN state IN ('confirmed','preparing','shipped','signed','collected') THEN 1 ELSE 0 END) confirmed,
       SUM(CASE WHEN state='shipped' THEN 1 ELSE 0 END) shipped,
       SUM(CASE WHEN state IN ('signed','collected') THEN 1 ELSE 0 END) delivered,
       SUM(CASE WHEN state='collected' THEN 1 ELSE 0 END) collected,
@@ -61,7 +67,7 @@ export async function adminClientCommandCenter(env,{me,range}={}){
       SUM(CASE WHEN state='returned' THEN 1 ELSE 0 END) returned,
       COALESCE(SUM(CASE WHEN state IN ('signed','collected') THEN total ELSE 0 END),0) delivered_revenue,
       COUNT(DISTINCT customer_id) customers
-      FROM orders WHERE date(date) BETWEEN date(?) AND date(?) GROUP BY client_id`).bind(period.from,period.to).all(),
+      FROM orders WHERE date(COALESCE(NULLIF(TRIM(date),''),created_at)) BETWEEN date(?) AND date(?) GROUP BY client_id`).bind(period.from,period.to).all(),
     env.DB.prepare(`SELECT client_id,COUNT(*) products,
       SUM(CASE WHEN stock<=low_stock_threshold THEN 1 ELSE 0 END) low_stock,
       SUM(CASE WHEN stock<=0 THEN 1 ELSE 0 END) out_of_stock
@@ -93,7 +99,7 @@ async function commercePeriodStats(env,{clientId,from,to}){
     SUM(CASE WHEN state='returned' THEN 1 ELSE 0 END) returned,
     COALESCE(SUM(CASE WHEN state IN ('signed','collected') THEN total ELSE 0 END),0) delivered_revenue,
     COUNT(DISTINCT customer_id) customers
-    FROM orders WHERE client_id=? AND date(date) BETWEEN date(?) AND date(?)`).bind(clientId,from,to).first();
+    FROM orders WHERE client_id=? AND date(COALESCE(NULLIF(TRIM(date),''),created_at)) BETWEEN date(?) AND date(?)`).bind(clientId,from,to).first();
   const total=n(row?.total),delivered=n(row?.delivered),returned=n(row?.returned);return {total,gmv:r2(row?.gmv),pending:n(row?.pending),confirmed:n(row?.confirmed),shipped:n(row?.shipped),delivered,collected:n(row?.collected),collectedAmount:r2(row?.collected_amount),cancelled:n(row?.cancelled),returned,deliveredRevenue:r2(row?.delivered_revenue),customers:n(row?.customers),aov:total?r2(n(row?.gmv)/total):0,confirmationRate:pct(row?.confirmed,total),deliveryRate:pct(delivered,total),cancellationRate:pct(row?.cancelled,total),returnRate:pct(returned,Math.max(1,delivered+returned))};
 }
 function change(current,previous){current=n(current);previous=n(previous);if(previous===0)return current===0?0:null;return r2((current-previous)/Math.abs(previous)*100);}
