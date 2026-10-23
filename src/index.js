@@ -1061,10 +1061,15 @@ async function handleApi(request, env, url, path) {
   /* أول تشغيل: إنشاء حساب الإدارة — متاح بس لما الجدول يكون فاضي */
   if (path === '/api/setup' && request.method === 'POST') {
     if (await countUsers(env) > 0) return json({ error: 'النظام متظبط بالفعل' }, 403);
-    const { email = '', password = '' } = await request.json().catch(() => ({}));
-    const mail = String(email).trim().toLowerCase();
-    if (!mail.includes('@')) return json({ error: 'اكتب إيميل صحيح' }, 400);
-    if (String(password).length < MIN_PASSWORD) {
+    const credentials = await request.json().catch(() => null);
+    if (!credentials || typeof credentials !== 'object' || Array.isArray(credentials) ||
+        typeof credentials.email !== 'string' || typeof credentials.password !== 'string') {
+      return json({ error: 'اكتب الإيميل وكلمة المرور بشكل صحيح' }, 400);
+    }
+    const mail = credentials.email.trim().toLowerCase();
+    const password = credentials.password;
+    if (!mail.includes('@') || mail.length > 254) return json({ error: 'اكتب إيميل صحيح' }, 400);
+    if (password.length < MIN_PASSWORD || password.length > 4096) {
       return json({ error: `كلمة المرور لازم تكون ${MIN_PASSWORD} حروف على الأقل` }, 400);
     }
     const uid = crypto.randomUUID();
@@ -1085,9 +1090,19 @@ async function handleApi(request, env, url, path) {
 
   /* تسجيل الدخول — الإيميل وكلمة المرور بيتطابقوا مع جدول users */
   if (path === '/api/login' && request.method === 'POST') {
-    const { email = '', password = '' } = await request.json().catch(() => ({}));
-    const mail = String(email).trim().toLowerCase();
-    if (!mail || !password) return json({ error: 'اكتب الإيميل وكلمة المرور' }, 400);
+    const credentials = await request.json().catch(() => null);
+    // Reject null, arrays, nested objects and non-string values before
+    // converting input or querying login_attempts. Bad clients must get 400,
+    // never an internal 500 or an accidental authentication side effect.
+    if (!credentials || typeof credentials !== 'object' || Array.isArray(credentials) ||
+        typeof credentials.email !== 'string' || typeof credentials.password !== 'string') {
+      return json({ error: 'اكتب الإيميل وكلمة المرور بشكل صحيح' }, 400);
+    }
+    const mail = credentials.email.trim().toLowerCase();
+    const password = credentials.password;
+    if (!mail || !password || mail.length > 254 || password.length > 4096) {
+      return json({ error: 'اكتب الإيميل وكلمة المرور بشكل صحيح' }, 400);
+    }
 
     const lockedFor = await checkLock(env, mail);
     if (lockedFor) {
