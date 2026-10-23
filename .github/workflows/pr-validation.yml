@@ -64,6 +64,8 @@ jobs:
         run: node scripts/browser-inventory-workspace-fixture-test.mjs
       - name: Sidebar cross-group navigation browser regression
         run: node scripts/browser-sidebar-navigation-regression-test.mjs
+      - name: Contextual help v147 isolated browser regression
+        run: node scripts/browser-context-help-fixture-test.mjs
       - name: Verify Preview isolation
         run: npm run check:preview-config
       - name: Verify Production remains migration-free
