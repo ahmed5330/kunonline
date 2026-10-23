@@ -11,6 +11,8 @@ import kotlin.concurrent.thread
 class SyncJobService : JobService() {
     override fun onStartJob(params: JobParameters): Boolean {
         thread(name = "kun-caller-sync") {
+            // Authenticated per-store alert feed runs even when the UI is closed.
+            runCatching { OrderNotifications.poll(this) }
             val result = runCatching { KunApi.syncWithStoredSession(this) }.getOrNull()
             jobFinished(params, result?.ok == false)
         }
