@@ -50,7 +50,7 @@ requireText(packageJson,'node scripts/verify-cloudflare-crons.mjs kunonline-sync
 requireText(packageJson,'node scripts/browser-preview-breakdown-controls-test.mjs','live Breakdown browser interaction must remain a hard Preview smoke gate.');
 requireText(packageJson,'"db:migrate:preview": "node scripts/reject-bulk-preview-migrations.mjs"','legacy bulk Preview migration command must fail closed.');
 requireText(packageJson,'"db:migrations:preview:list": "wrangler d1 migrations list DB --remote --config wrangler.preview.toml"','read-only Preview migration inventory is required.');
-forbidPattern(packageJson,/wrangler\\s+d1\\s+migrations\\s+apply/i,'unattended all-pending Preview migration command is forbidden in npm scripts.');
+forbidPattern(packageJson,/wrangler\s+d1\s+migrations\s+apply/i,'unattended all-pending Preview migration command is forbidden in npm scripts.');
 requireText(packageJson,'wrangler deploy --config wrangler.preview.toml','Preview deployment command is not pinned.');
 requireText(packageJson,'wrangler deploy --config wrangler.sync.preview.toml','sync Preview deployment command is not pinned.');
 requireText(packageJson,'wrangler rollback --config wrangler.preview.toml','manual rollback command is not pinned to Preview.');
