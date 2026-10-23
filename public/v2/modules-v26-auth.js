@@ -66,8 +66,27 @@
       if(failure){
         const notice=document.getElementById('v28LoginError');
         if(notice){
-          notice.textContent='تعذر تأكيد إبطال الجلسة على الخادم. تم إخفاء الحساب على هذا الجهاز، لكن الجلسة القديمة قد تظل صالحة. تواصل مع الإدارة إذا احتجت إيقافها فورًا.';
+          notice.textContent='تعذر تأكيد إبطال الجلسة على الخادم. تم إخفاء الحساب على هذا الجهاز، لكن الجلسة القديمة قد تظل صالحة. أعد المحاولة لإبطال الجلسة نفسها أو تواصل مع الإدارة.';
           notice.classList.add('show');notice.setAttribute('role','alert');
+          // On server failure the HttpOnly cookie remains intact. Do not
+          // retry with a new login or copy the bearer token into JavaScript.
+          // Clicking below resends the original cookie in a POST and keeps
+          // all sensitive dashboard content hidden.
+          const retry=document.createElement('button');
+          retry.type='button';retry.id='v28LogoutRetryBtn';
+          retry.className='btn soft';retry.textContent='إعادة محاولة تسجيل الخروج';
+          retry.onclick=async()=>{
+            retry.disabled=true;retry.textContent='جاري إعادة المحاولة...';
+            try{
+              await request('/api/logout',{method:'POST'});
+              showAuth('login');
+            }catch{
+              notice.textContent='تعذر تأكيد إبطال الجلسة مرة أخرى. قد تظل الجلسة القديمة صالحة. يمكنك إعادة المحاولة أو التواصل مع الإدارة.';
+              notice.classList.add('show');notice.setAttribute('role','alert');
+              retry.disabled=false;retry.textContent='إعادة محاولة تسجيل الخروج';
+            }
+          };
+          notice.insertAdjacentElement('afterend',retry);
         }
       }
     };
