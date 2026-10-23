@@ -1,3 +1,4 @@
+import {sessionTokenFromRequest,isSessionRevoked,revokeSession} from './session-revocation.js';
 /**
  * كن أونلاين — Cloudflare Worker
  * ---------------------------------------------------------------------------
@@ -158,18 +159,20 @@ async function makeSession(payload, secret) {
   return `${body}.${await hmac(body, secret)}`;
 }
 
-async function readSession(request, secret) {
+async function readSession(request, secret, env) {
   const raw = (request.headers.get('Cookie') || '')
     .split(';').map(c => c.trim()).find(c => c.startsWith(COOKIE + '='));
   if (!raw) return null;
   const [body, sig] = raw.slice(COOKIE.length + 1).split('.');
   if (!body || !sig) return null;
   if (!safeEqual(sig, await hmac(body, secret))) return null;
-  try {
-    const p = JSON.parse(b64url.dec(body));
-    if (!p.exp || p.exp < Math.floor(Date.now() / 1000)) return null;
-    return p;
-  } catch { return null; }
+  let p;
+  try { p = JSON.parse(b64url.dec(body)); } catch { return null; }
+  if (!p.exp || p.exp < Math.floor(Date.now() / 1000)) return null;
+  // Database failures propagate; the caller must not treat this as a valid
+  // session or issue a successful logout response when revocation failed.
+  if (await isSessionRevoked(env, sessionTokenFromRequest(request))) return null;
+  return p;
 }
 
 /* ---------- تشفير توكنز التكامل (Meta / EasyOrders / كلمة سر الإيميل) ----------
@@ -992,7 +995,7 @@ async function handleApi(request, env, url, path) {
     /* بيقبل التوكن أو جلسة عندها صلاحية الإدخال اليومي */
     let allowed = isIngest;
     if (!allowed) {
-      const sess = await readSession(request, secret);
+      const sess = await readSession(request, secret, env);
       if (sess && sess.uid) {
         const u = await env.DB.prepare('SELECT role, status FROM users WHERE id = ?').bind(sess.uid).first();
         allowed = u && u.status === 'active' && permsOf(u.role).includes('entries');
@@ -1116,10 +1119,20 @@ async function handleApi(request, env, url, path) {
   }
 
   if (path === '/api/logout') {
-    return json({ ok: true }, 200, { 'Set-Cookie': `${COOKIE}=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0` });
+    const cleared={ 'Set-Cookie': `${COOKIE}=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0` };
+    try {
+      const valid=await readSession(request,secret,env);
+      if(valid)await revokeSession(env,sessionTokenFromRequest(request),valid.exp);
+      return json({ok:true},200,cleared);
+    }catch(error){
+      console.error('Logout session revocation failed',error?.code||error?.name||'database_failure');
+      // The browser cookie is cleared, but do not claim server invalidation
+      // succeeded when the database rejected the revocation write.
+      return json({ok:false,error:'SESSION_REVOCATION_UNAVAILABLE'},503,cleared);
+    }
   }
 
-  const session = await readSession(request, secret);
+  const session = await readSession(request, secret, env);
   if (!session) {
     if (path === '/api/me') return json({ role: null, needsSetup: (await countUsers(env)) === 0 });
     return json({ error: 'محتاج تسجّل دخول' }, 401);
