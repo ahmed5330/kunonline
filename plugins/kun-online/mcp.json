@@ -1,0 +1,24 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "kun-online": {
+      "type": "streamable-http",
+      "url": "https://app.kun-online.com/mcp",
+      "extensions": {
+        "com.openai": {
+          "auth": {
+            "type": "oauth",
+            "client": {
+              "mode": "cimd"
+            },
+            "authorizationUrl": "https://app.kun-online.com/oauth/authorize",
+            "tokenUrl": "https://app.kun-online.com/oauth/token",
+            "baseScopes": [
+              "kun:read"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

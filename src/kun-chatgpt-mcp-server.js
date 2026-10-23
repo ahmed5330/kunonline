@@ -22,9 +22,15 @@ async function stateCounts(env,auth,p){
 }
 async function spend(env,auth,p){
  try{
-  const row=await env.DB.prepare('SELECT COALESCE(SUM(spend),0) spend,COUNT(DISTINCT metric_date) reportedDays FROM campaign_daily_metrics WHERE client_id=? AND store_id=? AND metric_date BETWEEN ? AND ?').bind(...bind(auth,p)).first();
-  return {reportedSpend:Number(row?.spend||0),reportedDays:Number(row?.reportedDays||0),currency:'حسب إعدادات الحساب الإعلاني',note:'المبلغ من بيانات الحملات المستوردة فقط؛ صفر لا يعني بالضرورة عدم الإنفاق.'};
- }catch{return {available:false,message:'تعذر قراءة بيانات الإنفاق الإعلاني لهذا المتجر حاليًا.'};}
+  // campaign_daily_metrics is tenant-only (no store_id). Do NOT query or
+  // aggregate it for a single store: it would either fail or leak other stores.
+  // Meta's granular table has true client/store isolation. Summing adsets only
+  // prevents double counting adset + individual-ad hierarchy levels.
+  const row=await env.DB.prepare("SELECT COALESCE(SUM(spend),0) spend,COUNT(DISTINCT metric_date) reportedDays,COUNT(*) metricRows FROM meta_ad_daily_metrics WHERE client_id=? AND store_id=? AND level='adset' AND metric_date BETWEEN ? AND ?").bind(...bind(auth,p)).first();
+  const available=Number(row?.metricRows||0)>0;
+  return {available,reportedSpend:available?Number(row.spend||0):null,reportedDays:Number(row?.reportedDays||0),currency:'غير محددة في جدول البيانات',
+    note:available?'إنفاق Meta المستورد على مستوى المجموعات الإعلانية فقط، بدون تكرار الإنفاق بين مستويات الإعلان.':'لا توجد بيانات إنفاق مستوردة لهذا المتجر خلال هذه الفترة؛ عدم وجود بيانات لا يعني إن الإنفاق صفر.'};
+ }catch{return {available:false,reportedSpend:null,reportedDays:0,message:'تعذر قراءة بيانات الإنفاق الإعلاني لهذا المتجر حاليًا.'};}
 }
 async function topProducts(env,auth,p){
  const {results=[]}=await env.DB.prepare(`SELECT COALESCE(NULLIF(trim(o.product),''),'غير محدد') product,
@@ -42,7 +48,7 @@ export const KUN_MCP_TOOLS=[
 export async function runKunMcpTool(env,auth,name,args={}){
  if(!KUN_MCP_TOOLS.some(x=>x.name===name))throw Object.assign(new Error('الأداة المطلوبة غير متاحة'),{code:-32602});
  if(!args||typeof args!=='object'||Array.isArray(args)||Object.keys(args).some(k=>k!=='days'))throw Object.assign(new Error('معاملات غير صحيحة'),{code:-32602});
- const p=period(args.days===undefined?30:args.days),base={store:{name:auth.storeName,id:auth.storeId},period:p,source:'Kun Online'};
+ const p=period(args.days===undefined?30:args.days),base={store:{name:auth.storeName},period:p,source:'Kun Online'};
  if(name==='get_order_funnel')return {...base,states:await stateCounts(env,auth,p)};
  if(name==='get_ads_spend')return {...base,advertising:await spend(env,auth,p)};
  if(name==='get_top_products')return {...base,products:await topProducts(env,auth,p)};
