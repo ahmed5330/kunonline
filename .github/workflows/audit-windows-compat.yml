@@ -1,0 +1,41 @@
+name: Audit Windows compatibility (isolated)
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/customer-service-board-print-void-test.mjs'
+      - 'scripts/android-chat-schema-ux-test.mjs'
+      - 'scripts/session-revocation-20261023-test.mjs'
+      - 'scripts/admin-audit-20261023-ui-test.mjs'
+      - 'scripts/audit-sandbox-config-test.mjs'
+      - 'src/session-revocation.js'
+      - 'src/index.js'
+      - 'package.json'
+      - '.github/workflows/audit-windows-compat.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  windows-regression:
+    runs-on: windows-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - name: Install dependencies without lifecycle side effects
+        run: npm install --ignore-scripts
+      - name: Customer Service J&T and printing workflow paths
+        run: node scripts/customer-service-board-print-void-test.mjs
+      - name: Android legacy and current SQLite chat schema
+        run: node scripts/android-chat-schema-ux-test.mjs
+      - name: Signed session logout and revocation contracts
+        run: node scripts/session-revocation-20261023-test.mjs
+      - name: Admin labels and safety contracts
+        run: node scripts/admin-audit-20261023-ui-test.mjs
+      - name: No live resource IDs in audit sandbox
+        run: node scripts/audit-sandbox-config-test.mjs
