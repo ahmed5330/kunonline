@@ -30,6 +30,9 @@ assert.match(gateway,/request\.method==='GET'&&COD_READ_PATHS/,'no financial wri
 const legacy=read('public/v2/modules-v20.js');
 assert.match(legacy,/function orderForm\(\)\{[\s\S]*?KunActionsV23\?\.openCreateOrder/,'legacy toolbar delegates to J&T form');
 assert.doesNotMatch(legacy,/api\('\/api\/orders',\{method:'POST'/,'old order endpoint must not be used by legacy toolbar');
+assert.match(legacy,/!window\.KunManualJntOrderV106/,'legacy toolbar must wait for authoritative form');
+const originalCreate=read('public/v2/modules-v23-create.js');
+assert.match(originalCreate,/if\(!window\.KunManualJntOrderV106\)/,'quick-create must block early legacy form');
 const modern=read('public/v2/modules-v106-manual-jnt-order.js');
 assert.match(modern,/api\/orders\/manual-jnt/,'authoritative order endpoint preserved');
 
