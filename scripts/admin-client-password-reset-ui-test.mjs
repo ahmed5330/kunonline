@@ -48,7 +48,7 @@ const K={
   },
   close(){}
 };
-const ctx={window:{KunActionsV23:K},document,MutationObserver:class {observe(){}},setTimeout:()=>0,clearTimeout:()=>{},console};
+const ctx={window:{KunActionsV23:K},document,MutationObserver:class {observe(){}},setTimeout:()=>0,clearTimeout:()=>{},AbortController:class {constructor(){this.signal={aborted:false}}abort(){this.signal.aborted=true}},console};
 runInNewContext(script,ctx,{filename:'modules-v23-admin.js'});
 
 const a=K.enhanceClientDrawer('CLIENT_ONE');
