@@ -8,9 +8,9 @@ const dashboard=fs.readFileSync('public/v2/modules-v126-dashboard-finance-top.js
 const accountingBackend=fs.readFileSync('src/accounting.js','utf8');
 const detail=fs.readFileSync('src/index-commerce-v38-base.js','utf8');
 
-assert.match(html,/modules-v96-finance-command-center\.js\?v=96\.1/,
+assert.match(html,/modules-v96-finance-command-center\.js\?v=96\.2/,
   'finance command center must be loaded in the real user-facing V2 HTML');
-assert.match(finance,/version:'96\.1'/);
+assert.match(finance,/version:'96\.2'/);
 assert.match(finance,/accountingNet=Math\.round\(\(net\+manualIncome\)\*100\)\/100/,
   'finance must distinguish operational and accounting net profitability');
 assert.ok(finance.includes('صافي الربح المحاسبي'),'accounting net must be visible in Finance');
