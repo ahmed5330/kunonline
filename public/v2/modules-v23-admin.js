@@ -42,7 +42,7 @@
               <button class="btn soft" id="v23ToggleResetVisibility" type="button" aria-label="إظهار كلمة المرور">إظهار</button>
               <button class="btn soft" id="v23CopyReset" type="button">نسخ</button>
             </div>
-            <div class="meta mt">التغيير يتم لحساب صاحب المتجر المحدد فقط. انسخ كلمة المرور الجديدة قبل إغلاق النافذة.</div>
+            <div class="meta mt">التغيير يتم لحساب صاحب المتجر المحدد فقط. انسخ كلمة المرور الجديدة قبل الضغط على تغيير كلمة المرور؛ تُمسح من الحقل بعد نجاح الحفظ.</div>
           </div>
           ${K.field('شحن مباشر من الإدارة','v23AdminCredit','number','min="1" step="0.01" placeholder="المبلغ"')}
           <label>رسوم الإدارة لكل أوردر<input class="input" id="v23OrderFee" type="number" min="0" step="0.25" value="${K.esc(c.wallet?.baseOrderFee??0)}" placeholder="بدون حد أقصى"><span class="meta">مفتوحة بدون حد أقصى.</span></label>
