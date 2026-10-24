@@ -39,7 +39,12 @@ async function easyOrdersGet(fetcher,url,apiKey){
   const response=await fetcher(url,{method:'GET',headers:{Accept:'application/json','Api-Key':apiKey}});
   if(response.status===429)return {kind:'rate_limited',data:null,status:429};
   const raw=await response.text().catch(()=>''),data=(()=>{if(!raw)return null;try{return JSON.parse(raw)}catch{return raw}})();
-  if(response.status===404||providerSaysMissing(data))return {kind:'missing',data:null,status:response.status};
+  // An upstream 5xx/401/403 cannot prove the order is missing even if its
+  // error body happens to contain "record not found". Only an actual HTTP
+  // 404 or a SUCCESS response with an explicit not-found result may advance
+  // the recovery cursor; anything else must fail closed and retry the ID.
+  if(response.status===404||(response.ok&&providerSaysMissing(data)))
+    return {kind:'missing',data:null,status:response.status};
   if(!response.ok){
     const error=new Error((typeof data==='string'?data:null)||data?.message||data?.error||`Easy Orders HTTP ${response.status}`);
     error.status=response.status;
