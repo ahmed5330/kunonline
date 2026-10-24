@@ -415,5 +415,31 @@ try{
   assert.equal(config('CON-FUTURE').easyOrdersRecoveryProbeCursor,1010,
     'A missing future order must be retried, not checkpointed past a foreign order');
 
+  // Once a provider 429 arrives, avoid exhausting quota by querying every
+  // other store in the same scheduled run. Their checkpoints remain intact.
+  for(const id of ['CON-QUOTA-1','CON-QUOTA-2']){
+    db.prepare('INSERT INTO store_connections (id,client_id,provider,status,config_json,updated_at,external_store_id) VALUES (?,?,?,?,?,?,?)')
+      .run(id,'TENANT-QUOTA','easyorders','connected',JSON.stringify({
+        kunStoreId:id,easyOrdersRecoveryHighestShortId:1100,
+        easyOrdersRecoveryCursor:1100
+      }),now,'EO-'+id);
+    db.prepare('INSERT INTO stores VALUES (?,?,?,?,?)')
+      .run(id,'TENANT-QUOTA','active',0,now);
+    db.prepare('INSERT INTO integration_secrets VALUES (?,?,?,?,?)')
+      .run('TENANT-QUOTA',id,'api_key',secret.ciphertextB64,secret.ivB64);
+  }
+  let quotaCalls=0;
+  const quotaResult=await reconcileEasyOrdersOrders(env,{
+    clientId:'TENANT-QUOTA',maxRequests:30,fetcher:async ()=>{
+      quotaCalls++;return Response.json({message:'retry later'},{status:429});
+    }
+  });
+  assert.equal(quotaCalls,1,'429 pauses all accounts in this scheduled run');
+  assert.equal(quotaResult.checkedConnections,1);
+  assert.equal(quotaResult.uncheckedConnections,1);
+  assert.equal(quotaResult.ok,false);
+  assert.equal(config('CON-QUOTA-2').easyOrdersRecoveryCursor,1100,
+    'Unvisited store checkpoint is never consumed');
+
   console.log('Easy Orders SQLite sync PASS: concurrent webhook/cron CAS, monotonic high-water, correct catching-up, tenant+store collision isolation, idempotent retries.');
 }finally{db.close();}
