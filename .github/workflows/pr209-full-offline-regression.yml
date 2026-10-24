@@ -55,6 +55,8 @@ jobs:
           node scripts/preview-migration-release-guard-test.mjs
       - name: Complete source and synthetic regression suite
         run: npm test
+      - name: Local Wrangler workerd and D1 only (no Cloudflare account or deploy)
+        run: npm run test:audit-sandbox:wrangler-local
       - name: Verify changes contain no whitespace errors
         run: git diff --check
 
