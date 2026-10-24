@@ -1,0 +1,29 @@
+name: Tenant Easy Orders dashboard health QA (no deploy)
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/tenant-easyorders-health.js'
+      - 'src/index-production-mobile-update.js'
+      - 'public/v2/modules-v121-dashboard-sync-guard.js'
+      - 'scripts/dashboard-sync-guard*'
+      - 'scripts/tenant-easyorders-health-20261023-test.mjs'
+      - '.github/workflows/tenant-easyorders-health-offline.yml'
+permissions:
+  contents: read
+jobs:
+  tenant-scoped-health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '22'}
+      - name: Execute isolated health and browser fixtures
+        run: |
+          node --check src/tenant-easyorders-health.js
+          node --check src/index-production-mobile-update.js
+          node --check public/v2/modules-v121-dashboard-sync-guard.js
+          node scripts/tenant-easyorders-health-20261023-test.mjs
+          node scripts/dashboard-sync-guard-test.mjs
+          node scripts/dashboard-sync-guard-live-fixture-test.mjs
