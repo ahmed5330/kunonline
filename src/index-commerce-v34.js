@@ -8,6 +8,7 @@ import {metaAdsExpertAnalysisV2} from './meta-ads-expert.js';
 import {easyOrdersRecoveryStatus,reconcileEasyOrdersOrders} from './easyorders-order-reconciliation.js';
 import {mutateEasyOrdersConfig,mergeEasyOrdersRecoveryPatch} from './easyorders-connection-config.js';
 import {assertEasyOrdersCronRecovered} from './easyorders-scheduler-outcome.js';
+import {reconcileEasyOrdersRecoveredFees} from './easyorders-recovered-fee-guard.js';
 import {reconcileManagementFeeForOrder} from './accounting.js';
 import {clearProductInventory,clearStaleBatchStockIfProductZero} from './inventory-clear.js';
 import {prepareIncomingEasyOrdersDedupe,prepareEasyOrdersSheetRows,persistEasyOrdersLineItems,restoreNativeSourceForMatchedSheetOrders} from './order-deduplication.js';
@@ -26,7 +27,7 @@ async function currentUser(request,env,ctx){
 }
 function cleanDate(value){return /^\d{4}-\d{2}-\d{2}$/.test(String(value||''))?String(value):null;}
 function requestedRange(input={}){const to=cleanDate(input.to)||new Date().toISOString().slice(0,10),rawFrom=String(input.from||''),from=rawFrom==='beginning'?null:cleanDate(rawFrom);let days=30;if(from){days=Math.max(1,Math.min(90,Math.floor((new Date(`${to}T00:00:00Z`)-new Date(`${from}T00:00:00Z`))/86400000)+1));}else if(rawFrom==='beginning')days=90;return {from:from||undefined,to,days};}
-async function reconcileRecoveredFees(env,result){for(const id of result?.recoveredOrderIds||[])await reconcileManagementFeeForOrder(env,id).catch(()=>{});return result;}
+async function reconcileRecoveredFees(env,result){return reconcileEasyOrdersRecoveredFees(result,id=>reconcileManagementFeeForOrder(env,id));}
 async function rememberEasyOrdersShortId(env,connectionId,rawPayload){
   const order=webhookOrderPayload(rawPayload);
   const shortId=positiveInt(order.short_id||order.shortId||rawPayload?.short_id||rawPayload?.shortId);
@@ -137,10 +138,10 @@ async function runScheduledWithEasyOrdersRecovery(controller,env,ctx){
   if(cron==='0 */2 * * *')return {ok:true,easyOrdersRecovery:'skipped',metaGranular:await syncAllMetaAdsGranularScheduled(env,{days:30})};
   if(cron!=='*/5 * * * *')return {ok:true,easyOrdersRecovery:'skipped'};
   const result=await reconcileEasyOrdersOrders(env,{maxRequests:30,lookback:80});
-  await reconcileRecoveredFees(env,result);
+  const withFees=await reconcileRecoveredFees(env,result);
   // Preserve persisted checkpoints and order fees, but report a failed
   // Cloudflare scheduled event for provider errors/429 instead of success.
-  return assertEasyOrdersCronRecovered(result);
+  return assertEasyOrdersCronRecovered(withFees);
 }
 
 export class SyncEntrypoint extends WorkerEntrypoint{
