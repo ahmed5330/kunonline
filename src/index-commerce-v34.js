@@ -7,6 +7,7 @@ import {syncMetaAdsGranular} from './meta-ads-granular.js';
 import {metaAdsExpertAnalysisV2} from './meta-ads-expert.js';
 import {easyOrdersRecoveryStatus,reconcileEasyOrdersOrders} from './easyorders-order-reconciliation.js';
 import {mutateEasyOrdersConfig,mergeEasyOrdersRecoveryPatch} from './easyorders-connection-config.js';
+import {assertEasyOrdersCronRecovered} from './easyorders-scheduler-outcome.js';
 import {reconcileManagementFeeForOrder} from './accounting.js';
 import {clearProductInventory,clearStaleBatchStockIfProductZero} from './inventory-clear.js';
 import {prepareIncomingEasyOrdersDedupe,prepareEasyOrdersSheetRows,persistEasyOrdersLineItems,restoreNativeSourceForMatchedSheetOrders} from './order-deduplication.js';
@@ -137,7 +138,11 @@ async function runScheduledWithEasyOrdersRecovery(controller,env,ctx){
   if(cron!=='*/5 * * * *')return {ok:true,easyOrdersRecovery:'skipped'};
   const result=await reconcileEasyOrdersOrders(env,{maxRequests:30,lookback:80});
   await reconcileRecoveredFees(env,result);
-  return result;
+  // An RPC Promise resolving with {ok:false} previously made Cloudflare
+  // Cron look successful despite provider failures and missing orders.
+  // Persist checkpoints first, then fail the scheduled event with an
+  // aggregate-only error. Deferred stores due to the budget are not errors.
+  return assertEasyOrdersCronRecovered(result);
 }
 
 export class SyncEntrypoint extends WorkerEntrypoint{
