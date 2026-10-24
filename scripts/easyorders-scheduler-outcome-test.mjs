@@ -6,6 +6,32 @@ import {readFile} from 'node:fs/promises';
 import scheduler from '../src/sync-scheduler-preview.js';
 import {assertEasyOrdersCronRecovered,checkEasyOrdersCronRecovery}
   from '../src/easyorders-scheduler-outcome.js';
+import {describeEasyOrdersProviderError} from '../src/easyorders-order-reconciliation.js';
+
+// An ambiguous upstream "record not found" on HTTP 5xx is a provider error,
+// not evidence of a missing Short ID: expose safe numeric status for diagnosis.
+assert.deepEqual(
+  describeEasyOrdersProviderError({status:503,code:'EASYORDERS_RECONCILIATION_PROVIDER_ERROR',message:'record not found'}),
+  {providerHttpStatus:503,providerErrorCategory:'provider_server_error'}
+);
+assert.deepEqual(
+  describeEasyOrdersProviderError({status:403,code:'EASYORDERS_ORDERS_READ_FORBIDDEN'}),
+  {providerHttpStatus:403,providerErrorCategory:'provider_auth'}
+);
+assert.deepEqual(
+  describeEasyOrdersProviderError({status:429,code:'EASYORDERS_RECONCILIATION_PROVIDER_ERROR'}),
+  {providerHttpStatus:429,providerErrorCategory:'provider_throttle'}
+);
+assert.deepEqual(
+  describeEasyOrdersProviderError({status:409,code:'EASYORDERS_RECOVERY_EXTERNAL_STORE_UNBOUND'}),
+  {providerHttpStatus:null,providerErrorCategory:null},
+  'Store-binding failure must not be attributed to the upstream API'
+);
+assert.deepEqual(
+  describeEasyOrdersProviderError({status:500,code:'not-provider',message:'private'}),
+  {providerHttpStatus:null,providerErrorCategory:null},
+  'Non-provider errors must not leak sensitive strings into upstream metadata'
+);
 
 const healthy={ok:true,connections:3,checkedConnections:2,uncheckedConnections:1,
   results:[{status:'healthy'},{status:'healthy'}],recovered:1};
