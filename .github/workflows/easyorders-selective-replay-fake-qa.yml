@@ -5,6 +5,8 @@ on:
       - audit/easyorders-store-gap-scan-20261024
     paths:
       - 'src/easyorders-explicit-gap-replay.js'
+      - 'src/commerce-order-sync.js'
+      - 'scripts/easyorders-sync-concurrency-sqlite-test.mjs'
       - 'src/index-commerce-v34.js'
       - 'scripts/easyorders-explicit-gap-replay-test.mjs'
       - '.github/workflows/easyorders-selective-replay-fake-qa.yml'
@@ -29,6 +31,9 @@ jobs:
           node --check scripts/easyorders-explicit-gap-replay-test.mjs
           node scripts/easyorders-explicit-gap-replay-test.mjs
           node scripts/easyorders-store-gap-audit-test.mjs
+          node scripts/easyorders-sync-concurrency-sqlite-test.mjs
+          node scripts/easyorders-scheduler-outcome-test.mjs
+          node scripts/easyorders-recovered-fee-guard-test.mjs
       - name: Assert runtime replay flag is disabled unless explicitly set
         run: |
           node -e "const fs=require('fs'),s=fs.readFileSync('src/easyorders-explicit-gap-replay.js','utf8');if(!s.includes(\"EASYORDERS_TARGETED_RECOVERY_ENABLED!=='true'\")) process.exit(1)"
