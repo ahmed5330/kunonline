@@ -7,6 +7,7 @@ import {syncMetaAdsGranular} from './meta-ads-granular.js';
 import {metaAdsExpertAnalysisV2} from './meta-ads-expert.js';
 import {easyOrdersRecoveryStatus,reconcileEasyOrdersOrders} from './easyorders-order-reconciliation.js';
 import {auditEasyOrdersStoreGapRange} from './easyorders-store-gap-audit.js';
+import {replayExplicitEasyOrdersStoreGaps} from './easyorders-explicit-gap-replay.js';
 import {mutateEasyOrdersConfig,mergeEasyOrdersRecoveryPatch} from './easyorders-connection-config.js';
 import {assertEasyOrdersCronRecovered} from './easyorders-scheduler-outcome.js';
 import {reconcileEasyOrdersRecoveredFees} from './easyorders-recovered-fee-guard.js';
@@ -126,6 +127,23 @@ async function fetchV34(request,env,ctx){
         fromShortId:body.fromShortId,toShortId:body.toShortId
       });
       return json(result);
+    }
+    if(path==='/api/commerce/order-sync/recover-gaps'&&method==='POST'){
+      // Feature disabled by default. No broad-store import, cursor rewinds, or
+      // fallback to an unscoped connection even for a platform administrator.
+      const me=await currentUser(request,env,ctx);
+      requirePermission(me,'orders','write');
+      const body=await request.clone().json().catch(()=>({}));
+      const clientId=resolveTenant(me,body.clientId||body.client_id);
+      const storeId=text(body.storeId||body.store_id);
+      const connectionId=text(body.connectionId||body.connection_id);
+      if(!storeId||!connectionId)return json({error:'حدد متجرًا واتصال Easy Orders',code:'EASYORDERS_REPLAY_SCOPE_REQUIRED'},400);
+      const scope=await resolveStoreScope(env,me,clientId,storeId,{write:true});
+      if(String(scope.storeId)!==storeId)return json({error:'صلاحية المتجر غير متاحة',code:'STORE_ISOLATION'},403);
+      return json(await replayExplicitEasyOrdersStoreGaps(env,{
+        clientId,storeId,connectionId,shortIds:body.shortIds,
+        confirmStoreId:body.confirmStoreId,confirmBackup:body.confirmBackup
+      }));
     }
     if(path==='/api/commerce/order-sync/reconcile'&&method==='POST'){
       const me=await currentUser(request,env,ctx);requirePermission(me,'orders','write');const body=await request.clone().json().catch(()=>({})),clientId=resolveTenant(me,body.clientId||body.client_id||url.searchParams.get('clientId')),scope=await resolveStoreScope(env,me,clientId,body.storeId||body.store_id||url.searchParams.get('storeId')||null,{write:true});
