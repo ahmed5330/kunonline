@@ -46,7 +46,7 @@
     "test:android-chat-schema-ux": "node scripts/android-chat-schema-ux-test.mjs",
     "test:customer-service-notes": "node scripts/customer-service-notes-product-cards-test.mjs",
     "test:session-revocation-20261023": "node scripts/session-revocation-20261023-test.mjs",
-    "test:session-revocation-schema": "node scripts/session-revocation-schema-contract.mjs && node scripts/session-revocation-schema-contract-test.mjs && node scripts/pr209-main-reconciliation-guard.mjs && node scripts/session-revocation-live-schema-inventory-test.mjs && node scripts/session-revocation-preservation-sqlite-test.mjs && node scripts/session-revocation-dual-bridge-sqlite-test.mjs",
+    "test:session-revocation-schema": "node scripts/session-revocation-schema-contract.mjs && node scripts/session-revocation-schema-contract-test.mjs && node scripts/pr209-main-reconciliation-guard.mjs && node scripts/session-revocation-live-schema-inventory-test.mjs && node scripts/session-revocation-preservation-sqlite-test.mjs && node scripts/session-revocation-dual-bridge-sqlite-test.mjs && node scripts/session-revocation-bridge-activation-guard.mjs",
     "test:preview-migration-safety": "node scripts/preview-migration-release-guard-test.mjs",
     "test:legacy-secret-encryption-20261023": "node scripts/legacy-secret-encryption-20261023-test.mjs",
     "test:cloudflare-secret-preflight": "node scripts/cloudflare-secret-name-preflight-test.mjs",
