@@ -30,6 +30,7 @@ The returned JSON is purposely conservative: the report always includes `release
 | Only `revoked_sessions` exists | Compare applied `0099` ledger, verify the active auth Worker and adapt release to preserve existing old-table hashes |
 | Only `revoked_session_tokens` exists | Compare PR migration ledger and active auth Worker; make no switch until confirmed |
 | Both exist | **Block.** Reconcile active hashes from both tables, including expiry and idempotency, with a separately reviewed, transactional, additive migration |
+| Either table exists with unexpected column types, PK, missing expiry or missing `revoked_at` where required | **Block.** Do not count it as a compatible revocation store or deploy a Worker against it |
 | Neither exists | **Block.** Explicitly approve and apply a single migration to the effective auth D1 before code deployment |
 | Any query fails or remote schema is inconsistent | **Block.** No bypass, no fallback that silently ignores one table |
 
