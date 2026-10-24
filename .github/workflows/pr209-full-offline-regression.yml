@@ -6,27 +6,9 @@ on:
   push:
     branches:
       - fix/audit-critical-findings-20261023
-    paths:
-      - '.github/workflows/pr209-full-offline-regression.yml'
-      - 'src/**'
-      - 'public/**'
-      - 'migrations/**'
-      - 'sandbox/**'
-      - 'scripts/**'
-      - 'package.json'
-      - 'package-lock.json'
-      - 'wrangler.audit-sandbox.example.toml'
   pull_request:
     branches:
       - fix/audit-critical-findings-20261023
-    paths:
-      - '.github/workflows/pr209-full-offline-regression.yml'
-      - 'src/**'
-      - 'public/**'
-      - 'migrations/**'
-      - 'scripts/**'
-      - 'package.json'
-      - 'package-lock.json'
   workflow_dispatch:
 
 permissions:
@@ -86,7 +68,7 @@ jobs:
         run: git diff --check
 
   windows-auth-suite:
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/fix/audit-critical-findings-20261023') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/fix/audit-critical-findings-20261023')
     runs-on: windows-latest
     timeout-minutes: 20
     env:
@@ -99,6 +81,11 @@ jobs:
         with:
           node-version: '22'
           package-manager-cache: false
+      - name: Windows source-only audit branch gate
+        run: |
+          if ($env:GITHUB_EVENT_NAME -eq 'push' -and $env:GITHUB_REF -ne 'refs/heads/fix/audit-critical-findings-20261023') { exit 1 }
+          if ($env:GITHUB_EVENT_NAME -eq 'workflow_dispatch' -and $env:GITHUB_REF -ne 'refs/heads/fix/audit-critical-findings-20261023') { exit 1 }
+          if ($env:GITHUB_EVENT_NAME -eq 'pull_request' -and $env:GITHUB_REF -notlike 'refs/pull/*/merge') { exit 1 }
       - name: Windows SQLite, owner password and schema contracts
         run: |
           node scripts/session-revocation-schema-contract.mjs
