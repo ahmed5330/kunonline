@@ -174,15 +174,29 @@ async function reconcileConnection(env,connection,{maxRequests,lookback,fetcher}
       cursor++;
     }
 
+    // Short IDs can be interleaved with orders of other Easy Orders stores.
+    // Rechecking the same 30 verified foreign-store IDs each cron would make
+    // a valid later order permanently unreachable. Persist a separate ahead
+    // probe for confirmed foreign IDs, but NEVER move that checkpoint past an
+    // unresolved HTTP 404 (a future order may acquire that ID).
+    let nextVerifiedProbe=positiveInt(config.easyOrdersRecoveryProbeCursor)||highest+1;
     if(cursor>highest&&out.requests<maxRequests&&!out.rateLimited){
-      let probe=highest+1,misses=0;
+      let probe=Math.max(highest+1,nextVerifiedProbe),misses=0;
+      let unresolvedMissing=false;
+      nextVerifiedProbe=probe;
       while(out.requests<maxRequests&&misses<MAX_AHEAD_MISSES&&!out.rateLimited){
         const found=await inspect(probe);
         if(found.kind==='found'){
           highest=Math.max(highest,positiveInt(found.shortId)||probe);
           probe=highest+1;misses=0;
-        }else if(found.kind==='missing'||found.kind==='foreign_store'){
+          nextVerifiedProbe=Math.max(nextVerifiedProbe,probe);
+          unresolvedMissing=false;
+        }else if(found.kind==='foreign_store'){
           misses++;probe++;
+          if(!unresolvedMissing)nextVerifiedProbe=Math.max(nextVerifiedProbe,probe);
+        }else if(found.kind==='missing'){
+          misses++;probe++;
+          unresolvedMissing=true;
         }else break;
       }
       cursor=highest+1;
@@ -190,7 +204,7 @@ async function reconcileConnection(env,connection,{maxRequests,lookback,fetcher}
 
     const cumulative=positiveInt(config.easyOrdersRecoveryRecoveredCount)+out.recovered,estimatedRemaining=cursor<=highest?highest-cursor+1:0;
     const status=out.rateLimited?'rate_limited':(estimatedRemaining>0?'catching_up':'healthy');
-    const saved=await patchConfig(env,connection,{easyOrdersRecoveryHighestShortId:highest,easyOrdersRecoveryCursor:cursor,easyOrdersRecoveryLastRunAt:now(),easyOrdersRecoveryLastStatus:status,easyOrdersRecoveryLastRequests:out.requests,easyOrdersRecoveryLastRecovered:out.recovered,easyOrdersRecoveryRecoveredCount:cumulative,easyOrdersRecoveryLastError:null});
+    const saved=await patchConfig(env,connection,{easyOrdersRecoveryHighestShortId:highest,easyOrdersRecoveryCursor:cursor,easyOrdersRecoveryProbeCursor:nextVerifiedProbe,easyOrdersRecoveryLastRunAt:now(),easyOrdersRecoveryLastStatus:status,easyOrdersRecoveryLastRequests:out.requests,easyOrdersRecoveryLastRecovered:out.recovered,easyOrdersRecoveryRecoveredCount:cumulative,easyOrdersRecoveryLastError:null});
     out.highestShortId=positiveInt(saved.easyOrdersRecoveryHighestShortId);out.nextShortId=positiveInt(saved.easyOrdersRecoveryCursor);out.estimatedRemaining=Math.max(0,out.highestShortId-out.nextShortId+1);out.cumulativeRecovered=positiveInt(saved.easyOrdersRecoveryRecoveredCount);out.status=saved.easyOrdersRecoveryLastStatus||status;
     return out;
   }catch(error){
