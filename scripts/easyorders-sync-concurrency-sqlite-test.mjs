@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import {mutateEasyOrdersConfig,mergeEasyOrdersRecoveryPatch} from '../src/easyorders-connection-config.js';
 import {easyOrdersWebhookPath,handleEasyOrdersWebhook} from '../src/commerce-order-sync.js';
+import {fairEasyOrdersRecoveryOrder} from '../src/easyorders-order-reconciliation.js';
 
 const db=new DatabaseSync(':memory:');
 db.exec(`
@@ -52,6 +53,16 @@ const connection=id=>db.prepare('SELECT * FROM store_connections WHERE id=?').ge
 const config=id=>JSON.parse(connection(id).config_json);
 const update=(id,mutate,extra)=>mutateEasyOrdersConfig(env,connection(id),mutate,extra);
 try{
+  const roundOne=[
+    {id:'A',config_json:JSON.stringify({easyOrdersRecoveryLastRunAt:'2026-10-24T02:30:00Z'})},
+    {id:'B',config_json:JSON.stringify({easyOrdersRecoveryLastRunAt:'2026-10-23T01:00:00Z'})},
+    {id:'C',config_json:'{}'},
+  ];
+  assert.deepEqual(fairEasyOrdersRecoveryOrder(roundOne).map(x=>x.id),['C','B','A'],
+    'Never-run and oldest-checked Easy Orders stores must get recovery budget first');
+  roundOne[2].config_json=JSON.stringify({easyOrdersRecoveryLastRunAt:'2026-10-24T03:00:00Z'});
+  assert.deepEqual(fairEasyOrdersRecoveryOrder(roundOne).map(x=>x.id),['B','A','C'],
+    'After being checked a store must move behind older unchecked stores');
   const initial=mergeEasyOrdersRecoveryPatch(
     {easyOrdersRecoveryHighestShortId:100,easyOrdersRecoveryCursor:101,easyOrdersRecoveryLastStatus:'healthy'},
     {easyOrdersRecoveryHighestShortId:99,easyOrdersRecoveryCursor:100,easyOrdersRecoveryLastStatus:'healthy'}
@@ -107,5 +118,23 @@ try{
   assert.equal(rows[0].state,'pending');
   assert.equal(rows[1].state,'confirmed');
   assert.equal(db.prepare("SELECT COUNT(*) n FROM orders WHERE ref='easyorders:EXTERNAL-SAME'").get().n,3);
+  // Status callbacks carrying the SAME provider ID must affect only the
+  // connected Kun store, including a second store under the same tenant.
+  const statusB=await post('CON-B',{
+    event_type:'order-status-update',order_id:'EXTERNAL-SAME',new_status:'shipped'
+  });
+  assert.equal(statusB.id,b.id);
+  assert.equal(db.prepare('SELECT state FROM orders WHERE id=?').get(b.id).state,'shipped');
+  assert.equal(db.prepare('SELECT state FROM orders WHERE id=?').get(a.id).state,'pending',
+    'One tenant status callback must not change another tenant');
+  assert.equal(db.prepare('SELECT state FROM orders WHERE id=?').get(third.id).state,'pending',
+    'Same tenant status callback must not update a different store');
+  const statusC=await post('CON-C',{
+    event_type:'order-status-update',order_id:'EXTERNAL-SAME',new_status:'confirmed'
+  });
+  assert.equal(statusC.id,third.id);
+  assert.equal(db.prepare('SELECT state FROM orders WHERE id=?').get(third.id).state,'confirmed');
+  assert.equal(db.prepare('SELECT state FROM orders WHERE id=?').get(b.id).state,'shipped');
+
   console.log('Easy Orders SQLite sync PASS: concurrent webhook/cron CAS, monotonic high-water, correct catching-up, tenant+store collision isolation, idempotent retries.');
 }finally{db.close();}
