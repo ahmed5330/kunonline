@@ -35,6 +35,8 @@ Classify and log redacted:
 - [ ] Submit at most **10 confirmed missing Short IDs** per `POST /api/commerce/order-sync/recover-gaps` request. Do not send any unverified sample IDs.
 - [ ] Use create-only canonical webhook semantics. If an order exists or another webhook wins the race, skip it and preserve shipping status, staff notes, calls, history and accounting values.
 - [ ] Stop at 429/5xx, record the exact retry Short ID, and check feeFailures. Do not claim financial success until fee reconciliation checks pass.
+- [ ] Resolve `EASYORDERS_RECOVERY_LEGACY_ORDER_AMBIGUOUS` manually for orders with `store_id IS NULL`; the recovery intentionally does **not** bind them to Wefaq or rewrite their state. Do not bypass this check to make counts match.
+- [ ] Treat any `unresolvedAheadCount>0` as `catching_up`, even when `nextShortId>highestShortId`; do not close the incident while queued 404 Short IDs remain.
 - [ ] Return feature flag to **disabled** as soon as the approved replay is over.
 
 ## Acceptance criteria: prove recovery, do not assume
