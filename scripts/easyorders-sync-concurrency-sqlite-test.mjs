@@ -495,5 +495,20 @@ try{
   assert.equal(config('CON-QUOTA-2').easyOrdersRecoveryCursor,1100,
     'Unvisited store checkpoint is never consumed');
 
+  // An owner can run a manual reconciliation even when the scheduler is
+  // broken. Health must never mistake that manual activity for Cron proof.
+  assert.equal(config('CON-PROBE').easyOrdersRecoveryLastCronAt,undefined);
+  await reconcileEasyOrdersOrders(env,{
+    clientId:'TENANT-A',connectionId:'CON-PROBE',maxRequests:1,
+    fetcher:probeApi,trigger:'cron'
+  });
+  const actualCronAt=config('CON-PROBE').easyOrdersRecoveryLastCronAt;
+  assert.ok(Number.isFinite(Date.parse(actualCronAt)),'Scheduled task must save a real Cron receipt');
+  await reconcileEasyOrdersOrders(env,{
+    clientId:'TENANT-A',connectionId:'CON-PROBE',maxRequests:1,fetcher:probeApi
+  });
+  assert.equal(config('CON-PROBE').easyOrdersRecoveryLastCronAt,actualCronAt,
+    'Manual recovery must never refresh the genuine Cron timestamp');
+
   console.log('Easy Orders SQLite sync PASS: concurrent webhook/cron CAS, monotonic high-water, correct catching-up, tenant+store collision isolation, idempotent retries.');
 }finally{db.close();}
