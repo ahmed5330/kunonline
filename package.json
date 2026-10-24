@@ -96,7 +96,8 @@
     "test:ai-marketing": "node --check src/ai-marketing-analyst.js && node --check public/v2/modules-v138-ai-marketing.js && node scripts/ai-marketing-test.mjs",
     "test:competitors": "node --check src/competitor-intelligence.js && node --check public/v2/modules-v139-competitors.js && node scripts/competitor-intelligence-test.mjs",
     "test:prod-mobile-store": "node scripts/production-mobile-store-context-test.mjs",
-    "audit:session-schema:read-only": "node scripts/session-revocation-live-schema-inventory.mjs --read-only"
+    "audit:session-schema:read-only": "node scripts/session-revocation-live-schema-inventory.mjs --read-only",
+    "test:audit-sandbox:wrangler-local": "node scripts/audit-sandbox-wrangler-local-qa.mjs"
   },
   "devDependencies": {
     "wrangler": "4.125.0"
