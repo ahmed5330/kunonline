@@ -6,6 +6,7 @@ import {syncMetaAdsForClient} from './meta-ads-sync.js';
 import {syncMetaAdsGranular} from './meta-ads-granular.js';
 import {metaAdsExpertAnalysisV2} from './meta-ads-expert.js';
 import {easyOrdersRecoveryStatus,reconcileEasyOrdersOrders} from './easyorders-order-reconciliation.js';
+import {startEasyOrdersBeforeLegacy} from './easyorders-cron-priority.js';
 import {auditEasyOrdersStoreGapRange} from './easyorders-store-gap-audit.js';
 import {replayExplicitEasyOrdersStoreGaps} from './easyorders-explicit-gap-replay.js';
 import {mutateEasyOrdersConfig,mergeEasyOrdersRecoveryPatch} from './easyorders-connection-config.js';
@@ -169,19 +170,25 @@ async function fetchV34(request,env,ctx){
 }
 
 async function runScheduledWithEasyOrdersRecovery(controller,env,ctx){
+  const cron=String(controller?.cron||'');
+  if(cron==='*/5 * * * *'){
+    return startEasyOrdersBeforeLegacy({
+      ctx,
+      launchLegacy:nestedCtx=>commerceV33.scheduled?.(controller,env,nestedCtx),
+      recover:async()=>{
+        const result=await reconcileEasyOrdersOrders(env,{maxRequests:30,lookback:80});
+        const withFees=await reconcileRecoveredFees(env,result);
+        return assertEasyOrdersCronRecovered(withFees);
+      }
+    });
+  }
   const pending=[],nestedCtx=Object.create(ctx||null);nestedCtx.waitUntil=promise=>{if(promise)pending.push(Promise.resolve(promise));};
   let delegated;try{delegated=commerceV33.scheduled?.(controller,env,nestedCtx);}catch(error){pending.push(Promise.reject(error));}
   if(delegated&&typeof delegated.then==='function')pending.push(Promise.resolve(delegated));
   await Promise.allSettled(pending);
-  const cron=String(controller?.cron||'');
   if(cron==='* * * * *')return {ok:true,easyOrdersRecovery:'skipped',metaNearLive:await syncAllMetaAdsNearLiveScheduled(env,{days:2})};
   if(cron==='0 */2 * * *')return {ok:true,easyOrdersRecovery:'skipped',metaGranular:await syncAllMetaAdsGranularScheduled(env,{days:30})};
-  if(cron!=='*/5 * * * *')return {ok:true,easyOrdersRecovery:'skipped'};
-  const result=await reconcileEasyOrdersOrders(env,{maxRequests:30,lookback:80});
-  const withFees=await reconcileRecoveredFees(env,result);
-  // Check both provider recovery and accounting side effects, with
-  // aggregate-only error codes after existing D1 order commits.
-  return assertEasyOrdersCronRecovered(withFees);
+  return {ok:true,easyOrdersRecovery:'skipped'};
 }
 
 export class SyncEntrypoint extends WorkerEntrypoint{
