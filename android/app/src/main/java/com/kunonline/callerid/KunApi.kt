@@ -489,9 +489,31 @@ object KunApi {
         }.getOrElse { StateResult(false, "تعذر قراءة بيانات النظام") }
     }
 
+    /** A short-lived, server-verified store picker result avoids repeating /api/me,
+     * /api/my-client-context and /api/my-store-context before each initial state read.
+     * Every subsequent API request still enforces current server-side tenant/store ACL. */
+    internal fun reusableVerifiedScope(
+        cookie: String, verifiedCookie: String, now: Long, expiresAt: Long, candidate: ScopeInfo?
+    ): ScopeInfo? =
+        candidate?.takeIf { cookie == verifiedCookie && now < expiresAt && it.clientId.isNotBlank() }
+
     @Synchronized internal fun resolveScope(cookie: String, context: Context? = null): ScopeInfo {
         val cached = cachedScope
-        if (scopeCookie == cookie && cached != null && SystemClock.elapsedRealtime() < scopeExpiresAt) return cached
+        val now = SystemClock.elapsedRealtime()
+        if (scopeCookie == cookie && cached != null && now < scopeExpiresAt) return cached
+        // Only reuse a valid server-verified assignment for the same session.
+        // Store switches clear scope and update the verified selection.
+        val verified = context?.let { cachedStoreOptions(it) }
+        val fastScope = reusableVerifiedScope(
+            cookie, verifiedOptionsCookie, now, verifiedOptionsUntil,
+            verified?.takeIf { it.ok }?.current
+        )
+        if (fastScope != null) {
+            scopeCookie = cookie
+            cachedScope = fastScope
+            scopeExpiresAt = verifiedOptionsUntil
+            return fastScope
+        }
         var clientId = ""
         var storeId = ""
         val saved = context?.let {
