@@ -14,8 +14,8 @@ export async function renderGuard(source,payload,{store='store-1',httpOk=true,ne
     getElementById(id){if(id==='root')return root;if(id==='storeBtn')return {value:store};if(id==='kunDashSyncGuard'&&html)return {remove(){html='';},querySelector(){return null;}};return null;}
   };
   const window={};
-  vm.runInNewContext(source,{window,document,Date,fetch:async url=>{
-    assert.match(url,/^\/health\/easyorders-sync\?/);calls++;
+  vm.runInNewContext(source,{window,document,Date,URLSearchParams,fetch:async url=>{
+    assert.match(url,/^\/api\/integrations\/easyorders\/dashboard-health\?/);assert.doesNotMatch(url,/clientId=/);calls++;
     if(networkError)throw new Error('offline');
     return {ok:httpOk,json:async()=>payload};
   }});
@@ -34,7 +34,7 @@ function environment(configs){
     }}
   };
 }
-const healthy={easyOrdersRecoveryHighestShortId:100,easyOrdersRecoveryCursor:101,easyOrdersRecoveryLastStatus:'healthy',easyOrdersRecoveryLastError:null};
+const healthy={easyOrdersRecoveryHighestShortId:100,easyOrdersRecoveryCursor:101,easyOrdersRecoveryLastStatus:'healthy',easyOrdersRecoveryLastError:null,easyOrdersRecoveryLastRunAt:new Date().toISOString()};
 async function getHealth(env){
   const response=await production.fetch(new Request('https://app.kun-online.com/health/easyorders-sync'),env,{});
   assert.equal(response.headers.get('Cache-Control'),'no-store');
@@ -53,25 +53,36 @@ async function main(){
   hooks.deregister();
   const source=await readFile('public/v2/modules-v121-dashboard-sync-guard.js','utf8');
   const {payload}=await getHealth(environment([healthy]));
+  const toTenant=data=>({...data,source:'tenant',scope:'client'});
   assert.equal(payload.source,'preview');assert.equal(payload.status,'healthy');assert.equal(payload.canonical.connections,1);
-  assert.equal((await renderGuard(source,payload)).html,'');
-  assert.doesNotMatch((await renderGuard(source,payload,{store:''})).html,/متوقفة|يرفض|تعذر/);
+  assert.match((await renderGuard(source,payload)).html,/تعذر التحقق/,'global platform health cannot be shown as tenant health');
+  assert.equal((await renderGuard(source,toTenant(payload))).html,'');
+  assert.doesNotMatch((await renderGuard(source,toTenant(payload),{store:''})).html,/متوقفة|يرفض|تعذر/);
   // Stale Production counters cannot override a successful canonical read.
-  assert.equal((await renderGuard(source,{...payload,runtimeDiagnostics:{failureCode:null,invalidApiKeyClients:1,unreadableKeyClients:1}})).html,'');
+  assert.equal((await renderGuard(source,{...toTenant(payload),runtimeDiagnostics:{failureCode:null,invalidApiKeyClients:1,unreadableKeyClients:1}})).html,'');
+  const {payload:stopped}=await getHealth(environment([{
+    ...healthy,easyOrdersRecoveryLastRunAt:'2026-10-01T00:00:00.000Z'
+  }]));
+  assert.equal(stopped.status,'scheduler_stale');
+  assert.equal(stopped.runtimeDiagnostics.failureCode,'EASYORDERS_RECOVERY_STALE');
+  // Tenant rendering is intentionally protected against unscoped platform
+  // aggregate health; only a separately authorized tenant health may warn.
+  assert.match((await renderGuard(source,toTenant(stopped))).html,/مزامنة Easy Orders متوقفة|فحص الطلبات/);
+  assert.match((await renderGuard(source,stopped)).html,/تعذر التحقق/);
   const stale={ok:true,runtimeDiagnostics:{failureCode:'EASYORDERS_API_KEY_INVALID',invalidApiKeyClients:1}};
   assert.match((await renderGuard(source,stale)).html,/تعذر التحقق/);
   assert.doesNotMatch((await renderGuard(source,stale)).html,/يرفض|متوقفة/);
   for(const [error,expected] of [['Api-key not valid provider-secret','يرفض'],['cannot be decrypted provider-secret','تعذر قراءة'],['provider unavailable provider-secret','توجد مشكلة']]){
     const {payload:p}=await getHealth(environment([healthy,{...healthy,easyOrdersRecoveryLastStatus:'error',easyOrdersRecoveryLastError:error}]));
     assert.equal(p.canonical.errorConnections,1);
-    assert.match((await renderGuard(source,p)).html,new RegExp(expected));
+    assert.match((await renderGuard(source,toTenant(p))).html,new RegExp(expected));
   }
   const {payload:limited}=await getHealth(environment([{...healthy,easyOrdersRecoveryLastStatus:'rate_limited'}]));
-  assert.match((await renderGuard(source,limited)).html,/تأخير مؤقت/);
-  const {payload:waiting}=await getHealth(environment([{}]));
-  assert.equal(waiting.status,'waiting_for_short_id');assert.equal((await renderGuard(source,waiting)).html,'');
+  assert.match((await renderGuard(source,toTenant(limited))).html,/تأخير مؤقت/);
+  const {payload:waiting}=await getHealth(environment([{easyOrdersRecoveryLastRunAt:new Date().toISOString()}]));
+  assert.equal(waiting.status,'waiting_for_short_id');assert.equal((await renderGuard(source,toTenant(waiting))).html,'');
   const {payload:disconnected}=await getHealth(environment([]));
-  assert.match((await renderGuard(source,disconnected)).html,/لا يوجد اتصال/);
+  assert.match((await renderGuard(source,toTenant(disconnected))).html,/لا يوجد اتصال/);
   const failedDatabase=environment([]);failedDatabase.PREVIEW_DB={prepare(){throw new Error('database unavailable');}};
   for(const env of [{PREVIEW_APP:{fetch(){}}},{PREVIEW_DB:{}},failedDatabase]){
     const {payload:p,response}=await getHealth(env);assert.equal(response.status,503);
@@ -79,7 +90,7 @@ async function main(){
   }
   assert.match((await renderGuard(source,null,{networkError:true})).html,/تعذر التحقق/);
   const htmlResponse=await production.fetch(new Request('https://app.kun-online.com/'),{ASSETS:{fetch:async()=>new Response('<body><script src="/v2/modules-v121-dashboard-sync-guard.js?v=121.0"></script></body>',{headers:{'Content-Type':'text/html'}})}},{});
-  assert.match(await htmlResponse.text(),/modules-v121-dashboard-sync-guard.js\?v=121.1/);
-  console.log('Dashboard sync guard regression passed: Preview health, real failures, unavailable source, no Production reads/writes, and cache version.');
+  assert.match(await htmlResponse.text(),/modules-v121-dashboard-sync-guard.js\?v=121.3/);
+  console.log('Dashboard sync guard regression passed: tenant dashboard isolation, Preview aggregate is not tenant health, safe failures, and cache version.');
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href)await main();
