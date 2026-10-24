@@ -47,7 +47,7 @@ export async function revokeAcrossBoth(env,sessionToken,expiresAt){
     db.prepare('INSERT INTO '+CANONICAL+' (token_hash,expires_at,revoked_at) VALUES (?,?,?) ON CONFLICT(token_hash) DO UPDATE SET expires_at=MAX('+CANONICAL+'.expires_at,excluded.expires_at)').bind(hash,expiry,revokedAt)
   ];
   // Cloudflare D1 batch() is transactional. Never silently fall back to
-  // separate .run() calls or pretend partial success is a completed logout.
+  // independent writes or pretend partial success is a completed logout.
   const results=await db.batch(queries);
   if(!Array.isArray(results)||results.length!==2||results.some(x=>x?.success!==true))
     throw new Error('Atomic D1 revocation batch did not confirm both writes');
