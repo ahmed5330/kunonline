@@ -69,4 +69,6 @@ assert.match(v34,/if\(cron==='\*\/5 \* \* \* \*'\)/,
   'Only the five-minute Cron uses prioritized Easy Orders recovery');
 assert.match(v34,/startEasyOrdersBeforeLegacy\(/,
   'Legacy background tasks must not precede the order recovery task');
+assert.match(v34,/lookback:80,trigger:'cron'/,
+  'Only a genuine five-minute scheduled call may record the Cron heartbeat');
 console.log('Easy Orders scheduler result contract PASS: healthy/partial budget, 429, provider error, missing result, no PII and dedicated Worker RPC rejection. NO cloud calls.');
