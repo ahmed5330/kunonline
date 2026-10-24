@@ -33,6 +33,8 @@ export async function inspectPublicEasyOrdersRuntime({fetcher=fetch}={}){
     row.service=short(data.service);
     row.build=short(data.build);
     row.upstreamHealthResponded=data.upstream?.ok===true;
+    row.upstreamBuild=short(data.upstream?.build);
+    row.upstreamEnvironment=short(data.upstream?.environment);
     row.recoveryCronAdvertised=data.policy?.easyOrdersRecovery==='every-5-minutes';
     // An RPC health response is NOT proof that the five-minute Cron fires.
     row.cronExecutionProven=false;
@@ -41,10 +43,17 @@ export async function inspectPublicEasyOrdersRuntime({fetcher=fetch}={}){
     row.entrypoint=short(data.entrypoint);
     row.appEnv=short(data.environment);
    }else{
+    row.build=short(data.build);
     row.status=short(data.status);
     row.dataSource=short(data.source);
     row.failureCode=short(data.runtimeDiagnostics?.failureCode);
     row.connectedIntegrations=integer(data.canonical?.connections);
+    row.errorIntegrations=integer(data.canonical?.errorConnections);
+    row.catchingUpIntegrations=integer(data.canonical?.catchingUpConnections);
+    row.waitingIntegrations=integer(data.canonical?.waitingConnections);
+    row.healthyIntegrations=integer(data.canonical?.healthyConnections);
+    row.invalidApiKeyIntegrations=integer(data.runtimeDiagnostics?.invalidApiKeyClients);
+    row.unreadableApiKeyIntegrations=integer(data.runtimeDiagnostics?.unreadableKeyClients);
     row.staleRecoveryConnections=integer(data.runtimeDiagnostics?.staleRecoveryConnections);
     row.neverRanRecoveryConnections=integer(data.runtimeDiagnostics?.neverRanRecoveryConnections);
     row.staleAfterMinutes=integer(data.runtimeDiagnostics?.staleAfterMinutes);
