@@ -6,6 +6,7 @@ import {syncMetaAdsForClient} from './meta-ads-sync.js';
 import {syncMetaAdsGranular} from './meta-ads-granular.js';
 import {metaAdsExpertAnalysisV2} from './meta-ads-expert.js';
 import {easyOrdersRecoveryStatus,reconcileEasyOrdersOrders} from './easyorders-order-reconciliation.js';
+import {mutateEasyOrdersConfig,mergeEasyOrdersRecoveryPatch} from './easyorders-connection-config.js';
 import {reconcileManagementFeeForOrder} from './accounting.js';
 import {clearProductInventory,clearStaleBatchStockIfProductZero} from './inventory-clear.js';
 import {prepareIncomingEasyOrdersDedupe,prepareEasyOrdersSheetRows,persistEasyOrdersLineItems,restoreNativeSourceForMatchedSheetOrders} from './order-deduplication.js';
@@ -26,15 +27,22 @@ function cleanDate(value){return /^\d{4}-\d{2}-\d{2}$/.test(String(value||''))?S
 function requestedRange(input={}){const to=cleanDate(input.to)||new Date().toISOString().slice(0,10),rawFrom=String(input.from||''),from=rawFrom==='beginning'?null:cleanDate(rawFrom);let days=30;if(from){days=Math.max(1,Math.min(90,Math.floor((new Date(`${to}T00:00:00Z`)-new Date(`${from}T00:00:00Z`))/86400000)+1));}else if(rawFrom==='beginning')days=90;return {from:from||undefined,to,days};}
 async function reconcileRecoveredFees(env,result){for(const id of result?.recoveredOrderIds||[])await reconcileManagementFeeForOrder(env,id).catch(()=>{});return result;}
 async function rememberEasyOrdersShortId(env,connectionId,rawPayload){
-  const order=webhookOrderPayload(rawPayload),shortId=positiveInt(order.short_id||order.shortId||rawPayload?.short_id||rawPayload?.shortId);if(!shortId||!connectionId)return;
-  const row=await env.DB.prepare("SELECT id,client_id,config_json FROM store_connections WHERE id=? AND provider='easyorders' AND status='connected'").bind(connectionId).first();if(!row)return;
-  const fresh=await env.DB.prepare('SELECT config_json FROM store_connections WHERE id=? AND client_id=?').bind(row.id,row.client_id).first(),config=parseConfig(fresh||row),oldHigh=positiveInt(config.easyOrdersRecoveryHighestShortId),oldCursor=positiveInt(config.easyOrdersRecoveryCursor);
-  config.webhookLastShortId=shortId;
-  config.easyOrdersRecoveryHighestShortId=Math.max(oldHigh,shortId);
-  if(!oldCursor)config.easyOrdersRecoveryCursor=Math.max(1,shortId-80);
-  if(!config.easyOrdersRecoverySeededAt)config.easyOrdersRecoverySeededAt=new Date().toISOString();
-  config.easyOrdersRecoveryLastError=null;
-  await env.DB.prepare('UPDATE store_connections SET config_json=?,updated_at=? WHERE id=? AND client_id=?').bind(JSON.stringify(config),new Date().toISOString(),row.id,row.client_id).run();
+  const order=webhookOrderPayload(rawPayload);
+  const shortId=positiveInt(order.short_id||order.shortId||rawPayload?.short_id||rawPayload?.shortId);
+  if(!shortId||!connectionId)return;
+  const connection=await env.DB.prepare("SELECT id,client_id,config_json FROM store_connections WHERE id=? AND provider='easyorders' AND status='connected'")
+    .bind(connectionId).first();
+  if(!connection)return;
+  await mutateEasyOrdersConfig(env,connection,current=>{
+    const oldCursor=positiveInt(current.easyOrdersRecoveryCursor);
+    const previousHigh=positiveInt(current.easyOrdersRecoveryHighestShortId);
+    return mergeEasyOrdersRecoveryPatch(current,{
+      webhookLastShortId:shortId,
+      easyOrdersRecoveryHighestShortId:Math.max(previousHigh,shortId),
+      ...(oldCursor?{}:{easyOrdersRecoveryCursor:Math.max(1,shortId-80)}),
+      ...(!current.easyOrdersRecoverySeededAt?{easyOrdersRecoverySeededAt:new Date().toISOString()}:{})
+    });
+  });
 }
 
 async function connectedMetaClients(env,{limit=50}={}){
@@ -91,7 +99,7 @@ async function fetchV34(request,env,ctx){
     const easyWebhook=path.match(/^\/webhooks\/easyorders\/([^/]+)\/[^/]+\/?$/);
     if(easyWebhook&&method==='POST'){
       const connectionId=decodeURIComponent(easyWebhook[1]),payload=await request.clone().json().catch(()=>({})),prepared=await prepareIncomingEasyOrdersDedupe(env,{connectionId,payload}).catch(()=>({matched:false,payload})),response=await commerceV33.fetch(request,env,ctx);
-      if(response.ok){await rememberEasyOrdersShortId(env,connectionId,payload).catch(()=>{});const data=await response.clone().json().catch(()=>({})),orderId=data.id||prepared.orderId||null,clientId=prepared.clientId||null,storeId=prepared.storeId||null;if(orderId&&clientId)await persistEasyOrdersLineItems(env,{clientId,storeId,orderId,payload,skip:prepared.matched}).catch(()=>{});if(prepared.matched)return json({...data,id:orderId,deduplicatedExact:true,dedupeMode:'strict-full-order'},response.status);}
+      if(response.ok){await rememberEasyOrdersShortId(env,connectionId,payload).catch(error=>console.error('Easy Orders webhook checkpoint update failed',error?.code||'CONCURRENT_CONFIG_WRITE'));const data=await response.clone().json().catch(()=>({})),orderId=data.id||prepared.orderId||null,clientId=prepared.clientId||null,storeId=prepared.storeId||null;if(orderId&&clientId)await persistEasyOrdersLineItems(env,{clientId,storeId,orderId,payload,skip:prepared.matched}).catch(()=>{});if(prepared.matched)return json({...data,id:orderId,deduplicatedExact:true,dedupeMode:'strict-full-order'},response.status);}
       return response;
     }
     if(path==='/api/commerce/order-sync/recovery-status'&&method==='GET'){
