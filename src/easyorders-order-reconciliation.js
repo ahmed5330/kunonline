@@ -219,6 +219,16 @@ export async function reconcileEasyOrdersOrders(env,{clientId=null,storeId=null,
     remaining-=result.requests;out.requests+=result.requests;out.recovered+=result.recovered;out.updated+=result.updated;out.missing+=result.missing;out.foreignStoreSkipped+=result.foreignStoreSkipped;if(result.seeded)out.seeded++;if(result.rateLimited)out.rateLimited=true;out.recoveredOrderIds.push(...result.recoveredOrderIds);out.results.push(result);
   }
   Object.assign(out,aggregateRecovery(out.results));
+  // Do not claim a globally successful recovery when a connection failed or
+  // upstream throttled it. The 5-minute scheduler may be limited to 30
+  // requests; expose deferred work without treating an ordinary budget
+  // rotation as a provider error.
+  out.checkedConnections=out.results.length;
+  out.uncheckedConnections=Math.max(0,selected.length-out.checkedConnections);
+  out.failedConnections=out.results.filter(row=>row.status==='error').length;
+  out.rateLimitedConnections=out.results.filter(row=>row.status==='rate_limited').length;
+  out.completedAllConnections=out.uncheckedConnections===0;
+  out.ok=out.failedConnections===0&&out.rateLimitedConnections===0;
   return out;
 }
 
