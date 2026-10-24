@@ -31,9 +31,16 @@ async function routeToken(env,connection){const secret=text(env.EASYORDERS_WEBHO
 export async function easyOrdersWebhookPath(env,connection){return `/webhooks/easyorders/${encodeURIComponent(connection.id)}/${await routeToken(env,connection)}`;}
 async function defaultStoreId(env,clientId){const row=await env.DB.prepare("SELECT id FROM stores WHERE client_id=? AND status='active' ORDER BY is_default DESC,created_at LIMIT 1").bind(clientId).first();return row?.id||null;}
 async function resolveKunStoreId(env,connection){const config=parseConfig(connection),configured=text(config.kunStoreId||config.storeId);if(configured){const found=await env.DB.prepare("SELECT id FROM stores WHERE id=? AND client_id=? AND status='active'").bind(configured,connection.client_id).first();if(found)return found.id;}const fallback=await defaultStoreId(env,connection.client_id);if(fallback&&!configured){
-    await mutateEasyOrdersConfig(env,connection,current=>({
+    const saved=await mutateEasyOrdersConfig(env,connection,current=>({
       ...current,kunStoreId:text(current.kunStoreId||current.storeId)||fallback
     }));
+    const selected=text(saved.kunStoreId||saved.storeId);
+    if(selected!==fallback){
+      const found=await env.DB.prepare("SELECT id FROM stores WHERE id=? AND client_id=? AND status='active'")
+        .bind(selected,connection.client_id).first();
+      if(!found)throw Object.assign(new Error('ربط Easy Orders تغيّر إلى متجر غير نشط'),{status:409,code:'EASYORDERS_STORE_CHANGED'});
+      return found.id;
+    }
   }return fallback;}
 function normalizePhone(raw){let d=text(raw).replace(/[^\d]/g,'');if(d.startsWith('0020'))d='0'+d.slice(4);else if(d.startsWith('20')&&d.length===12)d='0'+d.slice(2);else if(d.startsWith('00966'))d='0'+d.slice(5);else if(d.startsWith('966')&&d.length===12)d='0'+d.slice(3);return d||null;}
 
