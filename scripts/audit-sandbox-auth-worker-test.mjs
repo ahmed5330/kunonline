@@ -56,7 +56,7 @@ try{
   assert.equal(res.status,200);assert.equal(res.body.kind,'isolated_auth_sandbox');
   assert.equal(res.body.deployVerified,false);
   assert.equal((await call('/api/login')).status,404,'Never expose production auth routes');
-  assert.equal((await call('/api/orders',{toString(){return 'POST';}})).status,404);
+  assert.equal((await call('/api/orders','POST')).status,404);
   assert.equal((await call('/qa/revocation-selftest','GET')).status,404);
   assert.equal((await call('/qa/revocation-selftest','POST')).status,403);
   assert.equal((await call('/qa/revocation-selftest','POST',{'X-Audit-QA-Key':'wrong'})).status,403);
