@@ -8,6 +8,11 @@ on:
       - 'src/commerce-order-sync.js'
       - 'scripts/easyorders-sync-concurrency-sqlite-test.mjs'
       - 'src/index-commerce-v34.js'
+      - 'src/easyorders-cron-priority.js'
+      - 'src/easyorders-order-reconciliation.js'
+      - 'src/easyorders-connection-config.js'
+      - 'scripts/easyorders-cron-priority-test.mjs'
+      - 'scripts/easyorders-scheduler-outcome-test.mjs'
       - 'scripts/easyorders-explicit-gap-replay-test.mjs'
       - '.github/workflows/easyorders-selective-replay-fake-qa.yml'
   workflow_dispatch:
@@ -32,6 +37,7 @@ jobs:
           node scripts/easyorders-explicit-gap-replay-test.mjs
           node scripts/easyorders-store-gap-audit-test.mjs
           node scripts/easyorders-sync-concurrency-sqlite-test.mjs
+          node scripts/easyorders-cron-priority-test.mjs
           node scripts/easyorders-scheduler-outcome-test.mjs
           node scripts/easyorders-recovered-fee-guard-test.mjs
       - name: Assert runtime replay flag is disabled unless explicitly set
