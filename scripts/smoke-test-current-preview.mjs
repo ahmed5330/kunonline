@@ -22,8 +22,8 @@ async function resolveVersionOwner(start){
     // compatibility route with a newer version endpoint. Verify the public
     // build belonging to the REAL configured main entrypoint, not the first
     // nested module that happened to define a generic BUILD constant.
-    const ownBuild=source.match(/(?:export\\s+)?const\\s+KUN_PREVIEW_ENTRYPOINT_BUILD\\s*=\\s*['"]([^'"]+)['"]/i)?.[1]||'';
-    const build=ownBuild||source.match(/const\\s+BUILD\\s*=\\s*['"]([^'"]+)['"]/i)?.[1]||'';
+    const ownBuild=source.match(/(?:export\s+)?const\s+KUN_PREVIEW_ENTRYPOINT_BUILD\s*=\s*['"]([^'"]+)['"]/i)?.[1]||'';
+    const build=ownBuild||source.match(/const\s+BUILD\s*=\s*['"]([^'"]+)['"]/i)?.[1]||'';
     if(source.includes('/api/preview/version')&&build){
       return {filename,build,entrypoint:path.basename(filename)};
     }
