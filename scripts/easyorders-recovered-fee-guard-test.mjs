@@ -38,8 +38,8 @@ assert.ok(!Object.hasOwn(fake,'feeReconciliation'),'Original result must not be 
 const upstream={...fake,ok:false,failedConnections:1,results:[{status:'error'}]};
 const combined=await reconcileEasyOrdersRecoveredFees(upstream,async()=>({ok:true,status:'active'}));
 assert.equal(combined.ok,false,'Fee success must not mask failed provider ingest');
-assert.equal(assert.throws(()=>assertEasyOrdersCronRecovered(combined)).code,
-  'EASYORDERS_CRON_RECOVERY_FAILED');
+assert.throws(()=>assertEasyOrdersCronRecovered(combined),error=>
+  error.code==='EASYORDERS_CRON_RECOVERY_FAILED');
 
 await assert.rejects(reconcileEasyOrdersRecoveredFees(null,async()=>({ok:true})),
   /EASYORDERS_FEE_RECONCILIATION_RESULT_INVALID/);
