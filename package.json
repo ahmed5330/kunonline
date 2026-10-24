@@ -46,7 +46,7 @@
     "test:android-chat-schema-ux": "node scripts/android-chat-schema-ux-test.mjs",
     "test:customer-service-notes": "node scripts/customer-service-notes-product-cards-test.mjs",
     "test:session-revocation-20261023": "node scripts/session-revocation-20261023-test.mjs",
-    "test:session-revocation-schema": "node scripts/session-revocation-schema-contract.mjs && node scripts/session-revocation-schema-contract-test.mjs && node scripts/pr209-main-reconciliation-guard.mjs",
+    "test:session-revocation-schema": "node scripts/session-revocation-schema-contract.mjs && node scripts/session-revocation-schema-contract-test.mjs && node scripts/pr209-main-reconciliation-guard.mjs && node scripts/session-revocation-live-schema-inventory-test.mjs",
     "test:preview-migration-safety": "node scripts/preview-migration-release-guard-test.mjs",
     "test:legacy-secret-encryption-20261023": "node scripts/legacy-secret-encryption-20261023-test.mjs",
     "test:cloudflare-secret-preflight": "node scripts/cloudflare-secret-name-preflight-test.mjs",
@@ -95,7 +95,8 @@
     "test:clarity-growth": "node scripts/clarity-growth-test.mjs && node scripts/clarity-readable-ui-test.mjs",
     "test:ai-marketing": "node --check src/ai-marketing-analyst.js && node --check public/v2/modules-v138-ai-marketing.js && node scripts/ai-marketing-test.mjs",
     "test:competitors": "node --check src/competitor-intelligence.js && node --check public/v2/modules-v139-competitors.js && node scripts/competitor-intelligence-test.mjs",
-    "test:prod-mobile-store": "node scripts/production-mobile-store-context-test.mjs"
+    "test:prod-mobile-store": "node scripts/production-mobile-store-context-test.mjs",
+    "audit:session-schema:read-only": "node scripts/session-revocation-live-schema-inventory.mjs --read-only"
   },
   "devDependencies": {
     "wrangler": "4.125.0"
