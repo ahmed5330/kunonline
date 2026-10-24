@@ -356,5 +356,64 @@ try{
   assert.equal(config('CON-SERVER').easyOrdersRecoveryCursor,802);
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM orders WHERE ref='easyorders:SERVER-RECOVER-800'").get().n,1);
   assert.deepEqual(serverAttempts,[800,800,801],'503 retry must fetch exactly the failed Short ID');
+  // A busy shared provider can return >30 consecutive orders owned by a
+  // DIFFERENT storefront. Each verified foreign Short ID is safe to advance
+  // past between cron runs. Without a separate ahead cursor the scheduler
+  // would inspect the same first 30 forever, losing later local orders.
+  db.prepare('INSERT INTO stores VALUES (?,?,?,?,?)').run('STORE-PROBE','TENANT-A','active',0,now);
+  db.prepare('INSERT INTO store_connections (id,client_id,provider,status,config_json,updated_at,external_store_id) VALUES (?,?,?,?,?,?,?)')
+    .run('CON-PROBE','TENANT-A','easyorders','connected',JSON.stringify({
+      kunStoreId:'STORE-PROBE',easyOrdersRecoveryHighestShortId:899,
+      easyOrdersRecoveryCursor:900
+    }),now,'EO-PROBE');
+  db.prepare('INSERT INTO integration_secrets VALUES (?,?,?,?,?)')
+    .run('TENANT-A','CON-PROBE','api_key',secret.ciphertextB64,secret.ivB64);
+  const inspectedIds=[];
+  const probeApi=async url=>{
+    const shortId=Number(url.split('/').at(-1));inspectedIds.push(shortId);
+    if(shortId>=900&&shortId<=934)return Response.json({
+      ...p,id:'FOREIGN-'+shortId,short_id:shortId,store_id:'EO-FOREIGN'
+    });
+    if(shortId===935)return Response.json({
+      ...p,id:'PROBE-935',short_id:935,store_id:'EO-PROBE'
+    });
+    return Response.json({message:'record not found'},{status:404});
+  };
+  const probeRun=()=>reconcileEasyOrdersOrders(env,{
+    clientId:'TENANT-A',connectionId:'CON-PROBE',maxRequests:15,fetcher:probeApi
+  });
+  const firstProbe=await probeRun();
+  assert.equal(firstProbe.recovered,0);
+  assert.equal(config('CON-PROBE').easyOrdersRecoveryProbeCursor,915);
+  const secondProbe=await probeRun();
+  assert.equal(secondProbe.recovered,0);
+  assert.equal(config('CON-PROBE').easyOrdersRecoveryProbeCursor,930);
+  const finalProbe=await probeRun();
+  assert.equal(finalProbe.recovered,1,'Same-store order beyond 30 foreign IDs must be reached');
+  assert.equal(config('CON-PROBE').easyOrdersRecoveryProbeCursor,936);
+  assert.deepEqual(inspectedIds.slice(0,36),Array.from({length:36},(_,i)=>900+i));
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM orders WHERE ref='easyorders:PROBE-935'").get().n,1);
+
+  // Unlike a confirmed foreign-store ID, HTTP 404 can refer to a future
+  // order. Never persist the probe past an unresolved missing ID.
+  db.prepare('INSERT INTO stores VALUES (?,?,?,?,?)').run('STORE-FUTURE','TENANT-A','active',0,now);
+  db.prepare('INSERT INTO store_connections (id,client_id,provider,status,config_json,updated_at,external_store_id) VALUES (?,?,?,?,?,?,?)')
+    .run('CON-FUTURE','TENANT-A','easyorders','connected',JSON.stringify({
+      kunStoreId:'STORE-FUTURE',easyOrdersRecoveryHighestShortId:1009,
+      easyOrdersRecoveryCursor:1010
+    }),now,'EO-FUTURE');
+  db.prepare('INSERT INTO integration_secrets VALUES (?,?,?,?,?)')
+    .run('TENANT-A','CON-FUTURE','api_key',secret.ciphertextB64,secret.ivB64);
+  const futureApi=async url=>{
+    const id=Number(url.split('/').at(-1));
+    if(id===1010)return Response.json({message:'record not found'},{status:404});
+    return Response.json({...p,id:'FOREIGN-'+id,short_id:id,store_id:'EO-FOREIGN'});
+  };
+  await reconcileEasyOrdersOrders(env,{
+    clientId:'TENANT-A',connectionId:'CON-FUTURE',maxRequests:3,fetcher:futureApi
+  });
+  assert.equal(config('CON-FUTURE').easyOrdersRecoveryProbeCursor,1010,
+    'A missing future order must be retried, not checkpointed past a foreign order');
+
   console.log('Easy Orders SQLite sync PASS: concurrent webhook/cron CAS, monotonic high-water, correct catching-up, tenant+store collision isolation, idempotent retries.');
 }finally{db.close();}
