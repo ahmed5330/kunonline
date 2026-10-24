@@ -4,7 +4,7 @@ import {handleTenantEasyOrdersHealth} from '../src/tenant-easyorders-health.js';
 const rows=[
   {id:'conn-a',client_id:'tenant-a',provider:'easyorders',status:'connected',config_json:JSON.stringify({storeId:'a-1',easyOrdersRecoveryLastStatus:'error',easyOrdersRecoveryLastError:'HTTP 401 invalid api key'})},
   {id:'conn-b',client_id:'tenant-b',provider:'easyorders',status:'connected',config_json:JSON.stringify({storeId:'b-1',easyOrdersRecoveryHighestShortId:10,easyOrdersRecoveryCursor:11})},
-  {id:'conn-a2',client_id:'tenant-a',provider:'easyorders',status:'connected',config_json:JSON.stringify({storeId:'a-2',easyOrdersRecoveryHighestShortId:10,easyOrdersRecoveryCursor:11})}
+  {id:'conn-a2',client_id:'tenant-a',provider:'easyorders',status:'connected',config_json:JSON.stringify({storeId:'a-2',easyOrdersRecoveryHighestShortId:10,easyOrdersRecoveryCursor:11,easyOrdersRecoveryLastRunAt:new Date().toISOString()})}
 ];
 let reads=0,queries=[];
 const env={DB:{prepare(sql){
@@ -44,6 +44,33 @@ assert.deepEqual(sql.params,['tenant-a'],'connection query must use server sessi
 const scoped=await (await call(req('?storeId=a-2'))).json();
 assert.equal(scoped.connections,1);
 assert.equal(scoped.status,'healthy','other stores in same tenant do not contaminate the selected store');
+// Only the selected owner's connection may decide whether recovery is stale.
+// A second tenant's outage cannot poison the active customer's dashboard.
+const chosen=rows.find(row=>row.id==='conn-a2');
+const recentConfig=JSON.parse(chosen.config_json);
+assert.equal(scoped.runtimeDiagnostics.failureCode,null);
+const staleConfig={...recentConfig,easyOrdersRecoveryLastRunAt:'2026-10-23T00:00:00.000Z'};
+chosen.config_json=JSON.stringify(staleConfig);
+const stale=await (await call(req('?storeId=a-2'))).json();
+assert.equal(stale.status,'scheduler_stale');
+assert.equal(stale.runtimeDiagnostics.failureCode,'EASYORDERS_RECOVERY_STALE');
+assert.equal(stale.runtimeDiagnostics.staleRecoveryConnections,1);
+assert.equal(stale.runtimeDiagnostics.staleAfterMinutes,20);
+assert.equal(stale.connections,1);
+assert.doesNotMatch(JSON.stringify(stale),/tenant-a|tenant-b|conn-a2|config_json|lastError/);
+chosen.config_json=JSON.stringify({...recentConfig,easyOrdersRecoveryLastRunAt:null});
+const never=await (await call(req('?storeId=a-2'))).json();
+assert.equal(never.status,'scheduler_stale');
+assert.equal(never.runtimeDiagnostics.neverRanRecoveryConnections,1);
+chosen.config_json=JSON.stringify(recentConfig);
+const clear=await (await call(req('?storeId=a-2'))).json();
+assert.equal(clear.status,'healthy');
+assert.equal(clear.runtimeDiagnostics.staleRecoveryConnections,0);
+// In account-wide summaries explicit API-key errors remain the highest
+// priority; a missed heartbeat must not mask a broken integration key.
+const whole=await (await call(req())).json();
+assert.equal(whole.runtimeDiagnostics.failureCode,'EASYORDERS_API_KEY_INVALID');
+
 const rejected=await call(req('?storeId=b-1'));
 assert.equal(rejected.status,403,'cannot scope to another tenant store');
 assert.equal((await call(req('?storeId=a'.repeat(150)))).status,403,'oversized store identifiers are rejected');
