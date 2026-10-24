@@ -7,6 +7,7 @@ import {syncMetaAdsGranular} from './meta-ads-granular.js';
 import {metaAdsExpertAnalysisV2} from './meta-ads-expert.js';
 import {easyOrdersRecoveryStatus,reconcileEasyOrdersOrders} from './easyorders-order-reconciliation.js';
 import {mutateEasyOrdersConfig,mergeEasyOrdersRecoveryPatch} from './easyorders-connection-config.js';
+import {assertEasyOrdersCronRecovered} from './easyorders-scheduler-outcome.js';
 import {reconcileManagementFeeForOrder} from './accounting.js';
 import {clearProductInventory,clearStaleBatchStockIfProductZero} from './inventory-clear.js';
 import {prepareIncomingEasyOrdersDedupe,prepareEasyOrdersSheetRows,persistEasyOrdersLineItems,restoreNativeSourceForMatchedSheetOrders} from './order-deduplication.js';
@@ -137,7 +138,9 @@ async function runScheduledWithEasyOrdersRecovery(controller,env,ctx){
   if(cron!=='*/5 * * * *')return {ok:true,easyOrdersRecovery:'skipped'};
   const result=await reconcileEasyOrdersOrders(env,{maxRequests:30,lookback:80});
   await reconcileRecoveredFees(env,result);
-  return result;
+  // Preserve persisted checkpoints and order fees, but report a failed
+  // Cloudflare scheduled event for provider errors/429 instead of success.
+  return assertEasyOrdersCronRecovered(result);
 }
 
 export class SyncEntrypoint extends WorkerEntrypoint{
