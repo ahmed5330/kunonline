@@ -5,7 +5,8 @@ import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import {mutateEasyOrdersConfig,mergeEasyOrdersRecoveryPatch} from '../src/easyorders-connection-config.js';
 import {easyOrdersWebhookPath,handleEasyOrdersWebhook} from '../src/commerce-order-sync.js';
-import {fairEasyOrdersRecoveryOrder,reconcileEasyOrdersOrders} from '../src/easyorders-order-reconciliation.js';
+import {fairEasyOrdersRecoveryOrder,reconcileEasyOrdersOrders,easyOrdersRecoveryStatus} from '../src/easyorders-order-reconciliation.js';
+import {replayExplicitEasyOrdersStoreGaps} from '../src/easyorders-explicit-gap-replay.js';
 import {encryptSecret} from '../src/integration-secrets.js';
 
 const db=new DatabaseSync(':memory:');
@@ -142,6 +143,45 @@ try{
   assert.equal(db.prepare('SELECT state FROM orders WHERE id=?').get(third.id).state,'confirmed');
   assert.equal(db.prepare('SELECT state FROM orders WHERE id=?').get(b.id).state,'shipped');
 
+  // Historic replay cannot roll a shipped order back to pending, rewrite
+  // staff notes, or replace history—even if its provider payload is stale.
+  db.prepare("UPDATE orders SET state=?,note=?,history=?,contact_log=? WHERE id=?")
+    .run('shipped','STAFF-NOTE-MUST-STAY','[{"source":"staff"}]','[{"call":"handled"}]',a.id);
+  const pathA=await easyOrdersWebhookPath(env,connection('CON-A'));
+  const asReplay=payload=>handleEasyOrdersWebhook(new Request('https://offline.invalid'+pathA,{
+    method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)
+  }),env,{connectionId:'CON-A',routeToken:pathA.split('/').at(-1),createOnly:true});
+  const existingReplay=await asReplay({...p,status:'pending',full_name:'STALE_NAME'});
+  assert.equal(existingReplay.skippedExisting,true);
+  assert.deepEqual({...db.prepare('SELECT state,note,history,contact_log FROM orders WHERE id=?').get(a.id)},{
+    state:'shipped',note:'STAFF-NOTE-MUST-STAY',
+    history:'[{"source":"staff"}]',contact_log:'[{"call":"handled"}]'
+  },'Create-only replay must never overwrite existing customer-service work');
+
+  // A legacy order without a store ID must never be silently attributed
+  // to Wefaq (or any other store) by the historical recovery path.
+  db.prepare('INSERT INTO orders (id,client_id,store_id,ref,state,note) VALUES (?,?,?,?,?,?)')
+    .run('LEGACY-UNSCOPED','TENANT-A',null,'easyorders:LEGACY-UNSCOPED','shipped','KEEP-LEGACY-NOTE');
+  await assert.rejects(()=>asReplay({...p,id:'LEGACY-UNSCOPED',status:'pending'}),
+    {code:'EASYORDERS_RECOVERY_LEGACY_ORDER_AMBIGUOUS'});
+  assert.deepEqual({...db.prepare('SELECT store_id,state,note FROM orders WHERE id=?')
+    .get('LEGACY-UNSCOPED')},{
+    store_id:null,state:'shipped',note:'KEEP-LEGACY-NOTE'
+  },'Create-only history replay cannot claim or rewrite an unscoped legacy record');
+
+  // An actual insert may race AFTER the initial SELECT; create-only SQL must
+  // treat same-store concurrent insertion as already present without an upsert.
+  insertRaceId='RACE-SAME-STORE';
+  const raceReplay=await asReplay({...p,id:'RACE-SAME-STORE',status:'pending'});
+  assert.equal(raceReplay.skippedExisting,true,'Concurrent same-store creation should be idempotently skipped');
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM orders WHERE id='RACE-SAME-STORE'").get().n,1);
+  assert.equal(db.prepare("SELECT state FROM orders WHERE id='RACE-SAME-STORE'").get().state,null,
+    'Incoming stale state must not overwrite concurrently inserted order');
+
+  // Restore the original fixture state so unrelated legacy regression
+  // assertions below still test the original pending-order scenario.
+  db.prepare("UPDATE orders SET state='pending' WHERE id=?").run(a.id);
+
   // Inject a real insert between the initial SELECT and the first upsert:
   // both stores originally believe the external ID is unused. The losing
   // webhook must retry using a stable scoped ID, without overwriting a.
@@ -180,7 +220,9 @@ try{
   const recovery=await reconcileEasyOrdersOrders(env,{
     clientId:'TENANT-A',connectionId:'CON-D',maxRequests:3,lookback:10,fetcher:fakeApi
   });
-  assert.equal(recovery.results[0].status,'healthy',JSON.stringify(recovery.results[0]));
+  assert.equal(recovery.results[0].status,'catching_up',JSON.stringify(recovery.results[0]));
+  assert.equal(recovery.results[0].unresolvedAheadCount,1,
+    'An unresolved HTTP 404 must not be reported as a fully healthy connection');
   assert.deepEqual(seen,[500,501,502],'Foreign storefront response cannot terminate recovery scan');
   assert.equal(recovery.foreignStoreSkipped,1,'Foreign storefront is observed but never ingested');
   assert.equal(recovery.recovered,1,'Sibling Kun store with same provider ID is a NEW recovery');
@@ -196,6 +238,26 @@ try{
     'No order from another Easy Orders store may enter the Kun database');
   assert.equal(db.prepare('SELECT state FROM orders WHERE id=?').get(a.id).state,'pending',
     'Recovery must not change existing sibling store order');
+  // Scheduled catch-up repeats a provider order that is already confirmed
+  // or shipped locally. It MUST NOT replay stale source fields over staff
+  // notes, shipping state, contact history, or existing charges.
+  db.prepare("UPDATE orders SET state='shipped',checkpoint='جاري الشحن',note='KEEP-STAFF-NOTE',contact_log='[{\"call\":\"saved\"}]',history='[{\"type\":\"staff-handled\"}]',address='KEEP-STAFF-ADDRESS' WHERE id=?")
+    .run(recoveredId);
+  const existingD=config('CON-D');
+  db.prepare('UPDATE store_connections SET config_json=? WHERE id=?')
+    .run(JSON.stringify({...existingD,easyOrdersRecoveryCursor:501}),'CON-D');
+  const replayOfExisting=await reconcileEasyOrdersOrders(env,{
+    clientId:'TENANT-A',connectionId:'CON-D',maxRequests:2,lookback:10,
+    fetcher:fakeApi
+  });
+  assert.equal(replayOfExisting.recovered,0,'Scheduled recovery must not count existing orders as new');
+  assert.equal(replayOfExisting.updated,1,'Already-imported orders are counted as skipped');
+  assert.deepEqual({...db.prepare('SELECT state,checkpoint,note,contact_log,history,address FROM orders WHERE id=?').get(recoveredId)},{
+    state:'shipped',checkpoint:'جاري الشحن',note:'KEEP-STAFF-NOTE',
+    contact_log:'[{"call":"saved"}]',history:'[{"type":"staff-handled"}]',
+    address:'KEEP-STAFF-ADDRESS'
+  },'Scheduled recovery must never overwrite already handled live orders');
+
   // Unbound integrations must be explicitly repaired via authenticated
   // webhook rather than assigning the first random provider store from API.
   db.prepare('INSERT INTO store_connections (id,client_id,provider,status,config_json,updated_at,external_store_id) VALUES (?,?,?,?,?,?,?)')
@@ -308,5 +370,205 @@ try{
   assert.equal(config('CON-SERVER').easyOrdersRecoveryCursor,802);
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM orders WHERE ref='easyorders:SERVER-RECOVER-800'").get().n,1);
   assert.deepEqual(serverAttempts,[800,800,801],'503 retry must fetch exactly the failed Short ID');
+  // A busy shared provider can return >30 consecutive orders owned by a
+  // DIFFERENT storefront. Each verified foreign Short ID is safe to advance
+  // past between cron runs. Without a separate ahead cursor the scheduler
+  // would inspect the same first 30 forever, losing later local orders.
+  db.prepare('INSERT INTO stores VALUES (?,?,?,?,?)').run('STORE-PROBE','TENANT-A','active',0,now);
+  db.prepare('INSERT INTO store_connections (id,client_id,provider,status,config_json,updated_at,external_store_id) VALUES (?,?,?,?,?,?,?)')
+    .run('CON-PROBE','TENANT-A','easyorders','connected',JSON.stringify({
+      kunStoreId:'STORE-PROBE',easyOrdersRecoveryHighestShortId:899,
+      easyOrdersRecoveryCursor:900
+    }),now,'EO-PROBE');
+  db.prepare('INSERT INTO integration_secrets VALUES (?,?,?,?,?)')
+    .run('TENANT-A','CON-PROBE','api_key',secret.ciphertextB64,secret.ivB64);
+  const inspectedIds=[];
+  const probeApi=async url=>{
+    const shortId=Number(url.split('/').at(-1));inspectedIds.push(shortId);
+    if(shortId>=900&&shortId<=934)return Response.json({
+      ...p,id:'FOREIGN-'+shortId,short_id:shortId,store_id:'EO-FOREIGN'
+    });
+    if(shortId===935)return Response.json({
+      ...p,id:'PROBE-935',short_id:935,store_id:'EO-PROBE'
+    });
+    return Response.json({message:'record not found'},{status:404});
+  };
+  const probeRun=()=>reconcileEasyOrdersOrders(env,{
+    clientId:'TENANT-A',connectionId:'CON-PROBE',maxRequests:15,fetcher:probeApi
+  });
+  const firstProbe=await probeRun();
+  assert.equal(firstProbe.recovered,0);
+  assert.equal(config('CON-PROBE').easyOrdersRecoveryProbeCursor,915);
+  const secondProbe=await probeRun();
+  assert.equal(secondProbe.recovered,0);
+  assert.equal(config('CON-PROBE').easyOrdersRecoveryProbeCursor,930);
+  const finalProbe=await probeRun();
+  assert.equal(finalProbe.recovered,1,'Same-store order beyond 30 foreign IDs must be reached');
+  assert.ok(config('CON-PROBE').easyOrdersRecoveryProbeCursor>=936,
+    'Ahead probe may continue after the own-store order when unused budget remains');
+  assert.ok(config('CON-PROBE').easyOrdersRecoveryPendingShortIds.includes(936),
+    'Unknown 404 after last own-store order is retained for future retry');
+  assert.deepEqual(inspectedIds.slice(0,36),Array.from({length:36},(_,i)=>900+i));
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM orders WHERE ref='easyorders:PROBE-935'").get().n,1);
+
+  // Once a 404 is durably queued, newer Short IDs must remain discoverable.
+  // Simulate 35 missing source IDs followed by a real store order: no infinite
+  // rescans of the first 30, no permanent skip of the delayed source records.
+  db.prepare('INSERT INTO stores VALUES (?,?,?,?,?)').run('STORE-HOLES','TENANT-A','active',0,now);
+  db.prepare('INSERT INTO store_connections (id,client_id,provider,status,config_json,updated_at,external_store_id) VALUES (?,?,?,?,?,?,?)')
+    .run('CON-HOLES','TENANT-A','easyorders','connected',JSON.stringify({
+      kunStoreId:'STORE-HOLES',easyOrdersRecoveryHighestShortId:1199,
+      easyOrdersRecoveryCursor:1200
+    }),now,'EO-HOLES');
+  db.prepare('INSERT INTO integration_secrets VALUES (?,?,?,?,?)')
+    .run('TENANT-A','CON-HOLES','api_key',secret.ciphertextB64,secret.ivB64);
+  let lateHoleAvailable=false;
+  const holeApi=async url=>{
+    const id=Number(url.split('/').at(-1));
+    if(id===1235||lateHoleAvailable&&id===1202)
+      return Response.json({...p,id:'OWN-'+id,short_id:id,store_id:'EO-HOLES'});
+    if(id>1235)return Response.json({...p,id:'FOREIGN-'+id,short_id:id,store_id:'EO-OTHER'});
+    return Response.json({message:'record not found'},{status:404});
+  };
+  let foundBeyondHoles=false;
+  for(let i=0;i<8;i++){
+    const x=await reconcileEasyOrdersOrders(env,{
+      clientId:'TENANT-A',connectionId:'CON-HOLES',maxRequests:15,fetcher:holeApi
+    });
+    if(x.recovered){foundBeyondHoles=true;break;}
+  }
+  assert.equal(foundBeyondHoles,true,'35 missing Short IDs cannot permanently hide a later own-store order');
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM orders WHERE ref='easyorders:OWN-1235'").get().n,1);
+  assert.ok(config('CON-HOLES').easyOrdersRecoveryPendingShortIds.includes(1202),
+    'Unresolved 404 must remain durably queued after the ahead probe advances');
+  const holeHealth=await easyOrdersRecoveryStatus(env,{
+    clientId:'TENANT-A',connectionId:'CON-HOLES'
+  });
+  assert.ok(holeHealth.unresolvedAheadCount>=35,
+    'Operator-visible health must include a truthful unresolved-ahead count');
+  assert.equal(holeHealth.status,'catching_up',
+    'Aggregate health must not say healthy when missing Short IDs are queued');
+  assert.equal(holeHealth.results[0].status,'catching_up',
+    'The store itself must stay catching_up despite cursor passing high-water');
+  assert.equal(holeHealth.results[0].lastCronAt,null,
+    'Manual-only scans must not masquerade as scheduled recovery');
+  lateHoleAvailable=true;
+  let delayedRecovered=false;
+  for(let i=0;i<45;i++){
+    const x=await reconcileEasyOrdersOrders(env,{
+      clientId:'TENANT-A',connectionId:'CON-HOLES',maxRequests:15,fetcher:holeApi
+    });
+    if(x.recoveredOrderIds.some(id=>id==='OWN-1202')){delayedRecovered=true;break;}
+  }
+  assert.equal(delayedRecovered,true,'Late creation in a previously 404 slot must get recovered');
+  assert.equal(config('CON-HOLES').easyOrdersRecoveryPendingShortIds.includes(1202),false);
+
+  // An unconfirmed HTTP 404 is kept in a retry queue even as later verified
+  // foreign-store IDs advance discovery.
+  db.prepare('INSERT INTO stores VALUES (?,?,?,?,?)').run('STORE-FUTURE','TENANT-A','active',0,now);
+  db.prepare('INSERT INTO store_connections (id,client_id,provider,status,config_json,updated_at,external_store_id) VALUES (?,?,?,?,?,?,?)')
+    .run('CON-FUTURE','TENANT-A','easyorders','connected',JSON.stringify({
+      kunStoreId:'STORE-FUTURE',easyOrdersRecoveryHighestShortId:1009,
+      easyOrdersRecoveryCursor:1010
+    }),now,'EO-FUTURE');
+  db.prepare('INSERT INTO integration_secrets VALUES (?,?,?,?,?)')
+    .run('TENANT-A','CON-FUTURE','api_key',secret.ciphertextB64,secret.ivB64);
+  let futurePublished=false;
+  const futureApi=async url=>{
+    const id=Number(url.split('/').at(-1));
+    if(id===1010)return futurePublished
+      ?Response.json({...p,id:'LATE-FUTURE-1010',short_id:id,store_id:'EO-FUTURE'})
+      :Response.json({message:'record not found'},{status:404});
+    return Response.json({...p,id:'FOREIGN-'+id,short_id:id,store_id:'EO-FOREIGN'});
+  };
+  await reconcileEasyOrdersOrders(env,{
+    clientId:'TENANT-A',connectionId:'CON-FUTURE',maxRequests:3,fetcher:futureApi
+  });
+  assert.equal(config('CON-FUTURE').easyOrdersRecoveryProbeCursor,1013,
+    'Discovery advances only when the 404 was durably queued');
+  assert.deepEqual(config('CON-FUTURE').easyOrdersRecoveryPendingShortIds,[1010]);
+  futurePublished=true;
+  const restoredFuture=await reconcileEasyOrdersOrders(env,{
+    clientId:'TENANT-A',connectionId:'CON-FUTURE',maxRequests:5,fetcher:futureApi
+  });
+  assert.equal(restoredFuture.recovered,1);
+  assert.equal(config('CON-FUTURE').easyOrdersRecoveryPendingShortIds.includes(1010),false);
+
+  // Once a provider 429 arrives, avoid exhausting quota by querying every
+  // other store in the same scheduled run. Their checkpoints remain intact.
+  for(const id of ['CON-QUOTA-1','CON-QUOTA-2']){
+    db.prepare('INSERT INTO store_connections (id,client_id,provider,status,config_json,updated_at,external_store_id) VALUES (?,?,?,?,?,?,?)')
+      .run(id,'TENANT-QUOTA','easyorders','connected',JSON.stringify({
+        kunStoreId:id,easyOrdersRecoveryHighestShortId:1100,
+        easyOrdersRecoveryCursor:1100
+      }),now,'EO-'+id);
+    db.prepare('INSERT INTO stores VALUES (?,?,?,?,?)')
+      .run(id,'TENANT-QUOTA','active',0,now);
+    db.prepare('INSERT INTO integration_secrets VALUES (?,?,?,?,?)')
+      .run('TENANT-QUOTA',id,'api_key',secret.ciphertextB64,secret.ivB64);
+  }
+  let quotaCalls=0;
+  const quotaResult=await reconcileEasyOrdersOrders(env,{
+    clientId:'TENANT-QUOTA',maxRequests:30,fetcher:async ()=>{
+      quotaCalls++;return Response.json({message:'retry later'},{status:429});
+    }
+  });
+  assert.equal(quotaCalls,1,'429 pauses all accounts in this scheduled run');
+  assert.equal(quotaResult.checkedConnections,1);
+  assert.equal(quotaResult.uncheckedConnections,1);
+  assert.equal(quotaResult.ok,false);
+  assert.equal(config('CON-QUOTA-2').easyOrdersRecoveryCursor,1100,
+    'Unvisited store checkpoint is never consumed');
+
+  // An owner can run a manual reconciliation even when the scheduler is
+  // broken. Health must never mistake that manual activity for Cron proof.
+  assert.equal(config('CON-PROBE').easyOrdersRecoveryLastCronAt,undefined);
+  await reconcileEasyOrdersOrders(env,{
+    clientId:'TENANT-A',connectionId:'CON-PROBE',maxRequests:1,
+    fetcher:probeApi,trigger:'cron'
+  });
+  const actualCronAt=config('CON-PROBE').easyOrdersRecoveryLastCronAt;
+  assert.ok(Number.isFinite(Date.parse(actualCronAt)),'Scheduled task must save a real Cron receipt');
+  await reconcileEasyOrdersOrders(env,{
+    clientId:'TENANT-A',connectionId:'CON-PROBE',maxRequests:1,fetcher:probeApi
+  });
+  assert.equal(config('CON-PROBE').easyOrdersRecoveryLastCronAt,actualCronAt,
+    'Manual recovery must never refresh the genuine Cron timestamp');
+
+  // Exercise the ACTUAL explicit recovery -> canonical webhook -> SQLite path.
+  // Earlier replay tests use mocked ingestion; this case proves the default
+  // ingest adapter and request route token work without modifying live data.
+  env.EASYORDERS_TARGETED_RECOVERY_ENABLED='true';
+  const historicPayload={...p,id:'HISTORIC-WEFAQ-SYNTHETIC',short_id:1250,
+    store_id:'EO-EXTERNAL-D',status:'pending',phone:'01000001250'};
+  let reconciledFees=0;
+  const explicitOptions={
+    clientId:'TENANT-A',storeId:'STORE-D',connectionId:'CON-D',
+    confirmStoreId:'STORE-D',confirmBackup:true,shortIds:[1250],
+    fetcher:async(url,options)=>{
+      assert.equal(options.method,'GET');assert.ok(url.endsWith('/1250'));
+      return Response.json(historicPayload);
+    },
+    reconcileFee:async()=>{reconciledFees++;return {ok:true,skipped:'not_shipped_yet'};}
+  };
+  const firstHistoric=await replayExplicitEasyOrdersStoreGaps(env,explicitOptions);
+  assert.equal(firstHistoric.ok,true,JSON.stringify(firstHistoric));
+  assert.equal(firstHistoric.recovered,1);
+  assert.equal(firstHistoric.alreadyInKun,0);
+  const historicId=firstHistoric.recoveredOrderIds[0];
+  assert.equal(db.prepare('SELECT store_id FROM orders WHERE id=?').get(historicId).store_id,'STORE-D');
+  assert.equal(reconciledFees,1);
+  db.prepare('UPDATE orders SET state=?,note=?,history=? WHERE id=?')
+    .run('shipped','PRESERVE-STAFF-NOTE','[{"actor":"agent"}]',historicId);
+  const replayedHistoric=await replayExplicitEasyOrdersStoreGaps(env,explicitOptions);
+  assert.equal(replayedHistoric.recovered,0);
+  assert.equal(replayedHistoric.alreadyInKun,1);
+  assert.equal(reconciledFees,1,'Already existing order has no second fee reconciliation');
+  assert.deepEqual({...db.prepare('SELECT state,note,history FROM orders WHERE id=?').get(historicId)},
+    {state:'shipped',note:'PRESERVE-STAFF-NOTE',history:'[{"actor":"agent"}]'});
+  env.EASYORDERS_TARGETED_RECOVERY_ENABLED='false';
+  await assert.rejects(()=>replayExplicitEasyOrdersStoreGaps(env,explicitOptions),
+    {code:'EASYORDERS_REPLAY_DISABLED'});
+
   console.log('Easy Orders SQLite sync PASS: concurrent webhook/cron CAS, monotonic high-water, correct catching-up, tenant+store collision isolation, idempotent retries.');
 }finally{db.close();}

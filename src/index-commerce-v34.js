@@ -6,6 +6,9 @@ import {syncMetaAdsForClient} from './meta-ads-sync.js';
 import {syncMetaAdsGranular} from './meta-ads-granular.js';
 import {metaAdsExpertAnalysisV2} from './meta-ads-expert.js';
 import {easyOrdersRecoveryStatus,reconcileEasyOrdersOrders} from './easyorders-order-reconciliation.js';
+import {startEasyOrdersBeforeLegacy} from './easyorders-cron-priority.js';
+import {auditEasyOrdersStoreGapRange} from './easyorders-store-gap-audit.js';
+import {replayExplicitEasyOrdersStoreGaps} from './easyorders-explicit-gap-replay.js';
 import {mutateEasyOrdersConfig,mergeEasyOrdersRecoveryPatch} from './easyorders-connection-config.js';
 import {assertEasyOrdersCronRecovered} from './easyorders-scheduler-outcome.js';
 import {reconcileEasyOrdersRecoveredFees} from './easyorders-recovered-fee-guard.js';
@@ -108,6 +111,44 @@ async function fetchV34(request,env,ctx){
       const me=await currentUser(request,env,ctx);requirePermission(me,'orders','read');const clientId=resolveTenant(me,url.searchParams.get('clientId')),scope=await resolveStoreScope(env,me,clientId,url.searchParams.get('storeId')||null,{write:false});
       return json(await easyOrdersRecoveryStatus(env,{clientId,storeId:scope.storeId||null,connectionId:url.searchParams.get('connectionId')||null}));
     }
+    if(path==='/api/commerce/order-sync/audit-gaps'&&method==='POST'){
+      // POST is a READ-ONLY audit: neither Easy Orders nor D1 is mutated.
+      // Never allow all-store scans; even platform admins select one scoped store.
+      const me=await currentUser(request,env,ctx);
+      requirePermission(me,'orders','read');
+      const body=await request.clone().json().catch(()=>({}));
+      const storeId=text(body.storeId||body.store_id);
+      const connectionId=text(body.connectionId||body.connection_id);
+      if(!storeId||!connectionId)return json({error:'حدد متجرًا واتصال Easy Orders للفحص',code:'EASYORDERS_AUDIT_SCOPE_REQUIRED'},400);
+      const clientId=resolveTenant(me,body.clientId||body.client_id);
+      const scope=await resolveStoreScope(env,me,clientId,storeId,{write:false});
+      if(String(scope.storeId)!==storeId)return json({error:'صلاحية المتجر غير متاحة',code:'STORE_ISOLATION'},403);
+      const result=await auditEasyOrdersStoreGapRange(env,{
+        clientId,storeId,connectionId,
+        fromShortId:body.fromShortId,toShortId:body.toShortId
+      });
+      return json(result);
+    }
+    if(path==='/api/commerce/order-sync/recover-gaps'&&method==='POST'){
+      // Feature disabled by default. No broad-store import, cursor rewinds, or
+      // fallback to an unscoped connection even for a platform administrator.
+      const me=await currentUser(request,env,ctx);
+      requirePermission(me,'orders','write');
+      // Importing historic customer records requires platform administration;
+      // ordinary order operators may audit but never run a recovery.
+      if(me?.role!=='admin')return json({error:'استرجاع الطلبات التاريخية متاح للإدارة فقط',code:'EASYORDERS_REPLAY_ADMIN_REQUIRED'},403);
+      const body=await request.clone().json().catch(()=>({}));
+      const clientId=resolveTenant(me,body.clientId||body.client_id);
+      const storeId=text(body.storeId||body.store_id);
+      const connectionId=text(body.connectionId||body.connection_id);
+      if(!storeId||!connectionId)return json({error:'حدد متجرًا واتصال Easy Orders',code:'EASYORDERS_REPLAY_SCOPE_REQUIRED'},400);
+      const scope=await resolveStoreScope(env,me,clientId,storeId,{write:true});
+      if(String(scope.storeId)!==storeId)return json({error:'صلاحية المتجر غير متاحة',code:'STORE_ISOLATION'},403);
+      return json(await replayExplicitEasyOrdersStoreGaps(env,{
+        clientId,storeId,connectionId,shortIds:body.shortIds,
+        confirmStoreId:body.confirmStoreId,confirmBackup:body.confirmBackup
+      }));
+    }
     if(path==='/api/commerce/order-sync/reconcile'&&method==='POST'){
       const me=await currentUser(request,env,ctx);requirePermission(me,'orders','write');const body=await request.clone().json().catch(()=>({})),clientId=resolveTenant(me,body.clientId||body.client_id||url.searchParams.get('clientId')),scope=await resolveStoreScope(env,me,clientId,body.storeId||body.store_id||url.searchParams.get('storeId')||null,{write:true});
       const result=await reconcileEasyOrdersOrders(env,{clientId,storeId:scope.storeId||null,connectionId:body.connectionId||body.connection_id||null,maxRequests:body.maxRequests||30,lookback:body.lookback||80});
@@ -129,19 +170,25 @@ async function fetchV34(request,env,ctx){
 }
 
 async function runScheduledWithEasyOrdersRecovery(controller,env,ctx){
+  const cron=String(controller?.cron||'');
+  if(cron==='*/5 * * * *'){
+    return startEasyOrdersBeforeLegacy({
+      ctx,
+      launchLegacy:nestedCtx=>commerceV33.scheduled?.(controller,env,nestedCtx),
+      recover:async()=>{
+        const result=await reconcileEasyOrdersOrders(env,{maxRequests:30,lookback:80,trigger:'cron'});
+        const withFees=await reconcileRecoveredFees(env,result);
+        return assertEasyOrdersCronRecovered(withFees);
+      }
+    });
+  }
   const pending=[],nestedCtx=Object.create(ctx||null);nestedCtx.waitUntil=promise=>{if(promise)pending.push(Promise.resolve(promise));};
   let delegated;try{delegated=commerceV33.scheduled?.(controller,env,nestedCtx);}catch(error){pending.push(Promise.reject(error));}
   if(delegated&&typeof delegated.then==='function')pending.push(Promise.resolve(delegated));
   await Promise.allSettled(pending);
-  const cron=String(controller?.cron||'');
   if(cron==='* * * * *')return {ok:true,easyOrdersRecovery:'skipped',metaNearLive:await syncAllMetaAdsNearLiveScheduled(env,{days:2})};
   if(cron==='0 */2 * * *')return {ok:true,easyOrdersRecovery:'skipped',metaGranular:await syncAllMetaAdsGranularScheduled(env,{days:30})};
-  if(cron!=='*/5 * * * *')return {ok:true,easyOrdersRecovery:'skipped'};
-  const result=await reconcileEasyOrdersOrders(env,{maxRequests:30,lookback:80});
-  const withFees=await reconcileRecoveredFees(env,result);
-  // Check both provider recovery and accounting side effects, with
-  // aggregate-only error codes after existing D1 order commits.
-  return assertEasyOrdersCronRecovered(withFees);
+  return {ok:true,easyOrdersRecovery:'skipped'};
 }
 
 export class SyncEntrypoint extends WorkerEntrypoint{
