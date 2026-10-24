@@ -50,6 +50,26 @@ jobs:
             echo "Stale Preview run detected. Run=$GITHUB_SHA Latest=$latest. Preview mutation will be skipped."
           fi
 
+      - name: Gate Easy Orders code-only release on read-only live Worker and D1 checks
+        if: steps.ownership.outputs.is_latest == 'true' && contains(github.event.head_commit.message, '[easyorders-hotfix]')
+        shell: bash
+        run: |
+          set -euo pipefail
+          # This push must be a code-only release. No schema migration,
+          # customer order modification or secrets are allowed in preflight.
+          git fetch --no-tags --deepen=2 origin develop/ux-system-upgrade
+          if git diff --name-only "HEAD^" HEAD | grep -E '^(migrations/|sandbox/migrations/)'; then
+            echo 'BLOCK: an Easy Orders code-only release cannot include database migrations'
+            exit 1
+          fi
+          node scripts/easyorders-cloudflare-worker-readonly-inventory-test.mjs
+          node scripts/easyorders-cloudflare-worker-readonly-inventory.mjs
+          # Time Travel info only reads the current D1 recovery bookmark.
+          # NEVER restore here: doing so would erase recent real orders.
+          npx wrangler d1 time-travel info kunonline-preview --config wrangler.preview.toml > /tmp/kun-easyorders-time-travel-check.txt
+          grep -Eiq 'bookmark' /tmp/kun-easyorders-time-travel-check.txt
+          echo 'PASS: protected GET-only Workers/Cron binding and D1 recovery-point preflight.'
+
       - name: Apply preview migrations only with explicit schema approval
         # Ordinary UI/Worker pushes must never apply unrelated pending migrations.
         # This boolean is intentionally false for all automatic push deployments.
@@ -86,35 +106,16 @@ jobs:
           git cat-file -e "$stable_sha^{commit}"
           echo "source_sha=$stable_sha" >> "$GITHUB_OUTPUT"
 
-      - name: Create fresh verified rollback baseline from stable Git source
+      - name: Capture current live Preview version as rollback without changing traffic
         id: rollback_base
         if: steps.deploy_ownership.outputs.is_latest == 'true'
         run: |
           set -euo pipefail
-          base_url="https://kunonline-preview.mr-a-mnaa.workers.dev"
-          stable_sha="${{ steps.stable_source.outputs.source_sha }}"
-          test -n "$stable_sha"
-          stable_dir="$(mktemp -d)"
-          cleanup(){ git worktree remove --force "$stable_dir" >/dev/null 2>&1 || true; rm -rf "$stable_dir" >/dev/null 2>&1 || true; }
-          trap cleanup EXIT
-          git worktree add --detach "$stable_dir" "$stable_sha"
-          set +e
-          output="$(cd "$stable_dir" && "$GITHUB_WORKSPACE/node_modules/.bin/wrangler" deploy --config wrangler.preview.toml --message "CI rollback baseline from stable source $stable_sha" 2>&1)"
-          rc=$?
-          set -e
-          printf '%s\n' "$output"
-          if [ "$rc" -ne 0 ]; then
-            echo "Could not deploy the stable Git source as a fresh rollback baseline. Candidate deployment is blocked."
-            exit "$rc"
-          fi
-          version="$(printf '%s\n' "$output" | sed -nE 's/.*Current Version ID: ([0-9a-f-]{36}).*/\1/p' | tail -1)"
-          if [ -z "$version" ]; then
-            echo "Could not capture fresh rollback baseline Worker version ID."
-            exit 1
-          fi
-          node scripts/preview-health-check.mjs "$base_url"
+          # The previous workflow DEPLOYED an older stable source as its
+          # "baseline" before deploying the candidate, causing a needless
+          # live-code flip. Capture the CURRENT serving version read-only.
           status="$(npx wrangler deployments status --config wrangler.preview.toml --json)"
-          current="$(printf '%s' "$status" | node -e '
+          version="$(printf '%s' "$status" | node -e '
             let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{
               const root=JSON.parse(raw),hits=[];
               const walk=x=>{if(Array.isArray(x)){for(const v of x)walk(v);return;}if(!x||typeof x!=="object")return;
@@ -127,13 +128,11 @@ jobs:
               const full=unique.find(x=>x.pct===100||x.pct===1)||(unique.length===1?unique[0]:null);
               if(!full)process.exit(2);process.stdout.write(full.id);
             });')"
-          if [ "$current" != "$version" ]; then
-            echo "Fresh rollback baseline lost Worker ownership. Expected=$version Current=$current"
-            exit 1
-          fi
+          test -n "$version"
+          node scripts/preview-health-check.mjs https://kunonline-preview.mr-a-mnaa.workers.dev
           echo "version_id=$version" >> "$GITHUB_OUTPUT"
-          echo "source_sha=$stable_sha" >> "$GITHUB_OUTPUT"
-          echo "Fresh rollback authority created and health-verified: source=$stable_sha version=$version"
+          echo "source_sha=live-version-$version" >> "$GITHUB_OUTPUT"
+          echo "Verified live rollback version captured without any deployment: $version"
 
       - name: Deploy preview Worker
         id: deploy
@@ -337,14 +336,14 @@ jobs:
             echo "Preview changed during QA. Expected=$expected Current=$current. Automatic rollback suppressed."
           fi
 
-      - name: Restore same-run verified Preview baseline after failed validation
+      - name: Restore captured live Preview Worker version after failed validation
         if: always() && steps.rollback_ownership.outputs.is_latest == 'true' && steps.rollback_worker_ownership.outputs.is_current == 'true' && steps.qa_summary.outcome == 'failure'
         run: |
           previous="${{ steps.rollback_base.outputs.version_id }}"
           source="${{ steps.rollback_base.outputs.source_sha }}"
           test -n "$previous"
           test -n "$source"
-          npx wrangler versions deploy "$previous@100%" --yes --config wrangler.preview.toml --message "Automatic restore to same-run stable source $source after failed validation"
+          npx wrangler versions deploy "$previous@100%" --yes --config wrangler.preview.toml --message "Automatic restore to previous live Worker version $previous after failed validation"
 
       - name: Verify restored Preview health
         if: always() && steps.rollback_ownership.outputs.is_latest == 'true' && steps.rollback_worker_ownership.outputs.is_current == 'true' && steps.qa_summary.outcome == 'failure'
@@ -353,7 +352,7 @@ jobs:
       - name: Mark failed owned deployment
         if: always() && steps.rollback_ownership.outputs.is_latest == 'true' && steps.rollback_worker_ownership.outputs.is_current == 'true' && steps.qa_summary.outcome == 'failure'
         run: |
-          echo "The latest owned Preview deployment failed validation and the fresh same-run stable baseline was restored."
+          echo "The latest owned Preview deployment failed validation and the previous live Worker version was restored."
           exit 1
 
       - name: Mark Preview ownership loss
