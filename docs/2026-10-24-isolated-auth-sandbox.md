@@ -27,6 +27,8 @@ node scripts/audit-sandbox-auth-worker-test.mjs
 npm test
 ```
 
+The **separate local-workerd** test `npm run test:audit-sandbox:wrangler-local` uses the actual Wrangler-installed runtime to apply only `sandbox/migrations` to a **fresh local D1**, starts the minimal Worker on localhost with synthetic QA key, exercises the authenticated self-test twice and checks both local table counts. Every D1 CLI operation explicitly carries `--local`; all Cloudflare account tokens are blanked for the spawned commands, and no deployed Worker exists. This is stronger runtime evidence than a pure Node adapter, but remains **local**, not a real Cloudflare-account sandbox. Official documentation: https://developers.cloudflare.com/workers/local-development/local-data/ and https://developers.cloudflare.com/d1/wrangler-commands/.
+
 The tests exercise the actual `fetch` handler using a fake `Request` and a synthetic SQLite adapter, including auth-key rejection, blocked commerce routes, no cookie-setting, SHA-only storage, paired batch writes, automatic transaction rollback on second failure, fail-closed missing table and no external provider calls.
 
 **These tests are NOT a real Cloudflare D1/Worker end-to-end and are not evidence that Cloudflare environment permission was granted.** The one-time Production-environment metadata-only workflow in Draft PR #220 remains blocked before any steps executed; it is separate from this Sandbox. Draft PR #209 may not be promoted to main or Production without real D1 version/binding inventory, record-preserving schema transition approval, migration/rollback plan, safe sandbox QA and a verified release window.
