@@ -40,6 +40,8 @@ jobs:
           node --check src/index-commerce-v34.js
       - name: Concurrent webhook, fair store recovery and isolation
         run: npm run test:easyorders-sync-concurrency
+      - name: Ensure five-minute scheduler reports failed recovery instead of success
+        run: npm run test:easyorders-cron
       # Android delta transport lives on Production/main, not this older
       # Preview-only source branch. Main PR #225 tests mobile-state-sync and
       # the dashboard; this branch tests canonical Easy Orders data ingestion.
@@ -62,4 +64,5 @@ jobs:
           package-manager-cache: false
       - run: npm install --ignore-scripts
       - run: npm run test:easyorders-sync-concurrency
+      - run: npm run test:easyorders-cron
 # NO Preview D1 migration, remote query, production interaction, deploy or publish.
