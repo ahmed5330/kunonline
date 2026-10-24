@@ -18,9 +18,14 @@ async function resolveVersionOwner(start){
     const filename=queue.shift();
     if(seen.has(filename))continue;seen.add(filename);
     let source='';try{source=await readFile(filename,'utf8');}catch{continue;}
-    const build=source.match(/const\s+BUILD\s*=\s*['"]([^'"]+)['"]/i)?.[1]||'';
-    if(source.includes('/api/preview/version')&&build){
-      return {filename,build,entrypoint:path.basename(filename)};
+    // v38+ owns /api/preview/version in the OUTER Worker and exposes its
+    // release marker as KUN_PREVIEW_ENTRYPOINT_BUILD; older v36 uses BUILD.
+    // Always check the actual root handler before walking imported workers.
+    const outer=source.match(/(?:export\s+)?const\s+KUN_PREVIEW_ENTRYPOINT_BUILD\s*=\s*['"]([^'"]+)['"]/i)?.[1]||'';
+    const legacy=source.match(/(?:export\s+)?const\s+BUILD\s*=\s*['"]([^'"]+)['"]/i)?.[1]||'';
+    const ownsRoute=source.includes('/api/preview/version');
+    if(ownsRoute&&(outer||legacy)){
+      return {filename,build:outer||legacy,entrypoint:path.basename(filename)};
     }
     for(const spec of importSpecs(source)){
       let child=path.resolve(path.dirname(filename),spec);
