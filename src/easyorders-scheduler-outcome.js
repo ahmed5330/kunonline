@@ -20,13 +20,15 @@ export function checkEasyOrdersCronRecovery(result){
   const failedCount=Math.max(failed,legacyRows.filter(row=>row?.status==='error').length);
   const throttledCount=Math.max(throttled,legacyRows.filter(row=>row?.status==='rate_limited').length,
     result.rateLimited===true?1:0);
-  const fail=reportedFailure||failedCount>0||throttledCount>0;
+  const feeFailed=integer(result?.feeReconciliation?.failed);
+  const fail=reportedFailure||failedCount>0||throttledCount>0||feeFailed>0;
   const checked=integer(result.checkedConnections??legacyRows.length);
   const deferred=integer(result.uncheckedConnections);
   return {ok:!fail,
-    code:fail?(throttledCount?'EASYORDERS_CRON_THROTTLED':'EASYORDERS_CRON_RECOVERY_FAILED'):null,
+    code:fail?(throttledCount?'EASYORDERS_CRON_THROTTLED':failedCount>0?'EASYORDERS_CRON_RECOVERY_FAILED':feeFailed>0?'EASYORDERS_CRON_FEE_RECONCILIATION_FAILED':'EASYORDERS_CRON_RECOVERY_FAILED'):null,
     checkedConnections:checked,deferredConnections:deferred,
-    failedConnections:failedCount,throttledConnections:throttledCount};
+    failedConnections:failedCount,throttledConnections:throttledCount,
+    failedFeeReconciliations:feeFailed};
 }
 export function assertEasyOrdersCronRecovered(result){
   const health=checkEasyOrdersCronRecovery(result);
@@ -38,7 +40,8 @@ export function assertEasyOrdersCronRecovered(result){
     e.aggregate={checkedConnections:health.checkedConnections,
       deferredConnections:health.deferredConnections,
       failedConnections:health.failedConnections,
-      throttledConnections:health.throttledConnections};
+      throttledConnections:health.throttledConnections,
+      failedFeeReconciliations:health.failedFeeReconciliations};
     throw e;
   }
   return result;
