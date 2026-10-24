@@ -49,6 +49,7 @@ jobs:
           node scripts/session-revocation-live-schema-inventory-test.mjs
           node scripts/session-revocation-preservation-sqlite-test.mjs
           node scripts/session-revocation-dual-bridge-sqlite-test.mjs
+          node scripts/session-revocation-bridge-activation-guard.mjs
           node scripts/admin-client-command-center-test.mjs
           node scripts/audit-sandbox-config-test.mjs
           node scripts/preview-migration-release-guard-test.mjs
@@ -81,6 +82,7 @@ jobs:
           node scripts/session-revocation-live-schema-inventory-test.mjs
           node scripts/session-revocation-preservation-sqlite-test.mjs
           node scripts/session-revocation-dual-bridge-sqlite-test.mjs
+          node scripts/session-revocation-bridge-activation-guard.mjs
           node scripts/admin-client-command-center-test.mjs
 
 # NO wrangler deploy, D1 remote migrations, live probes, uploads or publish steps.
