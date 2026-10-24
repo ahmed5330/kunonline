@@ -246,6 +246,10 @@ export async function reconcileEasyOrdersOrders(env,{clientId=null,storeId=null,
   for(let i=0;i<selected.length&&remaining>0;i++){
     const fairShare=Math.max(3,Math.floor(remaining/Math.max(1,selected.length-i))),result=await reconcileConnection(env,selected[i],{maxRequests:Math.min(remaining,fairShare),lookback:back,fetcher});
     remaining-=result.requests;out.requests+=result.requests;out.recovered+=result.recovered;out.updated+=result.updated;out.missing+=result.missing;out.foreignStoreSkipped+=result.foreignStoreSkipped;if(result.seeded)out.seeded++;if(result.rateLimited)out.rateLimited=true;out.recoveredOrderIds.push(...result.recoveredOrderIds);out.results.push(result);
+    // A provider 429 may be account-wide rather than connection-local.
+    // Stop this Cron's remaining tenants instead of hammering all their keys,
+    // preserving each unvisited connection's existing checkpoint for retry.
+    if(result.rateLimited)break;
   }
   Object.assign(out,aggregateRecovery(out.results));
   // Do not claim a globally successful recovery when a connection failed or
