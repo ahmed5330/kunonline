@@ -30,6 +30,7 @@
     if(kind==='unreadable')return `<div id="${BOX_ID}"><div class="kdsg-copy"><strong>تعذر قراءة بيانات ربط Easy Orders</strong><p>تعذر قراءة بيانات أحد اتصالات Easy Orders في مصدر البيانات المستخدم حاليًا. أعد حفظ API Key من مركز التكاملات ثم شغّل إصلاح المزامنة من الطلبات.${currentScopeNote()}</p></div><div class="kdsg-actions"><button class="primary" data-kdsg="integrations">فتح مركز التكاملات</button></div></div>`;
     if(kind==='unavailable')return `<div id="${BOX_ID}" class="info"><div class="kdsg-copy"><strong>تعذر التحقق من حالة Easy Orders الآن</strong><p>حالة المزامنة غير مؤكدة مؤقتًا. حاول تحديث الصفحة لاحقًا؛ لا تحتاج لإعادة إدخال المفتاح بسبب هذا الفحص.</p></div></div>`;
     if(kind==='disconnected')return `<div id="${BOX_ID}"><div class="kdsg-copy"><strong>لا يوجد اتصال Easy Orders متصل في مصدر البيانات الحالي</strong><p>راجع حالة الربط في مركز التكاملات.</p></div><div class="kdsg-actions"><button data-kdsg="integrations">فتح مركز التكاملات</button></div></div>`;
+    if(kind==='stale')return `<div id="${BOX_ID}"><div class="kdsg-copy"><strong>مزامنة Easy Orders متوقفة أو متأخرة — قد توجد طلبات ناقصة</strong><p>لم يتم تسجيل استرجاع حديث لطلبات Easy Orders خلال 20 دقيقة. افحص حالة الجدولة من إدارة النظام؛ لا تغير مفتاح Easy Orders بلا دليل على رفضه.${currentScopeNote()}</p></div><div class="kdsg-actions"><button class="primary" data-kdsg="orders">فحص الطلبات</button></div></div>`;
     if(kind==='rate_limited')return `<div id="${BOX_ID}" class="info"><div class="kdsg-copy"><strong>تأخير مؤقت في مزامنة Easy Orders</strong><p>تم الوصول إلى حد الطلبات لدى Easy Orders. ستعاود المزامنة المحاولة تلقائيًا.</p></div></div>`;
     if(kind==='error')return `<div id="${BOX_ID}"><div class="kdsg-copy"><strong>توجد مشكلة في مزامنة بعض اتصالات Easy Orders</strong><p>راجع تفاصيل المزامنة في الطلبات ومركز التكاملات؛ الأرقام قد تكون غير مكتملة.</p></div><div class="kdsg-actions"><button data-kdsg="orders">فتح الطلبات</button></div></div>`;
     if(kind==='scope')return `<div id="${BOX_ID}" class="info"><div class="kdsg-copy"><strong>ملاحظة عند مقارنة Preview وProduction</strong><p>هذه الصفحة تعرض «كل الفروع». للمقارنة الدقيقة اختر نفس الفرع ونفس الفترة في الرابطين.</p></div></div>`;
@@ -48,6 +49,7 @@
       else if(diag.failureCode==='EASYORDERS_API_KEY_UNREADABLE')kind='unreadable';
       else if(diag.failureCode==='EASYORDERS_NOT_CONNECTED')kind='disconnected';
       else if(diag.failureCode==='EASYORDERS_RATE_LIMITED')kind='rate_limited';
+      else if(diag.failureCode==='EASYORDERS_RECOVERY_STALE')kind='stale';
       else if(diag.failureCode||Number(d.canonical?.errorConnections)>0)kind='error';
       // A multi-store total is an ordinary account scope, not an error banner.
       document.getElementById(BOX_ID)?.remove();if(!kind)return;
@@ -55,6 +57,6 @@
     }finally{pending=false;}
   }
   function hook(){style();const root=document.getElementById('root');if(root){new MutationObserver(()=>{if(dashboardActive()&&!document.getElementById(BOX_ID))setTimeout(()=>render(false),0);}).observe(root,{childList:true,subtree:false});}document.addEventListener('click',e=>{const b=e.target.closest?.('.nav button');if(b?.dataset.view==='dashboard')setTimeout(()=>render(true),350);});document.getElementById('storeBtn')?.addEventListener('change',()=>setTimeout(()=>render(true),0));setTimeout(()=>render(true),500);}
-  window.KunDashboardSyncGuardV121={version:'121.2',refresh:()=>render(true)};
+  window.KunDashboardSyncGuardV121={version:'121.3',refresh:()=>render(true)};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',hook);else hook();
 })();
