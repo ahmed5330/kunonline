@@ -54,6 +54,7 @@ jobs:
           node scripts/admin-client-password-reset-ui-test.mjs
           node scripts/session-revocation-schema-contract.mjs
           node scripts/session-revocation-schema-contract-test.mjs
+          node scripts/session-revocation-sqlite-integration-test.mjs
           node scripts/pr209-main-reconciliation-guard.mjs
       - name: Run unit tests and build debug APK
         run: gradle -p android test assembleDebug --stacktrace
