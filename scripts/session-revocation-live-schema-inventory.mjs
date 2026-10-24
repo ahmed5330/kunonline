@@ -84,7 +84,7 @@ export async function inspectRevocationDatabases({accountId,apiToken,configs,fet
       );
       // Incorrect schemas must not be considered healthy or have their
       // column values inspected. A fail-closed assessment blocks the release.
-      const count=columnsCompatible?(await sql(target.id,'SELECT COUNT(*) AS total, SUM(CASE WHEN expires_at > CAST(strftime(\\'%s\\',\\'now\\') AS INTEGER) THEN 1 ELSE 0 END) AS unexpired FROM '+table))[0]:null;
+      const count=columnsCompatible?(await sql(target.id,`SELECT COUNT(*) AS total, SUM(CASE WHEN expires_at > CAST(strftime('%s','now') AS INTEGER) THEN 1 ELSE 0 END) AS unexpired FROM ${table}`))[0]:null;
       tables[table]={exists,columns,columnsCompatible,
         counts:count?{total:Number(count.total||0),unexpired:Number(count.unexpired||0)}:null};
     }
