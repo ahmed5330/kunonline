@@ -107,5 +107,23 @@ try{
   assert.equal(rows[0].state,'pending');
   assert.equal(rows[1].state,'confirmed');
   assert.equal(db.prepare("SELECT COUNT(*) n FROM orders WHERE ref='easyorders:EXTERNAL-SAME'").get().n,3);
+  // Status callbacks carrying the SAME provider ID must affect only the
+  // connected Kun store, including a second store under the same tenant.
+  const statusB=await post('CON-B',{
+    event_type:'order-status-update',order_id:'EXTERNAL-SAME',new_status:'shipped'
+  });
+  assert.equal(statusB.id,b.id);
+  assert.equal(db.prepare('SELECT state FROM orders WHERE id=?').get(b.id).state,'shipped');
+  assert.equal(db.prepare('SELECT state FROM orders WHERE id=?').get(a.id).state,'pending',
+    'One tenant status callback must not change another tenant');
+  assert.equal(db.prepare('SELECT state FROM orders WHERE id=?').get(third.id).state,'pending',
+    'Same tenant status callback must not update a different store');
+  const statusC=await post('CON-C',{
+    event_type:'order-status-update',order_id:'EXTERNAL-SAME',new_status:'confirmed'
+  });
+  assert.equal(statusC.id,third.id);
+  assert.equal(db.prepare('SELECT state FROM orders WHERE id=?').get(third.id).state,'confirmed');
+  assert.equal(db.prepare('SELECT state FROM orders WHERE id=?').get(b.id).state,'shipped');
+
   console.log('Easy Orders SQLite sync PASS: concurrent webhook/cron CAS, monotonic high-water, correct catching-up, tenant+store collision isolation, idempotent retries.');
 }finally{db.close();}
