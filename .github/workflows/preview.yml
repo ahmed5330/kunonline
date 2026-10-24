@@ -106,16 +106,35 @@ jobs:
           git cat-file -e "$stable_sha^{commit}"
           echo "source_sha=$stable_sha" >> "$GITHUB_OUTPUT"
 
-      - name: Capture current live Preview version as rollback without changing traffic
+      - name: Create fresh verified rollback baseline from stable Git source
         id: rollback_base
         if: steps.deploy_ownership.outputs.is_latest == 'true'
         run: |
           set -euo pipefail
-          # The previous workflow DEPLOYED an older stable source as its
-          # "baseline" before deploying the candidate, causing a needless
-          # live-code flip. Capture the CURRENT serving version read-only.
+          base_url="https://kunonline-preview.mr-a-mnaa.workers.dev"
+          stable_sha="${{ steps.stable_source.outputs.source_sha }}"
+          test -n "$stable_sha"
+          stable_dir="$(mktemp -d)"
+          cleanup(){ git worktree remove --force "$stable_dir" >/dev/null 2>&1 || true; rm -rf "$stable_dir" >/dev/null 2>&1 || true; }
+          trap cleanup EXIT
+          git worktree add --detach "$stable_dir" "$stable_sha"
+          set +e
+          output="$(cd "$stable_dir" && "$GITHUB_WORKSPACE/node_modules/.bin/wrangler" deploy --config wrangler.preview.toml --message "CI rollback baseline from stable source $stable_sha" 2>&1)"
+          rc=$?
+          set -e
+          printf '%s\n' "$output"
+          if [ "$rc" -ne 0 ]; then
+            echo "Could not deploy the stable Git source as a fresh rollback baseline. Candidate deployment is blocked."
+            exit "$rc"
+          fi
+          version="$(printf '%s\n' "$output" | sed -nE 's/.*Current Version ID: ([0-9a-f-]{36}).*/\1/p' | tail -1)"
+          if [ -z "$version" ]; then
+            echo "Could not capture fresh rollback baseline Worker version ID."
+            exit 1
+          fi
+          node scripts/preview-health-check.mjs "$base_url"
           status="$(npx wrangler deployments status --config wrangler.preview.toml --json)"
-          version="$(printf '%s' "$status" | node -e '
+          current="$(printf '%s' "$status" | node -e '
             let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{
               const root=JSON.parse(raw),hits=[];
               const walk=x=>{if(Array.isArray(x)){for(const v of x)walk(v);return;}if(!x||typeof x!=="object")return;
@@ -128,11 +147,13 @@ jobs:
               const full=unique.find(x=>x.pct===100||x.pct===1)||(unique.length===1?unique[0]:null);
               if(!full)process.exit(2);process.stdout.write(full.id);
             });')"
-          test -n "$version"
-          node scripts/preview-health-check.mjs https://kunonline-preview.mr-a-mnaa.workers.dev
+          if [ "$current" != "$version" ]; then
+            echo "Fresh rollback baseline lost Worker ownership. Expected=$version Current=$current"
+            exit 1
+          fi
           echo "version_id=$version" >> "$GITHUB_OUTPUT"
-          echo "source_sha=live-version-$version" >> "$GITHUB_OUTPUT"
-          echo "Verified live rollback version captured without any deployment: $version"
+          echo "source_sha=$stable_sha" >> "$GITHUB_OUTPUT"
+          echo "Fresh rollback authority created and health-verified: source=$stable_sha version=$version"
 
       - name: Deploy preview Worker
         id: deploy
@@ -336,14 +357,14 @@ jobs:
             echo "Preview changed during QA. Expected=$expected Current=$current. Automatic rollback suppressed."
           fi
 
-      - name: Restore captured live Preview Worker version after failed validation
+      - name: Restore same-run verified Preview baseline after failed validation
         if: always() && steps.rollback_ownership.outputs.is_latest == 'true' && steps.rollback_worker_ownership.outputs.is_current == 'true' && steps.qa_summary.outcome == 'failure'
         run: |
           previous="${{ steps.rollback_base.outputs.version_id }}"
           source="${{ steps.rollback_base.outputs.source_sha }}"
           test -n "$previous"
           test -n "$source"
-          npx wrangler versions deploy "$previous@100%" --yes --config wrangler.preview.toml --message "Automatic restore to previous live Worker version $previous after failed validation"
+          npx wrangler versions deploy "$previous@100%" --yes --config wrangler.preview.toml --message "Automatic restore to same-run stable source $source after failed validation"
 
       - name: Verify restored Preview health
         if: always() && steps.rollback_ownership.outputs.is_latest == 'true' && steps.rollback_worker_ownership.outputs.is_current == 'true' && steps.qa_summary.outcome == 'failure'
@@ -352,7 +373,7 @@ jobs:
       - name: Mark failed owned deployment
         if: always() && steps.rollback_ownership.outputs.is_latest == 'true' && steps.rollback_worker_ownership.outputs.is_current == 'true' && steps.qa_summary.outcome == 'failure'
         run: |
-          echo "The latest owned Preview deployment failed validation and the previous live Worker version was restored."
+          echo "The latest owned Preview deployment failed validation and the fresh same-run stable baseline was restored."
           exit 1
 
       - name: Mark Preview ownership loss
