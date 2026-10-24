@@ -38,7 +38,7 @@
     "test:release": "node scripts/release-readiness-test.mjs",
     "test:product-import": "node --check public/v2/modules-v29-product-import.js && node --check public/v2/modules-v134-bundle-import-picker.js && node --check src/commerce-bundle-mapping.js && node --check src/commerce-product-import.js && node scripts/commerce-bundle-mapping-test.mjs && node --check scripts/browser-product-import-required-fields-fixture-test.mjs && node scripts/product-import-test.mjs && node scripts/browser-product-import-required-fields-fixture-test.mjs",
     "test:inventory-stock-date": "node scripts/inventory-stock-date-test.mjs && node --check scripts/live-preview-inventory-test.mjs && node --check scripts/live-preview-stock-clear-test.mjs && node --check scripts/feature-product-inventory-smoke.mjs",
-    "test:order-sync": "node scripts/order-sync-test.mjs",
+    "test:order-sync": "node scripts/order-sync-test.mjs && npm run test:easyorders-sync-concurrency",
     "test:manual-order-form": "node scripts/manual-order-form-test.mjs",
     "test:order-sheet-import": "node --check src/order-import-reconciliation.js && node --check src/order-sheet-import.js && node --check src/order-deduplication.js && node --check public/v2/modules-v35-order-import.js && node --check scripts/live-preview-order-sheet-import-test.mjs && node scripts/order-sheet-import-test.mjs && node scripts/order-deduplication-test.mjs",
     "test:accounting": "node scripts/accounting-management-fee-test.mjs && node scripts/finance-cross-section-sql-test.mjs",
@@ -74,7 +74,8 @@
     "test:clarity": "node scripts/clarity-integration-test.mjs",
     "test:clarity-growth": "node scripts/clarity-growth-test.mjs",
     "test:ai-marketing": "node --check src/ai-marketing-analyst.js && node --check public/v2/modules-v138-ai-marketing.js && node scripts/ai-marketing-test.mjs",
-    "test:competitors": "node --check src/competitor-intelligence.js && node --check public/v2/modules-v139-competitors.js && node scripts/competitor-intelligence-test.mjs"
+    "test:competitors": "node --check src/competitor-intelligence.js && node --check public/v2/modules-v139-competitors.js && node scripts/competitor-intelligence-test.mjs",
+    "test:easyorders-sync-concurrency": "node scripts/easyorders-sync-concurrency-sqlite-test.mjs"
   },
   "devDependencies": {
     "wrangler": "4.125.0"
