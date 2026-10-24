@@ -61,7 +61,7 @@ await assert.rejects(scheduler.scheduled(when,env,{waitUntil:p=>{pending.push(p.
   error=>error.code==='EASYORDERS_CRON_RECOVERY_FAILED');
 await Promise.all(pending);
 const v34=await readFile(new URL('../src/index-commerce-v34.js',import.meta.url),'utf8');
-assert.match(v34,/return assertEasyOrdersCronRecovered\(result\)/,
+assert.match(v34,/return assertEasyOrdersCronRecovered\(withFees\)/,
   'Canonical Preview runCron MUST turn bad Easy Orders recovery into failed RPC');
 assert.match(v34,/await reconcileRecoveredFees\(env,result\)/,
   'Preserve fee reconciliation even if the run is failed');
