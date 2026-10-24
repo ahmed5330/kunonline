@@ -96,7 +96,11 @@ export async function handleEasyOrdersWebhook(request,env,{connectionId=null,rou
   if(payload.event_type==='order-status-update'){
     if(!connection){const row=await env.DB.prepare("SELECT client_id FROM orders WHERE id=? OR ref=? LIMIT 1").bind(text(payload.order_id),`easyorders:${text(payload.order_id)}`).first();if(!row)return null;connection=await env.DB.prepare("SELECT * FROM store_connections WHERE client_id=? AND provider='easyorders' AND status='connected' ORDER BY updated_at DESC LIMIT 1").bind(row.client_id).first();if(!connection)return null;}
     await verifyWebhook(env,connection,sent);
-    const row=await env.DB.prepare("SELECT id FROM orders WHERE client_id=? AND (id=? OR ref=?) LIMIT 1").bind(connection.client_id,text(payload.order_id),`easyorders:${text(payload.order_id)}`).first();if(!row)return {ok:true,event:'status-update',ignored:true,note:'الأوردر غير موجود بعد'};
+    if(payload.store_id)await bindExternalStore(env,connection,payload.store_id);
+    const connectedStoreId=await resolveKunStoreId(env,connection);
+    if(!connectedStoreId)throw Object.assign(new Error('لا يوجد متجر مرتبط لتحديث حالة Easy Orders'),{status:409,code:'EASYORDERS_KUN_STORE_UNBOUND'});
+    const row=await env.DB.prepare("SELECT id FROM orders WHERE client_id=? AND (id=? OR ref=?) AND (store_id=? OR store_id IS NULL) LIMIT 1")
+      .bind(connection.client_id,text(payload.order_id),`easyorders:${text(payload.order_id)}`,connectedStoreId).first();if(!row)return {ok:true,event:'status-update',ignored:true,note:'الأوردر غير موجود بعد'};
     const state=mapEasyOrdersStatus(payload.new_status);
     // A delayed Easy Orders callback must not undo confirmation or J&T handoff.
     // Compare atomically in SQLite: two staff/sync actions may arrive together.
