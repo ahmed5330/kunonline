@@ -18,6 +18,7 @@ class VerifiedStoreScopeFastPathTest {
 
     @Test fun refusesMissingClientAndNullAssignment() {
         assertNull(KunApi.reusableVerifiedScope("cookie-a", "cookie-a", 100, 1000, ScopeInfo("", "store-1")))
+        assertNull(KunApi.reusableVerifiedScope("cookie-a", "cookie-a", 100, 1000, ScopeInfo("null", "store-1")))
         assertNull(KunApi.reusableVerifiedScope("cookie-a", "cookie-a", 100, 1000, null))
     }
 
