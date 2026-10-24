@@ -21,6 +21,7 @@ const fetcher=async (url,options)=>{
  return Response.json({ok:true,status:'scheduler_stale',source:'preview',
   canonical:{connections:4,errorConnections:0},
   runtimeDiagnostics:{failureCode:'EASYORDERS_RECOVERY_STALE',
+   invalidApiKeyClients:0,unreadableKeyClients:1,
    staleRecoveryConnections:3,neverRanRecoveryConnections:1,staleAfterMinutes:20,
    customerData:'DO_NOT_EXPOSE_PRIVATE_TENANT_ID'}});
 };
@@ -31,6 +32,9 @@ assert.equal(result.checks.scheduler.upstreamHealthResponded,true);
 assert.equal(result.checks.scheduler.cronExecutionProven,false,'Health RPC is NOT proof of scheduled executions');
 assert.equal(result.checks.production.connectedIntegrations,4);
 assert.equal(result.checks.production.staleRecoveryConnections,3);
+assert.equal(result.checks.production.invalidApiKeyIntegrations,0);
+assert.equal(result.checks.production.unreadableApiKeyIntegrations,1);
+assert.equal(result.checks.production.errorIntegrations,0);
 assert.equal(call.length,3,'Only 3 public GET probes permitted');
 assert.ok(!JSON.stringify(result).includes('DO_NOT_EXPOSE_PRIVATE_TENANT_ID'));
 const deny=await inspectPublicEasyOrdersRuntime({fetcher:async()=>new Response('DO_NOT_PRINT_SECRET',{status:403})});
