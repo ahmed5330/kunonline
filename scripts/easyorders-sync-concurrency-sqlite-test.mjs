@@ -394,8 +394,48 @@ try{
   assert.deepEqual(inspectedIds.slice(0,36),Array.from({length:36},(_,i)=>900+i));
   assert.equal(db.prepare("SELECT COUNT(*) n FROM orders WHERE ref='easyorders:PROBE-935'").get().n,1);
 
-  // Unlike a confirmed foreign-store ID, HTTP 404 can refer to a future
-  // order. Never persist the probe past an unresolved missing ID.
+  // Once a 404 is durably queued, newer Short IDs must remain discoverable.
+  // Simulate 35 missing source IDs followed by a real store order: no infinite
+  // rescans of the first 30, no permanent skip of the delayed source records.
+  db.prepare('INSERT INTO stores VALUES (?,?,?,?,?)').run('STORE-HOLES','TENANT-A','active',0,now);
+  db.prepare('INSERT INTO store_connections (id,client_id,provider,status,config_json,updated_at,external_store_id) VALUES (?,?,?,?,?,?,?)')
+    .run('CON-HOLES','TENANT-A','easyorders','connected',JSON.stringify({
+      kunStoreId:'STORE-HOLES',easyOrdersRecoveryHighestShortId:1199,
+      easyOrdersRecoveryCursor:1200
+    }),now,'EO-HOLES');
+  db.prepare('INSERT INTO integration_secrets VALUES (?,?,?,?,?)')
+    .run('TENANT-A','CON-HOLES','api_key',secret.ciphertextB64,secret.ivB64);
+  let lateHoleAvailable=false;
+  const holeApi=async url=>{
+    const id=Number(url.split('/').at(-1));
+    if(id===1235||lateHoleAvailable&&id===1202)
+      return Response.json({...p,id:'OWN-'+id,short_id:id,store_id:'EO-HOLES'});
+    return Response.json({message:'record not found'},{status:404});
+  };
+  let foundBeyondHoles=false;
+  for(let i=0;i<8;i++){
+    const x=await reconcileEasyOrdersOrders(env,{
+      clientId:'TENANT-A',connectionId:'CON-HOLES',maxRequests:15,fetcher:holeApi
+    });
+    if(x.recovered){foundBeyondHoles=true;break;}
+  }
+  assert.equal(foundBeyondHoles,true,'35 missing Short IDs cannot permanently hide a later own-store order');
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM orders WHERE ref='easyorders:OWN-1235'").get().n,1);
+  assert.ok(config('CON-HOLES').easyOrdersRecoveryPendingShortIds.includes(1202),
+    'Unresolved 404 must remain durably queued after the ahead probe advances');
+  lateHoleAvailable=true;
+  let delayedRecovered=false;
+  for(let i=0;i<10;i++){
+    const x=await reconcileEasyOrdersOrders(env,{
+      clientId:'TENANT-A',connectionId:'CON-HOLES',maxRequests:15,fetcher:holeApi
+    });
+    if(x.recoveredOrderIds.some(id=>id==='OWN-1202')){delayedRecovered=true;break;}
+  }
+  assert.equal(delayedRecovered,true,'Late creation in a previously 404 slot must get recovered');
+  assert.equal(config('CON-HOLES').easyOrdersRecoveryPendingShortIds.includes(1202),false);
+
+  // An unconfirmed HTTP 404 is kept in a retry queue even as later verified
+  // foreign-store IDs advance discovery.
   db.prepare('INSERT INTO stores VALUES (?,?,?,?,?)').run('STORE-FUTURE','TENANT-A','active',0,now);
   db.prepare('INSERT INTO store_connections (id,client_id,provider,status,config_json,updated_at,external_store_id) VALUES (?,?,?,?,?,?,?)')
     .run('CON-FUTURE','TENANT-A','easyorders','connected',JSON.stringify({
@@ -404,16 +444,26 @@ try{
     }),now,'EO-FUTURE');
   db.prepare('INSERT INTO integration_secrets VALUES (?,?,?,?,?)')
     .run('TENANT-A','CON-FUTURE','api_key',secret.ciphertextB64,secret.ivB64);
+  let futurePublished=false;
   const futureApi=async url=>{
     const id=Number(url.split('/').at(-1));
-    if(id===1010)return Response.json({message:'record not found'},{status:404});
+    if(id===1010)return futurePublished
+      ?Response.json({...p,id:'LATE-FUTURE-1010',short_id:id,store_id:'EO-FUTURE'})
+      :Response.json({message:'record not found'},{status:404});
     return Response.json({...p,id:'FOREIGN-'+id,short_id:id,store_id:'EO-FOREIGN'});
   };
   await reconcileEasyOrdersOrders(env,{
     clientId:'TENANT-A',connectionId:'CON-FUTURE',maxRequests:3,fetcher:futureApi
   });
-  assert.equal(config('CON-FUTURE').easyOrdersRecoveryProbeCursor,1010,
-    'A missing future order must be retried, not checkpointed past a foreign order');
+  assert.equal(config('CON-FUTURE').easyOrdersRecoveryProbeCursor,1013,
+    'Discovery advances only when the 404 was durably queued');
+  assert.deepEqual(config('CON-FUTURE').easyOrdersRecoveryPendingShortIds,[1010]);
+  futurePublished=true;
+  const restoredFuture=await reconcileEasyOrdersOrders(env,{
+    clientId:'TENANT-A',connectionId:'CON-FUTURE',maxRequests:5,fetcher:futureApi
+  });
+  assert.equal(restoredFuture.recovered,1);
+  assert.equal(config('CON-FUTURE').easyOrdersRecoveryPendingShortIds.includes(1010),false);
 
   // Once a provider 429 arrives, avoid exhausting quota by querying every
   // other store in the same scheduled run. Their checkpoints remain intact.
