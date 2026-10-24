@@ -176,7 +176,7 @@ async function runScheduledWithEasyOrdersRecovery(controller,env,ctx){
       ctx,
       launchLegacy:nestedCtx=>commerceV33.scheduled?.(controller,env,nestedCtx),
       recover:async()=>{
-        const result=await reconcileEasyOrdersOrders(env,{maxRequests:30,lookback:80});
+        const result=await reconcileEasyOrdersOrders(env,{maxRequests:30,lookback:80,trigger:'cron'});
         const withFees=await reconcileRecoveredFees(env,result);
         return assertEasyOrdersCronRecovered(withFees);
       }
