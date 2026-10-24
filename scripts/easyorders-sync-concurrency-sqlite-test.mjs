@@ -75,7 +75,12 @@ try{
   await update('CON-A',current=>({...current,webhookLastProbeAt:'probe-only'}));
   assert.equal(config('CON-A').easyOrdersRecoveryCursor,201,'Health probe cannot erase cursor');
   assert.equal(config('CON-A').webhookLastProbeAt,'probe-only');
-  await assert.rejects(update('UNKNOWN',c=>c),/not connected/);
+  await assert.rejects(
+    mutateEasyOrdersConfig(env,{id:'CON-UNKNOWN',client_id:'TENANT-A'},c=>c),
+    /not connected/,'Well-scoped but nonexistent connection must be denied'
+  );
+  await assert.rejects(mutateEasyOrdersConfig(env,null,c=>c),
+    /scope missing/,'Unscoped connection rejected before DB access');
   const p={id:'EXTERNAL-SAME',store_id:'EO-EXTERNAL-A',short_id:300,
     full_name:'QA Synthetic',phone:'01000000001',government:'Test Province',
     address:'Fake Address',status:'pending',total_cost:135,cart_items:[]};
