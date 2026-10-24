@@ -19,9 +19,9 @@ export function verifyAuditSandboxConfig(sandbox,production,preview){
   if(field(sandbox,'main')!=='src/audit-sandbox-auth-worker.js')fail('Use only the minimal isolated auth QA Worker, never full commerce');
   if(appEnv!=='audit_sandbox')fail('APP_ENV must be audit_sandbox');
   if(field(sandbox,'AUDIT_EGRESS_OFFLINE')!=='true')fail('Only egress-disabled sandbox mode is allowed');
-  if(!/^\\s*workers_dev\\s*=\\s*false\\s*$/m.test(sandbox))fail('Public workers.dev host must be disabled');
-  if(/^\\s*(?:AUDIT_QA_KEY|SESSION_SECRET)\\s*=/m.test(sandbox))fail('Secrets must not be embedded in TOML');
-  if(/^\\s*\\[assets\\]/m.test(sandbox))fail('Do not expose commerce assets or route assets');
+  if(!/^\s*workers_dev\s*=\s*false\s*$/m.test(sandbox))fail('Public workers.dev host must be disabled');
+  if(/^\s*(?:AUDIT_QA_KEY|SESSION_SECRET)\s*=/m.test(sandbox))fail('Secrets must not be embedded in TOML');
+  if(/^\s*\[assets\]/m.test(sandbox))fail('Do not expose commerce assets or route assets');
   if(!/^\[triggers\]\s*\n\s*crons\s*=\s*\[\s*\]/m.test(sandbox))fail('Cron Triggers must be explicitly disabled');
   if(/^\s*(?:routes?|zone_id)\s*=/m.test(sandbox))fail('Do not attach any Cloudflare zone routes');
   if(/^\[\[(?:services|kv_namespaces|r2_buckets|queues(?:\.[^\]]+)?|durable_objects\.[^\]]+|analytics_engine_datasets)\]\]/m.test(sandbox)){
