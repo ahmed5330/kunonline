@@ -1,5 +1,12 @@
 import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
 import {inspectDashboardSyncLive} from './dashboard-sync-guard-live-test.mjs';
+
+// Derive the current guard version from the checked-out source. This is a
+// synthetic release-gate fixture, NEVER evidence of a deployed Cloudflare version.
+const localGuard=await readFile(new URL('../public/v2/modules-v121-dashboard-sync-guard.js',import.meta.url),'utf8');
+const expected=localGuard.match(/version:'([0-9.]+)'/)?.[1];
+assert.ok(expected,'checked-out dashboard source must specify a version');
 
 const fixture={
   ok:true,source:'preview',mode:'preview-canonical',status:'error',
@@ -39,7 +46,7 @@ await assert.rejects(
   /Release is not deployed/,
   'Strict release acceptance must not pass on deployed legacy version'
 );
-const now=fakeLive('121.2');
+const now=fakeLive(expected);
 const current=await inspectDashboardSyncLive({base:'https://qa.example.test',fetchImpl:now.fetchImpl,nonce:11,requireCurrent:true});
 assert.equal(current.currentReleaseDeployed,true);
 assert.equal(current.anonymousScopedAccess,'denied_401');
@@ -47,7 +54,7 @@ assert.equal(current.tenantHealthVerified,false,'Anonymous check can never estab
 assert.equal(now.calls.length,4);
 assert.ok(now.calls.some(x=>x.path==='/api/integrations/easyorders/dashboard-health'));
 assert.ok(now.calls.every(x=>x.method==='GET'&&x.credentials==='omit'));
-const insecure=fakeLive('121.2',{scopedStatus:200});
+const insecure=fakeLive(expected,{scopedStatus:200});
 await assert.rejects(
   inspectDashboardSyncLive({base:'https://qa.example.test',fetchImpl:insecure.fetchImpl}),
   /Anonymous caller must not receive tenant-specific/,
