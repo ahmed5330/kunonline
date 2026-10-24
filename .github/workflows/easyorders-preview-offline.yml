@@ -9,6 +9,11 @@ on:
       - 'src/index-commerce-v31.js'
       - 'src/index-commerce-v34.js'
       - 'scripts/easyorders-sync-concurrency-sqlite-test.mjs'
+      - 'src/easyorders-scheduler-outcome.js'
+      - 'src/easyorders-recovered-fee-guard.js'
+      - 'scripts/easyorders-scheduler-outcome-test.mjs'
+      - 'scripts/easyorders-recovered-fee-guard-test.mjs'
+      - 'docs/2026-10-24-easyorders-incident-release-checklist.md'
       - 'package.json'
       - '.github/workflows/easyorders-preview-offline.yml'
 permissions:
@@ -67,4 +72,5 @@ jobs:
       - run: npm install --ignore-scripts
       - run: npm run test:easyorders-sync-concurrency
       - run: npm run test:easyorders-cron
+      - run: npm run test:easyorders-fees
 # NO Preview D1 migration, remote query, production interaction, deploy or publish.
