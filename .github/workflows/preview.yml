@@ -50,6 +50,26 @@ jobs:
             echo "Stale Preview run detected. Run=$GITHUB_SHA Latest=$latest. Preview mutation will be skipped."
           fi
 
+      - name: Gate Easy Orders code-only release on read-only live Worker and D1 checks
+        if: steps.ownership.outputs.is_latest == 'true' && contains(github.event.head_commit.message, '[easyorders-hotfix]')
+        shell: bash
+        run: |
+          set -euo pipefail
+          # This push must be a code-only release. No schema migration,
+          # customer order modification or secrets are allowed in preflight.
+          git fetch --no-tags --deepen=2 origin develop/ux-system-upgrade
+          if git diff --name-only "HEAD^" HEAD | grep -E '^(migrations/|sandbox/migrations/)'; then
+            echo 'BLOCK: an Easy Orders code-only release cannot include database migrations'
+            exit 1
+          fi
+          node scripts/easyorders-cloudflare-worker-readonly-inventory-test.mjs
+          node scripts/easyorders-cloudflare-worker-readonly-inventory.mjs
+          # Time Travel info only reads the current D1 recovery bookmark.
+          # NEVER restore here: doing so would erase recent real orders.
+          npx wrangler d1 time-travel info kunonline-preview --config wrangler.preview.toml > /tmp/kun-easyorders-time-travel-check.txt
+          grep -Eiq 'bookmark' /tmp/kun-easyorders-time-travel-check.txt
+          echo 'PASS: protected GET-only Workers/Cron binding and D1 recovery-point preflight.'
+
       - name: Apply preview migrations only with explicit schema approval
         # Ordinary UI/Worker pushes must never apply unrelated pending migrations.
         # This boolean is intentionally false for all automatic push deployments.

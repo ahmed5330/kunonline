@@ -6,6 +6,12 @@ import {syncMetaAdsForClient} from './meta-ads-sync.js';
 import {syncMetaAdsGranular} from './meta-ads-granular.js';
 import {metaAdsExpertAnalysisV2} from './meta-ads-expert.js';
 import {easyOrdersRecoveryStatus,reconcileEasyOrdersOrders} from './easyorders-order-reconciliation.js';
+import {startEasyOrdersBeforeLegacy} from './easyorders-cron-priority.js';
+import {auditEasyOrdersStoreGapRange} from './easyorders-store-gap-audit.js';
+import {replayExplicitEasyOrdersStoreGaps} from './easyorders-explicit-gap-replay.js';
+import {mutateEasyOrdersConfig,mergeEasyOrdersRecoveryPatch} from './easyorders-connection-config.js';
+import {assertEasyOrdersCronRecovered} from './easyorders-scheduler-outcome.js';
+import {reconcileEasyOrdersRecoveredFees} from './easyorders-recovered-fee-guard.js';
 import {reconcileManagementFeeForOrder} from './accounting.js';
 import {clearProductInventory,clearStaleBatchStockIfProductZero} from './inventory-clear.js';
 import {prepareIncomingEasyOrdersDedupe,prepareEasyOrdersSheetRows,persistEasyOrdersLineItems,restoreNativeSourceForMatchedSheetOrders} from './order-deduplication.js';
@@ -24,17 +30,24 @@ async function currentUser(request,env,ctx){
 }
 function cleanDate(value){return /^\d{4}-\d{2}-\d{2}$/.test(String(value||''))?String(value):null;}
 function requestedRange(input={}){const to=cleanDate(input.to)||new Date().toISOString().slice(0,10),rawFrom=String(input.from||''),from=rawFrom==='beginning'?null:cleanDate(rawFrom);let days=30;if(from){days=Math.max(1,Math.min(90,Math.floor((new Date(`${to}T00:00:00Z`)-new Date(`${from}T00:00:00Z`))/86400000)+1));}else if(rawFrom==='beginning')days=90;return {from:from||undefined,to,days};}
-async function reconcileRecoveredFees(env,result){for(const id of result?.recoveredOrderIds||[])await reconcileManagementFeeForOrder(env,id).catch(()=>{});return result;}
+async function reconcileRecoveredFees(env,result){return reconcileEasyOrdersRecoveredFees(result,id=>reconcileManagementFeeForOrder(env,id));}
 async function rememberEasyOrdersShortId(env,connectionId,rawPayload){
-  const order=webhookOrderPayload(rawPayload),shortId=positiveInt(order.short_id||order.shortId||rawPayload?.short_id||rawPayload?.shortId);if(!shortId||!connectionId)return;
-  const row=await env.DB.prepare("SELECT id,client_id,config_json FROM store_connections WHERE id=? AND provider='easyorders' AND status='connected'").bind(connectionId).first();if(!row)return;
-  const fresh=await env.DB.prepare('SELECT config_json FROM store_connections WHERE id=? AND client_id=?').bind(row.id,row.client_id).first(),config=parseConfig(fresh||row),oldHigh=positiveInt(config.easyOrdersRecoveryHighestShortId),oldCursor=positiveInt(config.easyOrdersRecoveryCursor);
-  config.webhookLastShortId=shortId;
-  config.easyOrdersRecoveryHighestShortId=Math.max(oldHigh,shortId);
-  if(!oldCursor)config.easyOrdersRecoveryCursor=Math.max(1,shortId-80);
-  if(!config.easyOrdersRecoverySeededAt)config.easyOrdersRecoverySeededAt=new Date().toISOString();
-  config.easyOrdersRecoveryLastError=null;
-  await env.DB.prepare('UPDATE store_connections SET config_json=?,updated_at=? WHERE id=? AND client_id=?').bind(JSON.stringify(config),new Date().toISOString(),row.id,row.client_id).run();
+  const order=webhookOrderPayload(rawPayload);
+  const shortId=positiveInt(order.short_id||order.shortId||rawPayload?.short_id||rawPayload?.shortId);
+  if(!shortId||!connectionId)return;
+  const connection=await env.DB.prepare("SELECT id,client_id,config_json FROM store_connections WHERE id=? AND provider='easyorders' AND status='connected'")
+    .bind(connectionId).first();
+  if(!connection)return;
+  await mutateEasyOrdersConfig(env,connection,current=>{
+    const oldCursor=positiveInt(current.easyOrdersRecoveryCursor);
+    const previousHigh=positiveInt(current.easyOrdersRecoveryHighestShortId);
+    return mergeEasyOrdersRecoveryPatch(current,{
+      webhookLastShortId:shortId,
+      easyOrdersRecoveryHighestShortId:Math.max(previousHigh,shortId),
+      ...(oldCursor?{}:{easyOrdersRecoveryCursor:Math.max(1,shortId-80)}),
+      ...(!current.easyOrdersRecoverySeededAt?{easyOrdersRecoverySeededAt:new Date().toISOString()}:{})
+    });
+  });
 }
 
 async function connectedMetaClients(env,{limit=50}={}){
@@ -91,12 +104,50 @@ async function fetchV34(request,env,ctx){
     const easyWebhook=path.match(/^\/webhooks\/easyorders\/([^/]+)\/[^/]+\/?$/);
     if(easyWebhook&&method==='POST'){
       const connectionId=decodeURIComponent(easyWebhook[1]),payload=await request.clone().json().catch(()=>({})),prepared=await prepareIncomingEasyOrdersDedupe(env,{connectionId,payload}).catch(()=>({matched:false,payload})),response=await commerceV33.fetch(request,env,ctx);
-      if(response.ok){await rememberEasyOrdersShortId(env,connectionId,payload).catch(()=>{});const data=await response.clone().json().catch(()=>({})),orderId=data.id||prepared.orderId||null,clientId=prepared.clientId||null,storeId=prepared.storeId||null;if(orderId&&clientId)await persistEasyOrdersLineItems(env,{clientId,storeId,orderId,payload,skip:prepared.matched}).catch(()=>{});if(prepared.matched)return json({...data,id:orderId,deduplicatedExact:true,dedupeMode:'strict-full-order'},response.status);}
+      if(response.ok){await rememberEasyOrdersShortId(env,connectionId,payload).catch(error=>console.error('Easy Orders webhook checkpoint update failed',error?.code||'CONCURRENT_CONFIG_WRITE'));const data=await response.clone().json().catch(()=>({})),orderId=data.id||prepared.orderId||null,clientId=prepared.clientId||null,storeId=prepared.storeId||null;if(orderId&&clientId)await persistEasyOrdersLineItems(env,{clientId,storeId,orderId,payload,skip:prepared.matched}).catch(()=>{});if(prepared.matched)return json({...data,id:orderId,deduplicatedExact:true,dedupeMode:'strict-full-order'},response.status);}
       return response;
     }
     if(path==='/api/commerce/order-sync/recovery-status'&&method==='GET'){
       const me=await currentUser(request,env,ctx);requirePermission(me,'orders','read');const clientId=resolveTenant(me,url.searchParams.get('clientId')),scope=await resolveStoreScope(env,me,clientId,url.searchParams.get('storeId')||null,{write:false});
       return json(await easyOrdersRecoveryStatus(env,{clientId,storeId:scope.storeId||null,connectionId:url.searchParams.get('connectionId')||null}));
+    }
+    if(path==='/api/commerce/order-sync/audit-gaps'&&method==='POST'){
+      // POST is a READ-ONLY audit: neither Easy Orders nor D1 is mutated.
+      // Never allow all-store scans; even platform admins select one scoped store.
+      const me=await currentUser(request,env,ctx);
+      requirePermission(me,'orders','read');
+      const body=await request.clone().json().catch(()=>({}));
+      const storeId=text(body.storeId||body.store_id);
+      const connectionId=text(body.connectionId||body.connection_id);
+      if(!storeId||!connectionId)return json({error:'حدد متجرًا واتصال Easy Orders للفحص',code:'EASYORDERS_AUDIT_SCOPE_REQUIRED'},400);
+      const clientId=resolveTenant(me,body.clientId||body.client_id);
+      const scope=await resolveStoreScope(env,me,clientId,storeId,{write:false});
+      if(String(scope.storeId)!==storeId)return json({error:'صلاحية المتجر غير متاحة',code:'STORE_ISOLATION'},403);
+      const result=await auditEasyOrdersStoreGapRange(env,{
+        clientId,storeId,connectionId,
+        fromShortId:body.fromShortId,toShortId:body.toShortId
+      });
+      return json(result);
+    }
+    if(path==='/api/commerce/order-sync/recover-gaps'&&method==='POST'){
+      // Feature disabled by default. No broad-store import, cursor rewinds, or
+      // fallback to an unscoped connection even for a platform administrator.
+      const me=await currentUser(request,env,ctx);
+      requirePermission(me,'orders','write');
+      // Importing historic customer records requires platform administration;
+      // ordinary order operators may audit but never run a recovery.
+      if(me?.role!=='admin')return json({error:'استرجاع الطلبات التاريخية متاح للإدارة فقط',code:'EASYORDERS_REPLAY_ADMIN_REQUIRED'},403);
+      const body=await request.clone().json().catch(()=>({}));
+      const clientId=resolveTenant(me,body.clientId||body.client_id);
+      const storeId=text(body.storeId||body.store_id);
+      const connectionId=text(body.connectionId||body.connection_id);
+      if(!storeId||!connectionId)return json({error:'حدد متجرًا واتصال Easy Orders',code:'EASYORDERS_REPLAY_SCOPE_REQUIRED'},400);
+      const scope=await resolveStoreScope(env,me,clientId,storeId,{write:true});
+      if(String(scope.storeId)!==storeId)return json({error:'صلاحية المتجر غير متاحة',code:'STORE_ISOLATION'},403);
+      return json(await replayExplicitEasyOrdersStoreGaps(env,{
+        clientId,storeId,connectionId,shortIds:body.shortIds,
+        confirmStoreId:body.confirmStoreId,confirmBackup:body.confirmBackup
+      }));
     }
     if(path==='/api/commerce/order-sync/reconcile'&&method==='POST'){
       const me=await currentUser(request,env,ctx);requirePermission(me,'orders','write');const body=await request.clone().json().catch(()=>({})),clientId=resolveTenant(me,body.clientId||body.client_id||url.searchParams.get('clientId')),scope=await resolveStoreScope(env,me,clientId,body.storeId||body.store_id||url.searchParams.get('storeId')||null,{write:true});
@@ -119,17 +170,25 @@ async function fetchV34(request,env,ctx){
 }
 
 async function runScheduledWithEasyOrdersRecovery(controller,env,ctx){
+  const cron=String(controller?.cron||'');
+  if(cron==='*/5 * * * *'){
+    return startEasyOrdersBeforeLegacy({
+      ctx,
+      launchLegacy:nestedCtx=>commerceV33.scheduled?.(controller,env,nestedCtx),
+      recover:async()=>{
+        const result=await reconcileEasyOrdersOrders(env,{maxRequests:30,lookback:80,trigger:'cron'});
+        const withFees=await reconcileRecoveredFees(env,result);
+        return assertEasyOrdersCronRecovered(withFees);
+      }
+    });
+  }
   const pending=[],nestedCtx=Object.create(ctx||null);nestedCtx.waitUntil=promise=>{if(promise)pending.push(Promise.resolve(promise));};
   let delegated;try{delegated=commerceV33.scheduled?.(controller,env,nestedCtx);}catch(error){pending.push(Promise.reject(error));}
   if(delegated&&typeof delegated.then==='function')pending.push(Promise.resolve(delegated));
   await Promise.allSettled(pending);
-  const cron=String(controller?.cron||'');
   if(cron==='* * * * *')return {ok:true,easyOrdersRecovery:'skipped',metaNearLive:await syncAllMetaAdsNearLiveScheduled(env,{days:2})};
   if(cron==='0 */2 * * *')return {ok:true,easyOrdersRecovery:'skipped',metaGranular:await syncAllMetaAdsGranularScheduled(env,{days:30})};
-  if(cron!=='*/5 * * * *')return {ok:true,easyOrdersRecovery:'skipped'};
-  const result=await reconcileEasyOrdersOrders(env,{maxRequests:30,lookback:80});
-  await reconcileRecoveredFees(env,result);
-  return result;
+  return {ok:true,easyOrdersRecovery:'skipped'};
 }
 
 export class SyncEntrypoint extends WorkerEntrypoint{

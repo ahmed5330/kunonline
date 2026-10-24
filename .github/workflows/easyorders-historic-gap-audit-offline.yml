@@ -1,0 +1,33 @@
+name: Easy Orders historic store gap audit (offline only)
+on:
+  pull_request:
+    branches:
+      - fix/easyorders-preview-recovery-20261024
+    paths:
+      - 'src/easyorders-store-gap-audit.js'
+      - 'src/index-commerce-v34.js'
+      - 'scripts/easyorders-store-gap-audit-test.mjs'
+      - '.github/workflows/easyorders-historic-gap-audit-offline.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-gap-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Static syntax and safe source regression
+        run: |
+          node --check src/easyorders-store-gap-audit.js
+          node --check src/index-commerce-v34.js
+          node --check scripts/easyorders-store-gap-audit-test.mjs
+          node scripts/easyorders-store-gap-audit-test.mjs
+      - name: Confirm no live Cloudflare/provider mutations
+        run: |
+          node -e "const s=require('fs').readFileSync('src/easyorders-store-gap-audit.js','utf8'); if(/\.run\s*\(|\.batch\s*\(|fetcher\s*\(\s*['\"\x60]https:\/\/[^)]*,\s*\{\s*method:\s*['\"]POST/.test(s)) process.exit(1)"
