@@ -1,0 +1,44 @@
+name: Kun Easy Orders unified recovery gate - offline no deploy
+on:
+  pull_request:
+    branches:
+      - fix/easyorders-explicit-store-gap-replay-20261024
+    paths:
+      - 'src/easyorders-*.js'
+      - 'src/commerce-order-sync.js'
+      - 'src/index-commerce-v34.js'
+      - 'src/index-commerce-v38.js'
+      - 'scripts/easyorders-*.mjs'
+      - '.github/workflows/easyorders-unified-recovery-gate.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  unified-isolated:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax guards
+        run: |
+          for f in src/easyorders-store-gap-audit.js src/easyorders-explicit-gap-replay.js src/easyorders-order-reconciliation.js src/easyorders-connection-config.js src/easyorders-cron-priority.js src/commerce-order-sync.js src/index-commerce-v34.js src/index-commerce-v38.js; do node --check "$f"; done
+      - name: Full fake provider + SQLite integration
+        run: |
+          node scripts/easyorders-store-gap-audit-test.mjs
+          node scripts/easyorders-explicit-gap-replay-test.mjs
+          node scripts/easyorders-sync-concurrency-sqlite-test.mjs
+          node scripts/easyorders-cron-priority-test.mjs
+          node scripts/easyorders-scheduler-outcome-test.mjs
+          node scripts/easyorders-recovered-fee-guard-test.mjs
+      - name: Outer Preview worker runtime provenance
+        run: |
+          node --experimental-loader ./scripts/session-test-cloudflare-loader.mjs scripts/easyorders-preview-attestation-test.mjs
+      - name: Assert manual import is disabled by default
+        run: |
+          node -e "const s=require('fs').readFileSync('src/easyorders-explicit-gap-replay.js','utf8'); if(!s.includes(\"EASYORDERS_TARGETED_RECOVERY_ENABLED!=='true'\")) process.exit(1)"
+      - name: Assert no deployment from this workflow
+        run: |
+          if grep -Ei 'wrangler[[:space:]]+deploy|d1[[:space:]]+execute[[:space:]]+.*--remote' .github/workflows/easyorders-unified-recovery-gate.yml; then exit 1; fi
