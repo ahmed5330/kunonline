@@ -133,6 +133,9 @@ async function fetchV34(request,env,ctx){
       // fallback to an unscoped connection even for a platform administrator.
       const me=await currentUser(request,env,ctx);
       requirePermission(me,'orders','write');
+      // Importing historic customer records requires platform administration;
+      // ordinary order operators may audit but never run a recovery.
+      if(me?.role!=='admin')return json({error:'استرجاع الطلبات التاريخية متاح للإدارة فقط',code:'EASYORDERS_REPLAY_ADMIN_REQUIRED'},403);
       const body=await request.clone().json().catch(()=>({}));
       const clientId=resolveTenant(me,body.clientId||body.client_id);
       const storeId=text(body.storeId||body.store_id);
