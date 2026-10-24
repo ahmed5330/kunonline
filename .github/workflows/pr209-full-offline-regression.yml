@@ -1,0 +1,80 @@
+name: PR209 full offline regression (no deploy)
+
+on:
+  pull_request:
+    branches:
+      - fix/audit-critical-findings-20261023
+    paths:
+      - '.github/workflows/pr209-full-offline-regression.yml'
+      - 'src/**'
+      - 'public/**'
+      - 'migrations/**'
+      - 'scripts/**'
+      - 'package.json'
+      - 'package-lock.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr209-offline-${{ github.event.pull_request.number || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  linux-full-suite:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      # Never supply Cloudflare tokens to this test. No live database or Worker.
+      CLOUDFLARE_API_TOKEN: ''
+      CLOUDFLARE_ACCOUNT_ID: ''
+      APP_ENV: 'isolated_ci'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - name: Install dependencies without lifecycle hooks
+        run: npm install --ignore-scripts
+      - name: Offline release blockers and owner password reset
+        run: |
+          node scripts/session-revocation-schema-contract.mjs
+          node scripts/session-revocation-schema-contract-test.mjs
+          node scripts/pr209-main-reconciliation-guard.mjs
+          node scripts/session-revocation-sqlite-integration-test.mjs
+          node scripts/admin-client-password-reset-ui-test.mjs
+          node scripts/admin-client-command-center-test.mjs
+          node scripts/audit-sandbox-config-test.mjs
+          node scripts/preview-migration-release-guard-test.mjs
+      - name: Complete source and synthetic regression suite
+        run: npm test
+      - name: Verify changes contain no whitespace errors
+        run: git diff --check
+
+  windows-auth-suite:
+    if: github.event_name == 'pull_request'
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_API_TOKEN: ''
+      CLOUDFLARE_ACCOUNT_ID: ''
+      APP_ENV: 'isolated_ci'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - name: Windows SQLite, owner password and schema contracts
+        run: |
+          node scripts/session-revocation-schema-contract.mjs
+          node scripts/session-revocation-schema-contract-test.mjs
+          node scripts/pr209-main-reconciliation-guard.mjs
+          node scripts/session-revocation-sqlite-integration-test.mjs
+          node scripts/admin-client-password-reset-ui-test.mjs
+          node scripts/admin-client-command-center-test.mjs
+
+# NO wrangler deploy, D1 remote migrations, live probes, uploads or publish steps.

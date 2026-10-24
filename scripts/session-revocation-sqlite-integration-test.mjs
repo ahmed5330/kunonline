@@ -114,10 +114,15 @@ try{
   const malformed=await request('/api/me','not.a.valid.cookie');
   assert.equal((await malformed.json()).role,null);
   database.exec('DROP TABLE revoked_session_tokens');
+  // Simulate MAIN's different 0099 schema existing on the SAME fake D1 while
+  // the canonical PR table is absent. A legacy hash must not be accepted as
+  // proof the canonical migration ran; authentication still fails closed.
+  database.exec('CREATE TABLE revoked_sessions (token_hash TEXT PRIMARY KEY,expires_at INTEGER NOT NULL)');
   const missing=await token('missing-'+crypto.randomUUID());
+  database.prepare('INSERT INTO revoked_sessions VALUES (?,?)').run(await sessionTokenHash(missing),Math.floor(Date.now()/1000)+3600);
   assert.equal((await identity(missing)).status,500,'missing migration fails closed before auth');
   const missingLogout=await request('/api/logout',missing,'POST');
   assert.equal(missingLogout.status,503,'cannot claim success when table missing');
   assert.equal(missingLogout.headers.get('Set-Cookie'),null);
-  console.log('SEC-02 actual SQLite migration/Worker PASS: session A replay rejected, B survives, legacy jti, idempotency, cookie-preserving error/retry, DB outages and missing table.');
+  console.log('SEC-02 actual SQLite migration/Worker PASS: session A replay rejected, B survives, legacy jti, idempotency, cookie-preserving error/retry, DB outages and legacy-only competing table.');
 }finally{database.close();}
