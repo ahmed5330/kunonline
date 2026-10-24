@@ -208,7 +208,9 @@ try{
   const recovery=await reconcileEasyOrdersOrders(env,{
     clientId:'TENANT-A',connectionId:'CON-D',maxRequests:3,lookback:10,fetcher:fakeApi
   });
-  assert.equal(recovery.results[0].status,'healthy',JSON.stringify(recovery.results[0]));
+  assert.equal(recovery.results[0].status,'catching_up',JSON.stringify(recovery.results[0]));
+  assert.equal(recovery.results[0].unresolvedAheadCount,1,
+    'An unresolved HTTP 404 must not be reported as a fully healthy connection');
   assert.deepEqual(seen,[500,501,502],'Foreign storefront response cannot terminate recovery scan');
   assert.equal(recovery.foreignStoreSkipped,1,'Foreign storefront is observed but never ingested');
   assert.equal(recovery.recovered,1,'Sibling Kun store with same provider ID is a NEW recovery');
