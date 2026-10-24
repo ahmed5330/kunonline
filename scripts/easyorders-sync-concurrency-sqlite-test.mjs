@@ -158,6 +158,17 @@ try{
     history:'[{"source":"staff"}]',contact_log:'[{"call":"handled"}]'
   },'Create-only replay must never overwrite existing customer-service work');
 
+  // A legacy order without a store ID must never be silently attributed
+  // to Wefaq (or any other store) by the historical recovery path.
+  db.prepare('INSERT INTO orders (id,client_id,store_id,ref,state,note) VALUES (?,?,?,?,?,?)')
+    .run('LEGACY-UNSCOPED','TENANT-A',null,'easyorders:LEGACY-UNSCOPED','shipped','KEEP-LEGACY-NOTE');
+  await assert.rejects(()=>asReplay({...p,id:'LEGACY-UNSCOPED',status:'pending'}),
+    {code:'EASYORDERS_RECOVERY_LEGACY_ORDER_AMBIGUOUS'});
+  assert.deepEqual({...db.prepare('SELECT store_id,state,note FROM orders WHERE id=?')
+    .get('LEGACY-UNSCOPED')},{
+    store_id:null,state:'shipped',note:'KEEP-LEGACY-NOTE'
+  },'Create-only history replay cannot claim or rewrite an unscoped legacy record');
+
   // An actual insert may race AFTER the initial SELECT; create-only SQL must
   // treat same-store concurrent insertion as already present without an upsert.
   insertRaceId='RACE-SAME-STORE';
