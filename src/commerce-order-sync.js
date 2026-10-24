@@ -71,7 +71,7 @@ async function verifyWebhook(env,connection,sent){const secrets=await readConnec
 async function verifyRoute(env,connection,sent){const expected=await routeToken(env,connection);if(!safeEqual(sent,expected))throw Object.assign(new Error('Webhook URL غير صالح لهذا الربط'),{status:401,code:'EASYORDERS_WEBHOOK_ROUTE_INVALID'});}
 async function bindExternalStore(env,connection,externalStoreId){const incoming=text(externalStoreId);if(!incoming)return;const current=text(connection.external_store_id),placeholder=!current||current===connection.id||/^CON-/i.test(current);if(!placeholder&&current!==incoming)throw Object.assign(new Error('Webhook وصل من Easy Orders Store مختلف عن المتجر المرتبط'),{status:409,code:'EASYORDERS_STORE_MISMATCH'});if(current!==incoming){await env.DB.prepare('UPDATE store_connections SET external_store_id=?,updated_at=? WHERE id=? AND client_id=?').bind(incoming,now(),connection.id,connection.client_id).run();connection.external_store_id=incoming;}}
 async function customer(env,connection,p,storeId){const phone=normalizePhone(p.phone);if(!phone)return null;const existing=await env.DB.prepare('SELECT id FROM customers WHERE client_id=? AND store_id IS ? AND phone=? LIMIT 1').bind(connection.client_id,storeId||null,phone).first();if(existing)return existing.id;const id=`CUS-${crypto.randomUUID().slice(0,8).toUpperCase()}`;await env.DB.prepare('INSERT INTO customers (id,client_id,store_id,name,phone,gov,address,tags,note,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)').bind(id,connection.client_id,storeId||null,text(p.full_name),phone,text(p.government),text(p.address),'[]','',now()).run();return id;}
-async function upsertEasyOrder(env,connection,p){
+async function upsertEasyOrder(env,connection,p,{createOnly=false}={}){
   const items=Array.isArray(p.cart_items)?p.cart_items:[],state=mapEasyOrdersStatus(p.status),qty=items.reduce((s,x)=>s+(Number(x.quantity)||1),0)||1,product=items.map(x=>text(x?.product?.name)).filter(Boolean).join(' + '),notes=items.flatMap(x=>(x?.variant?.variation_props||[]).map(v=>`${text(v.variation)}: ${text(v.variation_prop)}`)).filter(Boolean).join('، '),storeId=await resolveKunStoreId(env,connection),createdAt=text(p.created_at)||now(),orderDate=easyOrdersBusinessDate(createdAt);
   if(!storeId)throw Object.assign(new Error('تعذر تحديد متجر Kun Online الذي يستقبل الطلب'),{status:409,code:'EASYORDERS_KUN_STORE_UNBOUND'});
   // Easy Orders IDs are external IDs and need not be globally unique across
@@ -85,9 +85,19 @@ async function upsertEasyOrder(env,connection,p){
   const fingerprint=collision?await crypto.subtle.digest('SHA-256',new TextEncoder().encode([connection.client_id,storeId,connection.id,externalId].join(':'))):null;
   const scopedId=collision?'EO-'+Array.from(new Uint8Array(fingerprint),b=>b.toString(16).padStart(2,'0')).join('').slice(0,32):externalId;
   const id=existing?.id||scopedId;
+  // A historical recovery must never modify existing live order fields or
+  // status. Precheck avoids even touching its customer record in normal case;
+  // SQLite insert-only semantics below also handle concurrent webhooks safely.
+  if(createOnly&&existing)return {
+    ok:true,event:'order-existing',id:existing.id,clientId:connection.client_id,
+    storeId,skippedExisting:true
+  };
   const customerId=await customer(env,connection,p,storeId);
   const upsertSql=`INSERT INTO orders (id,client_id,store_id,ref,customer_id,date,name,phone,gov,address,product,product_note,unit_price,qty,total,product_cost,shipping_cost,source,note,state,checkpoint,contact_log,history,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET store_id=COALESCE(orders.store_id,excluded.store_id),customer_id=COALESCE(excluded.customer_id,orders.customer_id),date=excluded.date,name=excluded.name,phone=excluded.phone,gov=excluded.gov,address=excluded.address,product=excluded.product,product_note=excluded.product_note,unit_price=excluded.unit_price,qty=excluded.qty,total=excluded.total,product_cost=excluded.product_cost,shipping_cost=excluded.shipping_cost,state=CASE WHEN orders.state IN ('no_answer','deferred') THEN orders.state WHEN (orders.state IN ('shipped','signed','collected','returned','cancelled') AND excluded.state IN ('pending','confirmed','preparing')) OR (orders.state IN ('confirmed','preparing') AND excluded.state='pending') THEN orders.state ELSE excluded.state END,checkpoint=CASE WHEN orders.state IN ('no_answer','deferred') THEN orders.checkpoint WHEN (orders.state IN ('shipped','signed','collected','returned','cancelled') AND excluded.state IN ('pending','confirmed','preparing')) OR (orders.state IN ('confirmed','preparing') AND excluded.state='pending') THEN orders.checkpoint ELSE excluded.checkpoint END WHERE orders.client_id=excluded.client_id AND (orders.store_id=excluded.store_id OR orders.store_id IS NULL)`;
-  const writeOrder=candidateId=>env.DB.prepare(upsertSql).bind(candidateId,connection.client_id,storeId,ref,customerId,orderDate,text(p.full_name),normalizePhone(p.phone)||text(p.phone),text(p.government),text(p.address),product,notes,items.length===1?Number(items[0].price)||0:0,qty,Number(p.total_cost)||0,Number(p.cost)||0,Number(p.shipping_cost)||0,'المتجر (Easy Orders)','',state,checkpoint(state),'[]',JSON.stringify([{state,at:createdAt,source:'easyorders-webhook'}]),createdAt).run();
+  const statement=createOnly
+    ? upsertSql.split(' ON CONFLICT(id) DO UPDATE')[0]+' ON CONFLICT(id) DO NOTHING'
+    : upsertSql;
+  const writeOrder=candidateId=>env.DB.prepare(statement).bind(candidateId,connection.client_id,storeId,ref,customerId,orderDate,text(p.full_name),normalizePhone(p.phone)||text(p.phone),text(p.government),text(p.address),product,notes,items.length===1?Number(items[0].price)||0:0,qty,Number(p.total_cost)||0,Number(p.cost)||0,Number(p.shipping_cost)||0,'المتجر (Easy Orders)','',state,checkpoint(state),'[]',JSON.stringify([{state,at:createdAt,source:'easyorders-webhook'}]),createdAt).run();
   let savedId=id,result=await writeOrder(savedId);
   if(result?.success===false)throw Object.assign(new Error('Easy Orders order write failed'),{status:503,code:'EASYORDERS_ORDER_WRITE_FAILED'});
   if(result?.meta?.changes===0&&savedId===externalId&&!existing){
@@ -103,13 +113,21 @@ async function upsertEasyOrder(env,connection,p){
       result=await writeOrder(savedId);
     }
   }
+  if(createOnly&&result?.meta?.changes===0){
+    // Another webhook imported this ID between read and insert. A concurrent
+    // replay must report "already in Kun" instead of overwriting its state.
+    const won=await env.DB.prepare('SELECT id FROM orders WHERE client_id=? AND (id=? OR ref=?) AND store_id=? LIMIT 1')
+      .bind(connection.client_id,externalId,ref,storeId).first();
+    if(won)return {ok:true,event:'order-existing',id:won.id,
+      clientId:connection.client_id,storeId,skippedExisting:true};
+  }
   if(result?.success===false||result?.meta?.changes===0)
     throw Object.assign(new Error('Easy Orders order ID conflict; no cross-store overwrite'),{
       status:409,code:'EASYORDERS_ORDER_ID_COLLISION'});
   await env.DB.prepare('UPDATE store_connections SET last_sync_at=?,last_error=NULL,updated_at=? WHERE id=? AND client_id=?').bind(now(),now(),connection.id,connection.client_id).run();return {ok:true,event:'order-created',id:savedId,clientId:connection.client_id,storeId,date:orderDate};
 }
 
-export async function handleEasyOrdersWebhook(request,env,{connectionId=null,routeToken:sentRouteToken=''}={}){
+export async function handleEasyOrdersWebhook(request,env,{connectionId=null,routeToken:sentRouteToken='',createOnly=false}={}){
   const payload=await request.clone().json().catch(()=>({})),sent=request.headers.get('secret')||'';
   let connection=null;
   if(connectionId){
@@ -117,6 +135,8 @@ export async function handleEasyOrdersWebhook(request,env,{connectionId=null,rou
     if(!connection)throw Object.assign(new Error('ربط Easy Orders غير موجود أو غير متصل'),{status:404,code:'EASYORDERS_CONNECTION_NOT_FOUND'});
     await verifyRoute(env,connection,sentRouteToken);
   }
+  if(createOnly&&payload.event_type==='order-status-update')
+    throw Object.assign(new Error('Historical replay never updates existing status'),{status:409,code:'EASYORDERS_REPLAY_CREATE_ONLY'});
   if(payload.event_type==='order-status-update'){
     if(!connection){const row=await env.DB.prepare("SELECT client_id FROM orders WHERE id=? OR ref=? LIMIT 1").bind(text(payload.order_id),`easyorders:${text(payload.order_id)}`).first();if(!row)return null;connection=await env.DB.prepare("SELECT * FROM store_connections WHERE client_id=? AND provider='easyorders' AND status='connected' ORDER BY updated_at DESC LIMIT 1").bind(row.client_id).first();if(!connection)return null;}
     await verifyWebhook(env,connection,sent);
@@ -141,5 +161,5 @@ export async function handleEasyOrdersWebhook(request,env,{connectionId=null,rou
   }
   if(!payload.id||!payload.store_id)return null;
   if(!connection){connection=await env.DB.prepare("SELECT * FROM store_connections WHERE provider='easyorders' AND status='connected' AND external_store_id=? ORDER BY updated_at DESC LIMIT 1").bind(text(payload.store_id)).first();if(!connection)return null;}
-  await verifyWebhook(env,connection,sent);await bindExternalStore(env,connection,payload.store_id);return upsertEasyOrder(env,connection,payload);
+  await verifyWebhook(env,connection,sent);await bindExternalStore(env,connection,payload.store_id);return upsertEasyOrder(env,connection,payload,{createOnly});
 }
