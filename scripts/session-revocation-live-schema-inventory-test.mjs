@@ -32,7 +32,8 @@ const fake=async(url,options)=>{
   }else if(sql.includes('pragma_table_info')){
     rows=sql.includes('AS required')?[
       {name:'token_hash',type:'TEXT',required:0,pk:1},
-      {name:'expires_at',type:'INTEGER',required:1,pk:0}
+      {name:'expires_at',type:'INTEGER',required:1,pk:0},
+      ...(sql.includes("'revoked_session_tokens'")?[{name:'revoked_at',type:'TEXT',required:1,pk:0}]:[])
     ]:[{name:'id'},{name:'name'},{name:'applied_at'}];
   }else if(sql.includes('COUNT(*)')){
     rows=[{total:env==='production_db'?4:9,unexpired:env==='production_db'?1:3}];
@@ -57,13 +58,16 @@ assert.ok(count>6);
 assert.doesNotMatch(JSON.stringify(output),/SYNTHETIC_DO_NOT_LEAK|0123456789abcdef|sha256-user-cookie/);
 assert.ok(output.reports[0].ledgers.d1_migrations.matchingRevocationMigrationNames.includes('0099_revoked_sessions.sql'));
 const one=(x,y)=>[{
-  environment:'production_db',tables:{revoked_sessions:{exists:x},revoked_session_tokens:{exists:y}}
+  environment:'production_db',tables:{revoked_sessions:{exists:x,columnsCompatible:x},revoked_session_tokens:{exists:y,columnsCompatible:y}}
 },{
-  environment:'preview_db',tables:{revoked_sessions:{exists:x},revoked_session_tokens:{exists:y}}
+  environment:'preview_db',tables:{revoked_sessions:{exists:x,columnsCompatible:x},revoked_session_tokens:{exists:y,columnsCompatible:y}}
 }];
 assert.equal(assessReadOnlyInventory(one(false,false)).production,'NO_REVOCATION_SCHEMA_PRESENT_STOP_RELEASE');
 assert.equal(assessReadOnlyInventory(one(false,true)).preview,'PR209_SCHEMA_ONLY_VALIDATE_ACTUAL_WORKER');
 assert.equal(assessReadOnlyInventory(one(true,true)).preview,'DUAL_TABLES_REQUIRE_MANUAL_LEDGER_AND_RECORD_RECONCILIATION');
+const corrupted=one(true,false);corrupted[0].tables.revoked_sessions.columnsCompatible=false;
+assert.equal(assessReadOnlyInventory(corrupted).production,'INCOMPATIBLE_REVOCATION_COLUMNS_STOP_RELEASE',
+  'Incorrect token_hash/expiry/extra-column contract must fail closed');
 await assert.rejects(inspectRevocationDatabases({
   accountId:'0123456789abcdef0123456789abcdef',apiToken:secret,configs,
   fetchImpl:async()=>({ok:false,status:403,json:async()=>({errors:[{message:'NEVER_PRINT_DATABASE_PRIVATE_DETAILS'}]})})
