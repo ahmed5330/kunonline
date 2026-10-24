@@ -28,6 +28,9 @@ export function assessReadOnlyInventory(databases){
   if(!p||!v)throw Error('Both configured D1 databases must be audited');
   const outcome=x=>{
     const legacy=x.tables.revoked_sessions,pending=x.tables.revoked_session_tokens;
+    // Matching table names with incompatible columns are NOT proof that revocation is safe.
+    if((legacy.exists&&legacy.columnsCompatible!==true)||(pending.exists&&pending.columnsCompatible!==true))
+      return 'INCOMPATIBLE_REVOCATION_COLUMNS_STOP_RELEASE';
     if(legacy.exists&&pending.exists)return 'DUAL_TABLES_REQUIRE_MANUAL_LEDGER_AND_RECORD_RECONCILIATION';
     if(legacy.exists)return 'LEGACY_SCHEMA_ONLY_VALIDATE_ACTUAL_WORKER';
     if(pending.exists)return 'PR209_SCHEMA_ONLY_VALIDATE_ACTUAL_WORKER';
@@ -72,8 +75,18 @@ export async function inspectRevocationDatabases({accountId,apiToken,configs,fet
       const exists=names.has(table);
       const columns=exists?(await sql(target.id,"SELECT name, type, \"notnull\" AS required, pk FROM pragma_table_info('"+table+"') ORDER BY cid"))
         .map(x=>({name:String(x.name),type:String(x.type||''),required:Number(x.required||0)!==0,primaryKey:Number(x.pk||0)!==0})):[];
-      const count=exists?(await sql(target.id,'SELECT COUNT(*) AS total, SUM(CASE WHEN expires_at > CAST(strftime(\'%s\',\'now\') AS INTEGER) THEN 1 ELSE 0 END) AS unexpired FROM '+table))[0]:null;
-      tables[table]={exists,columns,counts:count?{total:Number(count.total||0),unexpired:Number(count.unexpired||0)}:null};
+      const field=name=>columns.find(col=>col.name===name);
+      const hash=field('token_hash'),expiry=field('expires_at'),revoked=field('revoked_at');
+      const columnsCompatible=exists&&Boolean(
+        hash?.primaryKey&&/^TEXT$/i.test(hash.type)&&
+        expiry?.required&&/^INTEGER$/i.test(expiry.type)&&
+        (table!=='revoked_session_tokens'||(revoked?.required&&/^TEXT$/i.test(revoked.type)))
+      );
+      // Incorrect schemas must not be considered healthy or have their
+      // column values inspected. A fail-closed assessment blocks the release.
+      const count=columnsCompatible?(await sql(target.id,'SELECT COUNT(*) AS total, SUM(CASE WHEN expires_at > CAST(strftime(\\'%s\\',\\'now\\') AS INTEGER) THEN 1 ELSE 0 END) AS unexpired FROM '+table))[0]:null;
+      tables[table]={exists,columns,columnsCompatible,
+        counts:count?{total:Number(count.total||0),unexpired:Number(count.unexpired||0)}:null};
     }
     const ledgers={};
     for(const table of LEDGERS.filter(n=>names.has(n))){
