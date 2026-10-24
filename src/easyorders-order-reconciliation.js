@@ -150,7 +150,13 @@ async function reconcileConnection(env,connection,{maxRequests,lookback,fetcher}
     };
 
     while(cursor>0&&cursor<=highest&&out.requests<maxRequests&&!out.rateLimited){
-      await inspect(cursor);cursor++;
+      const inspected=await inspect(cursor);
+      // A 429 is NOT a missing order. Do not checkpoint the next Short ID
+      // until the current ID has been read (or explicitly returned 404).
+      // Otherwise the throttled order can be permanently skipped in all
+      // future scheduled runs.
+      if(inspected.kind==='rate_limited'||inspected.kind==='budget')break;
+      cursor++;
     }
 
     if(cursor>highest&&out.requests<maxRequests&&!out.rateLimited){
