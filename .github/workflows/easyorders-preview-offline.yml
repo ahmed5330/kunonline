@@ -1,0 +1,65 @@
+name: Easy Orders Preview recovery hotfix offline QA
+on:
+  pull_request:
+    branches: [develop/ux-system-upgrade]
+    paths:
+      - 'src/commerce-order-sync.js'
+      - 'src/easyorders-connection-config.js'
+      - 'src/easyorders-order-reconciliation.js'
+      - 'src/index-commerce-v31.js'
+      - 'src/index-commerce-v34.js'
+      - 'scripts/easyorders-sync-concurrency-sqlite-test.mjs'
+      - 'package.json'
+      - '.github/workflows/easyorders-preview-offline.yml'
+permissions:
+  contents: read
+concurrency:
+  group: easyorders-preview-offline-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  preview-source-and-mobile:
+    if: github.head_ref == 'fix/easyorders-preview-recovery-20261024'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CLOUDFLARE_API_TOKEN: ''
+      CLOUDFLARE_ACCOUNT_ID: ''
+      APP_ENV: isolated_ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - run: npm install --ignore-scripts
+      - name: Verify canonical Preview Worker and webhook modules
+        run: |
+          node --check src/commerce-order-sync.js
+          node --check src/easyorders-order-reconciliation.js
+          node --check src/index-commerce-v31.js
+          node --check src/index-commerce-v34.js
+      - name: Concurrent webhook, fair store recovery and isolation
+        run: npm run test:easyorders-sync-concurrency
+      # Android delta transport lives on Production/main, not this older
+      # Preview-only source branch. Main PR #225 tests mobile-state-sync and
+      # the dashboard; this branch tests canonical Easy Orders data ingestion.
+      - name: Preview canonical Easy Orders source and recovery contract
+        run: node scripts/order-sync-test.mjs
+      - run: git diff --check
+  windows-sqlite:
+    if: github.head_ref == 'fix/easyorders-preview-recovery-20261024'
+    runs-on: windows-latest
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_API_TOKEN: ''
+      CLOUDFLARE_ACCOUNT_ID: ''
+      APP_ENV: isolated_ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - run: npm install --ignore-scripts
+      - run: npm run test:easyorders-sync-concurrency
+# NO Preview D1 migration, remote query, production interaction, deploy or publish.
