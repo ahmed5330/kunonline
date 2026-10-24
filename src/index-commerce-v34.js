@@ -6,6 +6,7 @@ import {syncMetaAdsForClient} from './meta-ads-sync.js';
 import {syncMetaAdsGranular} from './meta-ads-granular.js';
 import {metaAdsExpertAnalysisV2} from './meta-ads-expert.js';
 import {easyOrdersRecoveryStatus,reconcileEasyOrdersOrders} from './easyorders-order-reconciliation.js';
+import {auditEasyOrdersStoreGapRange} from './easyorders-store-gap-audit.js';
 import {mutateEasyOrdersConfig,mergeEasyOrdersRecoveryPatch} from './easyorders-connection-config.js';
 import {assertEasyOrdersCronRecovered} from './easyorders-scheduler-outcome.js';
 import {reconcileEasyOrdersRecoveredFees} from './easyorders-recovered-fee-guard.js';
@@ -107,6 +108,24 @@ async function fetchV34(request,env,ctx){
     if(path==='/api/commerce/order-sync/recovery-status'&&method==='GET'){
       const me=await currentUser(request,env,ctx);requirePermission(me,'orders','read');const clientId=resolveTenant(me,url.searchParams.get('clientId')),scope=await resolveStoreScope(env,me,clientId,url.searchParams.get('storeId')||null,{write:false});
       return json(await easyOrdersRecoveryStatus(env,{clientId,storeId:scope.storeId||null,connectionId:url.searchParams.get('connectionId')||null}));
+    }
+    if(path==='/api/commerce/order-sync/audit-gaps'&&method==='POST'){
+      // POST is a READ-ONLY audit: neither Easy Orders nor D1 is mutated.
+      // Never allow all-store scans; even platform admins select one scoped store.
+      const me=await currentUser(request,env,ctx);
+      requirePermission(me,'orders','read');
+      const body=await request.clone().json().catch(()=>({}));
+      const storeId=text(body.storeId||body.store_id);
+      const connectionId=text(body.connectionId||body.connection_id);
+      if(!storeId||!connectionId)return json({error:'حدد متجرًا واتصال Easy Orders للفحص',code:'EASYORDERS_AUDIT_SCOPE_REQUIRED'},400);
+      const clientId=resolveTenant(me,body.clientId||body.client_id);
+      const scope=await resolveStoreScope(env,me,clientId,storeId,{write:false});
+      if(String(scope.storeId)!==storeId)return json({error:'صلاحية المتجر غير متاحة',code:'STORE_ISOLATION'},403);
+      const result=await auditEasyOrdersStoreGapRange(env,{
+        clientId,storeId,connectionId,
+        fromShortId:body.fromShortId,toShortId:body.toShortId
+      });
+      return json(result);
     }
     if(path==='/api/commerce/order-sync/reconcile'&&method==='POST'){
       const me=await currentUser(request,env,ctx);requirePermission(me,'orders','write');const body=await request.clone().json().catch(()=>({})),clientId=resolveTenant(me,body.clientId||body.client_id||url.searchParams.get('clientId')),scope=await resolveStoreScope(env,me,clientId,body.storeId||body.store_id||url.searchParams.get('storeId')||null,{write:true});
