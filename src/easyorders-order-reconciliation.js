@@ -58,8 +58,13 @@ async function fetchOrderByShortId(fetcher,apiKey,shortId){
 }
 
 async function existingOrder(env,connection,order){
-  const id=text(order?.id);if(!id)return null;
-  return env.DB.prepare('SELECT id FROM orders WHERE client_id=? AND (id=? OR ref=?) LIMIT 1').bind(connection.client_id,id,`easyorders:${id}`).first();
+  const id=text(order?.id),config=parseConfig(connection),storeId=text(config.kunStoreId||config.storeId);
+  if(!id||!storeId)return null;
+  // Provider IDs are shared between Easy Orders stores; only same-store
+  // orders count as previously ingested, otherwise fee reconciliation and
+  // recovered order reporting silently miss new orders.
+  return env.DB.prepare('SELECT id FROM orders WHERE client_id=? AND (id=? OR ref=?) AND (store_id=? OR store_id IS NULL) LIMIT 1')
+    .bind(connection.client_id,id,`easyorders:${id}`,storeId).first();
 }
 
 async function ingestThroughCanonicalWebhook(env,connection,secrets,order){
@@ -95,7 +100,7 @@ async function bootstrapFromLastWebhook(env,connection,{apiKey,fetcher,lookback}
 }
 
 async function reconcileConnection(env,connection,{maxRequests,lookback,fetcher}){
-  const out={connectionId:connection.id,clientId:connection.client_id,storeId:null,requests:0,recovered:0,updated:0,missing:0,seeded:false,rateLimited:false,highestShortId:0,nextShortId:0,estimatedRemaining:0,cumulativeRecovered:0,status:'waiting_for_short_id',recoveredOrderIds:[],error:null};
+  const out={connectionId:connection.id,clientId:connection.client_id,storeId:null,requests:0,recovered:0,updated:0,missing:0,foreignStoreSkipped:0,seeded:false,rateLimited:false,highestShortId:0,nextShortId:0,estimatedRemaining:0,cumulativeRecovered:0,status:'waiting_for_short_id',recoveredOrderIds:[],error:null};
   try{
     const secrets=await readConnectionSecrets(env,connection.client_id,connection.id),apiKey=text(secrets.api_key);
     if(!apiKey)throw Object.assign(new Error('مفتاح Easy Orders API غير موجود؛ لا يمكن إصلاح فجوات الطلبات تلقائيًا'),{status:409,code:'EASYORDERS_API_KEY_MISSING'});
@@ -119,6 +124,23 @@ async function reconcileConnection(env,connection,{maxRequests,lookback,fetcher}
       if(fetched.kind==='rate_limited'){out.rateLimited=true;return fetched;}
       if(fetched.kind==='missing'){out.missing++;return fetched;}
       const order=fetched.data||{},actualShort=positiveInt(order.short_id||order.shortId)||shortId;
+      const incomingStore=text(order.store_id||order.storeId);
+      const boundStore=text(connection.external_store_id);
+      const verifiedStore=boundStore&&!/^CON-/i.test(boundStore)&&boundStore!==text(connection.id);
+      if(!verifiedStore){
+        throw Object.assign(new Error('Easy Orders store identity must be verified by the connected webhook before recovery'),{
+          status:409,code:'EASYORDERS_RECOVERY_EXTERNAL_STORE_UNBOUND'});
+      }
+      if(!incomingStore||!text(order.id)){
+        throw Object.assign(new Error('Easy Orders recovery response is missing order or store identity'),{
+          status:502,code:'EASYORDERS_RECOVERY_PAYLOAD_INVALID'});
+      }
+      if(incomingStore!==boundStore){
+        // A token may list orders from multiple external storefronts. Do not
+        // ingest the other shop into this Kun store or halt its entire scan.
+        out.foreignStoreSkipped++;
+        return {kind:'foreign_store',shortId};
+      }
       const before=await existingOrder(env,connection,order),result=await ingestThroughCanonicalWebhook(env,connection,secrets,order);
       if(result?.id){
         if(before)out.updated++;else {out.recovered++;out.recoveredOrderIds.push(result.id);}
@@ -138,7 +160,7 @@ async function reconcileConnection(env,connection,{maxRequests,lookback,fetcher}
         if(found.kind==='found'){
           highest=Math.max(highest,positiveInt(found.shortId)||probe);
           probe=highest+1;misses=0;
-        }else if(found.kind==='missing'){
+        }else if(found.kind==='missing'||found.kind==='foreign_store'){
           misses++;probe++;
         }else break;
       }
@@ -184,11 +206,11 @@ export function fairEasyOrdersRecoveryOrder(connections=[]){
 export async function reconcileEasyOrdersOrders(env,{clientId=null,storeId=null,connectionId=null,maxRequests=DEFAULT_MAX_REQUESTS,lookback=DEFAULT_LOOKBACK,fetcher=fetch}={}){
   const cap=bounded(maxRequests,DEFAULT_MAX_REQUESTS,1,30),back=bounded(lookback,DEFAULT_LOOKBACK,10,250),
     selected=fairEasyOrdersRecoveryOrder(selectConnections(await connectionRows(env,{clientId,connectionId}),storeId));
-  const out={ok:true,connections:selected.length,requests:0,recovered:0,updated:0,missing:0,seeded:0,rateLimited:false,recoveredOrderIds:[],results:[]};
+  const out={ok:true,connections:selected.length,requests:0,recovered:0,updated:0,missing:0,foreignStoreSkipped:0,seeded:0,rateLimited:false,recoveredOrderIds:[],results:[]};
   let remaining=cap;
   for(let i=0;i<selected.length&&remaining>0;i++){
     const fairShare=Math.max(3,Math.floor(remaining/Math.max(1,selected.length-i))),result=await reconcileConnection(env,selected[i],{maxRequests:Math.min(remaining,fairShare),lookback:back,fetcher});
-    remaining-=result.requests;out.requests+=result.requests;out.recovered+=result.recovered;out.updated+=result.updated;out.missing+=result.missing;if(result.seeded)out.seeded++;if(result.rateLimited)out.rateLimited=true;out.recoveredOrderIds.push(...result.recoveredOrderIds);out.results.push(result);
+    remaining-=result.requests;out.requests+=result.requests;out.recovered+=result.recovered;out.updated+=result.updated;out.missing+=result.missing;out.foreignStoreSkipped+=result.foreignStoreSkipped;if(result.seeded)out.seeded++;if(result.rateLimited)out.rateLimited=true;out.recoveredOrderIds.push(...result.recoveredOrderIds);out.results.push(result);
   }
   Object.assign(out,aggregateRecovery(out.results));
   return out;
