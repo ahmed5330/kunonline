@@ -27,10 +27,10 @@ const sections=[
   "Gate Easy Orders code-only release on read-only live Worker and D1 checks",
   "Apply preview migrations only with explicit schema approval",
   "Reconfirm latest branch HEAD before deploy",
-  "Capture current live Preview version as rollback without changing traffic",
+  "Create fresh verified rollback baseline from stable Git source",
   "Deploy preview Worker",
   "Require every Preview validation gate to succeed",
-  "Restore captured live Preview Worker version after failed validation"
+  "Restore same-run verified Preview baseline after failed validation"
 ];
 let previous=-1;
 for(const name of sections){
@@ -53,4 +53,4 @@ assert.ok(!/\bwrangler d1 migrations apply\b/.test(config),
 assert.match(scheduler,/service\s*=\s*"kunonline-preview"/);
 assert.match(scheduler,/entrypoint\s*=\s*"SyncEntrypoint"/);
 assert.match(scheduler,/\*\/5 \* \* \* \*/);
-console.log('Easy Orders Preview code-only release gate PASS: protected GET-only Cron/D1, no auto schema write, captured live rollback version, all QA + rollback checks.');
+console.log('Easy Orders Preview code-only release gate PASS: protected GET-only Cron/D1, no auto schema write, validated stable Git rollback version, all QA + rollback checks.');
