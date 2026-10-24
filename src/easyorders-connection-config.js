@@ -34,7 +34,7 @@ export function mergeEasyOrdersRecoveryPatch(current={},patch={}){
   }
   const highest=Math.max(positiveInt(next.webhookLastShortId),positiveInt(next.easyOrdersRecoveryHighestShortId));
   if(highest>0)next.easyOrdersRecoveryHighestShortId=highest;
-  if(next.easyOrdersRecoveryLastStatus==='healthy'&&positiveInt(next.easyOrdersRecoveryCursor)<=highest)
+  if(next.easyOrdersRecoveryLastStatus==='healthy'&&(positiveInt(next.easyOrdersRecoveryCursor)<=highest||next.easyOrdersRecoveryPendingShortIds?.length>0))
     next.easyOrdersRecoveryLastStatus='catching_up';
   return next;
 }
