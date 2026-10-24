@@ -43,7 +43,6 @@ const adapter=(db,{failSecond=false,returnFailure=false}={})=>({
 const fixedTime=Math.floor(Date.now()/1000);
 const expires=fixedTime+3600;
 const token=name=>'SYNTHETIC_TEST_TOKEN_ONLY_'+name;
-const row=(db,table,name)=>db.prepare('SELECT expires_at,revoked_at FROM '+table+' WHERE token_hash=?').get(name);
 const q=async(db,table,name)=>db.prepare('SELECT expires_at FROM '+table+' WHERE token_hash=?').get(await sessionTokenHash(token(name)));
 const addOld=async(db,name,exp=expires)=>{
   db.prepare('INSERT INTO revoked_sessions (token_hash,expires_at) VALUES (?,?)')
@@ -67,6 +66,10 @@ try{
   assert.deepEqual(result,{ok:true});
   assert.equal((await q(db,'revoked_sessions','mixed-version')).expires_at,expires);
   assert.equal((await q(db,'revoked_session_tokens','mixed-version')).expires_at,expires);
+  const storedHashes=db.prepare('SELECT token_hash FROM revoked_sessions').all().map(r=>r.token_hash);
+  assert.ok(storedHashes.every(x=>/^[0-9a-f]{64}$/.test(x)),
+    'D1 contains only SHA-256 fingerprints, never test bearer tokens');
+  assert.ok(storedHashes.every(x=>!x.includes('SYNTHETIC_TEST_TOKEN_ONLY_')));
   assert.equal(await isRevokedAcrossBoth(env,token('mixed-version')),true);
   // Repeating logout with shorter expiration must NOT shorten a known ban.
   await revokeAcrossBoth(env,token('mixed-version'),expires-300);
@@ -92,7 +95,7 @@ try{
   await assert.rejects(revokeAcrossBoth({DB:{prepare:env.DB.prepare}},token('no-batch'),expires),/Atomic D1 batch is required/);
   await assert.rejects(revokeAcrossBoth(env,token('bad-exp'),Infinity),/Invalid session expiry/);
   await assert.rejects(isRevokedAcrossBoth(env,''),/Missing session token/);
-  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM revoked_sessions').get().n,5);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM revoked_sessions').get().n,4);
 }finally{db.close();}
 
 for(const mode of [{old:true,canonical:false},{old:false,canonical:true}]){
