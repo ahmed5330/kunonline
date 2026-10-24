@@ -224,6 +224,26 @@ try{
     'No order from another Easy Orders store may enter the Kun database');
   assert.equal(db.prepare('SELECT state FROM orders WHERE id=?').get(a.id).state,'pending',
     'Recovery must not change existing sibling store order');
+  // Scheduled catch-up repeats a provider order that is already confirmed
+  // or shipped locally. It MUST NOT replay stale source fields over staff
+  // notes, shipping state, contact history, or existing charges.
+  db.prepare("UPDATE orders SET state='shipped',checkpoint='جاري الشحن',note='KEEP-STAFF-NOTE',contact_log='[{\"call\":\"saved\"}]',history='[{\"type\":\"staff-handled\"}]',address='KEEP-STAFF-ADDRESS' WHERE id=?")
+    .run(recoveredId);
+  const existingD=config('CON-D');
+  db.prepare('UPDATE store_connections SET config_json=? WHERE id=?')
+    .run(JSON.stringify({...existingD,easyOrdersRecoveryCursor:501}),'CON-D');
+  const replayOfExisting=await reconcileEasyOrdersOrders(env,{
+    clientId:'TENANT-A',connectionId:'CON-D',maxRequests:2,lookback:10,
+    fetcher:fakeApi
+  });
+  assert.equal(replayOfExisting.recovered,0,'Scheduled recovery must not count existing orders as new');
+  assert.equal(replayOfExisting.updated,1,'Already-imported orders are counted as skipped');
+  assert.deepEqual({...db.prepare('SELECT state,checkpoint,note,contact_log,history,address FROM orders WHERE id=?').get(recoveredId)},{
+    state:'shipped',checkpoint:'جاري الشحن',note:'KEEP-STAFF-NOTE',
+    contact_log:'[{"call":"saved"}]',history:'[{"type":"staff-handled"}]',
+    address:'KEEP-STAFF-ADDRESS'
+  },'Scheduled recovery must never overwrite already handled live orders');
+
   // Unbound integrations must be explicitly repaired via authenticated
   // webhook rather than assigning the first random provider store from API.
   db.prepare('INSERT INTO store_connections (id,client_id,provider,status,config_json,updated_at,external_store_id) VALUES (?,?,?,?,?,?,?)')
