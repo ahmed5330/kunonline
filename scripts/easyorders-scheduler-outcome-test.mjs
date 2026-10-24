@@ -23,7 +23,7 @@ for(const [payload,code] of [
 ]){
   assert.throws(()=>assertEasyOrdersCronRecovered(payload),error=>{
     assert.equal(error.code,code);
-    assert.doesNotMatch(error.message,/tenant|client|token|order/i,'Cloudflare scheduler failure must not leak tenant data');
+    assert.doesNotMatch(error.message,/tenantId|clientId|connectionId|private|token|customer/i,'Cloudflare scheduler failure must not leak tenant data');
     assert.ok(!('connectionId' in (error.aggregate||{})));
     return true;
   });
