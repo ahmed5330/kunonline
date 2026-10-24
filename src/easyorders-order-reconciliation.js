@@ -1,5 +1,6 @@
 import {readConnectionSecrets} from './integration-provider-validation.js';
 import {easyOrdersWebhookPath,handleEasyOrdersWebhook} from './commerce-order-sync.js';
+import {mutateEasyOrdersConfig,mergeEasyOrdersRecoveryPatch} from './easyorders-connection-config.js';
 
 const text=v=>String(v??'').trim();
 const now=()=>new Date().toISOString();
@@ -30,12 +31,8 @@ function aggregateRecovery(results=[]){
 }
 
 async function patchConfig(env,connection,patch){
-  const fresh=await env.DB.prepare('SELECT config_json FROM store_connections WHERE id=? AND client_id=?').bind(connection.id,connection.client_id).first();
-  const config={...parseConfig(fresh||connection),...patch};
-  const ts=now();
-  await env.DB.prepare('UPDATE store_connections SET config_json=?,updated_at=? WHERE id=? AND client_id=?').bind(JSON.stringify(config),ts,connection.id,connection.client_id).run();
-  connection.config_json=JSON.stringify(config);
-  return config;
+  return mutateEasyOrdersConfig(env,connection,
+    current=>mergeEasyOrdersRecoveryPatch(current,patch));
 }
 
 async function easyOrdersGet(fetcher,url,apiKey){
@@ -150,8 +147,8 @@ async function reconcileConnection(env,connection,{maxRequests,lookback,fetcher}
 
     const cumulative=positiveInt(config.easyOrdersRecoveryRecoveredCount)+out.recovered,estimatedRemaining=cursor<=highest?highest-cursor+1:0;
     const status=out.rateLimited?'rate_limited':(estimatedRemaining>0?'catching_up':'healthy');
-    await patchConfig(env,connection,{easyOrdersRecoveryHighestShortId:highest,easyOrdersRecoveryCursor:cursor,easyOrdersRecoveryLastRunAt:now(),easyOrdersRecoveryLastStatus:status,easyOrdersRecoveryLastRequests:out.requests,easyOrdersRecoveryLastRecovered:out.recovered,easyOrdersRecoveryRecoveredCount:cumulative,easyOrdersRecoveryLastError:null});
-    out.highestShortId=highest;out.nextShortId=cursor;out.estimatedRemaining=estimatedRemaining;out.cumulativeRecovered=cumulative;out.status=status;
+    const saved=await patchConfig(env,connection,{easyOrdersRecoveryHighestShortId:highest,easyOrdersRecoveryCursor:cursor,easyOrdersRecoveryLastRunAt:now(),easyOrdersRecoveryLastStatus:status,easyOrdersRecoveryLastRequests:out.requests,easyOrdersRecoveryLastRecovered:out.recovered,easyOrdersRecoveryRecoveredCount:cumulative,easyOrdersRecoveryLastError:null});
+    out.highestShortId=positiveInt(saved.easyOrdersRecoveryHighestShortId);out.nextShortId=positiveInt(saved.easyOrdersRecoveryCursor);out.estimatedRemaining=Math.max(0,out.highestShortId-out.nextShortId+1);out.cumulativeRecovered=positiveInt(saved.easyOrdersRecoveryRecoveredCount);out.status=saved.easyOrdersRecoveryLastStatus||status;
     return out;
   }catch(error){
     out.error=error?.message||String(error);out.status='error';
