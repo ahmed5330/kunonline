@@ -234,7 +234,18 @@ async function reconcileConnection(env,connection,{maxRequests,lookback,fetcher,
     const cumulative=positiveInt(config.easyOrdersRecoveryRecoveredCount)+out.recovered,estimatedRemaining=cursor<=highest?highest-cursor+1:0;
     const status=out.rateLimited?'rate_limited':(estimatedRemaining>0?'catching_up':'healthy');
     const saved=await patchConfig(env,connection,{easyOrdersRecoveryHighestShortId:highest,easyOrdersRecoveryCursor:cursor,easyOrdersRecoveryProbeCursor:nextVerifiedProbe,easyOrdersRecoveryPendingAdd:pendingAdd,easyOrdersRecoveryPendingRemove:pendingRemove,easyOrdersRecoveryPendingLastCheckedId:pendingLastChecked,easyOrdersRecoveryLastRunAt:now(),easyOrdersRecoveryLastStatus:pendingQueueFull?'error':status,easyOrdersRecoveryLastRequests:out.requests,easyOrdersRecoveryLastRecovered:out.recovered,easyOrdersRecoveryRecoveredCount:cumulative,easyOrdersRecoveryLastError:pendingQueueFull?'Unresolved Short ID queue requires operator review':null,...cronReceipt()});
-    out.highestShortId=positiveInt(saved.easyOrdersRecoveryHighestShortId);out.nextShortId=positiveInt(saved.easyOrdersRecoveryCursor);out.estimatedRemaining=Math.max(0,out.highestShortId-out.nextShortId+1);out.cumulativeRecovered=positiveInt(saved.easyOrdersRecoveryRecoveredCount);out.status=saved.easyOrdersRecoveryLastStatus||status;
+    out.highestShortId=positiveInt(saved.easyOrdersRecoveryHighestShortId);out.nextShortId=positiveInt(saved.easyOrdersRecoveryCursor);out.estimatedRemaining=Math.max(0,out.highestShortId-out.nextShortId+1);
+    out.unresolvedAheadCount=Array.isArray(saved.easyOrdersRecoveryPendingShortIds)
+      ?saved.easyOrdersRecoveryPendingShortIds.length:0;
+    out.cumulativeRecovered=positiveInt(saved.easyOrdersRecoveryRecoveredCount);
+    // "healthy" only means no backlog (or deferred cursor work), not merely
+    // that the most recent provider GET returned 200/404.
+    const visibleStatus=out.unresolvedAheadCount>0&&saved.easyOrdersRecoveryLastStatus==='healthy'
+      ?'catching_up':saved.easyOrdersRecoveryLastStatus||status;
+    if(visibleStatus!==saved.easyOrdersRecoveryLastStatus){
+      await patchConfig(env,connection,{easyOrdersRecoveryLastStatus:visibleStatus});
+    }
+    out.status=visibleStatus;
     return out;
   }catch(error){
     out.error=error?.message||String(error);out.status='error';
