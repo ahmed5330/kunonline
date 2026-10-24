@@ -38,14 +38,13 @@ jobs:
           node --check src/easyorders-order-reconciliation.js
           node --check src/index-commerce-v31.js
           node --check src/index-commerce-v34.js
-          node --check src/mobile-state-sync.js
       - name: Concurrent webhook, fair store recovery and isolation
         run: npm run test:easyorders-sync-concurrency
-      - name: Preview Easy Orders + Android/web display contracts
-        run: |
-          node scripts/order-sync-test.mjs
-          node scripts/mobile-state-sync-test.mjs
-          node scripts/dashboard-sync-guard-test.mjs
+      # Android delta transport lives on Production/main, not this older
+      # Preview-only source branch. Main PR #225 tests mobile-state-sync and
+      # the dashboard; this branch tests canonical Easy Orders data ingestion.
+      - name: Preview canonical Easy Orders source and recovery contract
+        run: node scripts/order-sync-test.mjs
       - run: git diff --check
   windows-sqlite:
     if: github.head_ref == 'fix/easyorders-preview-recovery-20261024'
