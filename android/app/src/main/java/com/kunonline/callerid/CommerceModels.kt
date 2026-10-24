@@ -79,7 +79,7 @@ object CommerceParser {
 
     /** The provider may send "date": null or a legacy invalid value while
      * created_at is valid. Never let that hide orders from Today/Week filters. */
-    private fun preferredOrderDate(order: JSONObject): String {
+    internal fun preferredOrderDate(order: JSONObject): String {
         val values = listOf("date", "createdAt", "created_at", "orderDate", "order_date")
             .map { order.str(it) }
             .filter { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
