@@ -41,6 +41,10 @@ jobs:
           node --check src/mobile-state-sync.js
       - name: SQL concurrent webhook and multi-store regression
         run: npm run test:easyorders-sync-concurrency
+      - name: Android/web sync transport and dashboard consistency
+        run: |
+          node scripts/mobile-state-sync-test.mjs
+          node scripts/dashboard-sync-guard-test.mjs
       - name: Full app/backend regression
         run: npm test
       - run: git diff --check
