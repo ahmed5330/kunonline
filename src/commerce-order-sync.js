@@ -1,5 +1,6 @@
 import {readConnectionSecrets} from './integration-provider-validation.js';
 import {providerById} from './provider-registry.js';
+import {mutateEasyOrdersConfig} from './easyorders-connection-config.js';
 
 const text=v=>String(v??'').trim(),now=()=>new Date().toISOString();
 const MODES=[
@@ -29,14 +30,18 @@ async function hmacHex(value,secret){const key=await crypto.subtle.importKey('ra
 async function routeToken(env,connection){const secret=text(env.EASYORDERS_WEBHOOK_ROUTE_SECRET||env.SESSION_SECRET);if(!secret)throw Object.assign(new Error('Webhook route secret غير متاح'),{status:500,code:'EASYORDERS_WEBHOOK_ROUTE_SECRET_MISSING'});return hmacHex(`easyorders:${connection.client_id}:${connection.id}`,secret);}
 export async function easyOrdersWebhookPath(env,connection){return `/webhooks/easyorders/${encodeURIComponent(connection.id)}/${await routeToken(env,connection)}`;}
 async function defaultStoreId(env,clientId){const row=await env.DB.prepare("SELECT id FROM stores WHERE client_id=? AND status='active' ORDER BY is_default DESC,created_at LIMIT 1").bind(clientId).first();return row?.id||null;}
-async function resolveKunStoreId(env,connection){const config=parseConfig(connection),configured=text(config.kunStoreId||config.storeId);if(configured){const found=await env.DB.prepare("SELECT id FROM stores WHERE id=? AND client_id=? AND status='active'").bind(configured,connection.client_id).first();if(found)return found.id;}const fallback=await defaultStoreId(env,connection.client_id);if(fallback&&!configured){const next={...config,kunStoreId:fallback};await env.DB.prepare('UPDATE store_connections SET config_json=?,updated_at=? WHERE id=? AND client_id=?').bind(JSON.stringify(next),now(),connection.id,connection.client_id).run();connection.config_json=JSON.stringify(next);}return fallback;}
+async function resolveKunStoreId(env,connection){const config=parseConfig(connection),configured=text(config.kunStoreId||config.storeId);if(configured){const found=await env.DB.prepare("SELECT id FROM stores WHERE id=? AND client_id=? AND status='active'").bind(configured,connection.client_id).first();if(found)return found.id;}const fallback=await defaultStoreId(env,connection.client_id);if(fallback&&!configured){
+    await mutateEasyOrdersConfig(env,connection,current=>({
+      ...current,kunStoreId:text(current.kunStoreId||current.storeId)||fallback
+    }));
+  }return fallback;}
 function normalizePhone(raw){let d=text(raw).replace(/[^\d]/g,'');if(d.startsWith('0020'))d='0'+d.slice(4);else if(d.startsWith('20')&&d.length===12)d='0'+d.slice(2);else if(d.startsWith('00966'))d='0'+d.slice(5);else if(d.startsWith('966')&&d.length===12)d='0'+d.slice(3);return d||null;}
 
 export async function orderSyncProviders(env,clientId,storeId){
   const {results=[]}=await env.DB.prepare("SELECT * FROM store_connections WHERE client_id=? AND status='connected' ORDER BY updated_at DESC").bind(clientId).all(),out=[];
   for(const row of results){
     const provider=providerById(row.provider);if(!provider||provider.category!=='commerce'||!scopes(row,provider).includes('orders.read'))continue;
-    const config=parseConfig(row),bound=text(config.storeId||config.kunStoreId);if(storeId&&bound&&bound!==storeId)continue;
+    const config=parseConfig(row),bound=text(config.kunStoreId||config.storeId);if(storeId&&bound&&bound!==storeId)continue;
     const historical=row.provider!=='easyorders';
     out.push({connectionId:row.id,provider:row.provider,name:provider.name,label:`مزامنة من ${provider.name}`,externalStoreId:row.external_store_id||null,webhookUrl:row.provider==='easyorders'?await easyOrdersWebhookPath(env,row):null,modes:MODES.map(x=>({...x,supported:x.id==='since_connection'||historical})),historicalSupported:historical,note:historical?null:'Easy Orders Public API الحالي لا يوفّر قائمة الطلبات التاريخية. الطلبات الجديدة وتغيّر حالتها تصل عبر Webhook بدءًا من الربط.'});
   }
@@ -49,8 +54,9 @@ export async function startOrderSync(env,{clientId,storeId,providerId,mode}){
   if(providerId==='easyorders'&&mode!=='since_connection')throw Object.assign(new Error('Easy Orders لا يوفّر حاليًا قائمة الطلبات التاريخية عبر Public API. اختر «بدءًا من الربط» لتفعيل استقبال الطلبات الجديدة عبر Webhook.'),{status:409,code:'EASYORDERS_HISTORICAL_ORDERS_UNAVAILABLE'});
   const row=await env.DB.prepare('SELECT * FROM store_connections WHERE id=? AND client_id=?').bind(provider.connectionId,clientId).first(),resolvedStoreId=storeId||await defaultStoreId(env,clientId),config={...parseConfig(row),orderSyncMode:mode,orderSyncStartedAt:now(),kunStoreId:resolvedStoreId||null};
   if(!resolvedStoreId)throw Object.assign(new Error('لا يوجد متجر/فرع نشط لربط طلبات Easy Orders به'),{status:409,code:'ORDER_SYNC_STORE_REQUIRED'});
-  await env.DB.prepare('UPDATE store_connections SET config_json=?,last_error=NULL,updated_at=? WHERE id=? AND client_id=?').bind(JSON.stringify(config),now(),provider.connectionId,clientId).run();
-  row.config_json=JSON.stringify(config);
+  await mutateEasyOrdersConfig(env,row,current=>({
+    ...current,orderSyncMode:mode,orderSyncStartedAt:now(),kunStoreId:resolvedStoreId
+  }),{lastError:null});
   return {ok:true,provider:providerId,mode,live:providerId==='easyorders',webhookUrl:providerId==='easyorders'?await easyOrdersWebhookPath(env,row):provider.webhookUrl,connectionId:provider.connectionId,message:providerId==='easyorders'?'تم تفعيل استقبال الطلبات الجديدة. انسخ رابط Webhook إلى Easy Orders، ثم احفظ الـSecret الذي يولده Easy Orders داخل Kun Online.':'بدأت مزامنة الطلبات.'};
 }
 
