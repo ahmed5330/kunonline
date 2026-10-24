@@ -78,8 +78,14 @@ async function upsertEasyOrder(env,connection,p,{createOnly=false}={}){
   // independent Kun clients/stores. Never let ON CONFLICT(id) overwrite an
   // unrelated tenant or store. Preserve legacy IDs when already assigned.
   const externalId=text(p.id),ref=`easyorders:${externalId}`;
-  const existing=await env.DB.prepare('SELECT id FROM orders WHERE client_id=? AND (id=? OR ref=?) AND (store_id=? OR store_id IS NULL) LIMIT 1')
+  const existing=await env.DB.prepare('SELECT id,store_id FROM orders WHERE client_id=? AND (id=? OR ref=?) AND (store_id=? OR store_id IS NULL) LIMIT 1')
     .bind(connection.client_id,externalId,ref,storeId).first();
+  // Old records with no store assignment cannot be attributed safely to a
+  // specific storefront. Historical replay must stop for operator review
+  // instead of silently classifying them as already imported.
+  if(createOnly&&existing&&!text(existing.store_id))
+    throw Object.assign(new Error('Unscoped legacy Easy Orders record requires operator review'),{
+      status:409,code:'EASYORDERS_RECOVERY_LEGACY_ORDER_AMBIGUOUS'});
   const global=existing?null:await env.DB.prepare('SELECT id,client_id,store_id FROM orders WHERE id=? LIMIT 1').bind(externalId).first();
   const collision=Boolean(global&&(text(global.client_id)!==text(connection.client_id)||text(global.store_id)!==text(storeId)));
   const fingerprint=collision?await crypto.subtle.digest('SHA-256',new TextEncoder().encode([connection.client_id,storeId,connection.id,externalId].join(':'))):null;
