@@ -17,15 +17,19 @@ function providerSaysMissing(data){const message=text(typeof data==='string'?dat
 function recoveryState(config={}){
   const highestShortId=positiveInt(config.easyOrdersRecoveryHighestShortId),nextShortId=positiveInt(config.easyOrdersRecoveryCursor),lastError=text(config.easyOrdersRecoveryLastError),explicit=text(config.easyOrdersRecoveryLastStatus);
   const estimatedRemaining=highestShortId&&nextShortId&&nextShortId<=highestShortId?highestShortId-nextShortId+1:0;
+  // Checking only the contiguous cursor hides delayed provider Short IDs:
+  // an ahead scan can have completed while unresolved 404s remain queued.
+  const unresolvedAheadCount=Array.isArray(config.easyOrdersRecoveryPendingShortIds)
+    ?config.easyOrdersRecoveryPendingShortIds.length:0;
   let status='waiting_for_short_id';
   if(explicit==='error'&&lastError)status='error';
   else if(explicit==='rate_limited')status='rate_limited';
-  else if(highestShortId&&estimatedRemaining>0)status='catching_up';
+  else if(highestShortId&&(estimatedRemaining>0||unresolvedAheadCount>0||explicit==='catching_up'))
+    status='catching_up';
   else if(highestShortId&&nextShortId>highestShortId)status='healthy';
   else if(highestShortId&&!nextShortId)status='catching_up';
   return {status,highestShortId,nextShortId,estimatedRemaining,
-    unresolvedAheadCount:Array.isArray(config.easyOrdersRecoveryPendingShortIds)
-      ?config.easyOrdersRecoveryPendingShortIds.length:0,
+    unresolvedAheadCount,
     lastError:lastError||null,lastRunAt:text(config.easyOrdersRecoveryLastRunAt)||null,lastCronAt:text(config.easyOrdersRecoveryLastCronAt)||null,lastRequests:positiveInt(config.easyOrdersRecoveryLastRequests),lastRecovered:positiveInt(config.easyOrdersRecoveryLastRecovered),recoveredTotal:positiveInt(config.easyOrdersRecoveryRecoveredCount),webhookLastShortId:positiveInt(config.webhookLastShortId||config.webhookLastShortID||config.webhook_last_short_id)};
 }
 function aggregateRecovery(results=[]){
@@ -234,7 +238,13 @@ async function reconcileConnection(env,connection,{maxRequests,lookback,fetcher,
     const cumulative=positiveInt(config.easyOrdersRecoveryRecoveredCount)+out.recovered,estimatedRemaining=cursor<=highest?highest-cursor+1:0;
     const status=out.rateLimited?'rate_limited':(estimatedRemaining>0?'catching_up':'healthy');
     const saved=await patchConfig(env,connection,{easyOrdersRecoveryHighestShortId:highest,easyOrdersRecoveryCursor:cursor,easyOrdersRecoveryProbeCursor:nextVerifiedProbe,easyOrdersRecoveryPendingAdd:pendingAdd,easyOrdersRecoveryPendingRemove:pendingRemove,easyOrdersRecoveryPendingLastCheckedId:pendingLastChecked,easyOrdersRecoveryLastRunAt:now(),easyOrdersRecoveryLastStatus:pendingQueueFull?'error':status,easyOrdersRecoveryLastRequests:out.requests,easyOrdersRecoveryLastRecovered:out.recovered,easyOrdersRecoveryRecoveredCount:cumulative,easyOrdersRecoveryLastError:pendingQueueFull?'Unresolved Short ID queue requires operator review':null,...cronReceipt()});
-    out.highestShortId=positiveInt(saved.easyOrdersRecoveryHighestShortId);out.nextShortId=positiveInt(saved.easyOrdersRecoveryCursor);out.estimatedRemaining=Math.max(0,out.highestShortId-out.nextShortId+1);out.cumulativeRecovered=positiveInt(saved.easyOrdersRecoveryRecoveredCount);out.status=saved.easyOrdersRecoveryLastStatus||status;
+    out.highestShortId=positiveInt(saved.easyOrdersRecoveryHighestShortId);out.nextShortId=positiveInt(saved.easyOrdersRecoveryCursor);out.estimatedRemaining=Math.max(0,out.highestShortId-out.nextShortId+1);
+    out.unresolvedAheadCount=Array.isArray(saved.easyOrdersRecoveryPendingShortIds)
+      ?saved.easyOrdersRecoveryPendingShortIds.length:0;
+    out.cumulativeRecovered=positiveInt(saved.easyOrdersRecoveryRecoveredCount);
+    // "healthy" only means no backlog (or deferred cursor work), not merely
+    // that the most recent provider GET returned 200/404.
+    out.status=saved.easyOrdersRecoveryLastStatus||status;
     return out;
   }catch(error){
     out.error=error?.message||String(error);out.status='error';

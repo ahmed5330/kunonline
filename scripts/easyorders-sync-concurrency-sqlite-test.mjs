@@ -6,6 +6,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {mutateEasyOrdersConfig,mergeEasyOrdersRecoveryPatch} from '../src/easyorders-connection-config.js';
 import {easyOrdersWebhookPath,handleEasyOrdersWebhook} from '../src/commerce-order-sync.js';
 import {fairEasyOrdersRecoveryOrder,reconcileEasyOrdersOrders,easyOrdersRecoveryStatus} from '../src/easyorders-order-reconciliation.js';
+import {replayExplicitEasyOrdersStoreGaps} from '../src/easyorders-explicit-gap-replay.js';
 import {encryptSecret} from '../src/integration-secrets.js';
 
 const db=new DatabaseSync(':memory:');
@@ -157,6 +158,17 @@ try{
     history:'[{"source":"staff"}]',contact_log:'[{"call":"handled"}]'
   },'Create-only replay must never overwrite existing customer-service work');
 
+  // A legacy order without a store ID must never be silently attributed
+  // to Wefaq (or any other store) by the historical recovery path.
+  db.prepare('INSERT INTO orders (id,client_id,store_id,ref,state,note) VALUES (?,?,?,?,?,?)')
+    .run('LEGACY-UNSCOPED','TENANT-A',null,'easyorders:LEGACY-UNSCOPED','shipped','KEEP-LEGACY-NOTE');
+  await assert.rejects(()=>asReplay({...p,id:'LEGACY-UNSCOPED',status:'pending'}),
+    {code:'EASYORDERS_RECOVERY_LEGACY_ORDER_AMBIGUOUS'});
+  assert.deepEqual({...db.prepare('SELECT store_id,state,note FROM orders WHERE id=?')
+    .get('LEGACY-UNSCOPED')},{
+    store_id:null,state:'shipped',note:'KEEP-LEGACY-NOTE'
+  },'Create-only history replay cannot claim or rewrite an unscoped legacy record');
+
   // An actual insert may race AFTER the initial SELECT; create-only SQL must
   // treat same-store concurrent insertion as already present without an upsert.
   insertRaceId='RACE-SAME-STORE';
@@ -208,7 +220,9 @@ try{
   const recovery=await reconcileEasyOrdersOrders(env,{
     clientId:'TENANT-A',connectionId:'CON-D',maxRequests:3,lookback:10,fetcher:fakeApi
   });
-  assert.equal(recovery.results[0].status,'healthy',JSON.stringify(recovery.results[0]));
+  assert.equal(recovery.results[0].status,'catching_up',JSON.stringify(recovery.results[0]));
+  assert.equal(recovery.results[0].unresolvedAheadCount,1,
+    'An unresolved HTTP 404 must not be reported as a fully healthy connection');
   assert.deepEqual(seen,[500,501,502],'Foreign storefront response cannot terminate recovery scan');
   assert.equal(recovery.foreignStoreSkipped,1,'Foreign storefront is observed but never ingested');
   assert.equal(recovery.recovered,1,'Sibling Kun store with same provider ID is a NEW recovery');
@@ -432,6 +446,10 @@ try{
   });
   assert.ok(holeHealth.unresolvedAheadCount>=35,
     'Operator-visible health must include a truthful unresolved-ahead count');
+  assert.equal(holeHealth.status,'catching_up',
+    'Aggregate health must not say healthy when missing Short IDs are queued');
+  assert.equal(holeHealth.results[0].status,'catching_up',
+    'The store itself must stay catching_up despite cursor passing high-water');
   assert.equal(holeHealth.results[0].lastCronAt,null,
     'Manual-only scans must not masquerade as scheduled recovery');
   lateHoleAvailable=true;
@@ -516,6 +534,41 @@ try{
   });
   assert.equal(config('CON-PROBE').easyOrdersRecoveryLastCronAt,actualCronAt,
     'Manual recovery must never refresh the genuine Cron timestamp');
+
+  // Exercise the ACTUAL explicit recovery -> canonical webhook -> SQLite path.
+  // Earlier replay tests use mocked ingestion; this case proves the default
+  // ingest adapter and request route token work without modifying live data.
+  env.EASYORDERS_TARGETED_RECOVERY_ENABLED='true';
+  const historicPayload={...p,id:'HISTORIC-WEFAQ-SYNTHETIC',short_id:1250,
+    store_id:'EO-EXTERNAL-D',status:'pending',phone:'01000001250'};
+  let reconciledFees=0;
+  const explicitOptions={
+    clientId:'TENANT-A',storeId:'STORE-D',connectionId:'CON-D',
+    confirmStoreId:'STORE-D',confirmBackup:true,shortIds:[1250],
+    fetcher:async(url,options)=>{
+      assert.equal(options.method,'GET');assert.ok(url.endsWith('/1250'));
+      return Response.json(historicPayload);
+    },
+    reconcileFee:async()=>{reconciledFees++;return {ok:true,skipped:'not_shipped_yet'};}
+  };
+  const firstHistoric=await replayExplicitEasyOrdersStoreGaps(env,explicitOptions);
+  assert.equal(firstHistoric.ok,true,JSON.stringify(firstHistoric));
+  assert.equal(firstHistoric.recovered,1);
+  assert.equal(firstHistoric.alreadyInKun,0);
+  const historicId=firstHistoric.recoveredOrderIds[0];
+  assert.equal(db.prepare('SELECT store_id FROM orders WHERE id=?').get(historicId).store_id,'STORE-D');
+  assert.equal(reconciledFees,1);
+  db.prepare('UPDATE orders SET state=?,note=?,history=? WHERE id=?')
+    .run('shipped','PRESERVE-STAFF-NOTE','[{"actor":"agent"}]',historicId);
+  const replayedHistoric=await replayExplicitEasyOrdersStoreGaps(env,explicitOptions);
+  assert.equal(replayedHistoric.recovered,0);
+  assert.equal(replayedHistoric.alreadyInKun,1);
+  assert.equal(reconciledFees,1,'Already existing order has no second fee reconciliation');
+  assert.deepEqual({...db.prepare('SELECT state,note,history FROM orders WHERE id=?').get(historicId)},
+    {state:'shipped',note:'PRESERVE-STAFF-NOTE',history:'[{"actor":"agent"}]'});
+  env.EASYORDERS_TARGETED_RECOVERY_ENABLED='false';
+  await assert.rejects(()=>replayExplicitEasyOrdersStoreGaps(env,explicitOptions),
+    {code:'EASYORDERS_REPLAY_DISABLED'});
 
   console.log('Easy Orders SQLite sync PASS: concurrent webhook/cron CAS, monotonic high-water, correct catching-up, tenant+store collision isolation, idempotent retries.');
 }finally{db.close();}

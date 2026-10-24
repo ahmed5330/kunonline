@@ -84,6 +84,13 @@ export async function replayExplicitEasyOrdersStoreGaps(env,{
     }
     const order=payload?.data?.id?payload.data:payload;
     const sourceOrderId=clean(order?.id),sourceStore=clean(order?.store_id||order?.storeId);
+    const returnedShort=order?.short_id??order?.shortId;
+    // A misrouted short lookup must never import a DIFFERENT customer order.
+    if(returnedShort!==undefined&&returnedShort!==null&&
+        (!Number.isSafeInteger(Number(returnedShort))||Number(returnedShort)!==shortId)){
+      result.ok=false;result.status='provider_short_id_mismatch';
+      result.retryShortId=shortId;break;
+    }
     if(!sourceOrderId||!sourceStore){
       result.ok=false;result.status='provider_payload_invalid';result.retryShortId=shortId;break;
     }
