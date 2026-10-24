@@ -1,17 +1,14 @@
 name: PR209 full offline regression (no deploy)
 
 on:
+  # Test the ACTUAL PR #209 commit after every squash/merge into its audit
+  # branch. This is a source-only CI; production/preview workflows never run.
+  push:
+    branches:
+      - fix/audit-critical-findings-20261023
   pull_request:
     branches:
       - fix/audit-critical-findings-20261023
-    paths:
-      - '.github/workflows/pr209-full-offline-regression.yml'
-      - 'src/**'
-      - 'public/**'
-      - 'migrations/**'
-      - 'scripts/**'
-      - 'package.json'
-      - 'package-lock.json'
   workflow_dispatch:
 
 permissions:
@@ -23,7 +20,7 @@ concurrency:
 
 jobs:
   linux-full-suite:
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/fix/audit-critical-findings-20261023') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/fix/audit-critical-findings-20261023')
     runs-on: ubuntu-latest
     timeout-minutes: 40
     env:
@@ -37,6 +34,16 @@ jobs:
         with:
           node-version: '22'
           package-manager-cache: false
+      - name: Assert this is an isolated audit SHA (never main, develop, or secrets)
+        shell: bash
+        run: |
+          case "${GITHUB_EVENT_NAME}:${GITHUB_REF}" in
+            push:refs/heads/fix/audit-critical-findings-20261023) ;;
+            workflow_dispatch:refs/heads/fix/audit-critical-findings-20261023) ;;
+            pull_request:refs/pull/*/merge) ;;
+            *) echo 'REF NOT ALLOWED for audit-only test'; exit 1 ;;
+          esac
+          echo "offline audited SHA: ${GITHUB_SHA}"
       - name: Install dependencies without lifecycle hooks
         run: npm install --ignore-scripts
       - name: Offline release blockers and owner password reset
@@ -61,7 +68,7 @@ jobs:
         run: git diff --check
 
   windows-auth-suite:
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/fix/audit-critical-findings-20261023') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/fix/audit-critical-findings-20261023')
     runs-on: windows-latest
     timeout-minutes: 20
     env:
@@ -74,6 +81,11 @@ jobs:
         with:
           node-version: '22'
           package-manager-cache: false
+      - name: Windows source-only audit branch gate
+        run: |
+          if ($env:GITHUB_EVENT_NAME -eq 'push' -and $env:GITHUB_REF -ne 'refs/heads/fix/audit-critical-findings-20261023') { exit 1 }
+          if ($env:GITHUB_EVENT_NAME -eq 'workflow_dispatch' -and $env:GITHUB_REF -ne 'refs/heads/fix/audit-critical-findings-20261023') { exit 1 }
+          if ($env:GITHUB_EVENT_NAME -eq 'pull_request' -and $env:GITHUB_REF -notlike 'refs/pull/*/merge') { exit 1 }
       - name: Windows SQLite, owner password and schema contracts
         run: |
           node scripts/session-revocation-schema-contract.mjs
