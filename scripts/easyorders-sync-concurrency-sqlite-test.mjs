@@ -435,6 +435,10 @@ try{
   });
   assert.ok(holeHealth.unresolvedAheadCount>=35,
     'Operator-visible health must include a truthful unresolved-ahead count');
+  assert.equal(holeHealth.status,'catching_up',
+    'Aggregate health must not say healthy when missing Short IDs are queued');
+  assert.equal(holeHealth.results[0].status,'catching_up',
+    'The store itself must stay catching_up despite cursor passing high-water');
   assert.equal(holeHealth.results[0].lastCronAt,null,
     'Manual-only scans must not masquerade as scheduled recovery');
   lateHoleAvailable=true;
