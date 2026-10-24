@@ -154,22 +154,24 @@ async function countUsers(env) {
 }
 
 async function makeSession(payload, secret) {
-  const body = b64url.enc(JSON.stringify({ ...payload, exp: Math.floor(Date.now() / 1000) + WEEK }));
+  const body = b64url.enc(JSON.stringify({ ...payload, jti: crypto.randomUUID(), exp: Math.floor(Date.now() / 1000) + WEEK }));
   return `${body}.${await hmac(body, secret)}`;
 }
 
-async function readSession(request, secret) {
+async function readSession(request, secret, env) {
   const raw = (request.headers.get('Cookie') || '')
     .split(';').map(c => c.trim()).find(c => c.startsWith(COOKIE + '='));
   if (!raw) return null;
   const [body, sig] = raw.slice(COOKIE.length + 1).split('.');
   if (!body || !sig) return null;
   if (!safeEqual(sig, await hmac(body, secret))) return null;
-  try {
-    const p = JSON.parse(b64url.dec(body));
-    if (!p.exp || p.exp < Math.floor(Date.now() / 1000)) return null;
-    return p;
-  } catch { return null; }
+  let p;
+  try { p = JSON.parse(b64url.dec(body)); } catch { return null; }
+  if (!Number.isFinite(p?.exp) || p.exp <= Math.floor(Date.now() / 1000)) return null;
+  const tokenHash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(body + '.' + sig))), x => x.toString(16).padStart(2, '0')).join('');
+  const revoked = await env.DB.prepare('SELECT token_hash FROM revoked_sessions WHERE token_hash = ?').bind(tokenHash).first();
+  if (revoked) return null;
+  return { ...p, tokenHash };
 }
 
 /* ---------- تشفير توكنز التكامل (Meta / EasyOrders / كلمة سر الإيميل) ----------
@@ -992,7 +994,7 @@ async function handleApi(request, env, url, path) {
     /* بيقبل التوكن أو جلسة عندها صلاحية الإدخال اليومي */
     let allowed = isIngest;
     if (!allowed) {
-      const sess = await readSession(request, secret);
+      const sess = await readSession(request, secret, env);
       if (sess && sess.uid) {
         const u = await env.DB.prepare('SELECT role, status FROM users WHERE id = ?').bind(sess.uid).first();
         allowed = u && u.status === 'active' && permsOf(u.role).includes('entries');
@@ -1116,10 +1118,14 @@ async function handleApi(request, env, url, path) {
   }
 
   if (path === '/api/logout') {
+    const current = await readSession(request, secret, env);
+    if (current) {
+      await env.DB.prepare('INSERT INTO revoked_sessions (token_hash, expires_at) VALUES (?, ?) ON CONFLICT(token_hash) DO NOTHING').bind(current.tokenHash, current.exp).run();
+    }
     return json({ ok: true }, 200, { 'Set-Cookie': `${COOKIE}=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0` });
   }
 
-  const session = await readSession(request, secret);
+  const session = await readSession(request, secret, env);
   if (!session) {
     if (path === '/api/me') return json({ role: null, needsSetup: (await countUsers(env)) === 0 });
     return json({ error: 'محتاج تسجّل دخول' }, 401);
