@@ -1,0 +1,21 @@
+name: Session revocation contract
+on:
+  pull_request:
+  push:
+    branches: [codex/session-revocation-20261023]
+permissions:
+  contents: read
+jobs:
+  isolated-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - run: node --experimental-loader ./scripts/session-test-cloudflare-loader.mjs scripts/session-revocation-test.mjs
+      - run: node scripts/session-logout-ui-test.mjs
+      - run: node tests.mjs
+      - run: node scripts/auth-status-test.mjs
+      - run: node scripts/access-control-test.mjs

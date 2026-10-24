@@ -1,3 +1,4 @@
+import {readFileSync as readSessionSchema} from 'node:fs';
 import {DatabaseSync} from 'node:sqlite';
 import {readFile} from 'node:fs/promises';
 import {createAdminClient,listAdminClients,updateClientStatus,resetClientOwnerPassword,addClientNote} from '../src/admin-control.js';
@@ -18,6 +19,7 @@ const normalize=v=>{if(v===undefined)throw new TypeError('D1_TYPE_ERROR undefine
 class Stmt{constructor(db,sql){this.db=db;this.sql=sql;this.args=[]}bind(...a){this.args=a.map(normalize);return this}p(){return this.db.prepare(this.sql)}async first(){return this.p().get(...this.args)||null}async all(){return {results:this.p().all(...this.args)}}async run(){const r=this.p().run(...this.args);return {success:true,meta:{changes:Number(r.changes||0)}}}}
 class D1{constructor(db){this.db=db}prepare(sql){return new Stmt(this.db,sql)}async batch(ss){const out=[];this.db.exec('BEGIN');try{for(const s of ss)out.push(await s.run());this.db.exec('COMMIT');return out}catch(e){this.db.exec('ROLLBACK');throw e}}}
 const db=new DatabaseSync(':memory:');
+db.exec(readSessionSchema(new URL('../migrations/0099_revoked_sessions.sql',import.meta.url),'utf8'));
 db.exec(`
 CREATE TABLE state(id INTEGER PRIMARY KEY,json TEXT NOT NULL,updated_at TEXT NOT NULL);
 CREATE TABLE users(id TEXT PRIMARY KEY,email TEXT UNIQUE NOT NULL,name TEXT,password TEXT,role TEXT,client_id TEXT,status TEXT,created_at TEXT,last_login TEXT);
