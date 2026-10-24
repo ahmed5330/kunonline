@@ -7,7 +7,7 @@ const positiveInt=value=>{const n=Math.floor(Number(value));return Number.isSafe
 const stop=(code,message)=>Object.assign(new Error(message),{status:409,code});
 export function mergeEasyOrdersRecoveryPatch(current={},patch={}){
   const next={...current,...patch};
-  for(const field of ['webhookLastShortId','easyOrdersRecoveryHighestShortId','easyOrdersRecoveryCursor','easyOrdersRecoveryRecoveredCount']){
+  for(const field of ['webhookLastShortId','easyOrdersRecoveryHighestShortId','easyOrdersRecoveryCursor','easyOrdersRecoveryProbeCursor','easyOrdersRecoveryRecoveredCount']){
     if(Object.hasOwn(patch,field)){
       next[field]=Math.max(positiveInt(current[field]),positiveInt(patch[field]));
     }
