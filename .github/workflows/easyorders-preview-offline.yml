@@ -14,6 +14,10 @@ on:
       - 'scripts/easyorders-scheduler-outcome-test.mjs'
       - 'scripts/easyorders-recovered-fee-guard-test.mjs'
       - 'docs/2026-10-24-easyorders-incident-release-checklist.md'
+      - '.github/workflows/preview.yml'
+      - 'scripts/easyorders-cloudflare-worker-readonly-inventory.mjs'
+      - 'scripts/easyorders-cloudflare-worker-readonly-inventory-test.mjs'
+      - 'scripts/easyorders-preview-release-flow-test.mjs'
       - 'package.json'
       - '.github/workflows/easyorders-preview-offline.yml'
 permissions:
@@ -45,6 +49,10 @@ jobs:
           node --check src/index-commerce-v34.js
       - name: Concurrent webhook, fair store recovery and isolation
         run: npm run test:easyorders-sync-concurrency
+      - name: Check protected Preview deployment preflight and rollback order
+        run: |
+          node scripts/easyorders-cloudflare-worker-readonly-inventory-test.mjs
+          npm run test:easyorders-preview-release-flow
       - name: Ensure five-minute scheduler reports failed recovery instead of success
         run: npm run test:easyorders-cron
       - name: Detect silently failed COD management fee reconciliation
