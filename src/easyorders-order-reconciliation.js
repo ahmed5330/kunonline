@@ -174,37 +174,62 @@ async function reconcileConnection(env,connection,{maxRequests,lookback,fetcher}
       cursor++;
     }
 
-    // Short IDs can be interleaved with orders of other Easy Orders stores.
-    // Rechecking the same 30 verified foreign-store IDs each cron would make
-    // a valid later order permanently unreachable. Persist a separate ahead
-    // probe for confirmed foreign IDs, but NEVER move that checkpoint past an
-    // unresolved HTTP 404 (a future order may acquire that ID).
+    // Shared-source Short IDs include orders from other shops and holes.
+    // Persist a *separate* ahead probe, together with an explicit retry list
+    // for HTTP 404 holes. Advancing the probe without recording every unknown
+    // ID would silently lose future orders whose Short ID appears later.
+    const existingPending=(Array.isArray(config.easyOrdersRecoveryPendingShortIds)
+      ?config.easyOrdersRecoveryPendingShortIds:[])
+      .map(positiveInt).filter(Boolean);
+    const pendingAdd=[],pendingRemove=[];
+    let pendingLastChecked=positiveInt(config.easyOrdersRecoveryPendingLastCheckedId);
     let nextVerifiedProbe=positiveInt(config.easyOrdersRecoveryProbeCursor)||highest+1;
+    let pendingQueueFull=false;
     if(cursor>highest&&out.requests<maxRequests&&!out.rateLimited){
-      let probe=Math.max(highest+1,nextVerifiedProbe),misses=0;
-      let unresolvedMissing=false;
-      nextVerifiedProbe=probe;
-      while(out.requests<maxRequests&&misses<MAX_AHEAD_MISSES&&!out.rateLimited){
-        const found=await inspect(probe);
-        if(found.kind==='found'){
-          highest=Math.max(highest,positiveInt(found.shortId)||probe);
-          probe=highest+1;misses=0;
-          nextVerifiedProbe=Math.max(nextVerifiedProbe,probe);
-          unresolvedMissing=false;
-        }else if(found.kind==='foreign_store'){
-          misses++;probe++;
-          if(!unresolvedMissing)nextVerifiedProbe=Math.max(nextVerifiedProbe,probe);
-        }else if(found.kind==='missing'){
-          misses++;probe++;
-          unresolvedMissing=true;
-        }else break;
+      const candidates=[...new Set(existingPending)].sort((a,b)=>a-b);
+      const sequence=[...candidates.filter(id=>id>pendingLastChecked),
+        ...candidates.filter(id=>id<=pendingLastChecked)];
+      // Reserve most of each connection's budget for new discovery. The
+      // backlog retries round-robin rather than hammering the first hole.
+      for(const shortId of sequence.slice(0,Math.min(3,Math.max(0,Math.floor(maxRequests/4))))){
+        if(out.requests>=maxRequests||out.rateLimited)break;
+        const checked=await inspect(shortId);
+        if(checked.kind==='rate_limited'||checked.kind==='budget')break;
+        pendingLastChecked=shortId;
+        if(checked.kind==='found'||checked.kind==='foreign_store')
+          pendingRemove.push(shortId);
+        if(checked.kind==='found')highest=Math.max(highest,positiveInt(checked.shortId));
+      }
+      if(!out.rateLimited){
+        let probe=Math.max(highest+1,nextVerifiedProbe),misses=0;
+        nextVerifiedProbe=probe;
+        while(out.requests<maxRequests&&misses<MAX_AHEAD_MISSES&&!out.rateLimited){
+          const pendingCount=new Set([...existingPending,...pendingAdd]
+            .filter(id=>!pendingRemove.includes(id))).size;
+          if(pendingCount>=120){pendingQueueFull=true;break;}
+          const found=await inspect(probe);
+          if(found.kind==='found'){
+            highest=Math.max(highest,positiveInt(found.shortId)||probe);
+            probe=highest+1;misses=0;
+            nextVerifiedProbe=Math.max(nextVerifiedProbe,probe);
+            pendingRemove.push(found.shortId||probe);
+          }else if(found.kind==='foreign_store'){
+            misses++;probe++;
+            nextVerifiedProbe=Math.max(nextVerifiedProbe,probe);
+          }else if(found.kind==='missing'){
+            misses++;pendingAdd.push(probe);probe++;
+            // Unresolved IDs are protected by the durable retry queue. Only
+            // then may discovery move on to newer, valid orders.
+            nextVerifiedProbe=Math.max(nextVerifiedProbe,probe);
+          }else break;
+        }
       }
       cursor=highest+1;
     }
 
     const cumulative=positiveInt(config.easyOrdersRecoveryRecoveredCount)+out.recovered,estimatedRemaining=cursor<=highest?highest-cursor+1:0;
     const status=out.rateLimited?'rate_limited':(estimatedRemaining>0?'catching_up':'healthy');
-    const saved=await patchConfig(env,connection,{easyOrdersRecoveryHighestShortId:highest,easyOrdersRecoveryCursor:cursor,easyOrdersRecoveryProbeCursor:nextVerifiedProbe,easyOrdersRecoveryLastRunAt:now(),easyOrdersRecoveryLastStatus:status,easyOrdersRecoveryLastRequests:out.requests,easyOrdersRecoveryLastRecovered:out.recovered,easyOrdersRecoveryRecoveredCount:cumulative,easyOrdersRecoveryLastError:null});
+    const saved=await patchConfig(env,connection,{easyOrdersRecoveryHighestShortId:highest,easyOrdersRecoveryCursor:cursor,easyOrdersRecoveryProbeCursor:nextVerifiedProbe,easyOrdersRecoveryPendingAdd:pendingAdd,easyOrdersRecoveryPendingRemove:pendingRemove,easyOrdersRecoveryPendingLastCheckedId:pendingLastChecked,easyOrdersRecoveryLastRunAt:now(),easyOrdersRecoveryLastStatus:pendingQueueFull?'error':status,easyOrdersRecoveryLastRequests:out.requests,easyOrdersRecoveryLastRecovered:out.recovered,easyOrdersRecoveryRecoveredCount:cumulative,easyOrdersRecoveryLastError:pendingQueueFull?'Unresolved Short ID queue requires operator review':null});
     out.highestShortId=positiveInt(saved.easyOrdersRecoveryHighestShortId);out.nextShortId=positiveInt(saved.easyOrdersRecoveryCursor);out.estimatedRemaining=Math.max(0,out.highestShortId-out.nextShortId+1);out.cumulativeRecovered=positiveInt(saved.easyOrdersRecoveryRecoveredCount);out.status=saved.easyOrdersRecoveryLastStatus||status;
     return out;
   }catch(error){
