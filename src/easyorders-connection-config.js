@@ -7,6 +7,26 @@ const positiveInt=value=>{const n=Math.floor(Number(value));return Number.isSafe
 const stop=(code,message)=>Object.assign(new Error(message),{status:409,code});
 export function mergeEasyOrdersRecoveryPatch(current={},patch={}){
   const next={...current,...patch};
+  // The ahead-probe can move past an HTTP 404 only when that unresolved Short
+  // ID is durably queued for eventual retry. Apply queue additions/removals
+  // against the *fresh* CAS value, never a stale scheduler snapshot.
+  if(Object.hasOwn(patch,'easyOrdersRecoveryPendingAdd')||
+      Object.hasOwn(patch,'easyOrdersRecoveryPendingRemove')){
+    const positive=value=>Number.isSafeInteger(Number(value))&&Number(value)>0?Number(value):0;
+    const saved=Array.isArray(current.easyOrdersRecoveryPendingShortIds)
+      ?current.easyOrdersRecoveryPendingShortIds:[];
+    const added=Array.isArray(patch.easyOrdersRecoveryPendingAdd)
+      ?patch.easyOrdersRecoveryPendingAdd:[];
+    const removed=new Set((Array.isArray(patch.easyOrdersRecoveryPendingRemove)
+      ?patch.easyOrdersRecoveryPendingRemove:[]).map(positive));
+    const pending=[...new Set([...saved,...added].map(positive).filter(v=>v&&!removed.has(v)))]
+      .sort((a,b)=>a-b);
+    if(pending.length>120)throw stop('EASYORDERS_PENDING_QUEUE_FULL',
+      'Easy Orders unresolved ahead queue reached the safe limit');
+    next.easyOrdersRecoveryPendingShortIds=pending;
+    delete next.easyOrdersRecoveryPendingAdd;
+    delete next.easyOrdersRecoveryPendingRemove;
+  }
   for(const field of ['webhookLastShortId','easyOrdersRecoveryHighestShortId','easyOrdersRecoveryCursor','easyOrdersRecoveryProbeCursor','easyOrdersRecoveryRecoveredCount']){
     if(Object.hasOwn(patch,field)){
       next[field]=Math.max(positiveInt(current[field]),positiveInt(patch[field]));
