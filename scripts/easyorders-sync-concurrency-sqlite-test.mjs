@@ -390,7 +390,10 @@ try{
   assert.equal(config('CON-PROBE').easyOrdersRecoveryProbeCursor,930);
   const finalProbe=await probeRun();
   assert.equal(finalProbe.recovered,1,'Same-store order beyond 30 foreign IDs must be reached');
-  assert.equal(config('CON-PROBE').easyOrdersRecoveryProbeCursor,936);
+  assert.ok(config('CON-PROBE').easyOrdersRecoveryProbeCursor>=936,
+    'Ahead probe may continue after the own-store order when unused budget remains');
+  assert.ok(config('CON-PROBE').easyOrdersRecoveryPendingShortIds.includes(936),
+    'Unknown 404 after last own-store order is retained for future retry');
   assert.deepEqual(inspectedIds.slice(0,36),Array.from({length:36},(_,i)=>900+i));
   assert.equal(db.prepare("SELECT COUNT(*) n FROM orders WHERE ref='easyorders:PROBE-935'").get().n,1);
 
