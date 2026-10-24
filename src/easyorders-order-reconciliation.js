@@ -125,7 +125,11 @@ async function reconcileConnection(env,connection,{maxRequests,lookback,fetcher}
     }
     const inspect=async shortId=>{
       if(out.requests>=maxRequests)return {kind:'budget'};
-      const fetched=await fetchOrderByShortId(fetcher,apiKey,shortId);out.requests++;
+      // Count the HTTP attempt BEFORE awaiting it: failed requests consume
+      // provider quota too. Otherwise one failed call per connection can
+      // bypass the global 30-request Cron ceiling.
+      out.requests++;
+      const fetched=await fetchOrderByShortId(fetcher,apiKey,shortId);
       if(fetched.kind==='rate_limited'){out.rateLimited=true;return fetched;}
       if(fetched.kind==='missing'){out.missing++;return fetched;}
       const order=fetched.data||{},actualShort=positiveInt(order.short_id||order.shortId)||shortId;
