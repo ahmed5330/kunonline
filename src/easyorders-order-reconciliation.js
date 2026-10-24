@@ -240,12 +240,7 @@ async function reconcileConnection(env,connection,{maxRequests,lookback,fetcher,
     out.cumulativeRecovered=positiveInt(saved.easyOrdersRecoveryRecoveredCount);
     // "healthy" only means no backlog (or deferred cursor work), not merely
     // that the most recent provider GET returned 200/404.
-    const visibleStatus=out.unresolvedAheadCount>0&&saved.easyOrdersRecoveryLastStatus==='healthy'
-      ?'catching_up':saved.easyOrdersRecoveryLastStatus||status;
-    if(visibleStatus!==saved.easyOrdersRecoveryLastStatus){
-      await patchConfig(env,connection,{easyOrdersRecoveryLastStatus:visibleStatus});
-    }
-    out.status=visibleStatus;
+    out.status=saved.easyOrdersRecoveryLastStatus||status;
     return out;
   }catch(error){
     out.error=error?.message||String(error);out.status='error';
