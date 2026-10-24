@@ -206,5 +206,54 @@ try{
   });
   assert.equal(unbound.results[0].status,'error','Unbound provider store must fail closed');
   assert.equal(connection('CON-UNBOUND').external_store_id,'');
+  // Regression for the Oct 23 recovery gap: HTTP 429 midway through a
+  // bounded scan must NOT advance its checkpoint past the unprocessed ID.
+  db.prepare('INSERT INTO stores VALUES (?,?,?,?,?)').run('STORE-THROTTLE','TENANT-A','active',0,now);
+  db.prepare('INSERT INTO store_connections (id,client_id,provider,status,config_json,updated_at,external_store_id) VALUES (?,?,?,?,?,?,?)')
+    .run('CON-THROTTLE','TENANT-A','easyorders','connected',JSON.stringify({
+      kunStoreId:'STORE-THROTTLE',easyOrdersRecoveryHighestShortId:701,
+      easyOrdersRecoveryCursor:700
+    }),now,'EO-THROTTLE');
+  db.prepare('INSERT INTO integration_secrets VALUES (?,?,?,?,?)').run(
+    'TENANT-A','CON-THROTTLE','api_key',secret.ciphertextB64,secret.ivB64
+  );
+  let throttled=true;
+  const throttleRequests=[];
+  const throttleApi=async(url,options)=>{
+    assert.equal(options.headers['Api-Key'],'ONLY-A-SYNTHETIC-EASYORDERS-API-KEY');
+    const shortId=Number(url.split('/').at(-1));
+    throttleRequests.push(shortId);
+    if(shortId===701&&throttled)return Response.json(
+      {message:'too many requests'},{status:429});
+    if(shortId===700||shortId===701)return Response.json({
+      ...p,id:'THROTTLE-'+shortId,store_id:'EO-THROTTLE',short_id:shortId,
+      phone:'01000000'+String(shortId).padStart(3,'0')
+    });
+    return Response.json({message:'record not found'},{status:404});
+  };
+  const rateLimited=await reconcileEasyOrdersOrders(env,{
+    clientId:'TENANT-A',connectionId:'CON-THROTTLE',maxRequests:3,fetcher:throttleApi
+  });
+  assert.equal(rateLimited.rateLimited,true,'429 must be surfaced to operations');
+  assert.equal(rateLimited.results[0].status,'rate_limited');
+  assert.equal(rateLimited.recovered,1,'The first successfully read order was imported');
+  assert.equal(config('CON-THROTTLE').easyOrdersRecoveryCursor,701,
+    '429 must not checkpoint the unprocessed Short ID 701 as completed');
+  assert.deepEqual(throttleRequests,[700,701]);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM orders WHERE ref='easyorders:THROTTLE-701'").get().n,0);
+  throttled=false;
+  const resumed=await reconcileEasyOrdersOrders(env,{
+    clientId:'TENANT-A',connectionId:'CON-THROTTLE',maxRequests:3,fetcher:throttleApi
+  });
+  assert.equal(resumed.rateLimited,false);
+  assert.equal(resumed.recovered,1,'Previously throttled order must be recovered in the next run');
+  assert.equal(resumed.recoveredOrderIds.length,1);
+  assert.equal(db.prepare('SELECT store_id FROM orders WHERE id=?')
+    .get(resumed.recoveredOrderIds[0]).store_id,'STORE-THROTTLE');
+  assert.equal(config('CON-THROTTLE').easyOrdersRecoveryCursor,702);
+  assert.equal(config('CON-THROTTLE').easyOrdersRecoveryRecoveredCount,2);
+  assert.deepEqual(throttleRequests.slice(0,3),[700,701,701],
+    'Retry must begin with EXACT unprocessed Short ID after throttling');
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM orders WHERE ref='easyorders:THROTTLE-701'").get().n,1);
   console.log('Easy Orders SQLite sync PASS: concurrent webhook/cron CAS, monotonic high-water, correct catching-up, tenant+store collision isolation, idempotent retries.');
 }finally{db.close();}
