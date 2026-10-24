@@ -5,7 +5,8 @@ import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import {mutateEasyOrdersConfig,mergeEasyOrdersRecoveryPatch} from '../src/easyorders-connection-config.js';
 import {easyOrdersWebhookPath,handleEasyOrdersWebhook} from '../src/commerce-order-sync.js';
-import {fairEasyOrdersRecoveryOrder} from '../src/easyorders-order-reconciliation.js';
+import {fairEasyOrdersRecoveryOrder,reconcileEasyOrdersOrders} from '../src/easyorders-order-reconciliation.js';
+import {encryptSecret} from '../src/integration-secrets.js';
 
 const db=new DatabaseSync(':memory:');
 db.exec(`
@@ -27,13 +28,18 @@ for(const [id,clientId,storeId] of [['CON-A','TENANT-A','STORE-A'],['CON-B','TEN
     .run(id,clientId,'easyorders','connected',JSON.stringify({kunStoreId:storeId}),now,'');
   db.prepare('INSERT INTO stores VALUES (?,?,?,?,?)').run(storeId,clientId,'active',1,now);
 }
-let race=null,forcedConflicts=0;
-const env={SESSION_SECRET:'SYNTHETIC_TEST_ROUTE_SECRET_ONLY',DB:{
+let race=null,forcedConflicts=0,insertRaceId=null;
+const env={APP_ENV:'preview',SESSION_SECRET:'SYNTHETIC_TEST_ROUTE_SECRET_ONLY',DB:{
   prepare(sql){
     return {bind(...params){return {
       async first(){return db.prepare(sql).get(...params)||null;},
       async all(){return {results:db.prepare(sql).all(...params)};},
       async run(){
+        if(insertRaceId&&sql.startsWith('INSERT INTO orders')&&params[0]===insertRaceId){
+          const contested=insertRaceId;insertRaceId=null;
+          db.prepare('INSERT INTO orders (id,client_id,store_id,ref) VALUES (?,?,?,?)')
+            .run(contested,'TENANT-A','STORE-A','easyorders:'+contested);
+        }
         if(race&&sql.includes('SET config_json=?')){
           const mutation=race;race=null;
           const id=params[params.length-4],clientId=params[params.length-3];
@@ -136,5 +142,69 @@ try{
   assert.equal(db.prepare('SELECT state FROM orders WHERE id=?').get(third.id).state,'confirmed');
   assert.equal(db.prepare('SELECT state FROM orders WHERE id=?').get(b.id).state,'shipped');
 
+  // Inject a real insert between the initial SELECT and the first upsert:
+  // both stores originally believe the external ID is unused. The losing
+  // webhook must retry using a stable scoped ID, without overwriting a.
+  db.prepare('INSERT INTO stores VALUES (?,?,?,?,?)').run('STORE-E','TENANT-B','active',0,now);
+  db.prepare('INSERT INTO store_connections (id,client_id,provider,status,config_json,updated_at,external_store_id) VALUES (?,?,?,?,?,?,?)')
+    .run('CON-E','TENANT-B','easyorders','connected',JSON.stringify({kunStoreId:'STORE-E'}),now,'');
+  insertRaceId='RACE-NEW';
+  const inserted=await post('CON-E',{...p,id:'RACE-NEW',store_id:'EO-EXTERNAL-E'});
+  assert.equal(insertRaceId,null,'First insert raced with another tenant');
+  assert.notEqual(inserted.id,'RACE-NEW','Concurrent loser must use a scoped ID');
+  assert.match(inserted.id,/^EO-[a-f0-9]{32}$/);
+  assert.equal(db.prepare('SELECT store_id FROM orders WHERE id=?').get(inserted.id).store_id,'STORE-E');
+  assert.equal(db.prepare('SELECT client_id FROM orders WHERE id=?').get('RACE-NEW').client_id,'TENANT-A');
+  const repeated=await post('CON-E',{...p,id:'RACE-NEW',store_id:'EO-EXTERNAL-E'});
+  assert.equal(repeated.id,inserted.id,'Race recovery remains idempotent');
+
+  // Recovery may fetch different Easy Orders stores through the same API
+  // key. The foreign shop must not block or silently enter the Kun tenant.
+  db.prepare('INSERT INTO stores VALUES (?,?,?,?,?)').run('STORE-D','TENANT-A','active',0,now);
+  db.prepare('INSERT INTO store_connections (id,client_id,provider,status,config_json,updated_at,external_store_id) VALUES (?,?,?,?,?,?,?)')
+    .run('CON-D','TENANT-A','easyorders','connected',JSON.stringify({
+      kunStoreId:'STORE-D',easyOrdersRecoveryHighestShortId:501,easyOrdersRecoveryCursor:500
+    }),now,'EO-EXTERNAL-D');
+  const secret=await encryptSecret(env,'ONLY-A-SYNTHETIC-EASYORDERS-API-KEY');
+  db.prepare('INSERT INTO integration_secrets VALUES (?,?,?,?,?)').run(
+    'TENANT-A','CON-D','api_key',secret.ciphertextB64,secret.ivB64
+  );
+  const seen=[];
+  const fakeApi=async (url,options)=>{
+    assert.equal(options.headers['Api-Key'],'ONLY-A-SYNTHETIC-EASYORDERS-API-KEY');
+    const id=Number(url.split('/').at(-1));seen.push(id);
+    if(id===500)return Response.json({...p,id:'FOREIGN-ORDER',store_id:'EO-FOREIGN',short_id:500});
+    if(id===501)return Response.json({...p,store_id:'EO-EXTERNAL-D',short_id:501,phone:'01000000004'});
+    return Response.json({message:'record not found'},{status:404});
+  };
+  const recovery=await reconcileEasyOrdersOrders(env,{
+    clientId:'TENANT-A',connectionId:'CON-D',maxRequests:3,lookback:10,fetcher:fakeApi
+  });
+  assert.equal(recovery.results[0].status,'healthy',JSON.stringify(recovery.results[0]));
+  assert.deepEqual(seen,[500,501,502],'Foreign storefront response cannot terminate recovery scan');
+  assert.equal(recovery.foreignStoreSkipped,1,'Foreign storefront is observed but never ingested');
+  assert.equal(recovery.recovered,1,'Sibling Kun store with same provider ID is a NEW recovery');
+  assert.equal(recovery.recoveredOrderIds.length,1,'Accounting reconciliation receives recovered order IDs');
+  const recoveredId=recovery.recoveredOrderIds[0];
+  assert.notEqual(recoveredId,a.id);
+  assert.equal(db.prepare('SELECT store_id FROM orders WHERE id=?').get(recoveredId).store_id,'STORE-D');
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM orders WHERE ref='easyorders:FOREIGN-ORDER'").get().n,0,
+    'No order from another Easy Orders store may enter the Kun database');
+  assert.equal(db.prepare('SELECT state FROM orders WHERE id=?').get(a.id).state,'pending',
+    'Recovery must not change existing sibling store order');
+  // Unbound integrations must be explicitly repaired via authenticated
+  // webhook rather than assigning the first random provider store from API.
+  db.prepare('INSERT INTO store_connections (id,client_id,provider,status,config_json,updated_at,external_store_id) VALUES (?,?,?,?,?,?,?)')
+    .run('CON-UNBOUND','TENANT-A','easyorders','connected',JSON.stringify({
+      kunStoreId:'STORE-D',easyOrdersRecoveryHighestShortId:501,easyOrdersRecoveryCursor:501
+    }),now,'');
+  db.prepare('INSERT INTO integration_secrets VALUES (?,?,?,?,?)').run(
+    'TENANT-A','CON-UNBOUND','api_key',secret.ciphertextB64,secret.ivB64
+  );
+  const unbound=await reconcileEasyOrdersOrders(env,{
+    clientId:'TENANT-A',connectionId:'CON-UNBOUND',maxRequests:2,fetcher:fakeApi
+  });
+  assert.equal(unbound.results[0].status,'error','Unbound provider store must fail closed');
+  assert.equal(connection('CON-UNBOUND').external_store_id,'');
   console.log('Easy Orders SQLite sync PASS: concurrent webhook/cron CAS, monotonic high-water, correct catching-up, tenant+store collision isolation, idempotent retries.');
 }finally{db.close();}
