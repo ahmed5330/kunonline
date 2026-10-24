@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import {mutateEasyOrdersConfig,mergeEasyOrdersRecoveryPatch} from '../src/easyorders-connection-config.js';
 import {easyOrdersWebhookPath,handleEasyOrdersWebhook} from '../src/commerce-order-sync.js';
+import {fairEasyOrdersRecoveryOrder} from '../src/easyorders-order-reconciliation.js';
 
 const db=new DatabaseSync(':memory:');
 db.exec(`
@@ -52,6 +53,16 @@ const connection=id=>db.prepare('SELECT * FROM store_connections WHERE id=?').ge
 const config=id=>JSON.parse(connection(id).config_json);
 const update=(id,mutate,extra)=>mutateEasyOrdersConfig(env,connection(id),mutate,extra);
 try{
+  const roundOne=[
+    {id:'A',config_json:JSON.stringify({easyOrdersRecoveryLastRunAt:'2026-10-24T02:30:00Z'})},
+    {id:'B',config_json:JSON.stringify({easyOrdersRecoveryLastRunAt:'2026-10-23T01:00:00Z'})},
+    {id:'C',config_json:'{}'},
+  ];
+  assert.deepEqual(fairEasyOrdersRecoveryOrder(roundOne).map(x=>x.id),['C','B','A'],
+    'Never-run and oldest-checked Easy Orders stores must get recovery budget first');
+  roundOne[2].config_json=JSON.stringify({easyOrdersRecoveryLastRunAt:'2026-10-24T03:00:00Z'});
+  assert.deepEqual(fairEasyOrdersRecoveryOrder(roundOne).map(x=>x.id),['B','A','C'],
+    'After being checked a store must move behind older unchecked stores');
   const initial=mergeEasyOrdersRecoveryPatch(
     {easyOrdersRecoveryHighestShortId:100,easyOrdersRecoveryCursor:101,easyOrdersRecoveryLastStatus:'healthy'},
     {easyOrdersRecoveryHighestShortId:99,easyOrdersRecoveryCursor:100,easyOrdersRecoveryLastStatus:'healthy'}
