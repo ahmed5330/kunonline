@@ -10,6 +10,8 @@ on:
       - 'src/mobile-*.js'
       - 'public/v2/modules-v26-auth.js'
       - 'scripts/android-*.mjs'
+      - 'scripts/admin-client-password-reset-ui-test.mjs'
+      - 'scripts/pr209-main-reconciliation-guard.mjs'
       - '.github/workflows/android-mobile-redesign-check.yml'
   workflow_dispatch:
 
@@ -26,6 +28,10 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          package-manager-cache: false
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
@@ -43,6 +49,12 @@ jobs:
         run: node scripts/android-accounting-fake-test.mjs
       - name: Fake per-store new-order notifications and security
         run: node scripts/android-order-notifications-fake-test.mjs
+      - name: Check reconciled owner password and session schema (offline only)
+        run: |
+          node scripts/admin-client-password-reset-ui-test.mjs
+          node scripts/session-revocation-schema-contract.mjs
+          node scripts/session-revocation-schema-contract-test.mjs
+          node scripts/pr209-main-reconciliation-guard.mjs
       - name: Run unit tests and build debug APK
         run: gradle -p android test assembleDebug --stacktrace
       - name: Keep isolated debug APK for manual device QA
