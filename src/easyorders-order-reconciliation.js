@@ -77,7 +77,10 @@ async function ingestThroughCanonicalWebhook(env,connection,secrets,order){
   const headers={'Content-Type':'application/json'};
   const webhookSecret=text(secrets.webhook_secret||env.EASYORDERS_WEBHOOK_SECRET);if(webhookSecret)headers.secret=webhookSecret;
   const request=new Request(`https://kun-reconciliation.internal${path}`,{method:'POST',headers,body:JSON.stringify(order)});
-  return handleEasyOrdersWebhook(request,env,{connectionId:connection.id,routeToken});
+  // Reconciliation is a gap-filler, not a provider-side overwrite operation.
+  // Even if a webhook or a staff action wins the race, preserve all existing
+  // state, notes, call history, shipping and financial fields.
+  return handleEasyOrdersWebhook(request,env,{connectionId:connection.id,routeToken,createOnly:true});
 }
 
 async function bootstrapFromLastWebhook(env,connection,{apiKey,fetcher,lookback}){
@@ -152,7 +155,10 @@ async function reconcileConnection(env,connection,{maxRequests,lookback,fetcher}
       }
       const before=await existingOrder(env,connection,order),result=await ingestThroughCanonicalWebhook(env,connection,secrets,order);
       if(result?.id){
-        if(before)out.updated++;else {out.recovered++;out.recoveredOrderIds.push(result.id);}
+        // A provider webhook may win between the SELECT and CREATE-only SQL:
+        // a raced existing order must never inflate recovered counts/fees.
+        if(before||result.skippedExisting===true)out.updated++;
+        else {out.recovered++;out.recoveredOrderIds.push(result.id);}
       }
       highest=Math.max(highest,actualShort);
       return {kind:'found',order,result,shortId:actualShort};
