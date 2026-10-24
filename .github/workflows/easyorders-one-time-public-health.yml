@@ -1,0 +1,37 @@
+name: One-time public Easy Orders health probe (GET only, no credentials)
+on:
+  push:
+    branches:
+      - audit/easyorders-preview-worker-inventory-20261024
+    paths:
+      - '.github/workflows/easyorders-one-time-public-health.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kunonline-public-easyorders-health-check-20261024
+  cancel-in-progress: false
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - name: Prove three GETs only, no credentials or leak on failed HTTP
+        run: |
+          node --check scripts/easyorders-public-runtime-health-get.mjs
+          node scripts/easyorders-public-runtime-health-get-test.mjs
+      - name: Read public scheduler, Preview and Production health (no authentication)
+        env:
+          CLOUDFLARE_API_TOKEN: ''
+          CLOUDFLARE_ACCOUNT_ID: ''
+        run: node scripts/easyorders-public-runtime-health-get.mjs
+# Second diagnostic: collect only aggregate key/error counts and safe RPC build.
+# No Cloudflare API token, environment secret, worker deploy, D1 query,
+# actual order data, provider Webhook, POST or migration is performed.

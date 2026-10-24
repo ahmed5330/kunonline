@@ -1,0 +1,42 @@
+name: One-time Easy Orders Worker scheduler metadata audit (GET only)
+
+# Branch-scoped, trigger once when this workflow is created in the audit
+# branch. No workflow_dispatch, cron, Production/Preview deploy or D1 access.
+on:
+  push:
+    branches:
+      - audit/easyorders-preview-worker-inventory-20261024
+    paths:
+      - '.github/workflows/easyorders-one-time-readonly-inventory.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kunonline-one-time-easyorders-worker-metadata-20261024
+  cancel-in-progress: false
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    environment:
+      name: preview
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - name: Verify inspector is GET-only with fake Cloudflare responses
+        run: |
+          node --check scripts/easyorders-cloudflare-worker-readonly-inventory.mjs
+          node scripts/easyorders-cloudflare-worker-readonly-inventory-test.mjs
+      - name: Read metadata of actual scheduler, Preview and Production Workers
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: node scripts/easyorders-cloudflare-worker-readonly-inventory.mjs
+# The script makes exactly 9 Cloudflare API GET requests (3 workers x:
+# schedules, settings and deployments), displays ONLY binding type/name and
+# service target plus cron/version IDs. No customer queries or raw API bodies.
