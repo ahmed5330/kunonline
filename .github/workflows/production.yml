@@ -116,6 +116,8 @@ jobs:
         run: |
           node --check src/public-site-reviews.js
           node scripts/public-site-reviews-test.mjs
+      - name: Verify guarded Easy Orders Production release rollback policy
+        run: node scripts/easyorders-production-release-flow-test.mjs
       - name: Verify Worker builds without touching Production
         run: npx wrangler deploy --dry-run --config wrangler.production.toml
   deploy:
