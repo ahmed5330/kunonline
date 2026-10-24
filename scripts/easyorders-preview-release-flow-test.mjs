@@ -15,9 +15,9 @@ const expected=[
   "git diff --name-only",
   "Apply preview migrations only with explicit schema approval",
   "github.event_name == 'workflow_dispatch' && inputs.apply_reviewed_migrations == true",
-  "Capture current live Preview version as rollback without changing traffic",
+  "Create fresh verified rollback baseline from stable Git source",
   "wrangler deployments status --config wrangler.preview.toml --json",
-  "Restore captured live Preview Worker version after failed validation",
+  "Restore same-run verified Preview baseline after failed validation",
   "Require every Preview validation gate to succeed",
   "Promote fully validated HEAD to preview-stable"
 ];
@@ -38,10 +38,14 @@ for(const name of sections){
  assert.ok(at>previous,'Preview safe-release order missing/out of sequence: '+name);
  previous=at;
 }
-const between=config.slice(config.indexOf("Capture current live Preview version as rollback without changing traffic"),
+const between=config.slice(config.indexOf("Create fresh verified rollback baseline from stable Git source"),
   config.indexOf("      - name: Deploy preview Worker"));
-assert.ok(!between.includes('wrangler" deploy'),'Rollback preparation must not deploy older source');
-assert.ok(!/^\\s*(?:npx\\s+)?wrangler\\s+deploy\\b/m.test(between),'Rollback preparation must be read-only');
+assert.ok(between.includes('git worktree add --detach "$stable_dir" "$stable_sha"'),
+  'Rollback baseline must come from a reviewed stable Git SHA');
+assert.ok(between.includes('node scripts/preview-health-check.mjs "$base_url"'),
+  'Rollback baseline must be healthy before candidate deploy');
+assert.ok(between.includes('CI rollback baseline from stable source $stable_sha'),
+  'Rollback deployment must be attributable to the stable source');
 assert.ok(config.includes("steps.rollback_base.outputs.version_id"),'Exact captured Worker version required');
 assert.ok(!/\bwrangler d1 time-travel restore\b/.test(config),'NEVER automatically revert live customer D1');
 assert.ok(!/\bwrangler d1 migrations apply\b/.test(config),
