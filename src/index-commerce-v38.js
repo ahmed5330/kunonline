@@ -101,10 +101,26 @@ async function injectV2Ui(request,response){
  * enrichShippingFinanceOrders
  * customerShippingCollected
  */
+// Report the actual outer Preview entrypoint rather than the inherited v36
+// compatibility route. A version string is a code signal, NOT proof that
+// the 5-minute Cron fired or that Easy Orders delivered any specific order.
+export const KUN_PREVIEW_ENTRYPOINT_BUILD='preview-v38-easyorders-runtime-attestation-2026-10-24';
+function actualPreviewVersion(env){
+  return new Response(JSON.stringify({
+    ok:true,build:KUN_PREVIEW_ENTRYPOINT_BUILD,entrypoint:'index-commerce-v38.js',
+    environment:env?.APP_ENV||'unknown',source:'outer-worker',
+    cronExecutionProven:false,liveOrderRecoveryProven:false
+  }),{status:200,headers:{
+    'Content-Type':'application/json; charset=utf-8',
+    'Cache-Control':'no-store','X-Kun-Build':KUN_PREVIEW_ENTRYPOINT_BUILD
+  }});
+}
 void safety;
 void core;
 export default {
   async fetch(request,env,ctx){
+    if(request.method==='GET'&&new URL(request.url).pathname==='/api/preview/version')
+      return actualPreviewVersion(env);
     const rootRedirect=redirectLegacyRoot(request);
     if(rootRedirect)return rootRedirect;
     const competitors=await handleCompetitorIntelligence({request,env,ctx,delegate:app});
@@ -148,5 +164,11 @@ export class SyncEntrypoint extends BaseSyncEntrypoint {
     }
     return upstream;
   }
-  async health(){return {...await super.health(),clarity:'connected-store-snapshots-every-12h'};}
+  async health(){return {...await super.health(),
+    // `build` is historically inherited from inner v35 and is not the deployed
+    // outer entrypoint. Return a separate explicit signal without suppressing it.
+    outerEntrypoint:'index-commerce-v38.js',
+    outerBuild:KUN_PREVIEW_ENTRYPOINT_BUILD,
+    cronExecutionProven:false,
+    clarity:'connected-store-snapshots-every-12h'};}
 }

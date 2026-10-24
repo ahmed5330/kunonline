@@ -1,0 +1,26 @@
+name: Preview runtime attestation fake QA (no deploy)
+on:
+  pull_request:
+    branches:
+      - fix/easyorders-preview-recovery-20261024
+    paths:
+      - 'src/index-commerce-v38.js'
+      - 'scripts/easyorders-preview-attestation-test.mjs'
+      - '.github/workflows/easyorders-preview-attestation-offline.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check syntax and dynamic version behavior
+        run: |
+          node --check src/index-commerce-v38.js
+          node --check scripts/easyorders-preview-attestation-test.mjs
+          node --experimental-loader ./scripts/session-test-cloudflare-loader.mjs scripts/easyorders-preview-attestation-test.mjs
