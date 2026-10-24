@@ -1,7 +1,7 @@
 name: Easy Orders incident hotfix full offline QA
 on:
   pull_request:
-    branches: [main]
+    branches: [main, fix/easyorders-sync-hotfix-20261024]
     paths:
       - 'src/commerce-order-sync.js'
       - 'src/easyorders-connection-config.js'
@@ -9,6 +9,8 @@ on:
       - 'src/index-commerce-v31.js'
       - 'src/index-commerce-v34.js'
       - 'scripts/easyorders-sync-concurrency-sqlite-test.mjs'
+      - '.github/workflows/production.yml'
+      - 'scripts/easyorders-production-release-flow-test.mjs'
       - 'package.json'
       - '.github/workflows/easyorders-hotfix-offline.yml'
 permissions:
@@ -18,7 +20,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   linux-full:
-    if: github.head_ref == 'fix/easyorders-sync-hotfix-20261024'
+    if: github.head_ref == 'fix/easyorders-sync-hotfix-20261024' || github.head_ref == 'release/easyorders-production-gated-20261025'
     runs-on: ubuntu-latest
     timeout-minutes: 35
     env:
@@ -45,11 +47,13 @@ jobs:
         run: |
           node scripts/mobile-state-sync-test.mjs
           node scripts/dashboard-sync-guard-test.mjs
+      - name: Protected Production release workflow + rollback contract
+        run: node scripts/easyorders-production-release-flow-test.mjs
       - name: Full app/backend regression
         run: npm test
       - run: git diff --check
   windows-sync:
-    if: github.head_ref == 'fix/easyorders-sync-hotfix-20261024'
+    if: github.head_ref == 'fix/easyorders-sync-hotfix-20261024' || github.head_ref == 'release/easyorders-production-gated-20261025'
     runs-on: windows-latest
     timeout-minutes: 15
     env:
