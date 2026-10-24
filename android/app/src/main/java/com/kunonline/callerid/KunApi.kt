@@ -495,7 +495,7 @@ object KunApi {
     internal fun reusableVerifiedScope(
         cookie: String, verifiedCookie: String, now: Long, expiresAt: Long, candidate: ScopeInfo?
     ): ScopeInfo? =
-        candidate?.takeIf { cookie == verifiedCookie && now < expiresAt && it.clientId.isNotBlank() }
+        candidate?.takeIf { cookie == verifiedCookie && now < expiresAt && it.clientId.isNotBlank() && !it.clientId.equals("null", ignoreCase = true) }
 
     @Synchronized internal fun resolveScope(cookie: String, context: Context? = null): ScopeInfo {
         val cached = cachedScope
