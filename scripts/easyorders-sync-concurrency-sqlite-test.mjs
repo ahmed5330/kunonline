@@ -166,6 +166,10 @@ try{
   assert.equal(db.prepare("SELECT state FROM orders WHERE id='RACE-SAME-STORE'").get().state,null,
     'Incoming stale state must not overwrite concurrently inserted order');
 
+  // Restore the original fixture state so unrelated legacy regression
+  // assertions below still test the original pending-order scenario.
+  db.prepare("UPDATE orders SET state='pending' WHERE id=?").run(a.id);
+
   // Inject a real insert between the initial SELECT and the first upsert:
   // both stores originally believe the external ID is unused. The losing
   // webhook must retry using a stable scoped ID, without overwriting a.
