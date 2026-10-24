@@ -5,10 +5,11 @@ import {readFile,readdir} from 'node:fs/promises';
 
 const root=new URL('../',import.meta.url);
 const read=path=>readFile(new URL(path,root),'utf8');
-const [entry,revoker,ui,html,pkg,loginUI]=await Promise.all([
+const [entry,revoker,ui,html,pkg,loginUI,previewWorkflow,sandboxTemplate]=await Promise.all([
   read('src/index.js'),read('src/session-revocation.js'),
   read('public/v2/modules-v23-admin.js'),read('public/v2/index.html'),
-  read('package.json'),read('public/v2/modules-v26-auth.js')
+  read('package.json'),read('public/v2/modules-v26-auth.js'),
+  read('.github/workflows/preview.yml'),read('wrangler.audit-sandbox.example.toml')
 ]);
 const names=(await readdir(new URL('migrations/',root)))
   .filter(name=>name.endsWith('.sql')&&(/session.revoc|revoked.session|(?:^|[_-])0098[_-]/i.test(name)));
@@ -37,4 +38,17 @@ assert.match(scripts['test:admin-client-command'],/admin-client-password-reset-u
   'Run preserved main admin UI regression with normal CI');
 assert.match(scripts['test:session-revocation-schema'],/pr209-main-reconciliation-guard\.mjs/,
   'Run this conflict guard in normal CI');
+assert.match(scripts['db:migrate:preview'],/reject-bulk-preview-migrations\.mjs/,
+  'Preview migration command must fail closed instead of applying all pending migrations');
+assert.doesNotMatch(scripts['deploy:preview'],/\|\|\s*true/,
+  'Preview deploy must not suppress failure');
+assert.doesNotMatch(previewWorkflow,/run:\s*npm run db:migrate:preview/,
+  'Preview CI must never bulk-apply migrations before deploy');
+assert.match(previewWorkflow,/FROM revoked_session_tokens LIMIT 0;/,
+  'Preview CI must check canonical schema read-only instead');
+assert.match(sandboxTemplate,/database_id\s*=\s*"REPLACE_WITH_NEW_D1_UUID"/,
+  'Audit sandbox example must remain non-deployable until fresh D1 is provisioned');
+assert.doesNotMatch(sandboxTemplate,/binding\s*=\s*"PREVIEW_APP"|binding\s*=\s*"PREVIEW_DB"/,
+  'Sandbox cannot bind a Production-connected Preview service or D1');
+
 console.log('Offline main/PR209 reconciliation guard PASS (source only). Remote D1 schema and deployed Workers remain UNVERIFIED.');
