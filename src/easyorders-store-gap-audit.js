@@ -73,6 +73,15 @@ export async function auditEasyOrdersStoreGapRange(env,{
     }
     const order=payload?.data?.id?payload.data:payload;
     const providerId=clean(order?.id),sourceStore=clean(order?.store_id||order?.storeId);
+    // Do not mistake an incorrectly resolved provider Short ID for a genuine
+    // missing Kun order. The real provider payload may omit short_id, but
+    // when it supplies one it must match the exact requested ID.
+    const returnedShort=order?.short_id??order?.shortId;
+    if(returnedShort!==undefined&&returnedShort!==null&&
+        (!Number.isSafeInteger(Number(returnedShort))||Number(returnedShort)!==shortId)){
+      result.ok=false;result.status='provider_short_id_mismatch';
+      result.nextShortId=shortId;break;
+    }
     if(!providerId||!sourceStore){
       result.ok=false;result.status='provider_payload_invalid';result.nextShortId=shortId;break;
     }

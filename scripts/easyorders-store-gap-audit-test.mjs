@@ -88,6 +88,19 @@ assert.equal(collision.missingInKun,1,'Cross-store same provider ID is not prese
 assert.equal(collision.ambiguousLegacyOrders,1,'Unscoped legacy collision requires operator review');
 assert.deepEqual(collision.gaps,[{shortId:406,sourceOrderId:'EA-406'}]);
 
+const identityMismatch=await run(400,401,{
+  fetcher:async()=>Response.json({
+    id:'WRONG-ORDER',store_id:'EO-W',short_id:999,
+    phone:'DO_NOT_DISCLOSE_CUSTOMER_PHONE'
+  })
+});
+assert.equal(identityMismatch.ok,false);
+assert.equal(identityMismatch.status,'provider_short_id_mismatch');
+assert.equal(identityMismatch.nextShortId,400);
+assert.equal(identityMismatch.missingInKun,0);
+assert.deepEqual(identityMismatch.gaps,[]);
+assert.doesNotMatch(JSON.stringify(identityMismatch),/WRONG-ORDER|CUSTOMER_PHONE/);
+
 const forbidden=await run(408,409);
 assert.equal(forbidden.status,'provider_forbidden');
 assert.equal(forbidden.nextShortId,408);
