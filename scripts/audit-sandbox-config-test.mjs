@@ -32,13 +32,19 @@ const tests=[
   ['Preview DB alias',safe.replace('binding = "DB"','binding = "PREVIEW_DB"')],
   ['missing APP_ENV',safe.replace('APP_ENV = "audit_sandbox"','APP_ENV = "production"')],
   ['live hostname route',safe+'\nroute = "app.kun-online.com/*"\n'],
-  ['unreviewed Worker entrypoint',safe.replace('main = "src/index-commerce-v38.js"','main = "src/index-production-mobile-update.js"')],
+  ['unreviewed Worker entrypoint',safe.replace('main = "src/audit-sandbox-auth-worker.js"','main = "src/index-production-mobile-update.js"')],
   ['extra D1 binding',safe+'\n[[d1_databases]]\nbinding="BACKUP"\ndatabase_name="some-other"\ndatabase_id="e0faf16e-cc77-4e1c-a829-7a86b53a990a"\n'],
   ['invalid UUID',safe.replace('8b1b87a5-34db-4e29-9634-08220d0a9d91','NOT_AN_ID')],
-  ['provider key embedded',safe+'\nTOKEN_ENC_KEY = "should-never-be-in-a-toml"\n']
+  ['provider key embedded',safe+'\nTOKEN_ENC_KEY = "should-never-be-in-a-toml"\n'],
+  ['workers.dev enabled',safe.replace('workers_dev = false','workers_dev = true')],
+  ['sandbox offline mode removed',safe.replace('AUDIT_EGRESS_OFFLINE = "true"','AUDIT_EGRESS_OFFLINE = "false"')],
+  ['sandbox uses production migration dir',safe.replace('migrations_dir = "sandbox/migrations"','migrations_dir = "migrations"')],
+  ['commerce asset binding added',safe+'\n[assets]\ndirectory="./public"\n'],
+  ['test key embedded as plain TOML',safe+'\nAUDIT_QA_KEY = "not-a-secret"\n'],
+  ['public zone enabled',safe+'\nzone_id = "fake"\n']
 ];
 for(const [label,config] of tests)assert.throws(()=>check(config),/UNSAFE AUDIT SANDBOX CONFIG/,label+' must block all stateful tests');
 const scripts=JSON.parse(packageText).scripts;
 assert.ok(scripts['deploy:preview'].includes('wrangler deploy --config wrangler.preview.toml'));
 assert.doesNotMatch(scripts['deploy:preview'],/\|\|\s*true/,'Preview deployment failure must propagate to CI');
-console.log('Audit sandbox static safety PASS: nondeployable template, fresh DB resources, 14 unsafe configurations denied, and Preview deploy errors cannot be swallowed. No Cloudflare requests.');
+console.log('Audit sandbox static safety PASS: nondeployable template, fresh DB resources, 20 unsafe configurations denied, and Preview deploy errors cannot be swallowed. No Cloudflare requests.');

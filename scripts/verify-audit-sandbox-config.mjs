@@ -16,10 +16,14 @@ export function verifyAuditSandboxConfig(sandbox,production,preview){
   if(!name||!/^[a-z][a-z0-9-]{5,60}$/.test(name)||name.startsWith('REPLACE_'))fail('Worker needs a unique valid name');
   if(name===prodName||name===previewName)fail('Worker name overlaps a live Worker');
   if(!name.includes('audit')&&!name.includes('sandbox'))fail('Worker name must identify audit/sandbox purpose');
-  if(field(sandbox,'main')!=='src/index-commerce-v38.js')fail('Entrypoint must be reviewed explicitly');
+  if(field(sandbox,'main')!=='src/audit-sandbox-auth-worker.js')fail('Use only the minimal isolated auth QA Worker, never full commerce');
   if(appEnv!=='audit_sandbox')fail('APP_ENV must be audit_sandbox');
+  if(field(sandbox,'AUDIT_EGRESS_OFFLINE')!=='true')fail('Only egress-disabled sandbox mode is allowed');
+  if(!/^\s*workers_dev\s*=\s*false\s*$/m.test(sandbox))fail('Public workers.dev host must be disabled');
+  if(/^\s*(?:AUDIT_QA_KEY|SESSION_SECRET)\s*=/m.test(sandbox))fail('Secrets must not be embedded in TOML');
+  if(/^\s*\[assets\]/m.test(sandbox))fail('Do not expose commerce assets or route assets');
   if(!/^\[triggers\]\s*\n\s*crons\s*=\s*\[\s*\]/m.test(sandbox))fail('Cron Triggers must be explicitly disabled');
-  if(/^\s*(?:routes?|workers_dev)\s*=/m.test(sandbox))fail('Do not attach live routes or enable workers.dev implicitly');
+  if(/^\s*(?:routes?|zone_id)\s*=/m.test(sandbox))fail('Do not attach any Cloudflare zone routes');
   if(/^\[\[(?:services|kv_namespaces|r2_buckets|queues(?:\.[^\]]+)?|durable_objects\.[^\]]+|analytics_engine_datasets)\]\]/m.test(sandbox)){
     fail('External bindings and inherited service links forbidden');
   }
@@ -30,6 +34,8 @@ export function verifyAuditSandboxConfig(sandbox,production,preview){
   if(blocks.length!==1)fail('Exactly one dedicated D1 binding required');
   const block=blocks[0];
   const binding=field(block,'binding'),databaseName=field(block,'database_name'),id=field(block,'database_id');
+  if(field(block,'migrations_dir')!=='sandbox/migrations')
+    fail('D1 may use ONLY isolated auth sandbox migrations, never full commerce migrations');
   if(binding!=='DB')fail('D1 binding must be DB (no PREVIEW_DB)');
   if(!/^[a-z][a-z0-9-]{5,80}$/.test(databaseName)||databaseName.startsWith('REPLACE_'))fail('Dedicated D1 name required');
   const names=[...production.matchAll(/^\s*database_name\s*=\s*"([^"]+)"/gm),...preview.matchAll(/^\s*database_name\s*=\s*"([^"]+)"/gm)].map(x=>x[1]);

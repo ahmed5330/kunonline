@@ -41,7 +41,7 @@
     "test:manual-order-form": "node scripts/manual-order-form-test.mjs",
     "test:audit-20261023": "node scripts/audit-20261023-regression-test.mjs",
     "test:admin-audit-ui-20261023": "node scripts/admin-audit-20261023-ui-test.mjs",
-    "test:audit-sandbox-config": "node scripts/audit-sandbox-config-test.mjs",
+    "test:audit-sandbox-config": "node scripts/audit-sandbox-config-test.mjs && node scripts/audit-sandbox-auth-worker-test.mjs",
     "test:auth-invalid-input-20261023": "node scripts/auth-invalid-login-20261023-test.mjs",
     "test:android-chat-schema-ux": "node scripts/android-chat-schema-ux-test.mjs",
     "test:customer-service-notes": "node scripts/customer-service-notes-product-cards-test.mjs",
