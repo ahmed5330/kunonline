@@ -1,7 +1,7 @@
 /* Audit-only Cloudflare Worker.
  * The only imported application functions are the UNWIRED dual-revocation
  * proof-of-concept; NO commerce handler, assets, scheduled events, service
- * bindings, upstream URL, provider SDK, customer data or outbound fetch().
+ * bindings, upstream URL, provider SDK, customer data or outbound network requests.
  * Never deploy against Production/Preview D1. No routes are configured.
  */
 import {isRevokedAcrossBoth,revokeAcrossBoth} from './session-revocation-compatibility-bridge.js';
