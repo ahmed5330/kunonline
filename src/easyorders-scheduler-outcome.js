@@ -13,7 +13,7 @@ export function checkEasyOrdersCronRecovery(result){
   }
   const failed=integer(result.failedConnections);
   const throttled=integer(result.rateLimitedConnections);
-  const reportedFailure=result.ok===false;
+  const reportedFailure=result.ok!==true;
   // Older deployments can report only rateLimited/results, without new
   // failedConnections fields: do not accidentally mark them successful.
   const legacyRows=Array.isArray(result.results)?result.results:[];
