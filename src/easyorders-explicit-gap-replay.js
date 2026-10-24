@@ -28,7 +28,7 @@ async function importCanonical(env,connection,secrets,order){
   if(webhookSecret)headers.secret=webhookSecret;
   return handleEasyOrdersWebhook(new Request('https://kun-gap-recovery.internal'+path,{
     method:'POST',headers,body:JSON.stringify(order)
-  }),env,{connectionId:connection.id,routeToken});
+  }),env,{connectionId:connection.id,routeToken,createOnly:true});
 }
 export async function replayExplicitEasyOrdersStoreGaps(env,{
   clientId,storeId,connectionId,confirmStoreId,confirmBackup,
@@ -100,6 +100,7 @@ export async function replayExplicitEasyOrdersStoreGaps(env,{
       const imported=await ingest(env,row,secrets,order);
       if(!imported?.ok||!clean(imported.id)||clean(imported.clientId)!==tenant||clean(imported.storeId)!==store)
         throw failure('EASYORDERS_REPLAY_IMPORT_MISMATCH','لم يتم تأكيد استيراد الطلب في المتجر الصحيح',409);
+      if(imported.skippedExisting===true){result.alreadyInKun++;continue;}
       result.recovered++;
       result.recoveredOrderIds.push(clean(imported.id));
       try{
