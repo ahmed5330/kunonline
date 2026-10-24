@@ -413,6 +413,7 @@ try{
     const id=Number(url.split('/').at(-1));
     if(id===1235||lateHoleAvailable&&id===1202)
       return Response.json({...p,id:'OWN-'+id,short_id:id,store_id:'EO-HOLES'});
+    if(id>1235)return Response.json({...p,id:'FOREIGN-'+id,short_id:id,store_id:'EO-OTHER'});
     return Response.json({message:'record not found'},{status:404});
   };
   let foundBeyondHoles=false;
@@ -428,7 +429,7 @@ try{
     'Unresolved 404 must remain durably queued after the ahead probe advances');
   lateHoleAvailable=true;
   let delayedRecovered=false;
-  for(let i=0;i<10;i++){
+  for(let i=0;i<45;i++){
     const x=await reconcileEasyOrdersOrders(env,{
       clientId:'TENANT-A',connectionId:'CON-HOLES',maxRequests:15,fetcher:holeApi
     });
