@@ -2,6 +2,7 @@ import commerceV30 from './index-commerce-v30.js';
 import {requirePermission,resolveTenant} from './access-control.js';
 import {resolveStoreScope} from './store-scope.js';
 import {easyOrdersWebhookPath} from './commerce-order-sync.js';
+import {mutateEasyOrdersConfig} from './easyorders-connection-config.js';
 import {readConnectionSecrets} from './integration-provider-validation.js';
 import {board as customerServiceBoard,handleAction as handleCustomerServiceAction} from './customer-service.js';
 import {dashboardData} from './dashboard-intelligence.js';
@@ -60,22 +61,22 @@ async function dashboardBeginning(env,clientId,storeId=null){
   return [orders?.d,transactions?.d,ads?.d].filter(Boolean).sort()[0]||now().slice(0,10);
 }
 async function patchHealth(env,connection,{status,code,httpStatus,orderId,externalStoreId,error,probe=false}){
-  const fresh=await env.DB.prepare('SELECT config_json FROM store_connections WHERE id=? AND client_id=?').bind(connection.id,connection.client_id).first();
-  const config=parseConfig(fresh||connection),ts=now();
+  const ts=now();
   if(probe){
-    config.webhookLastProbeAt=ts;
-    await env.DB.prepare('UPDATE store_connections SET config_json=?,updated_at=? WHERE id=? AND client_id=?').bind(JSON.stringify(config),ts,connection.id,connection.client_id).run();
+    await mutateEasyOrdersConfig(env,connection,current=>({...current,webhookLastProbeAt:ts}));
     return;
   }
-  config.webhookLastReceivedAt=ts;
-  config.webhookLastStatus=status||'received';
-  config.webhookLastCode=code||null;
-  config.webhookLastHttpStatus=Number(httpStatus)||null;
-  config.webhookLastOrderId=text(orderId)||null;
-  config.webhookLastExternalStoreId=text(externalStoreId)||null;
   const safeError=error?text(error).slice(0,500):null;
-  await env.DB.prepare('UPDATE store_connections SET config_json=?,last_error=?,updated_at=? WHERE id=? AND client_id=?').bind(JSON.stringify(config),safeError,ts,connection.id,connection.client_id).run();
+  await mutateEasyOrdersConfig(env,connection,current=>({
+    ...current,webhookLastReceivedAt:ts,
+    webhookLastStatus:status||'received',
+    webhookLastCode:code||null,
+    webhookLastHttpStatus:Number(httpStatus)||null,
+    webhookLastOrderId:text(orderId)||null,
+    webhookLastExternalStoreId:text(externalStoreId)||null
+  }),{lastError:safeError});
 }
+
 async function diagnostics(request,env,ctx){
   const me=await currentUser(request,env,ctx),url=new URL(request.url),clientId=resolveTenant(me,url.searchParams.get('clientId'));requirePermission(me,'orders','read');
   const requestedStore=text(url.searchParams.get('storeId'));
