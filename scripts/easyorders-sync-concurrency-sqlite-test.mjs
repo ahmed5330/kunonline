@@ -142,6 +142,30 @@ try{
   assert.equal(db.prepare('SELECT state FROM orders WHERE id=?').get(third.id).state,'confirmed');
   assert.equal(db.prepare('SELECT state FROM orders WHERE id=?').get(b.id).state,'shipped');
 
+  // Historic replay cannot roll a shipped order back to pending, rewrite
+  // staff notes, or replace history—even if its provider payload is stale.
+  db.prepare("UPDATE orders SET state=?,note=?,history=?,contact_log=? WHERE id=?")
+    .run('shipped','STAFF-NOTE-MUST-STAY','[{"source":"staff"}]','[{"call":"handled"}]',a.id);
+  const pathA=await easyOrdersWebhookPath(env,connection('CON-A'));
+  const asReplay=payload=>handleEasyOrdersWebhook(new Request('https://offline.invalid'+pathA,{
+    method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)
+  }),env,{connectionId:'CON-A',routeToken:pathA.split('/').at(-1),createOnly:true});
+  const existingReplay=await asReplay({...p,status:'pending',full_name:'STALE_NAME'});
+  assert.equal(existingReplay.skippedExisting,true);
+  assert.deepEqual(db.prepare('SELECT state,note,history,contact_log FROM orders WHERE id=?').get(a.id),{
+    state:'shipped',note:'STAFF-NOTE-MUST-STAY',
+    history:'[{"source":"staff"}]',contact_log:'[{"call":"handled"}]'
+  },'Create-only replay must never overwrite existing customer-service work');
+
+  // An actual insert may race AFTER the initial SELECT; create-only SQL must
+  // treat same-store concurrent insertion as already present without an upsert.
+  insertRaceId='RACE-SAME-STORE';
+  const raceReplay=await asReplay({...p,id:'RACE-SAME-STORE',status:'pending'});
+  assert.equal(raceReplay.skippedExisting,true,'Concurrent same-store creation should be idempotently skipped');
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM orders WHERE id='RACE-SAME-STORE'").get().n,1);
+  assert.equal(db.prepare("SELECT state FROM orders WHERE id='RACE-SAME-STORE'").get().state,null,
+    'Incoming stale state must not overwrite concurrently inserted order');
+
   // Inject a real insert between the initial SELECT and the first upsert:
   // both stores originally believe the external ID is unused. The losing
   // webhook must retry using a stable scoped ID, without overwriting a.
