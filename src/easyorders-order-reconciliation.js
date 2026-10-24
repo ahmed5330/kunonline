@@ -170,8 +170,20 @@ export async function easyOrdersRecoveryStatus(env,{clientId=null,storeId=null,c
   return {ok:true,connections:results.length,...aggregateRecovery(results),results};
 }
 
+// Global five-minute recovery uses a bounded request budget. Scheduling by
+// updated_at can starve stores indefinitely: every inspected connection gets
+// updated_at refreshed and stays at the front. Use least-recently-checked
+// order so stores with an old/no recovery run are served first.
+export function fairEasyOrdersRecoveryOrder(connections=[]){
+  return [...connections].sort((a,b)=>{
+    const x=text(parseConfig(a).easyOrdersRecoveryLastRunAt);
+    const y=text(parseConfig(b).easyOrdersRecoveryLastRunAt);
+    return x.localeCompare(y)||text(a.id).localeCompare(text(b.id));
+  });
+}
 export async function reconcileEasyOrdersOrders(env,{clientId=null,storeId=null,connectionId=null,maxRequests=DEFAULT_MAX_REQUESTS,lookback=DEFAULT_LOOKBACK,fetcher=fetch}={}){
-  const cap=bounded(maxRequests,DEFAULT_MAX_REQUESTS,1,30),back=bounded(lookback,DEFAULT_LOOKBACK,10,250),selected=selectConnections(await connectionRows(env,{clientId,connectionId}),storeId);
+  const cap=bounded(maxRequests,DEFAULT_MAX_REQUESTS,1,30),back=bounded(lookback,DEFAULT_LOOKBACK,10,250),
+    selected=fairEasyOrdersRecoveryOrder(selectConnections(await connectionRows(env,{clientId,connectionId}),storeId));
   const out={ok:true,connections:selected.length,requests:0,recovered:0,updated:0,missing:0,seeded:0,rateLimited:false,recoveredOrderIds:[],results:[]};
   let remaining=cap;
   for(let i=0;i<selected.length&&remaining>0;i++){
