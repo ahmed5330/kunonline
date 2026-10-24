@@ -184,6 +184,10 @@ try{
   assert.deepEqual(seen,[500,501,502],'Foreign storefront response cannot terminate recovery scan');
   assert.equal(recovery.foreignStoreSkipped,1,'Foreign storefront is observed but never ingested');
   assert.equal(recovery.recovered,1,'Sibling Kun store with same provider ID is a NEW recovery');
+  assert.equal(recovery.ok,true);
+  assert.equal(recovery.completedAllConnections,true);
+  assert.equal(recovery.checkedConnections,1);
+  assert.equal(recovery.failedConnections,0);
   assert.equal(recovery.recoveredOrderIds.length,1,'Accounting reconciliation receives recovered order IDs');
   const recoveredId=recovery.recoveredOrderIds[0];
   assert.notEqual(recoveredId,a.id);
@@ -205,6 +209,9 @@ try{
     clientId:'TENANT-A',connectionId:'CON-UNBOUND',maxRequests:2,fetcher:fakeApi
   });
   assert.equal(unbound.results[0].status,'error','Unbound provider store must fail closed');
+  assert.equal(unbound.ok,false,'A failed connection must never be reported as global ok:true');
+  assert.equal(unbound.failedConnections,1);
+  assert.equal(unbound.checkedConnections,1);
   assert.equal(connection('CON-UNBOUND').external_store_id,'');
   // Regression for the Oct 23 recovery gap: HTTP 429 midway through a
   // bounded scan must NOT advance its checkpoint past the unprocessed ID.
@@ -235,6 +242,9 @@ try{
     clientId:'TENANT-A',connectionId:'CON-THROTTLE',maxRequests:3,fetcher:throttleApi
   });
   assert.equal(rateLimited.rateLimited,true,'429 must be surfaced to operations');
+  assert.equal(rateLimited.ok,false,'A 429 cannot be represented as successful recovery');
+  assert.equal(rateLimited.rateLimitedConnections,1);
+  assert.equal(rateLimited.failedConnections,0);
   assert.equal(rateLimited.results[0].status,'rate_limited');
   assert.equal(rateLimited.recovered,1,'The first successfully read order was imported');
   assert.equal(config('CON-THROTTLE').easyOrdersRecoveryCursor,701,
@@ -246,6 +256,8 @@ try{
     clientId:'TENANT-A',connectionId:'CON-THROTTLE',maxRequests:3,fetcher:throttleApi
   });
   assert.equal(resumed.rateLimited,false);
+  assert.equal(resumed.ok,true,'Retry after provider 429 may become healthy only on confirmed success');
+  assert.equal(resumed.rateLimitedConnections,0);
   assert.equal(resumed.recovered,1,'Previously throttled order must be recovered in the next run');
   assert.equal(resumed.recoveredOrderIds.length,1);
   assert.equal(db.prepare('SELECT store_id FROM orders WHERE id=?')
