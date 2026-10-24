@@ -1,30 +1,25 @@
-# ISOLATED AUDIT SANDBOX TEMPLATE — DO NOT DEPLOY AS IS.
-# Replace BOTH name and database ID with brand-new Cloudflare resources.
-# This template deliberately contains a non-UUID database_id so deployment
-# and scripts/verify-audit-sandbox-config.mjs refuse it until provisioned.
-#
-# NOT production, NOT existing preview. Never copy live secrets or seed live data.
-# This config does not alone block outbound HTTP; before ANY test capable
-# of mutating D1, independently verify the deployed Worker has mock-only
-# integrations and no provider credentials. See docs/audit-2026-10-23-safe-release.md.
+# NON-DEPLOYABLE: isolated auth-only Worker and NEW dedicated D1 only.
+# No Production/Preview dependencies, assets, live commerce routes, Cron,
+# providers or service bindings. Requires separate Cloudflare audit authorization.
+# Replace all REPLACE_ placeholders *after* provisioning a brand-new D1/Worker.
+# This config is not a sandbox until actual Cloudflare IDs/bindings are verified.
 
 name = "REPLACE_WITH_UNIQUE_AUDIT_WORKER_NAME"
-main = "src/index-commerce-v38.js"
+main = "src/audit-sandbox-auth-worker.js"
 compatibility_date = "2026-08-23"
-
-[assets]
-directory = "./public"
-binding = "ASSETS"
-run_worker_first = ["/", "/index.html", "/v2", "/v2/", "/v2/index.html"]
+workers_dev = false
 
 [[d1_databases]]
 binding = "DB"
 database_name = "REPLACE_WITH_NEW_AUDIT_D1_NAME"
 database_id = "REPLACE_WITH_NEW_D1_UUID"
-migrations_dir = "migrations"
+migrations_dir = "sandbox/migrations"
 
 [triggers]
 crons = []
 
 [vars]
 APP_ENV = "audit_sandbox"
+AUDIT_EGRESS_OFFLINE = "true"
+# AUDIT_QA_KEY must be a NEW >=32 character secret in the sandbox only.
+# Do not use SESSION_SECRET or any Cloudflare key shared with a live Worker.
