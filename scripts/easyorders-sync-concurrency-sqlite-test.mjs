@@ -152,7 +152,7 @@ try{
   }),env,{connectionId:'CON-A',routeToken:pathA.split('/').at(-1),createOnly:true});
   const existingReplay=await asReplay({...p,status:'pending',full_name:'STALE_NAME'});
   assert.equal(existingReplay.skippedExisting,true);
-  assert.deepEqual(db.prepare('SELECT state,note,history,contact_log FROM orders WHERE id=?').get(a.id),{
+  assert.deepEqual({...db.prepare('SELECT state,note,history,contact_log FROM orders WHERE id=?').get(a.id)},{
     state:'shipped',note:'STAFF-NOTE-MUST-STAY',
     history:'[{"source":"staff"}]',contact_log:'[{"call":"handled"}]'
   },'Create-only replay must never overwrite existing customer-service work');
