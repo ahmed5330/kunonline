@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import {mutateEasyOrdersConfig,mergeEasyOrdersRecoveryPatch} from '../src/easyorders-connection-config.js';
 import {easyOrdersWebhookPath,handleEasyOrdersWebhook} from '../src/commerce-order-sync.js';
-import {fairEasyOrdersRecoveryOrder,reconcileEasyOrdersOrders} from '../src/easyorders-order-reconciliation.js';
+import {fairEasyOrdersRecoveryOrder,reconcileEasyOrdersOrders,easyOrdersRecoveryStatus} from '../src/easyorders-order-reconciliation.js';
 import {encryptSecret} from '../src/integration-secrets.js';
 
 const db=new DatabaseSync(':memory:');
@@ -427,6 +427,13 @@ try{
   assert.equal(db.prepare("SELECT COUNT(*) n FROM orders WHERE ref='easyorders:OWN-1235'").get().n,1);
   assert.ok(config('CON-HOLES').easyOrdersRecoveryPendingShortIds.includes(1202),
     'Unresolved 404 must remain durably queued after the ahead probe advances');
+  const holeHealth=await easyOrdersRecoveryStatus(env,{
+    clientId:'TENANT-A',connectionId:'CON-HOLES'
+  });
+  assert.ok(holeHealth.unresolvedAheadCount>=35,
+    'Operator-visible health must include a truthful unresolved-ahead count');
+  assert.equal(holeHealth.results[0].lastCronAt,null,
+    'Manual-only scans must not masquerade as scheduled recovery');
   lateHoleAvailable=true;
   let delayedRecovered=false;
   for(let i=0;i<45;i++){
