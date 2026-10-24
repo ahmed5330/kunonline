@@ -74,6 +74,20 @@ assert.equal(again.recovered,0,'Replaying the same range does not overwrite exis
 assert.equal(again.alreadyInKun,2);
 assert.equal(writes,2);
 
+const beforeMismatchWrites=writes;
+const mismatched=await recover([19,11],{
+  fetcher:async()=>Response.json({
+    id:'WRONG-CUSTOMER-ORDER',store_id:'EO-FAKE',short_id:3333,
+    full_name:'DO_NOT_EXPORT_PRIVATE_CUSTOMER'
+  })
+});
+assert.equal(mismatched.ok,false);
+assert.equal(mismatched.status,'provider_short_id_mismatch');
+assert.equal(mismatched.retryShortId,19);
+assert.equal(mismatched.attempted,1);
+assert.equal(writes,beforeMismatchWrites,'Wrong provider response must not write any order');
+assert.doesNotMatch(JSON.stringify(mismatched),/WRONG-CUSTOMER|PRIVATE_CUSTOMER/);
+
 const providerError=await recover([16,11]);
 assert.equal(providerError.ok,false);
 assert.equal(providerError.status,'provider_error');
