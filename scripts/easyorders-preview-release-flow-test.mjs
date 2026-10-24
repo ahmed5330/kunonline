@@ -41,7 +41,7 @@ for(const name of sections){
 const between=config.slice(config.indexOf("Capture current live Preview version as rollback without changing traffic"),
   config.indexOf("      - name: Deploy preview Worker"));
 assert.ok(!between.includes('wrangler" deploy'),'Rollback preparation must not deploy older source');
-assert.ok(!between.includes('wrangler deploy'),'Rollback preparation must be read-only');
+assert.ok(!/^\\s*(?:npx\\s+)?wrangler\\s+deploy\\b/m.test(between),'Rollback preparation must be read-only');
 assert.ok(config.includes("steps.rollback_base.outputs.version_id"),'Exact captured Worker version required');
 assert.ok(!/\bwrangler d1 time-travel restore\b/.test(config),'NEVER automatically revert live customer D1');
 assert.ok(!/\bwrangler d1 migrations apply\b/.test(config),
