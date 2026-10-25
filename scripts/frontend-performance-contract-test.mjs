@@ -71,7 +71,7 @@ for(const endpoint of ['/api/dashboard','/api/accounting/overview','/api/account
 assert.equal(financeCommandCenter.includes("v4Api('/api/finance"),false,'finance command center must not use legacy placeholder finance endpoint');
 assert.ok(financeCommandCenter.includes('المحصل فعليًا لا يُستخدم بدل إيراد المبيعات'),'finance must keep collection cash separate from P&L revenue');
 assert.ok(financeCommandCenter.includes('سلامة واكتمال الأرقام'),'finance must expose data-completeness health instead of silently treating missing costs as correct zeros');
-assert.ok(permissions.includes('/v2/modules-v96-finance-command-center.js?v=96.0'),'permission bootstrap must load the finance command center');
+assert.ok(permissions.includes('/v2/modules-v96-finance-command-center.js?v=96.2'),'permission bootstrap must load the finance command center');
 assert.ok(permissions.includes("accounting:['finance.read']"),'accounting child route must follow finance read permission');
 
 const dashboardStart=v35.indexOf('async function dashboard');

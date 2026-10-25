@@ -1,3 +1,5 @@
+import {handleFinancialAccountingOS} from './accounting-faos-api.js';
+import {routeProductionCodRead} from './production-cod-read-fallback.js';
 import app from './index-production-jt-history.js';
 import {handleMobileSync} from './mobile-state-sync.js';
 import {handleMobileAppUpdate} from './mobile-app-update.js';
@@ -108,7 +110,7 @@ async function websiteWithDirectAndroidDownload(request,env){
   if(!html.includes('/v2/modules-v126-dashboard-finance-top.js')){
     html=html.replace('</body>','<script src="/v2/modules-v126-dashboard-finance-top.js?v=126.5" data-kun-dashboard-finance-top-v126="1"></script></body>');
   }
-  if(!html.includes('/v2/modules-v127-subscriptions.js')){
+  if(!html.includes('/v2/modules-v127-subscriptions.js?v=127.22')){
     html=html.replace('</body>','<script src="/v2/modules-v127-subscriptions.js?v=127.22" data-kun-subscriptions-v127="1"></script></body>');
   }
   if(!html.includes('/v2/modules-v128-unit-tracking.js')){
@@ -167,6 +169,12 @@ export default {
 
     const dataEnv=previewRuntimeEnv(env);
     const delegate=previewDelegate(env,dataEnv,ctx);
+    const faos=await handleFinancialAccountingOS({request,env:dataEnv,ctx,delegate});
+    if(faos)return faos;
+    const codRead=await routeProductionCodRead({request,
+      fetchPreview:source=>previewFetch(source,env),
+      fetchLocal:source=>app.fetch(source,dataEnv,ctx)});
+    if(codRead)return codRead;
     const subscription=await handleSubscriptionControl({request,env:dataEnv,ctx,delegate});
     if(subscription)return subscription;
 

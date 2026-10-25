@@ -28,7 +28,7 @@ const fetch=async input=>{
 };
 const context={window,document,fetch,location:{origin:'https://test.local'},URL,Response,Intl,Date,Promise,Math,Number,Object,JSON,String,Array,Set,Map,console,setTimeout,clearTimeout};
 vm.runInNewContext(js,context,{filename:'modules-v96-finance-command-center.js'});
-assert.equal(window.KunFinanceCommandCenterV96.version,'96.1');
+assert.equal(window.KunFinanceCommandCenterV96.version,'96.2');
 await window.KunFinanceCommandCenterV96.render();
 for(const token of ['صافي الربح التشغيلي','صافي الربح المحاسبي','التحصيل: المالية × الحسابات','متطابق','ليس رصيد البنك'])
  assert.ok(root.innerHTML.includes(token),`missing visible finance indicator: ${token}`);
