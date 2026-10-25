@@ -18,6 +18,7 @@ jobs:
           node-version: 22
           package-manager-cache: false
       - run: npm install --ignore-scripts
+      - run: npm audit --audit-level=high
       - name: Admin J&T shipment access and import safety
         run: |
           node --check src/admin-jnt-shipments.js

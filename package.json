@@ -59,7 +59,7 @@
     "check:production-config": "node scripts/verify-production-config.mjs",
     "check:deploy": "npm run check:preview-config && wrangler deploy --dry-run --config wrangler.preview.toml",
     "check:sync-deploy": "npm run check:sync-preview-config && wrangler deploy --dry-run --config wrangler.sync.preview.toml",
-    "deploy:preview": "npm run check:preview-config && (wrangler deploy --config wrangler.preview.toml || true)",
+    "deploy:preview": "node -e \"console.error('Preview deployment is production-backed. Use reviewed GitHub Preview CI/CD workflow; direct deploy is blocked.');process.exit(1)\"",
     "deploy:sync-preview": "npm run check:sync-preview-config && wrangler deploy --config wrangler.sync.preview.toml",
     "rollback:preview": "npm run check:preview-config && wrangler rollback --config wrangler.preview.toml --message \"Automatic rollback after failed Preview smoke test\"",
     "db:migrate:preview": "npm run check:preview-config && wrangler d1 migrations apply kunonline-preview --remote --config wrangler.preview.toml",
@@ -88,6 +88,9 @@
     "test:growth-release": "node scripts/scaling-readiness-test.mjs && node scripts/growth-scenario-test.mjs && node scripts/growth-operating-evidence-test.mjs && node scripts/growth-experiment-test.mjs && node scripts/production-preview-release-gate-test.mjs && node scripts/browser-growth-planner-fixture-test.mjs && node scripts/growth-local-worker-smoke.mjs"
   },
   "devDependencies": {
-    "wrangler": "4.125.0"
+    "wrangler": "4.151.0"
+  },
+  "overrides": {
+    "undici": "7.30.1"
   }
 }
