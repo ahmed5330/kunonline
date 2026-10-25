@@ -213,7 +213,7 @@ jobs:
           CAMPAIGN_LIVE_BASE: https://app.kun-online.com
         run: node scripts/campaign-weekday-live-test.mjs
       - name: Verify live dashboard Easy Orders source and warning
-        run: node scripts/dashboard-sync-guard-live-test.mjs
+        run: node scripts/dashboard-sync-guard-live-test.mjs --require-current
       - name: Verify live Android update feed
         run: |
           set -euo pipefail

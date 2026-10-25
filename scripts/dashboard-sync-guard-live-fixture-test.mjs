@@ -24,7 +24,7 @@ function fakeLive(version,{scopedStatus=401,platform=fixture}={}){
     assert.equal(options.method,'GET','Live public diagnostic must never mutate data');
     assert.equal(options.credentials,'omit','Live probe must not authenticate as a customer');
     if(u.pathname==='/health/easyorders-sync')return Response.json(platform);
-    if(u.pathname==='/v2/index.html')return new Response('<script src="/v2/modules-v121-dashboard-sync-guard.js?v='+version+'"></script>',{status:200});
+    if(u.pathname==='/v2/')return new Response('<script src="/v2/modules-v121-dashboard-sync-guard.js?v='+version+'"></script>',{status:200});
     if(u.pathname==='/v2/modules-v121-dashboard-sync-guard.js')return new Response("window.KunDashboardSyncGuardV121={version:'"+version+"'};",{status:200});
     if(u.pathname==='/api/integrations/easyorders/dashboard-health')return Response.json({error:'AUTH_REQUIRED'},{status:scopedStatus});
     throw Error('Unexpected read-only URL '+url);

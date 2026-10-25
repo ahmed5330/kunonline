@@ -27,7 +27,7 @@ export async function inspectDashboardSyncLive({
   }
   const [globalResponse,pageResponse]=await Promise.all([
     get('/health/easyorders-sync?audit='+encodeURIComponent(nonce)),
-    get('/v2/index.html?audit='+encodeURIComponent(nonce))
+    get('/v2/?audit='+encodeURIComponent(nonce))
   ]);
   assert.ok([200,503].includes(globalResponse.status),'Unexpected platform health HTTP status');
   assert.equal(pageResponse.status,200,'The public V2 shell must be readable');
