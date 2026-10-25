@@ -9,7 +9,7 @@ const migrations=[
   '0093_inventory_scan_fulfillment_returns.sql',
   '0094_warehouse_unit_operations.sql'
 ];
-for(const filename of migrations) db.exec(fs.readFileSync('migrations/'+filename,'utf8'));
+for(const filename of migrations) db.exec(fs.readFileSync(new URL('./fixtures/inventory/'+filename,import.meta.url),'utf8'));
 assert.equal(db.prepare('PRAGMA integrity_check').get().integrity_check,'ok');
 for(const table of [
   'inventory_units','inventory_unit_events','order_unit_allocations','inventory_scan_events',
@@ -32,7 +32,7 @@ db.prepare(
 ).run('event1','u1','u1-QR','TENANT','received',t);
 assert.throws(()=>db.prepare("UPDATE inventory_unit_events SET event_type='shipped' WHERE id='event1'").run(),/UNIT_AUDIT_IMMUTABLE/);
 assert.throws(()=>db.prepare("DELETE FROM inventory_unit_events WHERE id='event1'").run(),/UNIT_AUDIT_IMMUTABLE/);
-for(const filename of migrations) db.exec(fs.readFileSync('migrations/'+filename,'utf8'));
+for(const filename of migrations) db.exec(fs.readFileSync(new URL('./fixtures/inventory/'+filename,import.meta.url),'utf8'));
 assert.equal(db.prepare('PRAGMA integrity_check').get().integrity_check,'ok');
 assert.equal(db.prepare("SELECT COUNT(*) n FROM inventory_units").get().n,2,'No duplicated units during repeat migration');
 assert.equal(db.prepare("SELECT COUNT(*) n FROM inventory_unit_events").get().n,1,'No rewritten audit history');

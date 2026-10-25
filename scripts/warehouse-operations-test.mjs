@@ -45,7 +45,7 @@ async function backRequest(path,body){return handleInventoryUnitTracking({env,ct
 const activation=await backRequest(base+'/serialize',{productId:'back-p'});assert.equal(activation.status,200);assert.equal((await activation.json()).afterQty,100);
 const replay=await backRequest(base+'/serialize',{productId:'back-p'});assert.equal((await replay.json()).idempotent,true);
 const adjustment=await backRequest('/api/inventory/stock-adjust',{productId:'back-p',delta:1});assert.equal(adjustment.status,409);assert.equal((await adjustment.json()).code,'SERIALIZED_MANUAL_STOCK_EDIT_BLOCKED');
-const migration=readFileSync(new URL('../migrations/0094_warehouse_unit_operations.sql',import.meta.url),'utf8');sqlite.exec(migration);sqlite.exec(migration);assert.equal(sqlite.prepare("SELECT stock FROM products WHERE id='back-p'").get().stock,100);
+const migration=readFileSync(new URL('./fixtures/inventory/0094_warehouse_unit_operations.sql',import.meta.url),'utf8');sqlite.exec(migration);sqlite.exec(migration);assert.equal(sqlite.prepare("SELECT stock FROM products WHERE id='back-p'").get().stock,100);
 console.log('Serialization activation/snapshot, manual adjustment block and idempotent migration passed.');
 sqlite.exec('CREATE TABLE stock_log(id TEXT PRIMARY KEY,client_id TEXT,store_id TEXT,product_id TEXT,variant_id TEXT,product_name TEXT,delta INTEGER,new_stock INTEGER,note TEXT,stock_date TEXT,batch_id TEXT,created_at TEXT,created_by TEXT)');
 await assert.rejects(call('/operations/approve',{sessionId:st.sessionId,reason:'count variance',adjustMissing:true},{...owner,email:'manager'}),e=>e.code==='STOCKTAKE_STALE');

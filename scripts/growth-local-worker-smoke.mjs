@@ -12,10 +12,10 @@ await new Promise(done=>portServer.close(done));
 const bin=process.execPath;
 const args=['node_modules/wrangler/bin/wrangler.js','dev','--local','--config','wrangler.preview.toml',
   '--ip','127.0.0.1','--port',String(port)];
-let output='',child;
+let output='',initialOutput='',child;
 try{
  child=spawn(bin,args,{stdio:['ignore','pipe','pipe'],env:{...process.env,WRANGLER_SEND_METRICS:'false'}});
- const record=chunk=>{output=(output+String(chunk)).slice(-14000);};
+ const record=chunk=>{if(initialOutput.length<4000)initialOutput=(initialOutput+String(chunk)).slice(0,4000);output=(output+String(chunk)).slice(-10000);};
  child.stdout?.on('data',record);child.stderr?.on('data',record);
  child.on('error',error=>record(error.message));
  const root='http://127.0.0.1:'+port;
@@ -28,7 +28,7 @@ try{
    }catch{}
    await delay(300);
  }
- assert.ok(ready,'local branch Worker did not serve the growth planner: '+output.slice(-2500));
+ assert.ok(ready,'local branch Worker did not serve the growth planner: '+initialOutput+'\nLATEST OUTPUT:\n'+output.slice(-4000));
  const html=await fetch(root+'/v2/');
  assert.equal(html.status,200,'real branch Worker should serve the V2 shell');
  const page=await html.text();

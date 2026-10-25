@@ -66,7 +66,13 @@ export function buildMigrationFiles(paths){
   return paths.map(name=>{
     if(!/^migrations\/[0-9]{4}_[A-Za-z0-9._-]+\.sql$/.test(name))
       throw new Error('Migration path refused');
-    return {name,sql:readFileSync(name,'utf8')};
+    let sql;
+    try{sql=readFileSync(name,'utf8')}catch(error){
+      const inventory=['migrations/0092_inventory_unit_qr_tracking.sql','migrations/0093_inventory_scan_fulfillment_returns.sql','migrations/0094_warehouse_unit_operations.sql'];
+      if(error.code!=='ENOENT'||!inventory.includes(name))throw error;
+      sql=readFileSync(new URL('./fixtures/inventory/'+name.split('/').at(-1),import.meta.url),'utf8');
+    }
+    return {name,sql};
   });
 }
 

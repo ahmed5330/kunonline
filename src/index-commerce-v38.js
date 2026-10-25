@@ -115,7 +115,7 @@ async function injectV2Ui(request,response){
 // Report the actual outer Preview entrypoint rather than the inherited v36
 // compatibility route. A version string is a code signal, NOT proof that
 // the 5-minute Cron fired or that Easy Orders delivered any specific order.
-export const KUN_PREVIEW_ENTRYPOINT_BUILD='preview-v38-easyorders-runtime-attestation-2026-10-24';
+const KUN_PREVIEW_ENTRYPOINT_BUILD='preview-v38-easyorders-runtime-attestation-2026-10-24';
 function actualPreviewVersion(env){
   return new Response(JSON.stringify({
     ok:true,build:KUN_PREVIEW_ENTRYPOINT_BUILD,entrypoint:'index-commerce-v38.js',

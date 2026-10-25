@@ -51,6 +51,11 @@ jobs:
             echo "Stale Preview run detected. Run=$GITHUB_SHA Latest=$latest. Preview mutation will be skipped."
           fi
 
+      - name: Prove inventory declarations already match the live schema without data reads
+        id: inventory_schema
+        if: steps.ownership.outputs.is_latest == 'true'
+        run: node scripts/existing-inventory-schema-check.mjs
+
       - name: Provision verified isolated QA with synthetic fixtures
         id: qa_provision
         if: steps.ownership.outputs.is_latest == 'true'

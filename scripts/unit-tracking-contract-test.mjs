@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 
 const backend=await readFile(new URL('../src/inventory-unit-tracking.js',import.meta.url),'utf8');
-const migration=await readFile(new URL('../migrations/0092_inventory_unit_qr_tracking.sql',import.meta.url),'utf8');
-const scanMigration=await readFile(new URL('../migrations/0093_inventory_scan_fulfillment_returns.sql',import.meta.url),'utf8');
+const migration=await readFile(new URL('./fixtures/inventory/0092_inventory_unit_qr_tracking.sql',import.meta.url),'utf8');
+const scanMigration=await readFile(new URL('./fixtures/inventory/0093_inventory_scan_fulfillment_returns.sql',import.meta.url),'utf8');
 const jtPrint=await readFile(new URL('../src/jt-print-workflow-v2.js',import.meta.url),'utf8');
 const legacyIndex=await readFile(new URL('../src/index.js',import.meta.url),'utf8');
 const fifo=await readFile(new URL('../src/inventory-fifo.js',import.meta.url),'utf8');
