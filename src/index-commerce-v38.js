@@ -98,6 +98,7 @@ void safety;
 void core;
 export default {
   async fetch(request,env,ctx){
+    if(request.method==='GET'&&new URL(request.url).pathname==='/api/preview/growth-release')return app.fetch(request,env,ctx);
     const rootRedirect=redirectLegacyRoot(request);
     if(rootRedirect)return rootRedirect;
     const mobileUpdate=await handleMobileAppUpdate(request);
