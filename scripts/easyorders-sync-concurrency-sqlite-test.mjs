@@ -304,6 +304,8 @@ try{
     clientId:'TENANT-A',connectionId:'CON-THROTTLE',maxRequests:3,fetcher:throttleApi
   });
   assert.equal(rateLimited.rateLimited,true,'429 must be surfaced to operations');
+  assert.equal(config('CON-THROTTLE').easyOrdersRecoveryLastProviderHttpStatus,429);
+  assert.equal(config('CON-THROTTLE').easyOrdersRecoveryLastProviderErrorCategory,'provider_throttle');
   assert.equal(rateLimited.ok,false,'A 429 cannot be represented as successful recovery');
   assert.equal(rateLimited.rateLimitedConnections,1);
   assert.equal(rateLimited.failedConnections,0);
@@ -346,16 +348,21 @@ try{
     assert.equal(options.headers['Api-Key'],'ONLY-A-SYNTHETIC-EASYORDERS-API-KEY');
     const shortId=Number(url.split('/').at(-1));serverAttempts.push(shortId);
     if(shortId===800&&serviceFail)return Response.json(
-      {message:'record not found'},{status:503});
+      {message:'record not found',privatePayload:'DO_NOT_PERSIST_PROVIDER_BODY'},{status:503});
     if(shortId===800)return Response.json({...p,
       id:'SERVER-RECOVER-800',store_id:'EO-SERVER',short_id:800,phone:'01000000800'});
     return Response.json({message:'record not found'},{status:404});
   };
   const failingServer=await reconcileEasyOrdersOrders(env,{
-    clientId:'TENANT-A',connectionId:'CON-SERVER',maxRequests:2,fetcher:serverApi
+    clientId:'TENANT-A',connectionId:'CON-SERVER',maxRequests:2,fetcher:serverApi,trigger:'cron'
   });
   assert.equal(failingServer.ok,false,'HTTP 503 must never produce success');
   assert.equal(failingServer.status,'error');
+  assert.equal(config('CON-SERVER').easyOrdersRecoveryLastProviderHttpStatus,503,'Cron must persist the actual upstream HTTP code, not infer 404 from text');
+  assert.equal(config('CON-SERVER').easyOrdersRecoveryLastProviderErrorCategory,'provider_server_error');
+  assert.ok(config('CON-SERVER').easyOrdersRecoveryLastCronAt);
+  assert.ok(!JSON.stringify(config('CON-SERVER')).includes('DO_NOT_PERSIST_PROVIDER_BODY'),'Never persist the provider response body');
+
   assert.equal(failingServer.missing,0,'503 with missing-looking text is NOT a 404');
   assert.equal(failingServer.requests,1,'Failed HTTP call still uses provider request budget');
   assert.equal(config('CON-SERVER').easyOrdersRecoveryCursor,800,
@@ -363,9 +370,11 @@ try{
   assert.deepEqual(serverAttempts,[800]);
   serviceFail=false;
   const recoveredServer=await reconcileEasyOrdersOrders(env,{
-    clientId:'TENANT-A',connectionId:'CON-SERVER',maxRequests:2,fetcher:serverApi
+    clientId:'TENANT-A',connectionId:'CON-SERVER',maxRequests:2,fetcher:serverApi,trigger:'cron'
   });
   assert.equal(recoveredServer.ok,true);
+  assert.equal(config('CON-SERVER').easyOrdersRecoveryLastProviderHttpStatus,null,'Successful retry clears stale failure metadata');
+  assert.equal(config('CON-SERVER').easyOrdersRecoveryLastProviderErrorCategory,null);
   assert.equal(recoveredServer.recovered,1);
   assert.equal(config('CON-SERVER').easyOrdersRecoveryCursor,802);
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM orders WHERE ref='easyorders:SERVER-RECOVER-800'").get().n,1);
