@@ -1,0 +1,69 @@
+name: Protected isolated Preview synthetic E2E
+on:
+  push:
+    branches: [codex/serialized-warehouse-operations]
+    paths: ['.github/workflows/protected-isolated-qa-e2e-20261025.yml']
+permissions:
+  contents: read
+concurrency:
+  group: kunonline-isolated-preview-synthetic-e2e
+  cancel-in-progress: false
+jobs:
+  isolated-e2e:
+    runs-on: ubuntu-latest
+    environment: preview
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # Exact reviewed candidate; never checkout an unpinned mutable branch.
+          ref: bbadc3757484254e019026b818132ff9a4cf460d
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: npm install --ignore-scripts
+      - name: Mandatory offline release tests
+        run: npm test
+      - name: Provision dedicated QA D1 and Worker with schema-only synthetic fixtures
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          WRANGLER_SEND_METRICS: 'false'
+        run: node scripts/provision-isolated-preview-qa.mjs
+      - name: Verify served QA identity matches pinned candidate
+        run: |
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          let identity;
+          for(let attempt=0;attempt<30;attempt++){
+            try{
+              const response=await fetch(process.env.KUN_PREVIEW_QA_BASE_URL+'/__qa/identity');
+              if(response.ok){identity=await response.json();break;}
+            }catch{}
+            await new Promise(resolve=>setTimeout(resolve,2000));
+          }
+          assert.equal(identity?.syntheticOnly,true);
+          assert.equal(identity.sourceSha,process.env.KUN_PREVIEW_QA_SOURCE_SHA);
+          assert.equal(identity.externalNetworkPolicy,'synthetic-easyorders-only');
+          console.log('PASS: exact QA candidate identity and synthetic provider policy.');
+          JS
+      - name: Require every writing E2E on the verified synthetic target
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          target="$KUN_PREVIEW_QA_BASE_URL"
+          node scripts/smoke-test-current-preview.mjs "$target"
+          node scripts/preview-operational-workflow-smoke.mjs "$target"
+          node scripts/live-preview-functional-test.mjs "$target"
+          node scripts/live-preview-team-test.mjs "$target"
+          node scripts/live-preview-customer-service-test.mjs "$target"
+          node scripts/live-preview-easyorders-test.mjs "$target"
+          node scripts/live-preview-dashboard-test.mjs "$target"
+          node scripts/browser-preview-breakdown-controls-test.mjs "$target"
+          node scripts/browser-preview-qa.mjs "$target"
+          node scripts/live-preview-competitor-ai-test.mjs "$target"
+# No customer data is copied, no existing Worker is deployed, and no live
+# provider is contacted. QA failure is failure, never a skipped/success gate.
