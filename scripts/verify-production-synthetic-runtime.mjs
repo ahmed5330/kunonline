@@ -37,7 +37,7 @@ async function main(){
  const uid=`QA-PRODUCTION-OWNER-${run}`,legacyUid=`QA-PRODUCTION-LEGACY-${run}`,cid='QA-SYNTHETIC-TENANT',sid='QA-SYNTHETIC-STORE',email=`qa-prod-${run}@example.test`;
  const password=`Canonical!${randomBytes(16).toString('hex')}Aa1`,legacyPassword=`Legacy!${randomBytes(16).toString('hex')}Bb2`;
  let legacy;
- async function cli(args){try{await execute(resolve('node_modules/.bin/wrangler'),args,{env:{...process.env,WRANGLER_SEND_METRICS:'false'},timeout:300000,maxBuffer:16*1024*1024});}catch{throw Error('PROD_QA_WRANGLER_FAILED');}}
+ async function cli(args){try{await execute(resolve('node_modules/.bin/wrangler'),args,{env:{...process.env,WRANGLER_SEND_METRICS:'false'},timeout:300000,maxBuffer:16*1024*1024});}catch{throw Error('PROD_QA_WRANGLER_'+(args[0]==='d1'?args[1]:args[0]).toUpperCase()+'_FAILED');}}
  async function hash(value){const salt=randomBytes(16),key=await webcrypto.subtle.importKey('raw',new TextEncoder().encode(value),'PBKDF2',false,['deriveBits']);const bits=await webcrypto.subtle.deriveBits({name:'PBKDF2',salt,iterations:100000,hash:'SHA-256'},key,256);return `pbkdf2$100000$${salt.toString('base64')}$${Buffer.from(bits).toString('base64')}`;}
  try{
   legacy=await api('POST','d1/database',{name:legacyName});
@@ -103,7 +103,7 @@ enabled = false
   let cookie='';
   async function request(path,{method='GET',body,status=200}={}){
    const r=await fetch(base+path,{method,redirect:'manual',signal:AbortSignal.timeout(30000),headers:{'Content-Type':'application/json',...(cookie?{Cookie:cookie}:{})},...(body?{body:JSON.stringify(body)}:{})});
-   const d=await r.json().catch(()=>({}));if(r.status!==status){const code=/^[A-Z0-9_]+$/.test(d.code||'')?d.code:'FAILED';throw Error(`PROD_QA_HTTP_${r.status}_${code}`);}return {r,d};
+   const d=await r.json().catch(()=>({}));if(r.status!==status){const code=/^[A-Z0-9_]+$/.test(d.code||'')?d.code:'FAILED';throw Error(`PROD_QA_HTTP_${path.split('?')[0].toUpperCase().replace(/[^A-Z0-9]/g,'_')}_${r.status}_${code}`);}return {r,d};
   }
   const login=await request('/api/login',{method:'POST',body:{email,password}});cookie=(login.r.headers.get('set-cookie')||'').split(';')[0];if(!cookie)throw Error('PROD_QA_COOKIE_MISSING');
   const me=(await request('/api/me')).d;if(me.role!=='client'||me.clientId!==cid)throw Error('PROD_QA_CANONICAL_AUTH_FAILED');
