@@ -1,3 +1,5 @@
+import {loadIsolatedPreviewQaConfig} from './isolated-preview-qa-config.mjs';
+const isolatedQaConfig=await loadIsolatedPreviewQaConfig(process.argv[2]);
 import {readFile} from 'node:fs/promises';
 import {randomBytes,webcrypto} from 'node:crypto';
 
@@ -5,7 +7,7 @@ const base=(process.argv[2]||'').replace(/\/$/,'');
 if(!base)throw new Error('Usage: node scripts/live-preview-dashboard-test.mjs <base-url>');
 const accountId=process.env.CLOUDFLARE_ACCOUNT_ID,token=process.env.CLOUDFLARE_API_TOKEN;
 if(!accountId||!token)throw new Error('Preview Dashboard QA requires Cloudflare account/token environment');
-const config=await readFile(new URL('../wrangler.preview.toml',import.meta.url),'utf8');
+const config=isolatedQaConfig;
 const databaseId=config.match(/database_id\s*=\s*"([^"]+)"/)?.[1];if(!databaseId)throw new Error('Preview database_id missing');
 const d1Url=`https://api.cloudflare.com/client/v4/accounts/${accountId}/d1/database/${databaseId}/query`;
 const nonce=randomBytes(5).toString('hex'),email=`qa-dashboard-${nonce}@example.test`,userId=`QA-DASH-${nonce}`,password=`Dashboard!${randomBytes(12).toString('hex')}Aa1`;

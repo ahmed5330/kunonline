@@ -1,3 +1,5 @@
+import {loadIsolatedPreviewQaConfig} from './isolated-preview-qa-config.mjs';
+const isolatedQaConfig=await loadIsolatedPreviewQaConfig(process.argv[2]);
 import {readFile} from 'node:fs/promises';
 import {randomBytes,webcrypto} from 'node:crypto';
 
@@ -5,7 +7,7 @@ const base=(process.argv[2]||'').replace(/\/$/,'');
 if(!base)throw new Error('Usage: node scripts/live-preview-shipping-smart-sync-test.mjs <base-url>');
 const accountId=process.env.CLOUDFLARE_ACCOUNT_ID,token=process.env.CLOUDFLARE_API_TOKEN;
 if(!accountId||!token)throw new Error('Preview Smart Shipping QA requires Cloudflare account/token environment');
-const config=await readFile(new URL('../wrangler.preview.toml',import.meta.url),'utf8'),databaseId=config.match(/database_id\s*=\s*"([^"]+)"/)?.[1];
+const config=isolatedQaConfig,databaseId=config.match(/database_id\s*=\s*"([^"]+)"/)?.[1];
 if(!databaseId)throw new Error('Preview database_id missing');
 const nonce=randomBytes(5).toString('hex').toUpperCase(),clientId=`QA-SS-${nonce}`,storeId=`QA-SS-ST-${nonce}`,productId=`QA-SS-PR-${nonce}`,userId=`QA-SS-US-${nonce}`,email=`qa-smart-shipping-${nonce.toLowerCase()}@example.test`,password=`SmartShip!${randomBytes(12).toString('hex')}Aa1`,today=new Date().toISOString().slice(0,10),d1Url=`https://api.cloudflare.com/client/v4/accounts/${accountId}/d1/database/${databaseId}/query`;let cookie='';
 

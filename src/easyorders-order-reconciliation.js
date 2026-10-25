@@ -37,6 +37,21 @@ function aggregateRecovery(results=[]){
   return {status:error?'error':rateLimited?'rate_limited':catchingUp?'catching_up':waiting?'waiting_for_short_id':'healthy',healthyConnections:results.filter(x=>x.status==='healthy').length,catchingUpConnections:results.filter(x=>x.status==='catching_up').length,waitingConnections:results.filter(x=>x.status==='waiting_for_short_id').length,errorConnections:results.filter(x=>x.status==='error').length,estimatedRemaining:results.reduce((sum,x)=>sum+positiveInt(x.estimatedRemaining),0),unresolvedAheadCount:results.reduce((sum,x)=>sum+positiveInt(x.unresolvedAheadCount),0),recoveredTotal:results.reduce((sum,x)=>sum+positiveInt(x.recoveredTotal||x.cumulativeRecovered),0)};
 }
 
+// Expose only numeric upstream HTTP failure metadata to authenticated diagnostics.
+ // A provider message like "record not found" on HTTP 5xx must NEVER be
+ // reclassified as an actual 404 or advance the reconciliation cursor.
+export function describeEasyOrdersProviderError(error){
+  const code=String(error?.code||'');
+  if(!['EASYORDERS_RECONCILIATION_PROVIDER_ERROR','EASYORDERS_ORDERS_READ_FORBIDDEN'].includes(code))
+    return {providerHttpStatus:null,providerErrorCategory:null};
+  const status=Number(error?.status);
+  if(!Number.isInteger(status)||status<400||status>599)
+    return {providerHttpStatus:null,providerErrorCategory:'provider_unknown_http'};
+  const providerErrorCategory=status===401||status===403?'provider_auth':
+    status===429?'provider_throttle':status>=500?'provider_server_error':'provider_other_http';
+  return {providerHttpStatus:status,providerErrorCategory};
+}
+
 async function patchConfig(env,connection,patch){
   return mutateEasyOrdersConfig(env,connection,
     current=>mergeEasyOrdersRecoveryPatch(current,patch));
@@ -115,7 +130,7 @@ async function bootstrapFromLastWebhook(env,connection,{apiKey,fetcher,lookback}
 }
 
 async function reconcileConnection(env,connection,{maxRequests,lookback,fetcher,cronRun=false}){
-  const out={connectionId:connection.id,clientId:connection.client_id,storeId:null,requests:0,recovered:0,updated:0,missing:0,foreignStoreSkipped:0,seeded:false,rateLimited:false,highestShortId:0,nextShortId:0,estimatedRemaining:0,cumulativeRecovered:0,status:'waiting_for_short_id',recoveredOrderIds:[],error:null};
+  const out={connectionId:connection.id,clientId:connection.client_id,storeId:null,requests:0,recovered:0,updated:0,missing:0,foreignStoreSkipped:0,seeded:false,rateLimited:false,highestShortId:0,nextShortId:0,estimatedRemaining:0,cumulativeRecovered:0,status:'waiting_for_short_id',recoveredOrderIds:[],error:null,providerHttpStatus:null,providerErrorCategory:null};
   try{
     const secrets=await readConnectionSecrets(env,connection.client_id,connection.id),apiKey=text(secrets.api_key);
     if(!apiKey)throw Object.assign(new Error('مفتاح Easy Orders API غير موجود؛ لا يمكن إصلاح فجوات الطلبات تلقائيًا'),{status:409,code:'EASYORDERS_API_KEY_MISSING'});
@@ -248,6 +263,7 @@ async function reconcileConnection(env,connection,{maxRequests,lookback,fetcher,
     return out;
   }catch(error){
     out.error=error?.message||String(error);out.status='error';
+    Object.assign(out,describeEasyOrdersProviderError(error));
     await patchConfig(env,connection,{easyOrdersRecoveryLastRunAt:now(),easyOrdersRecoveryLastStatus:'error',easyOrdersRecoveryLastError:out.error.slice(0,500),...(cronRun?{easyOrdersRecoveryLastCronAt:now()}:{})}).catch(()=>{});
     return out;
   }

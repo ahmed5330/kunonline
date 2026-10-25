@@ -1,3 +1,5 @@
+import {loadIsolatedPreviewQaConfig} from './isolated-preview-qa-config.mjs';
+const isolatedQaConfig=await loadIsolatedPreviewQaConfig(process.argv[2]);
 import {readFile} from 'node:fs/promises';
 import {randomBytes,webcrypto} from 'node:crypto';
 import {reconcileAutomaticManagementFees} from '../src/index-commerce-v30.js';
@@ -5,7 +7,7 @@ import {reconcileAutomaticManagementFees} from '../src/index-commerce-v30.js';
 const base=(process.argv[2]||'').replace(/\/$/,'');
 if(!base)throw new Error('Usage: node scripts/live-preview-accounting-test.mjs <base-url>');
 const accountId=process.env.CLOUDFLARE_ACCOUNT_ID,token=process.env.CLOUDFLARE_API_TOKEN;if(!accountId||!token)throw new Error('Preview Accounting QA requires Cloudflare account/token environment');
-const config=await readFile(new URL('../wrangler.preview.toml',import.meta.url),'utf8'),databaseId=config.match(/database_id\s*=\s*"([^"]+)"/)?.[1];if(!databaseId)throw new Error('Preview database_id missing');
+const config=isolatedQaConfig,databaseId=config.match(/database_id\s*=\s*"([^"]+)"/)?.[1];if(!databaseId)throw new Error('Preview database_id missing');
 const d1Url=`https://api.cloudflare.com/client/v4/accounts/${accountId}/d1/database/${databaseId}/query`,nonce=randomBytes(5).toString('hex').toUpperCase(),clientId=`QA-ACC-${nonce}`,storeId=`QA-STORE-${nonce}`,store2Id=`QA-STORE2-${nonce}`,order1=`QA-ORD-A-${nonce}`,order2=`QA-ORD-B-${nonce}`,order3=`QA-ORD-C-${nonce}`,order4=`QA-ORD-D-${nonce}`,adminEmail=`qa-accounting-admin-${nonce.toLowerCase()}@example.test`,accountantEmail=`qa-accountant-${nonce.toLowerCase()}@example.test`,adminId=`QA-ACC-ADMIN-${nonce}`,accountantId=`QA-ACCOUNTANT-${nonce}`,adminPassword=`Admin!${randomBytes(12).toString('hex')}Aa1`,accountantPassword=`Accountant!${randomBytes(12).toString('hex')}Aa1`,today=new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Cairo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date()),month=today.slice(0,7);
 let adminCookie='',accountantCookie='',entryId='',incomeEntryId='',store2ExpenseId='';
 async function d1Raw(sql,params=[]){const r=await fetch(d1Url,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({sql,params})}),p=await r.json().catch(()=>({})),x=p?.result?.[0];if(!r.ok||p.success===false||x?.success===false)throw new Error(`Preview D1 query failed (${r.status}): ${JSON.stringify(p?.errors||x?.error||p).slice(0,1000)}`);return x||{results:[],meta:{}};}

@@ -1,4 +1,4 @@
-/* Kun Online v75.4 implementation — v75.3 browser compatibility contract, with atomic contact ownership before contact/call. */
+/* Kun Online v75.5 implementation — v75.3 browser compatibility contract, with atomic contact ownership before contact/call. */
 (function(){
   if(window.KunCustomerServiceInteractionsV75)return;
   const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
@@ -37,11 +37,13 @@
     if(button)button.textContent=`تواصل (${count})`;if(counter)counter.textContent=String(count);if(noAnswer)noAnswer.textContent=`العميل لا يرد — ${count} محاولة تواصل`;window.KunCustomerServiceV31?.updateContactCount?.(id,count);
     return count;
   }
+  function invalidateReads(){for(const path of ['/api/customer-service','/api/state'])window.KunPerformanceCore?.invalidate?.(path);}
   async function saveNote(card,button){
     const id=orderId(card),input=card.querySelector('[data-cs-note]'),note=String(input?.value||'').trim();
     if(!note){notify('اكتب الملاحظة الأول');return;}
     clearError(card);const cid=await clientId();if(!cid)throw new Error('تعذر تحديد حساب المتجر');
     const data=await api(route(id,'notes',cid),{method:'POST',body:JSON.stringify({clientId:cid,note})});
+    invalidateReads();
     if(input&&String(input.value||'').trim()===note)input.value='';
     updateLatestNote(card,note);notify('تم حفظ الملاحظة الداخلية في سجل الأوردر');
     return data;
@@ -50,8 +52,10 @@
     const id=orderId(card),cid=await clientId();if(!cid)throw new Error('تعذر تحديد حساب المتجر');
     clearError(card);
     const ownership=await api(route(id,'claim-contact',cid),{method:'POST',body:JSON.stringify({clientId:cid})});
+    invalidateReads();
     window.dispatchEvent(new CustomEvent('kun:customer-service-contact-claimed',{detail:{orderId:id,claim:ownership.claim||null,savedAt:Date.now()}}));
     const data=await api(route(id,'contact',cid),{method:'POST',keepalive:isCall,body:JSON.stringify({clientId:cid,channel:'phone',intent:isCall?'call':'contact'})});
+    invalidateReads();
     const count=updateContactCount(card,data);
     window.dispatchEvent(new CustomEvent('kun:customer-service-contact-saved',{detail:{orderId:id,count,claim:ownership.claim||null,intent:isCall?'call':'contact',savedAt:Date.now()}}));
     notify(isCall?'تم حجز الأوردر باسمك وتسجيل المكالمة':'تم حجز الأوردر باسمك ونقله إلى «جاري الاتصال»');
@@ -85,6 +89,6 @@
 
   document.addEventListener('click',handle,true);
   document.addEventListener('change',handleConfirm,true);
-  window.KunCustomerServiceInteractionsV75={version:'75.3',revision:'75.4',pending,saveNote,saveContact,confirmState:handleConfirm};
-  document.documentElement.dataset.customerServiceInteractions='v75.4-ready';
+  window.KunCustomerServiceInteractionsV75={version:'75.3',revision:'75.5',pending,saveNote,saveContact,confirmState:handleConfirm};
+  document.documentElement.dataset.customerServiceInteractions='v75.5-ready';
 })();

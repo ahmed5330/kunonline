@@ -1,8 +1,8 @@
-/* Kun Online v52.1 — lightweight shared frontend performance primitives. */
+/* Kun Online v52.2 — lightweight shared frontend performance primitives. */
 (function(){
   if(window.KunPerformanceCore)return;
   const baseFetch=window.fetch.bind(window);
-  const inflight=new Map(),cache=new Map();
+  const inflight=new Map(),cache=new Map(),generations=new Map();
   const now=()=>Date.now();
   function requestInfo(input,init={}){
     const raw=typeof input==='string'?input:input?.url||'';
@@ -27,21 +27,31 @@
     const info=requestInfo(input,init),ms=info.url?.origin===location.origin&&info.method==='GET'?ttl(info.url.pathname):0;
     if(!ms)return baseFetch(input,init);
     const hit=cached(info.key);if(hit)return hit;
-    if(inflight.has(info.key))return (await inflight.get(info.key)).clone();
+    const generation=generations.get(info.key)||0;
+    async function current(promise){
+      const response=await promise;
+      if((generations.get(info.key)||0)!==generation)return window.fetch(input,init);
+      return response.clone();
+    }
+    if(inflight.has(info.key))return current(inflight.get(info.key));
     const work=baseFetch(input,init).then(response=>{
-      if(response.ok)cache.set(info.key,{expires:now()+ms,response:response.clone()});
+      if(response.ok&&(generations.get(info.key)||0)===generation)cache.set(info.key,{expires:now()+ms,response:response.clone()});
       return response;
-    }).finally(()=>inflight.delete(info.key));
+    }).finally(()=>{if(inflight.get(info.key)===work)inflight.delete(info.key);});
     inflight.set(info.key,work);
-    return (await work).clone();
+    return current(work);
   };
   function invalidate(path=''){
-    for(const key of cache.keys())if(!path||key.includes(`:${path}`))cache.delete(key);
+    for(const key of new Set([...cache.keys(),...inflight.keys()])){
+      if(path&&!key.includes(`:${path}`))continue;
+      generations.set(key,(generations.get(key)||0)+1);
+      cache.delete(key);inflight.delete(key);
+    }
   }
   function idle(fn,timeout=1200){
     if('requestIdleCallback' in window)return requestIdleCallback(fn,{timeout});
     return setTimeout(fn,Math.min(timeout,600));
   }
   const activeView=()=>document.querySelector('.nav button.active[data-view]')?.dataset.view||'';
-  window.KunPerformanceCore={invalidate,idle,activeView,inflight,cache,version:'52.1'};
+  window.KunPerformanceCore={invalidate,idle,activeView,inflight,cache,version:'52.2'};
 })();

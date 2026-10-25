@@ -2,16 +2,50 @@ import {readFile,access,mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {spawn} from 'node:child_process';
-import {randomBytes} from 'node:crypto';
 
 const uiSrc=await readFile(new URL('../public/v2/modules-v29-product-import.js',import.meta.url),'utf8');
 const bundleSrc=await readFile(new URL('../public/v2/modules-v134-bundle-import-picker.js',import.meta.url),'utf8');
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 let chrome=null,userDir=null,cdp=null;
 async function findChrome(){for(const path of ['/usr/bin/google-chrome','/usr/bin/google-chrome-stable','/usr/bin/chromium','/usr/bin/chromium-browser','/opt/google/chrome/chrome'])try{await access(path);return path;}catch{}throw new Error('No Chrome/Chromium executable found for product import fixture QA');}
-async function waitDebugger(port,{attempts=60,delay=100}={}){let last;for(let i=0;i<attempts;i++){try{const r=await fetch(`http://127.0.0.1:${port}/json/list`),pages=await r.json(),page=pages.find(x=>x.type==='page'&&x.webSocketDebuggerUrl)||pages.find(x=>x.webSocketDebuggerUrl);if(page)return page.webSocketDebuggerUrl;}catch(e){last=e;}await sleep(delay);}throw new Error(`Chrome DevTools unavailable: ${last?.message||'timeout'}`);}
+async function waitDebugger(child,{timeout=20000}={}){
+  // Chrome chooses a free port. Its stderr announces the actual browser socket,
+  // avoiding random-port collisions and preserving startup errors in CI.
+  const browserSocket=await new Promise((resolve,reject)=>{
+    let diagnostics='';
+    const timer=setTimeout(()=>finish(new Error('Chrome startup timed out')),timeout);
+    function finish(error,url){
+      clearTimeout(timer);child.stderr.off('data',onData);child.off('error',onError);child.off('exit',onExit);
+      error?reject(new Error(`${error.message}; Chrome stderr: ${diagnostics.trim()||'(empty)'}`)):resolve(url);
+    }
+    function onData(chunk){
+      diagnostics=(diagnostics+chunk.toString()).slice(-12000);
+      const socket=diagnostics.match(/DevTools listening on (ws:\/\/127\.0\.0\.1:\d+\/devtools\/browser\/[^\s]+)/)?.[1];
+      if(socket)finish(null,socket);
+    }
+    function onError(error){finish(error);}
+    function onExit(code,signal){finish(new Error(`Chrome exited before DevTools: code=${code} signal=${signal}`));}
+    child.stderr.on('data',onData);child.once('error',onError);child.once('exit',onExit);
+  });
+  const origin=new URL(browserSocket).origin.replace('ws:','http:');
+  let last;
+  for(let i=0;i<60;i++){
+    try{
+      const response=await fetch(`${origin}/json/list`,{signal:AbortSignal.timeout(1000)});
+      if(!response.ok)throw new Error(`HTTP ${response.status}`);
+      const pages=await response.json(),page=pages.find(x=>x.type==='page'&&x.webSocketDebuggerUrl);
+      if(page)return page.webSocketDebuggerUrl;
+    }catch(error){last=error;}
+    await sleep(100);
+  }
+  throw new Error(`Chrome page DevTools unavailable: ${last?.message||'no page target'}`);
+}
 async function cleanupBrowser(){try{cdp?.close();}catch{}cdp=null;try{if(chrome&&!chrome.killed)chrome.kill('SIGTERM');}catch{}chrome=null;await sleep(120);try{if(userDir)await rm(userDir,{recursive:true,force:true});}catch{}userDir=null;}
-async function launchOnce(executable){userDir=await mkdtemp(join(tmpdir(),'kun-product-import-'));const port=9000+(randomBytes(2).readUInt16BE(0)%6000);chrome=spawn(executable,['--headless=new','--no-sandbox','--disable-gpu','--disable-dev-shm-usage','--disable-background-networking','--no-first-run','--no-default-browser-check','--remote-debugging-address=127.0.0.1',`--remote-debugging-port=${port}`,`--user-data-dir=${userDir}`,'about:blank'],{stdio:['ignore','ignore','ignore']});return waitDebugger(port);}
+async function launchOnce(executable){
+  userDir=await mkdtemp(join(tmpdir(),'kun-product-import-'));
+  chrome=spawn(executable,['--headless=new','--no-sandbox','--disable-gpu','--disable-dev-shm-usage','--disable-background-networking','--no-first-run','--no-default-browser-check','--remote-debugging-address=127.0.0.1','--remote-debugging-port=0',`--user-data-dir=${userDir}`,'about:blank'],{stdio:['ignore','ignore','pipe']});
+  return waitDebugger(chrome);
+}
 async function launch(executable){const failures=[];for(let attempt=1;attempt<=3;attempt++){try{return await launchOnce(executable);}catch(error){failures.push(`attempt ${attempt}: ${error?.message||String(error)}`);await cleanupBrowser();if(attempt<3)await sleep(200*attempt);}}throw new Error(`Chrome DevTools unavailable after 3 isolated startup attempts — ${failures.join(' | ')}`);}
 class CDP{constructor(ws){this.ws=ws;this.id=0;this.pending=new Map();ws.addEventListener('message',e=>this.message(e));}message(e){let m;try{m=JSON.parse(String(e.data));}catch{return;}if(!m.id)return;const p=this.pending.get(m.id);if(!p)return;this.pending.delete(m.id);clearTimeout(p.t);m.error?p.reject(new Error(m.error.message)):p.resolve(m.result);}send(method,params={}){const id=++this.id;return new Promise((resolve,reject)=>{const t=setTimeout(()=>{this.pending.delete(id);reject(new Error(`CDP timeout: ${method}`));},12000);this.pending.set(id,{resolve,reject,t});this.ws.send(JSON.stringify({id,method,params}));});}close(){try{this.ws.close();}catch{}}}
 async function connect(url){const ws=new WebSocket(url);await new Promise((resolve,reject)=>{const t=setTimeout(()=>reject(new Error('CDP connect timeout')),8000);ws.addEventListener('open',()=>{clearTimeout(t);resolve();},{once:true});ws.addEventListener('error',()=>{clearTimeout(t);reject(new Error('CDP connect failed'));},{once:true});});return new CDP(ws);}

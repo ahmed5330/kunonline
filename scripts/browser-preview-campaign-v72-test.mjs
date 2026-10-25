@@ -1,3 +1,5 @@
+import {loadIsolatedPreviewQaConfig} from './isolated-preview-qa-config.mjs';
+const isolatedQaConfig=await loadIsolatedPreviewQaConfig(process.argv[2]);
 import {readFile,access,mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -8,7 +10,7 @@ const base=(process.argv[2]||'').replace(/\/$/,'');
 if(!base)throw new Error('Usage: node scripts/browser-preview-campaign-v72-test.mjs <base-url>');
 const accountId=process.env.CLOUDFLARE_ACCOUNT_ID,token=process.env.CLOUDFLARE_API_TOKEN;
 if(!accountId||!token)throw new Error('Preview Campaign v72 browser QA requires Cloudflare account/token environment');
-const config=await readFile(new URL('../wrangler.preview.toml',import.meta.url),'utf8');
+const config=isolatedQaConfig;
 const entrySource=await readFile(new URL('../src/index-commerce-v36.js',import.meta.url),'utf8');
 const expectedBuild=entrySource.match(/const BUILD=['"]([^'"]+)['"]/i)?.[1]||'';
 const databaseId=config.match(/database_id\s*=\s*"([^"]+)"/)?.[1];

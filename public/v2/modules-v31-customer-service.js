@@ -67,13 +67,16 @@
     </div>`;
   }
   async function renderWorkspace(){
+    if(document.querySelector('.nav button.active[data-view]')?.dataset.view!=='customer-service')return;
     if(loading){renderQueued=true;return;}loading=true;const r=root();if(!r){loading=false;return;}r.innerHTML='<div class="cs-loading">جارٍ تحميل أوردرات خدمة العملاء...</div>';
     try{
       if(!clientId)clientId=await (window.kunClientId?.()||Promise.resolve(me?.clientId||''));
       if(!clientId)throw new Error('تعذر تحديد حساب المتجر');
-      data=await api(urlFor('/api/customer-service'));
-      r.innerHTML=workspace();bindWorkspace();
-    }catch(e){r.innerHTML=`<div class="card empty"><h3>تعذر فتح خدمة العملاء</h3><p>${esc(e.message)}</p></div>`;}finally{loading=false;if(renderQueued){renderQueued=false;queueMicrotask(renderWorkspace);}}
+      const requestedClient=clientId,requestedStore=selectedStore;
+      const received=await api(urlFor('/api/customer-service'));
+      if(document.querySelector('.nav button.active[data-view]')?.dataset.view!=='customer-service'||clientId!==requestedClient||selectedStore!==requestedStore)return;
+      data=received;r.innerHTML=workspace();bindWorkspace();
+    }catch(e){if(document.querySelector('.nav button.active[data-view]')?.dataset.view!=='customer-service')return;r.innerHTML=`<div class="card empty"><h3>تعذر فتح خدمة العملاء</h3><p>${esc(e.message)}</p></div>`;}finally{loading=false;if(renderQueued){renderQueued=false;queueMicrotask(renderWorkspace);}}
   }
   function bindWorkspace(){
     document.getElementById('csReload')?.addEventListener('click',renderWorkspace);

@@ -1,3 +1,5 @@
+import {loadIsolatedPreviewQaConfig} from './isolated-preview-qa-config.mjs';
+const isolatedQaConfig=await loadIsolatedPreviewQaConfig(process.argv[2]);
 /* Live Preview-only synthetic competitor AI contract.
  * Creates an isolated QA store; never reads merchant orders/ads.
  * Tests real env.AI.run through authenticated app, never mocks the model.
@@ -6,10 +8,10 @@ import {readFile} from 'node:fs/promises';
 import {randomBytes,webcrypto} from 'node:crypto';
 
 const base=(process.argv[2]||'').replace(/\/$/,'');
-if(!base||!base.startsWith('https://kunonline-preview.'))throw Error('Only the Kun Online Preview URL may be tested');
+if(!base)throw Error('An isolated QA Worker URL is required');
 const account=process.env.CLOUDFLARE_ACCOUNT_ID,token=process.env.CLOUDFLARE_API_TOKEN;
 if(!account||!token)throw Error('Cloudflare preview environment credentials required');
-const config=await readFile(new URL('../wrangler.preview.toml',import.meta.url),'utf8');
+const config=isolatedQaConfig;
 const db=config.match(/database_id\s*=\s*"([^"]+)"/)?.[1];
 if(!db)throw Error('Preview D1 database not configured');
 const endpoint='https://api.cloudflare.com/client/v4/accounts/'+account+'/d1/database/'+db+'/query';
