@@ -1,5 +1,5 @@
 import {randomBytes,createHash} from 'node:crypto';
-import {mkdtemp,writeFile,rm} from 'node:fs/promises';
+import {mkdtemp,writeFile,readFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 import {execFile} from 'node:child_process';
@@ -8,6 +8,7 @@ import {pathToFileURL} from 'node:url';
 import {fullTrafficVersion} from './cloudflare-full-traffic-version.mjs';
 import {summarizeCandidate} from './wefaq-readonly-scope-inventory.mjs';
 const fingerprint=value=>createHash('sha256').update(String(value)).digest('hex');
+export const AUDIT_CALLER_SHA256='8fbe7d498059a192ba5b24483719bf6f670c1f72cfd5d1f924a4eef508f25381';
 export const expectedScope=Object.freeze({clientFingerprint:'719318eb4257a238f8dd5e65818122a0da906062f4788b4e70e945e9196b2dc2',storeFingerprint:'9381d0b26157bd6283d4c526e9d4baac139d103cc1bf5abc3e96cd1bbbec292d',connectionFingerprint:'975a5f7977c84755da82f3b732d6ff9b39bb850ad7e6713484378bb027d2457d',externalStoreFingerprint:'6bb4884d34c51ae38ce86b015c7573d3ce65b7dc4722d8b8819aea9a55befc7d'});
 export const scopeMatches=report=>report?.upstreamIdentityVerified===true&&Object.entries(expectedScope).every(([key,value])=>report[key]===value);
 export function auditCallerName(run){if(!/^\d{1,20}$/.test(run||''))throw Error('RPC_AUDIT_RUN_INVALID');return `kunonline-wefaq-readonly-${run}`;}
@@ -23,6 +24,7 @@ async function main(){
  }
  if(process.argv[2]==='--cleanup'){await api('DELETE',`workers/scripts/${name}`);console.log(JSON.stringify({auditCallerRemoved:true,customerWorkerModified:false}));return;}
  if(!/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(expected||''))throw Error('RPC_AUDIT_VERSION_REQUIRED');
+ if(createHash('sha256').update(await readFile(resolve('sandbox/easyorders-readonly-audit-caller.mjs'))).digest('hex')!==AUDIT_CALLER_SHA256)throw Error('RPC_AUDIT_CALLER_SOURCE_CHANGED');
  async function ownership(){if(fullTrafficVersion(await api('GET','workers/scripts/kunonline-preview/deployments'))!==expected)throw Error('RPC_AUDIT_VERSION_CHANGED');}
  await ownership();
  const app=await api('GET','workers/scripts/kunonline-preview/settings');
