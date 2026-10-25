@@ -19,4 +19,6 @@ assert.throws(()=>ready(run,[{...job,steps:[...job.steps,{name:'Later live check
 const flow=await readFile(new URL('../.github/workflows/android-stable-signed-release.yml',import.meta.url),'utf8');
 assert.ok(flow.indexOf('node scripts/wait-production-worker-for-android-release.mjs')<flow.indexOf('name: Publish canonical Android APKs'),'Server gate precedes public APK mutation');
 assert.match(flow,/actions: read/);
+const production=await readFile(new URL('../.github/workflows/production.yml',import.meta.url),'utf8');
+for(const name of names)assert.ok(production.includes('- name: '+name),'Android gate must reference an actual Production workflow step: '+name);
 console.log('PASS: signed Android publication waits for the same current Main commit and successful Production server gates; pending, skipped, failed and stale runs cannot authorize it.');
