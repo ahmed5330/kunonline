@@ -16,6 +16,7 @@ export function classifyWranglerFailure(text){
     ['SYNTAX',/syntax error/i],['NETWORK',/fetch failed|network|timed? out|econn/i],
     ['CLI_INTERNAL',/cannot read properties|typeerror|referenceerror/i],
     ['INTERACTIVE_PROMPT',/non.interactive|cannot prompt|confirmation/i]
+    ,['COMPOUND_SELECT_LIMIT',/too many terms|compound select/i]
   ])if(pattern.test(text))categories.push(category);
   const codes=['SQLITE_CONSTRAINT','SQLITE_ERROR','SQLITE_AUTH','SQLITE_TOOBIG','SQLITE_BUSY','SQLITE_MISUSE','D1_ERROR','D1_EXEC_ERROR'].filter(code=>new RegExp('\\b'+code+'\\b').test(text));
   const apiCodes=[...text.matchAll(/\[code:\s*(\d+)\]/g)].map(x=>Number(x[1]));
@@ -81,11 +82,15 @@ export async function rehearseD1Backup({api,cli,inspectExport,prepareImport=asyn
     await cli(['d1','execute',database.name,'--remote','--file',prepared.file,'--config',path,'--yes']);
     const tables=Object.keys(manifest).sort();
     if(!tables.length)throw new Error('EMPTY_EXPORT_MANIFEST');
-    const sql=tables.map(name=>`SELECT '${name}' AS table_name, COUNT(*) AS n FROM ${tableName(name)}`).join(' UNION ALL ');
-    const result=await api('POST',`d1/database/${database.id}/query`,{sql,params:[]});
-    if(!Array.isArray(result)||result.length!==1||result[0]?.success===false||!Array.isArray(result[0]?.results))
-      throw new Error('RESTORE_VALIDATION_UNAVAILABLE');
-    const actual=Object.fromEntries(result[0].results.map(row=>[row.table_name,Number(row.n)]));
+    onProgress({stage:'import-complete-verify-counts',target:database.name,tableCount:tables.length});
+    const actual={};
+    for(let index=0;index<tables.length;index+=10){
+      const sql=tables.slice(index,index+10).map(name=>`SELECT '${name}' AS table_name, COUNT(*) AS n FROM ${tableName(name)}`).join(' UNION ALL ');
+      const result=await api('POST',`d1/database/${database.id}/query`,{sql,params:[]});
+      if(!Array.isArray(result)||result.length!==1||result[0]?.success===false||!Array.isArray(result[0]?.results))
+        throw new Error('RESTORE_VALIDATION_UNAVAILABLE');
+      Object.assign(actual,Object.fromEntries(result[0].results.map(row=>[row.table_name,Number(row.n)])));
+    }
     if(JSON.stringify(tables.map(x=>[x,actual[x]]))!==JSON.stringify(tables.map(x=>[x,manifest[x]])))
       throw new Error('RESTORE_ROW_COUNT_MISMATCH');
     return {databaseName:database.name,databaseFingerprint:hash(database.id),allTableCountsMatch:true,tableCount:tables.length};
@@ -100,7 +105,8 @@ export async function rehearseD1Backup({api,cli,inspectExport,prepareImport=asyn
     await cli(['d1','export',`kunonline-source-${source.label}`,'--remote','--output',file,'--config',sourceConfig,'--skip-confirmation']);
     const {manifest,dumpSha256,contentFingerprint,integrity,foreignKeyViolationCount,hasDeferredForeignKeys}=await inspectExport(file);
     onProgress({stage:'source-export-integrity',source:source.label,integrity,
-      foreignKeyViolationCount:foreignKeyViolationCount??null,hasDeferredForeignKeys:hasDeferredForeignKeys??null});
+      foreignKeyViolationCount:foreignKeyViolationCount??null,hasDeferredForeignKeys:hasDeferredForeignKeys??null,
+      tableCount:Object.keys(manifest).length,dumpSha256,contentFingerprint});
     if(integrity!=='ok'||!/^[a-f0-9]{64}$/.test(dumpSha256)||!/^[a-f0-9]{64}$/.test(contentFingerprint))throw new Error('EXPORT_INTEGRITY_FAILED');
     for(const name of Object.keys(manifest))tableName(name);
     const backup=await target('backup',source);
@@ -153,7 +159,11 @@ async function main(){
       ...(body?{body:JSON.stringify(body)}:{})
     });
     const payload=await response.json().catch(()=>({}));
-    if(!response.ok||payload.success!==true)throw new Error(`CLOUDFLARE_HTTP_${response.status}_CODE_${Number(payload.errors?.[0]?.code)||0}`);
+    if(!response.ok||payload.success!==true){
+      console.error(JSON.stringify({operation:method,endpointKind:path.endsWith('/query')?'query':path.endsWith('/settings')?'settings':'metadata',
+        httpStatus:response.status,diagnostic:classifyWranglerFailure(JSON.stringify(payload.errors||[]))}));
+      throw new Error(`CLOUDFLARE_HTTP_${response.status}_CODE_${Number(payload.errors?.[0]?.code)||0}`);
+    }
     return payload.result;
   };
   const cli=async args=>{
