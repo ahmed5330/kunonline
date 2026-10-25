@@ -10,6 +10,14 @@ on:
         required: false
         type: boolean
         default: false
+      shared_d1_approved_sha:
+        description: 'Exact SHA:kunonline-preview approval for any manually reviewed schema change'
+        required: false
+        type: string
+      verified_backup_reference:
+        description: 'Verified restorable backup reference for manual schema changes'
+        required: false
+        type: string
 concurrency:
   group: kunonline-preview
   cancel-in-progress: true
@@ -181,11 +189,31 @@ jobs:
           grep -Eiq 'bookmark' /tmp/kun-easyorders-time-travel-check.txt
           echo 'PASS: protected GET-only Workers/Cron binding and D1 recovery-point preflight.'
 
+      - name: Reject live wallet settlement anomalies before modifying shared D1
+        if: steps.ownership.outputs.is_latest == 'true'
+        run: node scripts/preview-wallet-finance-invariants.mjs
+
+      - name: Require read-only inventory data invariants before any schema mutation
+        if: steps.ownership.outputs.is_latest == 'true'
+        run: node scripts/preview-d1-release-invariants.mjs
+
+      - name: Authorize shared D1 schema changes only with exact SHA and verified backup
+        id: shared_d1_preflight
+        if: steps.ownership.outputs.is_latest == 'true'
+        env:
+          PREVIEW_D1_APPROVAL: ${{ inputs.shared_d1_approved_sha }}
+          PREVIEW_D1_BACKUP_REF: ${{ inputs.verified_backup_reference }}
+        run: bash scripts/preview-db-release-preflight.sh
+
       - name: Apply preview migrations only with explicit schema approval
         # Ordinary UI/Worker pushes must never apply unrelated pending migrations.
         # This boolean is intentionally false for all automatic push deployments.
-        if: steps.ownership.outputs.is_latest == 'true' && github.event_name == 'workflow_dispatch' && inputs.apply_reviewed_migrations == true
+        if: steps.ownership.outputs.is_latest == 'true' && github.event_name == 'workflow_dispatch' && inputs.apply_reviewed_migrations == true && steps.shared_d1_preflight.outputs.apply_migrations == 'true'
         run: npm run db:migrate:preview
+
+      - name: Prove required release schema before customer Worker deployment
+        if: steps.ownership.outputs.is_latest == 'true'
+        run: node scripts/preview-release-schema-contract.mjs
 
       - name: Reconfirm latest branch HEAD before deploy
         id: deploy_ownership
