@@ -21,3 +21,11 @@ assert.equal(known.recoveryStatus,'error');
 assert.equal(known.lastCronAt,'2026-10-25T13:10:44.223Z');
 const malicious=summarizeCandidate({...row,recovery_status:'PRIVATE_PAYLOAD',last_cron_at:'PRIVATE_PAYLOAD',cron_error_class:'PRIVATE_PAYLOAD'},{});
 assert.ok(!JSON.stringify(malicious).includes('PRIVATE_PAYLOAD'),'Unrecognized database strings never leak into diagnostics');
+
+const measured=summarizeCandidate({...row,provider_http_status:503,provider_error_category:'provider_server_error'},{});
+assert.equal(measured.providerHttpStatus,503);
+assert.equal(measured.providerErrorCategory,'provider_server_error');
+const invalid=summarizeCandidate({...row,provider_http_status:'PRIVATE_HTTP_PAYLOAD',provider_error_category:'PRIVATE_PROVIDER_PAYLOAD'},{});
+assert.equal(invalid.providerHttpStatus,null);
+assert.equal(invalid.providerErrorCategory,null);
+assert.ok(!JSON.stringify(invalid).includes('PRIVATE_'));

@@ -19,7 +19,8 @@ export function summarizeCandidate(row,orders){
     recoveryStatus:['healthy','catching_up','rate_limited','waiting_for_short_id','error'].includes(row.recovery_status)?row.recovery_status:'unknown',
     lastCronAt:/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,3})?Z$/.test(row.last_cron_at||'')&&Number.isFinite(Date.parse(row.last_cron_at))?row.last_cron_at:null,
     cronErrorClass:['none','record_not_found_http_unknown','unresolved_queue_review','store_identity_unverified','provider_payload_identity_missing','api_key_missing_or_invalid','secret_decrypt_error','database_error','other_error_unclassified'].includes(row.cron_error_class)?row.cron_error_class:'unknown',
-    providerHttpStatus:null,
+    providerHttpStatus:Number.isInteger(Number(row.provider_http_status))&&Number(row.provider_http_status)>=400&&Number(row.provider_http_status)<=599?Number(row.provider_http_status):null,
+    providerErrorCategory:['provider_auth','provider_throttle','provider_server_error','provider_other_http','provider_unknown_http'].includes(row.provider_error_category)?row.provider_error_category:null,
     storedRecoveryHighestShortId:Number(row.highest)||0,storedRecoveryCursor:Number(row.cursor)||0,
     sourceOrderCount:Number(orders?.total)||0,ordersSince20261023:Number(orders?.recent)||0,
     upstreamIdentityVerified:false,providerAuditExecuted:false,missingOrderCount:null,realOrdersRecovered:0};
@@ -58,6 +59,8 @@ async function main(){
     CASE WHEN json_valid(c.config_json) THEN COALESCE(json_extract(c.config_json,'$.kunStoreId'),json_extract(c.config_json,'$.storeId')) END AS config_store_id,
     CASE WHEN json_valid(c.config_json) THEN json_extract(c.config_json,'$.easyOrdersRecoveryHighestShortId') END AS highest,
     CASE WHEN json_valid(c.config_json) THEN json_extract(c.config_json,'$.easyOrdersRecoveryCursor') END AS cursor,
+    CASE WHEN json_valid(c.config_json) THEN json_extract(c.config_json,'$.easyOrdersRecoveryLastProviderHttpStatus') END AS provider_http_status,
+    CASE WHEN json_valid(c.config_json) THEN json_extract(c.config_json,'$.easyOrdersRecoveryLastProviderErrorCategory') END AS provider_error_category,
     CASE WHEN json_valid(c.config_json) THEN json_extract(c.config_json,'$.easyOrdersRecoveryLastCronAt') END AS last_cron_at,
     CASE WHEN json_valid(c.config_json) THEN json_extract(c.config_json,'$.easyOrdersRecoveryLastStatus') END AS recovery_status,
     CASE WHEN json_valid(c.config_json) THEN CASE
