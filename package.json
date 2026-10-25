@@ -80,7 +80,7 @@
     "test:easyorders-sync-concurrency": "node scripts/easyorders-sync-concurrency-sqlite-test.mjs",
     "test:easyorders-mobile-sync": "node scripts/easyorders-mobile-sync-consistency-test.mjs",
     "test:easyorders-health-freshness": "node scripts/easyorders-health-freshness-test.mjs",
-    "test:production-parity-admin": "node scripts/production-parity-admin-guard-test.mjs"
+    "test:production-parity-admin": "node --loader ./scripts/session-test-cloudflare-loader.mjs scripts/production-parity-admin-guard-test.mjs"
   },
   "devDependencies": {
     "wrangler": "4.125.0"
