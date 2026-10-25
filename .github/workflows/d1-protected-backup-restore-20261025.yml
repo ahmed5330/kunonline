@@ -1,0 +1,35 @@
+name: Protected D1 independent backup and isolated restore rehearsal
+on:
+  push:
+    branches: [codex/serialized-warehouse-operations]
+    paths: ['.github/workflows/d1-protected-backup-restore-20261025.yml']
+permissions:
+  contents: read
+concurrency:
+  group: kunonline-d1-backup-restore-rehearsal
+  cancel-in-progress: false
+jobs:
+  backup-restore:
+    runs-on: ubuntu-latest
+    environment: preview
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - name: Validate new-target-only backup and restore guard offline
+        run: node scripts/d1-backup-restore-rehearsal-test.mjs
+      - name: Install pinned Wrangler without project install scripts
+        run: npm install --no-save --ignore-scripts wrangler@4.125.0
+      - name: Back up both effective D1 databases and rehearse isolated restoration
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          WRANGLER_SEND_METRICS: 'false'
+        run: node scripts/d1-backup-restore-rehearsal.mjs
+# Retain four D1 resources (backup + restored copy per source). None is bound
+# to a Worker or usable as synthetic QA. Customer rows, raw IDs, bookmarks,
+# signed export URLs, CLI output and SQL dumps are never logged/uploaded.
+# Raw dumps exist only in a private temporary runner directory and are removed.
