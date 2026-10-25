@@ -63,7 +63,9 @@ assert.ok(between.includes('CI rollback baseline from stable source $stable_sha'
 assert.ok(config.includes("steps.rollback_base.outputs.version_id"),'Exact captured Worker version required');
 const packageJson=JSON.parse(await readFile(new URL('../package.json',import.meta.url),'utf8'));
 assert.doesNotMatch(packageJson.scripts['deploy:preview'],/\|\|\s*true/,'Preview deploy must propagate CLI failure');
-assert.ok(packageJson.scripts['deploy:preview'].includes('--keep-vars'),'Preserve remote credential/config variables');
+assert.match(packageJson.scripts['deploy:preview'], /direct deploy is blocked/, 'Local direct deployment must remain blocked');
+assert.match(packageJson.scripts['deploy:preview'], /process\.exit\(1\)/, 'Blocked deployment must fail closed');
+assert.doesNotMatch(packageJson.scripts['deploy:preview'], /wrangler deploy/, 'No direct deploy may bypass protected workflow gates');
 assert.equal((config.match(/deploy --config wrangler\.preview\.toml --keep-vars/g)||[]).length,2,'Both stable baseline and candidate deploy must preserve remote variables');
 assert.equal((config.match(/node scripts\/cloudflare-full-traffic-version\.mjs/g)||[]).length,4,'Every Preview traffic/promotion/rollback check must prove an explicit 100% owner');
 const writingEntries=JSON.parse(await readFile(new URL('./isolated-preview-qa-entrypoints.json',import.meta.url),'utf8'));
