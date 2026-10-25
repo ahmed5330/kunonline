@@ -8,7 +8,7 @@ const expected=[
   "name: Preview CI/CD",
   "environment:",
   "name: preview",
-  "contains(github.event.head_commit.message, '[easyorders-hotfix]')",
+  "Gate every Preview release on read-only live Worker and D1 checks",
   "node scripts/easyorders-cloudflare-worker-readonly-inventory.mjs",
   "node scripts/easyorders-cloudflare-worker-readonly-inventory-test.mjs",
   "wrangler d1 time-travel info kunonline-preview",
@@ -22,9 +22,20 @@ const expected=[
   "Promote fully validated HEAD to preview-stable"
 ];
 for(const token of expected)assert.ok(config.includes(token), 'release guard missing '+token);
+// A tag on only the first hotfix merge is not a trustworthy release gate:
+// later develop pushes redeploy the same Worker and must rerun Cloudflare checks.
+const gate=config.slice(config.indexOf('      - name: Gate every Preview release on read-only live Worker and D1 checks'),
+  config.indexOf('      - name: Apply preview migrations only with explicit schema approval'));
+assert.match(gate,/if: steps\.ownership\.outputs\.is_latest == 'true'/);
+assert.doesNotMatch(gate,/contains\(github\.event\.head_commit\.message/,
+  'Commit-message hints MUST NOT bypass the Cloudflare safety preflight');
+assert.match(gate,/\[ "\$\{\{ github\.event_name \}\}" = "push" \]/,
+  'Push releases must block accidental migration changes');
+assert.ok(gate.includes('wrangler d1 time-travel info kunonline-preview'),
+  'Preview preflight must prove the backup bookmark is readable before Worker deployment');
 const sections=[
   "Confirm latest branch HEAD before Preview mutation",
-  "Gate Easy Orders code-only release on read-only live Worker and D1 checks",
+  "Gate every Preview release on read-only live Worker and D1 checks",
   "Apply preview migrations only with explicit schema approval",
   "Reconfirm latest branch HEAD before deploy",
   "Create fresh verified rollback baseline from stable Git source",

@@ -50,15 +50,18 @@ jobs:
             echo "Stale Preview run detected. Run=$GITHUB_SHA Latest=$latest. Preview mutation will be skipped."
           fi
 
-      - name: Gate Easy Orders code-only release on read-only live Worker and D1 checks
-        if: steps.ownership.outputs.is_latest == 'true' && contains(github.event.head_commit.message, '[easyorders-hotfix]')
+      - name: Gate every Preview release on read-only live Worker and D1 checks
+        # Every develop push publishes the full Worker, including prior Easy Orders
+        # changes. A subsequent QA-only commit MUST NOT bypass release inventory.
+        if: steps.ownership.outputs.is_latest == 'true'
         shell: bash
         run: |
           set -euo pipefail
-          # This push must be a code-only release. No schema migration,
-          # customer order modification or secrets are allowed in preflight.
+          # No automatic push may add schema migrations. A manually approved
+          # workflow_dispatch with apply_reviewed_migrations=true is handled
+          # separately below, but must still pass the read-only inventory.
           git fetch --no-tags --deepen=2 origin develop/ux-system-upgrade
-          if git diff --name-only "HEAD^" HEAD | grep -E '^(migrations/|sandbox/migrations/)'; then
+          if [ "${{ github.event_name }}" = "push" ] && git diff --name-only "HEAD^" HEAD | grep -E '^(migrations/|sandbox/migrations/)'; then
             echo 'BLOCK: an Easy Orders code-only release cannot include database migrations'
             exit 1
           fi
