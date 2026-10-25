@@ -47,7 +47,7 @@ requireText(packageJson,'"dev": "wrangler dev --config wrangler.preview.toml"','
 requireText(packageJson,'"dev:scheduled": "wrangler dev --config wrangler.sync.preview.toml --test-scheduled"','scheduled local testing must use the sync Preview config.');
 requireText(packageJson,'node scripts/verify-cloudflare-crons.mjs kunonline-preview --none','app live Cron check must require zero schedules.');
 requireText(packageJson,'node scripts/verify-cloudflare-crons.mjs kunonline-sync-preview','sync live Cron verification is missing.');
-requireText(packageJson,'node scripts/browser-preview-breakdown-controls-test.mjs','live Breakdown browser interaction must remain a hard Preview smoke gate.');
+requireText(workflow,'node scripts/browser-preview-breakdown-controls-test.mjs "$KUN_PREVIEW_QA_BASE_URL"','Breakdown interaction must remain mandatory on isolated QA.');
 requireText(packageJson,'wrangler d1 migrations apply kunonline-preview --remote --config wrangler.preview.toml','migration command must be pinned to Preview D1/config.');
 requireText(packageJson,'wrangler deploy --config wrangler.preview.toml','Preview deployment command is not pinned.');
 requireText(packageJson,'wrangler deploy --config wrangler.sync.preview.toml','sync Preview deployment command is not pinned.');
@@ -103,7 +103,7 @@ const gates=[
   ['Browser runtime and responsive QA','browser-preview-qa.mjs']
 ];
 for(const [name,script] of gates){requireText(workflow,`name: ${name}`,`${name} gate is missing.`);requireText(workflow,script,`${name} script is missing.`);}
-for(const dependency of ['steps.smoke.outcome == \'success\'','steps.live.outcome == \'success\'','steps.team_live.outcome == \'success\'','steps.customer_service_live.outcome == \'success\'','steps.easyorders_live.outcome == \'success\'','steps.dashboard_live.outcome == \'success\''])requireText(workflow,dependency,`required live-gate dependency ${dependency} is missing.`);
+for(const dependency of ['steps.qa_smoke.outcome == \'success\'','steps.live.outcome == \'success\'','steps.team_live.outcome == \'success\'','steps.customer_service_live.outcome == \'success\'','steps.easyorders_live.outcome == \'success\'','steps.dashboard_live.outcome == \'success\''])requireText(workflow,dependency,`required live-gate dependency ${dependency} is missing.`);
 
 requireText(workflow,'name: Require every Preview validation gate to succeed','final mandatory QA summary is missing.');
 requireText(workflow,'id: qa_summary','QA summary output is missing.');

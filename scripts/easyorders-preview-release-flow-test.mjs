@@ -35,6 +35,9 @@ assert.ok(gate.includes('wrangler d1 time-travel info kunonline-preview'),
   'Preview preflight must prove the backup bookmark is readable before Worker deployment');
 const sections=[
   "Confirm latest branch HEAD before Preview mutation",
+  "Provision verified isolated QA with synthetic fixtures",
+  "Require every isolated writing QA gate before release",
+  "Prove two native five-minute Cron executions on isolated QA",
   "Gate every Preview release on read-only live Worker and D1 checks",
   "Apply preview migrations only with explicit schema approval",
   "Reconfirm latest branch HEAD before deploy",
@@ -58,6 +61,15 @@ assert.ok(between.includes('node scripts/preview-health-check.mjs "$base_url"'),
 assert.ok(between.includes('CI rollback baseline from stable source $stable_sha'),
   'Rollback deployment must be attributable to the stable source');
 assert.ok(config.includes("steps.rollback_base.outputs.version_id"),'Exact captured Worker version required');
+const packageJson=JSON.parse(await readFile(new URL('../package.json',import.meta.url),'utf8'));
+const writingEntries=JSON.parse(await readFile(new URL('./isolated-preview-qa-entrypoints.json',import.meta.url),'utf8'));
+for(const name of [...writingEntries,'browser-preview-qa.mjs','browser-preview-breakdown-controls-test.mjs']){
+  for(const line of config.split('\n').filter(line=>line.includes('node scripts/'+name)))
+    assert.ok(line.includes('$KUN_PREVIEW_QA_BASE_URL'),`Writing QA ${name} must target isolated QA`);
+  assert.ok(!packageJson.scripts['smoke:preview'].includes(name),`Live Preview smoke must not invoke writing QA ${name}`);
+}
+assert.ok(!packageJson.scripts['smoke:preview'].includes('preview-operational-workflow-smoke'),
+  'POST-based negative smoke belongs on QA, not shared customer Preview');
 assert.ok(!/\bwrangler d1 time-travel restore\b/.test(config),'NEVER automatically revert live customer D1');
 assert.ok(!/\bwrangler d1 migrations apply\b/.test(config),
   'Only approved explicit npm migration step permitted, never migration from an ungated step');
