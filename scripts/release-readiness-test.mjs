@@ -39,7 +39,10 @@ for(const header of ['Content-Security-Policy','X-Content-Type-Options','X-Frame
 must(security.includes("Cache-Control','no-store"),'API no-store cache policy missing');
 must(security.includes("legacy-state:${env.INTEGRATION_ENCRYPTION_KEY}"),'Legacy integration secrets must derive encryption from the integration key when TOKEN_ENC_KEY is absent');
 must(customerApi.includes("u.pathname!=='/api/customers'")&&customerApi.includes("method.toUpperCase()!=='POST'"),'Customer create API missing');
-for(const marker of ["'/api/orders'","'/api/products'","'/api/suppliers'","/stock/add","data-v20-theme"])must(actions.includes(marker),`Core action wiring missing: ${marker}`);
+for(const marker of ["'/api/products'","'/api/suppliers'","/stock/add","data-v20-theme"])must(actions.includes(marker),`Core action wiring missing: ${marker}`);
+must(actions.includes('KunActionsV23?.openCreateOrder')&&actions.includes('KunManualJntOrderV106'),'Legacy toolbar must wait for and delegate to the canonical J&T form');
+const manualForm=await readFile(new URL('../public/v2/modules-v106-manual-jnt-order.js',import.meta.url),'utf8');
+must(manualForm.includes('/api/orders/manual-jnt'),'The authoritative manual order form must use the guarded J&T order API');
 must(recovery.includes("env.APP_ENV!=='preview'"),'Admin recovery must be Preview-only');
 must(recovery.includes("__preview_admin_recovery_used__"),'Admin recovery must be one-time');
 must(recovery.includes("UPDATE users SET status='disabled' WHERE role='admin'"),'Admin recovery must disable stale Preview admins');

@@ -18,5 +18,5 @@ for(const marker of ['form[data-jnt-address-form="1"]','provinceCode','cityCode'
 for(const marker of ['/api/orders/manual-jnt','JNT_ADDRESS_REQUIRED','jnt_province','jnt_city','jnt_area','jnt_street','jnt_province_code','jnt_city_code','jnt_district_code','jnt_country_code'])assert.ok(backend.includes(marker),`Manual J&T backend missing ${marker}`);
 for(const column of ['jnt_province','jnt_city','jnt_area','jnt_street','jnt_province_code','jnt_city_code','jnt_district_code','jnt_country_code'])assert.ok(migration.includes(`ADD COLUMN ${column}`),`Migration missing ${column}`);
 assert.ok(cascade.includes('modules-v106-manual-jnt-order.js?v=106.0'),'Manual J&T override must be loaded by the authoritative address module');
-assert.ok(index.includes('/v2/modules-v23-create.js?v=23.2'),'Legacy create module remains available before the J&T override');
+assert.ok(index.includes('/v2/modules-v23-create.js?v=23.3'),'Legacy create module remains available before the J&T override');
 console.log('Manual order form contract passed: manual orders require the authoritative J&T province/city/area/street hierarchy, persist carrier codes, and retain product/source/order fields.');

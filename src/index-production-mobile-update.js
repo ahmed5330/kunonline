@@ -121,7 +121,7 @@ async function websiteWithDirectAndroidDownload(request,env){
   if(!html.includes('/v2/modules-v126-dashboard-finance-top.js')){
     html=html.replace('</body>','<script src="/v2/modules-v126-dashboard-finance-top.js?v=126.5" data-kun-dashboard-finance-top-v126="1"></script></body>');
   }
-  if(!html.includes('/v2/modules-v127-subscriptions.js')){
+  if(!html.includes('/v2/modules-v127-subscriptions.js?v=127.22')){
     html=html.replace('</body>','<script src="/v2/modules-v127-subscriptions.js?v=127.22" data-kun-subscriptions-v127="1"></script></body>');
   }
   if(!html.includes('/v2/modules-v128-unit-tracking.js')){
