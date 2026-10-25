@@ -65,6 +65,7 @@ const packageJson=JSON.parse(await readFile(new URL('../package.json',import.met
 assert.doesNotMatch(packageJson.scripts['deploy:preview'],/\|\|\s*true/,'Preview deploy must propagate CLI failure');
 assert.ok(packageJson.scripts['deploy:preview'].includes('--keep-vars'),'Preserve remote credential/config variables');
 assert.equal((config.match(/deploy --config wrangler\.preview\.toml --keep-vars/g)||[]).length,2,'Both stable baseline and candidate deploy must preserve remote variables');
+assert.equal((config.match(/node scripts\/cloudflare-full-traffic-version\.mjs/g)||[]).length,4,'Every Preview traffic/promotion/rollback check must prove an explicit 100% owner');
 const writingEntries=JSON.parse(await readFile(new URL('./isolated-preview-qa-entrypoints.json',import.meta.url),'utf8'));
 for(const name of [...writingEntries,'browser-preview-qa.mjs','browser-preview-breakdown-controls-test.mjs']){
   for(const line of config.split('\n').filter(line=>line.includes('node scripts/'+name)))

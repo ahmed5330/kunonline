@@ -220,19 +220,7 @@ jobs:
           fi
           node scripts/preview-health-check.mjs "$base_url"
           status="$(npx wrangler deployments status --config wrangler.preview.toml --json)"
-          current="$(printf '%s' "$status" | node -e '
-            let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{
-              const root=JSON.parse(raw),hits=[];
-              const walk=x=>{if(Array.isArray(x)){for(const v of x)walk(v);return;}if(!x||typeof x!=="object")return;
-                const id=x.version_id||x.versionId;
-                const pct=x.percentage??x.traffic_percentage??x.trafficPercentage;
-                if(id)hits.push({id:String(id),pct:pct==null?null:Number(pct)});
-                for(const v of Object.values(x))walk(v);
-              };walk(root);
-              const unique=[...new Map(hits.map(x=>[x.id,x])).values()];
-              const full=unique.find(x=>x.pct===100||x.pct===1)||(unique.length===1?unique[0]:null);
-              if(!full)process.exit(2);process.stdout.write(full.id);
-            });')"
+          current="$(printf '%s' "$status" | node scripts/cloudflare-full-traffic-version.mjs)"
           if [ "$current" != "$version" ]; then
             echo "Fresh rollback baseline lost Worker ownership. Expected=$version Current=$current"
             exit 1
@@ -268,19 +256,7 @@ jobs:
           # before the exact candidate version owns live traffic.
           for attempt in $(seq 1 18); do
             status="$(npx wrangler deployments status --config wrangler.preview.toml --json 2>/dev/null || true)"
-            current="$(printf '%s' "$status" | node -e '
-            let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{
-              const root=JSON.parse(raw),hits=[];
-              const walk=x=>{if(Array.isArray(x)){for(const v of x)walk(v);return;}if(!x||typeof x!=="object")return;
-                const id=x.version_id||x.versionId;
-                const pct=x.percentage??x.traffic_percentage??x.trafficPercentage;
-                if(id)hits.push({id:String(id),pct:pct==null?null:Number(pct)});
-                for(const v of Object.values(x))walk(v);
-              };walk(root);
-              const unique=[...new Map(hits.map(x=>[x.id,x])).values()];
-              const full=unique.find(x=>x.pct===100||x.pct===1)||(unique.length===1?unique[0]:null);
-              if(!full)process.exit(2);process.stdout.write(full.id);
-            });' 2>/dev/null || true)"
+            current="$(printf '%s' "$status" | node scripts/cloudflare-full-traffic-version.mjs 2>/dev/null || true)"
 
             echo "Preview ownership check $attempt/18: expected=$expected live=${current:-unknown}"
             if [ "$current" = "$expected" ]; then
@@ -339,19 +315,7 @@ jobs:
             exit 1
           fi
           status="$(npx wrangler deployments status --config wrangler.preview.toml --json)"
-          current="$(printf '%s' "$status" | node -e '
-            let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{
-              const root=JSON.parse(raw),hits=[];
-              const walk=x=>{if(Array.isArray(x)){for(const v of x)walk(v);return;}if(!x||typeof x!=="object")return;
-                const id=x.version_id||x.versionId;
-                const pct=x.percentage??x.traffic_percentage??x.trafficPercentage;
-                if(id)hits.push({id:String(id),pct:pct==null?null:Number(pct)});
-                for(const v of Object.values(x))walk(v);
-              };walk(root);
-              const unique=[...new Map(hits.map(x=>[x.id,x])).values()];
-              const full=unique.find(x=>x.pct===100||x.pct===1)||(unique.length===1?unique[0]:null);
-              if(!full)process.exit(2);process.stdout.write(full.id);
-            });')"
+          current="$(printf '%s' "$status" | node scripts/cloudflare-full-traffic-version.mjs)"
           expected="${{ steps.deploy.outputs.version_id }}"
           if [ "$current" != "$expected" ]; then
             echo "Preview Worker changed after QA. Stable marker will not move. Expected=$expected Current=$current"
@@ -378,19 +342,7 @@ jobs:
         if: always() && steps.rollback_ownership.outputs.is_latest == 'true' && steps.qa_summary.outcome == 'failure'
         run: |
           status="$(npx wrangler deployments status --config wrangler.preview.toml --json)"
-          current="$(printf '%s' "$status" | node -e '
-            let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{
-              const root=JSON.parse(raw),hits=[];
-              const walk=x=>{if(Array.isArray(x)){for(const v of x)walk(v);return;}if(!x||typeof x!=="object")return;
-                const id=x.version_id||x.versionId;
-                const pct=x.percentage??x.traffic_percentage??x.trafficPercentage;
-                if(id)hits.push({id:String(id),pct:pct==null?null:Number(pct)});
-                for(const v of Object.values(x))walk(v);
-              };walk(root);
-              const unique=[...new Map(hits.map(x=>[x.id,x])).values()];
-              const full=unique.find(x=>x.pct===100||x.pct===1)||(unique.length===1?unique[0]:null);
-              if(!full)process.exit(2);process.stdout.write(full.id);
-            });')"
+          current="$(printf '%s' "$status" | node scripts/cloudflare-full-traffic-version.mjs)"
           expected="${{ steps.deploy.outputs.version_id }}"
           if [ "$current" = "$expected" ]; then
             echo "is_current=true" >> "$GITHUB_OUTPUT"
