@@ -62,6 +62,9 @@ assert.ok(between.includes('CI rollback baseline from stable source $stable_sha'
   'Rollback deployment must be attributable to the stable source');
 assert.ok(config.includes("steps.rollback_base.outputs.version_id"),'Exact captured Worker version required');
 const packageJson=JSON.parse(await readFile(new URL('../package.json',import.meta.url),'utf8'));
+assert.doesNotMatch(packageJson.scripts['deploy:preview'],/\|\|\s*true/,'Preview deploy must propagate CLI failure');
+assert.ok(packageJson.scripts['deploy:preview'].includes('--keep-vars'),'Preserve remote credential/config variables');
+assert.equal((config.match(/deploy --config wrangler\.preview\.toml --keep-vars/g)||[]).length,2,'Both stable baseline and candidate deploy must preserve remote variables');
 const writingEntries=JSON.parse(await readFile(new URL('./isolated-preview-qa-entrypoints.json',import.meta.url),'utf8'));
 for(const name of [...writingEntries,'browser-preview-qa.mjs','browser-preview-breakdown-controls-test.mjs']){
   for(const line of config.split('\n').filter(line=>line.includes('node scripts/'+name)))

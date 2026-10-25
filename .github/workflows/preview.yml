@@ -205,7 +205,7 @@ jobs:
           trap cleanup EXIT
           git worktree add --detach "$stable_dir" "$stable_sha"
           set +e
-          output="$(cd "$stable_dir" && "$GITHUB_WORKSPACE/node_modules/.bin/wrangler" deploy --config wrangler.preview.toml --message "CI rollback baseline from stable source $stable_sha" 2>&1)"
+          output="$(cd "$stable_dir" && "$GITHUB_WORKSPACE/node_modules/.bin/wrangler" deploy --config wrangler.preview.toml --keep-vars --message "CI rollback baseline from stable source $stable_sha" 2>&1)"
           rc=$?
           set -e
           printf '%s\n' "$output"
@@ -246,7 +246,7 @@ jobs:
         if: steps.deploy_ownership.outputs.is_latest == 'true'
         run: |
           set -euo pipefail
-          output="$(npx wrangler deploy --config wrangler.preview.toml --message "Preview candidate $GITHUB_SHA" 2>&1)"
+          output="$(npx wrangler deploy --config wrangler.preview.toml --keep-vars --message "Preview candidate $GITHUB_SHA" 2>&1)"
           printf '%s\n' "$output"
           version="$(printf '%s\n' "$output" | sed -nE 's/.*Current Version ID: ([0-9a-f-]{36}).*/\1/p' | tail -1)"
           if [ -z "$version" ]; then
