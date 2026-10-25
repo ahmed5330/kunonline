@@ -31,9 +31,7 @@ fun KunSevenDayOrdersTrend(root: JSONObject) {
         var count = 0
         if (input != null) for (index in 0 until input.length()) {
             val order = input.optJSONObject(index) ?: continue
-            val rawDate = order.optString("date").ifBlank {
-                order.optString("createdAt").ifBlank { order.optString("created_at") }
-            }
+            val rawDate = CommerceParser.preferredOrderDate(order)
             if (MobileDateFilterState.parseDate(rawDate) == day) count++
         }
         count

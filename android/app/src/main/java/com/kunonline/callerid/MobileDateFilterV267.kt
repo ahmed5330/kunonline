@@ -77,6 +77,10 @@ object MobileDateFilterState {
         private set
     var revision by mutableIntStateOf(0)
         private set
+    // Only an explicit data-changing event (e.g. an order just created) needs a
+    // server refresh. Selecting Today/All is local over the authorised snapshot.
+    var serverRefreshRevision by mutableIntStateOf(-1)
+        private set
 
     val periodLabel: String
         get() = when (preset) {
@@ -108,6 +112,7 @@ object MobileDateFilterState {
     /** Trigger one immediate state refresh without changing the selected date range. */
     fun requestRefresh() {
         revision++
+        serverRefreshRevision = revision
     }
 
     fun bounds(today: LocalDate = LocalDate.now(cairo)): MobileDateBounds = when (preset) {
