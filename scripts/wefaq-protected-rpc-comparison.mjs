@@ -18,6 +18,11 @@ export function cursorBoundaryRange(cursor,highest){
  if(!Number.isSafeInteger(from)||from<1||!Number.isSafeInteger(high)||high<1||!Number.isSafeInteger(to)||from>to||to-from>=10)throw Error('RPC_AUDIT_BOUNDARY_RANGE_INVALID');
  return {from,to};
 }
+export function historicalRange(fromId,toId){
+ const from=Number(fromId),to=Number(toId);
+ if(!Number.isSafeInteger(from)||from<1||!Number.isSafeInteger(to)||to<from||to-from>=30)throw Error('RPC_AUDIT_HISTORICAL_RANGE_INVALID');
+ return {from,to};
+}
 async function main(){
  const account=process.env.CLOUDFLARE_ACCOUNT_ID,token=process.env.CLOUDFLARE_API_TOKEN,expected=process.env.KUN_EXPECTED_PREVIEW_VERSION;
  const name=auditCallerName(process.env.GITHUB_RUN_ID),database='31cd5cdf-fc01-42d7-ba1e-571f3dd58495';
@@ -50,8 +55,8 @@ async function main(){
   return matches[0];
  }
  const selected=await scope(),mode=process.env.KUN_AUDIT_RANGE_MODE||'recent';
- if(!['recent','cursor-boundary'].includes(mode))throw Error('RPC_AUDIT_RANGE_MODE_INVALID');
- const range=mode==='cursor-boundary'?cursorBoundaryRange(selected.cursor,selected.highest):recentRange(selected.highest),readToken=randomBytes(32).toString('hex');
+ if(!['recent','cursor-boundary','historical'].includes(mode))throw Error('RPC_AUDIT_RANGE_MODE_INVALID');
+ const range=mode==='historical'?historicalRange(process.env.KUN_AUDIT_FROM_SHORT_ID,process.env.KUN_AUDIT_TO_SHORT_ID):mode==='cursor-boundary'?cursorBoundaryRange(selected.cursor,selected.highest):recentRange(selected.highest),readToken=randomBytes(32).toString('hex');
  const dir=await mkdtemp(join(tmpdir(),'kun-live-readonly-rpc-'));
  const report={kind:'WEFAQ_READONLY_PROVIDER_COMPARISON',testedAt:new Date().toISOString(),sourceVersion:expected,rangeMode:mode,...expectedScope,
   fromShortId:range.from,toShortId:range.to,requests:0,presentShortIds:[],missingShortIds:[],providerMissingShortIds:[],unconfirmedShortIds:[],ambiguousShortIds:[],httpStatusCounts:{},customerRowsModified:false,providerSecretsExposed:false,manualReplayExecuted:false};
