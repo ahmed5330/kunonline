@@ -17,7 +17,7 @@ export function classifyWranglerFailure(text){
     ['CLI_INTERNAL',/cannot read properties|typeerror|referenceerror/i],
     ['INTERACTIVE_PROMPT',/non.interactive|cannot prompt|confirmation/i]
   ])if(pattern.test(text))categories.push(category);
-  const codes=[...new Set((text.match(/\b(?:SQLITE|D1)_[A-Z_]+\b/g)||[]))];
+  const codes=['SQLITE_CONSTRAINT','SQLITE_ERROR','SQLITE_AUTH','SQLITE_TOOBIG','SQLITE_BUSY','SQLITE_MISUSE','D1_ERROR','D1_EXEC_ERROR'].filter(code=>new RegExp('\\b'+code+'\\b').test(text));
   const apiCodes=[...text.matchAll(/\[code:\s*(\d+)\]/g)].map(x=>Number(x[1]));
   return {categories,codes,apiCodes};
 }
