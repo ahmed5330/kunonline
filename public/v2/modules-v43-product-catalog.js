@@ -1,6 +1,6 @@
 /* Kun Online v43 — detailed products, Easy Orders-style options and variant inventory. */
 (function(){
-  const K=window.KunActionsV23;if(!K)return;let catalogPromise=null;
+  const K=window.KunActionsV23;if(!K)return;let catalogPromise=null,catalogScope="";
   const esc=value=>K.esc?K.esc(value):String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
   const num=value=>Number.isFinite(Number(value))?Number(value):0;
   const money=value=>new Intl.NumberFormat('ar-EG',{maximumFractionDigits:2}).format(num(value));
@@ -12,7 +12,13 @@
     `;document.head.appendChild(style);
   }
   async function scope(){return K.scope();}
-  async function catalog(force=false){if(force)catalogPromise=null;if(catalogPromise)return catalogPromise;catalogPromise=(async()=>{const {cid,sid}=await scope(),query=`clientId=${encodeURIComponent(cid)}${sid?`&storeId=${encodeURIComponent(sid)}`:''}`,data=await K.api(`/api/catalog/products?${query}`);return data.products||[];})().catch(error=>{catalogPromise=null;throw error;});return catalogPromise;}
+  async function catalog(force=false){
+    const {cid,sid}=await scope(),key=JSON.stringify([cid,sid||'']);
+    if(force||catalogScope!==key){catalogPromise=null;catalogScope=key;}
+    if(catalogPromise)return catalogPromise;
+    catalogPromise=(async()=>{const query=`clientId=${encodeURIComponent(cid)}${sid?`&storeId=${encodeURIComponent(sid)}`:''}`,data=await K.api(`/api/catalog/products?${query}`);return data.products||[];})().catch(error=>{if(catalogScope===key)catalogPromise=null;throw error;});
+    return catalogPromise;
+  }
   const optionText=variant=>Object.entries(variant?.optionValues||{}).map(([name,value])=>`${name}: ${value}`).join(' — ')||variant?.name||'';
   function combinationKey(values){return Object.entries(values||{}).sort(([a],[b])=>a.localeCompare(b,'ar')).map(([name,value])=>`${name}:${value}`).join('|');}
   function combinations(groups){let result=[{}];for(const group of groups.filter(entry=>entry.name&&entry.values.length)){const next=[];for(const current of result)for(const value of group.values)next.push({...current,[group.name]:value});result=next;}return result.length===1&&!Object.keys(result[0]).length?[]:result;}

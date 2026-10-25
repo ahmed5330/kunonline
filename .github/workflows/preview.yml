@@ -17,6 +17,7 @@ permissions:
   contents: write
 jobs:
   test-build-deploy:
+    if: github.ref == 'refs/heads/develop/ux-system-upgrade'
     runs-on: ubuntu-latest
     timeout-minutes: 55
     environment:
@@ -132,6 +133,10 @@ jobs:
         id: qa_rpc_audit
         if: steps.qa_before_release.outcome == 'success'
         run: node scripts/verify-isolated-qa-gap-audit-rpc.mjs
+
+      - name: Verify isolated growth wallet capability handshake
+        id: qa_growth_release
+        run: node scripts/production-preview-release-gate.mjs --isolated-qa "$KUN_PREVIEW_QA_BASE_URL"
 
       - name: Prove two native five-minute Cron executions on isolated QA
         id: qa_native_cron
@@ -292,10 +297,17 @@ jobs:
         run: |
           npm run smoke:preview
 
+      - name: Verify canonical growth wallet capability handshake
+        id: growth_release
+        if: steps.worker_ownership.outputs.is_current == 'true'
+        continue-on-error: true
+        run: node scripts/production-preview-release-gate.mjs
+
       - name: Require every Preview validation gate to succeed
         id: qa_summary
         if: always() && steps.worker_ownership.outputs.is_current == 'true'
         env:
+          GROWTH_RELEASE_OUTCOME: ${{ steps.growth_release.outcome }}
           SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
           STORE_B_OUTCOME: ${{ steps.live.outcome }}
           TEAM_OUTCOME: ${{ steps.team_live.outcome }}
@@ -307,7 +319,7 @@ jobs:
         run: |
           set -euo pipefail
           failed=0
-          for gate in SMOKE_OUTCOME COMPETITOR_AI_OUTCOME STORE_B_OUTCOME TEAM_OUTCOME CUSTOMER_SERVICE_OUTCOME EASYORDERS_OUTCOME DASHBOARD_OUTCOME BROWSER_OUTCOME; do
+          for gate in GROWTH_RELEASE_OUTCOME SMOKE_OUTCOME COMPETITOR_AI_OUTCOME STORE_B_OUTCOME TEAM_OUTCOME CUSTOMER_SERVICE_OUTCOME EASYORDERS_OUTCOME DASHBOARD_OUTCOME BROWSER_OUTCOME; do
             outcome="${!gate:-missing}"
             echo "$gate=$outcome"
             if [ "$outcome" != "success" ]; then failed=1; fi

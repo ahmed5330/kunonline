@@ -19,6 +19,7 @@ crons = []
 
 [vars]
 APP_ENV = "preview"
+FAOS_WRITE_ENABLED = "0"
 TRACKING_PROVIDER = "track123"
 META_GRAPH_API_VERSION = "v25.0"
 

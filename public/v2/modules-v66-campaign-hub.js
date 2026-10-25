@@ -1,5 +1,7 @@
 /* Kun Online v66 — Campaign / Ad Set / Ad workspaces with independent date ranges and comparisons. */
 (function(){
+  // Keep existing campaign state and event handlers on duplicate script evaluation.
+  if(window.KunCampaignHubV66)return;
   const root=()=>document.getElementById('root');
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const n=v=>Number.isFinite(Number(v))?Number(v):0;

@@ -55,6 +55,10 @@ export async function handleProductionMobileOrderGuard({request,env}){
     return null; // preserve the normal API's own JSON/body error behaviour
   }
 
+  const phone=clean(payload?.phone).replace(/[٠-٩]/g,c=>String(c.charCodeAt(0)-1632)).replace(/[^\d]/g,'');
+  const local=phone.startsWith('0020')?'0'+phone.slice(4):phone.startsWith('20')&&phone.length===12?'0'+phone.slice(2):phone.startsWith('00966')?'0'+phone.slice(5):phone.startsWith('966')&&phone.length===12?'0'+phone.slice(3):phone;
+  if(!/^01[0125]\d{8}$/.test(local)&&!/^05\d{8}$/.test(local))return json({error:'رقم الهاتف غير صحيح — أدخل رقم موبايل مصري أو سعودي صحيح',code:'PHONE_INVALID',field:'phone'},400);
+
   if(!isNativeManualOrder(request,payload))return null;
 
   const countryCode=clean(payload.addressCountryCode||payload.countryCode||'100000');

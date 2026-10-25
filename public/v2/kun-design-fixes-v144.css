@@ -1,0 +1,145 @@
+/* Kun Online v144 — contrast, mobile navigation and touch UX repair.
+ * Supplements v143; existing data, permissions and business logic are unchanged. */
+:root{--kun144-focus:#1e84d6;--kun144-touch:44px}
+html,body{max-width:100%;overflow-x:clip}
+#root{min-width:0}
+#root .card,#root .dash-section,#root .dash-fin-card,#root .dash-ad-metric{min-width:0}
+#root .table-wrap,#root .dash-table-wrap{max-width:100%;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain}
+#root button:focus-visible,#root a:focus-visible,#root input:focus-visible,#root select:focus-visible,.top button:focus-visible,.top input:focus-visible{outline:3px solid var(--kun144-focus);outline-offset:2px}
+#root .dash-hero-side{border:1px solid rgba(106,156,206,.20);background:rgba(255,255,255,.86);box-shadow:none}
+#root .dash-hero-side strong,#root .dash-hero-side b{color:#183047!important;opacity:1}
+#root .dash-hero-side span,#root .dash-hero-side small{color:#60758b!important;opacity:1}
+body[data-theme="dark"] #root .dash-hero-side{background:rgba(255,255,255,.065);border-color:rgba(186,209,233,.20)}
+body[data-theme="dark"] #root .dash-hero-side strong,body[data-theme="dark"] #root .dash-hero-side b{color:#f5f9ff!important}
+body[data-theme="dark"] #root .dash-hero-side span,body[data-theme="dark"] #root .dash-hero-side small{color:#c0d0e2!important}
+#root .dash-hero .dash-hero-side{min-width:0;width:min(100%,360px)}
+body[data-theme="dark"] .top{color:#243d59}
+body[data-theme="dark"] .top .btn.soft{color:#17578c!important}
+body[data-theme="dark"] .top .search,body[data-theme="dark"] .top #storeBtn{color:#183047!important}
+body[data-theme="dark"] .v33-dashboard{
+ --dx-ink:#eaf2fc!important;--dx-muted:#b5c3d6!important;--dx-line:#30465f!important;
+ --ink:#eaf2fc;--muted:#acbdd1;--line:#30445b;--card:#162338;
+ color:#eaf2fc!important}
+body[data-theme="dark"] #root .v33-dashboard .dash-section,
+body[data-theme="dark"] #root .v33-dashboard .dash-f126,
+body[data-theme="dark"] #root .v33-dashboard .dash-chart-card{color:#eaf2fc}
+body[data-theme="dark"] #root .v33-dashboard .dash-hero .title{color:#fff!important}
+body[data-theme="dark"] #root .v33-dashboard .dash-hero .sub{color:#c1cee0!important}
+body[data-theme="dark"] #root .v33-dashboard .dash-section-head h2,
+body[data-theme="dark"] #root .v33-dashboard .dash-section h2,
+body[data-theme="dark"] #root .v33-dashboard .dash-fin-card>strong,
+body[data-theme="dark"] #root .v33-dashboard .dash-kpi strong,
+body[data-theme="dark"] #root .v33-dashboard .dash-ad-metric>strong,
+body[data-theme="dark"] #root .v33-dashboard .dash-rate-main strong,
+body[data-theme="dark"] #root .v33-dashboard .dash-detail-row strong,
+body[data-theme="dark"] #root .v33-dashboard .dash-x-delta strong,
+body[data-theme="dark"] #root .v33-dashboard .dash-f126-value,
+body[data-theme="dark"] #root .v33-dashboard .dash-f126-chip b,
+body[data-theme="dark"] #root .v33-dashboard .dash-f126-breakdowns b{color:#eaf2fc!important}
+body[data-theme="dark"] #root .v33-dashboard .dash-section-head p,
+body[data-theme="dark"] #root .v33-dashboard .dash-kpi-label,
+body[data-theme="dark"] #root .v33-dashboard .dash-kpi small,
+body[data-theme="dark"] #root .v33-dashboard .dash-ad-metric small,
+body[data-theme="dark"] #root .v33-dashboard .dash-fin-card small,
+body[data-theme="dark"] #root .v33-dashboard .dash-fin-card span,
+body[data-theme="dark"] #root .v33-dashboard .dash-f126-copy span,
+body[data-theme="dark"] #root .v33-dashboard .dash-f126-copy small,
+body[data-theme="dark"] #root .v33-dashboard .dash-f126-caption,
+body[data-theme="dark"] #root .v33-dashboard .dash-f126-summary span,
+body[data-theme="dark"] #root .v33-dashboard .dash-f126-breakdowns span,
+body[data-theme="dark"] #root .v33-dashboard .dash-x-delta span{color:#adbed2!important}
+body[data-theme="dark"] #root .v33-dashboard .dash-f126-card.collected .dash-f126-value,
+body[data-theme="dark"] #root .v33-dashboard .dash-fin-card.pnl.positive>strong,
+body[data-theme="dark"] #root .v33-dashboard .dash-pos{color:#86efac!important}
+body[data-theme="dark"] #root .v33-dashboard .dash-f126-card.pending .dash-f126-value{color:#fcd28b!important}
+body[data-theme="dark"] #root .v33-dashboard .dash-f126-card.negative .dash-f126-value,
+body[data-theme="dark"] #root .v33-dashboard .dash-fin-card.negative>strong{color:#fda4af!important}
+body[data-theme="dark"] #root .v33-dashboard .dash-f126-card,
+body[data-theme="dark"] #root .v33-dashboard .dash-kpi,
+body[data-theme="dark"] #root .v33-dashboard .dash-fin-card,
+body[data-theme="dark"] #root .v33-dashboard .dash-ad-metric,
+body[data-theme="dark"] #root .v33-dashboard .dash-rate-card,
+body[data-theme="dark"] #root .v33-dashboard .dash-ai-card,
+body[data-theme="dark"] #root .v33-dashboard .dash-x-delta,
+body[data-theme="dark"] #root .v33-dashboard .dash-detail-row,
+body[data-theme="dark"] #root .v33-dashboard .dash-detail-group{
+ background:#1a2a40!important;border-color:#344a65!important;color:#eaf2fc!important}
+body[data-theme="dark"] #root .v33-dashboard .dash-f126-card:hover,
+body[data-theme="dark"] #root .v33-dashboard .dash-kpi:hover{background:#213753!important;border-color:#6385aa!important}
+body[data-theme="dark"] #root .v33-dashboard .dash-f126-formula,
+body[data-theme="dark"] #root .v33-dashboard .dash-f126-list,
+body[data-theme="dark"] #root .v33-dashboard .dash-f126-chip,
+body[data-theme="dark"] #root .v33-dashboard .dash-f126-refresh,
+body[data-theme="dark"] #root .v33-dashboard .dash-ad-summary>div,
+body[data-theme="dark"] #root .v33-dashboard .dash-rate-main>div,
+body[data-theme="dark"] #root .v33-dashboard .dash-trend-head>div{background:#21344d!important;border-color:#344a65!important;color:#eaf2fc!important}
+body[data-theme="dark"] #root .v33-dashboard .dash-f126-heading,
+body[data-theme="dark"] #root .v33-dashboard .dash-f126-head,
+body[data-theme="dark"] #root .v33-dashboard .dash-f126-row,
+body[data-theme="dark"] #root .v33-dashboard .dash-f126-note,
+body[data-theme="dark"] #root .v33-dashboard .dash-fin-lines,
+body[data-theme="dark"] #root .v33-dashboard .dash-fin-lines b,
+body[data-theme="dark"] #root .v33-dashboard .dash-ad-summary strong{color:#eaf2fc!important}
+body[data-theme="dark"] #root .v33-dashboard .dash-u-tab,
+body[data-theme="dark"] #root .v33-dashboard .dash-x-nav button{background:#1b2c43!important;border-color:#344a65!important;color:#d7e5f5!important}
+body[data-theme="dark"] #root .v33-dashboard .dash-u-tab.active{background:#0e5095!important;color:#fff!important}
+body[data-theme="dark"] #root .v33-dashboard .dash-f126-card .dash-f126-icon{filter:brightness(1.35)}
+body[data-theme="dark"] #root .v33-dashboard .dash-f126-copy b,
+body[data-theme="dark"] #root .v33-dashboard .dash-f126-summary b{color:#eaf2fc!important}
+body[data-theme="dark"] #root .v33-dashboard .dash-x-executive,
+body[data-theme="dark"] #root .v33-dashboard .dash-hero{color:#fff!important}
+body[data-theme="dark"] #root .v33-dashboard .dash-x-executive .dash-x-insight b{color:#fff!important}
+body[data-theme="dark"] #root .v33-dashboard .dash-hero-side strong{color:#fff!important}
+body[data-theme="dark"] #root .v33-dashboard .dash-period-toolbar{background:#17263a!important;color:#eaf2fc!important;border-color:#344a65!important}
+body[data-theme="gray"] #root .v33-dashboard{color:var(--ink)!important}
+body[data-theme="gray"] #root .dash-f126-value{color:var(--ink)!important}
+/* Mobile utility drawer: same actual controls as desktop (no cloned actions). */
+.kun144-mobile-tools{display:none}
+@media(max-width:820px){
+ .top{display:grid!important;grid-template-columns:44px minmax(0,1fr) 45px;grid-template-rows:44px 44px;gap:8px!important;align-items:center!important;min-height:0!important;height:auto!important;padding:9px 10px 10px!important;position:sticky;top:0}
+ .top #mobileMenuBtn{grid-column:1;grid-row:1;order:0!important;min-width:44px!important;width:44px;height:44px;padding:0;display:grid;place-items:center}
+ .top #storeBtn{grid-column:2;grid-row:1;order:0!important;max-width:none!important;min-width:0!important;width:100%!important;height:44px;flex:none!important;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+ .top #quickBtn{grid-column:3;grid-row:1;order:0!important;min-width:44px!important;width:44px!important;height:44px;padding:0!important;font-size:0!important;display:grid;place-items:center}
+ .top #quickBtn::after{content:'+';font-size:23px;font-weight:900}
+ .top #globalSearch{grid-column:1 / -1;grid-row:2;order:0!important;width:100%;height:44px;max-width:100%!important;min-width:0!important;flex:none!important;margin:0!important;padding:8px 13px;font-size:14px!important}
+ .top .android-download,.top #themeSwitcher,.top #v28SessionBox,.top button[aria-label="مركز المساعدة"]{display:none}
+ .kun144-mobile-tools{display:grid;gap:12px;padding:12px 10px 20px;border-top:1px solid #e5ecf4;margin-top:8px}
+ .kun144-mobile-tools-heading{font-size:12px;font-weight:900;color:#65798d}
+ .kun144-mobile-tools>.android-download,.kun144-mobile-tools>#v28SessionBox,.kun144-mobile-tools>button[aria-label="مركز المساعدة"]{display:flex!important;align-items:center;justify-content:center;gap:8px;width:100%;min-height:44px;color:#1c5481;background:#eef5fb!important;border-radius:10px;padding:9px 12px!important}
+ .kun144-mobile-tools #v28SessionBox{width:100%;margin:0;justify-content:space-between}
+ .kun144-mobile-tools #v28LogoutBtn{min-height:44px;white-space:nowrap;color:#a53030;background:#fff2f2;border:1px solid #f1cece}
+ .kun144-mobile-tools .v28-session-name{display:none}
+ .kun144-mobile-tools #themeSwitcher{display:flex!important;justify-content:space-evenly;gap:7px;background:#eaf1f9!important;border-radius:12px;padding:8px}
+ .kun144-mobile-tools #themeSwitcher button{color:#163d65!important;opacity:1!important;width:40px!important;height:40px!important;min-width:40px!important;border-radius:10px}
+ .kun144-mobile-tools #themeSwitcher button[aria-pressed="true"]{background:#0e5095!important;color:#fff!important}
+ .content{padding-top:13px!important}
+ #root .dash-hero{min-height:0!important}
+ #root .dash-hero-side{width:100%!important;padding:12px!important;margin:12px 0 0!important}
+ #root .dash-period-toolbar{position:static!important;top:auto!important}
+ #root .dash-x-nav,#root .dash-u-tabs,#root .dash-range{scroll-snap-type:x proximity;overscroll-behavior-inline:contain}
+ #root .dash-x-nav>button,#root .dash-u-tab,#root .dash-range-btn{scroll-snap-align:start;min-height:38px}
+ #root .dash-f126-grid,#root .dash-f126-breakdowns{min-width:0}
+ #root .dash-f126-card{min-width:0;overflow-wrap:anywhere}
+ #root .dash-f126-value,#root .dash-ad-metric strong{overflow-wrap:anywhere}
+ #root .dash-f126-card .dash-f126-value{font-size:clamp(19px,5.9vw,28px)}
+ #root .dash-section-head{gap:10px}
+ .kun143-bottom{grid-template-columns:repeat(5,minmax(0,1fr))!important;gap:0!important;padding:6px 5px calc(8px + env(safe-area-inset-bottom))!important}
+ .kun143-bottom button{min-width:0;min-height:49px!important;white-space:nowrap}
+ #kunCollabFab{bottom:calc(88px + env(safe-area-inset-bottom))!important;left:12px!important;width:52px!important;height:52px!important;min-width:52px;padding:0!important;border-radius:16px!important;display:flex;justify-content:center;align-items:center;z-index:9991}
+ #kunCollabFab>span:nth-child(2){display:none!important}
+ #kunCollabFab>span:first-child{font-size:22px}
+ #kunCollabFab .kc-badge{position:absolute;right:-5px;top:-6px}
+ #kunCollabPanel{bottom:calc(85px + env(safe-area-inset-bottom))!important;left:7px!important;width:calc(100vw - 14px)!important;height:min(73dvh,680px)!important;border-radius:17px!important;max-height:calc(100dvh - 150px)!important;z-index:9992}
+ #kunCollabPanel .kc-head{flex-wrap:wrap}
+ #kunCollabPanel .kc-body{min-width:0}
+}
+@media(max-width:390px){
+ .top{padding:8px 8px 9px!important;grid-template-columns:42px minmax(0,1fr) 42px;gap:7px!important}
+ .top #mobileMenuBtn,.top #quickBtn{min-width:42px!important;width:42px!important}
+ #root .dash-x-nav,#root .dash-u-tabs{padding-bottom:7px}
+}
+@media(min-width:821px){.kun144-mobile-tools{display:none!important}}
+@media(prefers-reduced-motion:reduce){#root *{scroll-behavior:auto!important}}
+
+/* Keep download label visible after moving its real link into mobile tools. */
+@media(max-width:820px){.kun144-mobile-tools #androidDownload span{display:inline!important;font-size:13px}}

@@ -32,9 +32,30 @@ jobs:
           node-version: 22
           package-manager-cache: false
       - run: npm install --ignore-scripts
+      - name: Reject high severity dependency vulnerabilities
+        run: npm audit --audit-level=high
       - name: Run full contract and unit suite
         run: npm test
       - name: Verify Preview isolation
         run: npm run check:preview-config
       - name: Verify Production remains migration-free
         run: npm run check:production-config
+      - name: Shared D1 migration safety gate regression
+        run: |
+          node scripts/preview-db-release-preflight-test.mjs
+          node scripts/preview-db-preflight-command-test.mjs
+          node scripts/preview-pending-migrations-test.mjs
+          node scripts/preview-live-readonly-availability-test.mjs
+          node scripts/preview-live-schema-rehearsal-test.mjs
+          node scripts/inventory-migrations-compatibility-test.mjs
+          node scripts/preview-release-schema-contract-test.mjs
+          node scripts/preview-d1-release-invariants-test.mjs
+          node scripts/preview-wallet-finance-invariants-test.mjs
+      - name: Release compatibility gate fixture
+        run: node scripts/production-preview-release-gate-test.mjs
+      - name: Growth planner Chromium fixture
+        run: node scripts/browser-growth-planner-fixture-test.mjs
+      - name: Preview Worker dry-run bundling
+        run: npx wrangler deploy --dry-run --config wrangler.preview.toml
+      - name: Growth endpoint authentication with local Preview Worker
+        run: node scripts/growth-local-worker-smoke.mjs

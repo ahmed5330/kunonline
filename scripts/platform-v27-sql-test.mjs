@@ -41,7 +41,7 @@ let charged=await billOrder(env,'NEW');must(charged.status==='charged'&&charged.
 charged=await billOrder(env,'NEW');must((await walletSnapshot(env,client)).balance===16,'Duplicate billing changed balance');
 const count=await env.DB.prepare("SELECT COUNT(*) n FROM wallet_log WHERE idempotency_key='order:NEW'").first();must(Number(count.n)===1,'Order ledger must be idempotent');
 const proof='data:image/jpeg;base64,AA==';const top=await requestTopup(env,client,{amount:10,senderPhone:'01000000000',proofDataUrl:proof},'qa-owner');await approveTopup(env,top.id,'qa-admin','ok');must((await walletSnapshot(env,client)).balance===26,'Topup did not credit exactly once');
-let duplicate=false;try{await approveTopup(env,top.id,'qa-admin','again')}catch(e){duplicate=e.code==='TOPUP_NOT_PENDING'}must(duplicate,'Second topup approval must be rejected');
+const repeatApproval=await approveTopup(env,top.id,'qa-admin','again');must(repeatApproval.alreadyApproved===true,'Repeat approval must be explicitly idempotent');must((await walletSnapshot(env,client)).balance===26,'Repeat approval must not add money again');
 await adminCreditWallet(env,client,4,'qa-admin','legacy admin endpoint compatibility');must((await walletSnapshot(env,client)).balance===30,'Admin direct credit must update v27 ledger');
 let unsafe={clients:[{id:client,walletBalance:999,walletFeePerOrder:5}]};unsafe=await sanitizeLegacyStateBilling(env,unsafe);must(unsafe.clients[0].walletBalance===30&&unsafe.clients[0].walletFeePerOrder===0,'Legacy state write must not re-enable double charging');
 await env.DB.prepare('UPDATE wallet_accounts SET balance=1,credit_limit=0 WHERE client_id=?').bind(client).run();
