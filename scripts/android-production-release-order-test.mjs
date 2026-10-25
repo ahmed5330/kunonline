@@ -1,0 +1,22 @@
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import {productionWorkerReadyForAndroid as ready} from './wait-production-worker-for-android-release.mjs';
+const sha='a'.repeat(40),scope={sha,currentHead:sha};
+const run={head_sha:sha,path:'.github/workflows/production.yml',conclusion:null};
+const names=['Attest newly deployed Production Worker version','Verify live branded dashboard and isolated daisyUI design preview','Verify live Campaign comparison assets','Verify live dashboard Easy Orders source and warning'];
+const job={name:'deploy',conclusion:null,steps:names.map(name=>({name,conclusion:'success'}))};
+assert.equal(ready(run,[job],scope),true,'Server gates may authorize publishing while the downstream APK check is still pending');
+assert.equal(ready(run,[{...job,steps:job.steps.slice(0,-1)}],scope),false);
+assert.equal(ready(run,[{...job,steps:job.steps.map((s,i)=>i? s:{...s,conclusion:'skipped'})}],scope),false);
+assert.equal(ready({...run,head_sha:'b'.repeat(40)},[job],scope),false);
+assert.equal(ready({...run,path:'.github/workflows/preview.yml'},[job],scope),false);
+assert.equal(ready(run,[],scope),false);
+assert.throws(()=>ready(run,[job],{sha,currentHead:'b'.repeat(40)}),/HEAD_CHANGED/);
+for(const conclusion of ['failure','cancelled','timed_out','skipped'])
+  assert.throws(()=>ready({...run,conclusion},[job],scope),/RUN_FAILED/);
+assert.throws(()=>ready(run,[{...job,conclusion:'failure'}],scope),/JOB_FAILED/);
+assert.throws(()=>ready(run,[{...job,steps:[...job.steps,{name:'Later live check',conclusion:'failure'}]}],scope),/JOB_FAILED/);
+const flow=await readFile(new URL('../.github/workflows/android-stable-signed-release.yml',import.meta.url),'utf8');
+assert.ok(flow.indexOf('node scripts/wait-production-worker-for-android-release.mjs')<flow.indexOf('name: Publish canonical Android APKs'),'Server gate precedes public APK mutation');
+assert.match(flow,/actions: read/);
+console.log('PASS: signed Android publication waits for the same current Main commit and successful Production server gates; pending, skipped, failed and stale runs cannot authorize it.');
