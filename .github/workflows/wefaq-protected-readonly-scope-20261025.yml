@@ -17,7 +17,7 @@ jobs:
           node-version: 22
           package-manager-cache: false
       - run: node scripts/wefaq-readonly-scope-inventory-test.mjs
-      - name: Read only named store metadata, sanitized Cron error class and order counts
+      - name: Read only named store metadata, sanitized Cron error class, measured HTTP metadata and order counts
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
