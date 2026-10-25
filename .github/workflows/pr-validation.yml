@@ -8,6 +8,18 @@ concurrency:
   group: kunonline-pr-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 jobs:
+  easyorders-qa-isolation:
+    if: github.base_ref == 'develop/ux-system-upgrade'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - name: Verify Easy Orders QA rejects customer-linked targets (offline)
+        run: node scripts/easyorders-qa-isolation-test.mjs
   validate:
     runs-on: ubuntu-latest
     timeout-minutes: 12
