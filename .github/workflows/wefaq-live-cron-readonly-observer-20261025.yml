@@ -1,0 +1,26 @@
+name: Observe two existing Wefaq live Cron markers - read only
+on:
+  push:
+    branches: [codex/serialized-warehouse-operations]
+    paths: ['.github/workflows/wefaq-live-cron-readonly-observer-20261025.yml']
+permissions:
+  contents: read
+jobs:
+  observe-live-markers:
+    runs-on: ubuntu-latest
+    environment: preview
+    timeout-minutes: 24
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - name: Observe existing Cron markers without invoking recovery
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          KUN_EXPECTED_PREVIEW_VERSION: 'b2fba8b9-baf8-4038-a713-9a7d2ecfb4ff'
+        run: node scripts/observe-wefaq-live-cron-readonly.mjs
+# GET-only metadata and SELECT-only scoped D1 queries. No provider request,
+# Cron modification, service invocation, credential read or customer write.
