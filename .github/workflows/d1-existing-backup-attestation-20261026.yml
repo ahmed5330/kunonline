@@ -1,0 +1,26 @@
+name: Protected existing D1 snapshot read-only attestation
+on:
+  push:
+    branches: [codex/serialized-warehouse-operations]
+    paths: ['.github/workflows/d1-existing-backup-attestation-20261026.yml']
+permissions:
+  contents: read
+jobs:
+  attest:
+    runs-on: ubuntu-latest
+    environment: preview
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: node scripts/d1-existing-backup-attestation-test.mjs
+      - run: npm install --no-save --ignore-scripts wrangler@4.125.0
+      - name: Re-export exact existing copies and prove all remain unbound
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          WRANGLER_SEND_METRICS: 'false'
+        run: node scripts/d1-existing-backup-attestation.mjs

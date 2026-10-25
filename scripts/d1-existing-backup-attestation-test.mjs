@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import {validateBackupIdentity,validateSnapshotContents,metadataGet,snapshots} from './d1-existing-backup-attestation.mjs';
+const name='kunonline-backup-preview-20261025-40236505426',uuid='11111111-2222-4333-8444-555555555555';
+assert.equal(validateBackupIdentity({name,uuid},name),uuid);
+for(const row of [{name:'kunonline',uuid},{name,uuid:'31cd5cdf-fc01-42d7-ba1e-571f3dd58495'},{name,uuid:'invalid'}])assert.throws(()=>validateBackupIdentity(row,name));
+const data={integrity:'ok',contentFingerprint:snapshots[0].fingerprint,manifest:Object.fromEntries(Array.from({length:124},(_,i)=>['t'+i,i]))};
+validateSnapshotContents(data,snapshots[0]);
+assert.throws(()=>validateSnapshotContents({...data,contentFingerprint:'a'.repeat(64)},snapshots[0]));
+assert.throws(()=>validateSnapshotContents({...data,integrity:'failed'},snapshots[0]));
+let calls=0;const fake=async()=>new Response('{}',{status:++calls<3?500:200});
+assert.equal((await metadataGet(fake,'https://fake.test',{method:'GET'},async()=>{})).status,200);assert.equal(calls,3);
+calls=0;assert.equal((await metadataGet(async()=>{calls++;return new Response('{}',{status:403});},'https://fake.test',{method:'GET'},async()=>{})).status,403);assert.equal(calls,1);
+await assert.rejects(()=>metadataGet(fake,'https://fake.test',{method:'POST'},async()=>{}),/ONLY_GET/);
+console.log('PASS: exact non-live snapshot identities, complete source content fingerprints, bounded GET-only transient retries and immediate authorization failure.');
