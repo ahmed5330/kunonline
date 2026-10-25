@@ -79,7 +79,7 @@ async function main(){
     if(!/^\d{3}$/.test(status)||!Number.isSafeInteger(count)||count<0||count>10)throw Error('RPC_AUDIT_HTTP_METADATA_INVALID');
     report.httpStatusCounts[status]=(report.httpStatusCounts[status]||0)+count;
    }
-   console.log(JSON.stringify({stage:'readonly-batch',fromShortId:from,toShortId:to,status:result.status,present:result.alreadyInKun,missing:result.missingInKun,unconfirmed:result.unconfirmedShortIds.length,customerRowsModified:false}));
+   console.log(JSON.stringify({stage:'readonly-batch',fromShortId:from,toShortId:to,status:result.status,present:result.alreadyInKun,missing:result.missingInKun,unconfirmed:result.unconfirmedShortIds.length,httpStatusCounts:result.httpStatusCounts,customerRowsModified:false}));
    if(!['complete','complete_with_unconfirmed'].includes(result.status))throw Error('RPC_AUDIT_BATCH_STOPPED');
    nextAllowed=Date.now()+60000;
   }
