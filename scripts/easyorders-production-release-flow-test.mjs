@@ -11,14 +11,21 @@ for(const phrase of [
   'environment:', 'name: production',
   'npx wrangler deployments status --config wrangler.production.toml --json',
   'id: rollback_base', 'id: deploy_worker',
-  'run: npx wrangler deploy --config wrangler.production.toml',
+  'npx wrangler deploy --config wrangler.production.toml --keep-vars',
+  'Current Version ID:',
+  'expected="${{ steps.deploy_worker.outputs.version_id }}"',
+  'if [ "$current" = "$expected" ]',
   'id: deployed_version', 'version_id=$current',
-  "if: failure() && steps.deployed_version.outcome == 'success'",
+  "if: failure() && steps.deploy_worker.outputs.version_id != ''",
   'if [ "$current" != "$deployed" ]',
   'npx wrangler versions deploy "$previous@100%" --yes --config wrangler.production.toml',
   'Verify live V2 login gateway and session endpoints',
   'Verify live ChatGPT MCP discovery and unauthorized access protection'
 ])assert.ok(flow.includes(phrase),'Production safety contract missing: '+phrase);
+assert.ok(!flow.includes('\"$current\" != \"$previous\"'),'Any different version must not be mistaken for this deployment');
+assert.ok(flow.includes('deployed=\"${{ steps.deploy_worker.outputs.version_id }}\"'),'Rollback authority must come from the deployment output');
+assert.ok(flow.includes('test \"$restored\" = \"$previous\"'),'Verify exact restored ownership');
+assert.equal((flow.match(/node scripts\/cloudflare-full-traffic-version\.mjs/g)||[]).length,4,'All Production ownership and restored-traffic checks must require 100%');
 const baseline=flow.slice(i,d);
 assert.ok(!/^[ \t]*(?:npx\s+)?wrangler\s+(?:deploy|versions deploy|d1 migrations apply)/m.test(baseline),
   'Baseline acquisition must never mutate Cloudflare');

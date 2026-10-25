@@ -141,21 +141,28 @@ jobs:
         id: rollback_base
         run: |
           set -euo pipefail
-          current="$(npx wrangler deployments status --config wrangler.production.toml --json | node -e 'let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{const root=JSON.parse(raw),hits=[];const walk=x=>{if(Array.isArray(x)){for(const v of x)walk(v);return;}if(!x||typeof x!=="object")return;const id=x.version_id||x.versionId,pct=x.percentage??x.traffic_percentage??x.trafficPercentage;if(id)hits.push({id:String(id),pct:pct==null?null:Number(pct)});for(const v of Object.values(x))walk(v);};walk(root);const unique=[...new Map(hits.map(x=>[x.id,x])).values()];const full=unique.find(x=>x.pct===100||x.pct===1)||(unique.length===1?unique[0]:null);if(!full)process.exit(2);process.stdout.write(full.id);});')"
+          current="$(npx wrangler deployments status --config wrangler.production.toml --json | node scripts/cloudflare-full-traffic-version.mjs)"
           test -n "$current"
           echo "version_id=$current" >> "$GITHUB_OUTPUT"
           echo "Captured current Production rollback version $current"
       - name: Deploy production Worker only — no migrations
         id: deploy_worker
-        run: npx wrangler deploy --config wrangler.production.toml
+        run: |
+          set -euo pipefail
+          output="$(npx wrangler deploy --config wrangler.production.toml --keep-vars --message "Production candidate $GITHUB_SHA" 2>&1)"
+          printf '%s\n' "$output"
+          version="$(printf '%s\n' "$output" | sed -nE 's/.*Current Version ID: ([0-9a-f-]{36}).*/\1/p' | tail -1)"
+          test -n "$version"
+          echo "version_id=$version" >> "$GITHUB_OUTPUT"
       - name: Attest newly deployed Production Worker version
         id: deployed_version
         run: |
           set -euo pipefail
-          previous="${{ steps.rollback_base.outputs.version_id }}"
+          expected="${{ steps.deploy_worker.outputs.version_id }}"
+          test -n "$expected"
           for attempt in $(seq 1 12); do
-            current="$(npx wrangler deployments status --config wrangler.production.toml --json | node -e 'let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{const root=JSON.parse(raw),hits=[];const walk=x=>{if(Array.isArray(x)){for(const v of x)walk(v);return;}if(!x||typeof x!=="object")return;const id=x.version_id||x.versionId,pct=x.percentage??x.traffic_percentage??x.trafficPercentage;if(id)hits.push({id:String(id),pct:pct==null?null:Number(pct)});for(const v of Object.values(x))walk(v);};walk(root);const unique=[...new Map(hits.map(x=>[x.id,x])).values()];const full=unique.find(x=>x.pct===100||x.pct===1)||(unique.length===1?unique[0]:null);if(!full)process.exit(2);process.stdout.write(full.id);});')"
-            if [ -n "$current" ] && [ "$current" != "$previous" ]; then
+            current="$(npx wrangler deployments status --config wrangler.production.toml --json | node scripts/cloudflare-full-traffic-version.mjs)"
+            if [ "$current" = "$expected" ]; then
               echo "version_id=$current" >> "$GITHUB_OUTPUT"
               echo "New Production Worker owns live traffic: $current"
               exit 0
@@ -407,16 +414,23 @@ jobs:
           if [ "$verified" != 1 ]; then echo 'V2 login entry or its JavaScript asset is missing from production'; exit 1; fi
           echo 'V2 login gateway and public authentication routes are reachable on production'
       - name: Restore prior Production Worker after failed smoke only if owned
-        if: failure() && steps.deployed_version.outcome == 'success'
+        if: failure() && steps.deploy_worker.outputs.version_id != ''
         run: |
           set -euo pipefail
           previous="${{ steps.rollback_base.outputs.version_id }}"
-          deployed="${{ steps.deployed_version.outputs.version_id }}"
+          deployed="${{ steps.deploy_worker.outputs.version_id }}"
           test -n "$previous" && test -n "$deployed"
-          current="$(npx wrangler deployments status --config wrangler.production.toml --json | node -e 'let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{const root=JSON.parse(raw),hits=[];const walk=x=>{if(Array.isArray(x)){for(const v of x)walk(v);return;}if(!x||typeof x!=="object")return;const id=x.version_id||x.versionId,pct=x.percentage??x.traffic_percentage??x.trafficPercentage;if(id)hits.push({id:String(id),pct:pct==null?null:Number(pct)});for(const v of Object.values(x))walk(v);};walk(root);const unique=[...new Map(hits.map(x=>[x.id,x])).values()];const full=unique.find(x=>x.pct===100||x.pct===1)||(unique.length===1?unique[0]:null);if(!full)process.exit(2);process.stdout.write(full.id);});')"
+          current="$(npx wrangler deployments status --config wrangler.production.toml --json | node scripts/cloudflare-full-traffic-version.mjs)"
           if [ "$current" != "$deployed" ]; then
             echo "Production Worker changed after this deploy; safe rollback suppressed."
             exit 1
           fi
           npx wrangler versions deploy "$previous@100%" --yes --config wrangler.production.toml --message "Restore prior Production Worker after Easy Orders hotfix smoke failure"
-          echo "Restored previous Production Worker version $previous"
+          for attempt in $(seq 1 12); do
+            restored="$(npx wrangler deployments status --config wrangler.production.toml --json | node scripts/cloudflare-full-traffic-version.mjs)"
+            if [ "$restored" = "$previous" ]; then break; fi
+            sleep 3
+          done
+          test "$restored" = "$previous"
+          curl -fsS --max-time 20 -o /dev/null https://app.kun-online.com/healthz
+          echo "Restored previous Production Worker version $previous and verified its traffic/health"
