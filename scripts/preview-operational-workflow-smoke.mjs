@@ -71,7 +71,7 @@ console.log(`Operational Preview smoke against ${base}`);
 {
   const checks=[
     ['/v2/modules-v105-customer-service-claim-v1053.js?v=105.3',['/api/customer-service/claims','جاري الاتصال','arrangeSalesCustomerNavigation',"['orders','customer-service','printing','post-shipping','returns-exchanges','customers','inbox']","setText(shipping,'الشحن')","setText(customers,'إدارة العملاء')",'data-state="contacting"','data-state="shipped"']],
-    ['/v2/modules-v75-customer-service-interactions-v753.js',['claim-contact','kun:customer-service-contact-claimed','تم حجز الأوردر باسمك ونقله إلى «جاري الاتصال»','revision:\'75.4\'']],
+    ['/v2/modules-v75-customer-service-interactions-v753.js',['invalidateReads','claim-contact','kun:customer-service-contact-claimed','تم حجز الأوردر باسمك ونقله إلى «جاري الاتصال»','revision:\'75.5\'']],
     ['/v2/modules-v106-manual-jnt-order.js?v=106.0',['/api/orders/manual-jnt','name="province"','name="city"','name="area"','name="street"','KunJntAddressesV80']],
     ['/v2/modules-v109-operational-date-contact.js?v=109.0',['اليوم','آخر أسبوع','الأسبوع الماضي','الشهر الحالي','الشهر الماضي','مدة معينة','Africa/Cairo','release-contact','kun:customer-service-contact-saved','جاري الاتصال بواسطة','customer-service','printing','post-shipping','returns-exchanges']]
   ];
