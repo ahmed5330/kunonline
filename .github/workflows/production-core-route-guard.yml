@@ -14,6 +14,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 7
     steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
       - name: Verify v2 shell and critical APIs resolve to the modern backend
         shell: bash
         run: |
@@ -23,7 +26,8 @@ jobs:
           grep -Fq '/v2/client-context-v24-fast.js' <<< "$page"
           grep -Fq '/v2/modules-v33-dashboard.js' <<< "$page"
           grep -Fq '/v2/modules-v47-post-shipping.js' <<< "$page"
-          grep -Fq '/v2/modules-v117-team-collaboration.js?v=117.2' <<< "$page"
+          expected_team="$(node -e "const s=require('fs').readFileSync('public/v2/index.html','utf8');const m=s.match(/src=.[^ >]*modules-v117-team-collaboration[.]js[?]v=[0-9.]+/);if(!m)process.exit(1);process.stdout.write(m[0].slice(5))")"
+          grep -Fq "$expected_team" <<< "$page"
           echo 'v2 shell verified.'
 
           check_guarded_route() {

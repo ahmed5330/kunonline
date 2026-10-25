@@ -11,6 +11,8 @@ on:
       - 'android/signing/signing-bundle-key.enc.b64'
       - 'android/signing/transport-private.pem.enc'
       - '.github/workflows/android-stable-signed-release.yml'
+      - '.github/workflows/production.yml'
+      - 'scripts/wait-production-worker-for-android-release.mjs'
   workflow_dispatch:
 
 permissions:
