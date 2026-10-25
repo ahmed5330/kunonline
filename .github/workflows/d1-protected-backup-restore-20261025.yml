@@ -1,4 +1,5 @@
 name: Protected D1 independent backup and isolated restore rehearsal
+# Fresh verified snapshot before the verified-prefix checkpoint release, 26 October Cairo.
 # Retry with allowlisted import diagnostics only; never print CLI/SQL payloads.
 # Rewrite oversized INSERTs only for newly created backup/restore targets.
 # Verify imported counts in bounded groups of ten tables per query.
