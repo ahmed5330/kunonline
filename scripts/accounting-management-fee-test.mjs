@@ -42,10 +42,13 @@ for(const marker of ['reconcileAutomaticManagementFees','JOIN stores s ON s.id=o
 assert.ok(scheduler.indexOf('Promise.allSettled(pending)')<scheduler.indexOf('return reconcileAutomaticManagementFees(env)'),'Management fee reconciliation must run after downstream scheduled tasks settle');
 assert.ok(!scheduler.includes('o.updated_at'),'Scheduled reconciliation must only use real orders timestamp columns');
 
-for(const marker of ['/api/accounting/monthly','requirePermission(me,\'finance\',\'read\')','accountingOverview','categoryBreakdown','accountingNetProfit','manualExpenses','collectedRevenue','finalDashboard'])assert.ok(monthly.includes(marker),`Monthly accounting service missing ${marker}`);
+for(const marker of ['/api/accounting/monthly','requirePermission(me,\'finance\',\'read\')','accountingOverview','categoryBreakdown','accountingNetProfit','manualExpenses','collectedRevenue','verifiedCollectedRevenue','estimatedCollectedRevenue','verifiedNetCash','finalDashboard'])assert.ok(monthly.includes(marker),`Monthly accounting service missing ${marker}`);
 for(const marker of ['handleAccountingMonthly','if(monthly)return monthly','handleJtHistoryReconcile'])assert.ok(entry.includes(marker),`v38 monthly accounting routing missing ${marker}`);
-for(const marker of ['الحسابات والحركات','تسجيل حركة','الحساب الشهري P&amp;L','إيراد المبيعات','المحصل فعليًا','صافي الربح المحاسبي للشهر','المتجر / الفرع','رقم المستند','الجهة / الطرف المقابل','الضريبة','رسوم الإدارة الآلية','المصروف اليدوي يدخل ضمن التشغيل مرة واحدة','kun:accounting-changed'])assert.ok(ui.includes(marker),`Accounting UI missing ${marker}`);
+for(const marker of ['الحسابات والحركات','تسجيل حركة','الحساب الشهري P&amp;L','إيراد المبيعات','تحصيل بمبلغ مسجل فقط','صافي الربح المحاسبي للشهر','المتجر / الفرع','رقم المستند','الجهة / الطرف المقابل','الضريبة','رسوم الإدارة الآلية','المصروف اليدوي يدخل ضمن التشغيل مرة واحدة','kun:accounting-changed'])assert.ok(ui.includes(marker),`Accounting UI missing ${marker}`);
 assert.ok(ui.includes('/api/accounting/monthly?month='),'Accounting UI must load the unified monthly summary');
+assert.ok(ui.includes('cash.verifiedCollectedRevenue'),'Accounts must display verified COD rather than imputed order totals');
+assert.ok(ui.includes('cash.verifiedNetCash'),'Accounts must distinguish verified net registered movements from estimated COD');
+assert.ok(ui.includes('estimatedCollectionAmount'),'estimated COD must have a visible warning');
 assert.ok(ui.includes("api('/api/accounting/entries',{method:'POST'"),'Accounting UI must create manual entries');
 assert.ok(ui.includes("method:'DELETE'"),'Accounting UI must support deleting manual entries');
 assert.ok(index.includes('data-view="accounting">الحسابات والحركات</button>'),'Accounting navigation must be present before the base router binds click handlers');

@@ -120,6 +120,8 @@ jobs:
         run: node scripts/easyorders-production-release-flow-test.mjs
       - name: Verify Worker builds without touching Production
         run: npx wrangler deploy --dry-run --config wrangler.production.toml
+      - name: Block incompatible Production release until canonical Preview backend is ready
+        run: node scripts/production-preview-release-gate.mjs
   deploy:
     needs: test
     runs-on: ubuntu-latest
@@ -196,7 +198,7 @@ jobs:
           grep -Fq '/v2/kun-dashboard-polish-v150.css?v=150.0' /tmp/kun-design-live.html
           grep -Fq '/v2/kun-dashboard-brand-v150.js?v=150.0' /tmp/kun-design-live.html
           grep -Fq '/v2/modules-v51-permission-navigation.js?v=51.16' /tmp/kun-design-live.html
-          grep -Fq '/v2/modules-v127-subscriptions.js?v=127.20' /tmp/kun-design-live.html
+          grep -Fq '/v2/modules-v127-subscriptions.js?v=127.22' /tmp/kun-design-live.html
           fetch_live "V51 platform-admin role guard" "https://app.kun-online.com/v2/modules-v51-permission-navigation.js?v=${nonce}" /tmp/kun-permissions-live.js
           grep -Fq "if(view==='subscriptions')return data.role==='admin'" /tmp/kun-permissions-live.js
           grep -Fq '/v2/kun-design-v143.js?v=145.1' /tmp/kun-design-live.html

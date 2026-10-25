@@ -3,8 +3,12 @@ const r2=v=>Math.round(n(v)*100)/100;
 const pct=(a,b)=>b?r2(a/b*100):0;
 
 export function dateRange(url){
-  const to=url.searchParams.get('to')||new Date().toISOString().slice(0,10);
-  const from=url.searchParams.get('from')||new Date(Date.now()-29*86400000).toISOString().slice(0,10);
+  const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Cairo',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());
+  const local=kind=>parts.find(part=>part.type===kind)?.value||'';
+  const today=`${local('year')}-${local('month')}-${local('day')}`;
+  const to=url.searchParams.get('to')||today;
+  const prior=new Date(today+'T00:00:00Z');prior.setUTCDate(prior.getUTCDate()-29);
+  const from=url.searchParams.get('from')||prior.toISOString().slice(0,10);
   return {from,to};
 }
 

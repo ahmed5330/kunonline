@@ -36,6 +36,11 @@ const env={DB:{prepare:sql=>new Statement(sql)}};
 const oct={clientId:'client',storeId:'store',from:'2026-10-11',to:'2026-10-11'};
 const overview=await accountingOverview(env,oct);
 assert.equal(overview.collectedRevenue,1370,'cash must use COD amount rather than original 1500 EGP orders');
+assert.equal(overview.verifiedCollectedRevenue,870,'only explicit COD collected_amount is verified in Accounts');
+assert.equal(overview.estimatedCollectedRevenue,500,'missing COD amount still tracked as fallback for legacy reconciliation');
+assert.equal(overview.verifiedNetCash,820,'verified COD + income - expenses excludes fallback values');
+assert.equal(overview.netCashIncludesEstimatedCOD,true,'account net cash is not a verified bank or settlement balance');
+assert.equal(overview.collectionBasis,'settlement_date_with_estimated_order_total_fallback');
 assert.equal(overview.collectedOrders,2,'linked duplicate must not inflate settled order count');
 assert.equal(overview.unverifiedCollectedOrders,1,'historical collected order without explicit amount must be flagged');
 assert.equal(overview.deliveredRevenue,500,'operating sales must use order date, not collection date');
@@ -44,6 +49,9 @@ assert.equal(overview.managementFees,0,'fee on September order is not an October
 assert.equal(overview.netCash,1320,'registered cash estimate must use actual collection and booked expenses');
 const sep=await accountingOverview(env,{...oct,from:'2026-09-25',to:'2026-09-25'});
 assert.equal(sep.collectedRevenue,0,'September sales cannot show October COD');
+assert.equal(sep.verifiedCollectedRevenue,0);
+assert.equal(sep.estimatedCollectedRevenue,0);
+assert.equal(sep.netCashIncludesEstimatedCOD,false);
 assert.equal(sep.deliveredRevenue,1000,'linked duplicate excluded from order-date sales');
 assert.equal(sep.managementFees,50,'duplicate linked order management fee cannot inflate expenses');
 assert.equal(sep.netCash,0,'accrued management fee on prior orders is not evidence of cash paid');
@@ -54,6 +62,13 @@ assert.equal(feesDetail[0].amount,50);
 
 const collected=await collectedProfitOverview(env,{...oct,includeDetails:true});
 assert.equal(collected.collectedGross,1370,'collection report must agree with accounting settlement cash');
+assert.equal(collected.verifiedCollectedGross,870,'only collected_amount is a recorded COD amount');
+assert.equal(collected.unverifiedCollectionFallbackGross,500,'missing COD amount is not verified cash');
+assert.equal(collected.missingCollectionAmountOrders,1);
+assert.equal(collected.collectionQuality,'partially_estimated_from_order_total');
+assert.equal(collected.collectedProfitIsFullyVerified,false,'unreconciled COD and shipping disallow verified-profit status');
+assert.equal(collected.orders.find(x=>x.id==='COD-2').collectionAmountEstimated,true);
+
 assert.equal(collected.collectedOrders,2,'collection report must exclude linked duplicate');
 assert.equal(collected.productCost,400,'recorded order inventory cost must be deducted from collected margin');
 assert.equal(collected.managementFees,50,'collection margin subtracts active management fees for collected orders');

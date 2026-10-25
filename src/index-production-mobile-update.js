@@ -1,3 +1,5 @@
+import {handleFinancialAccountingOS} from './accounting-faos-api.js';
+import {routeProductionCodRead} from './production-cod-read-fallback.js';
 import app from './index-production-jt-history.js';
 import {handlePublicSiteReviews} from './public-site-reviews.js';
 import {handleAIMarketing} from './ai-marketing-analyst.js';
@@ -120,7 +122,7 @@ async function websiteWithDirectAndroidDownload(request,env){
     html=html.replace('</body>','<script src="/v2/modules-v126-dashboard-finance-top.js?v=126.5" data-kun-dashboard-finance-top-v126="1"></script></body>');
   }
   if(!html.includes('/v2/modules-v127-subscriptions.js')){
-    html=html.replace('</body>','<script src="/v2/modules-v127-subscriptions.js?v=127.20" data-kun-subscriptions-v127="1"></script></body>');
+    html=html.replace('</body>','<script src="/v2/modules-v127-subscriptions.js?v=127.22" data-kun-subscriptions-v127="1"></script></body>');
   }
   if(!html.includes('/v2/modules-v128-unit-tracking.js')){
     html=html.replace('</body>','<script src="/v2/modules-v128-unit-tracking.js?v=128.4" data-kun-unit-tracking-v128="1"></script></body>');
@@ -162,7 +164,15 @@ export default {
     if(websiteReviews)return websiteReviews;
     const easyOrdersHealth=await handleProductionEasyOrdersHealth(request,env);
     if(easyOrdersHealth)return easyOrdersHealth;
-    const parity=await handleProductionPreviewParity(request,env);
+    const parity=await handleProductionPreviewParity(request,env,{
+      authorizeAdmin:async sourceRequest=>{
+        const identityUrl=new URL('/api/me',sourceRequest.url);
+        const identityRequest=new Request(identityUrl.toString(),{method:'GET',headers:sourceRequest.headers});
+        const identity=await previewFetch(identityRequest,env)||
+          await app.fetch(identityRequest,previewRuntimeEnv(env),ctx);
+        return identity.ok?identity.json().catch(()=>null):null;
+      }
+    });
     if(parity)return parity;
 
     const mobileUpdate=await handleMobileAppUpdate(request);
@@ -179,6 +189,12 @@ export default {
 
     const dataEnv=previewRuntimeEnv(env);
     const delegate=previewDelegate(env,dataEnv,ctx);
+    const faos=await handleFinancialAccountingOS({request,env:dataEnv,ctx,delegate});
+    if(faos)return faos;
+    const codRead=await routeProductionCodRead({request,
+      fetchPreview:source=>previewFetch(source,env),
+      fetchLocal:source=>app.fetch(source,dataEnv,ctx)});
+    if(codRead)return codRead;
     // Preview-backed customer data is live: never silently fall back to a
     // different D1 source for this status. Fail closed if bindings are absent.
     if(new URL(request.url).pathname==='/api/integrations/easyorders/dashboard-health'){

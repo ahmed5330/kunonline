@@ -15,7 +15,7 @@ const fixture={
   privateId:'NEVER_PRINT_PRIVATE_CONNECTION',
   tenants:[{clientId:'NEVER_PRINT_CLIENT_ID'}]
 };
-function fakeLive(version,{scopedStatus=401,platform=fixture}={}){
+function fakeLive(version,{scopedStatus=401,parityStatus=401,platform=fixture}={}){
   const calls=[];
   async function fetchImpl(url,options){
     const u=new URL(url);
@@ -23,6 +23,7 @@ function fakeLive(version,{scopedStatus=401,platform=fixture}={}){
     assert.equal(u.protocol,'https:');
     assert.equal(options.method,'GET','Live public diagnostic must never mutate data');
     assert.equal(options.credentials,'omit','Live probe must not authenticate as a customer');
+    if(u.pathname==='/health/preview-parity')return Response.json({error:'AUTH_REQUIRED'},{status:parityStatus});
     if(u.pathname==='/health/easyorders-sync')return Response.json(platform);
     if(u.pathname==='/v2/')return new Response('<script src="/v2/modules-v121-dashboard-sync-guard.js?v='+version+'"></script>',{status:200});
     if(u.pathname==='/v2/modules-v121-dashboard-sync-guard.js')return new Response("window.KunDashboardSyncGuardV121={version:'"+version+"'};",{status:200});
@@ -51,7 +52,8 @@ const current=await inspectDashboardSyncLive({base:'https://qa.example.test',fet
 assert.equal(current.currentReleaseDeployed,true);
 assert.equal(current.anonymousScopedAccess,'denied_401');
 assert.equal(current.tenantHealthVerified,false,'Anonymous check can never establish authenticated tenant correctness');
-assert.equal(now.calls.length,4);
+assert.equal(now.calls.length,5);
+assert.equal(current.privateParityAccess,'denied_401');
 assert.ok(now.calls.some(x=>x.path==='/api/integrations/easyorders/dashboard-health'));
 assert.ok(now.calls.every(x=>x.method==='GET'&&x.credentials==='omit'));
 const insecure=fakeLive(expected,{scopedStatus:200});
@@ -66,3 +68,5 @@ await assert.rejects(
   'No insecure public HTTP diagnostics'
 );
 console.log('Dashboard live-probe fixture PASS: legacy rollout pending, aggregate is not tenant health, new anonymous tenant route must deny, and no live writes.');
+
+await assert.rejects(()=>inspectDashboardSyncLive({base:'https://qa.example.test',fetchImpl:fakeLive(expected,{parityStatus:200}).fetchImpl,requireCurrent:true}),/Private parity diagnostics/);

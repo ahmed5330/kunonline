@@ -34,6 +34,10 @@ assert.ok(billing.includes("return clampMoney(account.base_order_fee)"),'managed
 assert.ok(billing.includes("orderFee=inTrial?0:clampMoney(account.base_order_fee)"),'client access must display the exact admin-defined fee');
 assert.ok(billing.includes("baseOrderFee,orderFee:inTrial?0:baseOrderFee"),'admin subscription list must show the exact base fee for managed clients');
 assert.ok(topups.includes('reconcileSubscriptionAfterTopup'),'topup approval must immediately reconcile access');
+assert.ok(ui.includes('legacy.mismatch===true||legacy.oldFeeStillEnabled===true'),'admin ledger must warn about legacy mirror drift and double-charge fee');
+assert.ok(ui.includes('مطابقة نسخة الرصيد القديمة'),'admin must expose wallet legacy mirror parity');
+assert.ok(ui.includes('ledgerChain.anomalyCount'),'admin must surface ledger continuity problems instead of hiding intermediate drift');
+assert.ok(ui.includes('ledgerChainHtml'),'wallet ledger audit must show read-only intermediate balance anomalies');
 assert.ok(topups.includes("String(row.status)==='approved'"),'topup approval must be idempotent for already-approved requests');
 assert.ok(topups.includes("TOPUP_APPROVAL_INTEGRITY"),'an approved payment without a matching wallet ledger entry must be rejected as an integrity error');
 assert.ok(topups.includes("appliedTopupCredit"),'topup approval must verify its authoritative wallet ledger entry');
@@ -147,8 +151,8 @@ assert.ok(ui.includes("b.onclick=event=>{event?.preventDefault?.();event?.stopPr
 assert.ok(ui.includes("$$('[data-sub127-hidden=\"1\"]')"),'restore navigation must iterate all hidden routes');
 assert.ok(ui.includes("$('.nav button[data-view]')"),'navigation state sync must iterate all routes with querySelectorAll semantics');
 assert.equal(/(?<!\$)\$\([^\n;]*\)\.forEach\s*\(/.test(ui),false,'single-element $() helper must never be used with forEach');
-assert.ok(preview.includes('/v2/modules-v127-subscriptions.js?v=127.20'),'preview must load v127.20 UI');
-assert.ok(production.includes('/v2/modules-v127-subscriptions.js?v=127.20'),'production must load v127.20 UI');
+assert.ok(preview.includes('/v2/modules-v127-subscriptions.js?v=127.22'),'preview must load v127.22 UI');
+assert.ok(production.includes('/v2/modules-v127-subscriptions.js?v=127.22'),'production must load v127.22 UI');
 assert.ok(control.includes('walletPaymentDiagnostics(env,clientId)'),'admin ledger must return a read-only post-topup audit');
 assert.ok(ui.includes('مراجعة الرصيد بعد آخر شحن معتمد'),'admin subscription view must expose the post-credit debit breakdown');
 assert.ok(preview.includes('handleSubscriptionControl'),'preview must enforce subscription control server-side');
@@ -229,7 +233,7 @@ assert.equal(await guardedRequest({path:'/api/state',method:'PUT',balance:50}),n
 assert.equal(await guardedRequest({path:'/api/state',method:'PUT',subscriptionStatus:'trialing'}),null,'approved trial must not require credit');
 assert.equal((await guardedRequest({path:'/api/printing',role:'staff'})).status,402,'store staff must respect the same server wallet gate');
 
-console.log('subscriptions v127.20 billing contract: ok');
+console.log('subscriptions v127.22 billing contract: ok');
 
 // Exercise the real SQLite CHECK constraint, idempotency and final-order overdraft.
 await import('./wallet-last-order-overdraft-test.mjs');

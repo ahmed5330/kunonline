@@ -20,10 +20,26 @@ export async function mirrorLegacyBalance(env,clientId,balance,{disableLegacyFee
     const canonical=await env.DB.prepare('SELECT balance,billing_version FROM wallet_accounts WHERE client_id=?').bind(clientId).first();
     client.walletBalance=round2(canonical?.balance??balance);
     if(disableLegacyFee||canonical?.billing_version==='v27')client.walletFeePerOrder=0;
-    const ts=now(),result=await env.DB.prepare('UPDATE state SET json=?,updated_at=? WHERE id=1 AND updated_at=?').bind(JSON.stringify(state),ts,row?.updated_at||'').run();
+    // Compare the original JSON as well as its timestamp: updates in the same millisecond
+    // must not pass the CAS and clobber a newer change to a client or unrelated field.
+    const ts=now(),result=await env.DB.prepare('UPDATE state SET json=?,updated_at=? WHERE id=1 AND updated_at IS ? AND json=?').bind(JSON.stringify(state),ts,row?.updated_at??null,row.json).run();
     if(Number(result?.meta?.changes||0)>0)return true;
   }
   return false;
+}
+
+// A payment or administrator credit may already be committed to the authoritative
+// wallet ledger. An unrelated legacy JSON mirror failure must never make that
+// successful financial transaction look rejected and invite a duplicate credit.
+export async function safeMirrorAfterLedgerCommit(env,clientId){
+  try{
+    const current=await env.DB.prepare('SELECT balance FROM wallet_accounts WHERE client_id=?').bind(clientId).first();
+    if(!current)return {legacyMirrorPending:true};
+    const synced=await mirrorLegacyBalance(env,clientId,current.balance);
+    return {legacyMirrorPending:synced!==true};
+  }catch(error){
+    return {legacyMirrorPending:true,legacyMirrorErrorCode:String(error?.code||'LEGACY_MIRROR_RETRY')};
+  }
 }
 
 export async function ensureWalletAccount(env,clientId){
