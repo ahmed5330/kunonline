@@ -14,7 +14,9 @@ assert.equal(assertIsolatedEasyOrdersQa(options).worker,'kunonline-isolated-qa')
 const denied=[
   {...options,baseUrl:'https://kunonline-preview.mr-a-mnaa.workers.dev'},
   {...options,baseUrl:'https://app.kun-online.com'},
+  {...options,baseUrl:'https://some-other-worker.example.test'},
   {...options,configText:liveConfig},
+  {...options,configText:safeConfig+'\n[[d1_databases]]\nbinding = "MORE"\ndatabase_name = "kunonline-preview"\ndatabase_id = "31cd5cdf-fc01-42d7-ba1e-571f3dd58495"'},
   {...options,approvedDatabaseId:'WRONG-D1'},
   {...options,configText:safeConfig.replace('kunonline-isolated-qa"','kunonline-preview"')},
   {...options,configText:safeConfig+'\n[[services]]\nbinding = "PREVIEW_APP"\nservice = "kunonline-preview"'},
