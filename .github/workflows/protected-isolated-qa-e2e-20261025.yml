@@ -17,7 +17,7 @@ jobs:
       - uses: actions/checkout@v5
         with:
           # Exact reviewed candidate; never checkout an unpinned mutable branch.
-          ref: 45f2d937370f2e42f1e1aa7d2b600b2a0ace76c2
+          ref: 43736218cecfef8ca4eecc10c2abc94bf95443fc
       - uses: actions/setup-node@v5
         with:
           node-version: 22
@@ -25,6 +25,22 @@ jobs:
       - run: npm install --ignore-scripts
       - name: Mandatory offline release tests
         run: npm test
+      - name: Verify strict traffic ownership against real read-only metadata
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          node --input-type=module <<'JS'
+          import {fullTrafficVersion} from './scripts/cloudflare-full-traffic-version.mjs';
+          for(const worker of ['kunonline','kunonline-preview']){
+            const endpoint=`https://api.cloudflare.com/client/v4/accounts/${process.env.CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${worker}/deployments`;
+            const response=await fetch(endpoint,{headers:{Authorization:`Bearer ${process.env.CLOUDFLARE_API_TOKEN}`}});
+            if(!response.ok)throw new Error('READONLY_DEPLOYMENT_METADATA_UNAVAILABLE');
+            const payload=await response.json();
+            if(!payload.success)throw new Error('READONLY_DEPLOYMENT_METADATA_REJECTED');
+            console.log(JSON.stringify({worker,version:fullTrafficVersion(payload),trafficPercentage:100,readOnly:true}));
+          }
+          JS
       - name: Provision dedicated QA D1 and Worker with schema-only synthetic fixtures
         id: provision
         env:
