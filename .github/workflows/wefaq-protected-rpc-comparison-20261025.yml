@@ -1,0 +1,41 @@
+name: Protected Wefaq recent-order comparison - read only data
+on:
+  push:
+    branches: [codex/serialized-warehouse-operations]
+    paths: ['.github/workflows/wefaq-protected-rpc-comparison-20261025.yml']
+permissions:
+  contents: read
+concurrency:
+  group: kunonline-wefaq-readonly-comparison
+  cancel-in-progress: false
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    environment: preview
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: npm install --ignore-scripts
+      - name: Validate scope, range, caller source and metadata privacy offline
+        run: |
+          node scripts/wefaq-protected-rpc-comparison-test.mjs
+          node scripts/wefaq-readonly-scope-inventory-test.mjs
+      - name: Compare at most thirty recent known Short IDs without order writes
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          KUN_EXPECTED_PREVIEW_VERSION: '076017cf-c2c8-4fbf-a799-432733dc587e'
+          WRANGLER_SEND_METRICS: 'false'
+        run: node scripts/wefaq-protected-rpc-comparison.mjs
+      - name: Remove temporary read-only caller after success failure or cancellation
+        if: always()
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: node scripts/wefaq-protected-rpc-comparison.mjs --cleanup
+# Only the expiring caller is deployed/deleted. Customer DB and provider
+# operations are SELECT/GET-only; provider secrets remain inside the app.
