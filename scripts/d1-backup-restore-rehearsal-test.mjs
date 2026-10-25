@@ -7,7 +7,7 @@ import {rehearseD1Backup,inspectSqlExport,classifyWranglerFailure,prepareChunked
 const live=['31cd5cdf-fc01-42d7-ba1e-571f3dd58495','c426601d-182f-486e-a5c1-bb1bca0ecb0b'];
 const dir=await mkdtemp(join(tmpdir(),'kun-backup-regression-'));
 let ids=new Map(),mutations=[],cliCalls=[],sourceMismatch=false,unsafeTarget=false,badContents=false,boundCopy=false;
-let inspectCalls=0;
+let inspectCalls=0,queryManifest={orders:3,users:2};
 async function api(method,path,body){
   if(method==='POST')mutations.push({path,body});
   if(path==='workers/scripts')return [{id:'kunonline'},{id:'kunonline-preview'}];
@@ -23,7 +23,9 @@ async function api(method,path,body){
     assert.ok(ids.has(id),'Only inspect newly created targets');
     assert.match(body.sql,/^SELECT /);
     assert.doesNotMatch(body.sql,/INSERT|UPDATE|DELETE|DROP|ALTER|REPLACE/);
-    return [{success:true,results:[{table_name:'orders',n:3},{table_name:'users',n:2}]}];
+    const selected=[...body.sql.matchAll(/SELECT '([^']+)' AS table_name/g)].map(x=>x[1]);
+    assert.ok(selected.length<=10,'Bound compound count validation to ten tables');
+    return [{success:true,results:selected.map(name=>({table_name:name,n:queryManifest[name]}))}];
   }
   const id=path.split('/')[2];return {uuid:id,name:ids.get(id)};
 }
@@ -65,6 +67,9 @@ try{
   assert.equal(report.customerSourceRowsModified,false);
   assert.ok(report.reports.every(x=>x.restoredContentsMatch&&x.isolatedRestoreProven));
   for(const secret of [...live,'PRIVATE_SOURCE_RECOVERY_POINT'])assert.ok(!JSON.stringify(report).includes(secret));
+  ids=new Map();queryManifest=Object.fromEntries(Array.from({length:24},(_,i)=>['table_'+i,i]));
+  await rehearseD1Backup({...options,inspectExport:async()=>({manifest:queryManifest,dumpSha256:'a'.repeat(64),contentFingerprint:'c'.repeat(64),integrity:'ok'})});
+  queryManifest={orders:3,users:2};
   ids=new Map();mutations=[];sourceMismatch=true;
   await assert.rejects(rehearseD1Backup(options),/SOURCE_BINDING_CHANGED/);
   assert.equal(mutations.length,0,'Verify all source bindings before creating resources');
