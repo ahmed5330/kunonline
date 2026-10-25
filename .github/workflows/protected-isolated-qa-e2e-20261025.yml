@@ -17,7 +17,7 @@ jobs:
       - uses: actions/checkout@v5
         with:
           # Exact reviewed candidate; never checkout an unpinned mutable branch.
-          ref: c27655a26ea6799caceb127f08bfd87ca96764f9
+          ref: 480cf04578e3d51a38360e1d2bfc1d3b77da7195
       - uses: actions/setup-node@v5
         with:
           node-version: 22
