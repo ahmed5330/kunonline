@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
-import {scopeMatches,expectedScope,auditCallerName,recentRange,cursorBoundaryRange,AUDIT_CALLER_SHA256} from './wefaq-protected-rpc-comparison.mjs';
+import {scopeMatches,expectedScope,auditCallerName,recentRange,cursorBoundaryRange,historicalRange,AUDIT_CALLER_SHA256} from './wefaq-protected-rpc-comparison.mjs';
 assert.equal(scopeMatches({...expectedScope,upstreamIdentityVerified:true}),true);
 assert.equal(scopeMatches({...expectedScope,upstreamIdentityVerified:false}),false);
 for(const key of Object.keys(expectedScope))assert.equal(scopeMatches({...expectedScope,upstreamIdentityVerified:true,[key]:'wrong'}),false);
@@ -16,3 +16,7 @@ assert.equal(createHash('sha256').update(await readFile(new URL('../sandbox/easy
 assert.deepEqual(cursorBoundaryRange(820,823),{from:820,to:824});
 assert.deepEqual(cursorBoundaryRange(824,823),{from:824,to:824});
 for(const args of [[0,823],[820,0],[1,823],[825,823],[820.5,823],[1,Number.MAX_SAFE_INTEGER]])assert.throws(()=>cursorBoundaryRange(...args));
+
+assert.deepEqual(historicalRange(700,729),{from:700,to:729});
+for(const args of [[700,730],[0,20],[700,699],[700.5,701],[700,NaN]])assert.throws(()=>historicalRange(...args));
+assert.deepEqual(historicalRange(824,829),{from:824,to:829},'Authoritative provider IDs may exceed the stored high-water when webhooks are missing');
