@@ -16,11 +16,11 @@ export function assertIsolatedEasyOrdersQa({baseUrl,configText,approvedDatabaseI
   if(!['https:','http:'].includes(target.protocol)||target.username||target.password)
     fail('Invalid QA worker target URL');
   if(LIVE_HOSTS.has(target.hostname.toLowerCase())||
-    /(^|\\.)kun-online\\.com$/i.test(target.hostname))
+    /(^|\.)kun-online\.com$/i.test(target.hostname))
     fail('Refusing to run state-writing QA against a customer-facing Worker');
   if(!configText||typeof configText!=='string')fail('Dedicated QA Wrangler config is required');
   const worker=field(configText,'name'),main=field(configText,'main');
-  const databaseBlock=configText.match(/\\[\\[d1_databases\\]\\]([\\s\\S]*?)(?=\\n\\[|$)/)?.[1]||'';
+  const databaseBlock=configText.match(/\[\[d1_databases\]\]([\s\S]*?)(?=\n\[|$)/)?.[1]||'';
   const databaseName=field(databaseBlock,'database_name'),databaseId=field(databaseBlock,'database_id');
   if(!worker||!/(?:qa|sandbox|isolated)/i.test(worker)||LIVE_WORKERS.has(worker))
     fail('QA Worker must have a distinct and explicit QA/sandbox name');
@@ -31,7 +31,7 @@ export function assertIsolatedEasyOrdersQa({baseUrl,configText,approvedDatabaseI
     fail('QA database must not reuse live customer D1');
   if(!approvedDatabaseId||databaseId!==String(approvedDatabaseId).trim())
     fail('Approved isolated QA D1 ID does not match Wrangler configuration');
-  if(/service\\s*=\\s*"(?:kunonline|kunonline-preview|kunonline-sync-preview)"/i.test(configText))
+  if(/service\s*=\s*"(?:kunonline|kunonline-preview|kunonline-sync-preview)"/i.test(configText))
     fail('QA configuration still points at a live Worker service');
   return {worker,databaseId};
 }
