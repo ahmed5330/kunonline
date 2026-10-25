@@ -3,7 +3,10 @@ package com.kunonline.callerid
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.json.JSONArray
+import org.json.JSONObject
 import org.junit.Test
+import java.time.ZoneId
 import java.time.LocalDate
 
 class MobileDateFilterV267Test {
@@ -59,6 +62,32 @@ class MobileDateFilterV267Test {
         assertEquals(LocalDate.of(2026, 9, 24), MobileDateFilterState.parseDate("24-09-2026"))
         assertEquals(LocalDate.of(2026, 9, 24), MobileDateFilterState.parseDate("2026/09/24"))
         assertEquals(LocalDate.of(2026, 9, 24), MobileDateFilterState.parseDate("2026-09-24T20:30:00Z"))
+    }
+
+    @Test
+    fun periodSelectionUsesCompleteLocalSnapshotWithoutDiscardingOtherDates() {
+        val businessToday = LocalDate.now(ZoneId.of("Africa/Cairo"))
+        val full = JSONObject().put("orders", JSONArray()
+            .put(JSONObject().put("id", "today-1").put("date", businessToday.toString()))
+            .put(JSONObject().put("id", "yesterday-1").put("date", businessToday.minusDays(1).toString()))
+            .put(JSONObject().put("id", "legacy-1").put("date", "old-date-unreadable")))
+        MobileDateFilterState.select(MobileDatePreset.ALL)
+        assertEquals(3, CommerceParser.parse(full).orders.size)
+        MobileDateFilterState.select(MobileDatePreset.TODAY)
+        assertEquals(listOf("today-1"), CommerceParser.parse(full).orders.map { it.id })
+        MobileDateFilterState.select(MobileDatePreset.ALL)
+        assertEquals(3, CommerceParser.parse(full).orders.size)
+        assertEquals(3, full.getJSONArray("orders").length())
+    }
+
+    @Test
+    fun onlyExplicitRefreshRequiresNetworkAfterPeriodSelections() {
+        MobileDateFilterState.select(MobileDatePreset.YESTERDAY)
+        assertTrue(MobileDateFilterState.serverRefreshRevision != MobileDateFilterState.revision)
+        MobileDateFilterState.requestRefresh()
+        assertEquals(MobileDateFilterState.revision, MobileDateFilterState.serverRefreshRevision)
+        MobileDateFilterState.select(MobileDatePreset.ALL)
+        assertTrue(MobileDateFilterState.serverRefreshRevision != MobileDateFilterState.revision)
     }
 
     @Test

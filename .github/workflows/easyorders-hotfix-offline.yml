@@ -1,0 +1,71 @@
+name: Easy Orders incident hotfix full offline QA
+on:
+  pull_request:
+    branches: [main, fix/easyorders-sync-hotfix-20261024]
+    paths:
+      - 'src/commerce-order-sync.js'
+      - 'src/easyorders-connection-config.js'
+      - 'src/easyorders-order-reconciliation.js'
+      - 'src/index-commerce-v31.js'
+      - 'src/index-commerce-v34.js'
+      - 'scripts/easyorders-sync-concurrency-sqlite-test.mjs'
+      - '.github/workflows/production.yml'
+      - 'scripts/easyorders-production-release-flow-test.mjs'
+      - 'package.json'
+      - '.github/workflows/easyorders-hotfix-offline.yml'
+permissions:
+  contents: read
+concurrency:
+  group: easyorders-qa-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  linux-full:
+    if: github.head_ref == 'fix/easyorders-sync-hotfix-20261024' || github.head_ref == 'release/easyorders-production-gated-20261025'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      CLOUDFLARE_API_TOKEN: ''
+      CLOUDFLARE_ACCOUNT_ID: ''
+      APP_ENV: isolated_ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - run: npm install --ignore-scripts
+      - name: Check sync Worker and mobile source
+        run: |
+          node --check src/commerce-order-sync.js
+          node --check src/easyorders-order-reconciliation.js
+          node --check src/index-commerce-v31.js
+          node --check src/index-commerce-v34.js
+          node --check src/mobile-state-sync.js
+      - name: SQL concurrent webhook and multi-store regression
+        run: npm run test:easyorders-sync-concurrency
+      - name: Android/web sync transport and dashboard consistency
+        run: |
+          node scripts/mobile-state-sync-test.mjs
+          node scripts/dashboard-sync-guard-test.mjs
+      - name: Protected Production release workflow + rollback contract
+        run: node scripts/easyorders-production-release-flow-test.mjs
+      - name: Full app/backend regression
+        run: npm test
+      - run: git diff --check
+  windows-sync:
+    if: github.head_ref == 'fix/easyorders-sync-hotfix-20261024' || github.head_ref == 'release/easyorders-production-gated-20261025'
+    runs-on: windows-latest
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_API_TOKEN: ''
+      CLOUDFLARE_ACCOUNT_ID: ''
+      APP_ENV: isolated_ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - run: npm install --ignore-scripts
+      - run: npm run test:easyorders-sync-concurrency
+# No wrangler deploy, migration, remote D1, production/preview probes or publish.

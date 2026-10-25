@@ -12,9 +12,9 @@ android {
         applicationId = "com.kunonline.callerid.stable"
         minSdk = 29
         targetSdk = 35
-        // v2.9.17: customer-rich new-order alerts with call and direct order review.
-        versionCode = 148
-        versionName = "2.9.17"
+        // v2.9.18: faster initial order load with server-verified, session-scoped store context.
+        versionCode = 149
+        versionName = "2.9.18"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

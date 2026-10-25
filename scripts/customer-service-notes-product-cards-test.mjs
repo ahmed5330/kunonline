@@ -33,7 +33,7 @@ assert.match(native,/ملاحظة العميل: /,'Customer notes visible on mob
 assert.match(native,/order.latestInternalNote/,'Staff notes retained on mobile card');
 assert.match(native,/تاريخ الطلب:/,'Order date visible');
 assert.match(native,/البوليصة:/,'AWB visible');
-assert.match(html,/modules-v31-customer-service.js\?v=31\.3\.[23]/,'Fresh copy JS on production');
+assert.match(html,/modules-v31-customer-service.js\?v=31\.3\.4/,'Fresh copy JS on production');
 assert.match(html,/modules-v42-customer-service-rich-cards.js\?v=42\.4/,'Fresh loaded-card name-copy JS on production');
 const androidBuild=read('android/app/build.gradle.kts');
 const buildCode=Number(androidBuild.match(/versionCode\s*=\s*(\d+)/)?.[1]||0);

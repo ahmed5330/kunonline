@@ -90,6 +90,7 @@
     </div>`;
   }
   async function renderWorkspace(){
+    if(document.querySelector('.nav button.active[data-view]')?.dataset.view!=='customer-service')return;
     if(loading){renderQueued=true;return;}
     loading=true;
     const r=root();if(!r){loading=false;return;}
@@ -99,6 +100,7 @@
     try{
       if(!clientId)clientId=await (window.kunClientId?.()||Promise.resolve(me?.clientId||''));
       if(!clientId)throw new Error('تعذر تحديد حساب المتجر');
+      const requestedClient=clientId,requestedStore=selectedStore;
       const boardUrl=new URL(urlFor('/api/customer-service'),location.origin);
       const range=window.KunOperationalDateContactV109?.customerServiceRange?.();
       if(range?.from&&range?.to){
@@ -106,10 +108,11 @@
         boardUrl.searchParams.set('periodTo',range.to);
       }
       const incoming=await api(boardUrl.pathname+boardUrl.search);
-      if(!r.isConnected||document.querySelector('.nav button.active[data-view]')?.dataset.view!=='customer-service')return;
+      if(!r.isConnected||document.querySelector('.nav button.active[data-view]')?.dataset.view!=='customer-service'||clientId!==requestedClient||selectedStore!==requestedStore)return;
       data=incoming;
       r.innerHTML=workspace();bindWorkspace();
     }catch(e){
+      if(!r.isConnected||document.querySelector('.nav button.active[data-view]')?.dataset.view!=='customer-service')return;
       if(oldPage?.isConnected){
         oldPage.classList.remove('cs-board-updating');
         oldPage.removeAttribute('aria-busy');

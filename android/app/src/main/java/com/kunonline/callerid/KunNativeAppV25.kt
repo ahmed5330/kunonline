@@ -191,10 +191,28 @@ fun KunNativeAppV25(
         if (loggedIn) displayName = withContext(Dispatchers.IO) { KunApi.userDisplayName(context) }
     }
 
-    // A period switch does one immediate delta refresh. It does not create a new
-    // recurring timer, so normal Cloudflare request cadence stays unchanged.
+    // Date selection is a UI-only operation over the complete, authorised
+    // snapshot. Refilter locally instead of sending a redundant server request.
+    // An explicitly created order still asks the server for a fresh delta.
     LaunchedEffect(loggedIn, dateRevision) {
-        if (loggedIn && dateRevision > 0) performRefresh(false)
+        if (loggedIn && dateRevision > 0) {
+            if (MobileDateFilterState.serverRefreshRevision == dateRevision) {
+                performRefresh(false)
+            } else {
+                val current = snapshot
+                if (current != null) {
+                    val updated = withContext(Dispatchers.Default) {
+                        CommerceParser.parse(current.raw)
+                    }
+                    // A store change/newer sync can replace the snapshot while
+                    // parsing. Never reinstate an older tenant/store response.
+                    if (loggedIn && snapshot?.raw === current.raw &&
+                        MobileDateFilterState.revision == dateRevision) {
+                        snapshot = updated
+                    }
+                }
+            }
+        }
     }
     // Keep the caller-ID cache current while customer service is visible too.
     ForegroundPolling(loggedIn, enabled = loggedIn && selected != MobileV25Tab.SETTINGS, intervalMillis = V25_FOREGROUND_SYNC_MS) {

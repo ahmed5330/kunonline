@@ -77,6 +77,16 @@ object CommerceParser {
         return CommerceSnapshot(orders = orders, customers = customers, products = products, raw = root)
     }
 
+    /** The provider may send "date": null or a legacy invalid value while
+     * created_at is valid. Never let that hide orders from Today/Week filters. */
+    internal fun preferredOrderDate(order: JSONObject): String {
+        val values = listOf("date", "createdAt", "created_at", "orderDate", "order_date")
+            .map { order.str(it) }
+            .filter { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
+        return values.firstOrNull { MobileDateFilterState.parseDate(it) != null }
+            ?: values.firstOrNull().orEmpty()
+    }
+
     private fun parseOrders(array: JSONArray): List<OrderUi> = buildList {
         for (i in 0 until array.length()) {
             val o = array.optJSONObject(i) ?: continue
@@ -94,7 +104,7 @@ object CommerceParser {
                     product = o.str("product"),
                     qty = o.optInt("qty", 1).coerceAtLeast(1),
                     awb = o.str("awb"),
-                    date = o.str("date").ifBlank { o.str("createdAt") }.ifBlank { o.str("created_at") },
+                    date = preferredOrderDate(o),
                     note = o.str("note"),
                     source = o.str("source"),
                     storeId = o.str("storeId").ifBlank { o.str("store_id") },

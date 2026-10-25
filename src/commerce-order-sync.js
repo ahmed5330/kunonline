@@ -1,5 +1,6 @@
 import {readConnectionSecrets} from './integration-provider-validation.js';
 import {providerById} from './provider-registry.js';
+import {mutateEasyOrdersConfig} from './easyorders-connection-config.js';
 
 const text=v=>String(v??'').trim(),now=()=>new Date().toISOString();
 const MODES=[
@@ -29,14 +30,25 @@ async function hmacHex(value,secret){const key=await crypto.subtle.importKey('ra
 async function routeToken(env,connection){const secret=text(env.EASYORDERS_WEBHOOK_ROUTE_SECRET||env.SESSION_SECRET);if(!secret)throw Object.assign(new Error('Webhook route secret غير متاح'),{status:500,code:'EASYORDERS_WEBHOOK_ROUTE_SECRET_MISSING'});return hmacHex(`easyorders:${connection.client_id}:${connection.id}`,secret);}
 export async function easyOrdersWebhookPath(env,connection){return `/webhooks/easyorders/${encodeURIComponent(connection.id)}/${await routeToken(env,connection)}`;}
 async function defaultStoreId(env,clientId){const row=await env.DB.prepare("SELECT id FROM stores WHERE client_id=? AND status='active' ORDER BY is_default DESC,created_at LIMIT 1").bind(clientId).first();return row?.id||null;}
-async function resolveKunStoreId(env,connection){const config=parseConfig(connection),configured=text(config.kunStoreId||config.storeId);if(configured){const found=await env.DB.prepare("SELECT id FROM stores WHERE id=? AND client_id=? AND status='active'").bind(configured,connection.client_id).first();if(found)return found.id;}const fallback=await defaultStoreId(env,connection.client_id);if(fallback&&!configured){const next={...config,kunStoreId:fallback};await env.DB.prepare('UPDATE store_connections SET config_json=?,updated_at=? WHERE id=? AND client_id=?').bind(JSON.stringify(next),now(),connection.id,connection.client_id).run();connection.config_json=JSON.stringify(next);}return fallback;}
+async function resolveKunStoreId(env,connection){const config=parseConfig(connection),configured=text(config.kunStoreId||config.storeId);if(configured){const found=await env.DB.prepare("SELECT id FROM stores WHERE id=? AND client_id=? AND status='active'").bind(configured,connection.client_id).first();if(found)return found.id;}const fallback=await defaultStoreId(env,connection.client_id);if(fallback&&!configured){
+    const saved=await mutateEasyOrdersConfig(env,connection,current=>({
+      ...current,kunStoreId:text(current.kunStoreId||current.storeId)||fallback
+    }));
+    const selected=text(saved.kunStoreId||saved.storeId);
+    if(selected!==fallback){
+      const found=await env.DB.prepare("SELECT id FROM stores WHERE id=? AND client_id=? AND status='active'")
+        .bind(selected,connection.client_id).first();
+      if(!found)throw Object.assign(new Error('ربط Easy Orders تغيّر إلى متجر غير نشط'),{status:409,code:'EASYORDERS_STORE_CHANGED'});
+      return found.id;
+    }
+  }return fallback;}
 function normalizePhone(raw){let d=text(raw).replace(/[^\d]/g,'');if(d.startsWith('0020'))d='0'+d.slice(4);else if(d.startsWith('20')&&d.length===12)d='0'+d.slice(2);else if(d.startsWith('00966'))d='0'+d.slice(5);else if(d.startsWith('966')&&d.length===12)d='0'+d.slice(3);return d||null;}
 
 export async function orderSyncProviders(env,clientId,storeId){
   const {results=[]}=await env.DB.prepare("SELECT * FROM store_connections WHERE client_id=? AND status='connected' ORDER BY updated_at DESC").bind(clientId).all(),out=[];
   for(const row of results){
     const provider=providerById(row.provider);if(!provider||provider.category!=='commerce'||!scopes(row,provider).includes('orders.read'))continue;
-    const config=parseConfig(row),bound=text(config.storeId||config.kunStoreId);if(storeId&&bound&&bound!==storeId)continue;
+    const config=parseConfig(row),bound=text(config.kunStoreId||config.storeId);if(storeId&&bound&&bound!==storeId)continue;
     const historical=row.provider!=='easyorders';
     out.push({connectionId:row.id,provider:row.provider,name:provider.name,label:`مزامنة من ${provider.name}`,externalStoreId:row.external_store_id||null,webhookUrl:row.provider==='easyorders'?await easyOrdersWebhookPath(env,row):null,modes:MODES.map(x=>({...x,supported:x.id==='since_connection'||historical})),historicalSupported:historical,note:historical?null:'Easy Orders Public API الحالي لا يوفّر قائمة الطلبات التاريخية. الطلبات الجديدة وتغيّر حالتها تصل عبر Webhook بدءًا من الربط.'});
   }
@@ -49,8 +61,9 @@ export async function startOrderSync(env,{clientId,storeId,providerId,mode}){
   if(providerId==='easyorders'&&mode!=='since_connection')throw Object.assign(new Error('Easy Orders لا يوفّر حاليًا قائمة الطلبات التاريخية عبر Public API. اختر «بدءًا من الربط» لتفعيل استقبال الطلبات الجديدة عبر Webhook.'),{status:409,code:'EASYORDERS_HISTORICAL_ORDERS_UNAVAILABLE'});
   const row=await env.DB.prepare('SELECT * FROM store_connections WHERE id=? AND client_id=?').bind(provider.connectionId,clientId).first(),resolvedStoreId=storeId||await defaultStoreId(env,clientId),config={...parseConfig(row),orderSyncMode:mode,orderSyncStartedAt:now(),kunStoreId:resolvedStoreId||null};
   if(!resolvedStoreId)throw Object.assign(new Error('لا يوجد متجر/فرع نشط لربط طلبات Easy Orders به'),{status:409,code:'ORDER_SYNC_STORE_REQUIRED'});
-  await env.DB.prepare('UPDATE store_connections SET config_json=?,last_error=NULL,updated_at=? WHERE id=? AND client_id=?').bind(JSON.stringify(config),now(),provider.connectionId,clientId).run();
-  row.config_json=JSON.stringify(config);
+  await mutateEasyOrdersConfig(env,row,current=>({
+    ...current,orderSyncMode:mode,orderSyncStartedAt:now(),kunStoreId:resolvedStoreId
+  }),{lastError:null});
   return {ok:true,provider:providerId,mode,live:providerId==='easyorders',webhookUrl:providerId==='easyorders'?await easyOrdersWebhookPath(env,row):provider.webhookUrl,connectionId:provider.connectionId,message:providerId==='easyorders'?'تم تفعيل استقبال الطلبات الجديدة. انسخ رابط Webhook إلى Easy Orders، ثم احفظ الـSecret الذي يولده Easy Orders داخل Kun Online.':'بدأت مزامنة الطلبات.'};
 }
 
@@ -61,9 +74,39 @@ async function customer(env,connection,p,storeId){const phone=normalizePhone(p.p
 async function upsertEasyOrder(env,connection,p){
   const items=Array.isArray(p.cart_items)?p.cart_items:[],state=mapEasyOrdersStatus(p.status),qty=items.reduce((s,x)=>s+(Number(x.quantity)||1),0)||1,product=items.map(x=>text(x?.product?.name)).filter(Boolean).join(' + '),notes=items.flatMap(x=>(x?.variant?.variation_props||[]).map(v=>`${text(v.variation)}: ${text(v.variation_prop)}`)).filter(Boolean).join('، '),storeId=await resolveKunStoreId(env,connection),createdAt=text(p.created_at)||now(),orderDate=easyOrdersBusinessDate(createdAt);
   if(!storeId)throw Object.assign(new Error('تعذر تحديد متجر Kun Online الذي يستقبل الطلب'),{status:409,code:'EASYORDERS_KUN_STORE_UNBOUND'});
-  const customerId=await customer(env,connection,p,storeId),ref=`easyorders:${p.id}`,existing=await env.DB.prepare('SELECT id FROM orders WHERE client_id=? AND (id=? OR ref=?) LIMIT 1').bind(connection.client_id,text(p.id),ref).first(),id=existing?.id||text(p.id);
-  await env.DB.prepare(`INSERT INTO orders (id,client_id,store_id,ref,customer_id,date,name,phone,gov,address,product,product_note,unit_price,qty,total,product_cost,shipping_cost,source,note,state,checkpoint,contact_log,history,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET store_id=COALESCE(orders.store_id,excluded.store_id),customer_id=COALESCE(excluded.customer_id,orders.customer_id),date=excluded.date,name=excluded.name,phone=excluded.phone,gov=excluded.gov,address=excluded.address,product=excluded.product,product_note=excluded.product_note,unit_price=excluded.unit_price,qty=excluded.qty,total=excluded.total,product_cost=excluded.product_cost,shipping_cost=excluded.shipping_cost,state=CASE WHEN orders.state IN ('no_answer','deferred') THEN orders.state WHEN (orders.state IN ('shipped','signed','collected','returned','cancelled') AND excluded.state IN ('pending','confirmed','preparing')) OR (orders.state IN ('confirmed','preparing') AND excluded.state='pending') THEN orders.state ELSE excluded.state END,checkpoint=CASE WHEN orders.state IN ('no_answer','deferred') THEN orders.checkpoint WHEN (orders.state IN ('shipped','signed','collected','returned','cancelled') AND excluded.state IN ('pending','confirmed','preparing')) OR (orders.state IN ('confirmed','preparing') AND excluded.state='pending') THEN orders.checkpoint ELSE excluded.checkpoint END`).bind(id,connection.client_id,storeId,ref,customerId,orderDate,text(p.full_name),normalizePhone(p.phone)||text(p.phone),text(p.government),text(p.address),product,notes,items.length===1?Number(items[0].price)||0:0,qty,Number(p.total_cost)||0,Number(p.cost)||0,Number(p.shipping_cost)||0,'المتجر (Easy Orders)','',state,checkpoint(state),'[]',JSON.stringify([{state,at:createdAt,source:'easyorders-webhook'}]),createdAt).run();
-  await env.DB.prepare('UPDATE store_connections SET last_sync_at=?,last_error=NULL,updated_at=? WHERE id=? AND client_id=?').bind(now(),now(),connection.id,connection.client_id).run();return {ok:true,event:'order-created',id,clientId:connection.client_id,storeId,date:orderDate};
+  // Easy Orders IDs are external IDs and need not be globally unique across
+  // independent Kun clients/stores. Never let ON CONFLICT(id) overwrite an
+  // unrelated tenant or store. Preserve legacy IDs when already assigned.
+  const externalId=text(p.id),ref=`easyorders:${externalId}`;
+  const existing=await env.DB.prepare('SELECT id FROM orders WHERE client_id=? AND (id=? OR ref=?) AND (store_id=? OR store_id IS NULL) LIMIT 1')
+    .bind(connection.client_id,externalId,ref,storeId).first();
+  const global=existing?null:await env.DB.prepare('SELECT id,client_id,store_id FROM orders WHERE id=? LIMIT 1').bind(externalId).first();
+  const collision=Boolean(global&&(text(global.client_id)!==text(connection.client_id)||text(global.store_id)!==text(storeId)));
+  const fingerprint=collision?await crypto.subtle.digest('SHA-256',new TextEncoder().encode([connection.client_id,storeId,connection.id,externalId].join(':'))):null;
+  const scopedId=collision?'EO-'+Array.from(new Uint8Array(fingerprint),b=>b.toString(16).padStart(2,'0')).join('').slice(0,32):externalId;
+  const id=existing?.id||scopedId;
+  const customerId=await customer(env,connection,p,storeId);
+  const upsertSql=`INSERT INTO orders (id,client_id,store_id,ref,customer_id,date,name,phone,gov,address,product,product_note,unit_price,qty,total,product_cost,shipping_cost,source,note,state,checkpoint,contact_log,history,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET store_id=COALESCE(orders.store_id,excluded.store_id),customer_id=COALESCE(excluded.customer_id,orders.customer_id),date=excluded.date,name=excluded.name,phone=excluded.phone,gov=excluded.gov,address=excluded.address,product=excluded.product,product_note=excluded.product_note,unit_price=excluded.unit_price,qty=excluded.qty,total=excluded.total,product_cost=excluded.product_cost,shipping_cost=excluded.shipping_cost,state=CASE WHEN orders.state IN ('no_answer','deferred') THEN orders.state WHEN (orders.state IN ('shipped','signed','collected','returned','cancelled') AND excluded.state IN ('pending','confirmed','preparing')) OR (orders.state IN ('confirmed','preparing') AND excluded.state='pending') THEN orders.state ELSE excluded.state END,checkpoint=CASE WHEN orders.state IN ('no_answer','deferred') THEN orders.checkpoint WHEN (orders.state IN ('shipped','signed','collected','returned','cancelled') AND excluded.state IN ('pending','confirmed','preparing')) OR (orders.state IN ('confirmed','preparing') AND excluded.state='pending') THEN orders.checkpoint ELSE excluded.checkpoint END WHERE orders.client_id=excluded.client_id AND (orders.store_id=excluded.store_id OR orders.store_id IS NULL)`;
+  const writeOrder=candidateId=>env.DB.prepare(upsertSql).bind(candidateId,connection.client_id,storeId,ref,customerId,orderDate,text(p.full_name),normalizePhone(p.phone)||text(p.phone),text(p.government),text(p.address),product,notes,items.length===1?Number(items[0].price)||0:0,qty,Number(p.total_cost)||0,Number(p.cost)||0,Number(p.shipping_cost)||0,'المتجر (Easy Orders)','',state,checkpoint(state),'[]',JSON.stringify([{state,at:createdAt,source:'easyorders-webhook'}]),createdAt).run();
+  let savedId=id,result=await writeOrder(savedId);
+  if(result?.success===false)throw Object.assign(new Error('Easy Orders order write failed'),{status:503,code:'EASYORDERS_ORDER_WRITE_FAILED'});
+  if(result?.meta?.changes===0&&savedId===externalId&&!existing){
+    // Two connections may both see an unused external ID before either
+    // inserts. A losing webhook must retry with its deterministic scoped ID
+    // instead of returning HTTP 409 and silently losing that order.
+    const conflicting=await env.DB.prepare('SELECT client_id,store_id FROM orders WHERE id=? LIMIT 1')
+      .bind(externalId).first();
+    if(conflicting&&(text(conflicting.client_id)!==text(connection.client_id)||text(conflicting.store_id)!==text(storeId))){
+      const digest=await crypto.subtle.digest('SHA-256',
+        new TextEncoder().encode([connection.client_id,storeId,connection.id,externalId].join(':')));
+      savedId='EO-'+Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,'0')).join('').slice(0,32);
+      result=await writeOrder(savedId);
+    }
+  }
+  if(result?.success===false||result?.meta?.changes===0)
+    throw Object.assign(new Error('Easy Orders order ID conflict; no cross-store overwrite'),{
+      status:409,code:'EASYORDERS_ORDER_ID_COLLISION'});
+  await env.DB.prepare('UPDATE store_connections SET last_sync_at=?,last_error=NULL,updated_at=? WHERE id=? AND client_id=?').bind(now(),now(),connection.id,connection.client_id).run();return {ok:true,event:'order-created',id:savedId,clientId:connection.client_id,storeId,date:orderDate};
 }
 
 export async function handleEasyOrdersWebhook(request,env,{connectionId=null,routeToken:sentRouteToken=''}={}){
@@ -77,7 +120,11 @@ export async function handleEasyOrdersWebhook(request,env,{connectionId=null,rou
   if(payload.event_type==='order-status-update'){
     if(!connection){const row=await env.DB.prepare("SELECT client_id FROM orders WHERE id=? OR ref=? LIMIT 1").bind(text(payload.order_id),`easyorders:${text(payload.order_id)}`).first();if(!row)return null;connection=await env.DB.prepare("SELECT * FROM store_connections WHERE client_id=? AND provider='easyorders' AND status='connected' ORDER BY updated_at DESC LIMIT 1").bind(row.client_id).first();if(!connection)return null;}
     await verifyWebhook(env,connection,sent);
-    const row=await env.DB.prepare("SELECT id FROM orders WHERE client_id=? AND (id=? OR ref=?) LIMIT 1").bind(connection.client_id,text(payload.order_id),`easyorders:${text(payload.order_id)}`).first();if(!row)return {ok:true,event:'status-update',ignored:true,note:'الأوردر غير موجود بعد'};
+    if(payload.store_id)await bindExternalStore(env,connection,payload.store_id);
+    const connectedStoreId=await resolveKunStoreId(env,connection);
+    if(!connectedStoreId)throw Object.assign(new Error('لا يوجد متجر مرتبط لتحديث حالة Easy Orders'),{status:409,code:'EASYORDERS_KUN_STORE_UNBOUND'});
+    const row=await env.DB.prepare("SELECT id FROM orders WHERE client_id=? AND (id=? OR ref=?) AND (store_id=? OR store_id IS NULL) LIMIT 1")
+      .bind(connection.client_id,text(payload.order_id),`easyorders:${text(payload.order_id)}`,connectedStoreId).first();if(!row)return {ok:true,event:'status-update',ignored:true,note:'الأوردر غير موجود بعد'};
     const state=mapEasyOrdersStatus(payload.new_status);
     // A delayed Easy Orders callback must not undo confirmation or J&T handoff.
     // Compare atomically in SQLite: two staff/sync actions may arrive together.

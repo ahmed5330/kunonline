@@ -116,6 +116,8 @@ jobs:
         run: |
           node --check src/public-site-reviews.js
           node scripts/public-site-reviews-test.mjs
+      - name: Verify guarded Easy Orders Production release rollback policy
+        run: node scripts/easyorders-production-release-flow-test.mjs
       - name: Verify Worker builds without touching Production
         run: npx wrangler deploy --dry-run --config wrangler.production.toml
   deploy:
@@ -135,8 +137,40 @@ jobs:
           node-version: 22
           package-manager-cache: false
       - run: npm install --ignore-scripts
+      - name: Read current Production Worker rollback version without mutation
+        id: rollback_base
+        run: |
+          set -euo pipefail
+          current="$(npx wrangler deployments status --config wrangler.production.toml --json | node scripts/cloudflare-full-traffic-version.mjs)"
+          test -n "$current"
+          echo "version_id=$current" >> "$GITHUB_OUTPUT"
+          echo "Captured current Production rollback version $current"
       - name: Deploy production Worker only — no migrations
-        run: npx wrangler deploy --config wrangler.production.toml
+        id: deploy_worker
+        run: |
+          set -euo pipefail
+          output="$(npx wrangler deploy --config wrangler.production.toml --keep-vars --message "Production candidate $GITHUB_SHA" 2>&1)"
+          printf '%s\n' "$output"
+          version="$(printf '%s\n' "$output" | sed -nE 's/.*Current Version ID: ([0-9a-f-]{36}).*/\1/p' | tail -1)"
+          test -n "$version"
+          echo "version_id=$version" >> "$GITHUB_OUTPUT"
+      - name: Attest newly deployed Production Worker version
+        id: deployed_version
+        run: |
+          set -euo pipefail
+          expected="${{ steps.deploy_worker.outputs.version_id }}"
+          test -n "$expected"
+          for attempt in $(seq 1 12); do
+            current="$(npx wrangler deployments status --config wrangler.production.toml --json | node scripts/cloudflare-full-traffic-version.mjs)"
+            if [ "$current" = "$expected" ]; then
+              echo "version_id=$current" >> "$GITHUB_OUTPUT"
+              echo "New Production Worker owns live traffic: $current"
+              exit 0
+            fi
+            sleep 4
+          done
+          echo 'Production ownership could not be verified; aborting smoke.'
+          exit 1
       - name: Verify live branded dashboard and isolated daisyUI design preview
         run: |
           set -euo pipefail
@@ -379,3 +413,24 @@ jobs:
           done
           if [ "$verified" != 1 ]; then echo 'V2 login entry or its JavaScript asset is missing from production'; exit 1; fi
           echo 'V2 login gateway and public authentication routes are reachable on production'
+      - name: Restore prior Production Worker after failed smoke only if owned
+        if: failure() && steps.deploy_worker.outputs.version_id != ''
+        run: |
+          set -euo pipefail
+          previous="${{ steps.rollback_base.outputs.version_id }}"
+          deployed="${{ steps.deploy_worker.outputs.version_id }}"
+          test -n "$previous" && test -n "$deployed"
+          current="$(npx wrangler deployments status --config wrangler.production.toml --json | node scripts/cloudflare-full-traffic-version.mjs)"
+          if [ "$current" != "$deployed" ]; then
+            echo "Production Worker changed after this deploy; safe rollback suppressed."
+            exit 1
+          fi
+          npx wrangler versions deploy "$previous@100%" --yes --config wrangler.production.toml --message "Restore prior Production Worker after Easy Orders hotfix smoke failure"
+          for attempt in $(seq 1 12); do
+            restored="$(npx wrangler deployments status --config wrangler.production.toml --json | node scripts/cloudflare-full-traffic-version.mjs)"
+            if [ "$restored" = "$previous" ]; then break; fi
+            sleep 3
+          done
+          test "$restored" = "$previous"
+          curl -fsS --max-time 20 -o /dev/null https://app.kun-online.com/healthz
+          echo "Restored previous Production Worker version $previous and verified its traffic/health"

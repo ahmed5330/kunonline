@@ -17,6 +17,7 @@ import {handleMobileOrderAlerts} from './mobile-order-alerts.js';
 import {ensureInternalCollaborationSchema} from './internal-collaboration-schema.js';
 import {handleProductionPreviewParity} from './production-preview-parity.js';
 import {handleProductionEasyOrdersHealth} from './production-easyorders-health.js';
+import {handleTenantEasyOrdersHealth} from './tenant-easyorders-health.js';
 import {reconcileFinancePresentation} from './production-finance-presentation.js';
 import {reconcileMonthlySubscriptions} from './subscription-billing.js';
 import {handleSubscriptionControl} from './subscription-control.js';
@@ -81,7 +82,7 @@ async function websiteWithDirectAndroidDownload(request,env){
     .replace(/\/v2\/modules-v19\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v19.js?v=20.3')
     .replace(/\/v2\/modules-v22\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v22.js?v=22.1')
     .replace(/\/v2\/modules-v80-jnt-address-cascade-v805\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v80-jnt-address-cascade-v805.js?v=80.6')
-    .replace(/\/v2\/modules-v121-dashboard-sync-guard\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v121-dashboard-sync-guard.js?v=121.1')
+    .replace(/\/v2\/modules-v121-dashboard-sync-guard\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v121-dashboard-sync-guard.js?v=121.3')
     .replaceAll(LEGACY_APK_URL,DIRECT_APK_PATH)
     .replaceAll('/v2/modules-v51-permission-navigation.js?v=51.10','/v2/modules-v51-permission-navigation.js?v=51.16')
     .replace(/\/v2\/modules-v57-section-reload\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v57-section-reload.js?v=57.3')
@@ -101,7 +102,7 @@ async function websiteWithDirectAndroidDownload(request,env){
     html=html.replace('</body>','<script src="/v2/modules-v118-collaboration-order-picker.js?v=118.1.1" data-kun-collaboration-order-picker="1"></script></body>');
   }
   if(!html.includes('/v2/modules-v121-dashboard-sync-guard.js')){
-    html=html.replace('</body>','<script src="/v2/modules-v121-dashboard-sync-guard.js?v=121.1" data-kun-dashboard-sync-guard="1"></script></body>');
+    html=html.replace('</body>','<script src="/v2/modules-v121-dashboard-sync-guard.js?v=121.3" data-kun-dashboard-sync-guard="1"></script></body>');
   }
   if(!html.includes('/v2/modules-v122-dashboard-experience.js')){
     html=html.replace('</body>','<script src="/v2/modules-v122-dashboard-experience.js?v=122.1" data-kun-dashboard-experience="1"></script></body>');
@@ -178,6 +179,22 @@ export default {
 
     const dataEnv=previewRuntimeEnv(env);
     const delegate=previewDelegate(env,dataEnv,ctx);
+    // Preview-backed customer data is live: never silently fall back to a
+    // different D1 source for this status. Fail closed if bindings are absent.
+    if(new URL(request.url).pathname==='/api/integrations/easyorders/dashboard-health'){
+      if(!env.PREVIEW_DB||!env.PREVIEW_APP?.fetch)
+        return new Response(JSON.stringify({error:'HEALTH_UNAVAILABLE'}),{
+          status:503,headers:{'Content-Type':'application/json','Cache-Control':'no-store'}
+        });
+      const tenantHealth=await handleTenantEasyOrdersHealth(request,dataEnv,{
+        authorize:async incoming=>{
+          const identity=new URL('/api/me',incoming.url);
+          const auth=await previewFetch(new Request(identity,{method:'GET',headers:incoming.headers}),env);
+          return auth?.ok?auth.json().catch(()=>null):null;
+        }
+      });
+      if(tenantHealth)return tenantHealth;
+    }
     const mcpAuth=await handleKunMcpOAuth({request,env:dataEnv,delegate});
     if(mcpAuth)return mcpAuth;
     const mcpTools=await handleKunMcpServer({request,env:dataEnv});

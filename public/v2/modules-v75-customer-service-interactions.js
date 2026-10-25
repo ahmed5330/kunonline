@@ -37,11 +37,13 @@
     if(button)button.textContent=`تواصل (${count})`;if(counter)counter.textContent=String(count);if(noAnswer)noAnswer.textContent=`العميل لا يرد — ${count} محاولة تواصل`;window.KunCustomerServiceV31?.updateContactCount?.(id,count);
     return count;
   }
+  function invalidateReads(){for(const path of ['/api/customer-service','/api/state'])window.KunPerformanceCore?.invalidate?.(path);}
   async function saveNote(card,button){
     const id=orderId(card),input=card.querySelector('[data-cs-note]'),note=String(input?.value||'').trim();
     if(!note){notify('اكتب الملاحظة الأول');return;}
     clearError(card);const cid=await clientId();if(!cid)throw new Error('تعذر تحديد حساب المتجر');
     const data=await api(route(id,'notes',cid),{method:'POST',body:JSON.stringify({clientId:cid,note})});
+    invalidateReads();
     if(input&&String(input.value||'').trim()===note)input.value='';
     updateLatestNote(card,note);notify('تم حفظ الملاحظة الداخلية في سجل الأوردر');
     return data;
@@ -49,6 +51,7 @@
   async function saveContact(card,isCall=false){
     const id=orderId(card),cid=await clientId();if(!cid)throw new Error('تعذر تحديد حساب المتجر');
     clearError(card);const data=await api(route(id,'contact',cid),{method:'POST',keepalive:isCall,body:JSON.stringify({clientId:cid,channel:'phone',intent:isCall?'call':'contact'})});
+    invalidateReads();
     const count=updateContactCount(card,data);
     window.dispatchEvent(new CustomEvent('kun:customer-service-contact-saved',{detail:{orderId:id,count,intent:isCall?'call':'contact',savedAt:Date.now()}}));
     notify(isCall?'تم تسجيل المكالمة في سجل الأوردر':'تم تسجيل محاولة التواصل في سجل الأوردر');
