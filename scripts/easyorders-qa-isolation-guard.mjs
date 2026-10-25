@@ -18,10 +18,14 @@ export function assertIsolatedEasyOrdersQa({baseUrl,configText,approvedDatabaseI
   if(LIVE_HOSTS.has(target.hostname.toLowerCase())||
     /(^|\.)kun-online\.com$/i.test(target.hostname))
     fail('Refusing to run state-writing QA against a customer-facing Worker');
+  if(!/(?:qa|sandbox|isolated)/i.test(target.hostname))
+    fail('QA URL host must identify a dedicated QA/sandbox Worker');
   if(!configText||typeof configText!=='string')fail('Dedicated QA Wrangler config is required');
   const worker=field(configText,'name'),main=field(configText,'main');
   const databaseBlock=configText.match(/\[\[d1_databases\]\]([\s\S]*?)(?=\n\[|$)/)?.[1]||'';
   const databaseName=field(databaseBlock,'database_name'),databaseId=field(databaseBlock,'database_id');
+  if((configText.match(/\[\[d1_databases\]\]/g)||[]).length!==1)
+    fail('QA configuration must bind exactly one isolated D1 database');
   if(!worker||!/(?:qa|sandbox|isolated)/i.test(worker)||LIVE_WORKERS.has(worker))
     fail('QA Worker must have a distinct and explicit QA/sandbox name');
   if(!main||!databaseName||!databaseId||field(databaseBlock,'binding')!=='DB')
