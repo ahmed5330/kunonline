@@ -1,11 +1,22 @@
 import {readFile} from 'node:fs/promises';
+import {assertIsolatedEasyOrdersQa} from './easyorders-qa-isolation-guard.mjs';
 import {randomBytes,webcrypto} from 'node:crypto';
 
 const base=(process.argv[2]||'').replace(/\/$/,'');
 if(!base)throw new Error('Usage: node scripts/live-preview-easyorders-test.mjs <base-url>');
+// Before any provider, Worker or D1 request, prove this is NOT the shared
+// customer-linked Preview/Production database. An operator must additionally
+// inspect Cloudflare's real bindings; config-only checks are a safety floor.
+const qaConfigPath=process.env.KUN_EASYORDERS_QA_WRANGLER_CONFIG;
+if(!qaConfigPath)throw new Error('EASYORDERS_QA_ISOLATION_REQUIRED: missing dedicated QA Wrangler config');
+const config=await readFile(qaConfigPath,'utf8');
+assertIsolatedEasyOrdersQa({
+  baseUrl:base,
+  configText:config,
+  approvedDatabaseId:process.env.KUN_EASYORDERS_QA_D1_ID
+});
 const accountId=process.env.CLOUDFLARE_ACCOUNT_ID,token=process.env.CLOUDFLARE_API_TOKEN;
-if(!accountId||!token)throw new Error('Preview Easy Orders QA requires Cloudflare account/token environment');
-const config=await readFile(new URL('../wrangler.preview.toml',import.meta.url),'utf8');
+if(!accountId||!token)throw new Error('Easy Orders isolated QA requires Cloudflare account/token environment');
 const databaseId=config.match(/database_id\s*=\s*"([^"]+)"/)?.[1];if(!databaseId)throw new Error('Preview database_id missing');
 const d1Url=`https://api.cloudflare.com/client/v4/accounts/${accountId}/d1/database/${databaseId}/query`;
 const nonce=randomBytes(5).toString('hex'),adminEmail=`qa-easyorders-${nonce}@example.test`,adminId=`QA-EO-${nonce}`,adminPassword=`Admin!${randomBytes(10).toString('hex')}Aa1`;
