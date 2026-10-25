@@ -12,12 +12,12 @@ jobs:
   isolated-e2e:
     runs-on: ubuntu-latest
     environment: preview
-    timeout-minutes: 40
+    timeout-minutes: 55
     steps:
       - uses: actions/checkout@v5
         with:
           # Exact reviewed candidate; never checkout an unpinned mutable branch.
-          ref: bbadc3757484254e019026b818132ff9a4cf460d
+          ref: 6d0bb1f3033eb9ac27809973e478ee66080c9265
       - uses: actions/setup-node@v5
         with:
           node-version: 22
@@ -26,6 +26,7 @@ jobs:
       - name: Mandatory offline release tests
         run: npm test
       - name: Provision dedicated QA D1 and Worker with schema-only synthetic fixtures
+        id: provision
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -67,3 +68,15 @@ jobs:
           node scripts/live-preview-competitor-ai-test.mjs "$target"
 # No customer data is copied, no existing Worker is deployed, and no live
 # provider is contacted. QA failure is failure, never a skipped/success gate.
+
+      - name: Prove two actual native five-minute QA Cron executions
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: node scripts/verify-isolated-preview-native-cron.mjs
+      - name: Disable QA Cron even after failure or cancellation
+        if: always() && steps.provision.outcome == 'success'
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: node scripts/verify-isolated-preview-native-cron.mjs --cleanup
