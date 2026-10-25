@@ -8,7 +8,7 @@ import {readFile} from 'node:fs/promises';
 import {randomBytes,webcrypto} from 'node:crypto';
 
 const base=(process.argv[2]||'').replace(/\/$/,'');
-if(!base||!base.startsWith('https://kunonline-preview.'))throw Error('Only the Kun Online Preview URL may be tested');
+if(!base)throw Error('An isolated QA Worker URL is required');
 const account=process.env.CLOUDFLARE_ACCOUNT_ID,token=process.env.CLOUDFLARE_API_TOKEN;
 if(!account||!token)throw Error('Cloudflare preview environment credentials required');
 const config=isolatedQaConfig;

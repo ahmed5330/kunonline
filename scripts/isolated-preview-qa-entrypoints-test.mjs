@@ -34,6 +34,9 @@ try{
   }
   const trap=join(dir,'network-trap.mjs');
   await writeFile(trap,"globalThis.fetch=()=>{throw new Error('NETWORK_ATTEMPT_BEFORE_ISOLATION');};\n");
+  const acceptedTrap=join(dir,'accepted-target-trap.mjs');
+  await writeFile(acceptedTrap,"globalThis.fetch=()=>{process.stderr.write('QA_GUARD_ACCEPTED_REQUEST\\n');process.exit(86);};\n");
+  await writeFile(configPath,safeConfig);
   const childEnv={...process.env,CLOUDFLARE_ACCOUNT_ID:'a'.repeat(32),CLOUDFLARE_API_TOKEN:'TEST_ONLY'};
   for(const key of ['KUN_PREVIEW_QA_WRANGLER_CONFIG','KUN_PREVIEW_QA_D1_ID','KUN_EASYORDERS_QA_WRANGLER_CONFIG','KUN_EASYORDERS_QA_D1_ID'])delete childEnv[key];
   const liveConfigPath=new URL('../wrangler.preview.toml',import.meta.url).pathname;
@@ -47,6 +50,12 @@ try{
       assert.match(failure.stderr,/EASYORDERS_QA_ISOLATION_REQUIRED/,entry);
       assert.doesNotMatch(failure.stderr,/NETWORK_ATTEMPT_BEFORE_ISOLATION/,entry);
     }
+    let accepted;
+    try{await execute(process.execPath,['--import',acceptedTrap,path,target],{
+      env:{...childEnv,...env,KUN_PREVIEW_QA_EASYORDERS_CONNECTION_ID:'CON-QA-EASYORDERS-12345'},timeout:10000
+    });}catch(error){accepted=error;}
+    assert.equal(accepted?.code,86,`${entry} must accept the approved QA target before its first stubbed request: ${accepted?.stderr||''}`);
+    assert.match(accepted.stderr,/QA_GUARD_ACCEPTED_REQUEST/);
   }
   for(const name of await readdir(new URL('.',import.meta.url))){
     if(!/^(live|browser)-preview-.*\.mjs$/.test(name))continue;
@@ -57,5 +66,5 @@ try{
       assert.ok(!source.includes("new URL('../wrangler.preview.toml'"),`Live configuration fallback in ${name}`);
     }
   }
-  console.log(`PASS: ${entries.length} state-writing Preview QA entrypoints fail before fetch for missing/live configuration; safe config, wrong origins, Production D1, env overrides and service proxies checked.`);
+  console.log(`PASS: ${entries.length} state-writing Preview QA entrypoints reject missing/live config and accept the approved QA target before a stubbed request; wrong origins, Production D1, env overrides and service proxies checked. No network requests.`);
 }finally{await rm(dir,{recursive:true,force:true});}
