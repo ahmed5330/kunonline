@@ -128,10 +128,25 @@ jobs:
             if [ "$outcome" != "success" ]; then exit 1; fi
           done
 
+      - name: Prove private read-only RPC audit against isolated synthetic orders
+        id: qa_rpc_audit
+        if: steps.qa_before_release.outcome == 'success'
+        run: node scripts/verify-isolated-qa-gap-audit-rpc.mjs
+
       - name: Prove two native five-minute Cron executions on isolated QA
         id: qa_native_cron
-        if: steps.qa_before_release.outcome == 'success'
+        if: steps.qa_before_release.outcome == 'success' && steps.qa_rpc_audit.outcome == 'success'
         run: node scripts/verify-isolated-preview-native-cron.mjs
+
+      - name: Require RPC and native Cron runtime gates before live preflight
+        if: always() && steps.ownership.outputs.is_latest == 'true'
+        env:
+          QA_RPC: ${{ steps.qa_rpc_audit.outcome }}
+          QA_CRON: ${{ steps.qa_native_cron.outcome }}
+        run: |
+          set -euo pipefail
+          test "$QA_RPC" = success
+          test "$QA_CRON" = success
 
       - name: Gate every Preview release on read-only live Worker and D1 checks
         # Every develop push publishes the full Worker, including prior Easy Orders
@@ -380,3 +395,7 @@ jobs:
       - name: Disable isolated QA Cron on completion or cancellation
         if: always() && steps.qa_provision.outcome == 'success'
         run: node scripts/verify-isolated-preview-native-cron.mjs --cleanup
+
+      - name: Remove read-only QA audit caller even after cancellation
+        if: always() && steps.qa_provision.outcome == 'success'
+        run: node scripts/verify-isolated-qa-gap-audit-rpc.mjs --cleanup
