@@ -286,7 +286,8 @@ async function reconcileConnection(env,connection,{maxRequests,lookback,fetcher,
       out.requests++;
       failure.easyOrdersRecoveryLastPositiveControlAt=now();
       try{
-        const fetched=knownShort?await fetchOrderByShortId(fetcher,apiKey,knownShort):await fetchOrderById(fetcher,apiKey,knownId);
+        const controlFetcher=(url,init)=>fetcher(url,{...init,signal:AbortSignal.timeout(10000)});
+        const fetched=knownShort?await fetchOrderByShortId(controlFetcher,apiKey,knownShort):await fetchOrderById(controlFetcher,apiKey,knownId);
         failure.easyOrdersRecoveryLastPositiveControlHttpStatus=fetched.status;
         if(fetched.kind==='rate_limited')out.rateLimited=true;
         const order=fetched.data||{},actualShort=positiveInt(order.short_id||order.shortId);

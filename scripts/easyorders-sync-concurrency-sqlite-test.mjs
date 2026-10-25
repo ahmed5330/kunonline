@@ -386,10 +386,11 @@ try{
     .run('CON-CONTROL','TENANT-A','easyorders','connected',JSON.stringify({kunStoreId:'STORE-CONTROL',webhookLastShortId:499,webhookLastOrderId:'KNOWN-499',easyOrdersRecoveryHighestShortId:501,easyOrdersRecoveryCursor:500}),now,'EO-CONTROL');
   db.prepare('INSERT INTO integration_secrets VALUES (?,?,?,?,?)').run('TENANT-A','CON-CONTROL','api_key',secret.ciphertextB64,secret.ivB64);
   const controlCalls=[];let controlMode='own';
-  const controlApi=async url=>{
+  const controlApi=async(url,options)=>{
     const id=Number(url.split('/').at(-1));controlCalls.push(id);
     if(id===500)return Response.json({message:'record not found'},{status:400});
     assert.equal(id,499,'The diagnostic must only read the known reference');
+    assert.ok(options.signal instanceof AbortSignal,'The secondary diagnostic must have a bounded timeout');
     if(controlMode==='quota')return Response.json({message:'private quota payload'},{status:429});
     if(controlMode==='denied')return Response.json({message:'private permission payload'},{status:403});
     return Response.json({...p,id:'KNOWN-499',short_id:499,store_id:controlMode==='own'?'EO-CONTROL':'EO-FOREIGN'});
