@@ -9,7 +9,8 @@ const report=summarizeCandidate(row,{total:666,recent:3});
 assert.equal(report.externalStoreBound,true);
 assert.equal(report.missingOrderCount,null);
 assert.equal(report.upstreamIdentityVerified,false);
-assert.equal(report.realOrdersRecovered,0);
+assert.equal(report.realOrdersRecovered,null);
+assert.equal(report.verifiedRealOrdersRecovered,0);
 for(const secret of ['PRIVATE_STORE','PRIVATE_CLIENT','PRIVATE_CONNECTION','PRIVATE_PROVIDER_STORE'])assert.ok(!JSON.stringify(report).includes(secret));
 assert.equal(summarizeCandidate({...row,external_store_id:'CON-PLACEHOLDER'},{}).externalStoreBound,false);
 console.log('PASS: exact metadata store/client mapping, placeholder rejection and fingerprint-only reports; order counts never imply missing orders or recovery.');
@@ -29,3 +30,16 @@ const invalid=summarizeCandidate({...row,provider_http_status:'PRIVATE_HTTP_PAYL
 assert.equal(invalid.providerHttpStatus,null);
 assert.equal(invalid.providerErrorCategory,null);
 assert.ok(!JSON.stringify(invalid).includes('PRIVATE_'));
+
+const cron=new Date(Date.now()-1000).toISOString(),control=new Date(Date.now()-2000).toISOString();
+const verified=summarizeCandidate({...row,last_cron_at:cron,positive_control_at:control,positive_control_http:200,positive_control_identity:1},{});
+assert.equal(verified.upstreamIdentityVerified,true);
+assert.equal(verified.providerAuditExecuted,false,'One known order is not a complete gap audit');
+assert.equal(verified.missingOrderCount,null);
+for(const patch of [{positive_control_http:403},{positive_control_identity:0},{positive_control_at:'PRIVATE_CONTROL_PAYLOAD'},
+  {positive_control_at:'2020-01-01T00:00:00Z',last_cron_at:'2020-01-01T00:00:01Z'},
+  {last_cron_at:new Date(Date.now()+60000).toISOString()}]){
+  const failed=summarizeCandidate({...row,last_cron_at:cron,positive_control_at:control,positive_control_http:200,positive_control_identity:1,...patch},{});
+  assert.equal(failed.upstreamIdentityVerified,false,'Missing, stale, future, failed and foreign controls never prove identity');
+  assert.ok(!JSON.stringify(failed).includes('PRIVATE_CONTROL_PAYLOAD'));
+}
