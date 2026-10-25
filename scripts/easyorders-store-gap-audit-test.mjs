@@ -38,7 +38,7 @@ const db={
 const calls=[];
 const noWriteFetcher=async(url,options)=>{
   assert.equal(options.method,'GET');
-  assert.equal(options.redirect,'error');
+  assert.equal(options.redirect,'manual');
   assert.equal(options.headers['Api-Key'],'FAKE-AUTH-SECRET');
   assert.match(url,/^https:\/\/api\.easy-orders\.net\/api\/v1\/external-apps\/orders\/short\/\d+$/);
   const id=Number(url.split('/').at(-1));calls.push(id);
@@ -164,3 +164,10 @@ assert.equal(invoked,0,'Expired, unauthorized and out-of-range requests never in
 assert.equal((await caller.fetch(request({clientId:'ATTACKER',fromShortId:400,toShortId:401}),callerEnv)).status,200);
 assert.equal(received.clientId,'TEN-W','Caller scope is pinned in deployment, never accepted from HTTP input');
 console.log('PASS: private audit RPC is SELECT/GET-only, bounded to ten IDs, reports400 as unconfirmed, stops403/429/5xx/foreign data, strips PII/provider IDs, and requires a scope-pinned expiring caller token.');
+
+const redirect=await rpcRun(400,401,async()=>new Response(null,{status:302,headers:{Location:'https://untrusted.invalid/order'}}));
+assert.equal(redirect.status,'provider_error');assert.equal(redirect.requests,1);
+assert.equal(redirect.httpStatusCounts[302],1);assert.equal(redirect.missingInKun,0,'Redirect never proves absence or a missing Kun order');
+const {syntheticProviderFetch,SYNTHETIC_API_KEY}=await import('../sandbox/easyorders-synthetic-provider.mjs');
+await assert.rejects(()=>syntheticProviderFetch('https://api.easy-orders.net/api/v1/external-apps/orders/short/1',{method:'GET',headers:{'Api-Key':SYNTHETIC_API_KEY},body:'invalid GET body'}),TypeError,'QA must use the real Request constructor instead of ignoring invalid fetch options');
+assert.equal((await syntheticProviderFetch('https://api.easy-orders.net/api/v1/external-apps/orders/short/1',{method:'GET',headers:{'Api-Key':SYNTHETIC_API_KEY},redirect:'manual'})).status,200);

@@ -32,7 +32,7 @@ export async function auditEasyOrdersReadOnlyRpc(env,input={},dependencies={}){
       const boundedGet=async(url,init)=>{
         if(url!==`https://api.easy-orders.net/api/v1/external-apps/orders/short/${id}`||init?.method!=='GET')
           throw failure('READONLY_AUDIT_HTTP_REJECTED');
-        const response=await fetcher(url,{...init,redirect:'error',signal:AbortSignal.timeout(10000)});
+        const response=await fetcher(url,{...init,redirect:'manual',signal:AbortSignal.timeout(10000)});
         httpStatus=response.status;
         output.httpStatusCounts[httpStatus]=(output.httpStatusCounts[httpStatus]||0)+1;
         return response;

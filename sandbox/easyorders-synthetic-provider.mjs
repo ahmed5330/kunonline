@@ -4,9 +4,10 @@ export const SYNTHETIC_EXTERNAL_STORE='EO-SYNTHETIC-QA';
 // This replaces outbound fetch only in the separately deployed QA entrypoint.
 // No real upstream is contacted, even if application code requests another URL.
 export async function syntheticProviderFetch(input,init={}){
-  const url=new URL(typeof input==='string'||input instanceof URL?input:input.url);
-  const method=init.method||(input instanceof Request?input.method:'GET');
-  const headers=new Headers(init.headers||(input instanceof Request?input.headers:undefined));
+  // Validate fetch options in the ACTUAL Worker runtime before faking I/O.
+  // This catches platform-only errors that Node/fake transport would hide.
+  const request=new Request(input instanceof URL?input.toString():input,init);
+  const url=new URL(request.url),method=request.method,headers=request.headers;
   if(url.protocol!=='https:'||url.hostname!=='api.easy-orders.net'||method!=='GET'||headers.get('Api-Key')!==SYNTHETIC_API_KEY)
     throw new Error('QA_EXTERNAL_NETWORK_FORBIDDEN');
   const match=url.pathname.match(/^\/api\/v1\/external-apps\/orders\/(?:short\/)?(?:QA-PROVIDER-)?(\d+)\/?$/);

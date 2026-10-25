@@ -66,7 +66,7 @@ export async function replayExplicitEasyOrdersStoreGaps(env,{
     let response;
     result.attempted++;
     try{response=await fetcher('https://api.easy-orders.net/api/v1/external-apps/orders/short/'+shortId,{
-      method:'GET',headers:{Accept:'application/json','Api-Key':apiKey},redirect:'error'
+      method:'GET',headers:{Accept:'application/json','Api-Key':apiKey},redirect:'manual'
     });}catch{
       result.ok=false;result.status='provider_network_error';result.retryShortId=shortId;break;
     }
