@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {mkdtemp,rm,readFile,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {rehearseD1Backup,inspectSqlExport,classifyWranglerFailure} from './d1-backup-restore-rehearsal.mjs';
+import {rehearseD1Backup,inspectSqlExport,classifyWranglerFailure,prepareChunkedImport} from './d1-backup-restore-rehearsal.mjs';
 
 const live=['31cd5cdf-fc01-42d7-ba1e-571f3dd58495','c426601d-182f-486e-a5c1-bb1bca0ecb0b'];
 const dir=await mkdtemp(join(tmpdir(),'kun-backup-regression-'));
@@ -51,6 +51,13 @@ try{
   assert.equal((await inspectSqlExport(sqlPath)).contentFingerprint,original.contentFingerprint,'Content verification ignores insertion order');
   await writeFile(sqlPath,"CREATE TABLE orders(id TEXT, amount INTEGER); INSERT INTO orders VALUES('fake-2',201),('fake-1',100);");
   assert.notEqual((await inspectSqlExport(sqlPath)).contentFingerprint,original.contentFingerprint,'Same row count with changed values must fail content verification');
+  const longValue="Unicode\nأهلاً ' quoted ".repeat(8000),blob='00ff'.repeat(20000);
+  await writeFile(sqlPath,`CREATE TABLE parent(id TEXT PRIMARY KEY, payload TEXT, binary BLOB); CREATE TABLE child(id TEXT PRIMARY KEY, parent_id TEXT REFERENCES parent(id)); INSERT INTO parent VALUES('one','${longValue.replaceAll("'","''")}',X'${blob}'); INSERT INTO child VALUES('child','one');`);
+  const large=await inspectSqlExport(sqlPath),bounded=await prepareChunkedImport(sqlPath);
+  assert.equal(bounded.rewrittenInsertCount,1);
+  assert.ok(bounded.largestOriginalStatementBytes>100000);
+  assert.equal((await inspectSqlExport(bounded.file)).contentFingerprint,large.contentFingerprint,'Large text/BLOB values, quotes, newlines and relationships must survive bounded import exactly');
+  assert.ok(!(await readFile(bounded.file,'utf8')).includes('BEGIN TRANSACTION;'));
   const report=await rehearseD1Backup(options);
   assert.equal(ids.size,4);
   assert.equal(cliCalls.filter(x=>x[1]==='execute').length,4);
