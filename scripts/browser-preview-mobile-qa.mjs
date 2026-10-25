@@ -1,3 +1,5 @@
+import {loadIsolatedPreviewQaConfig} from './isolated-preview-qa-config.mjs';
+const isolatedQaConfig=await loadIsolatedPreviewQaConfig(process.argv[2]);
 import {readFile,access,mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -5,10 +7,9 @@ import {spawn} from 'node:child_process';
 import {randomBytes,webcrypto} from 'node:crypto';
 
 const base=(process.argv[2]||'').replace(/\/$/,'');
-if(base!=='https://kunonline-preview.mr-a-mnaa.workers.dev')throw new Error('Mobile QA is restricted to Kun Online Preview');
 const accountId=process.env.CLOUDFLARE_ACCOUNT_ID,token=process.env.CLOUDFLARE_API_TOKEN;
 if(!accountId||!token)throw new Error('Mobile QA requires Cloudflare account/token');
-const config=await readFile(new URL('../wrangler.preview.toml',import.meta.url),'utf8');
+const config=isolatedQaConfig;
 const databaseId=config.match(/database_id\s*=\s*"([^"]+)"/)?.[1];if(!databaseId)throw new Error('Preview database_id missing');
 const d1Url=`https://api.cloudflare.com/client/v4/accounts/${accountId}/d1/database/${databaseId}/query`;
 const nonce=randomBytes(5).toString('hex'),email=`qa-mobile-${nonce}@example.test`,userId=`QA-MOBILE-${nonce}`,password=`Mobile!${randomBytes(12).toString('hex')}Aa1`,orderId=`QA-MOBILE-CALL-${nonce}`,createdAt=new Date().toISOString();

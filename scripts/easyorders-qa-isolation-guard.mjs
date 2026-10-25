@@ -8,6 +8,7 @@ const LIVE_HOSTS=new Set([
   'kunonline.mr-a-mnaa.workers.dev','kunonline-sync-preview.mr-a-mnaa.workers.dev'
 ]);
 const LIVE_PREVIEW_D1='31cd5cdf-fc01-42d7-ba1e-571f3dd58495';
+const LIVE_PRODUCTION_D1='c426601d-182f-486e-a5c1-bb1bca0ecb0b';
 const field=(source,key)=>source.match(new RegExp('^\\s*'+key+'\\s*=\\s*"([^"]+)"','m'))?.[1]||'';
 function fail(reason){throw new Error('EASYORDERS_QA_ISOLATION_REQUIRED: '+reason);}
 export function assertIsolatedEasyOrdersQa({baseUrl,configText,approvedDatabaseId}={}){
@@ -21,6 +22,10 @@ export function assertIsolatedEasyOrdersQa({baseUrl,configText,approvedDatabaseI
   if(!/(?:qa|sandbox|isolated)/i.test(target.hostname))
     fail('QA URL host must identify a dedicated QA/sandbox Worker');
   if(!configText||typeof configText!=='string')fail('Dedicated QA Wrangler config is required');
+  if(configText.toLowerCase().includes(LIVE_PREVIEW_D1)||configText.toLowerCase().includes(LIVE_PRODUCTION_D1))
+    fail('QA configuration contains a known customer database identity');
+  if(/^\s*\[(?:\[)?(?:env\.|services\b)/m.test(configText))
+    fail('Standalone QA config cannot contain environment overrides or service bindings');
   const worker=field(configText,'name'),main=field(configText,'main');
   const databaseBlock=configText.match(/\[\[d1_databases\]\]([\s\S]*?)(?=\n\[|$)/)?.[1]||'';
   const databaseName=field(databaseBlock,'database_name'),databaseId=field(databaseBlock,'database_id');
@@ -28,6 +33,8 @@ export function assertIsolatedEasyOrdersQa({baseUrl,configText,approvedDatabaseI
     fail('QA configuration must bind exactly one isolated D1 database');
   if(!worker||!/(?:qa|sandbox|isolated)/i.test(worker)||LIVE_WORKERS.has(worker))
     fail('QA Worker must have a distinct and explicit QA/sandbox name');
+  if(target.protocol!=='https:'||target.hostname.split('.')[0]!==worker||target.pathname!=='/'||target.search||target.hash)
+    fail('QA URL must be the exact HTTPS origin of the configured QA Worker');
   if(!main||!databaseName||!databaseId||field(databaseBlock,'binding')!=='DB')
     fail('QA app must have a distinct D1 DB binding and entrypoint');
   if(!/(?:qa|sandbox|isolated)/i.test(databaseName)||

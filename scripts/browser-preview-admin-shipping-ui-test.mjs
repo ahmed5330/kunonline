@@ -1,3 +1,5 @@
+import {loadIsolatedPreviewQaConfig} from './isolated-preview-qa-config.mjs';
+const isolatedQaConfig=await loadIsolatedPreviewQaConfig(process.argv[2]);
 import {readFile,access,mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -6,7 +8,7 @@ import {randomBytes,webcrypto} from 'node:crypto';
 
 const base=(process.argv[2]||'').replace(/\/$/,'');if(!base)throw new Error('Usage: node scripts/browser-preview-admin-shipping-ui-test.mjs <base-url>');
 const accountId=process.env.CLOUDFLARE_ACCOUNT_ID,token=process.env.CLOUDFLARE_API_TOKEN;if(!accountId||!token)throw new Error('Admin/Shipping browser QA requires Cloudflare credentials');
-const config=await readFile(new URL('../wrangler.preview.toml',import.meta.url),'utf8'),entry=await readFile(new URL('../src/index-commerce-v36.js',import.meta.url),'utf8'),databaseId=config.match(/database_id\s*=\s*"([^"]+)"/)?.[1],expectedBuild=entry.match(/const BUILD=['"]([^'"]+)['"]/i)?.[1];if(!databaseId||!expectedBuild)throw new Error('Browser QA setup incomplete');
+const config=isolatedQaConfig,entry=await readFile(new URL('../src/index-commerce-v36.js',import.meta.url),'utf8'),databaseId=config.match(/database_id\s*=\s*"([^"]+)"/)?.[1],expectedBuild=entry.match(/const BUILD=['"]([^'"]+)['"]/i)?.[1];if(!databaseId||!expectedBuild)throw new Error('Browser QA setup incomplete');
 const d1Url=`https://api.cloudflare.com/client/v4/accounts/${accountId}/d1/database/${databaseId}/query`,nonce=randomBytes(5).toString('hex'),email=`qa-admin-ship-ui-${nonce}@example.test`,userId=`QA-ADM-SHIP-${nonce}`,password=`AdminShip!${randomBytes(10).toString('hex')}Aa1`,createdAt=new Date().toISOString(),sleep=ms=>new Promise(r=>setTimeout(r,ms));
 let chrome=null,userDir=null,cdp=null,chromeErr='';
 async function d1(sql,params=[]){const r=await fetch(d1Url,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({sql,params})}),p=await r.json().catch(()=>({})),x=p?.result?.[0];if(!r.ok||p.success===false||x?.success===false)throw new Error(`D1 ${r.status}: ${JSON.stringify(p?.errors||x?.error||p).slice(0,700)}`);return x?.results||[];}

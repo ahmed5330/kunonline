@@ -1,3 +1,5 @@
+import {loadIsolatedPreviewQaConfig} from './isolated-preview-qa-config.mjs';
+const isolatedQaConfig=await loadIsolatedPreviewQaConfig(process.argv[2]);
 import {readFile} from 'node:fs/promises';
 import {randomBytes,webcrypto} from 'node:crypto';
 
@@ -5,7 +7,7 @@ const base=(process.argv[2]||'').replace(/\/$/,'');
 if(!base)throw new Error('Usage: node scripts/live-preview-order-dedupe-test.mjs <base-url>');
 const accountId=process.env.CLOUDFLARE_ACCOUNT_ID,token=process.env.CLOUDFLARE_API_TOKEN;
 if(!accountId||!token)throw new Error('Preview order dedupe QA requires Cloudflare account/token environment');
-const config=await readFile(new URL('../wrangler.preview.toml',import.meta.url),'utf8'),databaseId=config.match(/database_id\s*=\s*"([^"]+)"/)?.[1];
+const config=isolatedQaConfig,databaseId=config.match(/database_id\s*=\s*"([^"]+)"/)?.[1];
 if(!databaseId)throw new Error('Preview database_id missing');
 const d1Url=`https://api.cloudflare.com/client/v4/accounts/${accountId}/d1/database/${databaseId}/query`,nonce=randomBytes(5).toString('hex'),email=`qa-dedupe-${nonce}@example.test`,userId=`QA-DEDUPE-${nonce}`,password=`Dedupe!${randomBytes(10).toString('hex')}Aa1`,nativeId=`EO-QA-${nonce}`,sheetId=`IMP-QA-${nonce}`,shortId=`9${Date.now().toString().slice(-7)}`;
 let cookie='',clientId='',storeId='';

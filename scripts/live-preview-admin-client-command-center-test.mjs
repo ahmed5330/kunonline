@@ -1,9 +1,11 @@
+import {loadIsolatedPreviewQaConfig} from './isolated-preview-qa-config.mjs';
+const isolatedQaConfig=await loadIsolatedPreviewQaConfig(process.argv[2]);
 import {readFile} from 'node:fs/promises';
 import {randomBytes,webcrypto} from 'node:crypto';
 
 const base=(process.argv[2]||'').replace(/\/$/,'');if(!base)throw new Error('Usage: node scripts/live-preview-admin-client-command-center-test.mjs <base-url>');
 const accountId=process.env.CLOUDFLARE_ACCOUNT_ID,token=process.env.CLOUDFLARE_API_TOKEN;if(!accountId||!token)throw new Error('Admin Command Center QA requires Cloudflare account/token environment');
-const config=await readFile(new URL('../wrangler.preview.toml',import.meta.url),'utf8'),databaseId=config.match(/database_id\s*=\s*"([^"]+)"/)?.[1];if(!databaseId)throw new Error('Preview database_id missing');
+const config=isolatedQaConfig,databaseId=config.match(/database_id\s*=\s*"([^"]+)"/)?.[1];if(!databaseId)throw new Error('Preview database_id missing');
 const nonce=randomBytes(5).toString('hex').toUpperCase(),clientId=`QA-ADM-${nonce}`,storeId=`QA-ADM-ST-${nonce}`,adminId=`QA-ADM-US-${nonce}`,ownerId=`QA-ADM-OW-${nonce}`,productId=`QA-ADM-PR-${nonce}`,campaignId=`QA-ADM-CA-${nonce}`,subscriptionId=`QA-ADM-SUB-${nonce}`;
 const adminEmail=`qa-admin-command-${nonce.toLowerCase()}@example.test`,ownerEmail=`qa-owner-command-${nonce.toLowerCase()}@example.test`,adminPassword=`AdminCommand!${randomBytes(8).toString('hex')}Aa1`,ownerPassword=`OwnerCommand!${randomBytes(8).toString('hex')}Bb2`;
 const d1Url=`https://api.cloudflare.com/client/v4/accounts/${accountId}/d1/database/${databaseId}/query`;
