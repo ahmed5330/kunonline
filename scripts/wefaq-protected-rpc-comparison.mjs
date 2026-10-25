@@ -13,6 +13,11 @@ export const expectedScope=Object.freeze({clientFingerprint:'719318eb4257a238f8d
 export const scopeMatches=report=>report?.upstreamIdentityVerified===true&&Object.entries(expectedScope).every(([key,value])=>report[key]===value);
 export function auditCallerName(run){if(!/^\d{1,20}$/.test(run||''))throw Error('RPC_AUDIT_RUN_INVALID');return `kunonline-wefaq-readonly-${run}`;}
 export function recentRange(highest){const to=Number(highest);if(!Number.isSafeInteger(to)||to<1)throw Error('RPC_AUDIT_HIGH_WATER_INVALID');return {from:Math.max(1,to-29),to};}
+export function cursorBoundaryRange(cursor,highest){
+ const from=Number(cursor),high=Number(highest),to=high+1;
+ if(!Number.isSafeInteger(from)||from<1||!Number.isSafeInteger(high)||high<1||!Number.isSafeInteger(to)||from>to||to-from>=10)throw Error('RPC_AUDIT_BOUNDARY_RANGE_INVALID');
+ return {from,to};
+}
 async function main(){
  const account=process.env.CLOUDFLARE_ACCOUNT_ID,token=process.env.CLOUDFLARE_API_TOKEN,expected=process.env.KUN_EXPECTED_PREVIEW_VERSION;
  const name=auditCallerName(process.env.GITHUB_RUN_ID),database='31cd5cdf-fc01-42d7-ba1e-571f3dd58495';
@@ -33,6 +38,7 @@ async function main(){
   const sql=`SELECT id,client_id,external_store_id,status,
    CASE WHEN json_valid(config_json) THEN COALESCE(json_extract(config_json,'$.kunStoreId'),json_extract(config_json,'$.storeId')) END AS config_store_id,
    CASE WHEN json_valid(config_json) THEN json_extract(config_json,'$.easyOrdersRecoveryHighestShortId') END AS highest,
+   CASE WHEN json_valid(config_json) THEN json_extract(config_json,'$.easyOrdersRecoveryCursor') END AS cursor,
    CASE WHEN json_valid(config_json) THEN json_extract(config_json,'$.easyOrdersRecoveryLastCronAt') END AS last_cron_at,
    CASE WHEN json_valid(config_json) THEN json_extract(config_json,'$.easyOrdersRecoveryLastPositiveControlAt') END AS positive_control_at,
    CASE WHEN json_valid(config_json) THEN json_extract(config_json,'$.easyOrdersRecoveryLastPositiveControlHttpStatus') END AS positive_control_http,
@@ -43,9 +49,11 @@ async function main(){
   if(matches.length!==1||!scopeMatches(summarizeCandidate(matches[0],{})))throw Error('RPC_AUDIT_SCOPE_OR_IDENTITY_CHANGED');
   return matches[0];
  }
- const selected=await scope(),range=recentRange(selected.highest),readToken=randomBytes(32).toString('hex');
+ const selected=await scope(),mode=process.env.KUN_AUDIT_RANGE_MODE||'recent';
+ if(!['recent','cursor-boundary'].includes(mode))throw Error('RPC_AUDIT_RANGE_MODE_INVALID');
+ const range=mode==='cursor-boundary'?cursorBoundaryRange(selected.cursor,selected.highest):recentRange(selected.highest),readToken=randomBytes(32).toString('hex');
  const dir=await mkdtemp(join(tmpdir(),'kun-live-readonly-rpc-'));
- const report={kind:'WEFAQ_READONLY_PROVIDER_COMPARISON',testedAt:new Date().toISOString(),sourceVersion:expected,...expectedScope,
+ const report={kind:'WEFAQ_READONLY_PROVIDER_COMPARISON',testedAt:new Date().toISOString(),sourceVersion:expected,rangeMode:mode,...expectedScope,
   fromShortId:range.from,toShortId:range.to,requests:0,presentShortIds:[],missingShortIds:[],providerMissingShortIds:[],unconfirmedShortIds:[],ambiguousShortIds:[],httpStatusCounts:{},customerRowsModified:false,providerSecretsExposed:false,manualReplayExecuted:false};
  try{
   const cfg=join(dir,'wrangler.audit.toml');
