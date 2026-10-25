@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import {candidateConnections,summarizeCandidate} from './wefaq-readonly-scope-inventory.mjs';
+const stores=[{id:'PRIVATE_STORE',client_id:'PRIVATE_CLIENT'}];
+const row={id:'PRIVATE_CONNECTION',client_id:'PRIVATE_CLIENT',config_store_id:'PRIVATE_STORE',external_store_id:'PRIVATE_PROVIDER_STORE',status:'connected',key_count:1,last_error_present:1,highest:122,cursor:123};
+assert.equal(candidateConnections(stores,[row]).length,1);
+assert.equal(candidateConnections(stores,[{...row,client_id:'OTHER'}]).length,0);
+assert.equal(candidateConnections(stores,[{...row,config_store_id:'OTHER'}]).length,0);
+const report=summarizeCandidate(row,{total:666,recent:3});
+assert.equal(report.externalStoreBound,true);
+assert.equal(report.missingOrderCount,null);
+assert.equal(report.upstreamIdentityVerified,false);
+assert.equal(report.realOrdersRecovered,0);
+for(const secret of ['PRIVATE_STORE','PRIVATE_CLIENT','PRIVATE_CONNECTION','PRIVATE_PROVIDER_STORE'])assert.ok(!JSON.stringify(report).includes(secret));
+assert.equal(summarizeCandidate({...row,external_store_id:'CON-PLACEHOLDER'},{}).externalStoreBound,false);
+console.log('PASS: exact metadata store/client mapping, placeholder rejection and fingerprint-only reports; order counts never imply missing orders or recovery.');

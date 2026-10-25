@@ -1,0 +1,26 @@
+name: Protected Wefaq store scope inventory - read only
+on:
+  push:
+    branches: [codex/serialized-warehouse-operations]
+    paths: ['.github/workflows/wefaq-protected-readonly-scope-20261025.yml']
+permissions:
+  contents: read
+jobs:
+  scope-metadata:
+    runs-on: ubuntu-latest
+    environment: preview
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: node scripts/wefaq-readonly-scope-inventory-test.mjs
+      - name: Read only named store metadata and order counts
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: node scripts/wefaq-readonly-scope-inventory.mjs
+# Only SELECT statements; no customer payload, ciphertext, plaintext provider
+# key or raw store/connection ID is retrieved for log output. No replay/login.
