@@ -27,6 +27,13 @@ export async function inspectSqlExport(file){
     return JSON.parse(result.stdout);
   }catch{throw new Error('LOCAL_EXPORT_VALIDATION_FAILED');}
 }
+export async function prepareChunkedImport(file){
+  const output=file+'.bounded.sql';
+  try{
+    const result=await execute('python3',[new URL('./d1-export-chunked-import.py',import.meta.url).pathname,file,output],{timeout:120000,maxBuffer:1024*1024});
+    return {file:output,...JSON.parse(result.stdout)};
+  }catch{throw new Error('BOUNDED_IMPORT_PREPARATION_FAILED');}
+}
 const hash=s=>createHash('sha256').update(s).digest('hex');
 const sources=Object.freeze([
   {label:'preview',worker:'kunonline-preview',binding:'DB',id:'31cd5cdf-fc01-42d7-ba1e-571f3dd58495'},
@@ -39,7 +46,7 @@ const tableName=s=>{
   return `"${s}"`;
 };
 
-export async function rehearseD1Backup({api,cli,inspectExport,dir,runId,onProgress=()=>{}}){
+export async function rehearseD1Backup({api,cli,inspectExport,prepareImport=async file=>({file}),dir,runId,onProgress=()=>{}}){
   if(!/^\d{1,20}$/.test(runId||''))throw new Error('INVALID_RUN_ID');
   const created=new Map(),reports=[];
   // Prove both actual source bindings before exporting or creating anything.
@@ -66,7 +73,12 @@ export async function rehearseD1Backup({api,cli,inspectExport,dir,runId,onProgre
   async function importAndVerify(database,file,manifest){
     if(liveIds.has(database.id)||!created.has(database.id))throw new Error('LIVE_IMPORT_FORBIDDEN');
     const path=await config(database);
-    await cli(['d1','execute',database.name,'--remote','--file',file,'--config',path,'--yes']);
+    const prepared=await prepareImport(file);
+    onProgress({stage:'bounded-import-prepared',target:database.name,
+      rewrittenInsertCount:prepared.rewrittenInsertCount??null,
+      largestOriginalStatementBytes:prepared.largestOriginalStatementBytes??null,
+      maximumGeneratedStatementBytes:prepared.maximumGeneratedStatementBytes??null});
+    await cli(['d1','execute',database.name,'--remote','--file',prepared.file,'--config',path,'--yes']);
     const tables=Object.keys(manifest).sort();
     if(!tables.length)throw new Error('EMPTY_EXPORT_MANIFEST');
     const sql=tables.map(name=>`SELECT '${name}' AS table_name, COUNT(*) AS n FROM ${tableName(name)}`).join(' UNION ALL ');
@@ -155,7 +167,7 @@ async function main(){
     }
   };
   try{
-    const result=await rehearseD1Backup({api,cli,inspectExport:inspectSqlExport,dir,runId:process.env.GITHUB_RUN_ID,
+    const result=await rehearseD1Backup({api,cli,inspectExport:inspectSqlExport,prepareImport:prepareChunkedImport,dir,runId:process.env.GITHUB_RUN_ID,
       onProgress:progress=>console.log(JSON.stringify(progress))});
     console.log(JSON.stringify(result,null,2));
   }finally{await rm(dir,{recursive:true,force:true});}
