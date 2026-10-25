@@ -422,6 +422,46 @@ try{
   assert.equal(controlCalls.length-beforeBudget,1,'A diagnostic cannot exceed the shared request cap');
   assert.equal(config('CON-CONTROL').easyOrdersRecoveryLastPositiveControlAt,null);
   assert.equal(config('CON-CONTROL').easyOrdersRecoveryCursor,500);
+  // A later failed ahead probe must not erase the already verified prefix.
+  // Keep the failed number unresolved and retry it; HTTP400 is never absence.
+  db.prepare('INSERT INTO stores VALUES (?,?,?,?,?)').run('STORE-PREFIX','TENANT-A','active',0,now);
+  db.prepare('INSERT INTO store_connections (id,client_id,provider,status,config_json,updated_at,external_store_id) VALUES (?,?,?,?,?,?,?)')
+    .run('CON-PREFIX','TENANT-A','easyorders','connected',JSON.stringify({kunStoreId:'STORE-PREFIX',easyOrdersRecoveryHighestShortId:7002,easyOrdersRecoveryCursor:7000}),now,'EO-PREFIX');
+  db.prepare('INSERT INTO integration_secrets VALUES (?,?,?,?,?)').run('TENANT-A','CON-PREFIX','api_key',secret.ciphertextB64,secret.ivB64);
+  let prefixReady=false,prefixHole=false; const prefixCalls=[];
+  const prefixApi=async url=>{
+    const id=Number(url.match(/(\d+)$/)[1]);prefixCalls.push(id);
+    if(id===7003&&!prefixReady)return Response.json({message:'record not found'},{status:400});
+    if(id===7004&&prefixHole)return Response.json({message:'record not found'},{status:404});
+    if(id>=7004)return Response.json({message:'record not found'},{status:503});
+    return Response.json({...p,id:'PREFIX-'+id,short_id:id,store_id:'EO-PREFIX'});
+  };
+  const prefixRun=maxRequests=>reconcileEasyOrdersOrders(env,{clientId:'TENANT-A',connectionId:'CON-PREFIX',maxRequests,fetcher:prefixApi,trigger:'cron'});
+  const prefixFailed=await prefixRun(5);
+  assert.equal(prefixFailed.ok,false);assert.equal(prefixFailed.missing,0);
+  assert.equal(config('CON-PREFIX').easyOrdersRecoveryCursor,7003,'Persist only the successful prefix before the400');
+  assert.equal(config('CON-PREFIX').easyOrdersRecoveryLastStatus,'error');
+  assert.equal(config('CON-PREFIX').easyOrdersRecoveryLastProviderHttpStatus,400);
+  assert.equal(config('CON-PREFIX').easyOrdersRecoveryLastRecovered,3);
+  assert.equal(config('CON-PREFIX').easyOrdersRecoveryRecoveredCount,3);
+  assert.equal(config('CON-PREFIX').easyOrdersRecoveryLastRequests,5);
+  assert.equal(prefixFailed.results[0].nextShortId,7003);
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM orders WHERE store_id='STORE-PREFIX'").get().n,3);
+  const prefixRetryStart=prefixCalls.length;await prefixRun(2);
+  assert.equal(prefixCalls[prefixRetryStart],7003,'Retry the exact unresolved number, not the successful prefix');
+  assert.equal(config('CON-PREFIX').easyOrdersRecoveryCursor,7003);
+  assert.equal(config('CON-PREFIX').easyOrdersRecoveryRecoveredCount,3,'A failed retry must not count the known-order diagnostic');
+  prefixReady=true;const prefixResumed=await prefixRun(2);
+  assert.equal(prefixResumed.ok,false,'A subsequent503 is still a genuine failure');
+  assert.equal(config('CON-PREFIX').easyOrdersRecoveryCursor,7004);
+  assert.equal(config('CON-PREFIX').easyOrdersRecoveryLastProviderHttpStatus,503);
+  assert.equal(config('CON-PREFIX').easyOrdersRecoveryRecoveredCount,4);
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM orders WHERE store_id='STORE-PREFIX'").get().n,4);
+  prefixHole=true;await prefixRun(2);
+  assert.equal(config('CON-PREFIX').easyOrdersRecoveryLastProviderHttpStatus,503);
+  assert.deepEqual(config('CON-PREFIX').easyOrdersRecoveryPendingShortIds,[7004],'A404 ahead hole remains durably queued when a later request fails');
+  assert.equal(config('CON-PREFIX').easyOrdersRecoveryProbeCursor,7005,'Only the separately tracked probe may move past the queued404');
+  assert.equal(config('CON-PREFIX').easyOrdersRecoveryCursor,7004,'The contiguous checkpoint never skips the next unresolved order');
   // A busy shared provider can return >30 consecutive orders owned by a
   // DIFFERENT storefront. Each verified foreign Short ID is safe to advance
   // past between cron runs. Without a separate ahead cursor the scheduler

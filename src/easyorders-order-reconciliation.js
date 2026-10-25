@@ -141,7 +141,7 @@ async function bootstrapFromLastWebhook(env,connection,{apiKey,fetcher,lookback}
 
 async function reconcileConnection(env,connection,{maxRequests,lookback,fetcher,cronRun=false}){
   const out={connectionId:connection.id,clientId:connection.client_id,storeId:null,requests:0,recovered:0,updated:0,missing:0,foreignStoreSkipped:0,seeded:false,rateLimited:false,highestShortId:0,nextShortId:0,estimatedRemaining:0,cumulativeRecovered:0,status:'waiting_for_short_id',recoveredOrderIds:[],error:null,providerHttpStatus:null,providerErrorCategory:null};
-  let apiKey='';
+  let apiKey='',verifiedProgress=null;
   try{
     const secrets=await readConnectionSecrets(env,connection.client_id,connection.id);apiKey=text(secrets.api_key);
     if(!apiKey)throw Object.assign(new Error('مفتاح Easy Orders API غير موجود؛ لا يمكن إصلاح فجوات الطلبات تلقائيًا'),{status:409,code:'EASYORDERS_API_KEY_MISSING'});
@@ -206,6 +206,9 @@ async function reconcileConnection(env,connection,{maxRequests,lookback,fetcher,
       // future scheduled runs.
       if(inspected.kind==='rate_limited'||inspected.kind==='budget')break;
       cursor++;
+      // A later provider failure must not discard this verified prefix.
+      // The cursor still stops at the first unverified number.
+      verifiedProgress={easyOrdersRecoveryHighestShortId:highest,easyOrdersRecoveryCursor:cursor};
     }
 
     // Shared-source Short IDs include orders from other shops and holes.
@@ -219,6 +222,11 @@ async function reconcileConnection(env,connection,{maxRequests,lookback,fetcher,
     let pendingLastChecked=positiveInt(config.easyOrdersRecoveryPendingLastCheckedId);
     let nextVerifiedProbe=positiveInt(config.easyOrdersRecoveryProbeCursor)||highest+1;
     let pendingQueueFull=false;
+    const captureAheadProgress=()=>{verifiedProgress={
+      easyOrdersRecoveryHighestShortId:highest,easyOrdersRecoveryCursor:highest+1,
+      easyOrdersRecoveryProbeCursor:nextVerifiedProbe,
+      easyOrdersRecoveryPendingAdd:[...pendingAdd],easyOrdersRecoveryPendingRemove:[...pendingRemove],
+      easyOrdersRecoveryPendingLastCheckedId:pendingLastChecked};};
     if(cursor>highest&&out.requests<maxRequests&&!out.rateLimited){
       const candidates=[...new Set(existingPending)].sort((a,b)=>a-b);
       const sequence=[...candidates.filter(id=>id>pendingLastChecked),
@@ -233,6 +241,7 @@ async function reconcileConnection(env,connection,{maxRequests,lookback,fetcher,
         if(checked.kind==='found'||checked.kind==='foreign_store')
           pendingRemove.push(shortId);
         if(checked.kind==='found')highest=Math.max(highest,positiveInt(checked.shortId));
+        captureAheadProgress();
       }
       if(!out.rateLimited){
         let probe=Math.max(highest+1,nextVerifiedProbe),misses=0;
@@ -256,6 +265,7 @@ async function reconcileConnection(env,connection,{maxRequests,lookback,fetcher,
             // then may discovery move on to newer, valid orders.
             nextVerifiedProbe=Math.max(nextVerifiedProbe,probe);
           }else break;
+          captureAheadProgress();
         }
       }
       cursor=highest+1;
@@ -303,7 +313,18 @@ async function reconcileConnection(env,connection,{maxRequests,lookback,fetcher,
         if(status===429)out.rateLimited=true;
       }
     }
-    await patchConfig(env,connection,{...failure,easyOrdersRecoveryLastRunAt:now(),easyOrdersRecoveryLastStatus:'error',easyOrdersRecoveryLastError:out.error.slice(0,500),...(cronRun?{easyOrdersRecoveryLastCronAt:now()}:{})}).catch(()=>{});
+    const saved=await patchConfig(env,connection,{...verifiedProgress,...failure,
+      easyOrdersRecoveryLastRunAt:now(),easyOrdersRecoveryLastStatus:'error',
+      easyOrdersRecoveryLastRequests:out.requests,easyOrdersRecoveryLastRecovered:out.recovered,
+      easyOrdersRecoveryRecoveredCount:out.cumulativeRecovered+out.recovered,
+      easyOrdersRecoveryLastError:out.error.slice(0,500),...(cronRun?{easyOrdersRecoveryLastCronAt:now()}:{})}).catch(()=>null);
+    if(saved){
+      out.highestShortId=positiveInt(saved.easyOrdersRecoveryHighestShortId);
+      out.nextShortId=positiveInt(saved.easyOrdersRecoveryCursor);
+      out.estimatedRemaining=Math.max(0,out.highestShortId-out.nextShortId+1);
+      out.cumulativeRecovered=positiveInt(saved.easyOrdersRecoveryRecoveredCount);
+      out.unresolvedAheadCount=Array.isArray(saved.easyOrdersRecoveryPendingShortIds)?saved.easyOrdersRecoveryPendingShortIds.length:0;
+    }
     return out;
   }
 }
