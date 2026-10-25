@@ -1,3 +1,4 @@
+import {auditEasyOrdersReadOnlyRpc} from './easyorders-readonly-audit-rpc.js';
 import app,{SyncEntrypoint as BaseSyncEntrypoint} from './index-commerce-v38-base.js';
 import {handleClarityApi,syncClarityScheduled} from './clarity-integration.js';
 import {handleAIMarketing} from './ai-marketing-analyst.js';
@@ -156,6 +157,7 @@ export default {
 };
 
 export class SyncEntrypoint extends BaseSyncEntrypoint {
+  async auditEasyOrdersGapsReadOnly(input){return auditEasyOrdersReadOnlyRpc(this.env,input);}
   async runCron(cron){
     const upstream=await super.runCron(cron);
     if(String(cron||'')==='0 */2 * * *'){

@@ -126,3 +126,41 @@ await assert.rejects(()=>auditEasyOrdersStoreGapRange({DB:unverifiedDb},{
 
 assert.ok(queries.length>0);
 console.log('PASS Easy Orders historical gap audit: read-only scoped SQL, 30 max requests, tenant/store separation, 404/429/503 handling, redacted results');
+
+const {auditEasyOrdersReadOnlyRpc,readonlyAuditDatabase}=await import('../src/easyorders-readonly-audit-rpc.js');
+const safeDb=readonlyAuditDatabase(db);
+for(const sql of ['UPDATE orders SET state=1','SELECT 1; DELETE FROM orders','PRAGMA writable_schema=1','SELECT 1 -- hidden'])
+  assert.throws(()=>safeDb.prepare(sql),{code:'READONLY_AUDIT_SQL_REJECTED'});
+assert.equal(safeDb.prepare('SELECT id FROM orders').run,undefined);
+assert.equal(safeDb.batch,undefined);
+const rpcRun=(from,to,fetcher=noWriteFetcher)=>auditEasyOrdersReadOnlyRpc(environment,{
+  clientId:'TEN-W',storeId:'STORE-W',connectionId:'CON-W',fromShortId:from,toShortId:to
+},{fetcher,readSecrets:options.readSecrets});
+const rpc=await rpcRun(400,401);
+assert.equal(rpc.ok,true);assert.equal(rpc.alreadyInKun,1);assert.deepEqual(rpc.missingShortIds,[401]);
+assert.equal(rpc.dbWritesAllowed,false);assert.equal(rpc.recoveryPerformed,false);
+for(const value of ['TEN-W','STORE-W','CON-W','EA-401','PERSONAL_NAME','FAKE-AUTH-SECRET','01112345678'])
+  assert.ok(!JSON.stringify(rpc).includes(value),'RPC returns only counts and Short IDs');
+const continued=await rpcRun(409,410,async(url,init)=>url.endsWith('/409')?Response.json({message:'record not found'},{status:400}):noWriteFetcher(url,init));
+assert.equal(continued.ok,false);assert.deepEqual(continued.unconfirmedShortIds,[409]);
+assert.deepEqual(continued.missingShortIds,[410]);assert.equal(continued.missingAtProvider,0);
+assert.equal(continued.httpStatusCounts[400],1);assert.equal(continued.requests,2);
+assert.equal((await rpcRun(402,403)).status,'provider_store_mismatch');
+assert.equal((await rpcRun(404,406)).requests,1,'429 stops further provider requests');
+assert.equal((await rpcRun(405,406)).requests,1,'5xx stops further provider requests');
+assert.deepEqual((await rpcRun(407,407)).ambiguousShortIds,[407]);
+assert.equal((await rpcRun(400,410)).code,'READONLY_AUDIT_SCOPE_OR_RANGE_INVALID');
+assert.equal((await auditEasyOrdersReadOnlyRpc(environment,{...options,storeId:'OTHER',fromShortId:400,toShortId:400},{readSecrets:options.readSecrets,fetcher:noWriteFetcher})).status,'audit_failed');
+const caller=(await import('../sandbox/easyorders-readonly-audit-caller.mjs')).default;
+let invoked=0,received;
+const token='f'.repeat(64),callerEnv={KUN_READONLY_AUDIT:'true',AUDIT_READ_TOKEN:token,AUDIT_EXPIRES_AT:String(Date.now()+60000),
+ AUDIT_MIN_SHORT_ID:'400',AUDIT_MAX_SHORT_ID:'410',AUDIT_CLIENT_ID:'TEN-W',AUDIT_STORE_ID:'STORE-W',AUDIT_CONNECTION_ID:'CON-W',
+ APP_AUDIT:{auditEasyOrdersGapsReadOnly:async input=>{invoked++;received=input;return rpc;}}};
+const request=(body,auth=token)=>new Request('https://audit.invalid/audit',{method:'POST',headers:{Authorization:'Bearer '+auth},body:JSON.stringify(body)});
+assert.equal((await caller.fetch(request({fromShortId:400,toShortId:401},'wrong'),callerEnv)).status,404);
+assert.equal((await caller.fetch(request({fromShortId:400,toShortId:401}),{...callerEnv,AUDIT_EXPIRES_AT:'1'})).status,404);
+assert.equal((await caller.fetch(request({fromShortId:400,toShortId:411}),callerEnv)).status,400);
+assert.equal(invoked,0,'Expired, unauthorized and out-of-range requests never invoke the app');
+assert.equal((await caller.fetch(request({clientId:'ATTACKER',fromShortId:400,toShortId:401}),callerEnv)).status,200);
+assert.equal(received.clientId,'TEN-W','Caller scope is pinned in deployment, never accepted from HTTP input');
+console.log('PASS: private audit RPC is SELECT/GET-only, bounded to ten IDs, reports400 as unconfirmed, stops403/429/5xx/foreign data, strips PII/provider IDs, and requires a scope-pinned expiring caller token.');
