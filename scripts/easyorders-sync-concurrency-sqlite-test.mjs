@@ -387,7 +387,7 @@ try{
   db.prepare('INSERT INTO integration_secrets VALUES (?,?,?,?,?)').run('TENANT-A','CON-CONTROL','api_key',secret.ciphertextB64,secret.ivB64);
   const controlCalls=[];let controlMode='own';
   const controlApi=async(url,options)=>{
-    const id=Number(url.split('/').at(-1));controlCalls.push(id);
+    const reference=url.split('/').at(-1),id=reference==='KNOWN-499'?499:Number(reference);controlCalls.push(id);
     if(id===500)return Response.json({message:'record not found'},{status:400});
     assert.equal(id,499,'The diagnostic must only read the known reference');
     assert.ok(options.signal instanceof AbortSignal,'The secondary diagnostic must have a bounded timeout');
@@ -403,6 +403,12 @@ try{
   assert.equal(config('CON-CONTROL').easyOrdersRecoveryLastPositiveControlHttpStatus,200);
   assert.equal(config('CON-CONTROL').easyOrdersRecoveryLastPositiveControlIdentityVerified,true);
   assert.equal(db.prepare("SELECT COUNT(*) n FROM orders WHERE store_id='STORE-CONTROL'").get().n,0,'Positive control is never ingested');
+  await update('CON-CONTROL',current=>({...current,webhookLastShortId:498}));
+  await controlRun(2);
+  assert.equal(config('CON-CONTROL').easyOrdersRecoveryLastPositiveControlIdentityVerified,true,'A delayed webhook must not require a stale Short ID/UUID pair');
+  await update('CON-CONTROL',current=>({...current,webhookLastOrderId:null,webhookLastShortId:499}));
+  await controlRun(2);
+  assert.equal(config('CON-CONTROL').easyOrdersRecoveryLastPositiveControlIdentityVerified,true,'Short ID fallback works when no order UUID is available');
   controlMode='foreign';await controlRun(2);
   assert.equal(config('CON-CONTROL').easyOrdersRecoveryLastPositiveControlIdentityVerified,false,'Another store never verifies the connection');
   controlMode='denied';await controlRun(2);

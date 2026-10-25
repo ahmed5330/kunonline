@@ -276,8 +276,11 @@ async function reconcileConnection(env,connection,{maxRequests,lookback,fetcher,
     out.error=error?.message||String(error);out.status='error';
     Object.assign(out,describeEasyOrdersProviderError(error));
     const failure=providerFailurePatch(out);
-    const config=parseConfig(connection),knownShort=positiveInt(config.webhookLastShortId||config.webhookLastShortID||config.easyOrdersRecoveryHighestShortId);
+    const config=parseConfig(connection),knownShort=positiveInt(config.webhookLastShortId||config.webhookLastShortID||config.webhook_last_short_id||config.easyOrdersRecoveryHighestShortId);
     const knownId=text(config.webhookLastOrderId||config.easyOrdersRecoverySeedOrderId),boundStore=text(connection.external_store_id);
+    // Prefer the exact order ID: delayed webhooks can leave a monotonic Short
+    // ID paired with an older last-order UUID. Never require that stale pair.
+    const controlShort=knownId?(/^\d+$/.test(knownId)?positiveInt(knownId):0):knownShort;
     // A 400 missing-looking message cannot establish order absence. A single
     // budgeted GET of a known reference can diagnose this connection's identity
     // without importing an order, advancing any cursor or hiding the failure.
@@ -287,12 +290,12 @@ async function reconcileConnection(env,connection,{maxRequests,lookback,fetcher,
       failure.easyOrdersRecoveryLastPositiveControlAt=now();
       try{
         const controlFetcher=(url,init)=>fetcher(url,{...init,signal:AbortSignal.timeout(10000)});
-        const fetched=knownShort?await fetchOrderByShortId(controlFetcher,apiKey,knownShort):await fetchOrderById(controlFetcher,apiKey,knownId);
+        const fetched=controlShort?await fetchOrderByShortId(controlFetcher,apiKey,controlShort):await fetchOrderById(controlFetcher,apiKey,knownId);
         failure.easyOrdersRecoveryLastPositiveControlHttpStatus=fetched.status;
         if(fetched.kind==='rate_limited')out.rateLimited=true;
         const order=fetched.data||{},actualShort=positiveInt(order.short_id||order.shortId);
         failure.easyOrdersRecoveryLastPositiveControlIdentityVerified=fetched.kind==='found'&&!!text(order.id)&&
-          text(order.store_id||order.storeId)===boundStore&&(!knownShort||actualShort===knownShort)&&
+          text(order.store_id||order.storeId)===boundStore&&(!controlShort||actualShort===controlShort)&&
           (!knownId||/^\d+$/.test(knownId)||text(order.id)===knownId);
       }catch(controlError){
         const status=Number(controlError?.status);
