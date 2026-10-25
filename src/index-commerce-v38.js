@@ -170,26 +170,18 @@ export default {
     const baseResponse=await app.fetch(request,env,ctx);
     return injectV2Ui(request,await syncInventoryTrackingAfterResponse({request,response:baseResponse,env,actor:'system'}));
   },
-  scheduled(event,env,ctx){
-    ctx?.waitUntil?.(reconcileMonthlySubscriptions(env,{limit:1000}).catch(()=>[]));
-    ctx?.waitUntil?.(reconcileTrackedOrderLifecycles(env,{limit:1000,actor:'scheduled'}).catch(()=>({ok:false})));
-    if(String(event?.cron||'')==='0 */2 * * *')ctx?.waitUntil?.(reconcileAllClientsUnitCoverage(env,{limit:1000,actor:'scheduled'}).catch(()=>({ok:false})));
-    return app.scheduled?.(event,env,ctx);
-  }
+  scheduled(event,env,ctx){return app.scheduled?.(event,env,ctx);}
 };
 
 export class SyncEntrypoint extends BaseSyncEntrypoint {
   async auditEasyOrdersGapsReadOnly(input){return auditEasyOrdersReadOnlyRpc(this.env,input);}
   async runCron(cron){
     const upstream=await super.runCron(cron);
-    const lifecycle=await reconcileTrackedOrderLifecycles(this.env,{limit:1000,actor:'sync-cron'}).catch(error=>({ok:false,error:String(error?.code||error?.message||error)}));
-    const monthly=await reconcileMonthlySubscriptions(this.env,{limit:1000}).catch(error=>({ok:false,error:String(error?.code||error?.message||error)}));
-    const coverage=String(cron||'')==='0 */2 * * *'?await reconcileAllClientsUnitCoverage(this.env,{limit:1000,actor:'sync-cron'}).catch(error=>({ok:false,error:String(error?.code||error?.message||error)})):null;
     if(String(cron||'')==='0 */2 * * *'){
       const clarity=await syncClarityScheduled(this.env,{limit:30}).catch(error=>({ok:false,code:error?.code||'CLARITY_SCHEDULED_FAILED'}));
-      return {...(upstream&&typeof upstream==='object'?upstream:{upstream}),clarity,unitLifecycle:lifecycle,subscription:monthly,unitCoverage:coverage};
+      return {...(upstream&&typeof upstream==='object'?upstream:{upstream}),clarity};
     }
-    return {...(upstream&&typeof upstream==='object'?upstream:{upstream}),unitLifecycle:lifecycle,subscription:monthly};
+    return upstream;
   }
   async health(){return {...await super.health(),
     // `build` is historically inherited from inner v35 and is not the deployed
