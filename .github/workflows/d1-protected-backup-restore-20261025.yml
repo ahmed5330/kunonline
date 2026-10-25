@@ -1,4 +1,5 @@
 name: Protected D1 independent backup and isolated restore rehearsal
+# Retry with allowlisted import diagnostics only; never print CLI/SQL payloads.
 on:
   push:
     branches: [codex/serialized-warehouse-operations]

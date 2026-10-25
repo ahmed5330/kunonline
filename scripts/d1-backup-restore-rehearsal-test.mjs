@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {mkdtemp,rm,readFile,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {rehearseD1Backup,inspectSqlExport} from './d1-backup-restore-rehearsal.mjs';
+import {rehearseD1Backup,inspectSqlExport,classifyWranglerFailure} from './d1-backup-restore-rehearsal.mjs';
 
 const live=['31cd5cdf-fc01-42d7-ba1e-571f3dd58495','c426601d-182f-486e-a5c1-bb1bca0ecb0b'];
 const dir=await mkdtemp(join(tmpdir(),'kun-backup-regression-'));
@@ -39,6 +39,9 @@ async function cli(args){
 const inspectExport=async()=>({manifest:{orders:3,users:2},dumpSha256:'a'.repeat(64),integrity:'ok',contentFingerprint:badContents&&++inspectCalls>1?'b'.repeat(64):'c'.repeat(64)});
 const options={api,cli,inspectExport,dir,runId:'12345'};
 try{
+  const diagnostic=classifyWranglerFailure('PRIVATE_CUSTOMER_SECRET foreign key constraint failed SQLITE_CONSTRAINT [code: 7500]');
+  assert.deepEqual(diagnostic,{categories:['FOREIGN_KEY'],codes:['SQLITE_CONSTRAINT'],apiCodes:[7500]});
+  assert.ok(!JSON.stringify(diagnostic).includes('PRIVATE_CUSTOMER_SECRET'));
   const sqlPath=join(dir,'synthetic.sql');
   await writeFile(sqlPath,"CREATE TABLE orders(id TEXT, amount INTEGER); INSERT INTO orders VALUES('fake-1',100),('fake-2',200);");
   const original=await inspectSqlExport(sqlPath);
