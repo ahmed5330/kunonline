@@ -15,8 +15,8 @@ export function classifyWranglerFailure(text){
     ['UNSUPPORTED',/not supported|unsupported/i],['FILE_SIZE',/file.{0,20}too large|maximum.{0,15}size/i],
     ['SYNTAX',/syntax error/i],['NETWORK',/fetch failed|network|timed? out|econn/i],
     ['CLI_INTERNAL',/cannot read properties|typeerror|referenceerror/i],
-    ['INTERACTIVE_PROMPT',/non.interactive|cannot prompt|confirmation/i]
-    ,['COMPOUND_SELECT_LIMIT',/too many terms|compound select/i]
+    ['INTERACTIVE_PROMPT',/non.interactive|cannot prompt|confirmation/i],
+    ['COMPOUND_SELECT_LIMIT',/too many terms|compound select/i]
   ])if(pattern.test(text))categories.push(category);
   const codes=['SQLITE_CONSTRAINT','SQLITE_ERROR','SQLITE_AUTH','SQLITE_TOOBIG','SQLITE_BUSY','SQLITE_MISUSE','D1_ERROR','D1_EXEC_ERROR'].filter(code=>new RegExp('\\b'+code+'\\b').test(text));
   const apiCodes=[...text.matchAll(/\[code:\s*(\d+)\]/g)].map(x=>Number(x[1]));
