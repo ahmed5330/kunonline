@@ -14,11 +14,11 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/checkout@v5
         with:
-          ref: e52f7ca773e812d965b79c7a7fb20898b5f62717
+          ref: de97e11e2d4a3f7410c3d5c820af0b9fb46f37cc
           path: qa-backend
       - uses: actions/checkout@v5
         with:
-          ref: 7460977280792a94738084eb42a70cb1bc978dd6
+          ref: fc1adf349ed757ecccfbad33b3c8a5b890f29e12
           path: qa-production
       - uses: actions/setup-node@v5
         with:
@@ -27,6 +27,13 @@ jobs:
       - run: npm install --ignore-scripts
       - run: npm install --ignore-scripts
         working-directory: qa-backend
+      - run: npm audit --audit-level=high
+      - name: Prove existing canonical inventory declarations require no migration
+        working-directory: qa-backend
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: node scripts/existing-inventory-schema-check.mjs
       - name: Provision schema-only synthetic canonical backend
         id: provision
         working-directory: qa-backend
@@ -41,6 +48,9 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: node scripts/live-preview-easyorders-test.mjs "$KUN_PREVIEW_QA_BASE_URL"
+      - name: Verify isolated backend release capabilities
+        working-directory: qa-backend
+        run: node scripts/production-preview-release-gate.mjs --isolated-qa "$KUN_PREVIEW_QA_BASE_URL"
       - name: Test actual Production front with two isolated DBs and private backend
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
