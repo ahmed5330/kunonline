@@ -379,6 +379,42 @@ try{
   assert.equal(config('CON-SERVER').easyOrdersRecoveryCursor,802);
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM orders WHERE ref='easyorders:SERVER-RECOVER-800'").get().n,1);
   assert.deepEqual(serverAttempts,[800,800,801],'503 retry must fetch exactly the failed Short ID');
+  // Live-style 400 is still failure. One read-only known-order control can
+  // establish API/store identity, but never marks the failed number absent.
+  db.prepare('INSERT INTO stores VALUES (?,?,?,?,?)').run('STORE-CONTROL','TENANT-A','active',0,now);
+  db.prepare('INSERT INTO store_connections (id,client_id,provider,status,config_json,updated_at,external_store_id) VALUES (?,?,?,?,?,?,?)')
+    .run('CON-CONTROL','TENANT-A','easyorders','connected',JSON.stringify({kunStoreId:'STORE-CONTROL',webhookLastShortId:499,webhookLastOrderId:'KNOWN-499',easyOrdersRecoveryHighestShortId:501,easyOrdersRecoveryCursor:500}),now,'EO-CONTROL');
+  db.prepare('INSERT INTO integration_secrets VALUES (?,?,?,?,?)').run('TENANT-A','CON-CONTROL','api_key',secret.ciphertextB64,secret.ivB64);
+  const controlCalls=[];let controlMode='own';
+  const controlApi=async url=>{
+    const id=Number(url.split('/').at(-1));controlCalls.push(id);
+    if(id===500)return Response.json({message:'record not found'},{status:400});
+    assert.equal(id,499,'The diagnostic must only read the known reference');
+    if(controlMode==='quota')return Response.json({message:'private quota payload'},{status:429});
+    if(controlMode==='denied')return Response.json({message:'private permission payload'},{status:403});
+    return Response.json({...p,id:'KNOWN-499',short_id:499,store_id:controlMode==='own'?'EO-CONTROL':'EO-FOREIGN'});
+  };
+  const controlRun=maxRequests=>reconcileEasyOrdersOrders(env,{clientId:'TENANT-A',connectionId:'CON-CONTROL',maxRequests,fetcher:controlApi,trigger:'cron'});
+  const controlled=await controlRun(2);
+  assert.equal(controlled.ok,false);assert.equal(controlled.results[0].providerHttpStatus,400);
+  assert.equal(controlled.requests,2);assert.deepEqual(controlCalls,[500,499]);
+  assert.equal(config('CON-CONTROL').easyOrdersRecoveryCursor,500);
+  assert.equal(config('CON-CONTROL').easyOrdersRecoveryLastPositiveControlHttpStatus,200);
+  assert.equal(config('CON-CONTROL').easyOrdersRecoveryLastPositiveControlIdentityVerified,true);
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM orders WHERE store_id='STORE-CONTROL'").get().n,0,'Positive control is never ingested');
+  controlMode='foreign';await controlRun(2);
+  assert.equal(config('CON-CONTROL').easyOrdersRecoveryLastPositiveControlIdentityVerified,false,'Another store never verifies the connection');
+  controlMode='denied';await controlRun(2);
+  assert.equal(config('CON-CONTROL').easyOrdersRecoveryLastProviderHttpStatus,400,'Secondary errors do not overwrite the primary HTTP status');
+  assert.equal(config('CON-CONTROL').easyOrdersRecoveryLastPositiveControlHttpStatus,403);
+  assert.ok(!connection('CON-CONTROL').config_json.includes('private permission payload'));
+  controlMode='quota';const quotaControl=await controlRun(2);
+  assert.equal(quotaControl.rateLimited,true,'Secondary 429 must pause remaining connections');
+  assert.equal(config('CON-CONTROL').easyOrdersRecoveryLastPositiveControlHttpStatus,429);
+  const beforeBudget=controlCalls.length;await controlRun(1);
+  assert.equal(controlCalls.length-beforeBudget,1,'A diagnostic cannot exceed the shared request cap');
+  assert.equal(config('CON-CONTROL').easyOrdersRecoveryLastPositiveControlAt,null);
+  assert.equal(config('CON-CONTROL').easyOrdersRecoveryCursor,500);
   // A busy shared provider can return >30 consecutive orders owned by a
   // DIFFERENT storefront. Each verified foreign Short ID is safe to advance
   // past between cron runs. Without a separate ahead cursor the scheduler

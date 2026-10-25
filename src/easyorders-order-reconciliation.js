@@ -56,7 +56,10 @@ export function describeEasyOrdersProviderError(error){
 // diagnosable after the RPC result is discarded. A successful retry clears it.
 function providerFailurePatch(metadata={}){
   return {easyOrdersRecoveryLastProviderHttpStatus:metadata.providerHttpStatus??null,
-    easyOrdersRecoveryLastProviderErrorCategory:metadata.providerErrorCategory??null};
+    easyOrdersRecoveryLastProviderErrorCategory:metadata.providerErrorCategory??null,
+    easyOrdersRecoveryLastPositiveControlAt:null,
+    easyOrdersRecoveryLastPositiveControlHttpStatus:null,
+    easyOrdersRecoveryLastPositiveControlIdentityVerified:false};
 }
 
 async function patchConfig(env,connection,patch){
@@ -138,8 +141,9 @@ async function bootstrapFromLastWebhook(env,connection,{apiKey,fetcher,lookback}
 
 async function reconcileConnection(env,connection,{maxRequests,lookback,fetcher,cronRun=false}){
   const out={connectionId:connection.id,clientId:connection.client_id,storeId:null,requests:0,recovered:0,updated:0,missing:0,foreignStoreSkipped:0,seeded:false,rateLimited:false,highestShortId:0,nextShortId:0,estimatedRemaining:0,cumulativeRecovered:0,status:'waiting_for_short_id',recoveredOrderIds:[],error:null,providerHttpStatus:null,providerErrorCategory:null};
+  let apiKey='';
   try{
-    const secrets=await readConnectionSecrets(env,connection.client_id,connection.id),apiKey=text(secrets.api_key);
+    const secrets=await readConnectionSecrets(env,connection.client_id,connection.id);apiKey=text(secrets.api_key);
     if(!apiKey)throw Object.assign(new Error('مفتاح Easy Orders API غير موجود؛ لا يمكن إصلاح فجوات الطلبات تلقائيًا'),{status:409,code:'EASYORDERS_API_KEY_MISSING'});
     const cronReceipt=()=>cronRun?{easyOrdersRecoveryLastCronAt:now()}:{};
     let config=parseConfig(connection);out.storeId=text(config.kunStoreId||config.storeId)||null;out.cumulativeRecovered=positiveInt(config.easyOrdersRecoveryRecoveredCount);
@@ -271,7 +275,31 @@ async function reconcileConnection(env,connection,{maxRequests,lookback,fetcher,
   }catch(error){
     out.error=error?.message||String(error);out.status='error';
     Object.assign(out,describeEasyOrdersProviderError(error));
-    await patchConfig(env,connection,{...providerFailurePatch(out),easyOrdersRecoveryLastRunAt:now(),easyOrdersRecoveryLastStatus:'error',easyOrdersRecoveryLastError:out.error.slice(0,500),...(cronRun?{easyOrdersRecoveryLastCronAt:now()}:{})}).catch(()=>{});
+    const failure=providerFailurePatch(out);
+    const config=parseConfig(connection),knownShort=positiveInt(config.webhookLastShortId||config.webhookLastShortID||config.easyOrdersRecoveryHighestShortId);
+    const knownId=text(config.webhookLastOrderId||config.easyOrdersRecoverySeedOrderId),boundStore=text(connection.external_store_id);
+    // A 400 missing-looking message cannot establish order absence. A single
+    // budgeted GET of a known reference can diagnose this connection's identity
+    // without importing an order, advancing any cursor or hiding the failure.
+    if(cronRun&&out.providerHttpStatus===400&&providerSaysMissing(out.error)&&apiKey&&out.requests<maxRequests&&
+      (knownShort||knownId)&&boundStore&&boundStore!==text(connection.id)&&!/^CON-/i.test(boundStore)){
+      out.requests++;
+      failure.easyOrdersRecoveryLastPositiveControlAt=now();
+      try{
+        const fetched=knownShort?await fetchOrderByShortId(fetcher,apiKey,knownShort):await fetchOrderById(fetcher,apiKey,knownId);
+        failure.easyOrdersRecoveryLastPositiveControlHttpStatus=fetched.status;
+        if(fetched.kind==='rate_limited')out.rateLimited=true;
+        const order=fetched.data||{},actualShort=positiveInt(order.short_id||order.shortId);
+        failure.easyOrdersRecoveryLastPositiveControlIdentityVerified=fetched.kind==='found'&&!!text(order.id)&&
+          text(order.store_id||order.storeId)===boundStore&&(!knownShort||actualShort===knownShort)&&
+          (!knownId||/^\d+$/.test(knownId)||text(order.id)===knownId);
+      }catch(controlError){
+        const status=Number(controlError?.status);
+        failure.easyOrdersRecoveryLastPositiveControlHttpStatus=Number.isInteger(status)&&status>=400&&status<=599?status:null;
+        if(status===429)out.rateLimited=true;
+      }
+    }
+    await patchConfig(env,connection,{...failure,easyOrdersRecoveryLastRunAt:now(),easyOrdersRecoveryLastStatus:'error',easyOrdersRecoveryLastError:out.error.slice(0,500),...(cronRun?{easyOrdersRecoveryLastCronAt:now()}:{})}).catch(()=>{});
     return out;
   }
 }
