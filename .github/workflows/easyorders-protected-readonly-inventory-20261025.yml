@@ -23,8 +23,8 @@ jobs:
       name: preview
     timeout-minutes: 6
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: '22'
           package-manager-cache: false
@@ -37,6 +37,13 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: node scripts/easyorders-cloudflare-worker-readonly-inventory.mjs
+      - name: Verify D1 metadata inspector offline
+        run: node scripts/cloudflare-d1-binding-readonly-inventory-test.mjs
+      - name: Verify actual D1 binding identity and recovery bookmark (GET only)
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: node scripts/cloudflare-d1-binding-readonly-inventory.mjs
 # The script makes exactly 9 Cloudflare API GET requests (3 workers x:
 # schedules, settings and deployments), displays ONLY binding type/name and
 # service target plus cron/version IDs. No customer queries or raw API bodies.
