@@ -1,9 +1,11 @@
+import {loadIsolatedPreviewQaConfig} from './isolated-preview-qa-config.mjs';
+const isolatedQaConfig=await loadIsolatedPreviewQaConfig(process.argv[2]);
 import {readFile} from 'node:fs/promises';
 import {randomBytes,webcrypto} from 'node:crypto';
 
 const base=(process.argv[2]||'').replace(/\/$/,'');if(!base)throw new Error('Usage: node scripts/live-preview-order-sheet-import-test.mjs <base-url>');
 const accountId=process.env.CLOUDFLARE_ACCOUNT_ID,token=process.env.CLOUDFLARE_API_TOKEN;if(!accountId||!token)throw new Error('Order sheet live QA requires Cloudflare account/token');
-const config=await readFile(new URL('../wrangler.preview.toml',import.meta.url),'utf8'),databaseId=config.match(/database_id\s*=\s*"([^"]+)"/)?.[1];if(!databaseId)throw new Error('Preview database_id missing');
+const config=isolatedQaConfig,databaseId=config.match(/database_id\s*=\s*"([^"]+)"/)?.[1];if(!databaseId)throw new Error('Preview database_id missing');
 const d1Url=`https://api.cloudflare.com/client/v4/accounts/${accountId}/d1/database/${databaseId}/query`,nonce=randomBytes(5).toString('hex'),clientId=`QA-IMPORT-${nonce}`,storeA=`ST-IMP-A-${nonce}`,storeB=`ST-IMP-B-${nonce}`,email=`qa-order-import-${nonce}@example.test`,userId=`QA-OI-${nonce}`,password=`Import!${randomBytes(12).toString('hex')}Aa1`,external=`fed7ae4b-${nonce}-4d87-bf29-c03c41c5bd1b`,productA=`PR-IMP-A-${nonce}`,productB=`PR-IMP-B-${nonce}`,batchId=`BAT-IMP-${nonce}`,batchItemA=`BTI-IMP-A-${nonce}`,batchItemB=`BTI-IMP-B-${nonce}`;
 let cookie='';
 async function d1(sql,params=[]){const r=await fetch(d1Url,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({sql,params})}),p=await r.json().catch(()=>({})),x=p?.result?.[0];if(!r.ok||p.success===false||x?.success===false)throw new Error(`D1 failed ${r.status}: ${JSON.stringify(p?.errors||x?.error||p).slice(0,800)}`);return x?.results||[];}

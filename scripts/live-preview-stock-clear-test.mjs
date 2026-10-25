@@ -1,3 +1,5 @@
+import {loadIsolatedPreviewQaConfig} from './isolated-preview-qa-config.mjs';
+const isolatedQaConfig=await loadIsolatedPreviewQaConfig(process.argv[2]);
 import {readFile} from 'node:fs/promises';
 import {randomBytes,webcrypto} from 'node:crypto';
 
@@ -5,7 +7,7 @@ const base=(process.argv[2]||'').replace(/\/$/,'');
 if(!base)throw new Error('Usage: node scripts/live-preview-stock-clear-test.mjs <base-url>');
 const accountId=process.env.CLOUDFLARE_ACCOUNT_ID,token=process.env.CLOUDFLARE_API_TOKEN;
 if(!accountId||!token)throw new Error('Preview Stock Clear QA requires Cloudflare account/token environment');
-const config=await readFile(new URL('../wrangler.preview.toml',import.meta.url),'utf8'),databaseId=config.match(/database_id\s*=\s*"([^"]+)"/)?.[1];
+const config=isolatedQaConfig,databaseId=config.match(/database_id\s*=\s*"([^"]+)"/)?.[1];
 if(!databaseId)throw new Error('Preview database_id missing');
 const nonce=randomBytes(5).toString('hex').toUpperCase(),clientId=`QA-CLR-${nonce}`,storeId=`QA-CLR-ST-${nonce}`,productId=`QA-CLR-PR-${nonce}`,variantA=`QA-CLR-VA-${nonce}`,variantB=`QA-CLR-VB-${nonce}`,staleProductId=`QA-CLR-OLD-${nonce}`,userId=`QA-CLR-US-${nonce}`,email=`qa-stock-clear-${nonce.toLowerCase()}@example.test`,password=`StockClear!${randomBytes(12).toString('hex')}Aa1`,historicDate='2026-08-20';
 const d1Url=`https://api.cloudflare.com/client/v4/accounts/${accountId}/d1/database/${databaseId}/query`;let cookie='';

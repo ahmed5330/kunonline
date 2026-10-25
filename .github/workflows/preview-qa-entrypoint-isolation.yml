@@ -1,0 +1,23 @@
+name: Preview state-writing QA isolation
+on:
+  pull_request:
+    paths:
+      - 'scripts/isolated-preview-qa-*'
+      - 'scripts/easyorders-qa-isolation-*'
+      - 'scripts/live-preview-*.mjs'
+      - 'scripts/browser-preview-*.mjs'
+      - '.github/workflows/preview-qa-entrypoint-isolation.yml'
+permissions:
+  contents: read
+jobs:
+  reject-customer-linked-targets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: node scripts/easyorders-qa-isolation-test.mjs
+      - run: node scripts/isolated-preview-qa-entrypoints-test.mjs

@@ -19,7 +19,9 @@ jobs:
           node-version: 22
           package-manager-cache: false
       - name: Verify Easy Orders QA rejects customer-linked targets (offline)
-        run: node scripts/easyorders-qa-isolation-test.mjs
+        run: |
+          node scripts/easyorders-qa-isolation-test.mjs
+          node scripts/isolated-preview-qa-entrypoints-test.mjs
   validate:
     runs-on: ubuntu-latest
     timeout-minutes: 12
