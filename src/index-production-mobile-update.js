@@ -162,6 +162,8 @@ export default {
     // Send both endpoints to the same upstream unchanged, including Cookie and
     // Set-Cookie. Do not let subscription or finance middleware rewrite them.
     // If the service binding is absent, both use the same local fallback.
+    if(request.method==='GET'&&new URL(request.url).pathname==='/api/preview/growth-release')return await previewFetch(request,env)||app.fetch(request,previewRuntimeEnv(env),ctx);
+
     if(AUTH_PATHS.has(new URL(request.url).pathname)){
       const identity=await previewFetch(request,env);
       return identity||app.fetch(request,previewRuntimeEnv(env),ctx);

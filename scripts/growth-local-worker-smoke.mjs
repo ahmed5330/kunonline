@@ -34,6 +34,12 @@ try{
  const page=await html.text();
  assert.match(page,/modules-v150-growth-planner\.js\?v=150\.0/);
  assert.match(page,/modules-v27-meta-ads\.js\?v=27\.2/);
+ const manifest=await fetch(root+'/api/preview/growth-release');
+ assert.equal(manifest.status,200,'Release capability metadata must remain public before subscription middleware');
+ const release=await manifest.json();
+ assert.equal(release.release,'kun-growth-wallet-20261015-r1');
+ assert.ok(release.capabilities.includes('wallet-ledger-integrity'));
+ for(const field of ['uid','clientId','orders','users'])assert.equal(Object.hasOwn(release,field),false,'Public metadata must not expose tenant state');
  const endpoints=[
    ['/api/growth/inventory-catalog','GET'],
    ['/api/growth/operating-evidence','GET'],

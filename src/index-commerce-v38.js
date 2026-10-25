@@ -130,6 +130,7 @@ void safety;
 void core;
 export default {
   async fetch(request,env,ctx){
+    if(request.method==='GET'&&new URL(request.url).pathname==='/api/preview/growth-release')return app.fetch(request,env,ctx);
     if(request.method==='GET'&&new URL(request.url).pathname==='/api/preview/version')
       return actualPreviewVersion(env);
     const rootRedirect=redirectLegacyRoot(request);
