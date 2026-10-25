@@ -26,9 +26,21 @@ for(const [table,columns] of Object.entries(REQUIRED_RELEASE_SCHEMA)){
   assert(/^[a-z_]+$/.test(table));
   for(const col of columns)assert(/^[a-z_]+$/.test(col));
 }
-export const READONLY_SCHEMA_SQL=safeNames.map(name=>
-  "SELECT '"+name+"' AS table_name, name AS column_name FROM pragma_table_info('"+name+"')"
-).join(' UNION ALL ')+' ORDER BY table_name,column_name';
+const schemaSelect=name=>"SELECT '"+name+"' AS table_name, name AS column_name FROM pragma_table_info('"+name+"')";
+export const READONLY_SCHEMA_SQL=safeNames.map(schemaSelect).join(' UNION ALL ')+' ORDER BY table_name,column_name';
+// Cloudflare D1 limits compound SELECT terms more strictly than local SQLite.
+// Read bounded metadata batches, then validate the complete table set together.
+export const READONLY_SCHEMA_BATCHES=Object.freeze(Array.from({length:Math.ceil(safeNames.length/4)},(_,i)=>
+  safeNames.slice(i*4,i*4+4).map(schemaSelect).join(' UNION ALL ')+' ORDER BY table_name,column_name'));
+export async function verifyReleaseSchemaReadonly(run){
+  const all=[];
+  for(const sql of READONLY_SCHEMA_BATCHES){
+    const rows=findRows(await run(sql));
+    if(!rows)throw Error('D1 schema batch unrecognized — deployment blocked');
+    all.push(...rows);
+  }
+  return checkReleaseSchema(all);
+}
 
 function findRows(response){
   if(Array.isArray(response)){
@@ -66,10 +78,12 @@ export function checkReleaseSchema(fetchJson){
 }
 const direct=process.argv[1] && pathToFileURL(resolve(process.argv[1])).href===import.meta.url;
 if(direct){
+  const checked=await verifyReleaseSchemaReadonly(sql=>{
   const stdout=execFileSync('npx',[
     'wrangler','d1','execute','kunonline-preview','--remote','--json',
-    '--config','wrangler.preview.toml','--command',READONLY_SCHEMA_SQL
+    '--config','wrangler.preview.toml','--command',sql
   ],{encoding:'utf8',timeout:45000,maxBuffer:1024*1024});
-  const checked=checkReleaseSchema(JSON.parse(stdout));
+  return JSON.parse(stdout);
+  });
   console.log('Read-only Preview D1 release schema PASS: '+checked.verifiedTables+' required tables; no customer data queried.');
 }

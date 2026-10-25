@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {
-  REQUIRED_RELEASE_SCHEMA,READONLY_SCHEMA_SQL,validateReleaseSchema,checkReleaseSchema
+  REQUIRED_RELEASE_SCHEMA,READONLY_SCHEMA_SQL,READONLY_SCHEMA_BATCHES,verifyReleaseSchemaReadonly,validateReleaseSchema,checkReleaseSchema
 } from './preview-release-schema-contract.mjs';
 
 const workflow=readFileSync('.github/workflows/preview.yml','utf8');
@@ -23,3 +23,13 @@ assert.throws(()=>checkReleaseSchema('Invalid response'),/unrecognized/);
 const allButOne=rows.filter(x=>x.table_name!=='inventory_shipments');
 assert.ok(validateReleaseSchema([{results:allButOne}]).missing.includes('inventory_shipments.id'));
 console.log('Preview D1 release schema gate PASS: required columns, read-only SQL, missing-schema fail-closed.');
+
+assert.equal(READONLY_SCHEMA_BATCHES.length,3);
+let batches=0;
+assert.equal((await verifyReleaseSchemaReadonly(async sql=>{
+  batches++;assert.ok(sql.split(' UNION ALL ').length<=4,'D1 compound SELECT bound');
+  const names=[...sql.matchAll(/pragma_table_info\('([a-z_]+)'\)/g)].map(x=>x[1]);
+  return [{success:true,results:rows.filter(row=>names.includes(row.table_name))}];
+})).verifiedTables,Object.keys(REQUIRED_RELEASE_SCHEMA).length);
+assert.equal(batches,3,'All bounded metadata batches must be checked');
+await assert.rejects(()=>verifyReleaseSchemaReadonly(async()=>[{success:true,results:rows.filter(row=>row.table_name!=='wallet_log')}]),/deployment blocked/);
