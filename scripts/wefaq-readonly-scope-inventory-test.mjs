@@ -13,3 +13,11 @@ assert.equal(report.realOrdersRecovered,0);
 for(const secret of ['PRIVATE_STORE','PRIVATE_CLIENT','PRIVATE_CONNECTION','PRIVATE_PROVIDER_STORE'])assert.ok(!JSON.stringify(report).includes(secret));
 assert.equal(summarizeCandidate({...row,external_store_id:'CON-PLACEHOLDER'},{}).externalStoreBound,false);
 console.log('PASS: exact metadata store/client mapping, placeholder rejection and fingerprint-only reports; order counts never imply missing orders or recovery.');
+
+const known=summarizeCandidate({...row,recovery_status:'error',last_cron_at:'2026-10-25T13:10:44.223Z',cron_error_class:'record_not_found_http_unknown'},{});
+assert.equal(known.providerHttpStatus,null,'An error message never establishes an HTTP code');
+assert.equal(known.cronErrorClass,'record_not_found_http_unknown');
+assert.equal(known.recoveryStatus,'error');
+assert.equal(known.lastCronAt,'2026-10-25T13:10:44.223Z');
+const malicious=summarizeCandidate({...row,recovery_status:'PRIVATE_PAYLOAD',last_cron_at:'PRIVATE_PAYLOAD',cron_error_class:'PRIVATE_PAYLOAD'},{});
+assert.ok(!JSON.stringify(malicious).includes('PRIVATE_PAYLOAD'),'Unrecognized database strings never leak into diagnostics');

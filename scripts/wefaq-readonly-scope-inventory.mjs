@@ -16,6 +16,10 @@ export function summarizeCandidate(row,orders){
     externalStoreBound:!!external&&external!==row.id&&!/^CON-/i.test(external),
     externalStoreFingerprint:external?fingerprint(external):null,
     encryptedApiKeyPresent:Number(row.key_count)>0,lastErrorPresent:Number(row.last_error_present)>0,
+    recoveryStatus:['healthy','catching_up','rate_limited','waiting_for_short_id','error'].includes(row.recovery_status)?row.recovery_status:'unknown',
+    lastCronAt:/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,3})?Z$/.test(row.last_cron_at||'')&&Number.isFinite(Date.parse(row.last_cron_at))?row.last_cron_at:null,
+    cronErrorClass:['none','record_not_found_http_unknown','unresolved_queue_review','store_identity_unverified','provider_payload_identity_missing','api_key_missing_or_invalid','secret_decrypt_error','database_error','other_error_unclassified'].includes(row.cron_error_class)?row.cron_error_class:'unknown',
+    providerHttpStatus:null,
     storedRecoveryHighestShortId:Number(row.highest)||0,storedRecoveryCursor:Number(row.cursor)||0,
     sourceOrderCount:Number(orders?.total)||0,ordersSince20261023:Number(orders?.recent)||0,
     upstreamIdentityVerified:false,providerAuditExecuted:false,missingOrderCount:null,realOrdersRecovered:0};
@@ -54,6 +58,18 @@ async function main(){
     CASE WHEN json_valid(c.config_json) THEN COALESCE(json_extract(c.config_json,'$.kunStoreId'),json_extract(c.config_json,'$.storeId')) END AS config_store_id,
     CASE WHEN json_valid(c.config_json) THEN json_extract(c.config_json,'$.easyOrdersRecoveryHighestShortId') END AS highest,
     CASE WHEN json_valid(c.config_json) THEN json_extract(c.config_json,'$.easyOrdersRecoveryCursor') END AS cursor,
+    CASE WHEN json_valid(c.config_json) THEN json_extract(c.config_json,'$.easyOrdersRecoveryLastCronAt') END AS last_cron_at,
+    CASE WHEN json_valid(c.config_json) THEN json_extract(c.config_json,'$.easyOrdersRecoveryLastStatus') END AS recovery_status,
+    CASE WHEN json_valid(c.config_json) THEN CASE
+      WHEN COALESCE(TRIM(json_extract(c.config_json,'$.easyOrdersRecoveryLastError')),'')='' THEN 'none'
+      WHEN LOWER(json_extract(c.config_json,'$.easyOrdersRecoveryLastError')) LIKE '%record not found%' THEN 'record_not_found_http_unknown'
+      WHEN LOWER(json_extract(c.config_json,'$.easyOrdersRecoveryLastError')) LIKE '%short id queue%' THEN 'unresolved_queue_review'
+      WHEN LOWER(json_extract(c.config_json,'$.easyOrdersRecoveryLastError')) LIKE '%missing order or store identity%' THEN 'provider_payload_identity_missing'
+      WHEN LOWER(json_extract(c.config_json,'$.easyOrdersRecoveryLastError')) LIKE '%store identity%' THEN 'store_identity_unverified'
+      WHEN LOWER(json_extract(c.config_json,'$.easyOrdersRecoveryLastError')) LIKE '%api%key%' THEN 'api_key_missing_or_invalid'
+      WHEN LOWER(json_extract(c.config_json,'$.easyOrdersRecoveryLastError')) LIKE '%decrypt%' THEN 'secret_decrypt_error'
+      WHEN LOWER(json_extract(c.config_json,'$.easyOrdersRecoveryLastError')) LIKE '%d1_error%' THEN 'database_error'
+      ELSE 'other_error_unclassified' END ELSE 'unknown' END AS cron_error_class,
     CASE WHEN COALESCE(TRIM(c.last_error),'')<>'' THEN 1 ELSE 0 END AS last_error_present,
     (SELECT COUNT(*) FROM integration_secrets k WHERE k.connection_id=c.id AND k.client_id=c.client_id AND k.secret_name='api_key' AND LENGTH(k.ciphertext_b64)>0 AND LENGTH(k.iv_b64)>0) AS key_count
     FROM store_connections c WHERE c.provider='easyorders' AND c.client_id IN (${ids.map(()=>'?').join(',')})`,ids);
