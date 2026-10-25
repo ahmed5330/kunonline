@@ -162,7 +162,15 @@ export default {
     if(websiteReviews)return websiteReviews;
     const easyOrdersHealth=await handleProductionEasyOrdersHealth(request,env);
     if(easyOrdersHealth)return easyOrdersHealth;
-    const parity=await handleProductionPreviewParity(request,env);
+    const parity=await handleProductionPreviewParity(request,env,{
+      authorizeAdmin:async sourceRequest=>{
+        const identityUrl=new URL('/api/me',sourceRequest.url);
+        const identityRequest=new Request(identityUrl.toString(),{method:'GET',headers:sourceRequest.headers});
+        const identity=await previewFetch(identityRequest,env)||
+          await app.fetch(identityRequest,previewRuntimeEnv(env),ctx);
+        return identity.ok?identity.json().catch(()=>null):null;
+      }
+    });
     if(parity)return parity;
 
     const mobileUpdate=await handleMobileAppUpdate(request);
