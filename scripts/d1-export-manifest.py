@@ -12,6 +12,7 @@ try:
         sql = stream.read()
     connection.executescript(sql)
     integrity = connection.execute('PRAGMA integrity_check').fetchone()[0]
+    foreign_key_violation_count = sum(1 for _ in connection.execute('PRAGMA foreign_key_check'))
     names = sorted(row[0] for row in connection.execute(
         "SELECT name FROM sqlite_master WHERE type='table' "
         "AND name NOT GLOB 'sqlite_*' AND name NOT GLOB '_cf_*'"
@@ -31,6 +32,8 @@ try:
         'dumpSha256': hashlib.sha256(sql.encode()).hexdigest(),
         'contentFingerprint': content.hexdigest(),
         'integrity': integrity,
+        'foreignKeyViolationCount': foreign_key_violation_count,
+        'hasDeferredForeignKeys': 'defer_foreign_keys' in sql.lower(),
     }))
 finally:
     connection.close()

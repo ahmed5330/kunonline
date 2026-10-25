@@ -6,6 +6,21 @@ import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 
 const execute=promisify(execFile);
+export function classifyWranglerFailure(text){
+  const categories=[];
+  for(const [category,pattern] of [
+    ['FOREIGN_KEY',/foreign key constraint failed/i],['UNIQUE_CONSTRAINT',/unique constraint failed/i],
+    ['MISSING_TABLE',/no such table/i],['MISSING_COLUMN',/no such column/i],['EXISTING_OBJECT',/already exists/i],
+    ['AUTHORIZATION',/not authorized|authentication error|unauthorized|permission denied/i],
+    ['UNSUPPORTED',/not supported|unsupported/i],['FILE_SIZE',/file.{0,20}too large|maximum.{0,15}size/i],
+    ['SYNTAX',/syntax error/i],['NETWORK',/fetch failed|network|timed? out|econn/i],
+    ['CLI_INTERNAL',/cannot read properties|typeerror|referenceerror/i],
+    ['INTERACTIVE_PROMPT',/non.interactive|cannot prompt|confirmation/i]
+  ])if(pattern.test(text))categories.push(category);
+  const codes=['SQLITE_CONSTRAINT','SQLITE_ERROR','SQLITE_AUTH','SQLITE_TOOBIG','SQLITE_BUSY','SQLITE_MISUSE','D1_ERROR','D1_EXEC_ERROR'].filter(code=>new RegExp('\\b'+code+'\\b').test(text));
+  const apiCodes=[...text.matchAll(/\[code:\s*(\d+)\]/g)].map(x=>Number(x[1]));
+  return {categories,codes,apiCodes};
+}
 export async function inspectSqlExport(file){
   try{
     const result=await execute('python3',[new URL('./d1-export-manifest.py',import.meta.url).pathname,file],{timeout:120000,maxBuffer:1024*1024});
@@ -71,7 +86,9 @@ export async function rehearseD1Backup({api,cli,inspectExport,dir,runId,onProgre
     const sourceConfig=await config({id:source.id,name:`kunonline-source-${source.label}`});
     const file=join(dir,`${source.label}.sql`);
     await cli(['d1','export',`kunonline-source-${source.label}`,'--remote','--output',file,'--config',sourceConfig,'--skip-confirmation']);
-    const {manifest,dumpSha256,contentFingerprint,integrity}=await inspectExport(file);
+    const {manifest,dumpSha256,contentFingerprint,integrity,foreignKeyViolationCount,hasDeferredForeignKeys}=await inspectExport(file);
+    onProgress({stage:'source-export-integrity',source:source.label,integrity,
+      foreignKeyViolationCount:foreignKeyViolationCount??null,hasDeferredForeignKeys:hasDeferredForeignKeys??null});
     if(integrity!=='ok'||!/^[a-f0-9]{64}$/.test(dumpSha256)||!/^[a-f0-9]{64}$/.test(contentFingerprint))throw new Error('EXPORT_INTEGRITY_FAILED');
     for(const name of Object.keys(manifest))tableName(name);
     const backup=await target('backup',source);
@@ -132,6 +149,8 @@ async function main(){
       await execute(resolve('node_modules/.bin/wrangler'),args,{cwd:dir,env:{...process.env,WRANGLER_SEND_METRICS:'false'},timeout:300000,maxBuffer:64*1024*1024});
     }catch(error){
       // Wrangler errors can include SQL/customer values. Only expose its operation and exit code.
+      console.error(JSON.stringify({operation:args[1],exitCode:Number(error.code)||0,
+        diagnostic:classifyWranglerFailure(String(error.stdout||'')+'\n'+String(error.stderr||''))}));
       throw new Error(`WRANGLER_${args[1].toUpperCase()}_FAILED_EXIT_${Number(error.code)||0}`);
     }
   };
