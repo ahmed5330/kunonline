@@ -53,7 +53,7 @@ export async function auditEasyOrdersStoreGapRange(env,{
       result.requests++;
       response=await fetcher(providerUrl+shortId,{
         method:'GET',headers:{Accept:'application/json','Api-Key':apiKey},
-        redirect:'error'
+        redirect:'manual'
       });
     }catch{
       result.ok=false;result.status='provider_network_error';result.nextShortId=shortId;break;
