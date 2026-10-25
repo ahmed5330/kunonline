@@ -48,10 +48,18 @@ export async function inspectDashboardSyncLive({
     assert.equal(response.status,401,'Anonymous caller must not receive tenant-specific Easy Orders state');
     anonymousScopedAccess='denied_401';
   }
+  let privateParityAccess='not_checked';
+  if(requireCurrent){
+    const response=await get('/health/preview-parity?audit='+encodeURIComponent(nonce));
+    assert.equal(response.status,401,'Private parity diagnostics must require a server-verified Admin session');
+    const denied=await response.json();
+    assert.equal(denied.error,'AUTH_REQUIRED','The parity handler must deny access explicitly');
+    privateParityAccess='denied_401';
+  }
   const safe={
     expectedVersion,deployedVersion,currentReleaseDeployed:current,
     tenantHealthVerified:false,
-    anonymousScopedAccess,
+    anonymousScopedAccess,privateParityAccess,
     platformAggregateOnly:{
       source:'preview',
       status:String(globalHealth.status||'unknown'),
