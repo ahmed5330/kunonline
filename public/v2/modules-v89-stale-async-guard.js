@@ -47,6 +47,7 @@
   function activeView(){return document.querySelector('.nav button.active[data-view]')?.dataset.view||'';}
   function specializedViewReady(view){
     const root=document.getElementById('root');if(!root)return false;
+    if(view==='customer-service')return Boolean(window.KunCustomerServiceV31&&root.querySelector('.cs-page,.cs-loading'));
     if(view==='integrations')return Boolean(window.KunIntegrationsV16&&root.querySelector('#intGroups,#intSetupPanel .form-grid'));
     return false;
   }
