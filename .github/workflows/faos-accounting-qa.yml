@@ -1,0 +1,57 @@
+name: FAOS accounting isolated QA
+on:
+  pull_request:
+    paths:
+      - 'src/accounting-faos-*'
+      - 'migrations/0098_financial_ledger_v1.sql'
+      - 'public/v2/modules-v155-accounting-faos.js'
+      - 'scripts/faos-*'
+      - 'src/index-commerce-v38.js'
+      - '.github/workflows/faos-accounting-qa.yml'
+  push:
+    branches:
+      - 'feature/accounting-faos-*'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  fixture-and-ledger:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax checks
+        run: |
+          node --check src/accounting-faos-event-projector.js
+          node --check src/accounting-faos-reconciliation.js
+          node --check src/accounting-faos-core.js
+          node --check src/accounting-faos-api.js
+          node --check src/index-commerce-v38.js
+          node --check public/v2/modules-v155-accounting-faos.js
+      - name: Synthetic order and accounting validation
+        run: node scripts/faos-accounting-qa-test.mjs
+      - name: API runtime fixture isolation and authorization
+        run: node scripts/faos-api-isolation-test.mjs
+      - name: Real SQL API posting, idempotency and reversal regression
+        run: node --no-warnings scripts/faos-posting-live-sql-test.mjs
+      - name: Read-only operational reconciliation on fake orders
+        run: node --no-warnings scripts/faos-operational-sql-test.mjs
+      - name: Commerce verified event projection templates
+        run: node scripts/faos-event-projection-test.mjs
+      - name: Active chart consistency with master accounting reference
+        run: node scripts/faos-coa-reference-contract-test.mjs
+      - name: Cross-source reconciliation and source-confidence controls
+        run: node scripts/faos-reconciliation-test.mjs
+      - name: In-memory SQLite schema constraints
+        run: python3 scripts/faos-ledger-schema-test.py
+      - name: Verify migration with actual Wrangler local D1 (offline)
+        run: |
+          npm install --ignore-scripts
+          npx --no-install wrangler d1 execute kunonline-preview --local --config wrangler.preview.toml --file migrations/0098_financial_ledger_v1.sql
+          npx --no-install wrangler d1 execute kunonline-preview --local --config wrangler.preview.toml --command "SELECT count(*) as triggers FROM sqlite_master WHERE type='trigger' AND name LIKE 'faos_%';" --json > /tmp/faos-wrangler-local.json
+          node --input-type=module -e "import fs from 'node:fs'; const d=JSON.parse(fs.readFileSync('/tmp/faos-wrangler-local.json','utf8'));const n=Number(d?.[0]?.results?.[0]?.triggers??d?.result?.[0]?.results?.[0]?.triggers??0);console.log('FAOS Wrangler local D1 triggers:',n);if(n<8)process.exit(1)"
+          rm -f /tmp/faos-wrangler-local.json
+
