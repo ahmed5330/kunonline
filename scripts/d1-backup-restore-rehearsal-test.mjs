@@ -23,9 +23,10 @@ async function api(method,path,body){
     assert.ok(ids.has(id),'Only inspect newly created targets');
     assert.match(body.sql,/^SELECT /);
     assert.doesNotMatch(body.sql,/INSERT|UPDATE|DELETE|DROP|ALTER|REPLACE/);
-    const selected=[...body.sql.matchAll(/SELECT '([^']+)' AS table_name/g)].map(x=>x[1]);
+    const selected=[...body.sql.matchAll(/FROM "([^"]+)"\) AS "[^"]+"/g)].map(x=>x[1]);
     assert.ok(selected.length<=10,'Bound compound count validation to ten tables');
-    return [{success:true,results:selected.map(name=>({table_name:name,n:queryManifest[name]}))}];
+    assert.doesNotMatch(body.sql,/UNION/i,'D1 validation must avoid compound SELECT entirely');
+    return [{success:true,results:[Object.fromEntries(selected.map(name=>[name,queryManifest[name]]))]}];
   }
   const id=path.split('/')[2];return {uuid:id,name:ids.get(id)};
 }

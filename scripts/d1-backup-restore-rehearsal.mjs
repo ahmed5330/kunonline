@@ -85,11 +85,13 @@ export async function rehearseD1Backup({api,cli,inspectExport,prepareImport=asyn
     onProgress({stage:'import-complete-verify-counts',target:database.name,tableCount:tables.length});
     const actual={};
     for(let index=0;index<tables.length;index+=10){
-      const sql=tables.slice(index,index+10).map(name=>`SELECT '${name}' AS table_name, COUNT(*) AS n FROM ${tableName(name)}`).join(' UNION ALL ');
+      const selected=tables.slice(index,index+10);
+      const sql='SELECT '+selected.map(name=>`(SELECT COUNT(*) FROM ${tableName(name)}) AS ${tableName(name)}`).join(', ');
       const result=await api('POST',`d1/database/${database.id}/query`,{sql,params:[]});
       if(!Array.isArray(result)||result.length!==1||result[0]?.success===false||!Array.isArray(result[0]?.results))
         throw new Error('RESTORE_VALIDATION_UNAVAILABLE');
-      Object.assign(actual,Object.fromEntries(result[0].results.map(row=>[row.table_name,Number(row.n)])));
+      if(result[0].results.length!==1)throw new Error('RESTORE_COUNT_ROW_UNAVAILABLE');
+      for(const name of selected)actual[name]=Number(result[0].results[0][name]);
     }
     if(JSON.stringify(tables.map(x=>[x,actual[x]]))!==JSON.stringify(tables.map(x=>[x,manifest[x]])))
       throw new Error('RESTORE_ROW_COUNT_MISMATCH');

@@ -2,6 +2,7 @@ name: Protected D1 independent backup and isolated restore rehearsal
 # Retry with allowlisted import diagnostics only; never print CLI/SQL payloads.
 # Rewrite oversized INSERTs only for newly created backup/restore targets.
 # Verify imported counts in bounded groups of ten tables per query.
+# Use scalar subqueries: this D1 endpoint rejects compound SELECT.
 on:
   push:
     branches: [codex/serialized-warehouse-operations]
