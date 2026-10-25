@@ -70,3 +70,5 @@ jobs:
         run: node scripts/verify-production-synthetic-runtime.mjs --cleanup
 # Source exports are schema-only. Actual customer Workers and DB rows are never
 # deployed/changed. All auth, wallet and order fixtures belong to new QA DBs.
+
+# Read-only provenance classification requires independent order/store fixture evidence.
