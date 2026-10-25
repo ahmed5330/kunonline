@@ -36,8 +36,9 @@ jobs:
         run: |
           node scripts/existing-inventory-schema-check.mjs
           node scripts/preview-release-schema-contract.mjs
-          node scripts/preview-d1-release-invariants.mjs
           node scripts/preview-wallet-finance-invariants.mjs
+          node ../scripts/general-release-invariant-diagnostics.mjs
+          node scripts/preview-d1-release-invariants.mjs
       - name: Provision schema-only synthetic canonical backend
         id: provision
         working-directory: qa-backend
