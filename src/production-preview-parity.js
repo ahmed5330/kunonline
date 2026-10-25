@@ -59,8 +59,20 @@ async function tenantInventory(db){
 async function previewSecretCompatibility(db,env){if(!(await tableExists(db,'integration_secrets')))return {checked:0,success:0,failure:0,allDecryptable:false};const out=await db.prepare('SELECT ciphertext_b64,iv_b64 FROM integration_secrets LIMIT 100').all().catch(()=>({results:[]}));let success=0,failure=0;for(const row of out.results||[]){try{await decryptSecret(env,row.ciphertext_b64,row.iv_b64);success++;}catch{failure++;}}const checked=success+failure;return {checked,success,failure,allDecryptable:checked>0&&failure===0};}
 async function snapshot(db){const counts={};for(const name of TABLES)counts[name]=await countTable(db,name);return {counts,columns:{users:await columns(db,'users'),stores:await columns(db,'stores'),store_connections:await columns(db,'store_connections'),integration_secrets:await columns(db,'integration_secrets')},integrations:await groupedIntegrationMetadata(db),targetTenant:await targetTenant(db),tenantInventory:await tenantInventory(db),fingerprints:{clients:await idFingerprints(db,'clients'),stores:await idFingerprints(db,'stores')}};}
 
-export async function handleProductionPreviewParity(request,env){
-  const url=new URL(request.url);if(request.method!=='GET'||url.pathname!=='/health/preview-parity')return null;if(!env.DB||!env.PREVIEW_DB)return json({ok:false,error:'PARITY_BINDING_UNAVAILABLE'},503);
+export async function handleProductionPreviewParity(request,env,{authorizeAdmin}={}){
+  const url=new URL(request.url);
+  if(request.method!=='GET'||url.pathname!=='/health/preview-parity')return null;
+  // Authorize before reading either database or reporting binding availability.
+  // Never trust a client-supplied role header or silently allow a missing verifier.
+  if(typeof authorizeAdmin!=='function')return json({ok:false,error:'ADMIN_ONLY'},403);
+  let identity=null;
+  try{identity=await authorizeAdmin(request);}catch{return json({ok:false,error:'AUTH_REQUIRED'},401);}
+  if(!identity?.role)return json({ok:false,error:'AUTH_REQUIRED'},401);
+  if(identity.role!=='admin')return json({ok:false,error:'ADMIN_ONLY'},403);
+  // /api/me must identify an actual authenticated admin account, not only a role.
+  // An incomplete or stale upstream identity must never unlock D1-wide diagnostics.
+  if(typeof identity.uid!=='string'||!identity.uid.trim())return json({ok:false,error:'ADMIN_IDENTITY_REQUIRED'},403);
+  if(!env?.DB||!env?.PREVIEW_DB)return json({ok:false,error:'PARITY_BINDING_UNAVAILABLE'},503);
   try{const [production,preview,keyCompatibility]=await Promise.all([snapshot(env.DB),snapshot(env.PREVIEW_DB),previewSecretCompatibility(env.PREVIEW_DB,env)]);return json({ok:true,mode:'read-only-no-secret-values',production,preview,keyCompatibility,generatedAt:new Date().toISOString()});}
-  catch(error){return json({ok:false,error:'PARITY_READ_FAILED',message:String(error?.message||error)},500);}
+  catch(error){console.error('[preview-parity]',error?.code||error?.name||'error');return json({ok:false,error:'PARITY_READ_FAILED'},500);}
 }
