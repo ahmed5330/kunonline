@@ -13,6 +13,6 @@ must(src.includes("hidden=['actualOrderCost','margin','adSpend']"),'Repeated ove
 must(src.includes(".dash-section-actions .dash-period-control")&&src.includes(".dash-drill-head>.dash-period-chip"),'Repeated period controls are not removed.');
 must(src.includes("$('[data-dash-section=\"ads\"] .dash-campaign-strip',root)?.remove()")||src.includes("dash-campaign-strip',root)?.remove()"),'Repeated campaign strip removal is missing.');
 must(src.includes("$('[data-dash-section=\"ai\"] .dash-ai-ad-kpis',root)?.remove()")||src.includes("dash-ai-ad-kpis',root)?.remove()"),'Repeated AI KPI strip removal is missing.');
-must(preview.includes('/v2/modules-v122-dashboard-experience.js?v=122.1'),'Preview dashboard v122 injection missing.');
-must(production.includes('/v2/modules-v122-dashboard-experience.js?v=122.1'),'Production dashboard v122 injection missing.');
+must(preview.includes('/v2/modules-v122-dashboard-experience.js?v=122.3'),'Preview dashboard v122 injection missing.');
+must(production.includes('/v2/modules-v122-dashboard-experience.js?v=122.3'),'Production dashboard v122 injection missing.');
 console.log('Dashboard v122 UX contract passed.');

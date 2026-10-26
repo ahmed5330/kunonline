@@ -4,6 +4,12 @@ on:
   push:
     branches: [develop/ux-system-upgrade]
   workflow_dispatch:
+    inputs:
+      apply_reviewed_migrations:
+        description: 'Apply the reviewed pending Preview D1 migration queue only after checking every pending migration'
+        required: false
+        type: boolean
+        default: false
 concurrency:
   group: kunonline-preview
   cancel-in-progress: true
@@ -11,9 +17,9 @@ permissions:
   contents: write
 jobs:
   test-build-deploy:
-    if: github.ref_name != 'codex/serialized-warehouse-operations'
+    if: github.ref == 'refs/heads/develop/ux-system-upgrade'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 55
     environment:
       name: preview
       url: https://kunonline-preview.mr-a-mnaa.workers.dev/v2/
@@ -45,8 +51,140 @@ jobs:
             echo "Stale Preview run detected. Run=$GITHUB_SHA Latest=$latest. Preview mutation will be skipped."
           fi
 
-      - name: Apply preview migrations only
+      - name: Prove inventory declarations already match the live schema without data reads
+        id: inventory_schema
         if: steps.ownership.outputs.is_latest == 'true'
+        run: node scripts/existing-inventory-schema-check.mjs
+
+      - name: Provision verified isolated QA with synthetic fixtures
+        id: qa_provision
+        if: steps.ownership.outputs.is_latest == 'true'
+        run: node scripts/provision-isolated-preview-qa.mjs
+
+      - name: Smoke isolated QA before any customer Worker mutation
+        id: qa_smoke
+        if: steps.ownership.outputs.is_latest == 'true'
+        continue-on-error: true
+        run: |
+          node scripts/smoke-test-current-preview.mjs "$KUN_PREVIEW_QA_BASE_URL"
+          node scripts/preview-operational-workflow-smoke.mjs "$KUN_PREVIEW_QA_BASE_URL"
+          node scripts/browser-preview-breakdown-controls-test.mjs "$KUN_PREVIEW_QA_BASE_URL"
+
+      - name: Live real Workers AI competitor analysis (synthetic QA store only)
+        id: competitor_ai_live
+        # Independent of the unrelated UI smoke outcome; both gates remain mandatory in qa_summary.
+        if: steps.ownership.outputs.is_latest == 'true'
+        continue-on-error: true
+        run: node scripts/live-preview-competitor-ai-test.mjs "$KUN_PREVIEW_QA_BASE_URL"
+
+      - name: Live authenticated Store B regression
+        id: live
+        if: steps.ownership.outputs.is_latest == 'true' && steps.qa_smoke.outcome == 'success'
+        continue-on-error: true
+        run: node scripts/live-preview-functional-test.mjs "$KUN_PREVIEW_QA_BASE_URL"
+
+      - name: Live team and branch permission regression
+        id: team_live
+        if: steps.ownership.outputs.is_latest == 'true' && steps.qa_smoke.outcome == 'success' && steps.live.outcome == 'success'
+        continue-on-error: true
+        run: node scripts/live-preview-team-test.mjs "$KUN_PREVIEW_QA_BASE_URL"
+
+      - name: Live Customer Service regression
+        id: customer_service_live
+        if: steps.ownership.outputs.is_latest == 'true' && steps.qa_smoke.outcome == 'success' && steps.live.outcome == 'success' && steps.team_live.outcome == 'success'
+        continue-on-error: true
+        run: node scripts/live-preview-customer-service-test.mjs "$KUN_PREVIEW_QA_BASE_URL"
+
+      - name: Live Easy Orders webhook regression
+        id: easyorders_live
+        if: steps.ownership.outputs.is_latest == 'true' && steps.qa_smoke.outcome == 'success' && steps.live.outcome == 'success' && steps.team_live.outcome == 'success' && steps.customer_service_live.outcome == 'success'
+        continue-on-error: true
+        run: node scripts/live-preview-easyorders-test.mjs "$KUN_PREVIEW_QA_BASE_URL"
+
+      - name: Live Dashboard regression
+        id: dashboard_live
+        if: steps.ownership.outputs.is_latest == 'true' && steps.qa_smoke.outcome == 'success' && steps.live.outcome == 'success' && steps.team_live.outcome == 'success' && steps.customer_service_live.outcome == 'success' && steps.easyorders_live.outcome == 'success'
+        continue-on-error: true
+        run: node scripts/live-preview-dashboard-test.mjs "$KUN_PREVIEW_QA_BASE_URL"
+
+      - name: Browser runtime and responsive QA
+        id: browser
+        if: steps.ownership.outputs.is_latest == 'true' && steps.qa_smoke.outcome == 'success' && steps.live.outcome == 'success' && steps.team_live.outcome == 'success' && steps.customer_service_live.outcome == 'success' && steps.easyorders_live.outcome == 'success' && steps.dashboard_live.outcome == 'success'
+        continue-on-error: true
+        run: node scripts/browser-preview-qa.mjs "$KUN_PREVIEW_QA_BASE_URL"
+
+      - name: Require every isolated writing QA gate before release
+        id: qa_before_release
+        if: always() && steps.ownership.outputs.is_latest == 'true'
+        env:
+          QA_PROVISION: ${{ steps.qa_provision.outcome }}
+          QA_SMOKE: ${{ steps.qa_smoke.outcome }}
+          QA_AI: ${{ steps.competitor_ai_live.outcome }}
+          QA_STORE: ${{ steps.live.outcome }}
+          QA_TEAM: ${{ steps.team_live.outcome }}
+          QA_SERVICE: ${{ steps.customer_service_live.outcome }}
+          QA_EASYORDERS: ${{ steps.easyorders_live.outcome }}
+          QA_DASHBOARD: ${{ steps.dashboard_live.outcome }}
+          QA_BROWSER: ${{ steps.browser.outcome }}
+        run: |
+          set -euo pipefail
+          for gate in QA_PROVISION QA_SMOKE QA_AI QA_STORE QA_TEAM QA_SERVICE QA_EASYORDERS QA_DASHBOARD QA_BROWSER; do
+            outcome="${!gate:-missing}"
+            echo "$gate=$outcome"
+            if [ "$outcome" != "success" ]; then exit 1; fi
+          done
+
+      - name: Prove private read-only RPC audit against isolated synthetic orders
+        id: qa_rpc_audit
+        if: steps.qa_before_release.outcome == 'success'
+        run: node scripts/verify-isolated-qa-gap-audit-rpc.mjs
+
+      - name: Verify isolated growth wallet capability handshake
+        id: qa_growth_release
+        run: node scripts/production-preview-release-gate.mjs --isolated-qa "$KUN_PREVIEW_QA_BASE_URL"
+
+      - name: Prove two native five-minute Cron executions on isolated QA
+        id: qa_native_cron
+        if: steps.qa_before_release.outcome == 'success' && steps.qa_rpc_audit.outcome == 'success'
+        run: node scripts/verify-isolated-preview-native-cron.mjs
+
+      - name: Require RPC and native Cron runtime gates before live preflight
+        if: always() && steps.ownership.outputs.is_latest == 'true'
+        env:
+          QA_RPC: ${{ steps.qa_rpc_audit.outcome }}
+          QA_CRON: ${{ steps.qa_native_cron.outcome }}
+        run: |
+          set -euo pipefail
+          test "$QA_RPC" = success
+          test "$QA_CRON" = success
+
+      - name: Gate every Preview release on read-only live Worker and D1 checks
+        # Every develop push publishes the full Worker, including prior Easy Orders
+        # changes. A subsequent QA-only commit MUST NOT bypass release inventory.
+        if: steps.ownership.outputs.is_latest == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # No automatic push may add schema migrations. A manually approved
+          # workflow_dispatch with apply_reviewed_migrations=true is handled
+          # separately below, but must still pass the read-only inventory.
+          git fetch --no-tags --deepen=2 origin develop/ux-system-upgrade
+          if [ "${{ github.event_name }}" = "push" ] && git diff --name-only "HEAD^" HEAD | grep -E '^(migrations/|sandbox/migrations/)'; then
+            echo 'BLOCK: an Easy Orders code-only release cannot include database migrations'
+            exit 1
+          fi
+          node scripts/easyorders-cloudflare-worker-readonly-inventory-test.mjs
+          node scripts/easyorders-cloudflare-worker-readonly-inventory.mjs
+          # Time Travel info only reads the current D1 recovery bookmark.
+          # NEVER restore here: doing so would erase recent real orders.
+          npx wrangler d1 time-travel info kunonline-preview --config wrangler.preview.toml > /tmp/kun-easyorders-time-travel-check.txt
+          grep -Eiq 'bookmark' /tmp/kun-easyorders-time-travel-check.txt
+          echo 'PASS: protected GET-only Workers/Cron binding and D1 recovery-point preflight.'
+
+      - name: Apply preview migrations only with explicit schema approval
+        # Ordinary UI/Worker pushes must never apply unrelated pending migrations.
+        # This boolean is intentionally false for all automatic push deployments.
+        if: steps.ownership.outputs.is_latest == 'true' && github.event_name == 'workflow_dispatch' && inputs.apply_reviewed_migrations == true
         run: npm run db:migrate:preview
 
       - name: Reconfirm latest branch HEAD before deploy
@@ -92,7 +230,7 @@ jobs:
           trap cleanup EXIT
           git worktree add --detach "$stable_dir" "$stable_sha"
           set +e
-          output="$(cd "$stable_dir" && "$GITHUB_WORKSPACE/node_modules/.bin/wrangler" deploy --config wrangler.preview.toml --message "CI rollback baseline from stable source $stable_sha" 2>&1)"
+          output="$(cd "$stable_dir" && "$GITHUB_WORKSPACE/node_modules/.bin/wrangler" deploy --config wrangler.preview.toml --keep-vars --message "CI rollback baseline from stable source $stable_sha" 2>&1)"
           rc=$?
           set -e
           printf '%s\n' "$output"
@@ -107,19 +245,7 @@ jobs:
           fi
           node scripts/preview-health-check.mjs "$base_url"
           status="$(npx wrangler deployments status --config wrangler.preview.toml --json)"
-          current="$(printf '%s' "$status" | node -e '
-            let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{
-              const root=JSON.parse(raw),hits=[];
-              const walk=x=>{if(Array.isArray(x)){for(const v of x)walk(v);return;}if(!x||typeof x!=="object")return;
-                const id=x.version_id||x.versionId;
-                const pct=x.percentage??x.traffic_percentage??x.trafficPercentage;
-                if(id)hits.push({id:String(id),pct:pct==null?null:Number(pct)});
-                for(const v of Object.values(x))walk(v);
-              };walk(root);
-              const unique=[...new Map(hits.map(x=>[x.id,x])).values()];
-              const full=unique.find(x=>x.pct===100||x.pct===1)||(unique.length===1?unique[0]:null);
-              if(!full)process.exit(2);process.stdout.write(full.id);
-            });')"
+          current="$(printf '%s' "$status" | node scripts/cloudflare-full-traffic-version.mjs)"
           if [ "$current" != "$version" ]; then
             echo "Fresh rollback baseline lost Worker ownership. Expected=$version Current=$current"
             exit 1
@@ -133,7 +259,7 @@ jobs:
         if: steps.deploy_ownership.outputs.is_latest == 'true'
         run: |
           set -euo pipefail
-          output="$(npx wrangler deploy --config wrangler.preview.toml --message "Preview candidate $GITHUB_SHA" 2>&1)"
+          output="$(npx wrangler deploy --config wrangler.preview.toml --keep-vars --message "Preview candidate $GITHUB_SHA" 2>&1)"
           printf '%s\n' "$output"
           version="$(printf '%s\n' "$output" | sed -nE 's/.*Current Version ID: ([0-9a-f-]{36}).*/\1/p' | tail -1)"
           if [ -z "$version" ]; then
@@ -147,76 +273,46 @@ jobs:
         id: worker_ownership
         if: steps.deploy.outcome == 'success'
         run: |
-          status="$(npx wrangler deployments status --config wrangler.preview.toml --json)"
-          current="$(printf '%s' "$status" | node -e '
-            let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{
-              const root=JSON.parse(raw),hits=[];
-              const walk=x=>{if(Array.isArray(x)){for(const v of x)walk(v);return;}if(!x||typeof x!=="object")return;
-                const id=x.version_id||x.versionId;
-                const pct=x.percentage??x.traffic_percentage??x.trafficPercentage;
-                if(id)hits.push({id:String(id),pct:pct==null?null:Number(pct)});
-                for(const v of Object.values(x))walk(v);
-              };walk(root);
-              const unique=[...new Map(hits.map(x=>[x.id,x])).values()];
-              const full=unique.find(x=>x.pct===100||x.pct===1)||(unique.length===1?unique[0]:null);
-              if(!full)process.exit(2);process.stdout.write(full.id);
-            });')"
+          set -euo pipefail
           expected="${{ steps.deploy.outputs.version_id }}"
-          if [ "$current" = "$expected" ]; then
-            echo "is_current=true" >> "$GITHUB_OUTPUT"
-            echo "Preview Worker ownership confirmed: $current"
-          else
-            echo "is_current=false" >> "$GITHUB_OUTPUT"
-            echo "Preview Worker ownership lost immediately after deploy. Expected=$expected Current=$current"
-            exit 1
-          fi
+          test -n "$expected"
+          # Cloudflare deployments status can briefly report the previous 100% owner
+          # immediately after a successful Wrangler deploy. Never claim success
+          # before the exact candidate version owns live traffic.
+          for attempt in $(seq 1 18); do
+            status="$(npx wrangler deployments status --config wrangler.preview.toml --json 2>/dev/null || true)"
+            current="$(printf '%s' "$status" | node scripts/cloudflare-full-traffic-version.mjs 2>/dev/null || true)"
+
+            echo "Preview ownership check $attempt/18: expected=$expected live=${current:-unknown}"
+            if [ "$current" = "$expected" ]; then
+              echo "is_current=true" >> "$GITHUB_OUTPUT"
+              echo "Preview Worker ownership confirmed: $current"
+              exit 0
+            fi
+            if [ "$attempt" -lt 18 ]; then sleep 4; fi
+          done
+          echo "is_current=false" >> "$GITHUB_OUTPUT"
+          echo "Preview Worker never became 100% owner after 72s. Expected=$expected Current=${current:-unknown}; validation cannot proceed."
+          exit 1
 
       - name: Smoke test deployed preview
         id: smoke
         if: steps.worker_ownership.outputs.is_current == 'true'
         continue-on-error: true
-        run: npm run smoke:preview
+        run: |
+          npm run smoke:preview
 
-      - name: Live authenticated Store B regression
-        id: live
-        if: steps.worker_ownership.outputs.is_current == 'true' && steps.smoke.outcome == 'success'
+      - name: Verify canonical growth wallet capability handshake
+        id: growth_release
+        if: steps.worker_ownership.outputs.is_current == 'true'
         continue-on-error: true
-        run: node scripts/live-preview-functional-test.mjs https://kunonline-preview.mr-a-mnaa.workers.dev
-
-      - name: Live team and branch permission regression
-        id: team_live
-        if: steps.worker_ownership.outputs.is_current == 'true' && steps.smoke.outcome == 'success' && steps.live.outcome == 'success'
-        continue-on-error: true
-        run: node scripts/live-preview-team-test.mjs https://kunonline-preview.mr-a-mnaa.workers.dev
-
-      - name: Live Customer Service regression
-        id: customer_service_live
-        if: steps.worker_ownership.outputs.is_current == 'true' && steps.smoke.outcome == 'success' && steps.live.outcome == 'success' && steps.team_live.outcome == 'success'
-        continue-on-error: true
-        run: node scripts/live-preview-customer-service-test.mjs https://kunonline-preview.mr-a-mnaa.workers.dev
-
-      - name: Live Easy Orders webhook regression
-        id: easyorders_live
-        if: steps.worker_ownership.outputs.is_current == 'true' && steps.smoke.outcome == 'success' && steps.live.outcome == 'success' && steps.team_live.outcome == 'success' && steps.customer_service_live.outcome == 'success'
-        continue-on-error: true
-        run: node scripts/live-preview-easyorders-test.mjs https://kunonline-preview.mr-a-mnaa.workers.dev
-
-      - name: Live Dashboard regression
-        id: dashboard_live
-        if: steps.worker_ownership.outputs.is_current == 'true' && steps.smoke.outcome == 'success' && steps.live.outcome == 'success' && steps.team_live.outcome == 'success' && steps.customer_service_live.outcome == 'success' && steps.easyorders_live.outcome == 'success'
-        continue-on-error: true
-        run: node scripts/live-preview-dashboard-test.mjs https://kunonline-preview.mr-a-mnaa.workers.dev
-
-      - name: Browser runtime and responsive QA
-        id: browser
-        if: steps.worker_ownership.outputs.is_current == 'true' && steps.smoke.outcome == 'success' && steps.live.outcome == 'success' && steps.team_live.outcome == 'success' && steps.customer_service_live.outcome == 'success' && steps.easyorders_live.outcome == 'success' && steps.dashboard_live.outcome == 'success'
-        continue-on-error: true
-        run: node scripts/browser-preview-qa.mjs https://kunonline-preview.mr-a-mnaa.workers.dev
+        run: node scripts/production-preview-release-gate.mjs
 
       - name: Require every Preview validation gate to succeed
         id: qa_summary
         if: always() && steps.worker_ownership.outputs.is_current == 'true'
         env:
+          GROWTH_RELEASE_OUTCOME: ${{ steps.growth_release.outcome }}
           SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
           STORE_B_OUTCOME: ${{ steps.live.outcome }}
           TEAM_OUTCOME: ${{ steps.team_live.outcome }}
@@ -224,10 +320,11 @@ jobs:
           EASYORDERS_OUTCOME: ${{ steps.easyorders_live.outcome }}
           DASHBOARD_OUTCOME: ${{ steps.dashboard_live.outcome }}
           BROWSER_OUTCOME: ${{ steps.browser.outcome }}
+          COMPETITOR_AI_OUTCOME: ${{ steps.competitor_ai_live.outcome }}
         run: |
           set -euo pipefail
           failed=0
-          for gate in SMOKE_OUTCOME STORE_B_OUTCOME TEAM_OUTCOME CUSTOMER_SERVICE_OUTCOME EASYORDERS_OUTCOME DASHBOARD_OUTCOME BROWSER_OUTCOME; do
+          for gate in GROWTH_RELEASE_OUTCOME SMOKE_OUTCOME COMPETITOR_AI_OUTCOME STORE_B_OUTCOME TEAM_OUTCOME CUSTOMER_SERVICE_OUTCOME EASYORDERS_OUTCOME DASHBOARD_OUTCOME BROWSER_OUTCOME; do
             outcome="${!gate:-missing}"
             echo "$gate=$outcome"
             if [ "$outcome" != "success" ]; then failed=1; fi
@@ -250,19 +347,7 @@ jobs:
             exit 1
           fi
           status="$(npx wrangler deployments status --config wrangler.preview.toml --json)"
-          current="$(printf '%s' "$status" | node -e '
-            let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{
-              const root=JSON.parse(raw),hits=[];
-              const walk=x=>{if(Array.isArray(x)){for(const v of x)walk(v);return;}if(!x||typeof x!=="object")return;
-                const id=x.version_id||x.versionId;
-                const pct=x.percentage??x.traffic_percentage??x.trafficPercentage;
-                if(id)hits.push({id:String(id),pct:pct==null?null:Number(pct)});
-                for(const v of Object.values(x))walk(v);
-              };walk(root);
-              const unique=[...new Map(hits.map(x=>[x.id,x])).values()];
-              const full=unique.find(x=>x.pct===100||x.pct===1)||(unique.length===1?unique[0]:null);
-              if(!full)process.exit(2);process.stdout.write(full.id);
-            });')"
+          current="$(printf '%s' "$status" | node scripts/cloudflare-full-traffic-version.mjs)"
           expected="${{ steps.deploy.outputs.version_id }}"
           if [ "$current" != "$expected" ]; then
             echo "Preview Worker changed after QA. Stable marker will not move. Expected=$expected Current=$current"
@@ -289,19 +374,7 @@ jobs:
         if: always() && steps.rollback_ownership.outputs.is_latest == 'true' && steps.qa_summary.outcome == 'failure'
         run: |
           status="$(npx wrangler deployments status --config wrangler.preview.toml --json)"
-          current="$(printf '%s' "$status" | node -e '
-            let raw="";process.stdin.on("data",d=>raw+=d).on("end",()=>{
-              const root=JSON.parse(raw),hits=[];
-              const walk=x=>{if(Array.isArray(x)){for(const v of x)walk(v);return;}if(!x||typeof x!=="object")return;
-                const id=x.version_id||x.versionId;
-                const pct=x.percentage??x.traffic_percentage??x.trafficPercentage;
-                if(id)hits.push({id:String(id),pct:pct==null?null:Number(pct)});
-                for(const v of Object.values(x))walk(v);
-              };walk(root);
-              const unique=[...new Map(hits.map(x=>[x.id,x])).values()];
-              const full=unique.find(x=>x.pct===100||x.pct===1)||(unique.length===1?unique[0]:null);
-              if(!full)process.exit(2);process.stdout.write(full.id);
-            });')"
+          current="$(printf '%s' "$status" | node scripts/cloudflare-full-traffic-version.mjs)"
           expected="${{ steps.deploy.outputs.version_id }}"
           if [ "$current" = "$expected" ]; then
             echo "is_current=true" >> "$GITHUB_OUTPUT"
@@ -336,66 +409,10 @@ jobs:
           echo "Preview Worker changed during QA; validation result is not attributable to this run and rollback was intentionally suppressed."
           exit 1
 
-  serialized-warehouse-release:
-    if: github.event_name == 'workflow_dispatch' && github.ref_name == 'codex/serialized-warehouse-operations'
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    environment:
-      name: preview
-      url: https://kunonline-preview.mr-a-mnaa.workers.dev/v2/
-    env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 22
-          package-manager-cache: false
-      - run: npm install --ignore-scripts
-      - name: Warehouse release regression and config validation
-        run: |
-          npm test
-          npm run check:preview-config
-          npm run check:production-config
-          npx wrangler deploy --dry-run --config wrangler.preview.toml
-      - name: Verify exact authorized branch head before canonical data mutation
-        run: |
-          set -euo pipefail
-          latest="$(git ls-remote origin refs/heads/codex/serialized-warehouse-operations | awk '{print $1}')"
-          test "$latest" = "$GITHUB_SHA"
-      - name: Capture current Preview Worker for owned rollback
-        id: warehouse_baseline
-        run: echo "version=$(node scripts/warehouse-worker-version.mjs)" >> "$GITHUB_OUTPUT"
-      - name: Apply only additive inventory schema to canonical data store
-        run: node scripts/warehouse-schema-apply.mjs
-      - name: Deploy the same warehouse data runtime
-        id: warehouse_deploy
-        run: |
-          npx wrangler deploy --config wrangler.preview.toml
-          echo "version=$(node scripts/warehouse-worker-version.mjs)" >> "$GITHUB_OUTPUT"
-      - name: Verify protected warehouse API and exact UI version
-        id: warehouse_smoke
-        run: |
-          set -euo pipefail
-          response="$(curl -s -o /tmp/warehouse-auth.json -w '%{http_code}' 'https://kunonline-preview.mr-a-mnaa.workers.dev/api/inventory/unit-tracking/shipments?orderId=nonexistent')"
-          test "$response" = 401
-          verified=0
-          for attempt in {1..20}; do
-            if curl -fsS -H 'Cache-Control: no-cache' "https://kunonline-preview.mr-a-mnaa.workers.dev/v2/modules-v128-unit-tracking.js?v=128.4&deploy=${GITHUB_RUN_ID}-${attempt}" -o /tmp/warehouse-ui.js && grep -Fq "version:'128.4'" /tmp/warehouse-ui.js; then
-              verified=1
-              break
-            fi
-            sleep 3
-          done
-          test "$verified" = 1
+      - name: Disable isolated QA Cron on completion or cancellation
+        if: always() && steps.qa_provision.outcome == 'success'
+        run: node scripts/verify-isolated-preview-native-cron.mjs --cleanup
 
-      - name: Restore only this run's Worker after failed smoke
-        if: failure() && steps.warehouse_smoke.outcome == 'failure' && steps.warehouse_deploy.outputs.version != ''
-        run: |
-          set -euo pipefail
-          current="$(node scripts/warehouse-worker-version.mjs)"
-          latest="$(git ls-remote origin refs/heads/codex/serialized-warehouse-operations | awk '{print $1}')"
-          if [ "$current" = "${{ steps.warehouse_deploy.outputs.version }}" ] && [ "$latest" = "$GITHUB_SHA" ]; then
-            npx wrangler versions deploy "${{ steps.warehouse_baseline.outputs.version }}@100%" --yes --config wrangler.preview.toml --message "Restore warehouse baseline after failed smoke"
-          fi
+      - name: Remove read-only QA audit caller even after cancellation
+        if: always() && steps.qa_provision.outcome == 'success'
+        run: node scripts/verify-isolated-qa-gap-audit-rpc.mjs --cleanup

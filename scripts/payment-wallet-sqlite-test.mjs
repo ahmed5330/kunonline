@@ -19,11 +19,11 @@ function fixture({balance=23,fee=25,minimum=0}={}){
   db.prepare('INSERT INTO subscriptions(id,client_id,status,amount,created_at,updated_at) VALUES(?,?,\'active\',?,?,?)').run('SUB-'+id,id,minimum,ts,ts);
   db.prepare('INSERT INTO audit_log(id,client_id,action,created_at) VALUES(?,?,\'subscription.billing.start\',?)').run('START-'+id,id,ts);
  }
- let beforeBatch=null;
+ let beforeBatch=null,breakMirror=false;
  class Statement{
   constructor(sql){this.sql=sql;this.args=[];}
   bind(...args){assert.ok(args.every(v=>v!==undefined));this.args=args;return this;}
-  async first(column){const r=db.prepare(this.sql).get(...this.args)||null;return column&&r?r[column]:r;}
+  async first(column){if(breakMirror&&this.sql.includes('SELECT json,updated_at FROM state WHERE id=1'))throw Object.assign(new Error('SIMULATED_LEGACY_MIRROR_FAILURE'),{code:'SIMULATED_MIRROR_OFFLINE'});const r=db.prepare(this.sql).get(...this.args)||null;return column&&r?r[column]:r;}
   async all(){return {results:db.prepare(this.sql).all(...this.args)};}
   async run(){const r=db.prepare(this.sql).run(...this.args);return {success:true,meta:{changes:Number(r.changes)}};}
  }
@@ -33,7 +33,7 @@ function fixture({balance=23,fee=25,minimum=0}={}){
   if(beforeBatch){const f=beforeBatch;beforeBatch=null;await f();}
   db.exec('BEGIN IMMEDIATE');try{const results=statements.map(st=>{const r=db.prepare(st.sql).run(...st.args);return {success:true,meta:{changes:Number(r.changes)}};});db.exec('COMMIT');return results;}catch(e){db.exec('ROLLBACK');throw e;}
  };
- return {db,env,hook:f=>{beforeBatch=f;},balance:id=>db.prepare('SELECT balance FROM wallet_accounts WHERE client_id=?').get(id||'qa').balance,
+ return {db,env,hook:f=>{beforeBatch=f;},setMirrorFailure:v=>{breakMirror=!!v;},balance:id=>db.prepare('SELECT balance FROM wallet_accounts WHERE client_id=?').get(id||'qa').balance,
   order:id=>db.prepare('INSERT INTO orders(id,client_id,store_id,date,created_at) VALUES(?,\'qa\',\'shop\',\'2090-01-01\',\'2090-01-01T00:00:00Z\')').run(id),
   topup:id=>db.prepare('INSERT INTO wallet_topup_requests(id,client_id,amount,sender_phone,requested_at) VALUES(?,\'qa\',100,\'01000000000\',?)').run(id,ts)};
 }
@@ -80,6 +80,68 @@ paid.topup('INVALID-CREDIT');
 await assert.rejects(()=>approveTopup(paid.env,'INVALID-CREDIT','admin','',{creditAmount:1e308}),e=>e.code==='TOPUP_CREDIT_AMOUNT_INVALID');
 assert.equal(paid.balance(),93,'invalid input must leave the balance intact');
 paid.db.close();
+
+// Once wallet_log and wallet_accounts are committed, a legacy state sync outage
+// cannot report "topup rejected": retries must remain idempotent, with explicit
+// mirror warning until recovery.
+const mirrorTopup=fixture({balance:-2,minimum:0});mirrorTopup.topup('MIRROR-FAIL');
+mirrorTopup.setMirrorFailure(true);
+const creditedOnce=await approveTopup(mirrorTopup.env,'MIRROR-FAIL','admin');
+assert.equal(creditedOnce.ok,true);
+assert.equal(creditedOnce.legacyMirrorPending,true);
+assert.equal(creditedOnce.balance,98);
+assert.equal(mirrorTopup.db.prepare("SELECT COUNT(*) n FROM wallet_log WHERE client_id='qa'").get().n,1);
+const creditedTwice=await approveTopup(mirrorTopup.env,'MIRROR-FAIL','admin');
+assert.equal(creditedTwice.alreadyApproved,true);
+assert.equal(creditedTwice.legacyMirrorPending,true);
+assert.equal(mirrorTopup.balance(),98,'mirror outage must not double-charge or re-credit a topup');
+mirrorTopup.setMirrorFailure(false);
+const recoveredMirror=await approveTopup(mirrorTopup.env,'MIRROR-FAIL','admin');
+assert.equal(recoveredMirror.alreadyApproved,true);
+assert.equal(recoveredMirror.legacyMirrorPending,false);
+assert.equal(mirrorTopup.balance(),98);
+mirrorTopup.db.close();
+
+const mirrorManual=fixture({balance:10,minimum:0});
+mirrorManual.setMirrorFailure(true);
+const manualOne=await adminCreditWallet(mirrorManual.env,'qa',7,'admin','synthetic',{requestId:'mirror-credit-77'});
+assert.equal(manualOne.ok,true);
+assert.equal(manualOne.legacyMirrorPending,true);
+assert.equal(mirrorManual.balance(),17);
+const manualRetry=await adminCreditWallet(mirrorManual.env,'qa',7,'admin','synthetic',{requestId:'mirror-credit-77'});
+assert.equal(manualRetry.alreadyCredited,true);
+assert.equal(manualRetry.legacyMirrorPending,true);
+assert.equal(mirrorManual.balance(),17);
+mirrorManual.setMirrorFailure(false);
+const mirrorNowOk=await adminCreditWallet(mirrorManual.env,'qa',7,'admin','synthetic',{requestId:'mirror-credit-77'});
+assert.equal(mirrorNowOk.legacyMirrorPending,false);
+assert.equal(mirrorManual.balance(),17);
+mirrorManual.db.close();
+
+const mirrorOrder=fixture({balance:30,fee:8,minimum:0});
+mirrorOrder.order('BILL-WHEN-MIRROR-FAILS');
+mirrorOrder.setMirrorFailure(true);
+const billedWithMirrorDown=await billOrder(mirrorOrder.env,'BILL-WHEN-MIRROR-FAILS');
+assert.equal(billedWithMirrorDown.status,'charged');
+assert.equal(billedWithMirrorDown.legacyMirrorPending,true);
+assert.equal(mirrorOrder.balance(),22);
+assert.equal(mirrorOrder.db.prepare("SELECT COUNT(*) n FROM wallet_log WHERE client_id='qa'").get().n,1);
+const billedAgain=await billOrder(mirrorOrder.env,'BILL-WHEN-MIRROR-FAILS');
+assert.equal(billedAgain.status,'charged');
+assert.equal(mirrorOrder.balance(),22,'mirror outage must not trigger another order fee');
+mirrorOrder.db.close();
+
+const mirrorMonthly=fixture({balance:30,fee:5,minimum:10});
+mirrorMonthly.setMirrorFailure(true);
+const monthlyWithMirrorDown=await subscriptionAccess(mirrorMonthly.env,'qa',{applyMonthly:true});
+assert.equal(monthlyWithMirrorDown.monthlyCharged,true);
+assert.equal(monthlyWithMirrorDown.legacyMirrorPending,true);
+assert.equal(monthlyWithMirrorDown.balance,20);
+mirrorMonthly.setMirrorFailure(false);
+const monthlyOnce=await subscriptionAccess(mirrorMonthly.env,'qa',{applyMonthly:true});
+assert.equal(monthlyOnce.balance,20,'retry must not deduct monthly fee twice');
+assert.equal(mirrorMonthly.db.prepare("SELECT COUNT(*) n FROM wallet_log WHERE client_id='qa'").get().n,1);
+mirrorMonthly.db.close();
 
 // A stale monthly balance snapshot must not shrink credit below concurrent debt.
 const monthly=fixture({balance:5,fee:8,minimum:10});monthly.order('FINAL');

@@ -2,6 +2,9 @@
 (function(){
   const K=window.KunActionsV23;if(!K)throw new Error('KunActionsV23 core missing');
   K.openCreateOrder=async()=>{
+    // Do not allow the early-loaded legacy order form to bypass J&T validation.
+    // v106 overwrites this function as soon as the address cascade is ready.
+    if(!window.KunManualJntOrderV106){K.notify('نموذج إنشاء الطلب ما زال يُحمّل، حاول مرة أخرى');return;}
     const {cid,sid}=await K.scope(),q=`clientId=${encodeURIComponent(cid)}${sid?`&storeId=${encodeURIComponent(sid)}`:''}`;
     let products=[];try{const data=await K.api(`/api/state?${q}`);products=data.products||[];}catch{}
     const now=new Date(),today=new Date(now.getTime()-now.getTimezoneOffset()*60000).toISOString().slice(0,10);

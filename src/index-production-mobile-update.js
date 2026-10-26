@@ -1,3 +1,5 @@
+import {handleFinancialAccountingOS} from './accounting-faos-api.js';
+import {routeProductionCodRead} from './production-cod-read-fallback.js';
 import app from './index-production-jt-history.js';
 import {handlePublicSiteReviews} from './public-site-reviews.js';
 import {handleAIMarketing} from './ai-marketing-analyst.js';
@@ -84,7 +86,7 @@ async function websiteWithDirectAndroidDownload(request,env){
     .replace(/\/v2\/modules-v80-jnt-address-cascade-v805\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v80-jnt-address-cascade-v805.js?v=80.6')
     .replace(/\/v2\/modules-v121-dashboard-sync-guard\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v121-dashboard-sync-guard.js?v=121.3')
     .replaceAll(LEGACY_APK_URL,DIRECT_APK_PATH)
-    .replaceAll('/v2/modules-v51-permission-navigation.js?v=51.10','/v2/modules-v51-permission-navigation.js?v=51.16')
+    .replaceAll('/v2/modules-v51-permission-navigation.js?v=51.10','/v2/modules-v51-permission-navigation.js?v=51.17')
     .replace(/\/v2\/modules-v57-section-reload\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v57-section-reload.js?v=57.3')
     .replaceAll('/v2/modules-v78-jt-shipping-order.js?v=78.4','/v2/modules-v78-jt-shipping-order.js?v=78.5')
     .replaceAll('/v2/modules-v79-printing.js?v=79.7','/v2/modules-v79-printing.js?v=79.10')
@@ -105,7 +107,7 @@ async function websiteWithDirectAndroidDownload(request,env){
     html=html.replace('</body>','<script src="/v2/modules-v121-dashboard-sync-guard.js?v=121.3" data-kun-dashboard-sync-guard="1"></script></body>');
   }
   if(!html.includes('/v2/modules-v122-dashboard-experience.js')){
-    html=html.replace('</body>','<script src="/v2/modules-v122-dashboard-experience.js?v=122.1" data-kun-dashboard-experience="1"></script></body>');
+    html=html.replace('</body>','<script src="/v2/modules-v122-dashboard-experience.js?v=122.3" data-kun-dashboard-experience="1"></script></body>');
   }
   if(!html.includes('/v2/modules-v123-dashboard-unified.js')){
     html=html.replace('</body>','<script src="/v2/modules-v123-dashboard-unified.js?v=123.0" data-kun-dashboard-unified="1"></script></body>');
@@ -119,8 +121,8 @@ async function websiteWithDirectAndroidDownload(request,env){
   if(!html.includes('/v2/modules-v126-dashboard-finance-top.js')){
     html=html.replace('</body>','<script src="/v2/modules-v126-dashboard-finance-top.js?v=126.5" data-kun-dashboard-finance-top-v126="1"></script></body>');
   }
-  if(!html.includes('/v2/modules-v127-subscriptions.js')){
-    html=html.replace('</body>','<script src="/v2/modules-v127-subscriptions.js?v=127.20" data-kun-subscriptions-v127="1"></script></body>');
+  if(!html.includes('/v2/modules-v127-subscriptions.js?v=127.22')){
+    html=html.replace('</body>','<script src="/v2/modules-v127-subscriptions.js?v=127.22" data-kun-subscriptions-v127="1"></script></body>');
   }
   if(!html.includes('/v2/modules-v128-unit-tracking.js')){
     html=html.replace('</body>','<script src="/v2/modules-v128-unit-tracking.js?v=128.4" data-kun-unit-tracking-v128="1"></script></body>');
@@ -180,6 +182,8 @@ export default {
     // Send both endpoints to the same upstream unchanged, including Cookie and
     // Set-Cookie. Do not let subscription or finance middleware rewrite them.
     // If the service binding is absent, both use the same local fallback.
+    if(request.method==='GET'&&new URL(request.url).pathname==='/api/preview/growth-release')return await previewFetch(request,env)||app.fetch(request,previewRuntimeEnv(env),ctx);
+
     if(AUTH_PATHS.has(new URL(request.url).pathname)){
       const identity=await previewFetch(request,env);
       return identity||app.fetch(request,previewRuntimeEnv(env),ctx);
@@ -187,6 +191,12 @@ export default {
 
     const dataEnv=previewRuntimeEnv(env);
     const delegate=previewDelegate(env,dataEnv,ctx);
+    const faos=await handleFinancialAccountingOS({request,env:dataEnv,ctx,delegate});
+    if(faos)return faos;
+    const codRead=await routeProductionCodRead({request,
+      fetchPreview:source=>previewFetch(source,env),
+      fetchLocal:source=>app.fetch(source,dataEnv,ctx)});
+    if(codRead)return codRead;
     // Preview-backed customer data is live: never silently fall back to a
     // different D1 source for this status. Fail closed if bindings are absent.
     if(new URL(request.url).pathname==='/api/integrations/easyorders/dashboard-health'){

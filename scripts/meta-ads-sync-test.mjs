@@ -41,5 +41,5 @@ for(const marker of ['platformPurchaseValue','platformRoas','frequency','platfor
 for(const marker of ['إدارة الحملات — Meta Ads','Marketing Intelligence','مزامنة Meta الآن','الشغالة فقط','Platform ROAS','Real ROAS','KunMetaAdsLive','async function liveData','empty:${c.clientId}'])assert.ok(ui.includes(marker),`Live Meta UI missing ${marker}`);
 for(const marker of ['intMetaAdAccountId','رقم الحساب الإعلاني Meta Ad Account ID','لن يختار Kun Online أي حساب تلقائيًا'])assert.ok(integrationUi.includes(marker),`Integration UI missing explicit Meta account input: ${marker}`);
 assert.equal(ui.includes('access_token'),false,'The browser UI must never contain or expose the Meta access token');
-assert.ok(index.includes('/v2/modules-v27-meta-ads.js?v=27.0'),'Preview entrypoint must load the live Meta Ads overlay');
+assert.match(index,/\/v2\/modules-v27-meta-ads\.js\?v=27\.\d+/,'Preview entrypoint must load a cache-versioned live Meta Ads overlay');
 console.log('Meta Ads sync checks passed: Graph pagination/insights parsing, explicit account binding gate, tenant-scoped secrets/persistence, live campaign UI, real performance and safe scheduled refresh are wired.');

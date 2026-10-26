@@ -47,12 +47,13 @@ requireText(packageJson,'"dev": "wrangler dev --config wrangler.preview.toml"','
 requireText(packageJson,'"dev:scheduled": "wrangler dev --config wrangler.sync.preview.toml --test-scheduled"','scheduled local testing must use the sync Preview config.');
 requireText(packageJson,'node scripts/verify-cloudflare-crons.mjs kunonline-preview --none','app live Cron check must require zero schedules.');
 requireText(packageJson,'node scripts/verify-cloudflare-crons.mjs kunonline-sync-preview','sync live Cron verification is missing.');
-requireText(packageJson,'node scripts/browser-preview-breakdown-controls-test.mjs','live Breakdown browser interaction must remain a hard Preview smoke gate.');
+requireText(workflow,'node scripts/browser-preview-breakdown-controls-test.mjs "$KUN_PREVIEW_QA_BASE_URL"','Breakdown interaction must remain mandatory on isolated QA.');
 requireText(packageJson,'wrangler d1 migrations apply kunonline-preview --remote --config wrangler.preview.toml','migration command must be pinned to Preview D1/config.');
-requireText(packageJson,'wrangler deploy --config wrangler.preview.toml','Preview deployment command is not pinned.');
+requireText(workflow,'wrangler deploy --config wrangler.preview.toml','Reviewed Preview workflow must pin the deploy target.');
+requireText(packageJson,'Preview deployment is production-backed. Use reviewed GitHub Preview CI/CD workflow','Direct Preview deploy must fail closed instead of bypassing shared D1 gates.');
 requireText(packageJson,'wrangler deploy --config wrangler.sync.preview.toml','sync Preview deployment command is not pinned.');
 requireText(packageJson,'wrangler rollback --config wrangler.preview.toml','manual rollback command is not pinned to Preview.');
-requirePattern(packageJson,/"wrangler"\s*:\s*"4\.125\.0"/,'Wrangler must stay pinned to 4.125.0.');
+requirePattern(packageJson,/"wrangler"\s*:\s*"4\.151\.0"/,'Wrangler must stay pinned to the security-reviewed 4.151.0 release.');
 for(const script of ['db:init','db:init-local','db:commerce','db:commerce-local'])requirePattern(packageJson,new RegExp(`"${script.replace(':','\\:')}"\\s*:\\s*"[^"]*--config wrangler\\.preview\\.toml`),`${script} must be pinned to Preview config.`);
 requirePattern(cronVerifier,/workers\/scripts\/\$\{encodeURIComponent\(worker\)\}\/schedules/,'Cron verifier must query live Worker schedules.');
 requireText(cronVerifier,'CLOUDFLARE_API_TOKEN','Cron verifier must authenticate against Cloudflare.');
@@ -103,7 +104,7 @@ const gates=[
   ['Browser runtime and responsive QA','browser-preview-qa.mjs']
 ];
 for(const [name,script] of gates){requireText(workflow,`name: ${name}`,`${name} gate is missing.`);requireText(workflow,script,`${name} script is missing.`);}
-for(const dependency of ['steps.smoke.outcome == \'success\'','steps.live.outcome == \'success\'','steps.team_live.outcome == \'success\'','steps.customer_service_live.outcome == \'success\'','steps.easyorders_live.outcome == \'success\'','steps.dashboard_live.outcome == \'success\''])requireText(workflow,dependency,`required live-gate dependency ${dependency} is missing.`);
+for(const dependency of ['steps.qa_smoke.outcome == \'success\'','steps.live.outcome == \'success\'','steps.team_live.outcome == \'success\'','steps.customer_service_live.outcome == \'success\'','steps.easyorders_live.outcome == \'success\'','steps.dashboard_live.outcome == \'success\''])requireText(workflow,dependency,`required live-gate dependency ${dependency} is missing.`);
 
 requireText(workflow,'name: Require every Preview validation gate to succeed','final mandatory QA summary is missing.');
 requireText(workflow,'id: qa_summary','QA summary output is missing.');

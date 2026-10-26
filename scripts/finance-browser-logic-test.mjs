@@ -7,9 +7,9 @@ const root={innerHTML:''},styles=[];
 let collectedCash=350,purchases=false;
 const endpoints={
  '/api/dashboard':()=>({ok:true,from:'2026-10-01',to:'2026-10-11',currency:'EGP',overview:{expectedRevenue:500,profitMargin:60,productCostSource:'current_inventory'},ads:{spend:60},finance:{revenue:500,productCost:100,grossProfit:400,expenses:100,netProfit:300,expenseBreakdown:{ads:60,general:40,shipping:0,orderOther:0,admin:0}}}),
- '/api/accounting/overview':()=>({ok:true,collectedRevenue:collectedCash,netCash:380,manualIncome:20,manualExpenses:40,managementFees:0,entries:1,shippedOrders:0,unverifiedCollectedOrders:0}),
+ '/api/accounting/overview':()=>({ok:true,collectedRevenue:collectedCash,verifiedCollectedRevenue:collectedCash,estimatedCollectedRevenue:0,verifiedNetCash:collectedCash+20-40,netCash:collectedCash+20-40,manualIncome:20,manualExpenses:40,managementFees:0,entries:1,shippedOrders:0,unverifiedCollectedOrders:0}),
  '/api/accounting/entries':()=>({ok:true,entries:purchases?[{type:'expense',category:'مشتريات',amount:50,date:'2026-10-11'}]:[]}),
- '/api/accounting/collected-profit':()=>({ok:true,collectedGross:350,missingProductCostOrders:0,managementFees:0}),
+ '/api/accounting/collected-profit':()=>({ok:true,collectedGross:350,verifiedCollectedGross:350,unverifiedCollectionFallbackGross:0,missingProductCostOrders:0,managementFees:0}),
  '/api/cod-reconciliation/candidates':()=>[],
  '/api/cod-reconciliation':()=>[],
  '/api/cod-reconciliation/summary':()=>({ok:true,totalOrders:800,totalExpected:250000})
@@ -28,11 +28,13 @@ const fetch=async input=>{
 };
 const context={window,document,fetch,location:{origin:'https://test.local'},URL,Response,Intl,Date,Promise,Math,Number,Object,JSON,String,Array,Set,Map,console,setTimeout,clearTimeout};
 vm.runInNewContext(js,context,{filename:'modules-v96-finance-command-center.js'});
-assert.equal(window.KunFinanceCommandCenterV96.version,'96.1');
+assert.equal(window.KunFinanceCommandCenterV96.version,'96.2');
 await window.KunFinanceCommandCenterV96.render();
 for(const token of ['صافي الربح التشغيلي','صافي الربح المحاسبي','التحصيل: المالية × الحسابات','متطابق','ليس رصيد البنك'])
  assert.ok(root.innerHTML.includes(token),`missing visible finance indicator: ${token}`);
 assert.ok(!root.innerHTML.includes('فرق ٢٠'),'false positive in balanced fixture');
+assert.ok(root.innerHTML.includes('مبالغ تحصيل مثبتة فقط'),'Finance must display verified COD separately');
+assert.ok(root.innerHTML.includes('صافي مسجل بدون قيم طلبات تقديرية'),'Finance must display verified flow separately');
 assert.ok(root.innerHTML.includes(new Intl.NumberFormat('ar-EG',{maximumFractionDigits:2}).format(250000)),'Finance screen must show all pending COD, not only the first 500 candidate records');
 assert.ok(root.innerHTML.includes(new Intl.NumberFormat('ar-EG',{maximumFractionDigits:0}).format(800)),'Finance must show all pending COD orders including those beyond the 500-record list');
 collectedCash=370;

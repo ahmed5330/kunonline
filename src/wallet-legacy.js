@@ -1,4 +1,4 @@
-import {now,rid,round2,ensureWalletAccount,mirrorLegacyBalance} from './wallet-core.js';
+import {now,rid,round2,ensureWalletAccount,safeMirrorAfterLedgerCommit} from './wallet-core.js';
 
 export async function adminCreditWallet(env,clientId,amount,actor='admin',note='Manual admin credit',options={}){
   amount=round2(amount);if(!Number.isFinite(amount)||amount<=0)throw Object.assign(new Error('المبلغ لازم يكون رقمًا صالحًا أكبر من صفر'),{status:400,code:'ADMIN_CREDIT_AMOUNT_INVALID'});
@@ -12,7 +12,7 @@ export async function adminCreditWallet(env,clientId,amount,actor='admin',note='
   const result=async(prev)=>{
     if(round2(prev.amount)!==amount)throw Object.assign(new Error('رمز عملية التصحيح مستخدم بالفعل لمبلغ مختلف'),{status:409,code:'ADMIN_CREDIT_KEY_CONFLICT'});
     const row=await env.DB.prepare('SELECT balance FROM wallet_accounts WHERE client_id=?').bind(clientId).first();
-    return {ok:true,alreadyCredited:true,clientId,balance:round2(row?.balance),walletLogId:prev.id};
+    return {ok:true,alreadyCredited:true,clientId,balance:round2(row?.balance),walletLogId:prev.id,...await safeMirrorAfterLedgerCommit(env,clientId)};
   };
   const prior=requestId?await existing():null;
   if(prior)return result(prior);
@@ -31,8 +31,8 @@ export async function adminCreditWallet(env,clientId,amount,actor='admin',note='
     throw error;
   }
   const row=await env.DB.prepare('SELECT balance FROM wallet_accounts WHERE client_id=?').bind(clientId).first();
-  await mirrorLegacyBalance(env,clientId,row?.balance||0);
-  return {ok:true,alreadyCredited:false,clientId,balance:round2(row?.balance),walletLogId:logId};
+  const mirror=await safeMirrorAfterLedgerCommit(env,clientId);
+  return {ok:true,alreadyCredited:false,clientId,balance:round2(row?.balance),walletLogId:logId,...mirror};
 }
 
 export async function sanitizeLegacyStateBilling(env,state){

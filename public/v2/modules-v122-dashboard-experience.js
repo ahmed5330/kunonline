@@ -1,7 +1,7 @@
 /* Kun Online v122.0 — executive dashboard UX, de-duplication and analytical depth */
 (()=>{
   if(window.KunDashboardExperienceV122)return;
-  const VERSION='122.0';
+  const VERSION='122.3';
   const nativeFetch=window.fetch.bind(window);
   const sectionOrder=['overview','trend','finance','ads','rates','provinces','ai'];
   const sectionMeta={
@@ -14,8 +14,8 @@
     ai:['الذكاء','قراءة AI وخطوات العمل','الإشارات والتوصيات العملية بعد ربط التسويق والتشغيل والمالية.']
   };
   let lastData=null,timer=0,decorating=false,scopedTrend=null;
-  const $=(s,r=document)=>r.querySelector(s);
-  const $$=(s,r=document)=>[...r.querySelectorAll(s)];
+  const $=(s,r=document)=>r?.querySelector(s)||null;
+  const $$=(s,r=document)=>[...(r?.querySelectorAll(s)||[])];
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const n=v=>Number(v)||0;
   const num=v=>new Intl.NumberFormat('ar-EG',{maximumFractionDigits:1}).format(n(v));
@@ -46,6 +46,7 @@
       body[data-theme="dark"] .dash-x-delta{background:linear-gradient(180deg,#172033,var(--card));border-color:var(--line)}body[data-theme="dark"] .dash-x-nav button{background:var(--card)}body[data-theme="dark"] .v33-dashboard .dash-hero{background:radial-gradient(circle at 8% 14%,rgba(59,130,246,.13),transparent 31%),radial-gradient(circle at 88% 78%,rgba(34,197,94,.09),transparent 30%),linear-gradient(135deg,#101827,#121d30 58%,#10251f 100%)}
       @media(max-width:1180px){.dash-x-metrics{grid-template-columns:repeat(3,minmax(0,1fr))}.dash-x-insights{grid-template-columns:repeat(2,minmax(0,1fr))}.dash-ad-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
       @media(max-width:760px){.v33-dashboard .dash-hero{padding:18px}.v33-dashboard .dash-hero .title{font-size:26px}.dash-x-exec-head{display:grid}.dash-x-exec-range{margin-inline-start:0;width:max-content}.dash-x-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.dash-x-insights,.dash-x-delta-grid{grid-template-columns:1fr 1fr}.dash-kpis{grid-template-columns:repeat(2,minmax(0,1fr))!important}.dash-ad-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.dash-period-toolbar{top:4px}}
+      @media(max-width:600px){.dash-x-nav{flex-wrap:wrap;overflow:visible}.dash-x-nav button{max-width:100%;white-space:normal}}
       @media(max-width:430px){.dash-x-metrics,.dash-x-insights,.dash-x-delta-grid,.dash-kpis,.dash-ad-grid,.dash-ad-summary{grid-template-columns:1fr!important}.dash-x-executive{padding:15px!important}.dash-x-metric strong{font-size:20px}.v33-dashboard .dash-section[data-dash-section]{padding:14px}.dash-x-nav button{padding:7px 10px}}
       @media(prefers-reduced-motion:reduce){.dash-x-nav button{transition:none}}
     `;document.head.appendChild(s);

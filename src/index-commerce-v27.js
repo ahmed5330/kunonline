@@ -7,6 +7,11 @@ import {
 import {orderById,recordOrderEvent,recordOrderMutation,addOrderNote,logContact,timeline} from './order-events.js';
 import {campaignPerformance,saveAttribution,businessBrief,persistBrief,dateRange} from './marketing-intelligence.js';
 import {enrichBusinessBriefWithAI} from './ai-provider.js';
+import {dashboardData} from './dashboard-intelligence.js';
+import {growthStockCatalog,resolveForecastStock} from './growth-stock-catalog.js';
+import {simulateScaling,dryRunScalingRule} from './growth-scenario.js';
+import {compareGrowthPeriods} from './growth-experiment.js';
+import {growthOperatingEvidence} from './growth-operating-evidence.js';
 import {listAdDrafts,createAdDraft,getAdDraft,generateAdDraft,requestAdAction} from './ad-studio.js';
 import {
   requireAdmin,listAdminClients,clientOverview,updateClientModules,updateClientBilling,
@@ -66,9 +71,11 @@ function requestedClient(me,url,body={}){
   }
   return requested;
 }
-async function scopeFor(env,me,clientId,request,body={}){
+async function scopeFor(env,me,clientId,request,body={},options={}){
   if(!clientId)return {clientId:null,storeId:null,unrestricted:true};
-  return resolveStoreScope(env,me,clientId,requestedStoreId(request,body),{write:isWrite(request.method)});
+  // A growth scenario POST performs zero mutations; retain store-level read-only access.
+  // Every other POST/PATCH/PUT/DELETE continues to require writable store access.
+  return resolveStoreScope(env,me,clientId,requestedStoreId(request,body),{write:isWrite(request.method)&&options.readOnly!==true});
 }
 function featureSkip(path){return path==='/api/me'||path==='/api/login'||path==='/api/logout'||path==='/api/setup'||path==='/api/my-store-context'||path==='/api/tenant/features'||path==='/api/wallet'||path==='/api/wallet/log'||path==='/api/wallet/topups'||path.startsWith('/api/admin/')||path.startsWith('/api/preview/');}
 async function audit(env,me,clientId,storeId,action,entityType,entityId,metadata={}){
@@ -120,8 +127,8 @@ async function routeV27(request,env,ctx,me,url,body){
   const clientId=requestedClient(me,url,body);
   if(!clientId)return null;
   if(!featureSkip(path))await assertFeatureEnabled(env,me,clientId,path);
-  const needsStoreScope=(path==='/api/customers'&&method==='POST')||path.startsWith('/api/orders/')||path==='/api/order-attribution'||path==='/api/marketing/performance'||path==='/api/ai/business-brief'||path.startsWith('/api/ad-studio');
-  const scope=needsStoreScope?await scopeFor(env,me,clientId,request,body):{storeId:null};
+  const needsStoreScope=(path==='/api/customers'&&method==='POST')||path.startsWith('/api/orders/')||path==='/api/order-attribution'||path==='/api/marketing/performance'||path==='/api/ai/business-brief'||path.startsWith('/api/growth/')||path.startsWith('/api/ad-studio');
+  const scope=needsStoreScope?await scopeFor(env,me,clientId,request,body,{readOnly:path==='/api/growth/scenario/preview'&&method==='POST'}):{storeId:null};
   const storeId=scope.storeId||null;
 
   if(path==='/api/customers'&&method==='POST'){requirePermission(me,'customers','write');return json(await createStandaloneCustomer(env,{clientId,storeId,body,actor:me}),201);}
@@ -152,6 +159,75 @@ async function routeV27(request,env,ctx,me,url,body){
   if(path==='/api/order-attribution'&&method==='POST'){requirePermission(me,'campaigns','write');return json(await saveAttribution(env,{clientId,storeId,body,actor:me}),201);}
   if(path==='/api/marketing/performance'&&method==='GET'){
     requirePermission(me,'campaigns','read');const range=dateRange(url);return json(await campaignPerformance(env,{clientId,storeId,...range}));
+  }
+  // Low-cost read-only readiness endpoint for Campaign Hub; no LLM call or persisted snapshot.
+  if(path==='/api/growth/scaling-readiness'&&method==='GET'){
+    requirePermission(me,'ads','read');
+    const range=dateRange(url),base=await businessBrief(env,{clientId,storeId,...range});
+    return json({from:base.from,to:base.to,readiness:base.scalingReadiness});
+  }
+  if(path==='/api/growth/operating-evidence'&&method==='GET'){
+    requirePermission(me,'orders','read');requirePermission(me,'finance','read');
+    if(!storeId)throw Object.assign(new Error('اختار متجرًا محددًا.'),{status:400,code:'GROWTH_STORE_REQUIRED'});
+    const range=dateRange(url);
+    return json(await growthOperatingEvidence(env,{clientId,storeId,...range}));
+  }
+  if(path==='/api/growth/inventory-catalog'&&method==='GET'){
+    requirePermission(me,'inventory','read');
+    return json(await growthStockCatalog(env,{clientId,storeId,limit:url.searchParams.get('limit')||100}));
+  }
+  // A POST body contains hypothetical merchant cash/operations assumptions, not a write action.
+  // It only reads tenant-scoped data and cannot change Meta Ads, wallets or stored plans.
+  if(path==='/api/growth/scenario/preview'&&method==='POST'){
+    requirePermission(me,'ads','read');requirePermission(me,'inventory','read');requirePermission(me,'finance','read');
+    if(!storeId)throw Object.assign(new Error('اختار متجرًا محددًا للمحاكاة.'),{status:400,code:'GROWTH_STORE_REQUIRED'});
+    const plan=body.plan&&typeof body.plan==='object'&&!Array.isArray(body.plan)?body.plan:null;
+    if(!plan||JSON.stringify(plan).length>15000)throw Object.assign(new Error('مدخلات المحاكاة غير صالحة أو تتجاوز الحد المسموح.'),{status:400,code:'GROWTH_SCENARIO_BODY_INVALID'});
+    const range=dateRange(url);
+    const [dashboard,base,stockItems]=await Promise.all([
+      dashboardData(env,{clientId,storeId,...range}),
+      businessBrief(env,{clientId,storeId,...range}),
+      resolveForecastStock(env,{clientId,storeId,items:plan.stockItems||[]})
+    ]);
+    const reconciliation=dashboard.ads?.spendReconciliation||{};
+    const reportedCurrencies=reconciliation.campaignCurrencies||[];
+    const currency=String(dashboard.currency||'EGP').toUpperCase();
+    const verifiedCurrency=reportedCurrencies.length>0&&reportedCurrencies.every(value=>value===currency)&&
+      !reconciliation.currencyMismatch&&String(plan.currency||currency).toUpperCase()===currency;
+    const fromDate=Date.parse(dashboard.from+'T00:00:00Z'),toDate=Date.parse(dashboard.to+'T00:00:00Z');
+    const days=Math.max(1,Math.round((toDate-fromDate)/86400000)+1);
+    const scenario=simulateScaling({period:{from:dashboard.from,to:dashboard.to},history:{
+      days,spend:dashboard.ads.spend,realOrders:dashboard.overview.totalOrders,
+      attributedOrders:base.metrics?.marketing?.attributedOrders},
+      plan:{...plan,stockItems,currency,
+        currencyVerified:verifiedCurrency,coversAllPromotedSkus:plan.coversAllPromotedSkus===true}
+    });
+    const blockers=[];
+    if(dashboard.overview.totalOrders!==base.metrics.orders.total)blockers.push('الطلبات مختلفة بين الداشبورد وتحليل الأعمال.');
+    if(reconciliation.needsReview)blockers.push('الإنفاق المتزامن يختلف عن المصروفات المرتبطة بالحملات.');
+    if(reconciliation.currencyMismatch)blockers.push('عملة الحساب الإعلاني تختلف عن عملة المتجر.');
+    if(reconciliation.manualExcludedWhenIntegrated)scenario.warnings.push('راجع الإنفاق الإعلاني اليدوي المستبعد لتجنب ازدواج أو نقص المصروفات.');
+    if(blockers.length){scenario.blockers.push(...blockers);scenario.recommendation='fix_data_first';}
+    if(body.rule)scenario.rulePreview=dryRunScalingRule({scenario,proposedIncreasePct:body.rule.increasePct,maxDailyBudget:body.rule.maxDailyBudget});
+    return json({from:dashboard.from,to:dashboard.to,storeId,currency,
+      source:{dashboardOrders:dashboard.overview.totalOrders,businessOrders:base.metrics.orders.total,
+        recognizedSpend:dashboard.ads.spend,reconciliation},scenario});
+  }
+  if(path==='/api/growth/experiment/compare'&&method==='GET'){
+    requirePermission(me,'ads','read');requirePermission(me,'finance','read');
+    if(!storeId)throw Object.assign(new Error('اختار متجرًا محددًا للمقارنة.'),{status:400,code:'GROWTH_STORE_REQUIRED'});
+    const input=['beforeFrom','beforeTo','afterFrom','afterTo'].map(k=>url.searchParams.get(k)||'');
+    const [beforeFrom,beforeTo,afterFrom,afterTo]=input;
+    const goodDate=value=>/^\d{4}-\d{2}-\d{2}$/.test(value)&&!Number.isNaN(Date.parse(value+'T00:00:00Z'));
+    const daySpan=(from,to)=>(Date.parse(to+'T00:00:00Z')-Date.parse(from+'T00:00:00Z'))/86400000+1;
+    if(!input.every(goodDate)||beforeFrom>beforeTo||afterFrom>afterTo||beforeTo>=afterFrom||
+       daySpan(beforeFrom,beforeTo)>90||daySpan(afterFrom,afterTo)>90)
+      throw Object.assign(new Error('اختار فترتين صحيحتين غير متداخلتين، وبحد أقصى 90 يومًا لكل فترة.'),{status:400,code:'GROWTH_COMPARE_DATE_INVALID'});
+    const [before,after]=await Promise.all([
+      dashboardData(env,{clientId,storeId,from:beforeFrom,to:beforeTo}),
+      dashboardData(env,{clientId,storeId,from:afterFrom,to:afterTo})
+    ]);
+    return json({storeId,comparison:compareGrowthPeriods({before,after,today:after.today})});
   }
   if(path==='/api/ai/business-brief'&&method==='GET'){
     requirePermission(me,'ai','read');const range=dateRange(url),base=await businessBrief(env,{clientId,storeId,...range});
@@ -208,6 +284,11 @@ async function fetchV27(request,env,ctx={}){
   const url=new URL(request.url),path=url.pathname;
   try{
     if(path==='/api/preview/version')return json({ok:true,build:BUILD,environment:env.APP_ENV||'unknown',entrypoint:'index-commerce-v27.js'});
+    if(path==='/api/preview/growth-release'&&request.method.toUpperCase()==='GET')
+      return json({ok:true,release:'kun-growth-wallet-20261015-r1',
+        capabilities:['growth-scenario','stock-catalog','operating-evidence','accounting-cod-quality','wallet-ledger-integrity'],
+        environment:env.APP_ENV||'unknown'});
+
     if(['/api/me','/api/login','/api/setup','/api/logout','/api/preview-admin-recovery'].includes(path))return commerceV26.fetch(request,env,ctx);
     const bearer=(request.headers.get('authorization')||'').trim(),bearerToken=bearer.replace(/^Bearer\s+/i,'');
     if(env.INGEST_TOKEN&&/^Bearer\s+/i.test(bearer)&&safeEqual(bearerToken,env.INGEST_TOKEN)){

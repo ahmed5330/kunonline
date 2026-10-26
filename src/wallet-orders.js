@@ -1,5 +1,5 @@
 import {subscriptionOrderFee} from './subscription-billing.js';
-import {now,rid,round2,ensureWalletAccount,mirrorLegacyBalance} from './wallet-core.js';
+import {now,rid,round2,ensureWalletAccount,safeMirrorAfterLedgerCommit} from './wallet-core.js';
 
 async function billingStartAt(env,clientId){
   const paid=await env.DB.prepare("SELECT created_at FROM audit_log WHERE client_id=? AND action='subscription.billing.start' ORDER BY created_at ASC LIMIT 1").bind(clientId).first();
@@ -132,8 +132,8 @@ export async function billOrder(env,orderId,{allowBacklogCharge=false}={}){
     throw error;
   }
   const updated=await env.DB.prepare('SELECT balance FROM wallet_accounts WHERE client_id=?').bind(order.client_id).first();
-  await mirrorLegacyBalance(env,order.client_id,updated?.balance||0);
-  return {ok:true,status:'charged',fee,balance:round2(updated?.balance)};
+  const mirror=await safeMirrorAfterLedgerCommit(env,order.client_id);
+  return {ok:true,status:'charged',fee,balance:round2(updated?.balance),...mirror};
 }
 
 export async function reconcileUnbilledOrders(env,{clientId=null,limit=100}={}){

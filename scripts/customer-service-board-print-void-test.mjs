@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {execFileSync} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
 const read=path=>fs.readFileSync(new URL('../'+path,import.meta.url),'utf8');
-const check=path=>execFileSync(process.execPath,['--check',new URL('../'+path,import.meta.url).pathname],{stdio:'pipe'});
+const check=path=>execFileSync(process.execPath,['--check',fileURLToPath(new URL('../'+path,import.meta.url))],{stdio:'pipe'});
 const html=read('public/v2/index.html'),cs=read('public/v2/modules-v31-customer-service.js'),
 dates=read('public/v2/modules-v109-operational-date-contact.js'),board=read('public/v2/modules-v155-customer-service-board.js'),
 print=read('public/v2/modules-v79-printing.js'),api=read('src/jt-print-workflow-v2.js'),

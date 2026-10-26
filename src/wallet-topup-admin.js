@@ -1,4 +1,4 @@
-import {now,rid,round2,ensureWalletAccount,mirrorLegacyBalance} from './wallet-core.js';
+import {now,rid,round2,ensureWalletAccount,safeMirrorAfterLedgerCommit} from './wallet-core.js';
 
 async function appliedTopupCredit(env,clientId,topupId){
   return env.DB.prepare("SELECT id,amount,balance_after,created_at FROM wallet_log WHERE client_id=? AND reference_type='topup_request' AND reference_id=? ORDER BY created_at DESC LIMIT 1")
@@ -43,10 +43,11 @@ export async function approveTopup(env,topupId,actor,note='',options={}){
     }
     const account=await ensureWalletAccount(env,row.client_id);
     const {access,settlementPending,settlementErrorCode}=await afterTopupSettlement(env,row.client_id);
+    const mirror=await safeMirrorAfterLedgerCommit(env,row.client_id);
     return {
       ok:true,alreadyApproved:true,id:topupId,clientId:row.client_id,status:'approved',
       requestedAmount:round2(row.amount),creditedAmount:round2(applied.amount),
-      balanceAfterCredit:round2(applied.balance_after),balance:round2((await ensureWalletAccount(env,row.client_id)).balance),settlementPending,settlementErrorCode,
+      balanceAfterCredit:round2(applied.balance_after),balance:round2((await ensureWalletAccount(env,row.client_id)).balance),...mirror,settlementPending,settlementErrorCode,
       currency:account.currency||row.currency||'EGP',access
     };
   }
@@ -63,10 +64,11 @@ export async function approveTopup(env,topupId,actor,note='',options={}){
       .bind(actor||'admin',ts,String(note||'Recovered existing wallet credit'),topupId).run();
     const account=await ensureWalletAccount(env,row.client_id);
     const {access,settlementPending,settlementErrorCode}=await afterTopupSettlement(env,row.client_id);
+    const mirror=await safeMirrorAfterLedgerCommit(env,row.client_id);
     return {
       ok:true,alreadyApproved:true,recoveredRequestState:true,id:topupId,clientId:row.client_id,status:'approved',
       requestedAmount:round2(row.amount),creditedAmount:round2(existingCredit.amount),
-      balanceAfterCredit:round2(existingCredit.balance_after),balance:round2((await ensureWalletAccount(env,row.client_id)).balance),settlementPending,settlementErrorCode,
+      balanceAfterCredit:round2(existingCredit.balance_after),balance:round2((await ensureWalletAccount(env,row.client_id)).balance),...mirror,settlementPending,settlementErrorCode,
       currency:account.currency||row.currency||'EGP',access
     };
   }
@@ -102,12 +104,13 @@ export async function approveTopup(env,topupId,actor,note='',options={}){
       const applied=await appliedTopupCredit(env,row.client_id,topupId);
       if(!applied)throw error;
       const {access,settlementPending,settlementErrorCode}=await afterTopupSettlement(env,row.client_id);
+    const mirror=await safeMirrorAfterLedgerCommit(env,row.client_id);
       const current=await ensureWalletAccount(env,row.client_id);
       return {
         ok:true,alreadyApproved:true,id:topupId,clientId:row.client_id,status:'approved',
         requestedAmount,creditedAmount:round2(applied?.amount??creditedAmount),
         balanceAfterCredit:round2(applied?.balance_after??current.balance),balance:round2(current.balance),
-        currency:current.currency||row.currency||'EGP',access,settlementPending,settlementErrorCode
+        currency:current.currency||row.currency||'EGP',access,...mirror,settlementPending,settlementErrorCode
       };
     }
     throw error;
@@ -121,19 +124,17 @@ export async function approveTopup(env,topupId,actor,note='',options={}){
     });
   }
   const credited=await env.DB.prepare('SELECT balance,currency FROM wallet_accounts WHERE client_id=?').bind(row.client_id).first();
-  await mirrorLegacyBalance(env,row.client_id,credited?.balance||0);
-
   // Approval credits exactly the admin-confirmed amount. Do not silently consume it
   // against old pending order rows inside the approval action.
   const {access,settlementPending,settlementErrorCode}=await afterTopupSettlement(env,row.client_id);
+    const mirror=await safeMirrorAfterLedgerCommit(env,row.client_id);
 
   const final=await env.DB.prepare('SELECT balance,currency FROM wallet_accounts WHERE client_id=?').bind(row.client_id).first();
-  await mirrorLegacyBalance(env,row.client_id,final?.balance||0);
   return {
     ok:true,alreadyApproved:false,id:topupId,clientId:row.client_id,status:'approved',
     requestedAmount,creditedAmount,previousBalance:round2(account.balance),settlementPending,settlementErrorCode,
     balanceAfterCredit:round2(credited?.balance),balance:round2(final?.balance),
-    currency:final?.currency||row.currency||'EGP',access
+    currency:final?.currency||row.currency||'EGP',access,...mirror
   };
 }
 

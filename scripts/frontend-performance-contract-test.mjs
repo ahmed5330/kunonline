@@ -63,8 +63,8 @@ assert.equal(ecommerceCalculator.includes("['cpp'"),false,'CPA must be derived f
 assert.ok(ecommerceCalculator.includes('const returnRate=safeDiv(returned,delivered)*100'),'post-delivery return rate must be derived from actual counts');
 assert.ok(ecommerceCalculator.includes('const currentCPA=safeDiv(d.adSpend,total)'),'current CPA must come from actual ad spend and total orders');
 assert.ok(ecommerceCalculator.includes('const netBreakEvenAdSpend=Math.max(0,contributionBeforeAds-fixedCosts)'),'net break-even ad spend must include fixed costs');
-assert.ok(ecommerceCalculator.includes("version:'96.2'"),'calculator must expose v96.2');
-assert.ok(permissions.includes('/v2/modules-v94-ecommerce-calculator.js?v=96.2'),'calculator bundle must be cache-busted for v96.2');
+assert.ok(ecommerceCalculator.includes("version:'96.3'"),'calculator must expose v96.3');
+assert.ok(permissions.includes('/v2/modules-v94-ecommerce-calculator.js?v=96.3'),'calculator bundle must be cache-busted for v96.3');
 for(const marker of ['kun96-overview','kun96-stepnav','data-kun96-jump','quickSummary','entryProgress','window.confirm'])assert.ok(ecommerceCalculator.includes(marker),`Calculator UX missing ${marker}`);
 
 assert.doesNotThrow(()=>new Function(financeCommandCenter),'finance command center browser module must parse');
@@ -72,7 +72,7 @@ for(const endpoint of ['/api/dashboard','/api/accounting/overview','/api/account
 assert.equal(financeCommandCenter.includes("v4Api('/api/finance"),false,'finance command center must not use legacy placeholder finance endpoint');
 assert.ok(financeCommandCenter.includes('المحصل فعليًا لا يُستخدم بدل إيراد المبيعات'),'finance must keep collection cash separate from P&L revenue');
 assert.ok(financeCommandCenter.includes('سلامة واكتمال الأرقام'),'finance must expose data-completeness health instead of silently treating missing costs as correct zeros');
-assert.ok(permissions.includes('/v2/modules-v96-finance-command-center.js?v=96.0'),'permission bootstrap must load the finance command center');
+assert.ok(permissions.includes('/v2/modules-v96-finance-command-center.js?v=96.2'),'permission bootstrap must load the finance command center');
 assert.ok(permissions.includes("accounting:['finance.read']"),'accounting child route must follow finance read permission');
 
 const dashboardStart=v35.indexOf('async function dashboard');
