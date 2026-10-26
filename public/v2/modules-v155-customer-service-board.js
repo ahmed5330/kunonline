@@ -33,7 +33,10 @@
     const current=String(select.dataset.current||select.value||sourceState);
     if(current===next)return;
     if(next==='shipped'){
-      toast('نقل الطلب إلى جاري الشحن يتم بعد إصدار بوليصة J&T من قسم الطباعة.');
+      if(!['confirmed','preparing'].includes(current)){toast('أكد الأوردر أولًا قبل إرساله للشحن.');return;}
+      const ship=window.KunPrintingV79?.shipById;
+      if(typeof ship!=='function'){toast('افتح قسم الطباعة لإرسال الطلب إلى J&T.');document.querySelector('.nav button[data-view="printing"]')?.click();return;}
+      ship(orderId).catch(()=>{}); // Error is shown by the shared shipping flow.
       return;
     }
     if(next==='no_answer'&&Number(card.querySelector('[data-cs-contact-count]')?.textContent||0)<1){
@@ -104,5 +107,5 @@
     if(wasDragging&&next)attemptMove(id,next);
   },{passive:true});
   document.addEventListener('touchcancel',resetTouch,{passive:true});
-  window.KunCustomerServiceBoardV155={version:'155.0',attemptMove};
+  window.KunCustomerServiceBoardV155={version:'155.1',attemptMove};
 })();
