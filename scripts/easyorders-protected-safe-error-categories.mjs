@@ -15,17 +15,17 @@ LIMIT 25`;
 export function classifyRecoveryError(value){
   const text=String(value??'').slice(0,2048);
   if(!text.trim())return 'NO_ERROR_TEXT';
-  if(/(?:HTTP\\s*(401|403)|unauthorized|forbidden|invalid\\s+api.?key|api.?key\\s+not\\s+valid)/i.test(text))return 'UPSTREAM_CREDENTIAL_REJECTED';
-  if(/(?:HTTP\\s*429|rate.?limit|too\\s+many\\s+requests)/i.test(text))return 'UPSTREAM_RATE_LIMIT';
-  if(/(?:HTTP\\s*5\\d{2}|bad\\s+gateway|service\\s+unavailable|upstream.*(error|failed))/i.test(text))return 'UPSTREAM_SERVER_ERROR';
-  if(/(?:HTTP\\s*4\\d{2}|bad\\s+request|unprocessable|provider.*(reject|fail))/i.test(text))return 'UPSTREAM_REQUEST_REJECTED';
-  if(/(?:SQLITE|D1_|no\\s+such\\s+(table|column)|constraint|database\\s+is\\s+locked|DB\\.prepare)/i.test(text))return 'DATABASE_SCHEMA_OR_WRITE';
+  if(/(?:HTTP\s*(401|403)|unauthorized|forbidden|invalid\s+api.?key|api.?key\s+not\s+valid)/i.test(text))return 'UPSTREAM_CREDENTIAL_REJECTED';
+  if(/(?:HTTP\s*429|rate.?limit|too\s+many\s+requests)/i.test(text))return 'UPSTREAM_RATE_LIMIT';
+  if(/(?:HTTP\s*5\d{2}|bad\s+gateway|service\s+unavailable|upstream.*(error|failed))/i.test(text))return 'UPSTREAM_SERVER_ERROR';
+  if(/(?:HTTP\s*4\d{2}|bad\s+request|unprocessable|provider.*(reject|fail))/i.test(text))return 'UPSTREAM_REQUEST_REJECTED';
+  if(/(?:SQLITE|D1_|no\s+such\s+(table|column)|constraint|database\s+is\s+locked|DB\.prepare)/i.test(text))return 'DATABASE_SCHEMA_OR_WRITE';
   if(/(?:external.*store|store.*identity|STORE_UNBOUND|STORE_MISMATCH|store_id.*(missing|mismatch))/i.test(text))return 'EXTERNAL_STORE_BINDING';
   if(/(?:webhook|ingest|payload.*invalid|order.*collision|canonical)/i.test(text))return 'CANONICAL_WEBHOOK_OR_VALIDATION';
-  if(/(?:encrypt|decrypt|key\\s+missing|cannot.*key)/i.test(text))return 'SECRET_DECRYPT_OR_MISSING';
-  if(/(?:fetch\\s+failed|network|timeout|timed\\s+out|socket|ECONN)/i.test(text))return 'NETWORK_OR_TIMEOUT';
-  if(/(?:management\\s+fee|reconcil|accounting|fee\\s+write)/i.test(text))return 'FEE_RECONCILIATION';
-  if(/(?:order\\s+not\\s+found|record\\s+not\\s+found|HTTP\\s*404)/i.test(text))return 'UPSTREAM_ORDER_NOT_FOUND';
+  if(/(?:encrypt|decrypt|key\s+missing|cannot.*key)/i.test(text))return 'SECRET_DECRYPT_OR_MISSING';
+  if(/(?:fetch\s+failed|network|timeout|timed\s+out|socket|ECONN)/i.test(text))return 'NETWORK_OR_TIMEOUT';
+  if(/(?:management\s+fee|reconcil|accounting|fee\s+write)/i.test(text))return 'FEE_RECONCILIATION';
+  if(/(?:order\s+not\s+found|record\s+not\s+found|HTTP\s*404)/i.test(text))return 'UPSTREAM_ORDER_NOT_FOUND';
   return 'OTHER_UNCLASSIFIED';
 }
 
@@ -66,7 +66,7 @@ function fromWranglerJson(raw){
   return rows;
 }
 export function validateQuery(sql=SELECT){
- if(!/^SELECT\\b/i.test(sql.trim())||/;|--|\\/\\*|\\b(?:INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|REPLACE|ATTACH|PRAGMA)\\b/i.test(sql))
+ if(!/^SELECT\b/i.test(sql.trim())||/;|--|\/\*|\b(?:INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|REPLACE|ATTACH|PRAGMA)\b/i.test(sql))
    throw Error('ONLY_CONSTANT_SELECT_IS_ALLOWED');
  return sql;
 }
