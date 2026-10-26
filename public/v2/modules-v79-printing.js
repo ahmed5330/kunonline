@@ -41,12 +41,17 @@
 
   // Shared, user-confirmed carrier handoff from Customer Service, order details,
   // and Printing. Do not fake a shipped status with a generic state PATCH.
+  const handoffTasks=new Map();
   function shipById(id,storeId=''){
     if(!id)return Promise.reject(new Error('حدد الأوردر أولًا'));
+    // One confirmed J&T handoff per order in this browser context.
+    // Server-side cross-device idempotency remains independently required.
+    const key=String(id);
+    if(handoffTasks.has(key))return handoffTasks.get(key);
     if(!window.confirm('سيتم إرسال الأوردر فعليًا إلى J&T وإصدار البوليصة الرسمية. بعد نجاح العملية فقط سينتقل إلى جاري الشحن. هل تريد المتابعة؟'))return Promise.resolve({cancelled:true});
     const popup=window.open('about:blank','jtOfficialLabel');
     if(popup){popup.document.title='جارٍ إصدار بوليصة الشحن';popup.document.body.textContent='جارٍ تجهيز بوليصة J&T الرسمية...';}
-    return (async()=>{
+    const task=(async()=>{
       const client=await clientId();
       if(!client)throw new Error('تعذر تحديد حساب المتجر');
       const details=await api(`/api/orders/${encodeURIComponent(id)}/details?clientId=${encodeURIComponent(client)}${storeId?`&storeId=${encodeURIComponent(storeId)}`:''}`);
@@ -69,7 +74,9 @@
       try{popup?.close();}catch{}
       notify(`تعذر إرسال الأوردر إلى J&T: ${error.message}`);
       throw error;
-    });
+    }).finally(()=>handoffTasks.delete(key));
+    handoffTasks.set(key,task);
+    return task;
   }
   function askVoidReason(o){
     return new Promise(resolve=>{
