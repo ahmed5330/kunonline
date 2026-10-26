@@ -1,4 +1,11 @@
+import {readFile} from 'node:fs/promises';
 const base=String(process.argv[2]||'https://kunonline-sync-preview.mr-a-mnaa.workers.dev').replace(/\/+$/,'');
+const exactBuild=process.env.SYNC_REQUIRE_EXACT_BUILD==='1'
+  ?(await readFile(new URL('../src/sync-scheduler-preview.js',import.meta.url),'utf8'))
+    .match(/const BUILD='([^']+)'/)?.[1]
+  :null;
+if(process.env.SYNC_REQUIRE_EXACT_BUILD==='1'&&!exactBuild)
+  throw new Error('Cannot attest dedicated sync Worker source BUILD');
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const attempts=Math.max(1,Number(process.env.SYNC_SMOKE_ATTEMPTS||36));
 const interval=Math.max(1000,Number(process.env.SYNC_SMOKE_INTERVAL_MS||5000));
@@ -7,7 +14,7 @@ for(let attempt=1;attempt<=attempts;attempt++){
   try{
     const response=await fetch(`${base}/healthz`,{headers:{Accept:'application/json'}}),data=await response.json().catch(()=>({}));
     last={status:response.status,data};
-    if(response.ok&&data?.ok===true&&data?.service==='kunonline-sync-preview'&&data?.upstream?.ok===true&&data?.upstream?.service==='kunonline-sync-rpc'){
+    if(response.ok&&data?.ok===true&&data?.service==='kunonline-sync-preview'&&data?.upstream?.ok===true&&data?.upstream?.service==='kunonline-sync-rpc'&&(!exactBuild||data.build===exactBuild)){
       console.log(`Sync Preview smoke passed: scheduler -> private RPC -> app (${data.build} -> ${data.upstream.build}) on attempt ${attempt}/${attempts}.`);
       process.exit(0);
     }
