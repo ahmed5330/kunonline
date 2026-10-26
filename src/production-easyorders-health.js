@@ -25,7 +25,7 @@ function json(body,status=200){
 export async function handleProductionEasyOrdersHealth(request,env){
   if(request.method!=='GET'||new URL(request.url).pathname!=='/health/easyorders-sync')return null;
   if(!env.PREVIEW_DB&&!env.PREVIEW_APP)return null;
-  const base={build:BUILD,mode:'preview-canonical',source:'preview',legacyFallback:{active:false}};
+  const base={build:BUILD,mode:'preview-canonical',source:'preview',supportsProviderWaitingState:true,legacyFallback:{active:false}};
   if(!env.PREVIEW_DB||!env.PREVIEW_APP?.fetch)return json({...base,ok:false,status:'unavailable',runtimeDiagnostics:{failureCode:'EASYORDERS_HEALTH_UNAVAILABLE'}},503);
   try{
     const health=await easyOrdersRecoveryStatus({DB:env.PREVIEW_DB});
