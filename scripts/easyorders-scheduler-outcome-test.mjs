@@ -39,6 +39,20 @@ assert.equal(checkEasyOrdersCronRecovery({ok:false,status:'waiting_for_provider_
   failedConnections:0,results:[{status:'waiting_for_provider_order'}]}).ok,false,
   'Deferred provider confirmation is never advertised as a completed Cron recovery');
 const allowed=checkEasyOrdersCronRecovery(healthy);
+const deferred={ok:false,waitingForProviderConnections:1,failedConnections:0,rateLimitedConnections:0,
+  checkedConnections:1,uncheckedConnections:0,results:[{status:'waiting_for_provider_order',providerWaitingVerified:true,
+    providerHttpStatus:400,providerErrorCategory:'provider_other_http',error:null,highestShortId:1700,nextShortId:1701,
+    estimatedRemaining:0,unresolvedAheadCount:0,requests:2}]};
+const deferredHealth=checkEasyOrdersCronRecovery(deferred);
+assert.equal(deferredHealth.ok,true);assert.equal(deferredHealth.providerRecoveryComplete,false);
+assert.equal(deferredHealth.deferredProviderConnections,1);assert.equal(assertEasyOrdersCronRecovered(deferred),deferred);
+assert.equal(deferred.ok,false,'Preserve incomplete recovery for callers');
+for(const row of [
+  {providerWaitingVerified:false},{providerHttpStatus:503},{error:'error'},
+  {estimatedRemaining:1},{unresolvedAheadCount:1},{requests:1},{nextShortId:1702}
+])assert.equal(checkEasyOrdersCronRecovery({...deferred,results:[{...deferred.results[0],...row}]}).ok,false);
+for(const patch of [{waitingForProviderConnections:2},{failedConnections:1},{rateLimitedConnections:1},{feeReconciliation:{failed:1}}])
+  assert.equal(checkEasyOrdersCronRecovery({...deferred,...patch}).ok,false);
 assert.equal(allowed.ok,true);
 assert.equal(allowed.deferredConnections,1,'Normal global request-budget deferral is not provider failure');
 assert.equal(assertEasyOrdersCronRecovered(healthy),healthy);

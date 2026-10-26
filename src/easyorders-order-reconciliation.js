@@ -338,6 +338,7 @@ async function reconcileConnection(env,connection,{maxRequests,lookback,fetcher,
       !(config.easyOrdersRecoveryPendingShortIds?.length)&&
       failure.easyOrdersRecoveryLastPositiveControlHttpStatus===200&&verifiedControlShortId===frontier){
       out.status='waiting_for_provider_order';out.error=null;
+      out.providerWaitingVerified=true;
       failure.easyOrdersRecoveryUnconfirmedShortId=lastAttemptedShortId;
     }
     const saved=await patchConfig(env,connection,{...verifiedProgress,...failure,
