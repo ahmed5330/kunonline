@@ -189,6 +189,19 @@ async function recoverExisting(txlogisticId,secrets,options={}){
   }catch{return null;}
 }
 
+// Read-only recovery for an uncertain prior addOrder response. Never create a
+// second shipment for an outstanding server-side claim. Require an explicit
+// matching provider reference before attaching its AWB to a Kun order.
+export async function lookupJtShipmentByReference({txlogisticId,secrets,fetcher=fetch}){
+  const ref=clean(txlogisticId,120);
+  if(!ref)throw Object.assign(new Error('مرجع J&T مطلوب للمطابقة'),{status:400,code:'JT_RECOVERY_REFERENCE_REQUIRED'});
+  const found=await recoverExisting(ref,secrets,{fetcher});
+  if(!found)return null;
+  if(!found.txlogisticId||clean(found.txlogisticId,120)!==ref)
+    throw Object.assign(new Error('J&T أعادت شحنة دون مرجع مطابق بصورة مؤكدة. لن تُربط بالأوردر.'),{status:409,code:'JT_RECOVERY_REFERENCE_MISMATCH'});
+  return found;
+}
+
 async function postCreate(payload,secrets,{fetcher=fetch}={}){
   return signedPost(ADD_ORDER_PATH,payload,secrets,{fetcher});
 }
