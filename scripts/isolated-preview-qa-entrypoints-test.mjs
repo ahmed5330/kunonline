@@ -4,6 +4,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
+import {fileURLToPath,pathToFileURL} from 'node:url';
 import {loadIsolatedPreviewQaConfig} from './isolated-preview-qa-config.mjs';
 
 const execute=promisify(execFile);
@@ -39,19 +40,19 @@ try{
   await writeFile(configPath,safeConfig);
   const childEnv={...process.env,CLOUDFLARE_ACCOUNT_ID:'a'.repeat(32),CLOUDFLARE_API_TOKEN:'TEST_ONLY'};
   for(const key of ['KUN_PREVIEW_QA_WRANGLER_CONFIG','KUN_PREVIEW_QA_D1_ID','KUN_EASYORDERS_QA_WRANGLER_CONFIG','KUN_EASYORDERS_QA_D1_ID'])delete childEnv[key];
-  const liveConfigPath=new URL('../wrangler.preview.toml',import.meta.url).pathname;
+  const liveConfigPath=fileURLToPath(new URL('../wrangler.preview.toml',import.meta.url));
   for(const entry of entries){
-    const path=new URL(`./${entry}`,import.meta.url).pathname;
+    const path=fileURLToPath(new URL(`./${entry}`,import.meta.url));
     await execute(process.execPath,['--check',path]);
     for(const testEnv of [childEnv,{...childEnv,KUN_PREVIEW_QA_WRANGLER_CONFIG:liveConfigPath,KUN_PREVIEW_QA_D1_ID:safeId}]){
       let failure;
-      try{await execute(process.execPath,['--import',trap,path,target],{env:testEnv,timeout:10000});}catch(error){failure=error;}
+      try{await execute(process.execPath,['--import',pathToFileURL(trap).href,path,target],{env:testEnv,timeout:10000});}catch(error){failure=error;}
       assert.ok(failure,`${entry} must fail before network without isolated configuration`);
       assert.match(failure.stderr,/EASYORDERS_QA_ISOLATION_REQUIRED/,entry);
       assert.doesNotMatch(failure.stderr,/NETWORK_ATTEMPT_BEFORE_ISOLATION/,entry);
     }
     let accepted;
-    try{await execute(process.execPath,['--import',acceptedTrap,path,target],{
+    try{await execute(process.execPath,['--import',pathToFileURL(acceptedTrap).href,path,target],{
       env:{...childEnv,...env,KUN_PREVIEW_QA_EASYORDERS_CONNECTION_ID:'CON-QA-EASYORDERS-12345'},timeout:10000
     });}catch(error){accepted=error;}
     assert.equal(accepted?.code,86,`${entry} must accept the approved QA target before its first stubbed request: ${accepted?.stderr||''}`);

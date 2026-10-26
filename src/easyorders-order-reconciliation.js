@@ -68,7 +68,7 @@ async function patchConfig(env,connection,patch){
 }
 
 async function easyOrdersGet(fetcher,url,apiKey){
-  const response=await fetcher(url,{method:'GET',headers:{Accept:'application/json','Api-Key':apiKey}});
+  const response=await fetcher(url,{method:'GET',headers:{Accept:'application/json','Api-Key':apiKey},redirect:'manual'});
   if(response.status===429)return {kind:'rate_limited',data:null,status:429};
   const raw=await response.text().catch(()=>''),data=(()=>{if(!raw)return null;try{return JSON.parse(raw)}catch{return raw}})();
   // An upstream 5xx/401/403 cannot prove the order is missing even if its
@@ -91,7 +91,14 @@ async function fetchOrderById(fetcher,apiKey,orderId){
   return easyOrdersGet(fetcher,`${ORDER_BY_ID_BASE}${encodeURIComponent(text(orderId))}`,apiKey);
 }
 async function fetchOrderByShortId(fetcher,apiKey,shortId){
-  return easyOrdersGet(fetcher,`${SHORT_ORDER_BASE}${encodeURIComponent(String(shortId))}`,apiKey);
+  const fetched=await easyOrdersGet(fetcher,`${SHORT_ORDER_BASE}${encodeURIComponent(String(shortId))}`,apiKey);
+  const returnedShort=fetched.data?.short_id??fetched.data?.shortId;
+  if(fetched.kind==='found'&&returnedShort!==undefined&&returnedShort!==null&&
+      (!Number.isSafeInteger(Number(returnedShort))||Number(returnedShort)!==shortId)){
+    throw Object.assign(new Error('Easy Orders recovery response does not match the requested Short ID'),{
+      status:502,code:'EASYORDERS_RECOVERY_SHORT_ID_MISMATCH'});
+  }
+  return fetched;
 }
 
 async function existingOrder(env,connection,order){
@@ -115,7 +122,7 @@ async function ingestThroughCanonicalWebhook(env,connection,secrets,order){
   return handleEasyOrdersWebhook(request,env,{connectionId:connection.id,routeToken,createOnly:true});
 }
 
-async function bootstrapFromLastWebhook(env,connection,{apiKey,fetcher,lookback}){
+async function bootstrapFromLastWebhook(env,connection,{apiKey,fetcher,lookback,onRequest=()=>{}}){
   let config=parseConfig(connection),highest=positiveInt(config.easyOrdersRecoveryHighestShortId),requests=0;
   if(highest)return {config,highest,cursor:positiveInt(config.easyOrdersRecoveryCursor)||Math.max(1,highest-lookback),requests,seeded:true,rateLimited:false};
   const webhookShortId=positiveInt(config.webhookLastShortId||config.webhookLastShortID||config.webhook_last_short_id);
@@ -127,6 +134,8 @@ async function bootstrapFromLastWebhook(env,connection,{apiKey,fetcher,lookback}
   const lastOrderId=text(config.webhookLastOrderId);
   if(!lastOrderId)return {config,highest:0,cursor:0,requests,seeded:false,rateLimited:false};
   let fetched;
+  // Account before awaiting: a failed bootstrap still consumes provider quota.
+  onRequest();
   if(/^\d+$/.test(lastOrderId))fetched=await fetchOrderByShortId(fetcher,apiKey,positiveInt(lastOrderId));
   else fetched=await fetchOrderById(fetcher,apiKey,lastOrderId);
   requests++;
@@ -147,8 +156,8 @@ async function reconcileConnection(env,connection,{maxRequests,lookback,fetcher,
     if(!apiKey)throw Object.assign(new Error('مفتاح Easy Orders API غير موجود؛ لا يمكن إصلاح فجوات الطلبات تلقائيًا'),{status:409,code:'EASYORDERS_API_KEY_MISSING'});
     const cronReceipt=()=>cronRun?{easyOrdersRecoveryLastCronAt:now()}:{};
     let config=parseConfig(connection);out.storeId=text(config.kunStoreId||config.storeId)||null;out.cumulativeRecovered=positiveInt(config.easyOrdersRecoveryRecoveredCount);
-    const seed=await bootstrapFromLastWebhook(env,connection,{apiKey,fetcher,lookback});
-    config=seed.config;out.requests+=seed.requests;out.seeded=seed.seeded;out.rateLimited=seed.rateLimited;
+    const seed=await bootstrapFromLastWebhook(env,connection,{apiKey,fetcher,lookback,onRequest:()=>{out.requests++;}});
+    config=seed.config;out.seeded=seed.seeded;out.rateLimited=seed.rateLimited;
     let highest=seed.highest,cursor=seed.cursor;out.highestShortId=highest;out.nextShortId=cursor;
     if(out.rateLimited){
       out.status='rate_limited';

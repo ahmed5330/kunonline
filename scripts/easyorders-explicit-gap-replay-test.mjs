@@ -22,7 +22,7 @@ const env={
 };
 const fetcher=async(url,options)=>{
   assert.equal(options.method,'GET');
-  assert.equal(options.redirect,'error');
+  assert.equal(options.redirect,'manual');
   assert.equal(options.headers['Api-Key'],'TEST_PROVIDER_TOKEN');
   const n=Number(url.split('/').at(-1));apiCalls.push(n);
   if(n===12)return Response.json({id:'OTHER-12',store_id:'EO-OTHER'});
@@ -93,6 +93,15 @@ assert.equal(providerError.ok,false);
 assert.equal(providerError.status,'provider_error');
 assert.equal(providerError.retryShortId,16);
 assert.equal(providerError.attempted,1,'Provider 503 must stop before later IDs');
+const beforeRedirectWrites=writes;
+const redirected=await recover([19],{fetcher:async(_url,options)=>{
+  assert.equal(options.redirect,'manual','Never forward provider credentials to a redirect target');
+  return new Response(null,{status:302,headers:{Location:'https://untrusted.invalid/order'}});
+}});
+assert.equal(redirected.ok,false);
+assert.equal(redirected.status,'provider_error');
+assert.equal(redirected.retryShortId,19);
+assert.equal(writes,beforeRedirectWrites);
 const throttled=await recover([17,11]);
 assert.equal(throttled.ok,false);
 assert.equal(throttled.status,'rate_limited');

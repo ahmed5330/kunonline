@@ -662,5 +662,40 @@ try{
   await assert.rejects(()=>replayExplicitEasyOrdersStoreGaps(env,explicitOptions),
     {code:'EASYORDERS_REPLAY_DISABLED'});
 
-  console.log('Easy Orders SQLite sync PASS: concurrent webhook/cron CAS, monotonic high-water, correct catching-up, tenant+store collision isolation, idempotent retries.');
+  // Scheduled recovery must enforce the same exact Short ID contract as
+  // selective replay: a wrong provider result cannot move the checkpoint.
+  db.prepare('INSERT INTO stores VALUES (?,?,?,?,?)').run('STORE-IDENTITY','TENANT-A','active',0,now);
+  db.prepare('INSERT INTO store_connections (id,client_id,provider,status,config_json,updated_at,external_store_id) VALUES (?,?,?,?,?,?,?)')
+    .run('CON-IDENTITY','TENANT-A','easyorders','connected',JSON.stringify({kunStoreId:'STORE-IDENTITY',easyOrdersRecoveryHighestShortId:1500,easyOrdersRecoveryCursor:1500}),now,'EO-IDENTITY');
+  db.prepare('INSERT INTO integration_secrets VALUES (?,?,?,?,?)').run('TENANT-A','CON-IDENTITY','api_key',secret.ciphertextB64,secret.ivB64);
+  for(const wrongShort of [1501,1499,1500.5,'invalid',0]){
+    const wrong=await reconcileEasyOrdersOrders(env,{connectionId:'CON-IDENTITY',maxRequests:1,
+      fetcher:async()=>Response.json({...p,id:'WRONG-IDENTITY',short_id:wrongShort,store_id:'EO-IDENTITY'})});
+    assert.equal(wrong.ok,false,'A mismatched or malformed Short ID must fail before ingestion');
+    assert.equal(config('CON-IDENTITY').easyOrdersRecoveryCursor,1500);
+    assert.equal(config('CON-IDENTITY').easyOrdersRecoveryHighestShortId,1500);
+    assert.equal(db.prepare("SELECT COUNT(*) n FROM orders WHERE store_id='STORE-IDENTITY'").get().n,0);
+  }
+  const redirected=await reconcileEasyOrdersOrders(env,{connectionId:'CON-IDENTITY',maxRequests:1,
+    fetcher:async(_url,options)=>{
+      assert.equal(options.redirect,'manual','Scheduled lookup must not forward the API key to redirect targets');
+      return new Response(null,{status:302,headers:{Location:'https://untrusted.invalid/order'}});
+    }});
+  assert.equal(redirected.ok,false);
+  assert.equal(config('CON-IDENTITY').easyOrdersRecoveryCursor,1500);
+  // Bootstrap failures consume provider quota too. With a budget of one,
+  // another connection must never receive an uncounted extra request.
+  for(let i=1;i<=2;i++){
+    db.prepare('INSERT INTO store_connections (id,client_id,provider,status,config_json,updated_at,external_store_id) VALUES (?,?,?,?,?,?,?)')
+      .run('CON-BOOT-'+i,'TENANT-BOOT','easyorders','connected',JSON.stringify({kunStoreId:'STORE-BOOT',webhookLastOrderId:'BOOT-KNOWN-'+i}),now,'EO-BOOT');
+    db.prepare('INSERT INTO integration_secrets VALUES (?,?,?,?,?)').run('TENANT-BOOT','CON-BOOT-'+i,'api_key',secret.ciphertextB64,secret.ivB64);
+  }
+  let bootstrapCalls=0;
+  const bootstrapFailure=await reconcileEasyOrdersOrders(env,{clientId:'TENANT-BOOT',maxRequests:1,
+    fetcher:async()=>{bootstrapCalls++;return Response.json({message:'record not found'},{status:400});}});
+  assert.equal(bootstrapCalls,1,'Failed bootstrap must consume the global request budget');
+  assert.equal(bootstrapFailure.requests,1);
+  assert.equal(bootstrapFailure.checkedConnections,1);
+  assert.equal(bootstrapFailure.uncheckedConnections,1);
+  console.log('Easy Orders SQLite sync PASS: concurrent webhook/cron CAS, monotonic high-water, exact Short ID identity, bounded bootstrap failures, tenant+store isolation, idempotent retries.');
 }finally{db.close();}
