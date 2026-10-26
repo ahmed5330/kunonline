@@ -10,7 +10,7 @@ queue=read('src/production-printing-queue.js'),gateway=read('src/index-productio
 for(const p of ['public/v2/modules-v31-customer-service.js','public/v2/modules-v79-printing.js','public/v2/modules-v155-customer-service-board.js','src/jt-print-workflow-v2.js','src/production-printing-queue.js','src/index-production-mobile-update.js'])check(p);
 assert.match(html,/modules-v109-operational-date-contact\.js\?v=109\.4/,'Production loads period component');
 assert.match(html,/modules-v105-customer-service-claim\.js\?v=105\.4/,'Production loads live calling column');
-assert.match(html,/modules-v155-customer-service-board\.js\?v=155\.0/,'Production loads board');
+assert.match(html,/modules-v155-customer-service-board\.js\?v=155\.1/,'Production loads board');
 assert.match(html,/kun-cs-board-v155\.css\?v=155\.(0|1|2)/,'Production loads CSS');
 assert.match(cs,/boardUrl\.searchParams\.set\('periodFrom',range\.from\)/,'Board sends selected from date');
 assert.match(cs,/boardUrl\.searchParams\.set\('periodTo',range\.to\)/,'Board sends selected to date');
