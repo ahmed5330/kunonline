@@ -55,6 +55,11 @@
   async function changeState(details,next){
     const order=details.order||{},cid=await clientId();if(!cid)throw new Error('تعذر تحديد حساب المتجر');const current=stageOf(order);if(next===current)return;
     if(next==='deferred'){return openDeferredModal(details);}
+    if(next==='shipped'){
+      if(!['confirmed','preparing'].includes(current))throw new Error('أكّد الأوردر أولًا قبل إرساله إلى شركة الشحن');
+      if(typeof window.KunPrintingV79?.shipById!=='function')throw new Error('افتح قسم الطباعة لإرسال الأوردر إلى J&T');
+      return window.KunPrintingV79.shipById(order.id,order.storeId||'');
+    }
     if(next==='collecting'){
       if(current!=='signed')throw new Error('انقل الطلب إلى «تم الشحن» أولًا قبل بدء التحصيل');
       await api(query(`/api/post-shipping/orders/${encodeURIComponent(order.id)}/collecting`,cid,order.storeId||''),{method:'PATCH',body:JSON.stringify({clientId:cid})});
@@ -114,6 +119,6 @@
   }
   function captureOrder(event){const trigger=event.target.closest?.('[data-kod-cs-details],#root button[data-order]');if(!trigger)return;activeOrderId=trigger.dataset.kodCsDetails||trigger.dataset.order||activeOrderId;}
   ensureStyle();document.addEventListener('click',captureOrder,true);const target=document.getElementById('drawer')||document.body;new MutationObserver(()=>decorateDrawer()).observe(target,{subtree:true,childList:true});setTimeout(decorateDrawer,0);
-  window.KunOrderWorkflowV54={decorate:decorateDrawer,edit:openEditor,changeState,stageOf,version:'54.0'};
+  window.KunOrderWorkflowV54={decorate:decorateDrawer,edit:openEditor,changeState,stageOf,version:'54.1'};
   document.documentElement.dataset.orderWorkflowControls='v54-ready';
 })();

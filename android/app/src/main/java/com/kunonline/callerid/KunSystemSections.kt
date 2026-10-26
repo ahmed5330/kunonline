@@ -322,6 +322,7 @@ private fun NativePrintingScreen(onBack: () -> Unit) {
     var error by remember { mutableStateOf("") }
     var orders by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
     var sendingId by remember { mutableStateOf("") }
+    var pendingSendOrderId by remember { mutableStateOf("") }
     var scanData by remember { mutableStateOf<JSONObject?>(null) }
     var scanContext by remember { mutableStateOf("packing") }
     var scanBusy by remember { mutableStateOf(false) }
@@ -441,6 +442,22 @@ private fun NativePrintingScreen(onBack: () -> Unit) {
             .addOnFailureListener { scanMessage = it.message ?: "تعذر قراءة باركود القطعة" }
     }
 
+    if (pendingSendOrderId.isNotBlank()) {
+        val toSend = pendingSendOrderId
+        AlertDialog(
+            onDismissRequest = { pendingSendOrderId = "" },
+            title = { Text("إرسال إلى J&T وطباعة البوليصة") },
+            text = { Text("سيتم إنشاء شحنة حقيقية وإصدار بوليصة J&T الرسمية. سينتقل الأوردر إلى جاري الشحن فقط بعد نجاح العملية.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingSendOrderId = ""
+                    send(toSend)
+                }) { Text("تأكيد الإرسال") }
+            },
+            dismissButton = { TextButton(onClick = { pendingSendOrderId = "" }) { Text("إلغاء") } }
+        )
+    }
+
     if (scanData != null) {
         OrderUnitScanDialog(
             data = scanData!!,
@@ -503,6 +520,11 @@ private fun NativePrintingScreen(onBack: () -> Unit) {
                                     modifier = Modifier.weight(1f)
                                 ) { Text("تجهيز بالمسح") }
                             }
+                            Button(
+                                onClick = { pendingSendOrderId = order.str("id") },
+                                enabled = !scanBusy && sendingId.isBlank(),
+                                modifier = Modifier.fillMaxWidth()
+                            ) { Text("إرسال إلى J&T ونقل إلى جاري الشحن") }
                         }
                     }
                     if (printed.isNotEmpty()) {

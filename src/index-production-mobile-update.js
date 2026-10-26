@@ -87,7 +87,7 @@ async function websiteWithDirectAndroidDownload(request,env){
     .replaceAll('/v2/modules-v51-permission-navigation.js?v=51.10','/v2/modules-v51-permission-navigation.js?v=51.16')
     .replace(/\/v2\/modules-v57-section-reload\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v57-section-reload.js?v=57.3')
     .replaceAll('/v2/modules-v78-jt-shipping-order.js?v=78.4','/v2/modules-v78-jt-shipping-order.js?v=78.5')
-    .replaceAll('/v2/modules-v79-printing.js?v=79.7','/v2/modules-v79-printing.js?v=79.10')
+    .replaceAll('/v2/modules-v79-printing.js?v=79.7','/v2/modules-v79-printing.js?v=79.11')
     .replaceAll('/v2/modules-v117-team-collaboration.js?v=117.0','/v2/modules-v117-team-collaboration.js?v=117.3')
     .replaceAll('/v2/modules-v118-collaboration-order-picker.js?v=118.0','/v2/modules-v118-collaboration-order-picker.js?v=118.1.1');
   // v57 owns the ordered v66 -> v67 -> v68... chain. Injecting v66/v67 here
@@ -240,9 +240,12 @@ export default {
     const callerJntEdit=await handleProductionCallerJntEdit({request,env:dataEnv,ctx,delegate});
     if(callerJntEdit)return callerJntEdit;
 
-    // The live production gateway owns waybill voids even while the Preview
-    // service-binding backend is on an older deployment.
-    if(/^\/api\/jt\/shipments\/[^/]+\/void$/.test(new URL(request.url).pathname)&&request.method==='POST'){
+    // Keep queue, official printing, and void on the SAME canonical D1 and
+    // current workflow implementation as the Customer Service / Printing views.
+    // Forwarding only queue/print to an older Preview service version can leave
+    // confirmed orders stuck or write the shipping transition through a
+    // different implementation. No carrier action occurs without an explicit POST.
+    if(/^\/api\/jt\/shipments\/[^/]+(?:\/(?:print|void))?$/.test(new URL(request.url).pathname)&&request.method==='POST'){
       try{
         const identityUrl=new URL('/api/me',request.url);
         const identityResponse=await delegate.fetch(new Request(identityUrl.toString(),{method:'GET',headers:request.headers}));
@@ -251,7 +254,7 @@ export default {
         const result=await handleJtPrintWorkflowV2({request,env:dataEnv,ctx,delegate,me});
         if(result)return result;
       }catch(error){
-        return new Response(JSON.stringify({error:error?.message||'تعذر إلغاء البوليصة',code:error?.code||'JT_WAYBILL_VOID_ERROR'}),{status:Number(error?.status)>=400&&Number(error.status)<600?Number(error.status):500,headers:{'Content-Type':'application/json; charset=utf-8'}});
+        return new Response(JSON.stringify({error:error?.message||'تعذر تنفيذ إجراء J&T',code:error?.code||'JT_SHIPPING_WORKFLOW_ERROR'}),{status:Number(error?.status)>=400&&Number(error.status)<600?Number(error.status):500,headers:{'Content-Type':'application/json; charset=utf-8'}});
       }
     }
 

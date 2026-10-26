@@ -192,6 +192,7 @@ object KunCustomerServiceApi {
 
     fun updateState(context: Context, orderId: String, state: String, deferUntil: String = "", stockBatchId: String = "", cancelReason: String = ""): CustomerServiceJsonResult =
         withClient(context) { cookie, clientId ->
+            if (state == "shipped") return@withClient CustomerServiceJsonResult(false, "إرسال الطلب للشحن يتطلب إنشاء بوليصة J&T الرسمية. استخدم زر إرسال إلى J&T.")
             if (state == "cancelled" && cancelReason.isBlank()) return@withClient CustomerServiceJsonResult(false, "اكتب سبب إلغاء الطلب أولًا")
             val payload = JSONObject().put("clientId", clientId).put("state", state)
             if (state == "cancelled") {
@@ -210,6 +211,23 @@ object KunCustomerServiceApi {
             if (response.code !in 200..299) return@withClient authFailure(context, response, "تعذر تغيير حالة الأوردر")
             CustomerServiceJsonResult(true, "تم تحديث حالة الأوردر", json(response))
         }
+
+    /**
+     * Explicit carrier action shared with Native Printing. Only the official
+     * print response can mark an order shipped; a generic status PATCH cannot.
+     * Repeating after a print error reuses the existing queued/AWB shipment.
+     */
+    fun shipOrder(context: Context, orderId: String, storeId: String = ""): CustomerServiceJsonResult {
+        val queued = NativeSectionsApi.queueJt(context, orderId, storeId)
+        if (!queued.ok) return CustomerServiceJsonResult(false, queued.message.ifBlank { "تعذر تجهيز الشحنة في J&T" })
+        val printed = NativeSectionsApi.printJt(context, orderId, storeId)
+        if (!printed.ok) return CustomerServiceJsonResult(false, printed.message.ifBlank { "تعذر إصدار البوليصة من J&T؛ جرّب إعادة المحاولة لنفس الشحنة" })
+        val result = printed.obj ?: JSONObject()
+        if (result.optString("state") != "shipped" || result.optString("awb").isBlank() || result.optString("url").isBlank()) {
+            return CustomerServiceJsonResult(false, "لم يتم تأكيد إصدار البوليصة الرسمية؛ حدّث الطلب قبل المحاولة مجددًا")
+        }
+        return CustomerServiceJsonResult(true, "تم إرسال الطلب إلى J&T ونقله إلى جاري الشحن", result)
+    }
 
     fun addNote(context: Context, orderId: String, note: String): CustomerServiceJsonResult = withClient(context) { cookie, clientId ->
         val payload = JSONObject().put("clientId", clientId).put("note", note)
