@@ -14,7 +14,7 @@ must(ui.includes('dash-u-province-hidden'),'Only one province representation sho
 must(ui.includes('data-du-collapse'),'Dashboard sections must support interactive collapse');
 must(ui.includes('window.KunAdsExpertV48?.sync?.()'),'Unified ads must keep Meta refresh interaction');
 must(!/env\.DB|DELETE FROM|DROP TABLE|ALTER TABLE|CREATE TABLE/i.test(ui),'v123 UI must not mutate or access the database directly');
-for(const source of [preview,production])must(source.includes('/v2/modules-v123-dashboard-unified.js?v=123.0'),'v123 must be injected consistently');
+for(const source of [preview,production])must(source.includes('/v2/modules-v123-dashboard-unified.js?v=123.1'),'v123 must be injected consistently');
 must(preview.indexOf('modules-v122-dashboard-experience.js')<preview.indexOf('modules-v123-dashboard-unified.js'),'Preview must load v123 after v122');
 must(production.indexOf('modules-v122-dashboard-experience.js')<production.indexOf('modules-v123-dashboard-unified.js'),'Production must load v123 after v122');
 console.log('Dashboard v123 unified homepage contract passed.');

@@ -1,7 +1,7 @@
 /* Kun Online v123.0 — unified interactive dashboard, active ads only */
 (()=>{
   if(window.KunDashboardUnifiedV123)return;
-  const VERSION='123.0';
+  const VERSION='123.1';
   const nativeFetch=window.fetch.bind(window);
   const state={expert:null,adsTab:'campaigns',provinceView:'quick',timer:0};
   const $=(s,r=document)=>r?.querySelector?.(s)||null;
@@ -16,6 +16,7 @@
   const isActive=row=>String(row?.status||'').trim().toLowerCase()==='active';
   const activeRows=(data,key)=>Array.isArray(data?.[key]?.rows)?data[key].rows.filter(isActive):[];
   const sum=(rows,key)=>rows.reduce((t,x)=>t+n(x?.[key]),0);
+  const setText=(element,value)=>{if(element&&element.textContent!==value)element.textContent=value;};
 
   function style(){
     if($('#kunDashboardUnified123Style'))return;
@@ -68,8 +69,8 @@
   function decorateAds(root){
     const sec=$('[data-dash-section="ads"]',root);if(!sec)return;
     const head=$('.dash-section-head>div:first-child',sec),h=$('h2',head),p=$('p',head);
-    if(h)h.textContent='الإعلانات النشطة الآن';
-    if(p)p.textContent='قسم موحد للحملات والمجموعات والإعلانات التي تعمل حاليًا فقط، مع نتائج Kun Online الحقيقية بعد التأكيد والتسليم.';
+    setText(h,'الإعلانات النشطة الآن');
+    setText(p,'قسم موحد للحملات والمجموعات والإعلانات التي تعمل حاليًا فقط، مع نتائج Kun Online الحقيقية بعد التأكيد والتسليم.');
     let hub=$('.dash-u-active-hub',sec);if(!hub){hub=document.createElement('div');hub.className='dash-u-active-hub';sec.appendChild(hub);}
     const sig=[state.adsTab,state.expert?.lastSyncAt,activeRows(state.expert,'campaigns').length,activeRows(state.expert,'adsets').length,activeRows(state.expert,'ads').length].join('|');
     if(hub.dataset.sig!==sig){hub.innerHTML=adsHub(state.expert);hub.dataset.sig=sig;}
@@ -82,7 +83,7 @@
     $$('.dash-u-view-toggle button',sec).forEach(b=>b.classList.toggle('active',b.dataset.duProvince===state.provinceView));
     list.classList.toggle('dash-u-province-hidden',state.provinceView!=='quick');
     table.classList.toggle('dash-u-province-hidden',state.provinceView!=='table');
-    const h=$('.dash-section-head h2',sec),p=$('.dash-section-head p',sec);if(h)h.textContent='المحافظات وجودة الشحن';if(p)p.textContent='بيانات واحدة بطريقتين للقراءة: نظرة سريعة للقرار أو جدول كامل للتفاصيل، بدون تكرار الاثنين معًا.';
+    const h=$('.dash-section-head h2',sec),p=$('.dash-section-head p',sec);setText(h,'المحافظات وجودة الشحن');setText(p,'بيانات واحدة بطريقتين للقراءة: نظرة سريعة للقرار أو جدول كامل للتفاصيل، بدون تكرار الاثنين معًا.');
   }
 
   function addCollapse(root){
