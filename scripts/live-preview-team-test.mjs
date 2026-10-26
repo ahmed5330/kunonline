@@ -42,6 +42,8 @@ try{
     throw new Error(`Expected additive Preview v34+ with matching outer build/entrypoint, got ${JSON.stringify(version)}`);
   const onboard=(await api(adminCookie,'/api/admin/clients',{method:'POST',ok:[201],body:{businessName:'CI v28 Team Tenant',ownerName:'CI v28 Owner',email:ownerEmail,phone:'01012345678',password:ownerPassword,storeName:'CI Store A',plan:'trial',baseOrderFee:2,modules:{dashboard:{enabled:true},stores:{enabled:true},'store-access':{enabled:true},orders:{enabled:true},catalog:{enabled:true},inventory:{enabled:true},team:{enabled:true},settings:{enabled:true}}}})).data;
   clientId=onboard.clientId;storeA=onboard.storeId;if(!clientId||!storeA)throw new Error('Temporary tenant onboarding failed');
+  // Fund only the newly created synthetic tenant through the real Admin API.
+  await api(adminCookie,`/api/admin/subscriptions/${encodeURIComponent(clientId)}/credit`,{method:'POST',body:{amount:1000,note:'Isolated QA team fixture credit',requestId:`qa-team:${nonce}`}});
   ownerCookie=(await login(ownerEmail,ownerPassword)).cookie;if(!ownerCookie)throw new Error('Owner cookie missing');
   await api(ownerCookie,'/api/stores',{method:'POST',ok:[200,201],body:{name:'CI Store B'}});
   const second=(await d1('SELECT id FROM stores WHERE client_id=? AND id<>? ORDER BY created_at DESC LIMIT 1',[clientId,storeA]))[0];storeB=second?.id;if(!storeB)throw new Error('Second QA store was not created');

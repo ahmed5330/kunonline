@@ -130,10 +130,16 @@ try{
   const me=await ownerApi('/api/me');if(me.role!=='client'||me.clientId!==createdClientId)throw new Error(`Owner session is not tenant-scoped: ${JSON.stringify(me)}`);
   const features=await ownerApi(`/api/tenant/features?clientId=${encodeURIComponent(createdClientId)}`);if(features.modules?.finance?.enabled!==false||features.modules?.orders?.enabled!==true)throw new Error('Onboarded module entitlements are incorrect');
   const ownerState=await ownerApi(`/api/state?clientId=${encodeURIComponent(createdClientId)}&storeId=${encodeURIComponent(createdClientStoreId)}`);if(!(ownerState.clients||[]).some(x=>String(x.id)===createdClientId))throw new Error('Onboarded client is missing from tenant state');
+  // This client exists only in the config-verified isolated QA D1. A new
+  // zero-balance tenant must remain locked until an actual Admin credit.
+  const blocked=await ownerApi('/api/customers',{method:'POST',ok:[402],body:{clientId:createdClientId,storeId:createdClientStoreId,name:'QA blocked CRM',phone:'01000000000'}});
+  if(blocked.code!=='SUBSCRIPTION_BALANCE_REQUIRED')throw new Error('Zero-balance operational gate did not fail closed');
+  await ownerApi('/api/subscription/access');await ownerApi('/api/wallet/topups');
+  if(Number((await d1('SELECT COUNT(*) n FROM customers WHERE client_id=?',[createdClientId]))[0]?.n)!==0)throw new Error('Blocked zero-balance operation wrote a customer');
+  await api('/api/wallet/topup',{method:'POST',body:{clientId:createdClientId,amount:10,note:'CI admin credit'}});const credited=(await d1('SELECT balance FROM wallet_accounts WHERE client_id=?',[createdClientId]))[0];if(Number(credited?.balance)!==10)throw new Error('Admin direct wallet credit button/API failed');
   const standalone=await ownerApi('/api/customers',{method:'POST',ok:[201],body:{clientId:createdClientId,storeId:createdClientStoreId,name:'CI CRM Customer',phone:'01098765432',gov:'القاهرة',note:'Created from v27 action'}});if(!standalone.id)throw new Error('Standalone CRM customer action failed');
   const customerList=await ownerApi(`/api/customers?clientId=${encodeURIComponent(createdClientId)}`);if(!Array.isArray(customerList)||!customerList.some(x=>x.id===standalone.id))throw new Error('Standalone CRM customer is not readable after creation');
   await api(`/api/admin/clients/${encodeURIComponent(createdClientId)}/notes`,{method:'POST',ok:[201],body:{body:'CI admin note'}});
-  await api('/api/wallet/topup',{method:'POST',body:{clientId:createdClientId,amount:10,note:'CI admin credit'}});const credited=(await d1('SELECT balance FROM wallet_accounts WHERE client_id=?',[createdClientId]))[0];if(Number(credited?.balance)!==10)throw new Error('Admin direct wallet credit button/API failed');
   await api(`/api/admin/clients/${encodeURIComponent(createdClientId)}/reset-owner-password`,{method:'POST',body:{password:onboardingPassword2}});
   const resetLogin=await fetch(`${base}/api/login`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:onboardingEmail,password:onboardingPassword2})});if(!resetLogin.ok)throw new Error(`Owner password reset login failed: ${resetLogin.status}`);
   await api(`/api/admin/clients/${encodeURIComponent(createdClientId)}/status`,{method:'PATCH',body:{status:'suspended'}});const suspended=(await d1('SELECT status FROM users WHERE client_id=? AND role=?',[createdClientId,'client']))[0];if(suspended?.status!=='tenant_suspended')throw new Error('Suspend client action did not suspend owner');
