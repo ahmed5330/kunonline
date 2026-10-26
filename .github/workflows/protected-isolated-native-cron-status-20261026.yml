@@ -1,0 +1,23 @@
+name: Protected existing isolated native Cron read-only status
+on:
+  push:
+    branches: [codex/serialized-warehouse-operations]
+    paths: ['.github/workflows/protected-isolated-native-cron-status-20261026.yml']
+permissions:
+  contents: read
+jobs:
+  native-cron-status:
+    runs-on: ubuntu-latest
+    environment: preview
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - name: Read current isolated scheduler metadata and synthetic receipt without invoking Cron
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: node scripts/isolated-native-cron-readonly-status-20261026.mjs
