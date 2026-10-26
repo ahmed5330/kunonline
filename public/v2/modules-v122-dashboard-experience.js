@@ -1,7 +1,7 @@
 /* Kun Online v122.0 — executive dashboard UX, de-duplication and analytical depth */
 (()=>{
   if(window.KunDashboardExperienceV122)return;
-  const VERSION='122.0';
+  const VERSION='122.2';
   const nativeFetch=window.fetch.bind(window);
   const sectionOrder=['overview','trend','finance','ads','rates','provinces','ai'];
   const sectionMeta={
@@ -14,8 +14,8 @@
     ai:['الذكاء','قراءة AI وخطوات العمل','الإشارات والتوصيات العملية بعد ربط التسويق والتشغيل والمالية.']
   };
   let lastData=null,timer=0,decorating=false,scopedTrend=null;
-  const $=(s,r=document)=>r.querySelector(s);
-  const $$=(s,r=document)=>[...r.querySelectorAll(s)];
+  const $=(s,r=document)=>r?.querySelector(s)||null;
+  const $$=(s,r=document)=>[...(r?.querySelectorAll(s)||[])];
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const n=v=>Number(v)||0;
   const num=v=>new Intl.NumberFormat('ar-EG',{maximumFractionDigits:1}).format(n(v));

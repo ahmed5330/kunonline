@@ -30,7 +30,7 @@ const V2_UI_SCRIPTS=[
   '<script src="/v2/modules-v117-collaboration.js?v=117.0" data-kun-collaboration="1"></script>',
   '<script src="/v2/modules-v117-collaboration-sidebar.js?v=117.3" data-kun-collaboration-sidebar="1"></script>',
   '<script src="/v2/modules-v119-collaboration-order-link.js?v=119.0" data-kun-collaboration-order-link="1"></script>',
-  '<script src="/v2/modules-v122-dashboard-experience.js?v=122.1" data-kun-dashboard-experience="1"></script>',
+  '<script src="/v2/modules-v122-dashboard-experience.js?v=122.2" data-kun-dashboard-experience="1"></script>',
   '<script src="/v2/modules-v123-dashboard-unified.js?v=123.0" data-kun-dashboard-unified="1"></script>',
   '<script src="/v2/modules-v124-dashboard-periods-province.js?v=124.1" data-kun-dashboard-periods-v124="1"></script>',
   '<script src="/v2/modules-v125-dashboard-section-periods.js?v=125.3" data-kun-dashboard-section-periods-v125="1"></script>',
