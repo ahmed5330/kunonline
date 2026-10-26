@@ -89,8 +89,13 @@ async function main(){
     assert.match((await renderGuard(source,p,{httpOk:false})).html,/تعذر التحقق/);
   }
   assert.match((await renderGuard(source,null,{networkError:true})).html,/تعذر التحقق/);
-  const htmlResponse=await production.fetch(new Request('https://app.kun-online.com/'),{ASSETS:{fetch:async()=>new Response('<body><script src="/v2/modules-v121-dashboard-sync-guard.js?v=121.0"></script></body>',{headers:{'Content-Type':'text/html'}})}},{});
-  assert.match(await htmlResponse.text(),/modules-v121-dashboard-sync-guard.js\?v=121.3/);
+  const htmlResponse=await production.fetch(new Request('https://app.kun-online.com/'),{ASSETS:{fetch:async()=>new Response('<body><script src="/v2/modules-v121-dashboard-sync-guard.js?v=121.0"></script><script src="/v2/modules-v122-dashboard-experience.js?v=122.3"></script><script src="/v2/modules-v123-dashboard-unified.js?v=123.0"></script></body>',{headers:{'Content-Type':'text/html'}})}},{});
+  const upgradedHtml=await htmlResponse.text();
+  assert.match(upgradedHtml,/modules-v121-dashboard-sync-guard.js\?v=121.3/);
+  assert.match(upgradedHtml,/modules-v122-dashboard-experience.js\?v=122.4/);
+  assert.match(upgradedHtml,/modules-v123-dashboard-unified.js\?v=123.1/);
+  for(const asset of ['modules-v122-dashboard-experience.js','modules-v123-dashboard-unified.js'])
+    assert.equal(upgradedHtml.split(asset).length-1,1,'Upgrade existing scripts without injecting a duplicate');
   console.log('Dashboard sync guard regression passed: tenant dashboard isolation, Preview aggregate is not tenant health, safe failures, and cache version.');
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href)await main();

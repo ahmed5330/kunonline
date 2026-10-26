@@ -20,6 +20,6 @@ for(const marker of ['EXECUTIVE PULSE','Commerce Command Center','dash-x-executi
 must(dashboardUx.includes("['overview','trend','finance','ads','rates','provinces','ai']"),'Dashboard v122 must preserve the intended analytical hierarchy.');
 must(dashboardUx.includes(".dash-section-actions .dash-period-control")&&dashboardUx.includes(".dash-drill-head>.dash-period-chip"),'Dashboard v122 must remove duplicate period controls.');
 must(dashboardUx.includes("hidden=['actualOrderCost','margin','adSpend']"),'Dashboard v122 must remove repeated top-level KPI cards.');
-must(previewEntry.includes('/v2/modules-v122-dashboard-experience.js?v=122.3'),'Preview must inject dashboard v122 UX.');
-must(productionEntry.includes('/v2/modules-v122-dashboard-experience.js?v=122.3'),'Production must inject dashboard v122 UX.');
+must(previewEntry.includes('/v2/modules-v122-dashboard-experience.js?v=122.4'),'Preview must inject dashboard v122 UX.');
+must(productionEntry.includes('/v2/modules-v122-dashboard-experience.js?v=122.4'),'Production must inject dashboard v122 UX.');
 console.log('Release readiness and dashboard v122 UI contracts passed.');
