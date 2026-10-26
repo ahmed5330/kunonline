@@ -33,12 +33,21 @@ jobs:
             console.log(JSON.stringify({
               path,httpStatus:response.status,
               safeErrorCode:safe.includes(code)?code:'WITHHELD',
-              exposedJsonKeyCount:response.status===200&&value&&typeof value==='object'?Object.keys(value).length:0
+              exposedJsonKeyCount:response.status===200&&value&&typeof value==='object'?Object.keys(value).length:0,
+              safeResponseKeys:Object.keys(value||{}).filter(k=>/^[a-zA-Z_]{1,32}$/.test(k)).slice(0,12),
+              explicitOk:value?.ok===true?'true':value?.ok===false?'false':'absent',
+              containsIdentity:['id','uid','user','clientId','client_id','role','email','session'].some(k=>value&&Object.hasOwn(value,k))
             }));
-            // 401/403 are both access denials; an unauthed 200 is dangerous.
-            assert.ok(response.status===401||response.status===403,
-              'PUBLIC_ADMIN_PARITY_ACCESS_NOT_DENIED');
+            if(path==='/health/preview-parity')
+              assert.ok(response.status===401||response.status===403,
+                'PUBLIC_ADMIN_PARITY_ACCESS_NOT_DENIED');
+            else
+              assert.ok(response.status===401||response.status===403||
+                (response.status===200&&value?.ok===false&&
+                !['id','uid','user','clientId','client_id','role','email','session']
+                  .some(k=>Object.hasOwn(value,k))),
+                'PUBLIC_ME_IDENTITY_OR_SUCCESS_EXPOSED');
           }
-          console.log('PASS: no anonymous access to parity diagnostic or account identity.');
+          console.log('PASS: parity 401/403 and no anonymous identity from /api/me.');
           NODE
 # Fixed URLs only, no cookies, tokens or bodies printed and no deployment.
