@@ -1,0 +1,52 @@
+// Source-only synthetic D1/SQLite races. NEVER connects to a carrier or live D1.
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import {DatabaseSync} from 'node:sqlite';
+import {claimJtCreate,pendingJtCreateClaim,persistJtClaimAwb,finalizeJtOfficialLabel,repairJtPrintedState} from '../src/jt-shipping-claim.js';
+
+const db=new DatabaseSync(':memory:');
+db.exec("CREATE TABLE orders (id TEXT PRIMARY KEY,client_id TEXT NOT NULL,state TEXT,checkpoint TEXT,awb TEXT,history TEXT)");
+const env={prepare(sql){return {bind(...params){return {async run(){const r=db.prepare(sql).run(...params);return {meta:{changes:r.changes}};}}}}}};
+const read=id=>db.prepare('SELECT * FROM orders WHERE id=?').get(id);
+const insert=(id,clientId='A',state='confirmed',history='[]')=>db.prepare('INSERT INTO orders (id,client_id,state,history) VALUES (?,?,?,?)').run(id,clientId,state,history);
+const codeOf=e=>e?.code;
+insert('one');const stale=read('one');
+const race=await Promise.allSettled([claimJtCreate(env,stale,'REF-ONE'),claimJtCreate(env,stale,'REF-ONE')]);
+assert.equal(race.filter(x=>x.status==='fulfilled').length,1,'only one Worker may acquire carrier create');
+assert.equal(race.filter(x=>x.status==='rejected').length,1);
+assert.equal(codeOf(race.find(x=>x.status==='rejected').reason),'JT_CREATE_CLAIM_CONFLICT');
+const claim=race.find(x=>x.status==='fulfilled').value;
+assert.equal(pendingJtCreateClaim(read('one').history).claimId,claim.claimId);
+await assert.rejects(()=>claimJtCreate(env,read('one'),'REF-ONE'),e=>e.code==='JT_CREATE_RECOVERY_REQUIRED');
+// A lost carrier reply leaves the claim durable. A retry must only look up
+// REF-ONE externally; it MUST NOT issue another addOrder.
+await persistJtClaimAwb(env,read('one'),claim,'AWB-ONE');
+assert.equal(read('one').awb,'AWB-ONE');
+await assert.rejects(()=>persistJtClaimAwb(env,read('one'),claim,'AWB-OTHER'),e=>e.code==='JT_AWB_PERSIST_CONFLICT');
+const proof={awb:'AWB-ONE',sortingCode:'SORT-1',txlogisticId:'REF-ONE',printedAt:'2026-10-26T00:00:00Z',printedBy:'test'};
+await finalizeJtOfficialLabel(env,read('one'),proof);
+assert.equal(read('one').state,'shipped');
+const history=JSON.parse(read('one').history);
+assert.equal(history.filter(e=>e.type==='jt_label_printed').length,1);
+assert.equal(history.filter(e=>e.type==='jt_handoff_shipped').length,1);
+await assert.rejects(()=>finalizeJtOfficialLabel(env,read('one'),proof),e=>e.code==='JT_HANDOFF_STATE_CONFLICT');
+insert('other','B');
+await assert.rejects(()=>claimJtCreate(env,{...read('other'),client_id:'A'},'REF-OTHER'),e=>e.code==='JT_CREATE_CLAIM_CONFLICT');
+assert.equal(read('other').history,'[]','tenant A cannot claim tenant B order');
+insert('unconfirmed','A','pending');
+await assert.rejects(()=>claimJtCreate(env,read('unconfirmed'),'REF-BAD'),e=>e.code==='JT_CREATE_CLAIM_CONFLICT');
+insert('legacy','A','confirmed',JSON.stringify([{type:'jt_label_printed',awb:'AWB-OLD',official:true}]));
+db.prepare('UPDATE orders SET awb=? WHERE id=?').run('AWB-OLD','legacy');
+assert.equal(await repairJtPrintedState(env,read('legacy')),true);
+assert.equal(read('legacy').state,'shipped');
+assert.equal(await repairJtPrintedState(env,read('legacy')),false);
+insert('wrong-proof','A','confirmed',JSON.stringify([{type:'jt_label_printed',awb:'AWB-OTHER',official:true}]));
+db.prepare('UPDATE orders SET awb=? WHERE id=?').run('AWB-OLD','wrong-proof');
+assert.equal(await repairJtPrintedState(env,read('wrong-proof')),false);
+const wf=fs.readFileSync(new URL('../src/jt-print-workflow-v2.js',import.meta.url),'utf8');
+assert.match(wf,/claimJtCreate\(/);
+assert.match(wf,/persistJtClaimAwb\(/);
+assert.match(wf,/finalizeJtOfficialLabel\(/);
+assert.match(wf,/lookupJtShipmentByReference\(/);
+assert.match(wf,/JT_CREATE_RECOVERY_REQUIRED/);
+console.log('PASS: synthetic SQLite atomic J&T claim, two-device contention, crash/retry lock, scoped persistence, official label finalization and legacy repair');
