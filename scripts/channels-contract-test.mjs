@@ -44,7 +44,7 @@ must(nav.includes("collaboration:['inbox.read']"),'Dynamic collaboration navigat
 must(nav.includes('refreshLateInjectedNavigation')&&nav.includes('setTimeout(refreshLateInjectedNavigation,650)'),'Permission navigation must refresh only the late-injected collaboration item without re-applying every navigation rule');
 must(!nav.includes('setTimeout(()=>{if(ready)apply();},650)'),'Late collaboration injection must not trigger a full navigation re-apply');
 must(!nav.includes('new MutationObserver'),'Permission navigation must not watch every navigation mutation');
-must(nav.includes("permissionNavigationVersion='51.15'"),'Permission navigation must expose the active runtime version marker');
+must(nav.includes("permissionNavigationVersion='51.17'"),'Permission navigation must expose the active runtime version marker');
 must(collabSidebar.includes("button[data-view=\"collaboration\"]")&&collabSidebar.includes("classList.add('nav-standalone','nav-collaboration')"),'Collaboration must be promoted to a visible standalone sidebar route');
 must(collabSidebar.includes('[data-kun-shortcuts-nav]')&&collabSidebar.includes("dataset.collaborationSidebar='ready'"),'Collaboration sidebar placement must stay visible beside the primary mobile navigation and expose a readiness marker');
 must(collabSidebar.includes("dataset.collaborationStandalone=VERSION"),'Collaboration sidebar placement must mark its one-time normalization state');
