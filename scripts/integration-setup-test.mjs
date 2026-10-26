@@ -45,9 +45,12 @@ must(queueBlock.includes('state:row.state'),'Queue preparation must keep the cur
 
 const printStart=jtWorkflow.indexOf('async function createAndPrint'),printEnd=jtWorkflow.indexOf('export async function handleJtPrintWorkflowV2');
 const printBlock=jtWorkflow.slice(printStart,printEnd);
-for(const marker of ['createJtShipment({shipment,secrets})',"UPDATE orders SET awb=?",'jt_shipment_created','jt_print_requested',"printSize:'2'",'printCode:1','signedPost(PRINT_ORDER_PATH','jt_print_failed','jt_label_printed','official:true',"UPDATE orders SET state='shipped'",'jt_handoff_shipped'])must(printBlock.includes(marker),`Explicit Printing send workflow missing ${marker}`);
-must(printBlock.indexOf('createJtShipment({shipment,secrets})')<printBlock.indexOf('signedPost(PRINT_ORDER_PATH'),'AWB creation must happen before printOrder');
-must(printBlock.indexOf('jt_label_printed')<printBlock.indexOf("UPDATE orders SET state='shipped'"),'Order may enter shipping only after official J&T label succeeds');
+for(const marker of ['claimJtCreate(', 'createJtShipment({shipment,secrets})','persistJtClaimAwb(','jt_shipment_created','jt_print_requested',"printSize:'2'",'printCode:1','signedPost(PRINT_ORDER_PATH','jt_print_failed','finalizeJtOfficialLabel('])must(printBlock.includes(marker),`Explicit Printing send workflow missing ${marker}`);
+must(printBlock.indexOf('claimJtCreate(')<printBlock.indexOf('createJtShipment({shipment,secrets})'),'Atomic database claim must precede external J&T addOrder');
+must(printBlock.indexOf('persistJtClaimAwb(')<printBlock.indexOf('signedPost(PRINT_ORDER_PATH'),'Persist AWB before official label printing');
+must(printBlock.indexOf('signedPost(PRINT_ORDER_PATH')<printBlock.indexOf('finalizeJtOfficialLabel('),'Carrier proof precedes atomic shipped state');
+const claimGuard=await readFile(new URL('../src/jt-shipping-claim.js',import.meta.url),'utf8');
+for(const marker of ["UPDATE orders SET history=json_insert","history IS ?","jt_create_claimed","UPDATE orders SET awb=?","UPDATE orders SET state='shipped'","jt_label_printed","jt_handoff_shipped"])must(claimGuard.includes(marker),`Atomic D1 shipment guard missing ${marker}`);
 
 must(printingRoute.includes("url.pathname!=='/api/printing'")&&printingRoute.includes("o.state IN ('confirmed','preparing')")&&printingRoute.includes("hasMore:offset+limit<total"),'Production must expose paged confirmed orders to assigned stores through dedicated Printing queue');
 must(printingRoute.includes("order.state!=='shipped'||order.queuedForPrint||order.printed"),'Unrelated shipped orders must not leak into Printing');
