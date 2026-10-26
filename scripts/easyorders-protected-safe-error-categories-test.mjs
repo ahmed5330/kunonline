@@ -13,14 +13,18 @@ t('','NO_ERROR_TEXT');
 t('private customer phone + orders','OTHER_UNCLASSIFIED');
 const now=Date.parse('2026-10-26T18:00:00Z');
 const data=[
-{recovery_status:'error',last_run_at:'2026-10-26T17:55:00Z',recovery_error:'SQLITE_ERROR: no such column PRIVATE_CLIENT_ID'},
-{recovery_status:'error',last_run_at:'2026-10-26T17:57:00Z',recovery_error:'Error: HTTP 503 with PRIVATE_PHONE'},
+{recovery_status:'error',last_run_at:'2026-10-26T17:55:00Z',recovery_error:'SQLITE_ERROR: no such column PRIVATE_CLIENT_ID',provider_http_status:400,provider_error_category:'provider_other_http',positive_control_http_status:200,positive_control_verified:1},
+{recovery_status:'error',last_run_at:'2026-10-26T17:57:00Z',recovery_error:'Error: HTTP 503 with PRIVATE_PHONE',provider_http_status:503,provider_error_category:'provider_server_error',positive_control_http_status:null,positive_control_verified:0},
 ];
 const summary=summarizeRecoveryRows(data,now);
 assert.equal(summary.connections,2);
 assert.deepEqual(summary.byStatus,{error:2});
 assert.deepEqual(summary.byCategory,{DATABASE_SCHEMA_OR_WRITE:1,UPSTREAM_SERVER_ERROR:1});
 assert.equal(summary.checked.within20Minutes,2);
+assert.deepEqual(summary.byProviderHttpStatus,{'400':1,'503':1});
+assert.deepEqual(summary.byProviderErrorCategory,{provider_other_http:1,provider_server_error:1});
+assert.deepEqual(summary.byPositiveControlHttpStatus,{'200':1,not_recorded:1});
+assert.equal(summary.verifiedKnownOrderControls,1);
 assert.equal(summary.d1Writes,false);
 assert.equal(summary.wefaqHistoricalCompletenessProven,false);
 assert.ok(!JSON.stringify(summary).includes('PRIVATE_CLIENT_ID'));
