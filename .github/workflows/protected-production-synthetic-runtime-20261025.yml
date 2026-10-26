@@ -14,11 +14,11 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/checkout@v5
         with:
-          ref: 5c1713d5d5fb1aa0ebe74decb0fdc30fca68ffb8
+          ref: 60c19523b94521dd4d608a7ff25d3ed2db3e14ba
           path: qa-backend
       - uses: actions/checkout@v5
         with:
-          ref: fc1adf349ed757ecccfbad33b3c8a5b890f29e12
+          ref: 6bd257a62dfec2eaf623c592792ee93f0a4b863e
           path: qa-production
       - uses: actions/setup-node@v5
         with:
@@ -53,6 +53,12 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: node scripts/live-preview-easyorders-test.mjs "$KUN_PREVIEW_QA_BASE_URL"
+      - name: Verify real isolated browser after partial dashboard fix
+        working-directory: qa-backend
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: node scripts/browser-preview-breakdown-controls-test.mjs "$KUN_PREVIEW_QA_BASE_URL"
       - name: Verify isolated backend release capabilities
         working-directory: qa-backend
         run: node scripts/production-preview-release-gate.mjs --isolated-qa "$KUN_PREVIEW_QA_BASE_URL"
