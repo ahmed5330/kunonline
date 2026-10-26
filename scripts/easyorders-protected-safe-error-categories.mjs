@@ -7,7 +7,11 @@ import {spawnSync} from 'node:child_process';
 const SELECT = `SELECT
   json_extract(config_json,'$.easyOrdersRecoveryLastStatus') AS recovery_status,
   json_extract(config_json,'$.easyOrdersRecoveryLastRunAt') AS last_run_at,
-  json_extract(config_json,'$.easyOrdersRecoveryLastError') AS recovery_error
+  json_extract(config_json,'$.easyOrdersRecoveryLastError') AS recovery_error,
+  json_extract(config_json,'$.easyOrdersRecoveryLastProviderHttpStatus') AS provider_http_status,
+  json_extract(config_json,'$.easyOrdersRecoveryLastProviderErrorCategory') AS provider_error_category,
+  json_extract(config_json,'$.easyOrdersRecoveryLastPositiveControlHttpStatus') AS positive_control_http_status,
+  json_extract(config_json,'$.easyOrdersRecoveryLastPositiveControlIdentityVerified') AS positive_control_verified
 FROM store_connections
 WHERE provider='easyorders' AND status='connected'
 LIMIT 25`;
@@ -33,19 +37,32 @@ const knownStatuses=new Set(['healthy','error','rate_limited','catching_up','wai
 function safeStatus(value){const status=String(value??'unknown').trim().toLowerCase();return knownStatuses.has(status)?status:'unknown';}
 export function summarizeRecoveryRows(rows,nowMs=Date.now()){
   if(!Array.isArray(rows)||rows.length>25)throw Error('EASYORDERS_DIAGNOSTIC_RESULT_UNEXPECTED');
-  const byCategory={},byStatus={},checked={within20Minutes:0,olderThan20Minutes:0,neverOrInvalid:0};
+  const byCategory={},byStatus={},byProviderHttpStatus={},byProviderErrorCategory={},
+    byPositiveControlHttpStatus={},checked={within20Minutes:0,olderThan20Minutes:0,neverOrInvalid:0};
+  let verifiedKnownOrderControls=0;
   for(const row of rows){
     const category=classifyRecoveryError(row?.recovery_error);
     const status=safeStatus(row?.recovery_status);
     byCategory[category]=(byCategory[category]||0)+1;
     byStatus[status]=(byStatus[status]||0)+1;
+    const numericStatus=value=>{const n=Number(value);return Number.isInteger(n)&&n>=200&&n<=599?String(n):'not_recorded';};
+    const providerHttp=numericStatus(row?.provider_http_status);
+    const positiveHttp=numericStatus(row?.positive_control_http_status);
+    const categoryRaw=String(row?.provider_error_category||'');
+    const providerCategory=['provider_auth','provider_throttle','provider_server_error','provider_other_http','provider_unknown_http']
+      .includes(categoryRaw)?categoryRaw:'not_recorded';
+    byProviderHttpStatus[providerHttp]=(byProviderHttpStatus[providerHttp]||0)+1;
+    byProviderErrorCategory[providerCategory]=(byProviderErrorCategory[providerCategory]||0)+1;
+    byPositiveControlHttpStatus[positiveHttp]=(byPositiveControlHttpStatus[positiveHttp]||0)+1;
+    if(row?.positive_control_verified===true||row?.positive_control_verified===1)verifiedKnownOrderControls++;
     const time=Date.parse(String(row?.last_run_at??''));
     if(!Number.isFinite(time)||time>nowMs+60_000)checked.neverOrInvalid++;
     else if(nowMs-time<=20*60*1000)checked.within20Minutes++;
     else checked.olderThan20Minutes++;
   }
   return {kind:'EASYORDERS_CANONICAL_D1_ERROR_CATEGORIES_READ_ONLY',
-    connections:rows.length,byStatus,byCategory,checked,
+    connections:rows.length,byStatus,byCategory,byProviderHttpStatus,byProviderErrorCategory,
+    byPositiveControlHttpStatus,verifiedKnownOrderControls,checked,
     customerRowsReturned:false,customerIdentifiersReturned:false,
     providerErrorsReturned:false,providerSecretsReturned:false,
     d1Writes:false,cloudflareDeployment:false,
