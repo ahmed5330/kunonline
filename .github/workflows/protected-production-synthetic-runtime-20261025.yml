@@ -14,7 +14,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/checkout@v5
         with:
-          ref: ec1f1aa2a32ae2fb578692bf59c63db94b7981cd
+          ref: 5150a520704424039948df8e71727bc56a1df371
           path: qa-backend
       - uses: actions/checkout@v5
         with:
