@@ -52,9 +52,9 @@ must(printBlock.indexOf('jt_label_printed')<printBlock.indexOf("UPDATE orders SE
 must(printingRoute.includes("url.pathname!=='/api/printing'")&&printingRoute.includes("o.state IN ('confirmed','preparing')")&&printingRoute.includes("hasMore:offset+limit<total"),'Production must expose paged confirmed orders to assigned stores through dedicated Printing queue');
 must(printingRoute.includes("order.state!=='shipped'||order.queuedForPrint||order.printed"),'Unrelated shipped orders must not leak into Printing');
 must(production.includes('preserveCustomerServiceOrderVisibility')&&!production.includes('data.orders=data.orders.filter('),'Confirmed orders must remain in Customer Service and also be visible in Printing');
-for(const marker of ['modules-v51-permission-navigation.js?v=51.16','modules-v78-jt-shipping-order.js?v=78.5','modules-v79-printing.js?v=79.10','modules-v116-print-routing.js?v=116.1'])must(production.includes(marker),`Production HTML must cache-bust/load ${marker}`);
+for(const marker of ['modules-v51-permission-navigation.js?v=51.16','modules-v78-jt-shipping-order.js?v=78.5','modules-v79-printing.js?v=79.11','modules-v116-print-routing.js?v=116.1'])must(production.includes(marker),`Production HTML must cache-bust/load ${marker}`);
 
-for(const marker of ['/v2/modules-v51-permission-navigation.js?v=51.16','/v2/modules-v78-jt-shipping-order.js?v=78.5','/v2/modules-v79-printing.js?v=79.10','/v2/modules-v116-print-routing.js?v=116.1','/v2/modules-v117-team-collaboration.js?v=117.3'])must(v2Index.includes(marker),`Direct v2 index must load ${marker}`);
+for(const marker of ['/v2/modules-v51-permission-navigation.js?v=51.16','/v2/modules-v78-jt-shipping-order.js?v=78.5','/v2/modules-v79-printing.js?v=79.11','/v2/modules-v116-print-routing.js?v=116.1','/v2/modules-v117-team-collaboration.js?v=117.3'])must(v2Index.includes(marker),`Direct v2 index must load ${marker}`);
 must(v2Index.includes('href="/api/mobile/app-update/apk"'),'Direct v2 index must use the Kun Online Android download route');
 must(!v2Index.includes('https://github.com/ahmed5330/kunonline/releases/download/android-latest/Kun-Online-Mobile.apk'),'Direct v2 index must not expose the legacy GitHub APK URL');
 
