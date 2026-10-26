@@ -54,7 +54,7 @@ assert.ok(ui.includes("method:'DELETE'"),'Accounting UI must support deleting ma
 assert.ok(index.includes('data-view="accounting">الحسابات والحركات</button>'),'Accounting navigation must be present before the base router binds click handlers');
 assert.ok(index.includes('modules-v36-accounting.js?v=100.3'),'Accounting v100.3 module is not cache-busted in v2');
 assert.ok(index.includes('modules-v97-view-persistence-v976.js?v=97.6'),'View persistence v97.6 must use a versioned asset path so stale navigation/bootstrap state cannot win');
-assert.ok(index.includes('modules-v51-permission-navigation.js?v=51.16'),'Permission navigation v51.16 must be cache-busted for the accounting guard loader');
+assert.ok(index.includes('modules-v51-permission-navigation.js?v=51.17'),'Permission navigation v51.17 must be cache-busted for the accounting guard loader');
 assert.ok(index.includes('modules-v103-accounting-navigation-guard.js?v=103.1'),'Accounting deterministic navigation guard must be directly loaded by v2');
 for(const marker of ['/api/accounting/monthly','/api/accounting/overview','صافي الربح المحاسبي / الخسارة','إيرادات أخرى مسجلة يدويًا','kun:accounting-changed','operatingNet+otherIncome'])assert.ok(financeSync.includes(marker),`Finance accounting sync missing ${marker}`);
 assert.ok(loader.includes('/v2/modules-v101-finance-accounting-sync.js?v=101.1'),'Finance accounting sync asset is not runtime-loaded');
@@ -64,10 +64,10 @@ assert.ok(!guard.includes('Do not stop propagation'),'Accounting route must not 
 assert.ok(guard.includes("version:'103.1'"),'Accounting navigation guard must expose v103.1');
 assert.ok(permissionLoader.includes("accounting:['finance.read']"),'Accounting route must remain permission-gated by finance.read');
 assert.ok(permissionLoader.includes('/v2/modules-v103-accounting-navigation-guard.js?v=103.1'),'Permission bootstrap must load the deterministic accounting guard');
-assert.ok(permissionLoader.includes("version:'51.16'"),'Permission navigation cache version must match v51.16');
-assert.ok(permissionLoader.includes('/v2/modules-v94-ecommerce-calculator.js?v=96.2'),'Permission navigation must load Arabic ecommerce calculator v96.2');
+assert.ok(permissionLoader.includes("version:'51.17'"),'Permission navigation cache version must match v51.17');
+assert.ok(permissionLoader.includes('/v2/modules-v94-ecommerce-calculator.js?v=96.3'),'Permission navigation must load Arabic ecommerce calculator v96.3');
 for(const marker of ['حاسبة ربحية التجارة الإلكترونية','إجمالي الطلبات','الإنفاق الإعلاني','صافي الربح المستهدف','FIELD_HELP','data-kun96-help','kun96-tooltip','علامة']){if(marker==='علامة')continue;assert.ok(calculator.includes(marker),`Arabic ecommerce calculator missing ${marker}`);}
-assert.ok(calculator.includes("version:'96.2'"),'Ecommerce calculator must expose v96.2');
+assert.ok(calculator.includes("version:'96.3'"),'Ecommerce calculator must expose v96.3');
 for(const marker of ['kun96-overview','kun96-stepnav','data-kun96-jump','بيانات أساسية','الحفظ تلقائي','window.confirm'])assert.ok(calculator.includes(marker),`Calculator UX refresh missing ${marker}`);
 for(const marker of ['function routeNow(next)','button.dataset.kunDynamicRoute','button.onclick=()=>routeNow(\'ecommerce-calculator\')','beforeView=currentView()','sameRoot=Boolean(root&&root.innerHTML===beforeHtml)','if(now!==next||(beforeView!==next&&sameRoot))routeNow(next)','KunEcommerceCalculatorV94?.render?.()'])assert.ok(permissionLoader.includes(marker),`Deterministic delegated navigation missing ${marker}`);
 assert.ok(!service.includes('UPDATE order_management_fees SET rate_pct'),'Existing order fee rate must not be repriced when store rate changes');

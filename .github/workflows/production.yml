@@ -197,7 +197,7 @@ jobs:
           fetch_live "Isolated daisyUI demo" "https://app.kun-online.com/v2/design-preview/index.html?v=${nonce}" /tmp/kun-design-live-preview.html
           grep -Fq '/v2/kun-dashboard-polish-v150.css?v=150.0' /tmp/kun-design-live.html
           grep -Fq '/v2/kun-dashboard-brand-v150.js?v=150.0' /tmp/kun-design-live.html
-          grep -Fq '/v2/modules-v51-permission-navigation.js?v=51.16' /tmp/kun-design-live.html
+          grep -Fq '/v2/modules-v51-permission-navigation.js?v=51.17' /tmp/kun-design-live.html
           grep -Fq '/v2/modules-v127-subscriptions.js?v=127.22' /tmp/kun-design-live.html
           fetch_live "V51 platform-admin role guard" "https://app.kun-online.com/v2/modules-v51-permission-navigation.js?v=${nonce}" /tmp/kun-permissions-live.js
           grep -Fq "if(view==='subscriptions')return data.role==='admin'" /tmp/kun-permissions-live.js
@@ -313,7 +313,7 @@ jobs:
             routing="$(curl -fsS -H 'Cache-Control: no-cache' "https://app.kun-online.com/v2/modules-v116-print-routing.js?v=116.1&deploy=${nonce}" 2>/dev/null || true)"
             units="$(curl -fsS -H 'Cache-Control: no-cache' "https://app.kun-online.com/v2/modules-v128-unit-tracking.js?v=128.4&deploy=${nonce}" 2>/dev/null || true)"
             if [ -n "$page" ] \
-              && grep -Fq '/v2/modules-v51-permission-navigation.js?v=51.16' <<< "$page" \
+              && grep -Fq '/v2/modules-v51-permission-navigation.js?v=51.17' <<< "$page" \
               && grep -Fq '/v2/modules-v78-jt-shipping-order.js?v=78.5' <<< "$page" \
               && grep -Fq '/v2/modules-v79-printing.js?v=79.10' <<< "$page" \
               && grep -Fq '/v2/modules-v116-print-routing.js?v=116.1' <<< "$page" \
