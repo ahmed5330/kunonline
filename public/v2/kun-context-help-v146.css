@@ -1,0 +1,34 @@
+/* Kun Online v146 contextual explainer — accessible, RTL, light and dark. */
+.kun146-help{display:inline-grid;place-items:center;vertical-align:middle;flex:0 0 auto;width:24px;height:24px;min-width:24px;min-height:24px;margin-inline-start:7px;border-radius:50%;border:1px solid #c6d8ee;background:#eaf4ff;color:#114b83;font:900 15px/1 Tajawal,Cairo,sans-serif;cursor:pointer;touch-action:manipulation;transition:border-color .12s,background .12s;position:relative;z-index:1}
+.kun146-help:hover,.kun146-help[aria-expanded="true"]{background:#d7eaff;border-color:#408ad1;color:#083d70}
+.kun146-help:focus-visible{outline:3px solid #3b82f6;outline-offset:2px}
+.kun146-help-in-heading{margin-inline-start:9px}
+.kun146-help-in-table{width:22px;height:22px;min-width:22px;min-height:22px;font-size:13px;margin-inline-start:4px}
+.kun146-help-after-control{margin-inline-start:5px}
+.kun146-help-portal{position:fixed;inset:0;z-index:20050;pointer-events:none;direction:rtl;font-family:Cairo,Tajawal,system-ui,sans-serif}
+.kun146-help-card{position:fixed;width:min(400px,calc(100vw - 24px));max-height:min(70dvh,620px);overflow:auto;padding:17px 17px 15px;box-sizing:border-box;border:1px solid #d5e3f0;border-radius:17px;background:#fff;color:#152b42;box-shadow:0 18px 55px rgba(5,22,45,.20);pointer-events:auto;text-align:right;overscroll-behavior:contain}
+.kun146-help-header{display:flex;gap:12px;align-items:start;justify-content:space-between;padding-bottom:11px;border-bottom:1px solid #e7edf4}
+.kun146-help-header h2{font-size:15px;line-height:1.65;color:#143b60;margin:0;font-weight:900;overflow-wrap:anywhere}
+.kun146-help-close{border:1px solid #d7e2ec;border-radius:10px;flex:0 0 36px;width:36px;height:36px;display:grid;place-items:center;cursor:pointer;background:#f2f6fa;color:#344f68;font:900 19px sans-serif}
+.kun146-help-block{padding-top:11px}
+.kun146-help-block b{display:block;color:#126b94;font-weight:900;font-size:11px;margin-bottom:3px}
+.kun146-help-block p{font-size:12px;line-height:1.85;color:#283f58;margin:0;white-space:pre-wrap;overflow-wrap:anywhere}
+.kun146-help-close:focus-visible{outline:3px solid #60a5fa;outline-offset:1px}
+.kun146-help-backdrop{display:none}
+#root th .kun146-help,#root .metric .kun146-help,#root .brief-card .kun146-help,#root .dash-f126-card .kun146-help{float:none}
+#root .dash-kpi-label>.kun146-help,#root .dash-f126-copy>span>.kun146-help{margin-inline-start:5px}
+@media(max-width:820px){
+ .kun146-help-portal{z-index:20050}
+ .kun146-help-backdrop{display:block;position:fixed;inset:0;background:rgba(9,25,45,.46);pointer-events:auto}
+ .kun146-help-card{inset:auto 0 0!important;left:0!important;right:0!important;top:auto!important;transform:none!important;width:100%;max-height:min(72dvh,620px);border-radius:20px 20px 0 0;padding:19px 17px calc(18px + env(safe-area-inset-bottom))}
+ .kun146-help{width:26px;height:26px;min-width:26px;min-height:26px;font-size:14px}
+ .kun146-help-in-table{width:23px;height:23px;min-width:23px;min-height:23px}
+}
+body[data-theme="dark"] .kun146-help,body[data-theme="gray"] .kun146-help{color:#d4e9ff;background:#1b3b59;border-color:#49749c}
+body[data-theme="dark"] .kun146-help-card{background:#19293f;border-color:#3b516c;color:#f1f7ff;box-shadow:0 18px 55px #0009}
+body[data-theme="dark"] .kun146-help-header{border-color:#354b63}
+body[data-theme="dark"] .kun146-help-header h2{color:#f1f7ff}
+body[data-theme="dark"] .kun146-help-block b{color:#7ac9fb}
+body[data-theme="dark"] .kun146-help-block p{color:#d5e3f2}
+body[data-theme="dark"] .kun146-help-close{background:#263b53;border-color:#425b77;color:#e9f4ff}
+@media(prefers-reduced-motion:reduce){.kun146-help{transition:none}}

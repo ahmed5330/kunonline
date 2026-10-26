@@ -4,12 +4,6 @@ on:
   push:
     branches: [develop/ux-system-upgrade]
   workflow_dispatch:
-    inputs:
-      apply_reviewed_migrations:
-        description: 'Apply the reviewed pending Preview D1 migration queue only after checking every pending migration'
-        required: false
-        type: boolean
-        default: false
 concurrency:
   group: kunonline-preview
   cancel-in-progress: true
@@ -17,6 +11,7 @@ permissions:
   contents: write
 jobs:
   test-build-deploy:
+    if: github.ref == 'refs/heads/develop/ux-system-upgrade'
     runs-on: ubuntu-latest
     timeout-minutes: 55
     environment:
@@ -49,6 +44,11 @@ jobs:
             echo "is_latest=false" >> "$GITHUB_OUTPUT"
             echo "Stale Preview run detected. Run=$GITHUB_SHA Latest=$latest. Preview mutation will be skipped."
           fi
+
+      - name: Prove inventory declarations already match the live schema without data reads
+        id: inventory_schema
+        if: steps.ownership.outputs.is_latest == 'true'
+        run: node scripts/existing-inventory-schema-check.mjs
 
       - name: Provision verified isolated QA with synthetic fixtures
         id: qa_provision
@@ -133,6 +133,10 @@ jobs:
         if: steps.qa_before_release.outcome == 'success'
         run: node scripts/verify-isolated-qa-gap-audit-rpc.mjs
 
+      - name: Verify isolated growth wallet capability handshake
+        id: qa_growth_release
+        run: node scripts/production-preview-release-gate.mjs --isolated-qa "$KUN_PREVIEW_QA_BASE_URL"
+
       - name: Prove two native five-minute Cron executions on isolated QA
         id: qa_native_cron
         if: steps.qa_before_release.outcome == 'success' && steps.qa_rpc_audit.outcome == 'success'
@@ -155,9 +159,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # No automatic push may add schema migrations. A manually approved
-          # workflow_dispatch with apply_reviewed_migrations=true is handled
-          # separately below, but must still pass the read-only inventory.
+          # This release never applies schema migrations, including manual dispatch.
+          # Serialized inventory activation remains deferred pending reconciliation.
           git fetch --no-tags --deepen=2 origin develop/ux-system-upgrade
           if [ "${{ github.event_name }}" = "push" ] && git diff --name-only "HEAD^" HEAD | grep -E '^(migrations/|sandbox/migrations/)'; then
             echo 'BLOCK: an Easy Orders code-only release cannot include database migrations'
@@ -171,11 +174,17 @@ jobs:
           grep -Eiq 'bookmark' /tmp/kun-easyorders-time-travel-check.txt
           echo 'PASS: protected GET-only Workers/Cron binding and D1 recovery-point preflight.'
 
-      - name: Apply preview migrations only with explicit schema approval
-        # Ordinary UI/Worker pushes must never apply unrelated pending migrations.
-        # This boolean is intentionally false for all automatic push deployments.
-        if: steps.ownership.outputs.is_latest == 'true' && github.event_name == 'workflow_dispatch' && inputs.apply_reviewed_migrations == true
-        run: npm run db:migrate:preview
+      - name: Reject live wallet settlement anomalies before modifying shared D1
+        if: steps.ownership.outputs.is_latest == 'true'
+        run: node scripts/preview-wallet-finance-invariants.mjs
+
+      - name: Prove serialized inventory activation is excluded from this release
+        if: steps.ownership.outputs.is_latest == 'true'
+        run: node scripts/preview-inventory-deferral-proof.mjs
+
+      - name: Prove required release schema before customer Worker deployment
+        if: steps.ownership.outputs.is_latest == 'true'
+        run: node scripts/preview-release-schema-contract.mjs
 
       - name: Reconfirm latest branch HEAD before deploy
         id: deploy_ownership
@@ -292,10 +301,17 @@ jobs:
         run: |
           npm run smoke:preview
 
+      - name: Verify canonical growth wallet capability handshake
+        id: growth_release
+        if: steps.worker_ownership.outputs.is_current == 'true'
+        continue-on-error: true
+        run: node scripts/production-preview-release-gate.mjs
+
       - name: Require every Preview validation gate to succeed
         id: qa_summary
         if: always() && steps.worker_ownership.outputs.is_current == 'true'
         env:
+          GROWTH_RELEASE_OUTCOME: ${{ steps.growth_release.outcome }}
           SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
           STORE_B_OUTCOME: ${{ steps.live.outcome }}
           TEAM_OUTCOME: ${{ steps.team_live.outcome }}
@@ -307,7 +323,7 @@ jobs:
         run: |
           set -euo pipefail
           failed=0
-          for gate in SMOKE_OUTCOME COMPETITOR_AI_OUTCOME STORE_B_OUTCOME TEAM_OUTCOME CUSTOMER_SERVICE_OUTCOME EASYORDERS_OUTCOME DASHBOARD_OUTCOME BROWSER_OUTCOME; do
+          for gate in GROWTH_RELEASE_OUTCOME SMOKE_OUTCOME COMPETITOR_AI_OUTCOME STORE_B_OUTCOME TEAM_OUTCOME CUSTOMER_SERVICE_OUTCOME EASYORDERS_OUTCOME DASHBOARD_OUTCOME BROWSER_OUTCOME; do
             outcome="${!gate:-missing}"
             echo "$gate=$outcome"
             if [ "$outcome" != "success" ]; then failed=1; fi

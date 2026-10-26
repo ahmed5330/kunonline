@@ -60,9 +60,9 @@
   }
   function rateCard(r){if(!r)return '';return `<div class="dash-rate-card dash-rate-selected"><div class="dash-rate-title"><span>${esc(labelFor(selected))}</span><small>${esc(r.from)} — ${esc(r.to)}</small></div><div class="dash-rate-main"><div><span>متوسط نسبة التأكيد</span><strong>${pct(r.confirmationRate)}</strong><small>${num(r.confirmed)} من ${num(r.total)} طلب</small></div><div><span>متوسط نسبة التسليم</span><strong>${pct(r.deliveryRate)}</strong><small>المُسلّم ÷ (المُسلّم + المرتجع)</small></div><div><span>نسبة المرتجع</span><strong>${pct(r.returnRate)}</strong><small>${num(r.returned)} مرتجع من نتائج الشحن</small></div></div><div class="dash-rate-foot">المرتجعات ÷ كل ما دخل مرحلة الشحن × 100 = <b>${pct(r.returnOfShippedRate)}</b></div></div>`;}
   function decorateRates(){
-    const section=document.querySelector('[data-dash-section="rates"]'),rate=lastData?.rates?.selected;if(!section||!rate)return;
+    const section=document.querySelector('[data-dash-section="rates"]'),local=window.KunDashboardV33?.sectionData?.('rates'),rate=local?.rates?.selected||lastData?.rates?.selected;if(!section||!rate)return;
     const p=section.querySelector('.dash-section-head p');if(p)p.textContent='نسب التأكيد والتسليم والمرتجعات محسوبة على نفس الفترة المختارة للداشبورد.';
-    const grid=section.querySelector('.dash-rate-grid');if(grid){grid.classList.add('dash-rate-grid-single');grid.innerHTML=rateCard(rate);}
+    const grid=section.querySelector('.dash-rate-grid');if(grid){grid.classList.add('dash-rate-grid-single');grid.innerHTML=rateCard(rate).replace(labelFor(selected),local?'فترة هذا القسم':labelFor(selected));}
   }
   function decorateAiTitle(){const span=document.querySelector('.dash-ai-analysis-head>div>span');if(span)span.textContent=`تحليل الإعلانات بالـAI — ${labelFor(selected)}`;}
   function decorate(){

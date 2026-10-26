@@ -3,6 +3,8 @@ import app,{SyncEntrypoint as BaseSyncEntrypoint} from './index-commerce-v38-bas
 import {handleClarityApi,syncClarityScheduled} from './clarity-integration.js';
 import {handleAIMarketing} from './ai-marketing-analyst.js';
 import {handleCompetitorIntelligence} from './competitor-intelligence.js';
+import {handleSubscriptionControl} from './subscription-control.js';
+import {reconcileMonthlySubscriptions} from './subscription-billing.js';
 import safety from './index-commerce-v38-safety.js';
 import core from './index-commerce-v38-core.js';
 import {requirePermission} from './access-control.js';
@@ -27,7 +29,13 @@ const V2_UI_SCRIPTS=[
   '<script src="/v2/modules-v117-collaboration-root.js?v=117.0" data-kun-collaboration-root="1"></script>',
   '<script src="/v2/modules-v117-collaboration.js?v=117.0" data-kun-collaboration="1"></script>',
   '<script src="/v2/modules-v117-collaboration-sidebar.js?v=117.3" data-kun-collaboration-sidebar="1"></script>',
-  '<script src="/v2/modules-v119-collaboration-order-link.js?v=119.0" data-kun-collaboration-order-link="1"></script>'
+  '<script src="/v2/modules-v119-collaboration-order-link.js?v=119.0" data-kun-collaboration-order-link="1"></script>',
+  '<script src="/v2/modules-v122-dashboard-experience.js?v=122.1" data-kun-dashboard-experience="1"></script>',
+  '<script src="/v2/modules-v123-dashboard-unified.js?v=123.0" data-kun-dashboard-unified="1"></script>',
+  '<script src="/v2/modules-v124-dashboard-periods-province.js?v=124.1" data-kun-dashboard-periods-v124="1"></script>',
+  '<script src="/v2/modules-v125-dashboard-section-periods.js?v=125.3" data-kun-dashboard-section-periods-v125="1"></script>',
+  '<script src="/v2/modules-v126-dashboard-finance-top.js?v=126.5" data-kun-dashboard-finance-top-v126="1"></script>',
+  '<script src="/v2/modules-v127-subscriptions.js?v=127.22" data-kun-subscriptions-v127="1"></script>'
 ];
 
 function redirectLegacyRoot(request){
@@ -105,7 +113,7 @@ async function injectV2Ui(request,response){
 // Report the actual outer Preview entrypoint rather than the inherited v36
 // compatibility route. A version string is a code signal, NOT proof that
 // the 5-minute Cron fired or that Easy Orders delivered any specific order.
-export const KUN_PREVIEW_ENTRYPOINT_BUILD='preview-v38-easyorders-runtime-attestation-2026-10-24';
+const KUN_PREVIEW_ENTRYPOINT_BUILD='preview-v38-easyorders-runtime-attestation-2026-10-24';
 function actualPreviewVersion(env){
   return new Response(JSON.stringify({
     ok:true,build:KUN_PREVIEW_ENTRYPOINT_BUILD,entrypoint:'index-commerce-v38.js',
@@ -116,14 +124,20 @@ function actualPreviewVersion(env){
     'Cache-Control':'no-store','X-Kun-Build':KUN_PREVIEW_ENTRYPOINT_BUILD
   }});
 }
+// Serialized inventory activation is deferred: existing allocation conflict requires reconciliation.
 void safety;
 void core;
 export default {
   async fetch(request,env,ctx){
+    if(request.method==='GET'&&new URL(request.url).pathname==='/api/preview/growth-release')return app.fetch(request,env,ctx);
     if(request.method==='GET'&&new URL(request.url).pathname==='/api/preview/version')
       return actualPreviewVersion(env);
     const rootRedirect=redirectLegacyRoot(request);
     if(rootRedirect)return rootRedirect;
+    // Enforce subscription and balance state before AI, Clarity or competitor add-ons.
+    // Auth/login and topup recovery exemptions are defined centrally in subscription-control.
+    const subscription=await handleSubscriptionControl({request,env,ctx,delegate:app});
+    if(subscription)return subscription;
     const competitors=await handleCompetitorIntelligence({request,env,ctx,delegate:app});
     if(competitors)return competitors;
     const aiMarketing=await handleAIMarketing({request,env,ctx,delegate:app});
@@ -151,7 +165,8 @@ export default {
     if(monthly)return monthly;
     const handled=await handleJtHistoryReconcile({request,env,ctx,delegate:app});
     if(handled)return handled;
-    return injectV2Ui(request,await app.fetch(request,env,ctx));
+    const baseResponse=await app.fetch(request,env,ctx);
+    return injectV2Ui(request,baseResponse);
   },
   scheduled(event,env,ctx){return app.scheduled?.(event,env,ctx);}
 };

@@ -22,6 +22,7 @@ const PREFIX_MAP=[
   ['/api/shipping','shipping'],
   ['/api/cod-reconciliation','cod'],
   ['/api/campaigns','campaigns'],
+  ['/api/growth','campaigns'],
   ['/api/marketing','marketing'],
   ['/api/finance','finance'],
   ['/api/profit-intelligence','profit'],

@@ -20,7 +20,7 @@ const [periodJs,periodCss,indexHtml,costSource]=await Promise.all([
 ]);
 for(const marker of ['اليوم','أمس','الأسبوع الماضي','من بداية الشهر','الشهر الماضي','مدة معينة','data-dash-period','dash-period-toolbar','dash-period-modal','last_week','month_to_date','last_month','weekStartsOn'])assert.ok(periodJs.includes(marker),`dashboard period control missing ${marker}`);
 for(const marker of ['.dash-period-select','.dash-period-toolbar','.dash-period-modal','.dash-rate-grid-single','@media(max-width:560px)'])assert.ok(periodCss.includes(marker),`dashboard period CSS missing ${marker}`);
-for(const marker of ['kun-v15.css?v=15.0','modules-v62-dashboard-periods.js?v=62.0'])assert.ok(indexHtml.includes(marker),`dashboard period asset missing from index: ${marker}`);
+for(const marker of ['kun-v15.css?v=15.0','modules-v62-dashboard-periods.js?v=62.1'])assert.ok(indexHtml.includes(marker),`dashboard period asset missing from index: ${marker}`);
 for(const marker of ['snapshot.rates={...(snapshot.rates||{}),selected:selectedRateSummary(orders,from,to)}','rates:\'selected-dashboard-range\'','confirmationRate','deliveryRate','returnRate'])assert.ok(costSource.includes(marker),`selected-period rates backend missing ${marker}`);
 assert.doesNotThrow(()=>new Function(periodJs),'dashboard period browser module must parse');
 

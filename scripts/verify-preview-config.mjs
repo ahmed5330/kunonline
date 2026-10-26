@@ -49,10 +49,11 @@ requireText(packageJson,'node scripts/verify-cloudflare-crons.mjs kunonline-prev
 requireText(packageJson,'node scripts/verify-cloudflare-crons.mjs kunonline-sync-preview','sync live Cron verification is missing.');
 requireText(workflow,'node scripts/browser-preview-breakdown-controls-test.mjs "$KUN_PREVIEW_QA_BASE_URL"','Breakdown interaction must remain mandatory on isolated QA.');
 requireText(packageJson,'wrangler d1 migrations apply kunonline-preview --remote --config wrangler.preview.toml','migration command must be pinned to Preview D1/config.');
-requireText(packageJson,'wrangler deploy --config wrangler.preview.toml','Preview deployment command is not pinned.');
+requireText(workflow,'wrangler deploy --config wrangler.preview.toml','Reviewed Preview workflow must pin the deploy target.');
+requireText(packageJson,'Preview deployment is production-backed. Use reviewed GitHub Preview CI/CD workflow','Direct Preview deploy must fail closed instead of bypassing shared D1 gates.');
 requireText(packageJson,'wrangler deploy --config wrangler.sync.preview.toml','sync Preview deployment command is not pinned.');
 requireText(packageJson,'wrangler rollback --config wrangler.preview.toml','manual rollback command is not pinned to Preview.');
-requirePattern(packageJson,/"wrangler"\s*:\s*"4\.125\.0"/,'Wrangler must stay pinned to 4.125.0.');
+requirePattern(packageJson,/"wrangler"\s*:\s*"4\.151\.0"/,'Wrangler must stay pinned to the security-reviewed 4.151.0 release.');
 for(const script of ['db:init','db:init-local','db:commerce','db:commerce-local'])requirePattern(packageJson,new RegExp(`"${script.replace(':','\\:')}"\\s*:\\s*"[^"]*--config wrangler\\.preview\\.toml`),`${script} must be pinned to Preview config.`);
 requirePattern(cronVerifier,/workers\/scripts\/\$\{encodeURIComponent\(worker\)\}\/schedules/,'Cron verifier must query live Worker schedules.');
 requireText(cronVerifier,'CLOUDFLARE_API_TOKEN','Cron verifier must authenticate against Cloudflare.');
@@ -69,7 +70,8 @@ for(const [label,pattern] of [
 requirePattern(workflow,/environment:\s*\n\s*name:\s*preview\b/m,'workflow must use the preview GitHub Environment.');
 requirePattern(workflow,/permissions:\s*\n\s*contents:\s*write\b/m,'workflow needs contents:write to maintain preview-stable after full validation.');
 requireText(workflow,'git ls-remote origin refs/heads/develop/ux-system-upgrade','latest-HEAD ownership guard is missing.');
-requireText(workflow,'npm run db:migrate:preview','Preview migration gate is missing.');
+requireText(workflow,'node scripts/preview-inventory-deferral-proof.mjs','Exact baseline inventory deferral proof is missing.');
+forbidPattern(workflow,/npm run db:migrate:preview|wrangler d1 migrations apply/,'This deferred release must never apply migrations.');
 requireText(workflow,"if: steps.ownership.outputs.is_latest == 'true'",'Preview mutations must be gated by latest branch ownership.');
 requireText(workflow,'id: deploy_ownership','deploy ownership recheck is missing.');
 

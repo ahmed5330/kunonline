@@ -36,7 +36,7 @@
 (function(){
   if(document.querySelector('script[data-kun-finance-accounting-sync="v101"]'))return;
   const script=document.createElement('script');
-  script.src='/v2/modules-v101-finance-accounting-sync.js?v=101.0';
+  script.src='/v2/modules-v101-finance-accounting-sync.js?v=101.1';
   script.dataset.kunFinanceAccountingSync='v101';
   document.head.appendChild(script);
 })();

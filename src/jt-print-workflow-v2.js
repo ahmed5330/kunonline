@@ -1,3 +1,4 @@
+import {cancelJtShipment} from './jt-express-eg-cancel.js';
 import {requirePermission} from './access-control.js';
 import {listMyStores} from './store-scope.js';
 import {readConnectionSecrets} from './integration-provider-validation.js';
@@ -134,3 +135,12 @@ export async function handleJtPrintWorkflowV2({request,env,ctx,delegate,me}){
   const shipment=url.pathname.match(/^\/api\/jt\/shipments\/([^/]+)$/);if(shipment&&method==='POST')return queueForPrint(request,env,ctx,delegate,me,decodeURIComponent(shipment[1]));
   return null;
 }
+
+
+// Shared canonical J&T carrier operations for serialized warehouse shipments.
+export const jtWarehouseCarrier={
+ async cancel(env,clientId,txlogisticId,reason){const {secrets}=await connectionFor(env,clientId);return cancelJtShipment({txlogisticId,reason,secrets});},
+ async prepare(env,clientId,order,body){const {secrets,cred}=await connectionFor(env,clientId);const shipment=buildShipment(order,body);buildJtCreatePayload(shipment,secrets,{requireBusiness:true});return minimalShipment(shipment,cred);},
+ async create(env,clientId,shipment){const {secrets}=await connectionFor(env,clientId);return createJtShipment({shipment,secrets});},
+ async print(env,clientId,awb){const {secrets,cred}=await connectionFor(env,clientId),payload=__jtApiInternals.withEnterprise({billCode:awb,printSize:'2',printCode:1},cred.fields),r=await __jtApiInternals.signedPost(PRINT_ORDER_PATH,payload,secrets,{fetcher:fetch});if(!__jtApiInternals.success(r))throw Object.assign(new Error('J&T رفضت طباعة البوليصة الرسمية'),{status:502,code:'JT_PRINT_REJECTED'});const url=findPrintUrl(r.data);if(!url)throw Object.assign(new Error('J&T لم ترجع رابط البوليصة بعد؛ أعد المحاولة بنفس الشحنة'),{status:502,code:'JT_PRINT_URL_MISSING'});return {url,official:true};}
+};

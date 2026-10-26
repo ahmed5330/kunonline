@@ -1,5 +1,10 @@
 import assert from 'node:assert/strict';
-import preview,{KUN_PREVIEW_ENTRYPOINT_BUILD} from '../src/index-commerce-v38.js';
+import * as entrypoint from '../src/index-commerce-v38.js';
+import {readFileSync} from 'node:fs';
+const preview=entrypoint.default;
+const source=readFileSync(new URL('../src/index-commerce-v38.js',import.meta.url),'utf8');
+const KUN_PREVIEW_ENTRYPOINT_BUILD=source.match(/const\s+KUN_PREVIEW_ENTRYPOINT_BUILD\s*=\s*'([^']+)'/)[1];
+for(const [name,value] of Object.entries(entrypoint))assert.ok(typeof value==='function'||(name==='default'&&typeof value?.fetch==='function'),'Worker exports must be executable entrypoints');
 import scheduler from '../src/sync-scheduler-preview.js';
 
 let reads=0,writes=0,providerCalls=0;

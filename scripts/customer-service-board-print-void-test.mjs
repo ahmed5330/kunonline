@@ -1,0 +1,41 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import {execFileSync} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
+const read=path=>fs.readFileSync(new URL('../'+path,import.meta.url),'utf8');
+const check=path=>execFileSync(process.execPath,['--check',fileURLToPath(new URL('../'+path,import.meta.url))],{stdio:'pipe'});
+const html=read('public/v2/index.html'),cs=read('public/v2/modules-v31-customer-service.js'),
+dates=read('public/v2/modules-v109-operational-date-contact.js'),board=read('public/v2/modules-v155-customer-service-board.js'),
+print=read('public/v2/modules-v79-printing.js'),api=read('src/jt-print-workflow-v2.js'),
+queue=read('src/production-printing-queue.js'),gateway=read('src/index-production-mobile-update.js');
+for(const p of ['public/v2/modules-v31-customer-service.js','public/v2/modules-v79-printing.js','public/v2/modules-v155-customer-service-board.js','src/jt-print-workflow-v2.js','src/production-printing-queue.js','src/index-production-mobile-update.js'])check(p);
+assert.match(html,/modules-v109-operational-date-contact\.js\?v=109\.4/,'Production loads period component');
+assert.match(html,/modules-v105-customer-service-claim\.js\?v=105\.4/,'Production loads live calling column');
+assert.match(html,/modules-v155-customer-service-board\.js\?v=155\.0/,'Production loads board');
+assert.match(html,/kun-cs-board-v155\.css\?v=155\.(0|1|2)/,'Production loads CSS');
+assert.match(cs,/boardUrl\.searchParams\.set\('periodFrom',range\.from\)/,'Board sends selected from date');
+assert.match(cs,/boardUrl\.searchParams\.set\('periodTo',range\.to\)/,'Board sends selected to date');
+assert.match(dates,/periodFrom/,'Dates are parsed from selected period');
+assert.match(cs,/data-cs-order-date=/,'Order date explicit on card');
+assert.match(cs,/cs-board-updating/,'Old rows remain visible until filter returns');
+assert.match(cs,/data-cs-order="/,'Order card retained');
+assert.match(board,/dragstart/);
+assert.match(board,/dragover/);
+assert.match(board,/drop/);
+assert.match(board,/touchstart/);
+assert.match(board,/dispatchEvent\(new Event\('change'/,'Board uses existing validated state transition');
+assert.match(board,/next==='confirmed'/,'Stock confirmation workflow preserved');
+assert.match(board,/next==='shipped'/,'No bypass of J&T printing');
+assert.match(board,/next==='no_answer'/,'No answer requires contact attempt');
+assert.match(api,/function voidWaybill\(/,'Waybill endpoint exists');
+assert.match(api,/await jtWarehouseCarrier\.cancel\(/,'Carrier cancellation precedes local deletion');
+assert.match(api,/jt_print_voided/,'Event journal stores void');
+assert.match(api,/previousAwb/,'Original waybill kept in history');
+assert.match(api,/COALESCE\(awb,''\)=\? AND state=\?/,'No stale-state overwrite');
+assert.match(print,/data-print79-void/,'Printing button exists');
+assert.match(print,/askVoidReason/,'Reason is required');
+assert.match(queue,/length\(trim\(COALESCE\(o\.awb,''\)\)\)>0/,'Voided airway bill disappears from printed tab');
+assert.match(queue,/activeHistory/,'Old labels and queues ignored after void');
+assert.match(gateway,/handleJtPrintWorkflowV2/,'Production routes waybill void');
+assert.match(queue,/STORE_ISOLATION/,'Tenant/store isolation preserved');
+console.log('PASS: selected server periods, 6-column UI, drag and drop, protected audited J&T void, code parses');

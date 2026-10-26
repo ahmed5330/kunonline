@@ -23,7 +23,7 @@ assert.ok(index.includes('/v2/performance-core-v52.js'), 'shared performance cor
 assert.ok(index.indexOf('/v2/performance-core-v52.js')<index.indexOf('/v2/modules-v4.js'), 'performance core must load before feature modules');
 assert.equal(index.includes('/v2/modules-v45-post-shipping.js'),false,'superseded v45 post-shipping bundle must not load');
 assert.ok(index.includes('/v2/modules-v55-customer-search-fifo.js?v=55.3'),'name/phone customer-search bundle must be cache-busted');
-assert.ok(index.includes('/v2/modules-v57-section-reload.js?v=57.1'),'per-section reload bundle must be loaded');
+assert.ok(index.includes('/v2/modules-v57-section-reload.js?v=57.3'),'per-section reload bundle must be loaded');
 assert.ok(index.includes('/v2/modules-v58-confirm-inventory.js?v=58.1'),'no-reload inventory confirmation bundle must be loaded');
 assert.ok(index.indexOf('/v2/modules-v57-section-reload.js')>index.indexOf('/v2/modules-v56-returns-exchanges.js'),'section reload must load after the feature-specific workspace renderers');
 assert.ok(index.indexOf('/v2/modules-v58-confirm-inventory.js')>index.indexOf('/v2/modules-v57-section-reload.js'),'confirmation capture must load after the base operational UI');
@@ -40,7 +40,7 @@ assert.ok(rich.includes('if(!active()||scanQueued)return'),'customer-service sca
 assert.equal(ads.includes('if(data.connected&&noGranular'),false,'Meta granular sync must never start automatically from a dashboard read');
 assert.ok(ads.includes('KunPerformanceCore?.idle'),'advanced ads analysis should be deferred until the page is idle');
 
-for(const marker of ['data-kun-section-reload','تحديث بيانات هذا القسم فقط','reloadCurrentSection','KunDashboardV33','KunVariantInventoryV46','KunCustomerServiceV31','KunPostShippingV47','KunReturnsExchangesV56','KunProductCatalogV43','kun:section-reloaded','register:(view,handler)','kun-section-reload-head','kunReloadFallbackHead','root.prepend(fallback)','version:\'57.1\''])assert.ok(sectionReload.includes(marker),`section reload missing ${marker}`);
+for(const marker of ['data-kun-section-reload','تحديث بيانات هذا القسم فقط','reloadCurrentSection','KunDashboardV33','KunVariantInventoryV46','KunCustomerServiceV31','KunPostShippingV47','KunReturnsExchangesV56','KunProductCatalogV43','kun:section-reloaded','register:(view,handler)','kun-section-reload-head','kunReloadFallbackHead','root.prepend(fallback)','version:\'57.3\''])assert.ok(sectionReload.includes(marker),`section reload missing ${marker}`);
 assert.ok(sectionReload.includes("observer.observe(root,{childList:true,subtree:false})"),'section reload observer must watch root children only');
 assert.equal(sectionReload.includes('location.reload'),false,'section reload must never refresh the whole browser page');
 assert.doesNotThrow(()=>new Function(sectionReload),'section reload browser module must parse');
@@ -57,21 +57,21 @@ assert.ok(confirmInventory.includes("observe(root,{childList:true,subtree:false}
 assert.doesNotThrow(()=>new Function(confirmInventory),'inventory confirmation browser module must parse');
 
 assert.doesNotThrow(()=>new Function(ecommerceCalculator),'e-commerce calculator browser module must parse');
-for(const marker of ['totalOrders','cancelledOrders','shippedOrders','rtoOrders','deliveredOrders','returnedOrders','realizedRevenue','contributionProfit','netProfit','netBreakEvenCPA','realizedBreakEvenROAS','impactAnalysis','Scenario Planner','Stress Test','تحميل مثال 1000 Order'])assert.ok(ecommerceCalculator.includes(marker),`profitability calculator missing ${marker}`);
+for(const marker of ['totalOrders','cancelledOrders','shippedOrders','rtoOrders','deliveredOrders','returnedOrders','realizedRevenue','contributionProfit','netProfit','netBreakEvenCPA','realizedBreakEvenROAS','impactAnalysis','سيناريو النمو','stressRtoRate','تحميل مثال'])assert.ok(ecommerceCalculator.includes(marker),`profitability calculator missing ${marker}`);
 assert.equal(ecommerceCalculator.includes("['returnRate'"),false,'post-delivery return rate must be derived from actual return counts, not duplicated as a rate input');
 assert.equal(ecommerceCalculator.includes("['cpp'"),false,'CPA must be derived from Ad Spend / Total Orders instead of duplicated as a manual input');
 assert.ok(ecommerceCalculator.includes('const returnRate=safeDiv(returned,delivered)*100'),'post-delivery return rate must be derived from actual counts');
 assert.ok(ecommerceCalculator.includes('const currentCPA=safeDiv(d.adSpend,total)'),'current CPA must come from actual ad spend and total orders');
 assert.ok(ecommerceCalculator.includes('const netBreakEvenAdSpend=Math.max(0,contributionBeforeAds-fixedCosts)'),'net break-even ad spend must include fixed costs');
-assert.ok(ecommerceCalculator.includes("version:'96.0'"),'calculator must expose v96');
-assert.ok(permissions.includes('/v2/modules-v94-ecommerce-calculator.js?v=96.0'),'calculator bundle must be cache-busted for v96');
+assert.ok(ecommerceCalculator.includes("version:'96.2'"),'calculator must expose Arabic v96.2');
+assert.ok(permissions.includes('/v2/modules-v94-ecommerce-calculator.js?v=96.2'),'calculator bundle must be cache-busted for v96.2');
 
 assert.doesNotThrow(()=>new Function(financeCommandCenter),'finance command center browser module must parse');
 for(const endpoint of ['/api/dashboard','/api/accounting/overview','/api/accounting/entries','/api/accounting/collected-profit','/api/cod-reconciliation/candidates','/api/cod-reconciliation'])assert.ok(financeCommandCenter.includes(endpoint),`finance command center missing real source ${endpoint}`);
 assert.equal(financeCommandCenter.includes("v4Api('/api/finance"),false,'finance command center must not use legacy placeholder finance endpoint');
 assert.ok(financeCommandCenter.includes('المحصل فعليًا لا يُستخدم بدل إيراد المبيعات'),'finance must keep collection cash separate from P&L revenue');
 assert.ok(financeCommandCenter.includes('سلامة واكتمال الأرقام'),'finance must expose data-completeness health instead of silently treating missing costs as correct zeros');
-assert.ok(permissions.includes('/v2/modules-v96-finance-command-center.js?v=96.0'),'permission bootstrap must load the finance command center');
+assert.ok(permissions.includes('/v2/modules-v96-finance-command-center.js?v=96.2'),'permission bootstrap must load the finance command center');
 assert.ok(permissions.includes("accounting:['finance.read']"),'accounting child route must follow finance read permission');
 
 const dashboardStart=v35.indexOf('async function dashboard');
