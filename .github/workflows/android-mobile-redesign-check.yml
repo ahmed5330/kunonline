@@ -4,6 +4,12 @@ on:
   pull_request:
     paths:
       - 'android/**'
+      - 'src/index-production-mobile-update.js'
+      - 'src/production-customer-service.js'
+      - 'public/v2/modules-v79-printing.js'
+      - 'public/v2/modules-v155-customer-service-board.js'
+      - 'public/v2/modules-v54-order-workflow-controls.js'
+      - 'scripts/confirmed-shipping-handoff-contract-test.mjs'
       - '.github/workflows/android-mobile-redesign-check.yml'
   workflow_dispatch:
 
@@ -25,6 +31,8 @@ jobs:
           gradle-version: '8.9'
       - name: Check exact official Android launcher icon
         run: node scripts/android-launcher-icon-test.mjs
+      - name: Confirmed-to-shipping J&T contract and mock API regression (no live calls)
+        run: node scripts/confirmed-shipping-handoff-contract-test.mjs
       - name: Customer service J&T Android UI regression
         run: |
           node scripts/android-customer-service-jnt-ux-test.mjs
