@@ -743,5 +743,13 @@ try{
   await update('CON-TAIL',current=>({...current,webhookLastShortId:1701,easyOrdersRecoveryHighestShortId:1701}));
   assert.equal((await easyOrdersRecoveryStatus(env,{connectionId:'CON-TAIL'})).status,'catching_up','A newly known higher order immediately exposes backlog');
   assert.equal((await tailRun()).status,'error','A400 inside the known backlog is never deferred');
+  const availableTail=await reconcileEasyOrdersOrders(env,{connectionId:'CON-TAIL',maxRequests:1,
+    fetcher:async url=>{
+      assert.ok(url.endsWith('/1701'),'When available, fetch the same formerly unconfirmed number');
+      return Response.json({...p,id:'TAIL-NEW-1701',short_id:1701,store_id:'EO-TAIL'});
+    }});
+  assert.equal(availableTail.recovered,1);
+  assert.equal(config('CON-TAIL').easyOrdersRecoveryCursor,1702);
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM orders WHERE store_id='STORE-TAIL'").get().n,1,'The formerly deferred order is imported exactly once');
   console.log('Easy Orders SQLite sync PASS: concurrent webhook/cron CAS, monotonic high-water, exact Short ID identity, bounded bootstrap failures, tenant+store isolation, idempotent retries.');
 }finally{db.close();}
