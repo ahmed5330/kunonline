@@ -165,6 +165,10 @@ jobs:
           test "$QA_RPC" = success
           test "$QA_CRON" = success
 
+      - name: Require Production to understand unconfirmed provider order state
+        if: steps.ownership.outputs.is_latest == 'true'
+        run: node scripts/easyorders-provider-waiting-release-gate.mjs
+
       - name: Gate every Preview release on read-only live Worker and D1 checks
         # Every develop push publishes the full Worker, including prior Easy Orders
         # changes. A subsequent QA-only commit MUST NOT bypass release inventory.

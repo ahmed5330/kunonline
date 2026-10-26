@@ -1,15 +1,16 @@
 /* Easy Orders resilient gap recovery UI — health/progress v49.2 */
 (function(){
   const K=window.KunActionsV23;if(!K)return;
-  const labels={healthy:'مكتمل وسليم',catching_up:'جاري الاستكمال',rate_limited:'حد Easy Orders مؤقتًا',waiting_for_short_id:'بانتظار نقطة بداية',error:'خطأ في المزامنة'};
+  const labels={healthy:'مكتمل وسليم',catching_up:'جاري الاستكمال',rate_limited:'حد Easy Orders مؤقتًا',waiting_for_short_id:'بانتظار نقطة بداية',waiting_for_provider_order:'بانتظار تأكيد رقم الطلب التالي',error:'خطأ في المزامنة'};
   const label=s=>labels[s]||'غير معروف';
-  const statusTone=s=>s==='healthy'?'success':s==='catching_up'||s==='waiting_for_short_id'?'info':'warn';
+  const statusTone=s=>s==='healthy'?'success':['catching_up','waiting_for_short_id','waiting_for_provider_order'].includes(s)?'info':'warn';
   function summary(result){
     const rows=(result.results||[]).map(x=>`<tr><td>${K.esc(x.connectionId||'—')}</td><td>${K.esc(String(x.recovered||0))}</td><td>${K.esc(String(x.updated||0))}</td><td>${K.esc(String(x.requests||0))}</td><td>${K.esc(String(x.estimatedRemaining||0))}</td><td>${K.esc(label(x.status|| (x.error?'error':x.rateLimited?'rate_limited':'healthy')))}</td></tr>`).join('');
     const remaining=Number(result.estimatedRemaining||0),total=Number(result.recoveredTotal||0),state=result.status||(result.rateLimited?'rate_limited':'healthy');
     let note='المزامنة التلقائية تعمل كل 5 دقائق وتفحص أي فجوات جديدة بدون إنشاء أوردرات مكررة.';
     if(state==='catching_up')note=`ما زال هناك نحو ${remaining} رقم طلب داخل نطاق الفحص الحالي. النظام سيكمل تلقائيًا كل 5 دقائق، ويمكنك الضغط على «استكمال الآن» لتشغيل دفعة إضافية.`;
     else if(state==='waiting_for_short_id')note='لم يتم تحديد نقطة بداية بعد. بمجرد وصول Webhook يحمل Short ID سيبدأ الاسترجاع التلقائي.';
+    else if(state==='waiting_for_provider_order')note='نجحت قراءة آخر طلب معروف، لكن Easy Orders لم يؤكد رقم الطلب التالي بعد. سيُعاد فحص الرقم نفسه دون تخطيه. هذه الحالة لا تعني اكتمال مراجعة الطلبات التاريخية.';
     else if(state==='rate_limited')note='Easy Orders أوقف الطلبات مؤقتًا بسبب حد الـAPI. الـCron سيحاول مرة أخرى تلقائيًا في التشغيل التالي.';
     else if(state==='error')note='يوجد خطأ في أحد روابط Easy Orders. راجع تفاصيل الحالة أدناه ثم أعد الفحص.';
     return `<div class="card"><div class="title" style="font-size:18px">إصلاح مزامنة Easy Orders</div><div class="grid kpis four mt"><div class="card"><div class="k-label">مسترجع في هذه الدفعة</div><div class="k-val">${K.esc(String(result.recovered||0))}</div></div><div class="card"><div class="k-label">إجمالي المسترجع تلقائيًا</div><div class="k-val">${K.esc(String(total))}</div></div><div class="card"><div class="k-label">المتبقي التقديري للفحص</div><div class="k-val">${K.esc(String(remaining))}</div></div><div class="card"><div class="k-label">حالة المزامنة</div><div class="k-val" style="font-size:16px">${K.esc(label(state))}</div></div></div><div class="insight ${statusTone(state)} mt"><strong>${K.esc(label(state))}</strong><div class="meta">${K.esc(note)}</div></div>${rows?`<div class="table-wrap mt"><table><thead><tr><th>Connection</th><th>مسترجع</th><th>محدّث</th><th>API</th><th>متبقي تقديري</th><th>الحالة</th></tr></thead><tbody>${rows}</tbody></table></div>`:''}<div class="toolbar mt"><button class="btn primary" id="runEasyOrdersRecoveryAgain">${state==='catching_up'?'استكمال الآن':'فحص مرة أخرى'}</button><button class="btn soft" id="closeEasyOrdersRecovery">العودة للطلبات</button></div></div>`;

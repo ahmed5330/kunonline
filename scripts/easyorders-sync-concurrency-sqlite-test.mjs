@@ -697,5 +697,51 @@ try{
   assert.equal(bootstrapFailure.requests,1);
   assert.equal(bootstrapFailure.checkedConnections,1);
   assert.equal(bootstrapFailure.uncheckedConnections,1);
+  // An unconfirmed next number is distinct from a failed known-backlog read.
+  // It must stay retryable and must never count as absent, recovered or healthy.
+  db.prepare('INSERT INTO stores VALUES (?,?,?,?,?)').run('STORE-TAIL','TENANT-TAIL','active',0,now);
+  db.prepare('INSERT INTO store_connections (id,client_id,provider,status,config_json,updated_at,external_store_id) VALUES (?,?,?,?,?,?,?)')
+    .run('CON-TAIL','TENANT-TAIL','easyorders','connected',JSON.stringify({kunStoreId:'STORE-TAIL',webhookLastShortId:1700,webhookLastOrderId:'TAIL-KNOWN',easyOrdersRecoveryHighestShortId:1700,easyOrdersRecoveryCursor:1701}),now,'EO-TAIL');
+  db.prepare('INSERT INTO integration_secrets VALUES (?,?,?,?,?)').run('TENANT-TAIL','CON-TAIL','api_key',secret.ciphertextB64,secret.ivB64);
+  let tailControl='own',tailHttp=400,tailMessage='record not found';const tailCalls=[];
+  const tailApi=async url=>{
+    const reference=url.split('/').at(-1);tailCalls.push(reference);
+    if(reference==='1701')return Response.json({message:tailMessage},{status:tailHttp});
+    assert.equal(reference,'TAIL-KNOWN');
+    if(tailControl==='quota')return Response.json({message:'limit'},{status:429});
+    if(tailControl==='denied')return Response.json({message:'denied'},{status:403});
+    return Response.json({...p,id:'TAIL-KNOWN',short_id:1700,store_id:tailControl==='own'?'EO-TAIL':'EO-OTHER'});
+  };
+  const tailRun=()=>reconcileEasyOrdersOrders(env,{clientId:'TENANT-TAIL',connectionId:'CON-TAIL',maxRequests:2,fetcher:tailApi,trigger:'cron'});
+  const tail=await tailRun();
+  assert.equal(tail.status,'waiting_for_provider_order');
+  assert.equal(tail.ok,false,'Unconfirmed work is not complete');
+  assert.equal(tail.healthyConnections,0);
+  assert.equal(tail.waitingForProviderConnections,1);
+  assert.equal(tail.missing,0);assert.equal(tail.recovered,0);
+  assert.equal(config('CON-TAIL').easyOrdersRecoveryCursor,1701);
+  assert.equal(config('CON-TAIL').easyOrdersRecoveryLastProviderHttpStatus,400);
+  assert.equal((await easyOrdersRecoveryStatus(env,{connectionId:'CON-TAIL'})).status,'waiting_for_provider_order');
+  await tailRun();assert.deepEqual(tailCalls,['1701','TAIL-KNOWN','1701','TAIL-KNOWN'],'Retry exactly the same unconfirmed number');
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM orders WHERE store_id='STORE-TAIL'").get().n,0);
+  for(const mode of ['foreign','denied','quota']){
+    tailControl=mode;const failed=await tailRun();
+    assert.equal(failed.status,'error','A failed or foreign positive control remains an error');
+    assert.equal(failed.ok,false);assert.equal(config('CON-TAIL').easyOrdersRecoveryCursor,1701);
+  }
+  tailControl='own';tailHttp=503;
+  assert.equal((await tailRun()).status,'error','A future-number 503 is never a waiting state');
+  tailHttp=400;tailMessage='Invalid Short ID';
+  assert.equal((await tailRun()).status,'error','Other HTTP400 validation failures remain errors');
+  tailMessage='record not found';
+  const noControlBudget=await reconcileEasyOrdersOrders(env,{connectionId:'CON-TAIL',maxRequests:1,fetcher:tailApi,trigger:'cron'});
+  assert.equal(noControlBudget.status,'error','A positive control cannot be assumed without an actual budgeted read');
+  await update('CON-TAIL',current=>({...current,easyOrdersRecoveryPendingShortIds:[1690]}));
+  assert.equal((await tailRun()).status,'error','An unresolved older hole must not be labeled only as waiting for the next order');
+  await update('CON-TAIL',current=>({...current,easyOrdersRecoveryPendingShortIds:[]}));
+  await tailRun();
+  await update('CON-TAIL',current=>({...current,webhookLastShortId:1701,easyOrdersRecoveryHighestShortId:1701}));
+  assert.equal((await easyOrdersRecoveryStatus(env,{connectionId:'CON-TAIL'})).status,'catching_up','A newly known higher order immediately exposes backlog');
+  assert.equal((await tailRun()).status,'error','A400 inside the known backlog is never deferred');
   console.log('Easy Orders SQLite sync PASS: concurrent webhook/cron CAS, monotonic high-water, exact Short ID identity, bounded bootstrap failures, tenant+store isolation, idempotent retries.');
 }finally{db.close();}

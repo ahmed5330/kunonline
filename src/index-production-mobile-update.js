@@ -73,7 +73,7 @@ async function websiteWithDirectAndroidDownload(request,env){
     .replace(/\/v2\/modules-v19\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v19.js?v=20.3')
     .replace(/\/v2\/modules-v22\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v22.js?v=22.1')
     .replace(/\/v2\/modules-v80-jnt-address-cascade-v805\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v80-jnt-address-cascade-v805.js?v=80.6')
-    .replace(/\/v2\/modules-v121-dashboard-sync-guard\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v121-dashboard-sync-guard.js?v=121.1')
+    .replace(/\/v2\/modules-v121-dashboard-sync-guard\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v121-dashboard-sync-guard.js?v=121.4')
     .replaceAll(LEGACY_APK_URL,DIRECT_APK_PATH)
     .replaceAll('/v2/modules-v51-permission-navigation.js?v=51.10','/v2/modules-v51-permission-navigation.js?v=51.17')
     .replace(/\/v2\/modules-v57-section-reload\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v57-section-reload.js?v=57.3')
@@ -93,7 +93,7 @@ async function websiteWithDirectAndroidDownload(request,env){
     html=html.replace('</body>','<script src="/v2/modules-v118-collaboration-order-picker.js?v=118.1.1" data-kun-collaboration-order-picker="1"></script></body>');
   }
   if(!html.includes('/v2/modules-v121-dashboard-sync-guard.js')){
-    html=html.replace('</body>','<script src="/v2/modules-v121-dashboard-sync-guard.js?v=121.1" data-kun-dashboard-sync-guard="1"></script></body>');
+    html=html.replace('</body>','<script src="/v2/modules-v121-dashboard-sync-guard.js?v=121.4" data-kun-dashboard-sync-guard="1"></script></body>');
   }
   if(!html.includes('/v2/modules-v122-dashboard-experience.js')){
     html=html.replace('</body>','<script src="/v2/modules-v122-dashboard-experience.js?v=122.4" data-kun-dashboard-experience="1"></script></body>');
