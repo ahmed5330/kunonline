@@ -21,6 +21,7 @@
   function openView(view){const b=document.querySelector(`.nav button[data-view="${view}"]`);if(b)b.click();}
   function currentScopeNote(){const s=document.getElementById('storeBtn');return !s||s.value?'':' العرض الحالي على «كل الفروع»؛ عند مقارنة Preview وProduction اختر نفس الفرع في الاثنين.';}
   function box(kind){
+    if(kind==='provider_waiting')return `<div id="${BOX_ID}" class="info"><div class="kdsg-copy"><strong>بانتظار تأكيد رقم الطلب التالي من Easy Orders</strong><p>نجحت قراءة آخر طلب معروف، لكن المزود لم يؤكد الرقم التالي بعد. يُعاد فحص الرقم نفسه دون تخطيه؛ هذه الحالة لا تؤكد اكتمال السجل التاريخي.</p></div><div class="kdsg-actions"><button data-kdsg="orders">تفاصيل المزامنة</button></div></div>`;
     if(kind==='invalid')return `<div id="${BOX_ID}"><div class="kdsg-copy"><strong>تعذر مزامنة بعض اتصالات Easy Orders — الأرقام قد تكون ناقصة</strong><p>Easy Orders يرفض بيانات الوصول لأحد الاتصالات في مصدر البيانات المستخدم حاليًا. افتح مركز التكاملات وأعد ربط Easy Orders بمفتاح Public API صالح. لا ترسل المفتاح في الشات؛ أدخله داخل النظام فقط.${currentScopeNote()}</p></div><div class="kdsg-actions"><button class="primary" data-kdsg="integrations">فتح مركز التكاملات</button><button data-kdsg="orders">فتح الطلبات</button></div></div>`;
     if(kind==='unreadable')return `<div id="${BOX_ID}"><div class="kdsg-copy"><strong>تعذر قراءة بيانات ربط Easy Orders</strong><p>تعذر قراءة بيانات أحد اتصالات Easy Orders في مصدر البيانات المستخدم حاليًا. أعد حفظ API Key من مركز التكاملات ثم شغّل إصلاح المزامنة من الطلبات.${currentScopeNote()}</p></div><div class="kdsg-actions"><button class="primary" data-kdsg="integrations">فتح مركز التكاملات</button></div></div>`;
     if(kind==='unavailable')return `<div id="${BOX_ID}" class="info"><div class="kdsg-copy"><strong>تعذر التحقق من حالة Easy Orders الآن</strong><p>حالة المزامنة غير مؤكدة مؤقتًا. حاول تحديث الصفحة لاحقًا؛ لا تحتاج لإعادة إدخال المفتاح بسبب هذا الفحص.</p></div></div>`;
@@ -44,12 +45,13 @@
       else if(diag.failureCode==='EASYORDERS_NOT_CONNECTED')kind='disconnected';
       else if(diag.failureCode==='EASYORDERS_RATE_LIMITED')kind='rate_limited';
       else if(diag.failureCode||Number(d.canonical?.errorConnections)>0)kind='error';
+      else if(d.status==='waiting_for_provider_order')kind='provider_waiting';
       else if(document.getElementById('storeBtn')?.value==='')kind='scope';
       document.getElementById(BOX_ID)?.remove();if(!kind)return;
       hero.insertAdjacentHTML('afterend',box(kind));bind(document.getElementById(BOX_ID));
     }finally{pending=false;}
   }
   function hook(){style();const root=document.getElementById('root');if(root){new MutationObserver(()=>{if(dashboardActive()&&!document.getElementById(BOX_ID))setTimeout(()=>render(false),0);}).observe(root,{childList:true,subtree:false});}document.addEventListener('click',e=>{const b=e.target.closest?.('.nav button');if(b?.dataset.view==='dashboard')setTimeout(()=>render(true),350);});setTimeout(()=>render(true),500);}
-  window.KunDashboardSyncGuardV121={version:'121.1',refresh:()=>render(true)};
+  window.KunDashboardSyncGuardV121={version:'121.4',refresh:()=>render(true)};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',hook);else hook();
 })();

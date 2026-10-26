@@ -26,6 +26,7 @@ function recoveryState(config={}){
   else if(explicit==='rate_limited')status='rate_limited';
   else if(highestShortId&&(estimatedRemaining>0||unresolvedAheadCount>0||explicit==='catching_up'))
     status='catching_up';
+  else if(explicit==='waiting_for_provider_order')status='waiting_for_provider_order';
   else if(highestShortId&&nextShortId>highestShortId)status='healthy';
   else if(highestShortId&&!nextShortId)status='catching_up';
   return {status,highestShortId,nextShortId,estimatedRemaining,
@@ -33,8 +34,8 @@ function recoveryState(config={}){
     lastError:lastError||null,lastRunAt:text(config.easyOrdersRecoveryLastRunAt)||null,lastCronAt:text(config.easyOrdersRecoveryLastCronAt)||null,lastRequests:positiveInt(config.easyOrdersRecoveryLastRequests),lastRecovered:positiveInt(config.easyOrdersRecoveryLastRecovered),recoveredTotal:positiveInt(config.easyOrdersRecoveryRecoveredCount),webhookLastShortId:positiveInt(config.webhookLastShortId||config.webhookLastShortID||config.webhook_last_short_id)};
 }
 function aggregateRecovery(results=[]){
-  const statuses=results.map(x=>x.status),error=statuses.includes('error'),rateLimited=statuses.includes('rate_limited'),catchingUp=statuses.includes('catching_up'),waiting=statuses.includes('waiting_for_short_id');
-  return {status:error?'error':rateLimited?'rate_limited':catchingUp?'catching_up':waiting?'waiting_for_short_id':'healthy',healthyConnections:results.filter(x=>x.status==='healthy').length,catchingUpConnections:results.filter(x=>x.status==='catching_up').length,waitingConnections:results.filter(x=>x.status==='waiting_for_short_id').length,errorConnections:results.filter(x=>x.status==='error').length,estimatedRemaining:results.reduce((sum,x)=>sum+positiveInt(x.estimatedRemaining),0),unresolvedAheadCount:results.reduce((sum,x)=>sum+positiveInt(x.unresolvedAheadCount),0),recoveredTotal:results.reduce((sum,x)=>sum+positiveInt(x.recoveredTotal||x.cumulativeRecovered),0)};
+  const statuses=results.map(x=>x.status),error=statuses.includes('error'),rateLimited=statuses.includes('rate_limited'),catchingUp=statuses.includes('catching_up'),providerWaiting=statuses.includes('waiting_for_provider_order'),waiting=statuses.includes('waiting_for_short_id');
+  return {status:error?'error':rateLimited?'rate_limited':catchingUp?'catching_up':providerWaiting?'waiting_for_provider_order':waiting?'waiting_for_short_id':'healthy',healthyConnections:results.filter(x=>x.status==='healthy').length,catchingUpConnections:results.filter(x=>x.status==='catching_up').length,waitingConnections:results.filter(x=>['waiting_for_short_id','waiting_for_provider_order'].includes(x.status)).length,waitingForProviderConnections:results.filter(x=>x.status==='waiting_for_provider_order').length,errorConnections:results.filter(x=>x.status==='error').length,estimatedRemaining:results.reduce((sum,x)=>sum+positiveInt(x.estimatedRemaining),0),unresolvedAheadCount:results.reduce((sum,x)=>sum+positiveInt(x.unresolvedAheadCount),0),recoveredTotal:results.reduce((sum,x)=>sum+positiveInt(x.recoveredTotal||x.cumulativeRecovered),0)};
 }
 
 // Expose only numeric upstream HTTP failure metadata to authenticated diagnostics.
@@ -59,7 +60,8 @@ function providerFailurePatch(metadata={}){
     easyOrdersRecoveryLastProviderErrorCategory:metadata.providerErrorCategory??null,
     easyOrdersRecoveryLastPositiveControlAt:null,
     easyOrdersRecoveryLastPositiveControlHttpStatus:null,
-    easyOrdersRecoveryLastPositiveControlIdentityVerified:false};
+    easyOrdersRecoveryLastPositiveControlIdentityVerified:false,
+    easyOrdersRecoveryUnconfirmedShortId:null};
 }
 
 async function patchConfig(env,connection,patch){
@@ -150,7 +152,7 @@ async function bootstrapFromLastWebhook(env,connection,{apiKey,fetcher,lookback,
 
 async function reconcileConnection(env,connection,{maxRequests,lookback,fetcher,cronRun=false}){
   const out={connectionId:connection.id,clientId:connection.client_id,storeId:null,requests:0,recovered:0,updated:0,missing:0,foreignStoreSkipped:0,seeded:false,rateLimited:false,highestShortId:0,nextShortId:0,estimatedRemaining:0,cumulativeRecovered:0,status:'waiting_for_short_id',recoveredOrderIds:[],error:null,providerHttpStatus:null,providerErrorCategory:null};
-  let apiKey='',verifiedProgress=null;
+  let apiKey='',verifiedProgress=null,lastAttemptedShortId=0;
   try{
     const secrets=await readConnectionSecrets(env,connection.client_id,connection.id);apiKey=text(secrets.api_key);
     if(!apiKey)throw Object.assign(new Error('مفتاح Easy Orders API غير موجود؛ لا يمكن إصلاح فجوات الطلبات تلقائيًا'),{status:409,code:'EASYORDERS_API_KEY_MISSING'});
@@ -175,6 +177,7 @@ async function reconcileConnection(env,connection,{maxRequests,lookback,fetcher,
       // provider quota too. Otherwise one failed call per connection can
       // bypass the global 30-request Cron ceiling.
       out.requests++;
+      lastAttemptedShortId=shortId;
       const fetched=await fetchOrderByShortId(fetcher,apiKey,shortId);
       if(fetched.kind==='rate_limited'){out.rateLimited=true;return fetched;}
       if(fetched.kind==='missing'){out.missing++;return fetched;}
@@ -295,6 +298,7 @@ async function reconcileConnection(env,connection,{maxRequests,lookback,fetcher,
     out.error=error?.message||String(error);out.status='error';
     Object.assign(out,describeEasyOrdersProviderError(error));
     const failure=providerFailurePatch(out);
+    let verifiedControlShortId=0;
     const config=parseConfig(connection),knownShort=positiveInt(config.webhookLastShortId||config.webhookLastShortID||config.webhook_last_short_id||config.easyOrdersRecoveryHighestShortId);
     const knownId=text(config.webhookLastOrderId||config.easyOrdersRecoverySeedOrderId),boundStore=text(connection.external_store_id);
     // Prefer the exact order ID: delayed webhooks can leave a monotonic Short
@@ -316,17 +320,31 @@ async function reconcileConnection(env,connection,{maxRequests,lookback,fetcher,
         failure.easyOrdersRecoveryLastPositiveControlIdentityVerified=fetched.kind==='found'&&!!text(order.id)&&
           text(order.store_id||order.storeId)===boundStore&&(!controlShort||actualShort===controlShort)&&
           (!knownId||/^\d+$/.test(knownId)||text(order.id)===knownId);
+        if(failure.easyOrdersRecoveryLastPositiveControlIdentityVerified)verifiedControlShortId=actualShort;
       }catch(controlError){
         const status=Number(controlError?.status);
         failure.easyOrdersRecoveryLastPositiveControlHttpStatus=Number.isInteger(status)&&status>=400&&status<=599?status:null;
         if(status===429)out.rateLimited=true;
       }
     }
+    const frontier=Math.max(positiveInt(config.easyOrdersRecoveryHighestShortId),knownShort,positiveInt(verifiedProgress?.easyOrdersRecoveryHighestShortId));
+    const next=positiveInt(verifiedProgress?.easyOrdersRecoveryCursor)||positiveInt(config.easyOrdersRecoveryCursor);
+    // Only defer the immediate, still-unconfirmed next number after a fresh
+    // same-store read of the exact known frontier. Never infer absence, move
+    // the cursor, import the control, or claim the connection is healthy.
+    if(out.providerHttpStatus===400&&['record not found','order not found','not found'].includes(text(out.error).toLowerCase())&&
+      out.recovered===0&&out.updated===0&&
+      frontier>0&&lastAttemptedShortId===frontier+1&&next===lastAttemptedShortId&&
+      !(config.easyOrdersRecoveryPendingShortIds?.length)&&
+      failure.easyOrdersRecoveryLastPositiveControlHttpStatus===200&&verifiedControlShortId===frontier){
+      out.status='waiting_for_provider_order';out.error=null;
+      failure.easyOrdersRecoveryUnconfirmedShortId=lastAttemptedShortId;
+    }
     const saved=await patchConfig(env,connection,{...verifiedProgress,...failure,
-      easyOrdersRecoveryLastRunAt:now(),easyOrdersRecoveryLastStatus:'error',
+      easyOrdersRecoveryLastRunAt:now(),easyOrdersRecoveryLastStatus:out.status,
       easyOrdersRecoveryLastRequests:out.requests,easyOrdersRecoveryLastRecovered:out.recovered,
       easyOrdersRecoveryRecoveredCount:out.cumulativeRecovered+out.recovered,
-      easyOrdersRecoveryLastError:out.error.slice(0,500),...(cronRun?{easyOrdersRecoveryLastCronAt:now()}:{})}).catch(()=>null);
+      easyOrdersRecoveryLastError:out.error?.slice(0,500)||null,...(cronRun?{easyOrdersRecoveryLastCronAt:now()}:{})}).catch(()=>null);
     if(saved){
       out.highestShortId=positiveInt(saved.easyOrdersRecoveryHighestShortId);
       out.nextShortId=positiveInt(saved.easyOrdersRecoveryCursor);
@@ -385,7 +403,7 @@ export async function reconcileEasyOrdersOrders(env,{clientId=null,storeId=null,
   out.failedConnections=out.results.filter(row=>row.status==='error').length;
   out.rateLimitedConnections=out.results.filter(row=>row.status==='rate_limited').length;
   out.completedAllConnections=out.uncheckedConnections===0;
-  out.ok=out.failedConnections===0&&out.rateLimitedConnections===0;
+  out.ok=out.failedConnections===0&&out.rateLimitedConnections===0&&out.waitingForProviderConnections===0;
   return out;
 }
 

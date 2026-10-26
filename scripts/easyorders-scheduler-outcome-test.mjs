@@ -35,6 +35,9 @@ assert.deepEqual(
 
 const healthy={ok:true,connections:3,checkedConnections:2,uncheckedConnections:1,
   results:[{status:'healthy'},{status:'healthy'}],recovered:1};
+assert.equal(checkEasyOrdersCronRecovery({ok:false,status:'waiting_for_provider_order',waitingForProviderConnections:1,
+  failedConnections:0,results:[{status:'waiting_for_provider_order'}]}).ok,false,
+  'Deferred provider confirmation is never advertised as a completed Cron recovery');
 const allowed=checkEasyOrdersCronRecovery(healthy);
 assert.equal(allowed.ok,true);
 assert.equal(allowed.deferredConnections,1,'Normal global request-budget deferral is not provider failure');

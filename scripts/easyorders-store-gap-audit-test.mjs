@@ -48,6 +48,7 @@ const noWriteFetcher=async(url,options)=>{
   if(id===408)return Response.json({message:'denied'},{status:403});
   return Response.json({
     id:`EA-${id}`,short_id:id,store_id:id===402?'EO-OTHER':'EO-W',
+    created_at:id===400?'2026-10-23T12:00:00Z':id===402?'2001-01-01T00:00:00Z':'2026-10-24T12:00:00Z',
     full_name:'PERSONAL_NAME_MUST_NOT_LEAK',phone:'01112345678'
   });
 };
@@ -70,6 +71,7 @@ assert.equal(a.foreignStoreSkipped,1);
 assert.equal(a.missingAtProvider,1);
 assert.deepEqual(a.gaps,[{shortId:401,sourceOrderId:'EA-401'}]);
 assert.equal(a.nextShortId,404);
+assert.deepEqual(a.providerCreatedDays,{oldest:'2026-10-23',newest:'2026-10-24',datedOrders:2},'Only validated same-store dates may describe the audited range');
 assert.doesNotMatch(JSON.stringify(a),/PERSONAL_NAME|01112345678|FAKE-AUTH-SECRET/);
 
 const throttle=await run(403,406);
@@ -139,6 +141,7 @@ const rpcRun=(from,to,fetcher=noWriteFetcher)=>auditEasyOrdersReadOnlyRpc(enviro
 const rpc=await rpcRun(400,401);
 assert.equal(rpc.ok,true);assert.equal(rpc.alreadyInKun,1);assert.deepEqual(rpc.missingShortIds,[401]);
 assert.equal(rpc.dbWritesAllowed,false);assert.equal(rpc.recoveryPerformed,false);
+assert.deepEqual(rpc.providerCreatedDays,{oldest:'2026-10-23',newest:'2026-10-24',datedOrders:2});
 for(const value of ['TEN-W','STORE-W','CON-W','EA-401','PERSONAL_NAME','FAKE-AUTH-SECRET','01112345678'])
   assert.ok(!JSON.stringify(rpc).includes(value),'RPC returns only counts and Short IDs');
 const continued=await rpcRun(409,410,async(url,init)=>url.endsWith('/409')?Response.json({message:'record not found'},{status:400}):noWriteFetcher(url,init));

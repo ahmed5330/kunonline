@@ -86,7 +86,7 @@
     "test:production-faos-readonly": "node --loader ./scripts/session-test-cloudflare-loader.mjs scripts/production-faos-readonly-gateway-test.mjs",
     "test:growth-release": "node scripts/scaling-readiness-test.mjs && node scripts/growth-scenario-test.mjs && node scripts/growth-operating-evidence-test.mjs && node scripts/growth-experiment-test.mjs && node scripts/production-preview-release-gate-test.mjs && node scripts/browser-growth-planner-fixture-test.mjs && node scripts/growth-local-worker-smoke.mjs",
     "test:existing-inventory-schema": "node scripts/existing-inventory-schema-check-test.mjs && node scripts/inventory-migrations-compatibility-test.mjs && node scripts/preview-live-schema-rehearsal-test.mjs && node scripts/preview-inventory-deferral-proof.mjs",
-    "test:easyorders-d1-readonly": "node scripts/easyorders-d1-aggregate-readonly-test.mjs && node scripts/easyorders-d1-diagnose-only-flow-test.mjs"
+    "test:easyorders-d1-readonly": "node scripts/easyorders-d1-aggregate-readonly-test.mjs && node scripts/easyorders-d1-diagnose-only-flow-test.mjs && node scripts/easyorders-provider-waiting-release-gate-test.mjs"
   },
   "devDependencies": {
     "wrangler": "4.151.0"

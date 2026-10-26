@@ -17,7 +17,8 @@ export async function auditEasyOrdersReadOnlyRpc(env,input={},dependencies={}){
   const output={ok:false,mode:'read_only',dbWritesAllowed:false,recoveryPerformed:false,
     status:'invalid_request',requests:0,alreadyInKun:0,missingInKun:0,missingAtProvider:0,
     ambiguousLegacyOrders:0,foreignStoreSkipped:0,checkedShortIds:[],presentShortIds:[],
-    missingShortIds:[],providerMissingShortIds:[],unconfirmedShortIds:[],ambiguousShortIds:[],httpStatusCounts:{}};
+    missingShortIds:[],providerMissingShortIds:[],unconfirmedShortIds:[],ambiguousShortIds:[],httpStatusCounts:{},
+    providerCreatedDays:{oldest:null,newest:null,datedOrders:0}};
   try{
     const clientId=clean(input.clientId),storeId=clean(input.storeId),connectionId=clean(input.connectionId);
     const start=Number(input.fromShortId),end=Number(input.toShortId);
@@ -44,6 +45,12 @@ export async function auditEasyOrdersReadOnlyRpc(env,input={},dependencies={}){
       output.alreadyInKun+=result.alreadyInKun;output.missingInKun+=result.missingInKun;
       output.missingAtProvider+=result.missingAtProvider;output.ambiguousLegacyOrders+=result.ambiguousLegacyOrders;
       output.foreignStoreSkipped+=result.foreignStoreSkipped;
+      const dates=result.providerCreatedDays;
+      if(dates?.datedOrders){
+        const summary=output.providerCreatedDays;summary.datedOrders+=dates.datedOrders;
+        if(!summary.oldest||dates.oldest<summary.oldest)summary.oldest=dates.oldest;
+        if(!summary.newest||dates.newest>summary.newest)summary.newest=dates.newest;
+      }
       if(result.alreadyInKun)output.presentShortIds.push(id);
       if(result.missingInKun)output.missingShortIds.push(id);
       if(result.missingAtProvider)output.providerMissingShortIds.push(id);

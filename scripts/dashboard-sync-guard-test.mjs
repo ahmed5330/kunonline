@@ -53,6 +53,9 @@ async function main(){
   hooks.deregister();
   const source=await readFile('public/v2/modules-v121-dashboard-sync-guard.js','utf8');
   const {payload}=await getHealth(environment([healthy]));
+  const waitingProvider=await renderGuard(source,{ok:true,source:'preview',status:'waiting_for_provider_order',canonical:{errorConnections:0},runtimeDiagnostics:{failureCode:null}});
+  assert.match(waitingProvider.html,/بانتظار تأكيد رقم الطلب التالي/);
+  assert.doesNotMatch(waitingProvider.html,/مكتمل وسليم|توجد مشكلة في مزامنة/);
   assert.equal(payload.source,'preview');assert.equal(payload.status,'healthy');assert.equal(payload.canonical.connections,1);
   assert.equal((await renderGuard(source,payload)).html,'');
   assert.doesNotMatch((await renderGuard(source,payload,{store:''})).html,/متوقفة|يرفض|تعذر/);
@@ -79,7 +82,7 @@ async function main(){
   }
   assert.match((await renderGuard(source,null,{networkError:true})).html,/تعذر التحقق/);
   const htmlResponse=await production.fetch(new Request('https://app.kun-online.com/'),{ASSETS:{fetch:async()=>new Response('<body><script src="/v2/modules-v121-dashboard-sync-guard.js?v=121.0"></script></body>',{headers:{'Content-Type':'text/html'}})}},{});
-  assert.match(await htmlResponse.text(),/modules-v121-dashboard-sync-guard.js\?v=121.1/);
+  assert.match(await htmlResponse.text(),/modules-v121-dashboard-sync-guard.js\?v=121.4/);
   console.log('Dashboard sync guard regression passed: Preview health, real failures, unavailable source, no Production reads/writes, and cache version.');
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href)await main();

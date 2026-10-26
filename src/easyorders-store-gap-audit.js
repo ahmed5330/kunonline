@@ -45,7 +45,8 @@ export async function auditEasyOrdersStoreGapRange(env,{
     ok:true,mode:'read_only',clientId:tenant,storeId:store,connectionId:connection,
     startShortId:start,endShortId:end,requests:0,alreadyInKun:0,
     missingInKun:0,missingAtProvider:0,foreignStoreSkipped:0,
-    ambiguousLegacyOrders:0,gaps:[],status:'complete',nextShortId:end+1
+    ambiguousLegacyOrders:0,gaps:[],status:'complete',nextShortId:end+1,
+    providerCreatedDays:{oldest:null,newest:null,datedOrders:0}
   };
   for(let shortId=start;shortId<=end;shortId++){
     let response;
@@ -86,6 +87,14 @@ export async function auditEasyOrdersStoreGapRange(env,{
       result.ok=false;result.status='provider_payload_invalid';result.nextShortId=shortId;break;
     }
     if(sourceStore!==external){result.foreignStoreSkipped++;continue;}
+    // Date-only scope metadata is useful for separating pre-connection history
+    // from incident-period gaps. Never return a customer payload or timestamp.
+    const created=clean(order.created_at),day=/^\d{4}-\d{2}-\d{2}T/.test(created)&&Number.isFinite(Date.parse(created))?created.slice(0,10):null;
+    if(day){
+      const dates=result.providerCreatedDays;dates.datedOrders++;
+      if(!dates.oldest||day<dates.oldest)dates.oldest=day;
+      if(!dates.newest||day>dates.newest)dates.newest=day;
+    }
     const {results:matches=[]}=await env.DB.prepare(
       'SELECT id,store_id FROM orders WHERE client_id=? AND (id=? OR ref=?) LIMIT 10'
     ).bind(tenant,providerId,`easyorders:${providerId}`).all();
