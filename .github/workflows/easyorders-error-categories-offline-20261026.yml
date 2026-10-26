@@ -1,0 +1,29 @@
+name: Offline Easy Orders safe D1 error categories QA
+on:
+  push:
+    branches: [ops/easyorders-safe-error-categories-20261026]
+    paths:
+      - 'scripts/easyorders-protected-safe-error-categories.mjs'
+      - 'scripts/easyorders-protected-safe-error-categories-test.mjs'
+      - '.github/workflows/easyorders-error-categories-offline-20261026.yml'
+  pull_request:
+    branches: [codex/serialized-warehouse-operations]
+    paths:
+      - 'scripts/easyorders-protected-safe-error-categories.mjs'
+      - 'scripts/easyorders-protected-safe-error-categories-test.mjs'
+      - '.github/workflows/easyorders-error-categories-offline-20261026.yml'
+permissions:
+  contents: read
+jobs:
+  offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Compile and test sanitization (no Cloudflare requests)
+        run: |
+          node --check scripts/easyorders-protected-safe-error-categories.mjs
+          node scripts/easyorders-protected-safe-error-categories-test.mjs
