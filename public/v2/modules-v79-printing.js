@@ -39,6 +39,38 @@
   async function ensureQueued(o){if(isQueued(o))return;try{await api(`/api/jt/shipments/${encodeURIComponent(o.id)}?clientId=${encodeURIComponent(cid)}${o.storeId?`&storeId=${encodeURIComponent(o.storeId)}`:''}`,{method:'POST',body:JSON.stringify({clientId:cid,...(o.storeId?{storeId:o.storeId}:{})})});}catch(error){if(needsEditor(error)){editOrder(o.id,()=>sendOrder(o.id,true));const wrapped=new Error('راجع بيانات J&T ثم سيتم استكمال الإرسال من نفس قسم الطباعة.');wrapped.code='EDITOR_OPENED';throw wrapped;}throw error;}}
   async function sendOrder(id,skipConfirm=false){const o=orderById(id);if(!o||sending.has(String(id)))return;if(!skipConfirm&&!window.confirm('سيتم الآن إرسال الأوردر فعليًا إلى J&T، إنشاء AWB، ثم طلب البوليصة الرسمية. بعد النجاح سينتقل الأوردر إلى جاري الشحن. هل تريد المتابعة؟'))return;sending.add(String(id));let popup=null;try{await render();if(window.KunSubscriptionsV127?.access?.locked)throw Object.assign(new Error('رصيد الاشتراك انتهى. اشحن الرصيد أولًا.'),{code:'SUBSCRIPTION_BALANCE_REQUIRED'});await ensureQueued(o);popup=window.open('about:blank','jtOfficialLabel');if(popup){popup.document.title='جارٍ تجهيز بوليصة J&T...';popup.document.body.innerHTML='<p style="font-family:Arial;padding:24px">جارٍ إرسال الأوردر إلى J&amp;T وتجهيز البوليصة الرسمية...</p>';}const result=await api(`/api/jt/shipments/${encodeURIComponent(id)}/print?clientId=${encodeURIComponent(cid)}${o.storeId?`&storeId=${encodeURIComponent(o.storeId)}`:''}`,{method:'POST',body:JSON.stringify({clientId:cid,...(o.storeId?{storeId:o.storeId}:{})})});if(result.url){if(popup){popup.opener=null;popup.location.replace(result.url);}else window.open(result.url,'_blank','noopener');}else try{popup?.close();}catch{}notify(`تم إرسال الأوردر إلى J&T بنجاح — AWB: ${result.awb||'تم الإنشاء'}`);if(result.state==='shipped')window.dispatchEvent(new CustomEvent('kun:order-workflow-updated',{detail:{orderId:id,state:'shipped',storeId:o.storeId||null,source:'printing'}}));tab='printed';pageIndex=0;}catch(error){try{popup?.close();}catch{}if(error.code!=='EDITOR_OPENED')notify(`لم يكتمل الإرسال إلى J&T — ${error.message}`);}finally{sending.delete(String(id));await render();}}
 
+  // Shared, user-confirmed carrier handoff from Customer Service, order details,
+  // and Printing. Do not fake a shipped status with a generic state PATCH.
+  function shipById(id,storeId=''){
+    if(!id)return Promise.reject(new Error('حدد الأوردر أولًا'));
+    if(!window.confirm('سيتم إرسال الأوردر فعليًا إلى J&T وإصدار البوليصة الرسمية. بعد نجاح العملية فقط سينتقل إلى جاري الشحن. هل تريد المتابعة؟'))return Promise.resolve({cancelled:true});
+    const popup=window.open('about:blank','jtOfficialLabel');
+    if(popup){popup.document.title='جارٍ إصدار بوليصة الشحن';popup.document.body.textContent='جارٍ تجهيز بوليصة J&T الرسمية...';}
+    return (async()=>{
+      const client=await clientId();
+      if(!client)throw new Error('تعذر تحديد حساب المتجر');
+      const details=await api(`/api/orders/${encodeURIComponent(id)}/details?clientId=${encodeURIComponent(client)}${storeId?`&storeId=${encodeURIComponent(storeId)}`:''}`);
+      const order=details.order||{};
+      if(!['confirmed','preparing'].includes(order.state))throw new Error('لا يمكن إرسال الطلب قبل التأكيد أو بعد شحنه بالفعل');
+      const sid=clean(order.storeId||storeId);
+      const query=`?clientId=${encodeURIComponent(client)}${sid?`&storeId=${encodeURIComponent(sid)}`:''}`;
+      const body=JSON.stringify({clientId:client,...(sid?{storeId:sid}:{})});
+      await api(`/api/jt/shipments/${encodeURIComponent(id)}${query}`,{method:'POST',body});
+      const result=await api(`/api/jt/shipments/${encodeURIComponent(id)}/print${query}`,{method:'POST',body});
+      if(result.state!=='shipped'||!result.awb||!result.url)throw new Error('الشركة لم تؤكد إصدار بوليصة رسمية؛ لم يتم تغيير حالة الأوردر');
+      if(popup){popup.opener=null;popup.location.replace(result.url);}
+      else window.open(result.url,'_blank','noopener');
+      notify(`تم إرسال الأوردر إلى J&T ونقله إلى جاري الشحن — AWB: ${result.awb}`);
+      window.dispatchEvent(new CustomEvent('kun:order-workflow-updated',{detail:{orderId:id,state:'shipped',storeId:sid||null,source:'confirmed-handoff'}}));
+      if(document.querySelector('.nav button.active[data-view="customer-service"]'))await window.KunCustomerServiceV31?.render?.();
+      if(document.querySelector('.nav button.active[data-view="printing"]'))await render();
+      return result;
+    })().catch(error=>{
+      try{popup?.close();}catch{}
+      notify(`تعذر إرسال الأوردر إلى J&T: ${error.message}`);
+      throw error;
+    });
+  }
   function askVoidReason(o){
     return new Promise(resolve=>{
       const cover=document.createElement('div');cover.className='print79-void-back';cover.setAttribute('role','presentation');
@@ -77,5 +109,5 @@
   }
   function boot(){style();const button=document.querySelector('.nav [data-view="printing"]');if(button)button.addEventListener('click',event=>{event.preventDefault();event.stopImmediatePropagation();document.querySelectorAll('.nav button').forEach(b=>b.classList.toggle('active',b===button));tab='waiting';pageIndex=0;render();},true);window.addEventListener('kun:jt-print-queued',()=>{if(document.querySelector('.nav button.active[data-view="printing"]'))render();});window.addEventListener('kun:printing-ready',()=>{if(document.querySelector('.nav button.active[data-view="printing"]'))render();});}
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
-  window.KunPrintingV79={render,isPrinted,isQueued,sendOrder,version:'79.9'};
+  window.KunPrintingV79={render,isPrinted,isQueued,sendOrder,shipById,version:'79.11'};
 })();
