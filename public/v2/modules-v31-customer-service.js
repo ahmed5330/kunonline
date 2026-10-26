@@ -133,7 +133,15 @@
   function orderByCard(card){return (data?.orders||[]).find(o=>String(o.id)===String(card.dataset.csOrder));}
   function bindCard(card){
     const select=card.querySelector('[data-cs-state]');
-    select.onchange=async()=>{const o=orderByCard(card),next=select.value;if(!o)return;if(next==='deferred'){select.value=select.dataset.current||o.state;openDefer(o);return;}if(next==='cancelled'){select.value=select.dataset.current||o.state;openCancel(o);return;}try{await changeState(o,next);select.dataset.current=next;}catch(e){notify(e.message);select.value=select.dataset.current||o.state;}};
+    select.onchange=async()=>{const o=orderByCard(card),next=select.value;if(!o)return;
+      if(next==='shipped'){
+        select.value=select.dataset.current||o.state;
+        if(!['confirmed','preparing'].includes(o.state)){notify('أكّد الطلب قبل إرساله إلى شركة الشحن');return;}
+        if(typeof window.KunPrintingV79?.shipById!=='function'){notify('افتح قسم الطباعة لإرسال الطلب إلى J&T');return;}
+        try{await window.KunPrintingV79.shipById(o.id,o.storeId||'');}catch{/* Shared carrier flow displays actual error. */}
+        return;
+      }
+      if(next==='deferred'){select.value=select.dataset.current||o.state;openDefer(o);return;}if(next==='cancelled'){select.value=select.dataset.current||o.state;openCancel(o);return;}try{await changeState(o,next);select.dataset.current=next;}catch(e){notify(e.message);select.value=select.dataset.current||o.state;}};
   }
 
   const pendingActions=new Set();
