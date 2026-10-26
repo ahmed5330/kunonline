@@ -1,7 +1,7 @@
 name: Offline Easy Orders safe D1 error categories QA
 on:
   push:
-    branches: [ops/easyorders-safe-error-categories-20261026]
+    branches: [ops/easyorders-safe-error-categories-20261026, ops/easyorders-provider-http400-proof-20261026]
     paths:
       - 'scripts/easyorders-protected-safe-error-categories.mjs'
       - 'scripts/easyorders-protected-safe-error-categories-test.mjs'
