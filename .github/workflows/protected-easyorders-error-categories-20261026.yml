@@ -1,0 +1,30 @@
+name: Protected Easy Orders canonical D1 error category inspection (SELECT only)
+on:
+  push:
+    branches: [codex/serialized-warehouse-operations]
+    paths:
+      - '.github/workflows/protected-easyorders-error-categories-20261026.yml'
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    environment: preview
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - run: npm install --ignore-scripts
+      - name: Verify strictly SELECT-only sanitized classifier with synthetic fixtures
+        run: |
+          node --check scripts/easyorders-protected-safe-error-categories.mjs
+          node scripts/easyorders-protected-safe-error-categories-test.mjs
+      - name: Classify connected Easy Orders recovery errors without exposing PII
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: node scripts/easyorders-protected-safe-error-categories.mjs
+# Do NOT add any deploy, migration, webhook POST, actual recovery or raw D1
+# debug output here. Only one fixed SELECT is permitted; stdout is aggregate.
