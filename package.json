@@ -85,7 +85,7 @@
     "test:residual-audit": "node scripts/audit-20261023-regression-test.mjs && node scripts/production-cod-read-fallback-test.mjs",
     "test:production-faos-readonly": "node --loader ./scripts/session-test-cloudflare-loader.mjs scripts/production-faos-readonly-gateway-test.mjs",
     "test:growth-release": "node scripts/scaling-readiness-test.mjs && node scripts/growth-scenario-test.mjs && node scripts/growth-operating-evidence-test.mjs && node scripts/growth-experiment-test.mjs && node scripts/production-preview-release-gate-test.mjs && node scripts/browser-growth-planner-fixture-test.mjs && node scripts/growth-local-worker-smoke.mjs",
-    "test:existing-inventory-schema": "node scripts/existing-inventory-schema-check-test.mjs && node scripts/inventory-migrations-compatibility-test.mjs && node scripts/preview-live-schema-rehearsal-test.mjs"
+    "test:existing-inventory-schema": "node scripts/existing-inventory-schema-check-test.mjs && node scripts/inventory-migrations-compatibility-test.mjs && node scripts/preview-live-schema-rehearsal-test.mjs && node scripts/preview-inventory-deferral-proof.mjs"
   },
   "devDependencies": {
     "wrangler": "4.151.0"

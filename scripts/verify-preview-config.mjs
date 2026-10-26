@@ -70,7 +70,8 @@ for(const [label,pattern] of [
 requirePattern(workflow,/environment:\s*\n\s*name:\s*preview\b/m,'workflow must use the preview GitHub Environment.');
 requirePattern(workflow,/permissions:\s*\n\s*contents:\s*write\b/m,'workflow needs contents:write to maintain preview-stable after full validation.');
 requireText(workflow,'git ls-remote origin refs/heads/develop/ux-system-upgrade','latest-HEAD ownership guard is missing.');
-requireText(workflow,'npm run db:migrate:preview','Preview migration gate is missing.');
+requireText(workflow,'node scripts/preview-inventory-deferral-proof.mjs','Exact baseline inventory deferral proof is missing.');
+forbidPattern(workflow,/npm run db:migrate:preview|wrangler d1 migrations apply/,'This deferred release must never apply migrations.');
 requireText(workflow,"if: steps.ownership.outputs.is_latest == 'true'",'Preview mutations must be gated by latest branch ownership.');
 requireText(workflow,'id: deploy_ownership','deploy ownership recheck is missing.');
 

@@ -19,12 +19,8 @@ for (const variable of ['GITHUB_SHA','PREVIEW_D1_BACKUP_REF','stable_sha']) {
   const unescaped = String.fromCharCode(96) + '$' + variable + String.fromCharCode(96);
   assert(!gate.includes(unescaped), 'Shell summary must not execute substitution for ' + variable);
 }
-const safetyStep = workflow.indexOf('run: bash scripts/preview-db-release-preflight.sh');
-const migrationStep = workflow.indexOf('run: npm run db:migrate:preview');
-assert(safetyStep > 0 && migrationStep > safetyStep, 'D1 preflight must precede migrations');
-assert(workflow.includes("steps.shared_d1_preflight.outputs.apply_migrations == 'true'"), 'Only preflight-approved migrations may run');
-const walletBeforeMigration=workflow.indexOf('name: Reject live wallet settlement anomalies before modifying shared D1');
-assert(walletBeforeMigration>0 && walletBeforeMigration<migrationStep,'Wallet ledger pre-migration gate must execute before any shared D1 mutation');
+assert(!workflow.includes('run: npm run db:migrate:preview'),'This inventory-deferred release must have no migration step');
+assert(workflow.includes('node scripts/preview-inventory-deferral-proof.mjs'),'Require exact baseline deferral proof');
 assert(workflow.includes('run: node scripts/preview-wallet-finance-invariants.mjs'),'Canonical read-only wallet validation missing');
 const readonlyAudit=readFileSync('.github/workflows/shared-preview-d1-readonly.yml','utf8');
 assert(readonlyAudit.includes('  workflow_dispatch:')&&readonlyAudit.includes('branches: [release/growth-wallet-preview-20261015]'),'Audit must be restricted to the release branch before default-branch registration');
@@ -32,8 +28,7 @@ assert(readonlyAudit.includes("paths:")&&readonlyAudit.includes("'.github/workfl
 assert(readonlyAudit.includes('Require dedicated read-only Cloudflare audit credentials'),'Audit must explicitly deny missing environment credentials');
 assert(readonlyAudit.includes('kunonline-d1-readonly-audit'),'Cloudflare audit must use a dedicated, segregated credentials environment');
 assert(gate.includes('apply_migrations=false') && gate.includes('apply_migrations=true'), 'Preflight must distinguish unchanged releases from approved schema changes');
-for (const text of ['inputs.shared_d1_approved_sha','inputs.verified_backup_reference'])
-  assert(workflow.includes(text), 'Missing manual release input: ' + text);
+assert(!workflow.includes('apply_reviewed_migrations'),'Deferred release must not offer a schema mutation input');
 for (const text of ['workflow_dispatch','GITHUB_SHA','d1 time-travel info','preview-live-schema-rehearsal.mjs'])
   assert(gate.includes(text), 'Missing shared DB safety mechanism: ' + text);
 

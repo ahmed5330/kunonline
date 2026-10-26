@@ -13,19 +13,20 @@ const expected=[
   "node scripts/easyorders-cloudflare-worker-readonly-inventory-test.mjs",
   "wrangler d1 time-travel info kunonline-preview",
   "git diff --name-only",
-  "Apply preview migrations only with explicit schema approval",
-  "github.event_name == 'workflow_dispatch' && inputs.apply_reviewed_migrations == true",
+  "Prove serialized inventory activation is excluded from this release",
+  "node scripts/preview-inventory-deferral-proof.mjs",
   "Create fresh verified rollback baseline from stable Git source",
   "wrangler deployments status --config wrangler.preview.toml --json",
   "Restore same-run verified Preview baseline after failed validation",
   "Require every Preview validation gate to succeed",
   "Promote fully validated HEAD to preview-stable"
 ];
+assert.ok(!config.includes('npm run db:migrate:preview'),'No schema mutation path is permitted in the deferred release');
 for(const token of expected)assert.ok(config.includes(token), 'release guard missing '+token);
 // A tag on only the first hotfix merge is not a trustworthy release gate:
 // later develop pushes redeploy the same Worker and must rerun Cloudflare checks.
 const gate=config.slice(config.indexOf('      - name: Gate every Preview release on read-only live Worker and D1 checks'),
-  config.indexOf('      - name: Apply preview migrations only with explicit schema approval'));
+  config.indexOf('      - name: Prove serialized inventory activation is excluded from this release'));
 assert.match(gate,/if: steps\.ownership\.outputs\.is_latest == 'true'/);
 assert.doesNotMatch(gate,/contains\(github\.event\.head_commit\.message/,
   'Commit-message hints MUST NOT bypass the Cloudflare safety preflight');
@@ -39,7 +40,7 @@ const sections=[
   "Require every isolated writing QA gate before release",
   "Prove two native five-minute Cron executions on isolated QA",
   "Gate every Preview release on read-only live Worker and D1 checks",
-  "Apply preview migrations only with explicit schema approval",
+  "Prove serialized inventory activation is excluded from this release",
   "Reconfirm latest branch HEAD before deploy",
   "Create fresh verified rollback baseline from stable Git source",
   "Deploy preview Worker",

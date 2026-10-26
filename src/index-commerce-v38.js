@@ -5,7 +5,6 @@ import {handleAIMarketing} from './ai-marketing-analyst.js';
 import {handleCompetitorIntelligence} from './competitor-intelligence.js';
 import {handleSubscriptionControl} from './subscription-control.js';
 import {reconcileMonthlySubscriptions} from './subscription-billing.js';
-import {handleInventoryUnitTracking,syncInventoryTrackingAfterResponse,reconcileTrackedOrderLifecycles,reconcileAllClientsUnitCoverage} from './inventory-unit-tracking.js';
 import safety from './index-commerce-v38-safety.js';
 import core from './index-commerce-v38-core.js';
 import {requirePermission} from './access-control.js';
@@ -36,8 +35,7 @@ const V2_UI_SCRIPTS=[
   '<script src="/v2/modules-v124-dashboard-periods-province.js?v=124.1" data-kun-dashboard-periods-v124="1"></script>',
   '<script src="/v2/modules-v125-dashboard-section-periods.js?v=125.3" data-kun-dashboard-section-periods-v125="1"></script>',
   '<script src="/v2/modules-v126-dashboard-finance-top.js?v=126.5" data-kun-dashboard-finance-top-v126="1"></script>',
-  '<script src="/v2/modules-v127-subscriptions.js?v=127.22" data-kun-subscriptions-v127="1"></script>',
-  '<script src="/v2/modules-v128-unit-tracking.js?v=128.4" data-kun-unit-tracking-v128="1"></script>'
+  '<script src="/v2/modules-v127-subscriptions.js?v=127.22" data-kun-subscriptions-v127="1"></script>'
 ];
 
 function redirectLegacyRoot(request){
@@ -126,6 +124,7 @@ function actualPreviewVersion(env){
     'Cache-Control':'no-store','X-Kun-Build':KUN_PREVIEW_ENTRYPOINT_BUILD
   }});
 }
+// Serialized inventory activation is deferred: existing allocation conflict requires reconciliation.
 void safety;
 void core;
 export default {
@@ -145,8 +144,6 @@ export default {
     if(aiMarketing)return aiMarketing;
     const clarity=await handleClarityApi({request,env,ctx,delegate:app});
     if(clarity)return clarity;
-    const tracking=await handleInventoryUnitTracking({request,env,ctx,delegate:app});
-    if(tracking)return tracking;
     const mobileUpdate=await handleMobileAppUpdate(request);
     if(mobileUpdate)return mobileUpdate;
     const collaborationDenied=await collaborationPermissionGuard(request,env,ctx);
@@ -169,7 +166,7 @@ export default {
     const handled=await handleJtHistoryReconcile({request,env,ctx,delegate:app});
     if(handled)return handled;
     const baseResponse=await app.fetch(request,env,ctx);
-    return injectV2Ui(request,await syncInventoryTrackingAfterResponse({request,response:baseResponse,env,actor:'system'}));
+    return injectV2Ui(request,baseResponse);
   },
   scheduled(event,env,ctx){return app.scheduled?.(event,env,ctx);}
 };

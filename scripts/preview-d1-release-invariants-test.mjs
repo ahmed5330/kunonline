@@ -76,7 +76,6 @@ assert.equal(conflict('shipment_awb_collision'),1,'Duplicate AWB within tenant i
 fixture.close();
 
 const workflow=readFileSync('.github/workflows/preview.yml','utf8');
-const mutation=workflow.indexOf('run: npm run db:migrate:preview');
-const invariant=workflow.indexOf('node scripts/preview-d1-release-invariants.mjs');
-assert.ok(invariant>0 && invariant<mutation,'Read-only invariant preflight must happen before DB mutation');
+assert.ok(!workflow.includes('run: npm run db:migrate:preview'),'No schema mutation is permitted in the deferred release');
+assert.ok(workflow.includes('node scripts/preview-inventory-deferral-proof.mjs'),'Release must retain exact baseline inventory behavior while existing conflict remains unresolved');
 console.log('Read-only D1 live inventory data invariants PASS: no PII, duplicate guards, safe missing tables, fail closed.');
