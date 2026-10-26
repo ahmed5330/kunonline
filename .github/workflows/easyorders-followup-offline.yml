@@ -1,0 +1,49 @@
+name: Easy Orders follow-up regression (offline)
+on:
+  pull_request:
+    branches: [develop/ux-system-upgrade]
+    paths:
+      - 'src/easyorders-*.js'
+      - 'scripts/easyorders-*.mjs'
+      - 'scripts/isolated-preview-qa-entrypoints-test.mjs'
+      - 'scripts/browser-*-fixture-test.mjs'
+      - '.github/workflows/easyorders-followup-offline.yml'
+permissions:
+  contents: read
+jobs:
+  regression:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - name: Provider identity, request budgets, scoped audit and replay
+        run: |
+          node scripts/easyorders-sync-concurrency-sqlite-test.mjs
+          node scripts/easyorders-store-gap-audit-test.mjs
+          node scripts/easyorders-explicit-gap-replay-test.mjs
+          node scripts/easyorders-scheduler-outcome-test.mjs
+          node scripts/easyorders-recovered-fee-guard-test.mjs
+      - name: Reject every customer-linked writing QA entrypoint
+        run: node scripts/isolated-preview-qa-entrypoints-test.mjs
+      - name: Select installed Windows Chrome for the isolated fixture
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $chromePath = 'C:\Program Files\Google\Chrome\Application\chrome.exe'
+          if (!(Test-Path -LiteralPath $chromePath)) { throw 'Chrome is required for the fixture' }
+          "KUN_CHROME_PATH=$chromePath" >> $env:GITHUB_ENV
+      - name: Exercise the actual product import UI with synthetic browser data
+        run: |
+          node scripts/browser-product-import-required-fields-fixture-test.mjs
+          node scripts/browser-customer-service-interactions-fixture-test.mjs
+          node scripts/browser-breakdown-controls-fixture-test.mjs
+          node scripts/browser-breakdown-all-options-fixture-test.mjs
+          node scripts/browser-campaign-visual-density-fixture-test.mjs

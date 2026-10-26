@@ -7,7 +7,7 @@ const uiSrc=await readFile(new URL('../public/v2/modules-v29-product-import.js',
 const bundleSrc=await readFile(new URL('../public/v2/modules-v134-bundle-import-picker.js',import.meta.url),'utf8');
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 let chrome=null,userDir=null,cdp=null;
-async function findChrome(){for(const path of ['/usr/bin/google-chrome','/usr/bin/google-chrome-stable','/usr/bin/chromium','/usr/bin/chromium-browser','/opt/google/chrome/chrome'])try{await access(path);return path;}catch{}throw new Error('No Chrome/Chromium executable found for product import fixture QA');}
+async function findChrome(){for(const path of [process.env.KUN_CHROME_PATH,'/usr/bin/google-chrome','/usr/bin/google-chrome-stable','/usr/bin/chromium','/usr/bin/chromium-browser','/opt/google/chrome/chrome']){if(!path)continue;try{await access(path);return path;}catch{}}throw new Error('No Chrome/Chromium executable found for product import fixture QA; set KUN_CHROME_PATH');}
 async function waitDebugger(child,{timeout=20000}={}){
   // Chrome chooses a free port. Its stderr announces the actual browser socket,
   // avoiding random-port collisions and preserving startup errors in CI.
