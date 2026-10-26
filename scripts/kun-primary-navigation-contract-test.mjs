@@ -44,7 +44,7 @@ for(const route of required){
 assert.ok(html.includes('/v2/kun-design-v143.js?v=145.1'),'Production must point at current JS');
 assert.ok(html.includes('/v2/kun-design-v143.css?v=145.0'),'Production must point at current CSS');
 const subscriptionUi=await readFile(new URL('modules-v127-subscriptions.js',base),'utf8');
-assert.ok(html.includes('/v2/modules-v127-subscriptions.js?v=127.20'),'Production V2 must load the current subscription interface');
+assert.ok(html.includes('/v2/modules-v127-subscriptions.js?v=127.22'),'Production V2 must load the current subscription interface');
 assert.match(html,/data-view="subscriptions" hidden>الاشتراكات والمدفوعات/,'Subscriptions start hidden until role validation');
 assert.match(access,/if\(view==='subscriptions'\)return data\.role==='admin'/,'Only platform admin may navigate to subscriptions');
 assert.ok(subscriptionUi.includes('if(state.me?.role!==\'admin\')return;'),'Subscription module must gate admin UI');

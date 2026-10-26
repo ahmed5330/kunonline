@@ -84,7 +84,7 @@ jobs:
           node --check public/v2/modules-v127-subscriptions.js
           node scripts/subscriptions-v127-contract-test.mjs
           node scripts/payment-access-v148-test.mjs
-      - name: Kun Online primary navigation contract
+      - name: Kun Online primary navigation and current subscription asset contract
         run: |
           node scripts/kun-primary-navigation-contract-test.mjs
           node --check public/v2/kun-design-v143.js

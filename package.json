@@ -26,7 +26,7 @@
     "test:integration-setup": "node scripts/integration-setup-test.mjs",
     "test:integration-validation": "node scripts/integration-validation-test.mjs",
     "test:meta-sync": "node scripts/meta-ads-sync-test.mjs",
-    "test:release-ui": "node scripts/release-ui-test.mjs",
+    "test:release-ui": "node scripts/release-ui-test.mjs && node scripts/kun-primary-navigation-contract-test.mjs",
     "test:store-isolation": "node scripts/store-data-isolation-test.mjs",
     "test:store-sql": "node scripts/store-sql-integration-test.mjs",
     "test:v27-contract": "node scripts/platform-v27-contract-test.mjs",
