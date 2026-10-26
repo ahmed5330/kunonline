@@ -17,17 +17,25 @@ function providerSaysMissing(data){const message=text(typeof data==='string'?dat
 function recoveryState(config={}){
   const highestShortId=positiveInt(config.easyOrdersRecoveryHighestShortId),nextShortId=positiveInt(config.easyOrdersRecoveryCursor),lastError=text(config.easyOrdersRecoveryLastError),explicit=text(config.easyOrdersRecoveryLastStatus);
   const estimatedRemaining=highestShortId&&nextShortId&&nextShortId<=highestShortId?highestShortId-nextShortId+1:0;
+  // Checking only the contiguous cursor hides delayed provider Short IDs:
+  // an ahead scan can have completed while unresolved 404s remain queued.
+  const unresolvedAheadCount=Array.isArray(config.easyOrdersRecoveryPendingShortIds)
+    ?config.easyOrdersRecoveryPendingShortIds.length:0;
   let status='waiting_for_short_id';
   if(explicit==='error'&&lastError)status='error';
   else if(explicit==='rate_limited')status='rate_limited';
-  else if(highestShortId&&estimatedRemaining>0)status='catching_up';
+  else if(highestShortId&&(estimatedRemaining>0||unresolvedAheadCount>0||explicit==='catching_up'))
+    status='catching_up';
+  else if(explicit==='waiting_for_provider_order')status='waiting_for_provider_order';
   else if(highestShortId&&nextShortId>highestShortId)status='healthy';
   else if(highestShortId&&!nextShortId)status='catching_up';
-  return {status,highestShortId,nextShortId,estimatedRemaining,lastError:lastError||null,lastRunAt:text(config.easyOrdersRecoveryLastRunAt)||null,lastRequests:positiveInt(config.easyOrdersRecoveryLastRequests),lastRecovered:positiveInt(config.easyOrdersRecoveryLastRecovered),recoveredTotal:positiveInt(config.easyOrdersRecoveryRecoveredCount),webhookLastShortId:positiveInt(config.webhookLastShortId||config.webhookLastShortID||config.webhook_last_short_id)};
+  return {status,highestShortId,nextShortId,estimatedRemaining,
+    unresolvedAheadCount,
+    lastError:lastError||null,lastRunAt:text(config.easyOrdersRecoveryLastRunAt)||null,lastCronAt:text(config.easyOrdersRecoveryLastCronAt)||null,lastRequests:positiveInt(config.easyOrdersRecoveryLastRequests),lastRecovered:positiveInt(config.easyOrdersRecoveryLastRecovered),recoveredTotal:positiveInt(config.easyOrdersRecoveryRecoveredCount),webhookLastShortId:positiveInt(config.webhookLastShortId||config.webhookLastShortID||config.webhook_last_short_id)};
 }
 function aggregateRecovery(results=[]){
-  const statuses=results.map(x=>x.status),error=statuses.includes('error'),rateLimited=statuses.includes('rate_limited'),catchingUp=statuses.includes('catching_up'),waiting=statuses.includes('waiting_for_short_id');
-  return {status:error?'error':rateLimited?'rate_limited':catchingUp?'catching_up':waiting?'waiting_for_short_id':'healthy',healthyConnections:results.filter(x=>x.status==='healthy').length,catchingUpConnections:results.filter(x=>x.status==='catching_up').length,waitingConnections:results.filter(x=>x.status==='waiting_for_short_id').length,errorConnections:results.filter(x=>x.status==='error').length,estimatedRemaining:results.reduce((sum,x)=>sum+positiveInt(x.estimatedRemaining),0),recoveredTotal:results.reduce((sum,x)=>sum+positiveInt(x.recoveredTotal||x.cumulativeRecovered),0)};
+  const statuses=results.map(x=>x.status),error=statuses.includes('error'),rateLimited=statuses.includes('rate_limited'),catchingUp=statuses.includes('catching_up'),providerWaiting=statuses.includes('waiting_for_provider_order'),waiting=statuses.includes('waiting_for_short_id');
+  return {status:error?'error':rateLimited?'rate_limited':catchingUp?'catching_up':providerWaiting?'waiting_for_provider_order':waiting?'waiting_for_short_id':'healthy',healthyConnections:results.filter(x=>x.status==='healthy').length,catchingUpConnections:results.filter(x=>x.status==='catching_up').length,waitingConnections:results.filter(x=>['waiting_for_short_id','waiting_for_provider_order'].includes(x.status)).length,waitingForProviderConnections:results.filter(x=>x.status==='waiting_for_provider_order').length,errorConnections:results.filter(x=>x.status==='error').length,estimatedRemaining:results.reduce((sum,x)=>sum+positiveInt(x.estimatedRemaining),0),unresolvedAheadCount:results.reduce((sum,x)=>sum+positiveInt(x.unresolvedAheadCount),0),recoveredTotal:results.reduce((sum,x)=>sum+positiveInt(x.recoveredTotal||x.cumulativeRecovered),0)};
 }
 
 async function patchConfig(env,connection,patch){

@@ -84,10 +84,11 @@ async function websiteWithDirectAndroidDownload(request,env){
     .replace(/\/v2\/modules-v19\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v19.js?v=20.3')
     .replace(/\/v2\/modules-v22\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v22.js?v=22.1')
     .replace(/\/v2\/modules-v80-jnt-address-cascade-v805\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v80-jnt-address-cascade-v805.js?v=80.6')
-    .replace(/\/v2\/modules-v121-dashboard-sync-guard\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v121-dashboard-sync-guard.js?v=121.3')
+    .replace(/\/v2\/modules-v121-dashboard-sync-guard\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v121-dashboard-sync-guard.js?v=121.4')
     .replace(/\/v2\/modules-v122-dashboard-experience\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v122-dashboard-experience.js?v=122.4')
     .replace(/\/v2\/modules-v123-dashboard-unified\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v123-dashboard-unified.js?v=123.1')
     .replace(/\/v2\/modules-v124-dashboard-periods-province\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v124-dashboard-periods-province.js?v=124.2')
+    .replace(/\/v2\/modules-v49-easyorders-recovery\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v49-easyorders-recovery.js?v=49.3')
     .replaceAll(LEGACY_APK_URL,DIRECT_APK_PATH)
     .replaceAll('/v2/modules-v51-permission-navigation.js?v=51.10','/v2/modules-v51-permission-navigation.js?v=51.17')
     .replace(/\/v2\/modules-v57-section-reload\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v57-section-reload.js?v=57.3')
@@ -107,7 +108,7 @@ async function websiteWithDirectAndroidDownload(request,env){
     html=html.replace('</body>','<script src="/v2/modules-v118-collaboration-order-picker.js?v=118.1.1" data-kun-collaboration-order-picker="1"></script></body>');
   }
   if(!html.includes('/v2/modules-v121-dashboard-sync-guard.js')){
-    html=html.replace('</body>','<script src="/v2/modules-v121-dashboard-sync-guard.js?v=121.3" data-kun-dashboard-sync-guard="1"></script></body>');
+    html=html.replace('</body>','<script src="/v2/modules-v121-dashboard-sync-guard.js?v=121.4" data-kun-dashboard-sync-guard="1"></script></body>');
   }
   if(!html.includes('/v2/modules-v122-dashboard-experience.js')){
     html=html.replace('</body>','<script src="/v2/modules-v122-dashboard-experience.js?v=122.4" data-kun-dashboard-experience="1"></script></body>');
