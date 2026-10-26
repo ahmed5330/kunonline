@@ -8,6 +8,7 @@ import {easyOrdersWebhookPath,handleEasyOrdersWebhook} from '../src/commerce-ord
 import {fairEasyOrdersRecoveryOrder,reconcileEasyOrdersOrders,easyOrdersRecoveryStatus} from '../src/easyorders-order-reconciliation.js';
 import {replayExplicitEasyOrdersStoreGaps} from '../src/easyorders-explicit-gap-replay.js';
 import {encryptSecret} from '../src/integration-secrets.js';
+import {checkEasyOrdersCronRecovery,assertEasyOrdersCronRecovered} from '../src/easyorders-scheduler-outcome.js';
 
 const db=new DatabaseSync(':memory:');
 db.exec(`
@@ -718,6 +719,12 @@ try{
   assert.equal(tail.ok,false,'Unconfirmed work is not complete');
   assert.equal(tail.healthyConnections,0);
   assert.equal(tail.waitingForProviderConnections,1);
+  const deferredTask=checkEasyOrdersCronRecovery(tail);
+  assert.equal(deferredTask.ok,true,'A verified wait is an allowed scheduled-task deferral');
+  assert.equal(deferredTask.providerRecoveryComplete,false);
+  assert.equal(deferredTask.deferredProviderConnections,1);
+  assert.equal(assertEasyOrdersCronRecovered(tail),tail);
+  assert.equal(tail.ok,false,'Task completion never changes the incomplete recovery result');
   assert.equal(tail.missing,0);assert.equal(tail.recovered,0);
   assert.equal(config('CON-TAIL').easyOrdersRecoveryCursor,1701);
   assert.equal(config('CON-TAIL').easyOrdersRecoveryLastProviderHttpStatus,400);
