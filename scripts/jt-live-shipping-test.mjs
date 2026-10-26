@@ -88,7 +88,7 @@ assert.ok(printBlock.includes("if(!awb){"),'Existing AWB must skip shipment crea
 assert.ok(printingRoute.includes("url.pathname!=='/api/printing'")&&printingRoute.includes("o.state IN ('confirmed','preparing')")&&printingRoute.includes("hasMore:offset+limit<total"),'Production Printing must expose assigned-store confirmed orders through paged dedicated queue');
 assert.ok(printingRoute.includes("order.state!=='shipped'||order.queuedForPrint||order.printed"),'Unrelated shipped orders must stay out of Printing');
 assert.ok(production.includes('preserveCustomerServiceOrderVisibility')&&!production.includes('data.orders=data.orders.filter('),'Confirmed orders must remain in Customer Service responses while also appearing in Printing');
-for(const marker of ['modules-v78-jt-shipping-order.js?v=78.5','modules-v79-printing.js?v=79.10','modules-v116-print-routing.js?v=116.1'])assert.ok(production.includes(marker),`Production must load/cache-bust ${marker}`);
+for(const marker of ['modules-v78-jt-shipping-order.js?v=78.5','modules-v79-printing.js?v=79.11','modules-v116-print-routing.js?v=116.1'])assert.ok(production.includes(marker),`Production must load/cache-bust ${marker}`);
 
 assert.ok(ui.includes('الإرسال الحقيقي وإنشاء AWB يتمان فقط')&&ui.includes('قسم الطباعة'),'J&T editor must explain that external sending belongs to Printing');
 assert.ok(ui.includes("version:'78.5'"),'J&T editor runtime must be v78.5');
