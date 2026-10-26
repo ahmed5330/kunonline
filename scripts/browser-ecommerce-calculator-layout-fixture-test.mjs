@@ -54,9 +54,13 @@ try{
   await cdp.send('Emulation.setDeviceMetricsOverride',{width,height:844,deviceScaleFactor:1,mobile:true});
   await cdp.send('Page.navigate',{url:'http://127.0.0.1:'+server.address().port+'/'});
   await waitFor('!!document.querySelector(".kun96-head")');
-  const result=await evaluate(`(()=>{const width=innerWidth;return {width,overflow:document.documentElement.scrollWidth-width,bad:[...document.querySelectorAll('#root *')].filter(x=>{if(x.closest('.kun96-impact'))return false;const r=x.getBoundingClientRect(),s=getComputedStyle(x);return r.width>0&&r.height>0&&s.display!=='none'&&s.visibility!=='hidden'&&(r.left < -2||r.right>width+2||r.width>width+2);}).slice(0,6).map(x=>({className:x.className,left:x.getBoundingClientRect().left,right:x.getBoundingClientRect().right})),widest:[...document.querySelectorAll("#root *")].map(x=>({c:x.className,w:x.getBoundingClientRect().width,sw:x.scrollWidth})).sort((a,b)=>b.w-a.w).slice(0,10),errors:window.__errors};})()`);
+  const result=await evaluate(`(()=>{const width=innerWidth;return {width,overflow:document.documentElement.scrollWidth-width,bad:[...document.querySelectorAll('#root *')].filter(x=>{if(x.closest('.table-wrap'))return false;const r=x.getBoundingClientRect(),s=getComputedStyle(x);return r.width>0&&r.height>0&&s.display!=='none'&&s.visibility!=='hidden'&&(r.left < -2||r.right>width+2||r.width>width+2);}).slice(0,6).map(x=>({className:x.className,left:x.getBoundingClientRect().left,right:x.getBoundingClientRect().right})),widest:[...document.querySelectorAll("#root *")].map(x=>({c:x.className,w:x.getBoundingClientRect().width,sw:x.scrollWidth})).sort((a,b)=>b.w-a.w).slice(0,10),errors:window.__errors};})()`);
   assert.equal(result.width,width,JSON.stringify(result));assert.ok(result.overflow<=1,'Calculator must fit the mobile viewport');
   assert.deepEqual(result.bad,[],'Calculator controls and content must remain inside the mobile viewport');
+  const table=await evaluate(`(()=>{const box=document.querySelector('.kun96-impact.table-wrap');if(!box)return null;const r=box.getBoundingClientRect(),before=box.scrollLeft;box.scrollLeft=-box.scrollWidth;const scrollable=box.scrollLeft!==before;box.scrollLeft=before;return {left:r.left,right:r.right,overflow:getComputedStyle(box).overflowX,scrollable,columns:box.querySelectorAll('thead th').length};})()`);
+  assert.ok(table&&table.left>=-2&&table.right<=width+2,'Wide table must have a bounded common table wrapper');
+  assert.ok(['auto','scroll'].includes(table.overflow)&&table.scrollable,'All wide table columns must remain reachable by RTL horizontal scrolling');
+  assert.equal(table.columns,4,'No sensitivity comparison column may be hidden');
   assert.deepEqual(result.errors,[]);
  }
  console.log('PASS: actual calculator header, steps and form fit 360px and 390px RTL without off-screen content.');
