@@ -32,8 +32,20 @@ jobs:
       - name: Verify Production remains migration-free
         run: npm run check:production-config
 
+      - name: Diagnose Easy Orders error HTTP codes and Cron ticks (READ ONLY)
+        if: contains(github.event.head_commit.message, '[easyorders-diagnose-only]')
+        run: |
+          set -euo pipefail
+          node scripts/easyorders-d1-aggregate-readonly-test.mjs
+          # Executes exactly one fixed SELECT on the canonical Preview D1.
+          # Outputs only numeric counts, no IDs, tokens or order data.
+          node scripts/easyorders-d1-aggregate-readonly.mjs
+
       - name: Confirm latest branch HEAD before Preview mutation
         id: ownership
+        # No QA fixture provisioning, Worker publish or D1 write may run for
+        # the separately approved, diagnosis-only squash commit.
+        if: ${{ !contains(github.event.head_commit.message, '[easyorders-diagnose-only]') }}
         run: |
           latest="$(git ls-remote origin refs/heads/develop/ux-system-upgrade | awk '{print $1}')"
           echo "latest_sha=$latest" >> "$GITHUB_OUTPUT"
@@ -135,6 +147,7 @@ jobs:
 
       - name: Verify isolated growth wallet capability handshake
         id: qa_growth_release
+        if: steps.ownership.outputs.is_latest == 'true'
         run: node scripts/production-preview-release-gate.mjs --isolated-qa "$KUN_PREVIEW_QA_BASE_URL"
 
       - name: Prove two native five-minute Cron executions on isolated QA
