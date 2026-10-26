@@ -36,7 +36,7 @@ assert.match(nativePrinting,/pendingSendOrderId/);
 assert.match(nativePrinting,/إرسال إلى J&T ونقل إلى جاري الشحن/);
 
 const calls=[],events=[],toasts=[],popups=[];
-let allow=true, failQueue=false;
+let allow=true, failQueue=false, failPrint=false, missingProof=false;
 const window={
   confirm:()=>allow,showToast:m=>toasts.push(m),
   open:()=>{const popup={location:{replace:url=>{popup.finalUrl=url;}},document:{body:{}},close(){popup.closed=true;}};popups.push(popup);return popup;},
@@ -47,7 +47,10 @@ const document={readyState:'loading',addEventListener(){},querySelector(){return
 const fetch=async (url,options={})=>{
   calls.push({url,method:options.method||'GET',body:options.body});
   if(url.includes('/details?'))return {ok:true,json:async()=>({order:{id:'o-1',storeId:'store-a',state:'confirmed'}})};
-  if(url.includes('/shipments/o-1/print'))return {ok:true,json:async()=>({state:'shipped',awb:'AWB-1',url:'https://jt.example/label'})};
+  if(url.includes('/shipments/o-1/print')){
+    if(failPrint)return {ok:false,status:502,json:async()=>({error:'Carrier print failed',code:'JT_PRINT_REJECTED'})};
+    return {ok:true,json:async()=>({state:'shipped',awb:missingProof?'':'AWB-1',url:missingProof?'':'https://jt.example/label'})};
+  }
   if(url.includes('/shipments/o-1'))return {ok:!failQueue,status:failQueue?422:201,json:async()=>failQueue?{error:'Address missing',code:'JT_SHIPMENT_FIELDS_MISSING'}:{queuedForPrint:true}};
   throw new Error('Unexpected network call '+url);
 };
@@ -66,7 +69,27 @@ assert.deepEqual(calls.map(x=>x.method),['GET','POST'],'Print is forbidden if qu
 assert.equal(events.length,0,'Do not optimistically mark shipped on error');
 assert.equal(popups.at(-1).closed,true,'Close abandoned popup');
 
+calls.length=0;events.length=0;failQueue=false;failPrint=true;
+await assert.rejects(()=>window.KunPrintingV79.shipById('o-1'),/Carrier print failed/);
+assert.deepEqual(calls.map(x=>x.method),['GET','POST','POST'],'Printing error must not re-create the shipment from the browser');
+assert.equal(events.length,0,'Printing failure never sends optimistic shipped events');
+assert.equal(popups.at(-1).closed,true,'Failed printing closes the waiting label window');
+
+calls.length=0;events.length=0;failPrint=false;missingProof=true;
+await assert.rejects(()=>window.KunPrintingV79.shipById('o-1'),/لم تؤكد إصدار بوليصة رسمية/);
+assert.equal(events.length,0,'Missing AWB or label URL cannot be reported as shipped');
+
+calls.length=0;events.length=0;popups.length=0;missingProof=false;
+const duplicateClicks=await Promise.all([
+  window.KunPrintingV79.shipById('o-1'),
+  window.KunPrintingV79.shipById('o-1')
+]);
+assert.equal(duplicateClicks.length,2);
+assert.deepEqual(calls.map(x=>x.method),['GET','POST','POST'],'Two concurrent clicks share one handoff');
+assert.equal(popups.length,1,'Only one label window may open for duplicate clicks');
+assert.equal(events.length,1,'Only one shipped event may fire per handoff');
+
 calls.length=0;allow=false;failQueue=false;
 assert.equal((await window.KunPrintingV79.shipById('o-1')).cancelled,true);
 assert.equal(calls.length,0,'No carrier call without explicit confirmation');
-console.log('PASS: confirmed -> J&T queue -> official print -> shipped; rejection/cancellation keep status unchanged; Android and worker wiring');
+console.log('PASS: confirmed -> J&T queue -> official print -> shipped; rejection, print failure, missing proof, cancel, duplicate clicks; Android and worker wiring');
