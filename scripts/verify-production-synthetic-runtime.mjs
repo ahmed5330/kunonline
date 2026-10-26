@@ -151,6 +151,8 @@ enabled = false
   await request(approvalPath,{method:'POST',body:{},status:403});
   const adminLogin=await request('/api/login',{method:'POST',body:{email:adminEmail,password:adminPassword}});cookie=(adminLogin.r.headers.get('set-cookie')||'').split(';')[0];
   const adminMe=(await request('/api/me')).d;if(adminMe.role!=='admin'||adminMe.uid!==adminUid)throw Error('PROD_QA_ADMIN_IDENTITY_FAILED');
+  const deferred=await fetch(process.env.KUN_PREVIEW_QA_BASE_URL+'/api/inventory/unit-tracking/summary'+q,{headers:{Cookie:cookie},redirect:'manual',signal:AbortSignal.timeout(30000)});
+  if(deferred.status!==404)throw Error('PROD_QA_DEFERRED_INVENTORY_ACTIVATED');
   const blocked=(await request('/api/accounting/faos/journals',{method:'POST',body:{clientId:cid,storeId:sid},status:403})).d;
   if(blocked.code!=='FAOS_WRITE_DISABLED')throw Error('PROD_QA_FAOS_POSTING_GATE_FAILED');
   await Promise.all([request(approvalPath,{method:'POST',body:{note:'Synthetic race A'}}),request(approvalPath,{method:'POST',body:{note:'Synthetic race B'}})]);
@@ -160,7 +162,7 @@ enabled = false
   const forensic=(await request('/api/admin/subscriptions/'+cid+'/ledger?limit=50')).d;
   if(forensic.diagnostics?.ledgerContinuity?.anomalyCount!==0||Number(forensic.wallet?.balance)!==1042)throw Error('PROD_QA_WALLET_FORENSIC_FAILED');
   const legacyOrders=(await query(legacy.uuid,'SELECT COUNT(*) AS n FROM orders'))[0]?.n;if(Number(legacyOrders)!==0)throw Error('PROD_QA_LEGACY_DATA_ROUTING_FAILED');
-  console.log(JSON.stringify({kind:'ISOLATED_PRODUCTION_RUNTIME_PROVEN',candidateSha,backendSha,syntheticOnly:true,distinctDatabases:true,distinctSessionSecrets:true,canonicalOrdersMatched:3,customerServiceConfirmedVisible:true,printingSameOrder:true,mobileSameOrders:true,legacyPasswordRejected:true,foreignClientDenied:true,providerKeyStayedInBackend:true,scopedHealthMatched:true,publicMetadataOnly:true,growthDryRunNoProviderWrite:true,productionFaosReadOnly:true,syntheticWalletConcurrentCreditExactlyOnce:true,foreignWalletUnchanged:true,walletLedgerContinuity:true,customerRowsModified:false}));
+  console.log(JSON.stringify({kind:'ISOLATED_PRODUCTION_RUNTIME_PROVEN',candidateSha,backendSha,syntheticOnly:true,distinctDatabases:true,distinctSessionSecrets:true,canonicalOrdersMatched:3,customerServiceConfirmedVisible:true,printingSameOrder:true,mobileSameOrders:true,legacyPasswordRejected:true,foreignClientDenied:true,providerKeyStayedInBackend:true,scopedHealthMatched:true,publicMetadataOnly:true,growthDryRunNoProviderWrite:true,productionFaosReadOnly:true,syntheticWalletConcurrentCreditExactlyOnce:true,foreignWalletUnchanged:true,walletLedgerContinuity:true,canonicalSerializedInventoryActivated:false,existingInventoryConflictResolved:false,customerRowsModified:false}));
  }finally{
   try{await query(canonical,'DELETE FROM users WHERE id=? AND email=?',[`QA-GENERAL-ADMIN-${run}`,`qa-admin-${run}@example.test`]);await query(canonical,'DELETE FROM store_connections WHERE id=? AND client_id=?',[`QA-FOREIGN-ERROR-${run}`,'PREVIEW-STORE-001']);await query(canonical,'DELETE FROM users WHERE id=? AND email=?',[uid,email]);if(legacy?.uuid&&allowedIds.has(legacy.uuid))await query(legacy.uuid,'DELETE FROM users WHERE id=? AND email=?',[legacyUid,email]);}
   finally{try{await api('DELETE',`workers/scripts/${name}`);}finally{await rm(dir,{recursive:true,force:true});}}
