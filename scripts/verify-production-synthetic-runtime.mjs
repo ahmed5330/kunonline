@@ -26,7 +26,7 @@ async function main(){
  if(b.filter(x=>x.type==='d1').length!==1||!b.some(x=>x.type==='d1'&&x.name==='DB'&&x.id===canonical)||b.some(x=>x.type==='service'))throw Error('PROD_QA_BACKEND_NOT_ISOLATED');
  const identity=await fetch(process.env.KUN_PREVIEW_QA_BASE_URL+'/__qa/identity').then(r=>r.json());
  const backendSha=(await execute('git',['rev-parse','HEAD'],{cwd:backendDir})).stdout.trim(),candidateSha=(await execute('git',['rev-parse','HEAD'],{cwd:candidateDir})).stdout.trim();
- if(identity.syntheticOnly!==true||identity.externalNetworkPolicy!=='synthetic-easyorders-only'||identity.sourceSha!==backendSha||candidateSha!=='0047df6a41769a5f77c234bb16a49e15ec630ae1')throw Error('PROD_QA_SOURCE_IDENTITY_INVALID');
+ if(identity.syntheticOnly!==true||identity.externalNetworkPolicy!=='synthetic-easyorders-only'||identity.sourceSha!==backendSha||candidateSha!=='36a027afd7a54abb53eaf375716d6d828c0fc047')throw Error('PROD_QA_SOURCE_IDENTITY_INVALID');
  const allowedIds=new Set([canonical]);
  async function query(id,sql,params=[]){
   if(!allowedIds.has(id)||liveIds.has(id))throw Error('PROD_QA_CUSTOMER_SQL_FORBIDDEN');
