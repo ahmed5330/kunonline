@@ -1,7 +1,7 @@
-/* Kun Online v124.1 — calendar-accurate previous month and dashboard period coordination */
+/* Kun Online v124.2 — stable province rendering and dashboard period coordination */
 (()=>{
   if(window.KunDashboardPeriodsProvinceV124)return;
-  const VERSION='124.1';
+  const VERSION='124.2';
   const nativeFetch=window.fetch.bind(window);
   const PRESETS=[
     ['today','اليوم'],
@@ -82,8 +82,9 @@
     list?.remove();
     $('.dash-u-view-toggle',sec)?.remove();
     const title=$('.dash-section-head h2',sec),sub=$('.dash-section-head p',sec);
-    if(title)title.textContent='كفاءة الشحن حسب المحافظة';
-    if(sub)sub.textContent='ترتيب وحجم الطلبات وجودة الشحن في جدول واحد، بدون تكرار نفس المحافظات مرتين.';
+    if(title&&title.textContent!=='كفاءة الشحن حسب المحافظة')title.textContent='كفاءة الشحن حسب المحافظة';
+    const description='ترتيب وحجم الطلبات وجودة الشحن في جدول واحد، بدون تكرار نفس المحافظات مرتين.';
+    if(sub&&sub.textContent!==description)sub.textContent=description;
     sec.dataset.v124Province='merged';
   }
 
