@@ -100,6 +100,8 @@ try{
   clientId=onboard.clientId;storeA=onboard.storeId;
   if(!clientId||!storeA)throw new Error('Customer Service tenant onboarding failed');
 
+  // Fund only the newly created synthetic tenant through the real Admin API.
+  await api(adminCookie,`/api/admin/subscriptions/${encodeURIComponent(clientId)}/credit`,{method:'POST',body:{amount:1000,note:'Isolated QA customer-service fixture credit',requestId:`qa-cs:${nonce}`}});
   const ownerCookie=(await login(ownerEmail,ownerPassword)).cookie;
   if(!ownerCookie)throw new Error('Customer Service owner login failed');
   await api(ownerCookie,'/api/stores',{method:'POST',ok:[200,201],body:{name:'CI CS Store B'}});
