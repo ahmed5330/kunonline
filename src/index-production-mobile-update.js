@@ -107,10 +107,10 @@ async function websiteWithDirectAndroidDownload(request,env){
     html=html.replace('</body>','<script src="/v2/modules-v121-dashboard-sync-guard.js?v=121.3" data-kun-dashboard-sync-guard="1"></script></body>');
   }
   if(!html.includes('/v2/modules-v122-dashboard-experience.js')){
-    html=html.replace('</body>','<script src="/v2/modules-v122-dashboard-experience.js?v=122.3" data-kun-dashboard-experience="1"></script></body>');
+    html=html.replace('</body>','<script src="/v2/modules-v122-dashboard-experience.js?v=122.4" data-kun-dashboard-experience="1"></script></body>');
   }
   if(!html.includes('/v2/modules-v123-dashboard-unified.js')){
-    html=html.replace('</body>','<script src="/v2/modules-v123-dashboard-unified.js?v=123.0" data-kun-dashboard-unified="1"></script></body>');
+    html=html.replace('</body>','<script src="/v2/modules-v123-dashboard-unified.js?v=123.1" data-kun-dashboard-unified="1"></script></body>');
   }
   if(!html.includes('/v2/modules-v124-dashboard-periods-province.js')){
     html=html.replace('</body>','<script src="/v2/modules-v124-dashboard-periods-province.js?v=124.1" data-kun-dashboard-periods-v124="1"></script></body>');

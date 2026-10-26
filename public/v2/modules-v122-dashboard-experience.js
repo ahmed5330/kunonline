@@ -1,7 +1,7 @@
 /* Kun Online v122.0 — executive dashboard UX, de-duplication and analytical depth */
 (()=>{
   if(window.KunDashboardExperienceV122)return;
-  const VERSION='122.3';
+  const VERSION='122.4';
   const nativeFetch=window.fetch.bind(window);
   const sectionOrder=['overview','trend','finance','ads','rates','provinces','ai'];
   const sectionMeta={
@@ -99,7 +99,9 @@
     // Unified performance cards replace the old dark executive pulse entirely.
     if(window.KunDashboardFinanceTopV126?.version==='126.4'){exec?.remove();}
     else if(d&&exec?.dataset.sig!==sig){const html=executive(d);if(exec)exec.outerHTML=html;else{const navEl=$('.dash-x-nav',dashboard),insertAfter=navEl||toolbar||legacy||$('.dash-hero',dashboard);insertAfter?.insertAdjacentHTML('afterend',html);}exec=$('[data-dash-executive="122"]',dashboard);if(exec)exec.dataset.sig=sig;}
-    const current=$$('[data-dash-section]',dashboard).map(x=>x.dataset.dashSection).filter(Boolean);if(current.join('|')!==sectionOrder.join('|'))for(const k of sectionOrder){const sec=$(`[data-dash-section="${k}"]`,dashboard);if(sec)dashboard.appendChild(sec);}
+    const current=$$('[data-dash-section]',dashboard).map(x=>x.dataset.dashSection).filter(k=>sectionOrder.includes(k));
+    const desired=sectionOrder.filter(k=>current.includes(k));
+    if(current.join('|')!==desired.join('|'))for(const k of desired){const sec=$(`[data-dash-section="${k}"]`,dashboard);if(sec)dashboard.appendChild(sec);}
   }
   function decorate(){
     if(decorating||!active())return;const root=$('#root');if(!root)return;decorating=true;
