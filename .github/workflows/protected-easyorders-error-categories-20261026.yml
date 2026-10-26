@@ -26,5 +26,6 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: node scripts/easyorders-protected-safe-error-categories.mjs
+# This run only reads categorized numeric HTTP/positive-control status metadata.
 # Do NOT add any deploy, migration, webhook POST, actual recovery or raw D1
 # debug output here. Only one fixed SELECT is permitted; stdout is aggregate.
