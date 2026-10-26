@@ -765,7 +765,7 @@ private fun V23OrderDetailDialog(
     var confirmDelete by remember { mutableStateOf(false) }
     var confirmShip by remember(order.id) { mutableStateOf(false) }
 
-    fun runAction(block: suspend () -> CustomerServiceJsonResult, after: ((CustomerServiceJsonResult) -> Unit)? = null) {
+    fun runAction(block: suspend () -> CustomerServiceJsonResult, after: (() -> Unit)? = null, afterResult: ((CustomerServiceJsonResult) -> Unit)? = null) {
         if (actionBusy) return
         actionBusy = true
         scope.launch {
@@ -773,7 +773,8 @@ private fun V23OrderDetailDialog(
             actionBusy = false
             Toast.makeText(context, result.message, if (result.ok) Toast.LENGTH_SHORT else Toast.LENGTH_LONG).show()
             if (result.ok) {
-                after?.invoke(result)
+                after?.invoke()
+                afterResult?.invoke(result)
                 onChanged()
             }
         }
@@ -789,7 +790,7 @@ private fun V23OrderDetailDialog(
                     confirmShip = false
                     runAction(
                         { KunCustomerServiceApi.shipOrder(context, order.id, order.storeId) },
-                        after = { shipped ->
+                        afterResult = { shipped ->
                             val url = shipped.data.optString("url")
                             if (url.startsWith("https://")) {
                                 runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
