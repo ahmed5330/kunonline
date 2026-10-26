@@ -6,7 +6,7 @@ t('HTTP 429 too many requests','UPSTREAM_RATE_LIMIT');
 t('SQLITE_CONSTRAINT: UNIQUE key','DATABASE_SCHEMA_OR_WRITE');
 t('External store identity not bound','EXTERNAL_STORE_BINDING');
 t('Easy Orders HTTP 400 bad request','UPSTREAM_REQUEST_REJECTED');
-t('Webhook returned 409: payload invalid','UPSTREAM_REQUEST_REJECTED');
+t('Webhook returned 409: payload invalid','CANONICAL_WEBHOOK_OR_VALIDATION');
 t('fetch failed from network','NETWORK_OR_TIMEOUT');
 t('Failed to decrypt key','SECRET_DECRYPT_OR_MISSING');
 t('','NO_ERROR_TEXT');
