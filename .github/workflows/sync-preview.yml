@@ -65,6 +65,7 @@ jobs:
         env:
           SYNC_SMOKE_ATTEMPTS: '36'
           SYNC_SMOKE_INTERVAL_MS: '5000'
+          SYNC_REQUIRE_EXACT_BUILD: '1'
         run: npm run smoke:sync-preview
       - name: Restore previous sync Worker after failed smoke
         if: always() && steps.smoke.outcome == 'failure' && steps.rollback_base.outputs.version_id != ''
