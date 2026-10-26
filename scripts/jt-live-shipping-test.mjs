@@ -79,11 +79,12 @@ assert.ok(queueBlock.includes('state:row.state'),'Preparation must preserve the 
 
 const printStart=workflow.indexOf('async function createAndPrint'),printEnd=workflow.indexOf('export async function handleJtPrintWorkflowV2'),printBlock=workflow.slice(printStart,printEnd);
 assert.ok(printStart>=0&&printEnd>printStart,'Create-and-print handler must exist');
-for(const marker of ['createJtShipment({shipment,secrets})',"UPDATE orders SET awb=?",'jt_shipment_created','jt_print_requested',"printSize:'2'",'printCode:1','signedPost(PRINT_ORDER_PATH','jt_print_failed','jt_label_printed','official:true',"UPDATE orders SET state='shipped'",'jt_handoff_shipped'])assert.ok(printBlock.includes(marker),`Explicit Printing send workflow missing ${marker}`);
-assert.ok(printBlock.indexOf('createJtShipment({shipment,secrets})')<printBlock.indexOf('signedPost(PRINT_ORDER_PATH'),'addOrder must run before printOrder');
-assert.ok(printBlock.indexOf("UPDATE orders SET awb=?")<printBlock.indexOf('signedPost(PRINT_ORDER_PATH'),'AWB must be persisted before printOrder so retries cannot duplicate a shipment');
-assert.ok(printBlock.indexOf('jt_label_printed')<printBlock.indexOf("UPDATE orders SET state='shipped'"),'Order must enter shipping only after the carrier label succeeds');
-assert.ok(printBlock.includes("if(!awb){"),'Existing AWB must skip shipment creation and continue printing');
+for(const marker of ['claimJtCreate(', 'createJtShipment({shipment,secrets})','persistJtClaimAwb(','jt_shipment_created','jt_print_requested',"printSize:'2'",'printCode:1','signedPost(PRINT_ORDER_PATH','jt_print_failed','finalizeJtOfficialLabel('])assert(printBlock.includes(marker),`Explicit Printing send workflow missing ${marker}`);
+assert(printBlock.indexOf('claimJtCreate(')<printBlock.indexOf('createJtShipment({shipment,secrets})'),'Atomic database claim must precede external J&T addOrder');
+assert(printBlock.indexOf('persistJtClaimAwb(')<printBlock.indexOf('signedPost(PRINT_ORDER_PATH'),'Persist AWB before official label printing');
+assert(printBlock.indexOf('signedPost(PRINT_ORDER_PATH')<printBlock.indexOf('finalizeJtOfficialLabel('),'Carrier proof precedes atomic shipped state');
+const claimGuard=await readFile(new URL('../src/jt-shipping-claim.js',import.meta.url),'utf8');
+for(const marker of ["UPDATE orders SET history=json_insert","history IS ?","jt_create_claimed","UPDATE orders SET awb=?","UPDATE orders SET state='shipped'","jt_label_printed","jt_handoff_shipped"])assert(claimGuard.includes(marker),`Atomic D1 shipment guard missing ${marker}`);
 
 assert.ok(printingRoute.includes("url.pathname!=='/api/printing'")&&printingRoute.includes("o.state IN ('confirmed','preparing')")&&printingRoute.includes("hasMore:offset+limit<total"),'Production Printing must expose assigned-store confirmed orders through paged dedicated queue');
 assert.ok(printingRoute.includes("order.state!=='shipped'||order.queuedForPrint||order.printed"),'Unrelated shipped orders must stay out of Printing');
