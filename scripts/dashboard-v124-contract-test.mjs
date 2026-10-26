@@ -26,8 +26,8 @@ assert.ok(ui.includes("tableWrap.classList.remove('dash-u-province-hidden')"),'t
 assert.ok(ui.includes('dash-v124-orders-track'),'order-volume visualization must be merged into the province table');
 assert.ok(ui.includes('بدون تكرار نفس المحافظات مرتين'),'province copy must explain the single merged view');
 
-assert.ok(preview.includes('/v2/modules-v124-dashboard-periods-province.js?v=124.1'),'preview must inject dashboard v124');
-assert.ok(production.includes('/v2/modules-v124-dashboard-periods-province.js?v=124.1'),'production must inject dashboard v124');
+assert.ok(preview.includes('/v2/modules-v124-dashboard-periods-province.js?v=124.2'),'preview must inject dashboard v124');
+assert.ok(production.includes('/v2/modules-v124-dashboard-periods-province.js?v=124.2'),'production must inject dashboard v124');
 
 for(const unsafe of ['DROP TABLE','DELETE FROM','ALTER TABLE','CREATE TABLE','migrations/']){
   assert.ok(!ui.includes(unsafe),`dashboard v124 must not contain database mutation token: ${unsafe}`);

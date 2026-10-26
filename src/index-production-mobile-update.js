@@ -87,6 +87,7 @@ async function websiteWithDirectAndroidDownload(request,env){
     .replace(/\/v2\/modules-v121-dashboard-sync-guard\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v121-dashboard-sync-guard.js?v=121.3')
     .replace(/\/v2\/modules-v122-dashboard-experience\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v122-dashboard-experience.js?v=122.4')
     .replace(/\/v2\/modules-v123-dashboard-unified\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v123-dashboard-unified.js?v=123.1')
+    .replace(/\/v2\/modules-v124-dashboard-periods-province\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v124-dashboard-periods-province.js?v=124.2')
     .replaceAll(LEGACY_APK_URL,DIRECT_APK_PATH)
     .replaceAll('/v2/modules-v51-permission-navigation.js?v=51.10','/v2/modules-v51-permission-navigation.js?v=51.17')
     .replace(/\/v2\/modules-v57-section-reload\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v57-section-reload.js?v=57.3')
@@ -115,7 +116,7 @@ async function websiteWithDirectAndroidDownload(request,env){
     html=html.replace('</body>','<script src="/v2/modules-v123-dashboard-unified.js?v=123.1" data-kun-dashboard-unified="1"></script></body>');
   }
   if(!html.includes('/v2/modules-v124-dashboard-periods-province.js')){
-    html=html.replace('</body>','<script src="/v2/modules-v124-dashboard-periods-province.js?v=124.1" data-kun-dashboard-periods-v124="1"></script></body>');
+    html=html.replace('</body>','<script src="/v2/modules-v124-dashboard-periods-province.js?v=124.2" data-kun-dashboard-periods-v124="1"></script></body>');
   }
   if(!html.includes('/v2/modules-v125-dashboard-section-periods.js')){
     html=html.replace('</body>','<script src="/v2/modules-v125-dashboard-section-periods.js?v=125.3" data-kun-dashboard-section-periods-v125="1"></script></body>');
