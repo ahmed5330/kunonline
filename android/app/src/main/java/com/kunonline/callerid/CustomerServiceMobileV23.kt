@@ -763,8 +763,9 @@ private fun V23OrderDetailDialog(
     var note by remember(order.id) { mutableStateOf("") }
     var cancelReason by remember(order.id) { mutableStateOf("") }
     var confirmDelete by remember { mutableStateOf(false) }
+    var confirmShip by remember(order.id) { mutableStateOf(false) }
 
-    fun runAction(block: suspend () -> CustomerServiceJsonResult, after: (() -> Unit)? = null) {
+    fun runAction(block: suspend () -> CustomerServiceJsonResult, after: ((CustomerServiceJsonResult) -> Unit)? = null) {
         if (actionBusy) return
         actionBusy = true
         scope.launch {
@@ -772,10 +773,33 @@ private fun V23OrderDetailDialog(
             actionBusy = false
             Toast.makeText(context, result.message, if (result.ok) Toast.LENGTH_SHORT else Toast.LENGTH_LONG).show()
             if (result.ok) {
-                after?.invoke()
+                after?.invoke(result)
                 onChanged()
             }
         }
+    }
+
+    if (confirmShip) {
+        AlertDialog(
+            onDismissRequest = { confirmShip = false },
+            title = { Text("إرسال الأوردر إلى J&T") },
+            text = { Text("سيتم إنشاء شحنة حقيقية وإصدار بوليصة رسمية. سينتقل الأوردر إلى جاري الشحن فقط عند نجاح J&T. هل تريد المتابعة؟") },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmShip = false
+                    runAction(
+                        { KunCustomerServiceApi.shipOrder(context, order.id, order.storeId) },
+                        after = { shipped ->
+                            val url = shipped.data.optString("url")
+                            if (url.startsWith("https://")) {
+                                runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+                            }
+                        }
+                    )
+                }) { Text("إرسال وطباعة") }
+            },
+            dismissButton = { TextButton(onClick = { confirmShip = false }) { Text("إلغاء") } }
+        )
     }
 
     AlertDialog(
@@ -821,10 +845,14 @@ private fun V23OrderDetailDialog(
                         label = { Text("سبب الإلغاء (إجباري)") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
                 }
                 Button(
-                    onClick = { runAction({ KunCustomerServiceApi.updateState(context, order.id, selectedState, deferUntil, order.stockBatchId, cancelReason) }) },
+                    onClick = {
+                        if (selectedState == "shipped") confirmShip = true
+                        else runAction({ KunCustomerServiceApi.updateState(context, order.id, selectedState, deferUntil, order.stockBatchId, cancelReason) })
+                    },
                     enabled = !actionBusy && selectedState.isNotBlank() &&
                         (selectedState != "deferred" || deferUntil.matches(Regex("^\\d{4}-\\d{2}-\\d{2}$"))) &&
-                        (selectedState != "cancelled" || cancelReason.isNotBlank()),
+                        (selectedState != "cancelled" || cancelReason.isNotBlank()) &&
+                        (selectedState != "shipped" || order.state in setOf("confirmed", "preparing")),
                     modifier = Modifier.fillMaxWidth()
                 ) { Text("حفظ الحالة") }
 
