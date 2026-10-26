@@ -1,0 +1,44 @@
+name: One-time public parity access status (no secrets)
+on:
+  push:
+    branches: [audit/public-parity-response-status-20261026]
+    paths: [.github/workflows/one-time-parity-status-20261026.yml]
+permissions:
+  contents: read
+jobs:
+  public-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: GET anonymous parity status only, never echo sensitive bodies
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          const paths=['/health/preview-parity','/api/me'];
+          for(const path of paths){
+            const url='https://app.kun-online.com'+path+'?publicOnlyParityStatus=20261026';
+            const response=await fetch(url,{
+              method:'GET',redirect:'manual',
+              headers:{Accept:'application/json','Cache-Control':'no-store'},
+              signal:AbortSignal.timeout(12000)
+            });
+            let value={};
+            try{value=await response.json();}catch{}
+            const code=String(value?.code||value?.error||'');
+            const safe=['AUTH_REQUIRED','ADMIN_ONLY','ADMIN_IDENTITY_REQUIRED','UNAUTHORIZED','FORBIDDEN',''];
+            console.log(JSON.stringify({
+              path,httpStatus:response.status,
+              safeErrorCode:safe.includes(code)?code:'WITHHELD',
+              exposedJsonKeyCount:response.status===200&&value&&typeof value==='object'?Object.keys(value).length:0
+            }));
+            // 401/403 are both access denials; an unauthed 200 is dangerous.
+            assert.ok(response.status===401||response.status===403,
+              'PUBLIC_ADMIN_PARITY_ACCESS_NOT_DENIED');
+          }
+          console.log('PASS: no anonymous access to parity diagnostic or account identity.');
+          NODE
+# Fixed URLs only, no cookies, tokens or bodies printed and no deployment.
