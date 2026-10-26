@@ -160,13 +160,58 @@ async function reconcileConnection(env,connection,{maxRequests,lookback,fetcher,
       await patchConfig(env,connection,{...providerFailurePatch(),easyOrdersRecoveryLastRunAt:now(),easyOrdersRecoveryLastStatus:'waiting_for_short_id',easyOrdersRecoveryLastRequests:out.requests,easyOrdersRecoveryLastRecovered:0,easyOrdersRecoveryLastError:null,...cronReceipt()});
       return out;
     }
+    // Any confirmed absence in the historical prefix must be retried just
+    // like an ahead-probe hole. A short ID is never permanently discarded.
+    const existingPending=(Array.isArray(config.easyOrdersRecoveryPendingShortIds)
+      ?config.easyOrdersRecoveryPendingShortIds:[]).map(positiveInt).filter(Boolean);
+    const prefixPendingAdd=[],prefixPendingRemove=[];
+    let positiveControlVerified=false;
     const inspect=async shortId=>{
       if(out.requests>=maxRequests)return {kind:'budget'};
-      // Count the HTTP attempt BEFORE awaiting it: failed requests consume
-      // provider quota too. Otherwise one failed call per connection can
-      // bypass the global 30-request Cron ceiling.
+      // Failed and successful requests BOTH consume provider quota.
       out.requests++;
-      const fetched=await fetchOrderByShortId(fetcher,apiKey,shortId);
+      let fetched;
+      try{fetched=await fetchOrderByShortId(fetcher,apiKey,shortId);}
+      catch(error){
+        // Easy Orders sometimes returns HTTP 400 "record not found" for a
+        // non-existent Short ID rather than HTTP 404. NEVER treat 400 as
+        // missing solely because of the error text. During an actual Cron
+        // run, first verify a known order on the SAME external storefront
+        // still responds with correct identity and then retry the exact
+        // disputed Short ID. Both 400s must agree before queuing a hole.
+        if(!cronRun||Number(error?.status)!==400||
+          error?.code!=='EASYORDERS_RECONCILIATION_PROVIDER_ERROR'||
+          !providerSaysMissing(error?.message))throw error;
+        const boundStore=text(connection.external_store_id),knownId=text(config.webhookLastOrderId||config.easyOrdersRecoverySeedOrderId);
+        const knownShort=positiveInt(config.webhookLastShortId||config.webhookLastShortID||
+          config.webhook_last_short_id||config.easyOrdersRecoveryHighestShortId);
+        const controlShort=knownId&&/^\d+$/.test(knownId)?positiveInt(knownId):knownId?0:knownShort;
+        if(!boundStore||boundStore===text(connection.id)||/^CON-/i.test(boundStore)||
+          (!knownId&&!controlShort))throw error;
+        if(!positiveControlVerified){
+          if(out.requests>=maxRequests)return {kind:'budget'};
+          out.requests++;
+          const control=controlShort?await fetchOrderByShortId(fetcher,apiKey,controlShort)
+            :await fetchOrderById(fetcher,apiKey,knownId);
+          if(control.kind==='rate_limited'){out.rateLimited=true;return control;}
+          const order=control.data||{},actual=positiveInt(order.short_id||order.shortId);
+          positiveControlVerified=control.kind==='found'&&!!text(order.id)&&
+            text(order.store_id||order.storeId)===boundStore&&
+            (!controlShort||actual===controlShort)&&
+            (!knownId||/^\d+$/.test(knownId)||text(order.id)===knownId);
+          if(!positiveControlVerified)throw error;
+        }
+        if(out.requests>=maxRequests)return {kind:'budget'};
+        out.requests++;
+        try{fetched=await fetchOrderByShortId(fetcher,apiKey,shortId);}
+        catch(retryError){
+          if(Number(retryError?.status)===400&&
+            retryError?.code==='EASYORDERS_RECONCILIATION_PROVIDER_ERROR'&&
+            providerSaysMissing(retryError?.message)){
+            fetched={kind:'missing',status:400,data:null};
+          }else throw retryError;
+        }
+      }
       if(fetched.kind==='rate_limited'){out.rateLimited=true;return fetched;}
       if(fetched.kind==='missing'){out.missing++;return fetched;}
       const order=fetched.data||{},actualShort=positiveInt(order.short_id||order.shortId)||shortId;
@@ -200,24 +245,28 @@ async function reconcileConnection(env,connection,{maxRequests,lookback,fetcher,
 
     while(cursor>0&&cursor<=highest&&out.requests<maxRequests&&!out.rateLimited){
       const inspected=await inspect(cursor);
-      // A 429 is NOT a missing order. Do not checkpoint the next Short ID
-      // until the current ID has been read (or explicitly returned 404).
-      // Otherwise the throttled order can be permanently skipped in all
-      // future scheduled runs.
       if(inspected.kind==='rate_limited'||inspected.kind==='budget')break;
+      if(inspected.kind==='missing'&&!existingPending.includes(cursor)&&
+        !prefixPendingAdd.includes(cursor)){
+        if(new Set([...existingPending,...prefixPendingAdd]).size>=120)
+          throw Object.assign(new Error('Unresolved Short ID queue requires operator review'),{
+            status:409,code:'EASYORDERS_PENDING_QUEUE_FULL'});
+        prefixPendingAdd.push(cursor);
+      }
+      if(inspected.kind==='found'&&existingPending.includes(cursor))
+        prefixPendingRemove.push(cursor);
       cursor++;
-      // A later provider failure must not discard this verified prefix.
-      // The cursor still stops at the first unverified number.
-      verifiedProgress={easyOrdersRecoveryHighestShortId:highest,easyOrdersRecoveryCursor:cursor};
+      // A later provider failure must not discard this verified prefix OR
+      // the durable pending retry queue for any now-skipped Short IDs.
+      verifiedProgress={easyOrdersRecoveryHighestShortId:highest,easyOrdersRecoveryCursor:cursor,
+        easyOrdersRecoveryPendingAdd:[...prefixPendingAdd],
+        easyOrdersRecoveryPendingRemove:[...prefixPendingRemove]};
     }
 
     // Shared-source Short IDs include orders from other shops and holes.
     // Persist a *separate* ahead probe, together with an explicit retry list
     // for HTTP 404 holes. Advancing the probe without recording every unknown
     // ID would silently lose future orders whose Short ID appears later.
-    const existingPending=(Array.isArray(config.easyOrdersRecoveryPendingShortIds)
-      ?config.easyOrdersRecoveryPendingShortIds:[])
-      .map(positiveInt).filter(Boolean);
     const pendingAdd=[],pendingRemove=[];
     let pendingLastChecked=positiveInt(config.easyOrdersRecoveryPendingLastCheckedId);
     let nextVerifiedProbe=positiveInt(config.easyOrdersRecoveryProbeCursor)||highest+1;
@@ -225,7 +274,8 @@ async function reconcileConnection(env,connection,{maxRequests,lookback,fetcher,
     const captureAheadProgress=()=>{verifiedProgress={
       easyOrdersRecoveryHighestShortId:highest,easyOrdersRecoveryCursor:highest+1,
       easyOrdersRecoveryProbeCursor:nextVerifiedProbe,
-      easyOrdersRecoveryPendingAdd:[...pendingAdd],easyOrdersRecoveryPendingRemove:[...pendingRemove],
+      easyOrdersRecoveryPendingAdd:[...prefixPendingAdd,...pendingAdd],
+      easyOrdersRecoveryPendingRemove:[...prefixPendingRemove,...pendingRemove],
       easyOrdersRecoveryPendingLastCheckedId:pendingLastChecked};};
     if(cursor>highest&&out.requests<maxRequests&&!out.rateLimited){
       const candidates=[...new Set(existingPending)].sort((a,b)=>a-b);
@@ -273,7 +323,7 @@ async function reconcileConnection(env,connection,{maxRequests,lookback,fetcher,
 
     const cumulative=positiveInt(config.easyOrdersRecoveryRecoveredCount)+out.recovered,estimatedRemaining=cursor<=highest?highest-cursor+1:0;
     const status=out.rateLimited?'rate_limited':(estimatedRemaining>0?'catching_up':'healthy');
-    const saved=await patchConfig(env,connection,{...providerFailurePatch(out.rateLimited?{providerHttpStatus:429,providerErrorCategory:'provider_throttle'}:{}),easyOrdersRecoveryHighestShortId:highest,easyOrdersRecoveryCursor:cursor,easyOrdersRecoveryProbeCursor:nextVerifiedProbe,easyOrdersRecoveryPendingAdd:pendingAdd,easyOrdersRecoveryPendingRemove:pendingRemove,easyOrdersRecoveryPendingLastCheckedId:pendingLastChecked,easyOrdersRecoveryLastRunAt:now(),easyOrdersRecoveryLastStatus:pendingQueueFull?'error':status,easyOrdersRecoveryLastRequests:out.requests,easyOrdersRecoveryLastRecovered:out.recovered,easyOrdersRecoveryRecoveredCount:cumulative,easyOrdersRecoveryLastError:pendingQueueFull?'Unresolved Short ID queue requires operator review':null,...cronReceipt()});
+    const saved=await patchConfig(env,connection,{...providerFailurePatch(out.rateLimited?{providerHttpStatus:429,providerErrorCategory:'provider_throttle'}:{}),easyOrdersRecoveryHighestShortId:highest,easyOrdersRecoveryCursor:cursor,easyOrdersRecoveryProbeCursor:nextVerifiedProbe,easyOrdersRecoveryPendingAdd:[...prefixPendingAdd,...pendingAdd],easyOrdersRecoveryPendingRemove:[...prefixPendingRemove,...pendingRemove],easyOrdersRecoveryPendingLastCheckedId:pendingLastChecked,easyOrdersRecoveryLastRunAt:now(),easyOrdersRecoveryLastStatus:pendingQueueFull?'error':status,easyOrdersRecoveryLastRequests:out.requests,easyOrdersRecoveryLastRecovered:out.recovered,easyOrdersRecoveryRecoveredCount:cumulative,easyOrdersRecoveryLastError:pendingQueueFull?'Unresolved Short ID queue requires operator review':null,...cronReceipt()});
     out.highestShortId=positiveInt(saved.easyOrdersRecoveryHighestShortId);out.nextShortId=positiveInt(saved.easyOrdersRecoveryCursor);out.estimatedRemaining=Math.max(0,out.highestShortId-out.nextShortId+1);
     out.unresolvedAheadCount=Array.isArray(saved.easyOrdersRecoveryPendingShortIds)
       ?saved.easyOrdersRecoveryPendingShortIds.length:0;
