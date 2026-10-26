@@ -1,0 +1,29 @@
+name: Protected general release public and Worker read-only proof
+on:
+  push:
+    branches: [codex/serialized-warehouse-operations]
+    paths: ['.github/workflows/protected-general-release-public-proof-20261026.yml']
+permissions:
+  contents: read
+jobs:
+  public-readonly-proof:
+    runs-on: ubuntu-latest
+    environment: preview
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - name: Verify pinned full-traffic Workers and public access boundaries
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          EXPECTED_PRODUCTION_WORKER_VERSION: 6e3f5489-0cd1-4926-80dc-be3871be84b5
+          EXPECTED_PREVIEW_WORKER_VERSION: 3c0f6a25-7d10-4176-8f7b-1d04c481026b
+          EXPECTED_PRODUCTION_SOURCE_SHA: 66d4f87efd540a2a964798d74b2e0f572ee671c5
+          EXPECTED_PREVIEW_SOURCE_SHA: 9f39190bf882f2302d3ccf0a477676f771f076b8
+        run: node scripts/general-release-public-readonly-proof.mjs
+# All Cloudflare requests are GET metadata. Public application checks use no
+# account session and return release metadata or verify anonymous access denial.
