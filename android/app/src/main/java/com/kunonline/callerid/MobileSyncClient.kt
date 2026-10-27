@@ -28,7 +28,10 @@ object MobileSyncClient {
             .fetch(cookie, source, forceFull)
 }
 
-private class MobileSyncSession {
+internal class MobileSyncSession(
+    private val elapsedTime: () -> Long = { SystemClock.elapsedRealtime() },
+    private val network: ((String, String) -> MobileSyncResponse)? = null
+) {
     private var activeCookie = ""
     private val states = linkedMapOf<String, MobileSyncAccumulator>()
     private var legacyUntil = 0L
@@ -50,47 +53,52 @@ private class MobileSyncSession {
         val endpoint = if (source.substringBefore('?') == "/api/state") "/api/mobile/state-sync" else "/api/mobile/board-sync"
         val query = source.substringAfter('?', "")
         val syncPath = endpoint + "?" + query + if (accumulator.cursor.isBlank()) "" else "&cursor=" + URLEncoder.encode(accumulator.cursor, "UTF-8")
-        val response = if (SystemClock.elapsedRealtime() < legacyUntil) get(cookie, source) else get(cookie, syncPath)
+        val response = if (elapsedTime() < legacyUntil) get(cookie, source) else get(cookie, syncPath)
         if (response.code == 401 || response.code == 403) {
             clear()
             return response
         }
         if (response.code == 404 || response.code == 405) {
-            legacyUntil = SystemClock.elapsedRealtime() + 300_000L
+            legacyUntil = elapsedTime() + 300_000L
             states.remove(source)
-            return get(cookie, source)
+            return loadAuthoritative(cookie, source)
         }
         if (response.code in 500..599) {
             // The delta layer is an optimisation only. If it has a transient server
             // problem, immediately fall back to the authoritative source so orders
             // never stop refreshing just because delta transport is unavailable.
-            val authoritative = get(cookie, source)
+            val authoritative = loadAuthoritative(cookie, source)
+            if (authoritative.code == 401 || authoritative.code == 403) return authoritative
             if (authoritative.code in 200..299) {
-                legacyUntil = SystemClock.elapsedRealtime() + 60_000L
+                legacyUntil = elapsedTime() + 60_000L
                 states.remove(source)
                 return authoritative
             }
             return response
         }
         if (response.code !in 200..299) return response
-        if (SystemClock.elapsedRealtime() < legacyUntil) return response
+        if (elapsedTime() < legacyUntil) return response
         val changed = try {
             accumulator.accept(response.body)
         } catch (_: Exception) {
             // Never merge a partial/corrupt delta. Rebase once from the server.
             states.remove(source)
             val reset = get(cookie, endpoint + "?" + query)
+            if (reset.code == 401 || reset.code == 403) {
+                clear()
+                return reset
+            }
             if (reset.code !in 200..299) {
-                val authoritative = get(cookie, source)
-                if (authoritative.code in 200..299) legacyUntil = SystemClock.elapsedRealtime() + 60_000L
+                val authoritative = loadAuthoritative(cookie, source)
+                if (authoritative.code in 200..299) legacyUntil = elapsedTime() + 60_000L
                 return authoritative
             }
             val fresh = MobileSyncAccumulator()
             try {
                 fresh.accept(reset.body)
             } catch (_: Exception) {
-                val authoritative = get(cookie, source)
-                if (authoritative.code in 200..299) legacyUntil = SystemClock.elapsedRealtime() + 60_000L
+                val authoritative = loadAuthoritative(cookie, source)
+                if (authoritative.code in 200..299) legacyUntil = elapsedTime() + 60_000L
                 return authoritative
             }
             states[source] = fresh
@@ -102,7 +110,14 @@ private class MobileSyncSession {
         return MobileSyncResponse(200, if (changed) JSONObject(baseline.toString()) else baseline, changed)
     }
 
+    private fun loadAuthoritative(cookie: String, source: String): MobileSyncResponse {
+        val response = get(cookie, source)
+        if (response.code == 401 || response.code == 403) clear()
+        return response
+    }
+
     private fun get(cookie: String, path: String): MobileSyncResponse {
+        network?.let { return it(cookie, path) }
         val connection = (URL("https://app.kun-online.com" + path).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
             connectTimeout = 10_000
