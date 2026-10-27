@@ -1,3 +1,4 @@
+import {guardSessionRequest} from './session-request-guard.js';
 import {auditEasyOrdersReadOnlyRpc} from './easyorders-readonly-audit-rpc.js';
 import app,{SyncEntrypoint as BaseSyncEntrypoint} from './index-commerce-v38-base.js';
 import {handleClarityApi,syncClarityScheduled} from './clarity-integration.js';
@@ -129,6 +130,7 @@ void safety;
 void core;
 export default {
   async fetch(request,env,ctx){
+    const sessionGuard=guardSessionRequest(request);if(sessionGuard)return sessionGuard;
     if(request.method==='GET'&&new URL(request.url).pathname==='/api/preview/growth-release')return app.fetch(request,env,ctx);
     if(request.method==='GET'&&new URL(request.url).pathname==='/api/preview/version')
       return actualPreviewVersion(env);
