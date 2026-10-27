@@ -1,3 +1,4 @@
+import {createHash} from 'node:crypto';
 import {writeFile,mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
@@ -47,6 +48,14 @@ async function main(){
     if(cfg.easyOrdersRecoveryLastError||['error','rate_limited'].includes(cfg.easyOrdersRecoveryLastStatus))throw new Error('QA_NATIVE_CRON_RECOVERY_FAILED');
     return cfg.easyOrdersRecoveryLastCronAt||null;
   }
+  // Only after proving this app owns one isolated QA D1, seed two synthetic fingerprints.
+  const fingerprint=label=>createHash('sha256').update(`${app}:${label}`).digest('hex');
+  const expiredFingerprint=fingerprint('session-maintenance-expired'),validFingerprint=fingerprint('session-maintenance-valid');
+  const expiryNow=Math.floor(Date.now()/1000);
+  for(const [hash,expiry] of [[expiredFingerprint,expiryNow-60],[validFingerprint,expiryNow+3600]]){
+    const inserted=await api('POST',`d1/database/${id}/query`,{sql:'INSERT INTO revoked_sessions (token_hash,expires_at) VALUES (?,?) ON CONFLICT(token_hash) DO UPDATE SET expires_at=excluded.expires_at',params:[hash,expiry]});
+    if(inserted?.[0]?.success!==true)throw new Error('QA_SESSION_MAINTENANCE_SEED_FAILED');
+  }
   const before=await receipt();
   const dir=await mkdtemp(join(tmpdir(),'kun-qa-cron-'));
   let report;
@@ -72,8 +81,15 @@ async function main(){
       if(receipts.size<2)await new Promise(resolve=>setTimeout(resolve,20000));
     }
     if(receipts.size!==2)throw new Error('QA_TWO_NATIVE_CRON_RECEIPTS_NOT_OBSERVED');
+    const maintenance=await api('POST',`d1/database/${id}/query`,{
+      sql:'SELECT COUNT(CASE WHEN token_hash=? THEN 1 END) AS expiredRemaining,COUNT(CASE WHEN token_hash=? THEN 1 END) AS validRemaining FROM revoked_sessions WHERE token_hash IN (?,?)',
+      params:[expiredFingerprint,validFingerprint,expiredFingerprint,validFingerprint]
+    });
+    const maintenanceRows=maintenance?.[0]?.results?.[0];
+    if(maintenance?.[0]?.success!==true||maintenanceRows?.expiredRemaining!==0||maintenanceRows?.validRemaining!==1)
+      throw new Error('QA_NATIVE_SESSION_MAINTENANCE_NOT_PROVEN');
     report={kind:'ISOLATED_QA_NATIVE_CRON_PROVEN',scheduler:name,receipts:[...receipts],
-      syntheticOnly:true,liveCronExecutionProven:false,customerRowsModified:false};
+      syntheticOnly:true,sessionMaintenanceProven:true,expiredSyntheticFingerprintRemoved:true,validSyntheticRevocationPreserved:true,liveCronExecutionProven:false,customerRowsModified:false};
   }finally{
     try{await api('PUT',`workers/scripts/${name}/schedules`,[]);}
     finally{await rm(dir,{recursive:true,force:true});}
