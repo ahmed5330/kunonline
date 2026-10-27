@@ -24,7 +24,7 @@ for(const field of ['metaToken','easyOrdersToken','emailPassword']){
  await assert.rejects(async()=>context.legacy.saveState(withLegacySecretEncryption({DB:database}),{clients:[{id:'synthetic-client',[field]:'synthetic-plaintext-secret'}]}),e=>e.code==='LEGACY_ENCRYPTION_KEY_MISSING');
  assert.equal(db.prepare('SELECT json FROM state').get().json,before,'Missing key must not persist partial/plaintext state');
 }
-assert.throws(()=>withLegacySecretEncryption({DB:database}),e=>e.code==='LEGACY_ENCRYPTION_KEY_MISSING');
+assert.throws(()=>withLegacySecretEncryption({DB:database}).TOKEN_ENC_KEY,e=>e.code==='LEGACY_ENCRYPTION_KEY_MISSING');
 const explicit=withLegacySecretEncryption({...bare,TOKEN_ENC_KEY:'synthetic-existing-key'});
 await context.legacy.saveState(explicit,{clients:[{id:'synthetic-client',metaToken:'synthetic-existing-secret'}]});
 const saved=JSON.parse(db.prepare('SELECT json FROM state').get().json).clients[0].metaToken;

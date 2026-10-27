@@ -4,6 +4,9 @@ export function withLegacySecretEncryption(env){
   const inherited=Object.create(env);
   if(env.INTEGRATION_ENCRYPTION_KEY)inherited.TOKEN_ENC_KEY=`legacy-state:${env.INTEGRATION_ENCRYPTION_KEY}`;
   else if(env.SESSION_SECRET)inherited.TOKEN_ENC_KEY=`legacy-state:${env.SESSION_SECRET}`;
-  else throw Object.assign(new Error('تعذر حفظ أسرار التكامل: مفتاح التشفير غير مهيأ.'),{status:503,code:'LEGACY_ENCRYPTION_KEY_MISSING'});
+  else Object.defineProperty(inherited,'TOKEN_ENC_KEY',{get(){
+    // Public pages can still render without secrets; only a cipher operation fails.
+    throw Object.assign(new Error('تعذر حفظ أسرار التكامل: مفتاح التشفير غير مهيأ.'),{status:503,code:'LEGACY_ENCRYPTION_KEY_MISSING'});
+  }});
   return inherited;
 }
