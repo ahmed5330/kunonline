@@ -28,7 +28,10 @@ object MobileSyncClient {
             .fetch(cookie, source, forceFull)
 }
 
-private class MobileSyncSession {
+internal class MobileSyncSession(
+    private val elapsedTime: () -> Long = { SystemClock.elapsedRealtime() },
+    private val network: ((String, String) -> MobileSyncResponse)? = null
+) {
     private var activeCookie = ""
     private val states = linkedMapOf<String, MobileSyncAccumulator>()
     private var legacyUntil = 0L
@@ -50,13 +53,13 @@ private class MobileSyncSession {
         val endpoint = if (source.substringBefore('?') == "/api/state") "/api/mobile/state-sync" else "/api/mobile/board-sync"
         val query = source.substringAfter('?', "")
         val syncPath = endpoint + "?" + query + if (accumulator.cursor.isBlank()) "" else "&cursor=" + URLEncoder.encode(accumulator.cursor, "UTF-8")
-        val response = if (SystemClock.elapsedRealtime() < legacyUntil) get(cookie, source) else get(cookie, syncPath)
+        val response = if (elapsedTime() < legacyUntil) get(cookie, source) else get(cookie, syncPath)
         if (response.code == 401 || response.code == 403) {
             clear()
             return response
         }
         if (response.code == 404 || response.code == 405) {
-            legacyUntil = SystemClock.elapsedRealtime() + 300_000L
+            legacyUntil = elapsedTime() + 300_000L
             states.remove(source)
             return get(cookie, source)
         }
@@ -66,14 +69,14 @@ private class MobileSyncSession {
             // never stop refreshing just because delta transport is unavailable.
             val authoritative = get(cookie, source)
             if (authoritative.code in 200..299) {
-                legacyUntil = SystemClock.elapsedRealtime() + 60_000L
+                legacyUntil = elapsedTime() + 60_000L
                 states.remove(source)
                 return authoritative
             }
             return response
         }
         if (response.code !in 200..299) return response
-        if (SystemClock.elapsedRealtime() < legacyUntil) return response
+        if (elapsedTime() < legacyUntil) return response
         val changed = try {
             accumulator.accept(response.body)
         } catch (_: Exception) {
@@ -82,7 +85,7 @@ private class MobileSyncSession {
             val reset = get(cookie, endpoint + "?" + query)
             if (reset.code !in 200..299) {
                 val authoritative = get(cookie, source)
-                if (authoritative.code in 200..299) legacyUntil = SystemClock.elapsedRealtime() + 60_000L
+                if (authoritative.code in 200..299) legacyUntil = elapsedTime() + 60_000L
                 return authoritative
             }
             val fresh = MobileSyncAccumulator()
@@ -90,7 +93,7 @@ private class MobileSyncSession {
                 fresh.accept(reset.body)
             } catch (_: Exception) {
                 val authoritative = get(cookie, source)
-                if (authoritative.code in 200..299) legacyUntil = SystemClock.elapsedRealtime() + 60_000L
+                if (authoritative.code in 200..299) legacyUntil = elapsedTime() + 60_000L
                 return authoritative
             }
             states[source] = fresh
@@ -103,6 +106,7 @@ private class MobileSyncSession {
     }
 
     private fun get(cookie: String, path: String): MobileSyncResponse {
+        network?.let { return it(cookie, path) }
         val connection = (URL("https://app.kun-online.com" + path).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
             connectTimeout = 10_000
