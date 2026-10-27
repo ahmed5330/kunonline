@@ -12,9 +12,9 @@ android {
         applicationId = "com.kunonline.callerid.stable"
         minSdk = 29
         targetSdk = 35
-        // v2.9.18: faster initial order load with server-verified, session-scoped store context.
-        versionCode = 149
-        versionName = "2.9.18"
+        // v2.9.19: preserve authoritative auth failures and clear denied-session sync data.
+        versionCode = 150
+        versionName = "2.9.19"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

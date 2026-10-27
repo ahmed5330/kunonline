@@ -61,13 +61,14 @@ internal class MobileSyncSession(
         if (response.code == 404 || response.code == 405) {
             legacyUntil = elapsedTime() + 300_000L
             states.remove(source)
-            return get(cookie, source)
+            return loadAuthoritative(cookie, source)
         }
         if (response.code in 500..599) {
             // The delta layer is an optimisation only. If it has a transient server
             // problem, immediately fall back to the authoritative source so orders
             // never stop refreshing just because delta transport is unavailable.
-            val authoritative = get(cookie, source)
+            val authoritative = loadAuthoritative(cookie, source)
+            if (authoritative.code == 401 || authoritative.code == 403) return authoritative
             if (authoritative.code in 200..299) {
                 legacyUntil = elapsedTime() + 60_000L
                 states.remove(source)
@@ -83,8 +84,12 @@ internal class MobileSyncSession(
             // Never merge a partial/corrupt delta. Rebase once from the server.
             states.remove(source)
             val reset = get(cookie, endpoint + "?" + query)
+            if (reset.code == 401 || reset.code == 403) {
+                clear()
+                return reset
+            }
             if (reset.code !in 200..299) {
-                val authoritative = get(cookie, source)
+                val authoritative = loadAuthoritative(cookie, source)
                 if (authoritative.code in 200..299) legacyUntil = elapsedTime() + 60_000L
                 return authoritative
             }
@@ -92,7 +97,7 @@ internal class MobileSyncSession(
             try {
                 fresh.accept(reset.body)
             } catch (_: Exception) {
-                val authoritative = get(cookie, source)
+                val authoritative = loadAuthoritative(cookie, source)
                 if (authoritative.code in 200..299) legacyUntil = elapsedTime() + 60_000L
                 return authoritative
             }
@@ -103,6 +108,12 @@ internal class MobileSyncSession(
         // Cloning thousands of orders on every heartbeat was expensive.
         val baseline = requireNotNull(accumulator.state)
         return MobileSyncResponse(200, if (changed) JSONObject(baseline.toString()) else baseline, changed)
+    }
+
+    private fun loadAuthoritative(cookie: String, source: String): MobileSyncResponse {
+        val response = get(cookie, source)
+        if (response.code == 401 || response.code == 403) clear()
+        return response
     }
 
     private fun get(cookie: String, path: String): MobileSyncResponse {

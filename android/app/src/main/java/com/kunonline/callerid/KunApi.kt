@@ -466,6 +466,7 @@ object KunApi {
                 return StateResult(false, "انتهت الجلسة — سجّل الدخول مرة أخرى")
             }
             if (response.code == 403 || response.code == 400) clearScope()
+            if (response.code == 403 && session(context) == cookie) CustomerCache.clear(context)
             if (response.code !in 200..299) {
                 return StateResult(false, response.body.optString("error").ifBlank { "تعذر تحميل بيانات النظام" })
             }
@@ -587,6 +588,8 @@ object KunApi {
 
     private fun session(context: Context): String? = SecureStore.get(context, AUTH_PREFS, SESSION_KEY)
     private fun clearSession(context: Context) {
+        // Derived caller data must not remain after session authentication ends.
+        CustomerCache.clear(context)
         clearScope()
         verifiedOptionsCookie = ""
         verifiedOptionsUntil = 0L
