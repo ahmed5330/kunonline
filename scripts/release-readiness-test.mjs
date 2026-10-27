@@ -37,7 +37,7 @@ must(clientContext.includes("window.KunClientContextV24={version:'24.0'")&&clien
 for(const view of ['dashboard','onboarding','stores','store-access','pos','orders','customers','inbox','inventory','procurement','supplier-finance','shipping','cod','campaigns','finance','profit','analytics','automation','ai','integrations','access','approvals','ops','audit','wallet','admin-clients','ad-studio','control','readiness','settings'])must(index.includes(`data-view="${view}"`),`Release navigation view missing: ${view}`);
 for(const header of ['Content-Security-Policy','X-Content-Type-Options','X-Frame-Options','Referrer-Policy','Permissions-Policy','Cross-Origin-Opener-Policy'])must(security.includes(header),`Security header missing: ${header}`);
 must(security.includes("Cache-Control','no-store"),'API no-store cache policy missing');
-must(security.includes("legacy-state:${env.INTEGRATION_ENCRYPTION_KEY}"),'Legacy integration secrets must derive encryption from the integration key when TOKEN_ENC_KEY is absent');
+must((await readFile(new URL('../src/legacy-secret-policy.js',import.meta.url),'utf8')).includes("legacy-state:${env.INTEGRATION_ENCRYPTION_KEY}"),'Legacy integration secrets must derive encryption from the integration key when TOKEN_ENC_KEY is absent');
 must(customerApi.includes("u.pathname!=='/api/customers'")&&customerApi.includes("method.toUpperCase()!=='POST'"),'Customer create API missing');
 for(const marker of ["'/api/products'","'/api/suppliers'","/stock/add","data-v20-theme"])must(actions.includes(marker),`Core action wiring missing: ${marker}`);
 must(actions.includes('KunActionsV23?.openCreateOrder')&&actions.includes('KunManualJntOrderV106'),'Legacy toolbar must wait for and delegate to the canonical J&T form');

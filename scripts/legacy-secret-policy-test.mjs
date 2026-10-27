@@ -1,0 +1,40 @@
+import assert from 'node:assert/strict';
+import vm from 'node:vm';
+import {readFileSync} from 'node:fs';
+import {DatabaseSync} from 'node:sqlite';
+import {withLegacySecretEncryption} from '../src/legacy-secret-policy.js';
+import {encryptSecret as encryptModern,decryptSecret as decryptModern} from '../src/integration-secrets.js';
+const source=readFileSync(new URL('../src/index.js',import.meta.url),'utf8');
+const names=['encKeyFrom','encryptSecret','decryptSecret','encryptClientSecrets','saveState'];
+const funcs=names.map(name=>{const a=source.indexOf('async function '+name+'('),b=source.indexOf('\n}',a);assert.ok(a>=0&&b>a);return source.slice(a,b+2)}).join('\n');
+const script=source.split('\n').filter(x=>x.startsWith('const toB64 =')||x.startsWith('const fromB64 =')||x.startsWith('const SECRET_FIELDS =')).join('\n')+'\n'+funcs+'\n;globalThis.legacy={encryptSecret,decryptSecret,saveState};';
+const context=vm.createContext({crypto,TextEncoder,TextDecoder,btoa,atob});vm.runInContext(script,context);
+const db=new DatabaseSync(':memory:');db.exec('CREATE TABLE state(id INTEGER PRIMARY KEY,json TEXT,updated_at TEXT)');
+const database={prepare(sql){let args=[];return {bind(...a){args=a;return this},async run(){return {success:true,meta:db.prepare(sql).run(...args)}}}}};
+const bare={DB:database,APP_ENV:'preview',SESSION_SECRET:'synthetic-modern-key'};
+const guarded=withLegacySecretEncryption(bare);assert.equal(withLegacySecretEncryption(guarded),guarded);
+assert.equal(guarded.TOKEN_ENC_KEY,'legacy-state:'+bare.SESSION_SECRET);
+assert.equal(withLegacySecretEncryption({...bare,INTEGRATION_ENCRYPTION_KEY:'synthetic-explicit-modern'}).TOKEN_ENC_KEY,'legacy-state:synthetic-explicit-modern');
+assert.equal(guarded.DB,database);assert.equal(guarded.SESSION_SECRET,bare.SESSION_SECRET);
+await context.legacy.saveState(guarded,{clients:[{id:'synthetic-client',metaToken:'synthetic-derived-existing'}]});
+const derivedCipher=JSON.parse(db.prepare('SELECT json FROM state').get().json).clients[0].metaToken;
+assert.equal(await context.legacy.decryptSecret(derivedCipher,{...bare,TOKEN_ENC_KEY:'legacy-state:'+bare.SESSION_SECRET}),'synthetic-derived-existing');
+const before=db.prepare('SELECT json FROM state').get().json;
+for(const field of ['metaToken','easyOrdersToken','emailPassword']){
+ await assert.rejects(async()=>context.legacy.saveState(withLegacySecretEncryption({DB:database}),{clients:[{id:'synthetic-client',[field]:'synthetic-plaintext-secret'}]}),e=>e.code==='LEGACY_ENCRYPTION_KEY_MISSING');
+ assert.equal(db.prepare('SELECT json FROM state').get().json,before,'Missing key must not persist partial/plaintext state');
+}
+assert.throws(()=>withLegacySecretEncryption({DB:database}).TOKEN_ENC_KEY,e=>e.code==='LEGACY_ENCRYPTION_KEY_MISSING');
+const explicit=withLegacySecretEncryption({...bare,TOKEN_ENC_KEY:'synthetic-existing-key'});
+await context.legacy.saveState(explicit,{clients:[{id:'synthetic-client',metaToken:'synthetic-existing-secret'}]});
+const saved=JSON.parse(db.prepare('SELECT json FROM state').get().json).clients[0].metaToken;
+assert.ok(saved.startsWith('enc$'));assert.ok(!saved.includes('synthetic-existing-secret'));
+assert.equal(await context.legacy.decryptSecret(saved,explicit),'synthetic-existing-secret');
+const wrong=withLegacySecretEncryption({...bare,TOKEN_ENC_KEY:'synthetic-other-key'});
+assert.equal(await context.legacy.decryptSecret(saved,wrong),null);
+// Modern Preview-derived encryption must not be changed by the legacy policy.
+const modern=await encryptModern(guarded,'synthetic-modern-secret');
+assert.equal(await decryptModern(bare,modern.ciphertextB64,modern.ivB64),'synthetic-modern-secret');
+assert.equal(await decryptModern(guarded,modern.ciphertextB64,modern.ivB64),'synthetic-modern-secret');
+assert.equal(bare.TOKEN_ENC_KEY,undefined,'No remote/local environment key rotation');
+db.close();console.log('Legacy secret policy passed: real persistence helper rejects missing keys before writes; existing cipher and modern derived-key compatibility preserved.');

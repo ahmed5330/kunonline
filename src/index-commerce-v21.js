@@ -1,3 +1,4 @@
+import {withLegacySecretEncryption as hardenedEnv} from './legacy-secret-policy.js';
 import commerceV20 from './index-commerce-v20.js';
 
 const SECURITY_HEADERS={
@@ -10,13 +11,6 @@ const SECURITY_HEADERS={
   'Cross-Origin-Resource-Policy':'same-origin'
 };
 
-function hardenedEnv(env){
-  if(env.TOKEN_ENC_KEY)return env;
-  const inherited=Object.create(env);
-  if(env.INTEGRATION_ENCRYPTION_KEY)inherited.TOKEN_ENC_KEY=`legacy-state:${env.INTEGRATION_ENCRYPTION_KEY}`;
-  else if(env.SESSION_SECRET)inherited.TOKEN_ENC_KEY=`legacy-state:${env.SESSION_SECRET}`;
-  return inherited;
-}
 
 function harden(response,path){
   const headers=new Headers(response.headers);
