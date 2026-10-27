@@ -18,6 +18,13 @@ for(const entry of [worker,gateway]){
  assert.equal((await entry.fetch(new Request('https://isolated.test/api/me',{headers:{cookie:'ko_session=x; ko_session=y'}}),noSideEffects,context)).status,401);
 }
 for(const path of ['/api/login','/api/setup','/v2/'])assert.equal(guardSessionRequest(new Request('https://isolated.test'+path,{headers:{cookie:'ko_session=stale; ko_session=stale'}})),null);
+for(const entry of [worker,gateway]){
+ let databaseReads=0;
+ const missingKeys={DB:{prepare(){databaseReads++;throw Error('No DB access without encryption sources')}}};
+ const response=await entry.fetch(new Request('https://isolated.test/api/me'),missingKeys,context);
+ assert.ok(response.status>=500&&response.status<600,'Missing signing/encryption configuration must fail closed');
+ assert.equal(databaseReads,0);
+}
 env.PREVIEW_APP={fetch:r=>worker.fetch(r,env,context)};
 async function req(path,t,useGateway=false,options={}){const r=new Request('https://isolated.test'+path,{method:path==='/api/logout'?'POST':'GET',...options,headers:{cookie:'ko_session='+t,...options.headers}});return (useGateway?gateway:worker).fetch(r,env,context)}
 for(const viaGateway of [false,true]){

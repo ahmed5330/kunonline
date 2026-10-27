@@ -1,3 +1,4 @@
+import {runWithSessionMaintenance} from './session-maintenance.js';
 import {guardSessionRequest} from './session-request-guard.js';
 import {auditEasyOrdersReadOnlyRpc} from './easyorders-readonly-audit-rpc.js';
 import app,{SyncEntrypoint as BaseSyncEntrypoint} from './index-commerce-v38-base.js';
@@ -170,13 +171,16 @@ export default {
     const baseResponse=await app.fetch(request,env,ctx);
     return injectV2Ui(request,baseResponse);
   },
-  scheduled(event,env,ctx){return app.scheduled?.(event,env,ctx);}
+  scheduled(event,env,ctx){
+    const task=runWithSessionMaintenance(event?.cron,env,()=>app.scheduled?.(event,env,ctx));
+    ctx?.waitUntil?.(task);return task;
+  }
 };
 
 export class SyncEntrypoint extends BaseSyncEntrypoint {
   async auditEasyOrdersGapsReadOnly(input){return auditEasyOrdersReadOnlyRpc(this.env,input);}
   async runCron(cron){
-    const upstream=await super.runCron(cron);
+    const upstream=await runWithSessionMaintenance(cron,this.env,()=>super.runCron(cron));
     if(String(cron||'')==='0 */2 * * *'){
       const clarity=await syncClarityScheduled(this.env,{limit:30}).catch(error=>({ok:false,code:error?.code||'CLARITY_SCHEDULED_FAILED'}));
       return {...(upstream&&typeof upstream==='object'?upstream:{upstream}),clarity};
