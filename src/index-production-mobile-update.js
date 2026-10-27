@@ -1,3 +1,4 @@
+import {guardSessionRequest} from './session-request-guard.js';
 import {handleFinancialAccountingOS} from './accounting-faos-api.js';
 import {routeProductionCodRead} from './production-cod-read-fallback.js';
 import app from './index-production-jt-history.js';
@@ -153,6 +154,7 @@ function collaborationSchemaFailure(){
 
 export default {
   async fetch(request,env,ctx){
+    const sessionGuard=guardSessionRequest(request);if(sessionGuard)return sessionGuard;
     // Public marketing reviews and admin moderation remain isolated from
     // customer/store subscriptions and from Preview database forwarding.
     const websiteReviews=await handlePublicSiteReviews(request,env,{
