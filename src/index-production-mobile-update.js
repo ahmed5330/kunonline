@@ -1,3 +1,4 @@
+import {guardSessionRequest} from './session-request-guard.js';
 import {handleFinancialAccountingOS} from './accounting-faos-api.js';
 import {routeProductionCodRead} from './production-cod-read-fallback.js';
 import app from './index-production-jt-history.js';
@@ -142,6 +143,7 @@ function collaborationSchemaFailure(){
 
 export default {
   async fetch(request,env,ctx){
+    const sessionGuard=guardSessionRequest(request);if(sessionGuard)return sessionGuard;
     const easyOrdersHealth=await handleProductionEasyOrdersHealth(request,env);
     if(easyOrdersHealth)return easyOrdersHealth;
     const parity=await handleProductionPreviewParity(request,env,{
