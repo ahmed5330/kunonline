@@ -15,6 +15,7 @@ import android.view.View
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import kotlin.concurrent.thread
@@ -126,7 +127,18 @@ object CallerOverlay {
                 customer.note?.takeIf { it.isNotBlank() }?.let { line("ملاحظة: $it", 13f) }
                 if (customer.previousOrders > 0) line("له ${customer.previousOrders} طلب سابق", 12f)
             }
-            card.addView(body)
+            val detailsHost = LinearLayout(app).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(0, app.dp(8), 0, app.dp(8))
+            }
+            if (!locked && !customer.orderId.isNullOrBlank()) {
+                line("جاري تحميل تفاصيل الطلب الكاملة…", 12f, INK2)
+                body.addView(detailsHost)
+            }
+            card.addView(ScrollView(app).apply {
+                isFillViewport = false
+                addView(body)
+            }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, app.dp(240)))
 
             val actions = LinearLayout(app).apply {
                 orientation = LinearLayout.VERTICAL
@@ -246,6 +258,23 @@ object CallerOverlay {
                 wm.addView(card, params)
                 currentView = card
                 currentManager = wm
+                if (!locked && !customer.orderId.isNullOrBlank()) {
+                    thread(name = "kun-caller-order-details") {
+                        val result = KunCustomerServiceApi.fetchOrderDetails(app, customer.orderId,
+                            selectedClientId = customer.clientId, selectedStoreId = customer.storeId)
+                        handler.post {
+                            val stillUnlocked = !(app.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager).isKeyguardLocked
+                            if (currentView === card && stillUnlocked) {
+                                if (result.ok) renderCallerFullDetails(app, detailsHost, result.data)
+                                else detailsHost.addView(TextView(app).apply {
+                                    text = "تعذر تحميل التفاصيل: ${result.message}"
+                                    textSize = 12f
+                                    setTextColor(INK2)
+                                })
+                            }
+                        }
+                    }
+                }
             }
         }
     }
