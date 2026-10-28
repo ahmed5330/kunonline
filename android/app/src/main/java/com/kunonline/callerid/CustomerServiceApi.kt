@@ -255,6 +255,20 @@ object KunCustomerServiceApi {
         CustomerServiceJsonResult(true, "تم حذف الأوردر", json(response))
     }
 
+    /** Live one-request read for the active caller overlay; no catalog or mutation. */
+    fun fetchOrderDetails(context: Context, orderId: String, selectedClientId: String = "", selectedStoreId: String = ""): CustomerServiceJsonResult {
+        val cookie = cookie(context) ?: return CustomerServiceJsonResult(false, "سجّل الدخول أولاً")
+        return runCatching {
+            val clientId = selectedClientId.ifBlank { resolveClientId(context, cookie) }
+            if (clientId.isBlank()) return CustomerServiceJsonResult(false, "تعذر تحديد حساب المتجر")
+            val storeParam = if (selectedStoreId.isBlank()) "" else "&storeId=${enc(selectedStoreId)}"
+            val response = request("GET", "/api/orders/${enc(orderId)}/details?clientId=${enc(clientId)}$storeParam", cookie)
+            if (cookie(context) != cookie) return CustomerServiceJsonResult(false, "تغيّرت جلسة الحساب")
+            if (response.code !in 200..299) return authFailure(context, response, "تعذر تحميل تفاصيل الطلب")
+            CustomerServiceJsonResult(true, "تم تحميل تفاصيل الطلب", json(response))
+        }.getOrElse { CustomerServiceJsonResult(false, "تعذر الاتصال بكن أونلاين") }
+    }
+
     fun fetchEditorData(context: Context, orderId: String, selectedStoreId: String = "", requireHistory: Boolean = false, selectedClientId: String = ""): CustomerServiceEditorData {
         val cookie = cookie(context) ?: return CustomerServiceEditorData(false, "سجّل الدخول أولاً")
         return runCatching {
