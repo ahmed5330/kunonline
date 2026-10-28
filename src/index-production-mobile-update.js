@@ -94,11 +94,14 @@ async function websiteWithDirectAndroidDownload(request,env){
     .replaceAll('/v2/modules-v51-permission-navigation.js?v=51.10','/v2/modules-v51-permission-navigation.js?v=51.17')
     .replace(/\/v2\/modules-v57-section-reload\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v57-section-reload.js?v=57.3')
     .replaceAll('/v2/modules-v78-jt-shipping-order.js?v=78.4','/v2/modules-v78-jt-shipping-order.js?v=78.5')
-    .replaceAll('/v2/modules-v79-printing.js?v=79.7','/v2/modules-v79-printing.js?v=79.11')
+    .replaceAll('/v2/modules-v79-printing.js?v=79.7','/v2/modules-v79-printing.js?v=79.12')
     .replaceAll('/v2/modules-v117-team-collaboration.js?v=117.0','/v2/modules-v117-team-collaboration.js?v=117.3')
     .replaceAll('/v2/modules-v118-collaboration-order-picker.js?v=118.0','/v2/modules-v118-collaboration-order-picker.js?v=118.1.1');
   // v57 owns the ordered v66 -> v67 -> v68... chain. Injecting v66/v67 here
   // executes them twice and splits the hub state from its event handlers.
+  html=html.replace(/order-document-preview\.js\?v=[^"']+/g,'order-document-preview.js?v=1.0');
+  if(!html.includes('/v2/order-document-preview.js'))html=html.replace('</body>','<script src="/v2/order-document-preview.js?v=1.0"></script></body>');
+  html=html.replace(/modules-v79-printing\.js\?v=[^"']+/g,'modules-v79-printing.js?v=79.12');
   if(!html.includes('/v2/modules-v116-print-routing.js')){
     html=html.replace('</body>','<script src="/v2/modules-v116-print-routing.js?v=116.1" data-kun-print-routing="1"></script></body>');
   }
