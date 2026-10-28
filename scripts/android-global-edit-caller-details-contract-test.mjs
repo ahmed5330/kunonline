@@ -14,7 +14,7 @@ const details = source('CallerFullDetailsView.kt');
 const service = readFileSync(new URL('../src/production-customer-service.js', import.meta.url), 'utf8');
 
 assert.match(store, /user_store_access a JOIN stores s/, 'visible employee stores must come from server-owned ACL');
-assert.match(store, /if\(\(isOwner\|\|scopedClient\)\&\&!allowed\.has\(clientId\)\)continue/, 'tenant bound accounts still require client match');
+assert.match(store, /if\(isOwner\&\&!allowed\.has\(clientId\)\)continue/, 'owner accounts remain tenant isolated while staff use live store grants');
 assert.match(store, /clientName:allowed\.get\(clientId\)\|\|clientId/, 'legacy client context is an optional label, not staff grant');
 
 for (const key of ['EXTRA_CLIENT_ID','EXTRA_STORE_ID','EXTRA_ORDER_ID']) {
@@ -22,7 +22,8 @@ for (const key of ['EXTRA_CLIENT_ID','EXTRA_STORE_ID','EXTRA_ORDER_ID']) {
   assert(edit.includes(key), 'editor must consume ' + key);
 }
 assert(search.includes('تعديل الطلب'), 'search has an edit action');
-assert(search.includes('order.state in setOf("pending", "no_answer", "confirmed", "preparing", "deferred")'), 'immutable shipped/COD orders cannot enter regular edit');
+assert(search.includes('تعديل الملاحظات'), 'shipped/COD search results must expose safe notes-only editing');
+assert(edit.includes('payload.put("editMode", "notes")'), 'native editor selects server-enforced post-shipping notes mode');
 assert(edit.includes('selectedClientId = clientId'), 'editor loads exact searched tenant');
 assert(edit.includes('selectedClientId = data.clientId'), 'editor saves only the tenant returned by verified details');
 assert.match(api, /fetchEditorData\(context: Context, orderId: String, selectedStoreId: String = "", requireHistory: Boolean = false, selectedClientId: String = ""\)/);
