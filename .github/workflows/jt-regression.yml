@@ -8,6 +8,8 @@ on:
       - 'src/jt-express-eg-validation.js'
       - 'src/jt-print-workflow-v2.js'
       - 'src/jt-shipping-claim.js'
+      - 'src/production-caller-jnt-edit.js'
+      - 'scripts/android-cross-store-caller-scope-test.mjs'
       - 'src/index-commerce-v37.js'
       - 'src/index-commerce-v38.js'
       - 'src/index-commerce-v38-core.js'
@@ -35,6 +37,8 @@ on:
       - 'src/jt-express-eg-validation.js'
       - 'src/jt-print-workflow-v2.js'
       - 'src/jt-shipping-claim.js'
+      - 'src/production-caller-jnt-edit.js'
+      - 'scripts/android-cross-store-caller-scope-test.mjs'
       - 'src/index-commerce-v37.js'
       - 'src/index-commerce-v38.js'
       - 'src/index-commerce-v38-core.js'
@@ -70,6 +74,7 @@ jobs:
           node scripts/jnt-order-shipping-edit-test.mjs
           node scripts/jt-live-shipping-test.mjs
           node scripts/jt-shipping-claim-sqlite-test.mjs
+          node scripts/android-cross-store-caller-scope-test.mjs
           node scripts/confirmed-shipping-handoff-contract-test.mjs
           node scripts/integration-setup-test.mjs
           node scripts/jt-eg-create-endpoint-contract-test.mjs
