@@ -51,6 +51,30 @@ internal data class GlobalOrderSearchItem(
     val product: String
 )
 
+// Present business-friendly Arabic states rather than backend values like "pending".
+internal fun globalSearchCustomerStatus(state: String): String = when (state.trim().lowercase()) {
+    "pending", "new" -> "في انتظار التأكيد"
+    "contacting" -> "جاري التواصل"
+    "no_answer" -> "العميل لا يرد"
+    "confirmed" -> "تم التأكيد"
+    "preparing" -> "التجهيز والتغليف"
+    "shipping", "in_shipping", "shipped" -> "جاري الشحن"
+    "signed" -> "تم التسليم — تحصيل منتظر"
+    "collected" -> "تم التحصيل"
+    "returned" -> "مرتجع"
+    "cancelled", "canceled" -> "ملغي"
+    "deferred" -> "مؤجل"
+    else -> state.trim().takeIf { it.isNotBlank() } ?: "غير محددة"
+}
+
+internal fun globalSearchOrderDate(value: String): String = value.trim()
+    .substringBefore('T').substringBefore(' ').takeIf { it.isNotBlank() } ?: "غير مسجل"
+
+// Imported Easy Orders UUIDs stay searchable but no longer dominate the card.
+internal fun globalSearchReadableRef(value: String): String = value.trim().takeIf {
+    it.isNotBlank() && it.length <= 26 && !it.startsWith("easyorders:", ignoreCase = true)
+} ?: ""
+
 private data class GlobalSearchPage(
     val ok: Boolean,
     val items: List<GlobalOrderSearchItem> = emptyList(),
@@ -222,10 +246,20 @@ fun GlobalOrderSearchDialog(
                                 ) {
                                     Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                                         Text(order.name.ifBlank { "عميل بدون اسم" }, fontWeight = FontWeight.Bold)
-                                        Text("طلب ${order.ref} • ${order.storeName}",
-                                            maxLines = 2, overflow = TextOverflow.Ellipsis)
-                                        Text("${order.phone} • ${order.state} • ${order.date.take(10)}",
+                                        Text("المتجر: ${order.storeName}",
+                                            style = MaterialTheme.typography.bodySmall, color = KunColors.Ink2,
+                                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        val readableRef = globalSearchReadableRef(order.ref)
+                                        if (readableRef.isNotBlank()) Text("رقم الطلب: $readableRef",
                                             style = MaterialTheme.typography.bodySmall, color = KunColors.Ink2)
+                                        if (order.phone.isNotBlank()) Text("الهاتف: ${order.phone}",
+                                            style = MaterialTheme.typography.bodySmall, color = KunColors.Ink2)
+                                        Text("تاريخ الطلب: ${globalSearchOrderDate(order.date)}",
+                                            style = MaterialTheme.typography.bodySmall, color = KunColors.Ink2)
+                                        Text("المنتج: ${order.product.ifBlank { "غير مسجل" }}",
+                                            maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                        Text("حالة العميل: ${globalSearchCustomerStatus(order.state)}",
+                                            fontWeight = FontWeight.SemiBold, color = KunColors.Chrome)
                                     }
                                 }
                             }
@@ -296,24 +330,42 @@ fun GlobalOrderSearchDialog(
             title = { Text(order.name.ifBlank { "مراجعة الطلب" }) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (initialOrderId.isBlank()) Text("الطلب: ${order.ref}")
+                    if (initialOrderId.isBlank()) {
+                        val readableRef = globalSearchReadableRef(order.ref)
+                        if (readableRef.isNotBlank()) Text("الطلب: $readableRef")
+                    }
                     Text("المتجر: ${order.storeName}")
-                    Text("الحالة: ${order.state}")
-                    Text("التاريخ: ${order.date.take(10)}")
+                    Text("حالة العميل: ${globalSearchCustomerStatus(order.state)}")
+                    Text("تاريخ الطلب: ${globalSearchOrderDate(order.date)}")
                     Text("الهاتف: ${order.phone}")
-                    if (order.product.isNotBlank()) Text("المنتج: ${order.product}")
+                    Text("المنتج: ${order.product.ifBlank { "غير مسجل" }}")
                     if (order.total.isNotBlank()) Text("الإجمالي: ${order.total} ج.م")
                     if (order.gov.isNotBlank()) Text("المحافظة: ${order.gov}")
                     if (order.awb.isNotBlank()) Text("البوليصة: ${order.awb}")
+                    if (order.state !in setOf("pending", "no_answer", "confirmed", "preparing", "deferred")) {
+                        Text("هذا الطلب خرج من مرحلة التعديل العادي؛ استخدم إجراء الشحن أو المرتجعات المخصص.", color = KunColors.Ink2)
+                    }
                 }
             },
             confirmButton = {
-                TextButton(
-                    enabled = order.phone.isNotBlank(),
-                    onClick = {
-                        context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:${Uri.encode(order.phone)}")))
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (order.state in setOf("pending", "no_answer", "confirmed", "preparing", "deferred")) {
+                        Button(onClick = {
+                            context.startActivity(Intent(context, CallerOrderEditActivity::class.java).apply {
+                                putExtra(CallerOrderEditActivity.EXTRA_ORDER_ID, order.id)
+                                putExtra(CallerOrderEditActivity.EXTRA_CLIENT_ID, order.clientId)
+                                putExtra(CallerOrderEditActivity.EXTRA_STORE_ID, order.storeId)
+                            })
+                            onDismiss()
+                        }) { Text("تعديل الطلب") }
                     }
-                ) { Text("اتصال") }
+                    TextButton(
+                        enabled = order.phone.isNotBlank(),
+                        onClick = {
+                            context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:${Uri.encode(order.phone)}")))
+                        }
+                    ) { Text("اتصال") }
+                }
             },
             dismissButton = {
                 TextButton(onClick = { if (initialOrderId.isNotBlank()) onDismiss() else selected = null }) {

@@ -5,14 +5,15 @@ import android.telecom.CallScreeningService
 import kotlin.concurrent.thread
 
 class KunCallScreeningService : CallScreeningService() {
-    private fun observed(orderId: String?, number: String, incoming: Boolean) {
+    private fun observed(customer: CallerCustomer, number: String, incoming: Boolean) {
+        val orderId = customer.orderId
         if (!CallActivityStore.markObserved(this, orderId, number, incoming)) return
         if (!KunApi.hasSession(this)) return
         thread(name = "kun-observed-call-log") {
             val id = orderId ?: return@thread
-            runCatching { KunCustomerServiceApi.claimContact(this, id) }
+            runCatching { KunCustomerServiceApi.claimContact(this, id, selectedClientId = customer.clientId) }
             runCatching { KunCustomerServiceApi.logContact(this, id, "phone", "screened",
-                if (incoming) "incoming" else "outgoing") }
+                if (incoming) "incoming" else "outgoing", selectedClientId = customer.clientId) }
         }
     }
 
@@ -28,7 +29,7 @@ class KunCallScreeningService : CallScreeningService() {
         if (number.isBlank()) return
         val cached = CustomerCache.lookup(this, number)
         if (cached != null) {
-            observed(cached.orderId, number, incoming)
+            observed(cached, number, incoming)
             CallerOverlay.show(this, cached, incoming)
         }
 
@@ -42,7 +43,7 @@ class KunCallScreeningService : CallScreeningService() {
                 CustomerCache.lookup(this, number)
             }
             if (fresh != null) {
-                observed(fresh.orderId, number, incoming)
+                observed(fresh, number, incoming)
                 if (fresh != cached) CallerOverlay.show(this, fresh, incoming)
             }
         }

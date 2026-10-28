@@ -14,6 +14,7 @@ import android.view.View
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import kotlin.concurrent.thread
@@ -46,7 +47,7 @@ class CallerCardActivity : Activity() {
         else -> state.orEmpty()
     }
 
-    private fun showCancelReason(orderId: String) {
+    private fun showCancelReason(orderId: String, clientId: String = "") {
         val field = EditText(this).apply {
             hint = "اكتب سبب الإلغاء (إجباري)"
             minLines = 2
@@ -70,7 +71,7 @@ class CallerCardActivity : Activity() {
                 }
                 confirm.isEnabled = false
                 thread(name = "kun-call-cancel-with-note") {
-                    val result = KunCustomerServiceApi.updateState(this, orderId, "cancelled", cancelReason = reason)
+                    val result = KunCustomerServiceApi.updateState(this, orderId, "cancelled", cancelReason = reason, selectedClientId = clientId)
                     runOnUiThread {
                         Toast.makeText(this, result.message, Toast.LENGTH_LONG).show()
                         if (result.ok) { dialog.dismiss(); finish() }
@@ -95,7 +96,8 @@ class CallerCardActivity : Activity() {
 
         val phone = intent.getStringExtra("phone").orEmpty()
         val incoming = intent.getBooleanExtra("incoming", false)
-        val customer = CustomerCache.lookup(this, phone) ?: run { finish(); return }
+        val customer = CallerPayload.decode(intent.getStringExtra("kun_caller_payload"))
+            ?: CustomerCache.lookup(this, phone) ?: run { finish(); return }
         val locked = (getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager).isKeyguardLocked
 
         val root = LinearLayout(this).apply {
@@ -145,6 +147,7 @@ class CallerCardActivity : Activity() {
             })
         }
         addLine(customer.phone, 15f, ink, true)
+        if (!locked && customer.storeName.isNotBlank()) addLine("المتجر: ${customer.storeName}", 13f, chrome, true)
         addLine(listOfNotNull(customer.orderRef?.takeUnless { locked }?.let { "طلب $it" }, stateText(customer.status).takeIf { it.isNotBlank() }).joinToString(" • "), 13f, chrome, true)
         if (!locked) {
             addLine(listOfNotNull(customer.product, customer.total?.let { "الإجمالي ${it.toInt()} ج.م" }).joinToString(" • "), 14f, ink)
@@ -152,7 +155,21 @@ class CallerCardActivity : Activity() {
             customer.note?.takeIf { it.isNotBlank() }?.let { addLine("ملاحظة: $it", 13f) }
             if (customer.previousOrders > 0) addLine("له ${customer.previousOrders} طلب سابق", 12f)
         }
-        card.addView(body)
+        val detailsHost = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(8), 0, dp(8))
+        }
+        if (!locked && !customer.orderId.isNullOrBlank()) {
+            detailsHost.addView(TextView(this).apply {
+                text = "جاري تحميل تفاصيل الطلب الكاملة…"
+                textSize = 12f
+                setTextColor(ink2)
+            })
+            body.addView(detailsHost)
+        }
+        card.addView(ScrollView(this).apply {
+            addView(body)
+        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(280)))
 
         val actions = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -174,12 +191,12 @@ class CallerCardActivity : Activity() {
             }
         fun decision(button: Button, orderId: String, target: String) {
             if (target == "cancelled") {
-                showCancelReason(orderId)
+                showCancelReason(orderId, customer.clientId)
                 return
             }
             button.isEnabled = false
             thread(name = "kun-fallback-call-decision") {
-                val result = KunCustomerServiceApi.updateState(this, orderId, target)
+                val result = KunCustomerServiceApi.updateState(this, orderId, target, selectedClientId = customer.clientId)
                 runOnUiThread {
                     Toast.makeText(this, if (result.ok) {
                         when (target) {
@@ -205,6 +222,8 @@ class CallerCardActivity : Activity() {
                     action("تعديل بيانات\nالشحن J&T", chrome, Color.WHITE) {
                         startActivity(Intent(this@CallerCardActivity, CallerJntOrderEditActivity::class.java).apply {
                             putExtra(CallerJntOrderEditActivity.EXTRA_ORDER_ID, orderId)
+                            putExtra(CallerJntOrderEditActivity.EXTRA_CLIENT_ID, customer.clientId)
+                            putExtra(CallerJntOrderEditActivity.EXTRA_STORE_ID, customer.storeId)
                             putExtra(CallerJntOrderEditActivity.EXTRA_SHIPPING_ONLY, true)
                         })
                         finish()
@@ -220,8 +239,25 @@ class CallerCardActivity : Activity() {
         card.addView(actions)
         root.addView(card, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
         setContentView(root)
+        if (!locked && !customer.orderId.isNullOrBlank()) {
+            thread(name = "kun-call-card-details") {
+                val result = KunCustomerServiceApi.fetchOrderDetails(this, customer.orderId,
+                    selectedClientId = customer.clientId, selectedStoreId = customer.storeId)
+                runOnUiThread {
+                    val stillUnlocked = !(getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager).isKeyguardLocked
+                    if (!isFinishing && stillUnlocked) {
+                        if (result.ok) renderCallerFullDetails(this, detailsHost, result.data)
+                        else detailsHost.addView(TextView(this).apply {
+                            text = "تعذر تحميل التفاصيل: ${result.message}"
+                            textSize = 12f
+                            setTextColor(ink2)
+                        })
+                    }
+                }
+            }
+        }
         if (!locked && intent.getBooleanExtra("start_cancel", false)) {
-            customer.orderId?.takeIf { it.isNotBlank() }?.let { showCancelReason(it) }
+            customer.orderId?.takeIf { it.isNotBlank() }?.let { showCancelReason(it, customer.clientId) }
         }
     }
 }

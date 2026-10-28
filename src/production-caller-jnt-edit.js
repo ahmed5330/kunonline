@@ -1,3 +1,4 @@
+import {resolveStoreScope} from './store-scope.js';
 const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}});
 const clean=value=>String(value??'').trim();
 const num=value=>Number.isFinite(Number(value))?Number(value):0;
@@ -61,8 +62,13 @@ export async function handleProductionCallerJntEdit({request,env,ctx,delegate}){
     const me=await currentUser(delegate,request,env,ctx);
     const clientId=clientIdFor(me,body);
     const orderId=decodeURIComponent(match[1]);
-    const row=await env.DB.prepare('SELECT id,client_id,name,phone,product,product_id,variant_id,product_note,qty,unit_price,total,note,history FROM orders WHERE id=? AND client_id=? LIMIT 1').bind(orderId,clientId).first();
+    const row=await env.DB.prepare('SELECT id,client_id,store_id,state,awb,name,phone,product,product_id,variant_id,product_note,qty,unit_price,total,note,history FROM orders WHERE id=? AND client_id=? LIMIT 1').bind(orderId,clientId).first();
     if(!row)return json({error:'الأوردر غير موجود',code:'ORDER_NOT_FOUND'},404);
+    // The supplied clientId is never an authorization grant. Enforce the exact
+    // authenticated store ACL before any J&T edit, including cross-client callers.
+    await resolveStoreScope(env,me,clientId,row.store_id||null,{write:true});
+    if(clean(row.awb)||!['pending','no_answer','confirmed','preparing','deferred'].includes(clean(row.state)))
+      throw Object.assign(new Error('لا يمكن تعديل بيانات الطلب بعد إصدار بوليصة أو بدء الشحن'),{status:409,code:'ORDER_JNT_EDIT_LOCKED'});
 
     const name=clean(body.name);
     const phone=clean(body.phone);
@@ -91,9 +97,9 @@ export async function handleProductionCallerJntEdit({request,env,ctx,delegate}){
       weight:jtAddress.weight
     });
 
-    await env.DB.prepare(`UPDATE orders SET
+    const saved=await env.DB.prepare(`UPDATE orders SET
       name=?,phone=?,gov=?,address=?,product=?,product_id=?,variant_id=?,product_note=?,qty=?,unit_price=?,total=?,note=?,history=?
-      WHERE id=? AND client_id=?`)
+      WHERE id=? AND client_id=? AND store_id IS ? AND state=? AND COALESCE(awb,'')='' AND history IS ?`)
       .bind(
         name,
         phone,
@@ -109,8 +115,13 @@ export async function handleProductionCallerJntEdit({request,env,ctx,delegate}){
         note,
         JSON.stringify(history),
         orderId,
-        clientId
+        clientId,
+        row.store_id??null,
+        row.state,
+        row.history??null
       ).run();
+    if((saved.meta?.changes??0)!==1)
+      throw Object.assign(new Error('تغير الأوردر أثناء التعديل. حدّث بياناته وأعد المحاولة.'),{status:409,code:'ORDER_JNT_EDIT_CONFLICT'});
 
     return json({ok:true,orderId,clientId,name,phone,gov:jtAddress.province,address:fullAddress,product,quantity:qty,total,jntAddress:jtAddress});
   }catch(error){

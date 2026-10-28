@@ -179,8 +179,14 @@ async function board(env,me,clientId,storeId,dateRange={key:'all',from:'',to:''}
 }
 async function details(env,clientId,orderId){
   const r=await getOrder(env,clientId,orderId),o=mapOrder(r);
-  const item={productId:o.productId,variantId:o.variantId,name:o.product,productName:o.product,variantName:o.productNote,note:o.productNote,quantity:o.qty,qty:o.qty,price:o.unitPrice,unitPrice:o.unitPrice,sku:''};
-  return {ok:true,order:{id:o.id,ref:o.ref,clientId:o.clientId,storeId:o.storeId,state:o.state,couponCode:r.coupon_code||'',customerNote:o.customerNote,awb:o.awb},customer:{id:r.customer_id||'',name:o.name,phone:o.phone,government:o.gov,address:o.address},address:{government:o.gov,address:o.address},items:[item],summary:{total:o.total,qty:o.qty,discountAmount:n(r.discount_amount)},raw:o};
+  const fallback={productId:o.productId,variantId:o.variantId,name:o.product,productName:o.product,variantName:o.productNote,note:o.productNote,quantity:o.qty,qty:o.qty,price:o.unitPrice,unitPrice:o.unitPrice,sku:''};
+  let items=[];
+  try{
+    const {results=[]}=await env.DB.prepare('SELECT product_id,variant_id,product_name,variant_label,sku,qty,unit_price,line_total FROM order_items WHERE order_id=? AND client_id=? ORDER BY created_at,id LIMIT 30').bind(orderId,clientId).all();
+    items=results.map(item=>({productId:item.product_id||'',variantId:item.variant_id||'',name:item.product_name||o.product,productName:item.product_name||o.product,variantName:item.variant_label||'',note:item.variant_label||'',quantity:n(item.qty)||1,qty:n(item.qty)||1,price:n(item.unit_price),unitPrice:n(item.unit_price),lineTotal:n(item.line_total),sku:item.sku||''}));
+  }catch(error){console.warn('Optional detailed order items unavailable',error?.message||error);}
+  if(!items.length)items=[fallback];
+  return {ok:true,order:{id:o.id,ref:o.ref,clientId:o.clientId,storeId:o.storeId,state:o.state,date:o.date,source:o.source,couponCode:r.coupon_code||'',customerNote:o.customerNote,awb:o.awb},customer:{id:r.customer_id||'',name:o.name,phone:o.phone,government:o.gov,address:o.address},address:{government:o.gov,address:o.address},items,summary:{total:o.total,qty:o.qty,discountAmount:n(r.discount_amount),shippingCost:n(r.shipping_cost),otherCost:n(r.other_cost)},raw:o};
 }
 async function catalog(delegate,request,env,ctx,clientId){
   // Keep the detailed catalog route and store scope. The basic products route
@@ -221,6 +227,10 @@ export async function handleProductionCustomerService({request,env,ctx,delegate}
     if(action==='history'&&method==='GET')return json({ok:true,order:mapOrder(row)});
     if(action==='state'&&method==='PATCH'){
       const state=clean(body.state);if(!STATES.includes(state))return json({error:'حالة الأوردر غير معروفة',code:'ORDER_STATE_INVALID'},400);
+      // A generic status PATCH is not evidence that the carrier accepted a shipment.
+      // Use the authenticated J&T queue + official print workflow, which records
+      // the AWB and only then commits the shipped state.
+      if(state==='shipped')return json({error:'لنقل الأوردر إلى جاري الشحن استخدم إرسال J&T وطباعة البوليصة الرسمية',code:'JT_OFFICIAL_HANDOFF_REQUIRED'},409);
       if(state==='cancelled'&&!['pending','new','contacting','no_answer','confirmed','preparing','deferred'].includes(String(row.state||'')))
         return json({error:'لا يمكن إلغاء الطلب بهذه الطريقة بعد الشحن أو التحصيل؛ استخدم إجراءات الشحن والمرتجعات',code:'ORDER_CANCEL_NOT_ALLOWED'},409);
       const claimOwner=clean(row.contact_claim_user_id),actorId=clean(me.uid||me.id||me.email||`${me.role}:${me.clientId||''}`);

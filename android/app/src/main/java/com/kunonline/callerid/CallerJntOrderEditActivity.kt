@@ -38,6 +38,7 @@ class CallerJntOrderEditActivity : ComponentActivity() {
         val orderId = intent.getStringExtra(EXTRA_ORDER_ID).orEmpty()
         val shippingOnly = intent.getBooleanExtra(EXTRA_SHIPPING_ONLY, false)
         val storeId = intent.getStringExtra(EXTRA_STORE_ID).orEmpty()
+        val clientId = intent.getStringExtra(EXTRA_CLIENT_ID).orEmpty()
         if (orderId.isBlank()) {
             finish()
             return
@@ -45,7 +46,7 @@ class CallerJntOrderEditActivity : ComponentActivity() {
         setContent {
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
                 KunTheme {
-                    CallerJntOrderEditScreen(orderId = orderId, storeId = storeId, shippingOnly = shippingOnly, onClose = { finish() })
+                    CallerJntOrderEditScreen(orderId = orderId, storeId = storeId, clientId = clientId, shippingOnly = shippingOnly, onClose = { finish() })
                 }
             }
         }
@@ -53,6 +54,7 @@ class CallerJntOrderEditActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_ORDER_ID = "kun_caller_jnt_order_id"
+        const val EXTRA_CLIENT_ID = "kun_caller_jnt_client_id"
         const val EXTRA_STORE_ID = "kun_caller_jnt_store_id"
         const val EXTRA_SHIPPING_ONLY = "kun_jnt_shipping_only"
     }
@@ -154,7 +156,7 @@ private data class CallerJntSeed(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun CallerJntOrderEditScreen(orderId: String, storeId: String, shippingOnly: Boolean, onClose: () -> Unit) {
+private fun CallerJntOrderEditScreen(orderId: String, storeId: String, clientId: String, shippingOnly: Boolean, onClose: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var loading by remember { mutableStateOf(true) }
@@ -183,9 +185,9 @@ private fun CallerJntOrderEditScreen(orderId: String, storeId: String, shippingO
     var cityPicker by remember { mutableStateOf(false) }
     var areaPicker by remember { mutableStateOf(false) }
 
-    LaunchedEffect(orderId, storeId) {
+    LaunchedEffect(orderId, storeId, clientId) {
         loading = true
-        val dataResult = withContext(Dispatchers.IO) { KunCustomerServiceApi.fetchEditorData(context, orderId, storeId, requireHistory = shippingOnly) }
+        val dataResult = withContext(Dispatchers.IO) { KunCustomerServiceApi.fetchEditorData(context, orderId, storeId, requireHistory = shippingOnly, selectedClientId = clientId) }
         val manifestResult = runCatching { CallerJntAddressRepository.manifest() }
         if (!dataResult.ok) {
             error = dataResult.message
@@ -292,8 +294,8 @@ private fun CallerJntOrderEditScreen(orderId: String, storeId: String, shippingO
             val result = withContext(Dispatchers.IO) {
                 if (shippingOnly) CallerJntEditApi.saveShipping(context, orderId, storeId.ifBlank {
                     editorData?.details?.optJSONObject("order")?.optString("storeId").orEmpty()
-                }, payload)
-                else CallerJntEditApi.save(context, orderId, payload)
+                }, payload, selectedClientId = editorData?.clientId.orEmpty().ifBlank { clientId })
+                else CallerJntEditApi.save(context, orderId, payload, selectedClientId = editorData?.clientId.orEmpty().ifBlank { clientId })
             }
             saving = false
             if (result.ok) {

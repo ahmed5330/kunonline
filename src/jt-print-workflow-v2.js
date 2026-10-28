@@ -2,7 +2,8 @@ import {cancelJtShipment} from './jt-express-eg-cancel.js';
 import {requirePermission} from './access-control.js';
 import {listMyStores} from './store-scope.js';
 import {readConnectionSecrets} from './integration-provider-validation.js';
-import {buildJtCreatePayload,createJtShipment,jtCredentials,__jtApiInternals} from './jt-express-eg-api.js';
+import {buildJtCreatePayload,createJtShipment,lookupJtShipmentByReference,jtCredentials,__jtApiInternals} from './jt-express-eg-api.js';
+import {claimJtCreate,pendingJtCreateClaim,persistJtClaimAwb,finalizeJtOfficialLabel,repairJtPrintedState} from './jt-shipping-claim.js';
 
 const PRINT_ORDER_PATH='/webopenplatformapi/api/order/printOrder';
 const ALLOWED_ROLES=new Set(['admin','client','ops','support']);
@@ -42,10 +43,14 @@ async function assertOrderAccess(env,me,clientId,orderId,{write=true}={}){
   return row;
 }
 
+async function mirrorJtOrderEvent(env,row,entry,source='jt-print-workflow-v2'){
+  try{await env.DB.prepare('INSERT INTO order_events (id,client_id,store_id,order_id,event_type,actor_user_id,actor_email,source,metadata_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)')
+    .bind(eventId(),row.client_id,row.store_id||null,row.id,entry.type,null,null,source,JSON.stringify(entry),entry.at||now()).run();}catch{}
+}
 async function appendOrderEvent(env,row,type,metadata={},source='jt-print-workflow-v2'){
   const at=now(),entry={type,at,provider:'jt',...metadata},array=`CASE WHEN json_valid(history) AND json_type(history)='array' THEN history ELSE '[]' END`;
   await env.DB.prepare(`UPDATE orders SET history=json_insert(${array},'$[#]',json(?)) WHERE id=? AND client_id=?`).bind(JSON.stringify(entry),row.id,row.client_id).run();
-  try{await env.DB.prepare('INSERT INTO order_events (id,client_id,store_id,order_id,event_type,actor_user_id,actor_email,source,metadata_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)').bind(eventId(),row.client_id,row.store_id||null,row.id,type,null,null,source,JSON.stringify(metadata),at).run();}catch{}
+  await mirrorJtOrderEvent(env,row,entry,source);
   return entry;
 }
 
@@ -68,6 +73,7 @@ async function voidWaybill(request,env,me,orderId){
   const queued=activeEvent(row,'jt_print_queued'),created=activeEvent(row,'jt_shipment_created');
   const printed=activeEvent(row,'jt_label_printed');
   const awb=clean(row.awb,160);
+  if(pendingJtCreateClaim(row.history)&&!awb&&!created?.awb)throw Object.assign(new Error('شحنة J&T قيد الإنشاء أو تحتاج مطابقة مع الشركة. لا يمكن حذف تجهيزها حتى يتم التحقق من النتيجة.'),{status:409,code:'JT_CREATE_RECOVERY_REQUIRED'});
   if(!queued&&!created&&!printed&&!awb)throw Object.assign(new Error('لا توجد بوليصة أو تجهيز شحن نشط للحذف'),{status:409,code:'JT_WAYBILL_NOT_FOUND'});
   const reason=clean(body.reason,500);
   if(reason.length<8)throw Object.assign(new Error('اكتب سبب حذف البوليصة (٨ حروف على الأقل)'),{status:400,code:'JT_WAYBILL_VOID_REASON_REQUIRED'});
@@ -145,13 +151,37 @@ async function createAndPrint(request,env,ctx,delegate,me,orderId){
   const {row:connection,secrets,cred}=await connectionFor(env,clientId);if(!cred.enterpriseReady)throw Object.assign(new Error('إصدار البوليصة الرسمية يحتاج Business Info الخاصة بحساب J&T'),{status:409,code:'JT_BUSINESS_CREDENTIALS_MISSING',enterpriseCredentialsRequired:true});
   let createdEvent=shipmentEvent(row),awb=clean(row.awb||createdEvent?.awb,160),sortingCode=clean(createdEvent?.sortingCode,160),txlogisticId=clean(createdEvent?.txlogisticId,160),shipmentCreatedNow=false;
   const alreadyPrinted=activePrintHistory(row).some(event=>event?.type==='jt_label_printed'&&(!awb||clean(event?.awb,160)===awb));
-  if(alreadyPrinted)throw Object.assign(new Error('تم إرسال وطباعة هذه البوليصة بالفعل. استخدم إعادة الطباعة فقط عند الحاجة.'),{status:409,code:'JT_LABEL_ALREADY_PRINTED'});
+  if(alreadyPrinted){
+    // Heal old interrupted flows that wrote label proof before shipped state.
+    await repairJtPrintedState(env.DB,row);
+    throw Object.assign(new Error('تم إصدار البوليصة بالفعل. حالة الطلب محفوظة؛ استخدم إعادة الطباعة فقط عند الحاجة.'),{status:409,code:'JT_LABEL_ALREADY_PRINTED'});
+  }
   if(!awb){
     const queued=queueEvent(row);if(!queued?.shipment)throw Object.assign(new Error('بيانات الشحنة غير مجهزة. جهّز بيانات J&T من قسم الطباعة أولًا.'),{status:409,code:'JT_PRINT_QUEUE_DATA_MISSING'});
     const shipment={...queued.shipment,orderId:row.id,orderRef:row.ref||row.id,customerOrderNo:clean(queued.txlogisticId||row.ref||row.id,120),storeId:row.store_id||null};
-    let created;try{created=await createJtShipment({shipment,secrets});}catch(error){await env.DB.prepare('UPDATE store_connections SET last_error=?,updated_at=? WHERE id=? AND client_id=?').bind(clean(error.message,1000),now(),connection.id,clientId).run().catch(()=>{});throw Object.assign(error,{status:error.status||502});}
-    awb=created.awb;sortingCode=clean(created.sortingCode,160);txlogisticId=clean(created.txlogisticId||shipment.customerOrderNo,160);shipmentCreatedNow=true;
-    await env.DB.prepare('UPDATE orders SET awb=? WHERE id=? AND client_id=?').bind(awb,row.id,clientId).run();
+    // A durable D1 CAS claim precedes every external addOrder request.
+    // On uncertain timeout, ONLY an exact-reference GetOrders lookup may resume.
+    const previousClaim=pendingJtCreateClaim(row.history);
+    if(previousClaim&&previousClaim.txlogisticId!==shipment.customerOrderNo)
+      throw Object.assign(new Error('رقم مرجع J&T اختلف بعد بدء الإنشاء؛ يلزم مراجعة يدوية.'),{status:409,code:'JT_CREATE_REFERENCE_MISMATCH'});
+    const claim=previousClaim||await claimJtCreate(env.DB,row,shipment.customerOrderNo);
+    let created;
+    if(previousClaim){
+      created=await lookupJtShipmentByReference({txlogisticId:claim.txlogisticId,secrets});
+      if(!created)throw Object.assign(new Error('لم نتأكد بعد هل أنشأت J&T الشحنة. لن نرسل إنشاء جديدًا حتى يتم التحقق من نفس الرقم لدى الشركة.'),{status:409,code:'JT_CREATE_RECOVERY_REQUIRED'});
+    }else{
+      try{created=await createJtShipment({shipment,secrets});}
+      catch(error){
+        await env.DB.prepare('UPDATE store_connections SET last_error=?,updated_at=? WHERE id=? AND client_id=?').bind(clean(error.message,1000),now(),connection.id,clientId).run().catch(()=>{});
+        // The claim persists even on network failure, since the carrier may
+        // have committed the shipment before losing its HTTP response.
+        throw Object.assign(error,{status:error.status||502});
+      }
+    }
+    if(created.txlogisticId&&created.txlogisticId!==shipment.customerOrderNo)
+      throw Object.assign(new Error('J&T أعادت رقم مرجع لا يطابق الأوردر؛ لن نحفظ بوليصة غير مؤكدة الهوية.'),{status:409,code:'JT_CREATE_REFERENCE_MISMATCH'});
+    awb=created.awb;sortingCode=clean(created.sortingCode,160);txlogisticId=clean(created.txlogisticId||shipment.customerOrderNo,160);shipmentCreatedNow=!previousClaim;
+    await persistJtClaimAwb(env.DB,row,claim,awb);
     await appendOrderEvent(env,row,'jt_shipment_created',{awb,sortingCode,txlogisticId,lastCenterName:created.lastCenterName||'',sourceCode:cred.fields.sourceCode,shipment:queued.shipment,recovered:Boolean(created.recovered),createdAtPrintTime:true},'jt-print-create');
     await env.DB.prepare("UPDATE store_connections SET status='connected',external_store_id=?,last_sync_at=?,last_error=NULL,updated_at=? WHERE id=? AND client_id=?").bind(cred.fields.sourceCode,now(),now(),connection.id,clientId).run().catch(()=>{});
     row={...row,awb,history:JSON.stringify([...parseArray(row.history),{type:'jt_shipment_created',awb,sortingCode,txlogisticId,shipment:queued.shipment}])};
@@ -162,9 +192,11 @@ async function createAndPrint(request,env,ctx,delegate,me,orderId){
   try{result=await __jtApiInternals.signedPost(PRINT_ORDER_PATH,payload,secrets,{fetcher:fetch});}catch(error){await appendOrderEvent(env,row,'jt_print_failed',{awb,error:clean(error?.message,700),shipmentCreatedNow},'printing');throw error;}
   if(!__jtApiInternals.success(result)){await appendOrderEvent(env,row,'jt_print_failed',{awb,jtCode:result.code||null,error:clean(result.message||`HTTP ${result.response.status}`,700),shipmentCreatedNow},'printing');throw Object.assign(new Error(`J&T لم تجهز البوليصة الرسمية للطباعة${result.code?` (${result.code})`:''}: ${result.message||`HTTP ${result.response.status}`}`),{status:result.response.status>=500?502:422,code:'JT_PRINT_REJECTED',jtCode:result.code});}
   const printUrl=findPrintUrl(result.data);if(!printUrl){await appendOrderEvent(env,row,'jt_print_failed',{awb,jtCode:result.code||null,error:'J&T accepted printOrder but returned no label URL',shipmentCreatedNow},'printing');throw Object.assign(new Error('J&T قبلت طلب الطباعة لكن لم ترجع رابط البوليصة بعد. تم حفظ AWB ولن يتم إنشاء شحنة مكررة عند إعادة المحاولة.'),{status:502,code:'JT_PRINT_URL_MISSING'});}
-  await appendOrderEvent(env,row,'jt_label_printed',{awb,sortingCode,txlogisticId,printedAt,printedBy,confirmed:true,official:true,shipmentCreatedNow},'printing');
-  await env.DB.prepare("UPDATE orders SET state='shipped',checkpoint='جاري الشحن' WHERE id=? AND client_id=?").bind(row.id,clientId).run();
-  await appendOrderEvent(env,row,'jt_handoff_shipped',{awb,sortingCode,txlogisticId,from:'printing',state:'shipped'},'printing');
+  const {label,handoff}=await finalizeJtOfficialLabel(env.DB,row,{awb,sortingCode,txlogisticId,printedAt,printedBy,shipmentCreatedNow});
+  // orders.history + shipped are already committed atomically. Audit mirror is
+  // best effort and may never be used as the carrier/state source of truth.
+  await mirrorJtOrderEvent(env,row,label,'printing');
+  await mirrorJtOrderEvent(env,row,handoff,'printing');
   return json({ok:true,official:true,provider:'jt',orderId:row.id,awb,sortingCode,txlogisticId,shipmentCreatedNow,printSize:'100x150mm',status:'printed',state:'shipped',printed:true,printedAt,printedBy,url:printUrl});
 }
 

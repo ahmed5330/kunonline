@@ -4,6 +4,23 @@ on:
   pull_request:
     paths:
       - 'android/**'
+      - 'src/index-production-mobile-update.js'
+      - 'src/jt-print-workflow-v2.js'
+      - 'src/jt-shipping-claim.js'
+      - 'public/v2/modules-v79-printing.js'
+      - 'public/v2/modules-v155-customer-service-board.js'
+      - 'public/v2/modules-v54-order-workflow-controls.js'
+      - 'scripts/confirmed-shipping-handoff-contract-test.mjs'
+      - 'scripts/jt-shipping-claim-sqlite-test.mjs'
+      - 'src/mobile-store-options.js'
+      - 'src/production-customer-service.js'
+      - 'scripts/mobile-store-options-test.mjs'
+      - 'scripts/android-global-edit-caller-details-contract-test.mjs'
+      - 'scripts/android-global-search-result-fields-test.mjs'
+      - 'scripts/android-cross-store-caller-scope-test.mjs'
+      - 'scripts/caller-jnt-store-acl-test.mjs'
+      - 'src/production-caller-jnt-edit.js'
+      - 'src/mobile-global-order-search.js'
       - '.github/workflows/android-mobile-redesign-check.yml'
   workflow_dispatch:
 
@@ -16,6 +33,9 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -25,6 +45,17 @@ jobs:
           gradle-version: '8.9'
       - name: Check exact official Android launcher icon
         run: node scripts/android-launcher-icon-test.mjs
+      - name: Official J&T shipping handoff contracts (offline)
+        run: |
+          node scripts/confirmed-shipping-handoff-contract-test.mjs
+          node scripts/jt-shipping-claim-sqlite-test.mjs
+      - name: Multi-store discovery, global edit and complete call details (offline)
+        run: |
+          node scripts/mobile-store-options-test.mjs
+          node scripts/android-global-edit-caller-details-contract-test.mjs
+          node scripts/android-global-search-result-fields-test.mjs
+          node scripts/android-cross-store-caller-scope-test.mjs
+          node scripts/caller-jnt-store-acl-test.mjs
       - name: Customer service J&T Android UI regression
         run: |
           node scripts/android-customer-service-jnt-ux-test.mjs

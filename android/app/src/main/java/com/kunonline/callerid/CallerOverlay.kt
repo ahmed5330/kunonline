@@ -15,6 +15,7 @@ import android.view.View
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import kotlin.concurrent.thread
@@ -63,6 +64,7 @@ object CallerOverlay {
                     app.startActivity(Intent(app, CallerCardActivity::class.java).apply {
                         putExtra("phone", customer.phone)
                         putExtra("incoming", incoming)
+                        putExtra("kun_caller_payload", CallerPayload.encode(customer))
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     })
                 }
@@ -115,6 +117,7 @@ object CallerOverlay {
                 })
             }
             line(customer.phone, 15f, INK, true)
+            if (!locked && customer.storeName.isNotBlank()) line("المتجر: ${customer.storeName}", 13f, CHROME, true)
             val orderBits = listOfNotNull(
                 customer.orderRef?.takeUnless { locked }?.let { "طلب $it" },
                 stateText(customer.status).takeIf { it.isNotBlank() }
@@ -126,7 +129,22 @@ object CallerOverlay {
                 customer.note?.takeIf { it.isNotBlank() }?.let { line("ملاحظة: $it", 13f) }
                 if (customer.previousOrders > 0) line("له ${customer.previousOrders} طلب سابق", 12f)
             }
-            card.addView(body)
+            val detailsHost = LinearLayout(app).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(0, app.dp(8), 0, app.dp(8))
+            }
+            if (!locked && !customer.orderId.isNullOrBlank()) {
+                detailsHost.addView(TextView(app).apply {
+                    text = "جاري تحميل تفاصيل الطلب الكاملة…"
+                    textSize = 12f
+                    setTextColor(INK2)
+                })
+                body.addView(detailsHost)
+            }
+            card.addView(ScrollView(app).apply {
+                isFillViewport = false
+                addView(body)
+            }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, app.dp(240)))
 
             val actions = LinearLayout(app).apply {
                 orientation = LinearLayout.VERTICAL
@@ -154,6 +172,7 @@ object CallerOverlay {
                         app.startActivity(Intent(app, CallerCardActivity::class.java).apply {
                             putExtra("phone", customer.phone)
                             putExtra("incoming", incoming)
+                            putExtra("kun_caller_payload", CallerPayload.encode(customer))
                             putExtra("start_cancel", true)
                             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                         })
@@ -164,7 +183,7 @@ object CallerOverlay {
                 }
                 button.isEnabled = false
                 thread(name = "kun-call-decision") {
-                    val result = KunCustomerServiceApi.updateState(app, orderId, target)
+                    val result = KunCustomerServiceApi.updateState(app, orderId, target, selectedClientId = customer.clientId)
                     handler.post {
                         Toast.makeText(app, if (result.ok) {
                             when (target) {
@@ -194,6 +213,8 @@ object CallerOverlay {
                         runCatching {
                             app.startActivity(Intent(app, CallerJntOrderEditActivity::class.java).apply {
                                 putExtra(CallerJntOrderEditActivity.EXTRA_ORDER_ID, orderId)
+                                putExtra(CallerJntOrderEditActivity.EXTRA_CLIENT_ID, customer.clientId)
+                                putExtra(CallerJntOrderEditActivity.EXTRA_STORE_ID, customer.storeId)
                                 putExtra(CallerJntOrderEditActivity.EXTRA_SHIPPING_ONLY, true)
                                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
                             })
@@ -246,6 +267,23 @@ object CallerOverlay {
                 wm.addView(card, params)
                 currentView = card
                 currentManager = wm
+                if (!locked && !customer.orderId.isNullOrBlank()) {
+                    thread(name = "kun-caller-order-details") {
+                        val result = KunCustomerServiceApi.fetchOrderDetails(app, customer.orderId,
+                            selectedClientId = customer.clientId, selectedStoreId = customer.storeId)
+                        handler.post {
+                            val stillUnlocked = !(app.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager).isKeyguardLocked
+                            if (currentView === card && stillUnlocked) {
+                                if (result.ok) renderCallerFullDetails(app, detailsHost, result.data)
+                                else detailsHost.addView(TextView(app).apply {
+                                    text = "تعذر تحميل التفاصيل: ${result.message}"
+                                    textSize = 12f
+                                    setTextColor(INK2)
+                                })
+                            }
+                        }
+                    }
+                }
             }
         }
     }
