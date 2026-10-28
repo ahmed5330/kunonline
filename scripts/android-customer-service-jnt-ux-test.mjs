@@ -32,7 +32,7 @@ assert.ok(app.includes('onEditShipping = { openCustomerServiceJntEditor(context,
 assert.ok(dates.includes('compact: Boolean = false'));
 assert.ok(dates.includes('DropdownMenu(expanded = expanded'));
 
-assert.ok(editor.includes('KunCustomerServiceApi.fetchEditorData(context, orderId, storeId, requireHistory = shippingOnly)'));
+assert.ok(editor.includes('KunCustomerServiceApi.fetchEditorData(context, orderId, storeId, requireHistory = shippingOnly, selectedClientId = clientId)'), 'J&T editor must use the tenant associated with the call or selected order');
 assert.ok(editor.includes('CallerJntEditApi.saveShipping(context, orderId, storeId.ifBlank'));
 assert.ok(service.includes('selectedStoreId: String = "", requireHistory: Boolean = false'));
 assert.ok(service.includes('if (requireHistory && historyResponse.code !in 200..299)'));
