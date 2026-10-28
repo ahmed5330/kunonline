@@ -6,6 +6,7 @@
   const notify=message=>window.showToast?.(message)||console.log(message);
   const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
   let lastMatches=[],searchBox=null,scanQueued=false;
+  let globalMatches=[],globalSearchTimer=null,globalController=null,globalSeq=0;
 
   async function clientId(){return window.kunClientId?await window.kunClientId():'';}
   async function api(path,options={}){const response=await fetch(path,{credentials:'include',...options,headers:{...(options.body?{'Content-Type':'application/json'}:{}),...(options.headers||{})}}),data=await response.json().catch(()=>({}));if(!response.ok)throw Object.assign(new Error(data.error||`HTTP ${response.status}`),{status:response.status,code:data.code});return data;}
@@ -27,6 +28,31 @@
   function matchesCard(card,query){const {text,phone}=queryParts(query),nameMatch=text.length>=2&&norm(cardName(card)).includes(text),phoneMatch=phone.length>=3&&digits(cardPhone(card)).includes(phone);return !text&&!phone?true:nameMatch||phoneMatch;}
   function operationalCustomerMatches(query){const {text,phone}=queryParts(query);if(text.length<2&&phone.length<3)return[];const seen=new Set(),out=[];for(const card of operationalCards()){if(!matchesCard(card,query))continue;const name=cardName(card),phoneValue=cardPhone(card),store=cardStore(card),phoneKey=digits(phoneValue),identity=phoneKey||cardOrderId(card),key=`${norm(name)}|${identity}|${norm(store)}`;if(seen.has(key))continue;seen.add(key);out.push({name,phone:phoneValue,store,key});}return out.sort((a,b)=>norm(a.name).localeCompare(norm(b.name),'ar')||digits(a.phone).localeCompare(digits(b.phone)));}
   function renderOperationalMatches(query,matches){const box=ensureSearchBox(),raw=String(query||'').trim(),parts=queryParts(raw);lastMatches=matches;if((parts.text.length<2&&parts.phone.length<3)||!operationalView()){box.style.display='none';return;}box.innerHTML=`<div class="v55-search-head"><span>العملاء المطابقون للاسم أو الرقم</span><span class="v55-search-count">${matches.length}</span></div>${matches.length?matches.map((customer,index)=>`<button type="button" class="v55-search-item" data-v55-customer="${index}"><div><div class="v55-search-name">${esc(customer.name||'بدون اسم')}</div><div class="v55-search-meta">${esc(customer.phone||'بدون رقم')}</div></div><span class="v55-search-store">${esc(customer.store||'')}</span></button>`).join(''):'<div class="v55-search-empty">لا يوجد عميل مطابق للاسم أو رقم الهاتف داخل هذا القسم</div>'}<div class="v55-search-note">يمكن البحث بجزء من اسم العميل أو بثلاثة أرقام أو أكثر من رقم الهاتف، ويتم البحث داخل الطلبات الظاهرة في القسم الحالي فقط.</div>`;box.style.display='block';positionSearchBox();box.querySelectorAll('[data-v55-customer]').forEach(button=>button.onclick=()=>{const customer=matches[Number(button.dataset.v55Customer)];if(!customer)return;const input=document.getElementById('globalSearch'),usePhone=parts.phone.length>=3&&digits(customer.phone).includes(parts.phone),selectedQuery=usePhone?customer.phone:customer.name;if(input)input.value=selectedQuery;filterOperationalCards(selectedQuery);renderOperationalMatches(selectedQuery,operationalCustomerMatches(selectedQuery));});}
+  function renderGlobalMatches(query,rows,hasMore=false){
+    const box=ensureSearchBox();globalMatches=rows;
+    box.innerHTML=`<div class="v55-search-head"><span>البحث في كل المتاجر والتواريخ</span><span class="v55-search-count">${rows.length}${hasMore?'+':''}</span></div>${rows.length?rows.map((o,i)=>`<div class="v55-search-item" data-v55-global-row="${i}" style="display:flex;align-items:center;gap:10px"><div style="flex:1;min-width:0"><div class="v55-search-name">${esc(o.name||'بدون اسم')}</div><div class="v55-search-meta">${esc(o.storeName||'')} · ${esc(o.phone||'')} · ${esc(o.date||'')}</div><div class="v55-search-meta">${esc(o.product||'')} · ${esc(o.state||'')}</div></div><button type="button" class="btn soft" data-v55-global-edit="${i}" style="min-width:76px">${['pending','new','contacting','no_answer','confirmed','preparing','deferred'].includes(o.state)&&!o.awb?'تعديل الطلب':'تعديل ملاحظات'}</button></div>`).join(''):'<div class="v55-search-empty">لا توجد طلبات مطابقة في المتاجر المسموح بها</div>'}<div class="v55-search-note">التعديل حسب صلاحية الموظف. بعد الشحن تُحمى بيانات البوليصة والمبلغ، ويُسمح بتعديل الملاحظات فقط.</div>`;
+    box.style.display='block';positionSearchBox();
+  }
+  async function searchAllAssignedOrders(query){
+    const q=String(query||'').trim(),seq=++globalSeq;
+    globalController?.abort();globalController=null;
+    if(q.length<2){ensureSearchBox().style.display='none';return;}
+    globalController=new AbortController();
+    const box=ensureSearchBox();box.style.display='block';box.innerHTML='<div class="v55-search-note">جاري البحث في جميع المتاجر والتواريخ...</div>';positionSearchBox();
+    try {
+      const res=await fetch('/api/mobile/orders/search?'+new URLSearchParams({q,limit:'25'}),{credentials:'include',signal:globalController.signal});
+      const data=await res.json().catch(()=>({}));
+      if(seq!==globalSeq)return;
+      if(!res.ok)throw new Error(data.error||'تعذر البحث في الطلبات');
+      renderGlobalMatches(q,data.orders||[],Boolean(data.hasMore));
+    } catch(error) {
+      if(seq!==globalSeq||error.name==='AbortError')return;
+      box.innerHTML='<div class="v55-search-note">'+esc(error.message||'تعذر تحميل نتائج البحث')+'</div>';box.style.display='block';positionSearchBox();
+    }
+  }
+  function scheduleGlobalSearch(query,delay=250){
+    clearTimeout(globalSearchTimer);globalSearchTimer=setTimeout(()=>searchAllAssignedOrders(query),delay);
+  }
   function updateColumnCounts(){document.querySelectorAll('#root .cs-column,#root .ps-column').forEach(column=>{const cards=[...column.querySelectorAll('.cs-order,.ps-order')],visible=cards.filter(card=>!card.classList.contains('v55-filter-hidden')).length,count=column.querySelector('.cs-count');if(count)count.textContent=String(visible);});const deferred=document.querySelector('#root .cs-deferred');if(deferred){const cards=[...deferred.querySelectorAll('.cs-order')],count=deferred.querySelector('.cs-count');if(count)count.textContent=String(cards.filter(card=>!card.classList.contains('v55-filter-hidden')).length);}}
   function filterOperationalCards(query){if(!operationalView())return;for(const card of operationalCards())card.classList.toggle('v55-filter-hidden',!matchesCard(card,query));updateColumnCounts();}
   function mirrorNativeSearch(query){const view=activeView(),id=view==='customers'?'customerSearch':view==='orders'?'orderSearch':'';if(!id)return false;const input=document.getElementById(id);if(!input)return false;input.value=query;input.dispatchEvent(new Event('input',{bubbles:true}));return true;}
@@ -41,12 +67,16 @@
   async function stateOnlyShip(select){const card=select.closest('[data-cs-order]'),orderId=card?.dataset.csOrder;if(!orderId)return;const previous=select.dataset.current||'preparing';select.disabled=true;try{const cid=await clientId();if(!cid)throw new Error('تعذر تحديد حساب المتجر');const history=await api(`/api/customer-service/orders/${encodeURIComponent(orderId)}/history?clientId=${encodeURIComponent(cid)}`),order=history.order||{},storeId=order.storeId||'';await api(`/api/customer-service/orders/${encodeURIComponent(orderId)}/state?clientId=${encodeURIComponent(cid)}${storeId?`&storeId=${encodeURIComponent(storeId)}`:''}`,{method:'PATCH',body:JSON.stringify({clientId:cid,...(storeId?{storeId}:{}),state:'shipped'})});select.dataset.current='shipped';notify('تم نقل الأوردر إلى «جاري الشحن» بدون أي تعديل على المخزون');await window.KunCustomerServiceV31?.render?.();await sleep(0);scheduleScan();}catch(error){notify(error.message);select.value=previous;select.disabled=false;}}
 
   document.addEventListener('change',event=>{const select=event.target.closest?.('[data-cs-state]');if(!select||select.value!=='shipped'||select.dataset.current==='shipped')return;event.preventDefault();event.stopImmediatePropagation();stateOnlyShip(select);},true);
-  document.addEventListener('input',event=>{if(event.target?.id==='globalSearch')applySearch(event.target.value);},true);
-  document.addEventListener('keydown',event=>{if(event.target?.id!=='globalSearch'||event.key!=='Enter')return;const query=event.target.value||'',view=activeView();if(['customer-service','post-shipping'].includes(view)){event.preventDefault();event.stopImmediatePropagation();applySearch(query);return;}if(mirrorNativeSearch(query)){event.preventDefault();event.stopImmediatePropagation();}},true);
-  document.addEventListener('click',event=>{if(event.target.closest?.('#globalSearch,#v55SearchResults'))return;ensureSearchBox().style.display='none';},true);
+  document.addEventListener('input',event=>{if(event.target?.id==='globalSearch'){applySearch(event.target.value);scheduleGlobalSearch(event.target.value);}},true);
+  document.addEventListener('keydown',event=>{if(event.target?.id!=='globalSearch'||event.key!=='Enter')return;const query=event.target.value||'',view=activeView();scheduleGlobalSearch(query,0);if(['customer-service','post-shipping'].includes(view)){event.preventDefault();event.stopImmediatePropagation();applySearch(query);return;}if(mirrorNativeSearch(query)){event.preventDefault();event.stopImmediatePropagation();}},true);
+  document.addEventListener('click',event=>{
+    const edit=event.target.closest?.('[data-v55-global-edit]');
+    if(edit){event.preventDefault();event.stopImmediatePropagation();const order=globalMatches[Number(edit.dataset.v55GlobalEdit)];if(!order)return;ensureSearchBox().style.display='none';window.KunCustomerServiceOrderEdit?.openEditor?.(order.id,order.clientId,order.storeId)?.catch?.(error=>notify(error.message));return;}
+    if(event.target.closest?.('#globalSearch,#v55SearchResults'))return;ensureSearchBox().style.display='none';
+  },true);
   window.addEventListener('resize',positionSearchBox);window.addEventListener('scroll',positionSearchBox,true);
   document.getElementById('storeBtn')?.addEventListener('change',()=>{const input=document.getElementById('globalSearch');if(input?.value&&operationalView())setTimeout(()=>applySearch(input.value),0);});
-  function boot(){ensureStyle();const root=document.getElementById('root');if(root)new MutationObserver(scheduleScan).observe(root,{childList:true,subtree:false});scheduleScan();}
+  function boot(){ensureStyle();document.getElementById('globalSearch')?.addEventListener('focus',event=>scheduleGlobalSearch(event.target.value,100));const root=document.getElementById('root');if(root)new MutationObserver(scheduleScan).observe(root,{childList:true,subtree:false});scheduleScan();}
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();
-  window.KunCustomerSearchFifoV55={applySearch,filterOperationalCards,operationalCustomerMatches,scan:scheduleScan,stateOnlyShip,version:'55.3'};document.documentElement.dataset.customerSearchFifo='v55.3-ready';
+  window.KunCustomerSearchFifoV55={applySearch,filterOperationalCards,operationalCustomerMatches,scan:scheduleScan,searchAllAssignedOrders,stateOnlyShip,version:'55.4'};document.documentElement.dataset.customerSearchFifo='v55.3-ready';
 })();
