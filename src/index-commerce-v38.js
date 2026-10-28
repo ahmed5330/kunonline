@@ -1,3 +1,4 @@
+import {handleDocumentSettings} from './document-settings.js';
 import {guardSessionRequest} from './session-request-guard.js';
 import {handleFinancialAccountingOS} from './accounting-faos-api.js';
 import app,{SyncEntrypoint as BaseSyncEntrypoint} from './index-commerce-v38-base.js';
@@ -17,6 +18,7 @@ import {reconcileMonthlySubscriptions} from './subscription-billing.js';
 import {handleInventoryUnitTracking,syncInventoryTrackingAfterResponse,reconcileTrackedOrderLifecycles,reconcileAllClientsUnitCoverage} from './inventory-unit-tracking.js';
 
 const V2_UI_SCRIPTS=[
+  '<script type="module" src="/v2/document-settings-ui.js?v=1.0"></script>',
   '<script src="/v2/modules-v155-accounting-faos.js?v=155.4" data-kun-accounting-faos="1"></script>',
   '<script src="/v2/modules-v105-customer-service-claim.js?v=105.3" data-kun-customer-service-claim="1"></script>',
   '<script src="/v2/modules-v105-section-nav-actions.js?v=105.1" data-kun-section-nav-actions="1"></script>',
@@ -123,6 +125,7 @@ export default {
     if(operational)return operational;
     const automation=await handleAutomationWorkflowsV104({request,env,ctx,delegate:app});
     if(automation)return automation;
+    const documentSettings=await handleDocumentSettings({request,env:env,ctx,delegate:app});if(documentSettings)return documentSettings;
     const faos=await handleFinancialAccountingOS({request,env,ctx,delegate:app});
     if(faos)return faos;
     const monthly=await handleAccountingMonthly({request,env,ctx,delegate:app});
