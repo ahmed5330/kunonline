@@ -7,6 +7,9 @@ import {resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
 
 export const REQUIRED_RELEASE_SCHEMA=Object.freeze({
+  audit_log:['id','client_id','store_id','actor_user_id','actor_email','action','entity_type','entity_id','before_json','after_json','metadata_json','created_at'],
+  transactions:['id','type','date','category','amount','currency','method','client_id','store_id','note','created_by','created_at','document_no','counterparty','tax_amount','due_date','reference_type','reference_id','attachment_url','metadata_json'],
+  stores:['id','client_id','management_fee_pct','updated_at'],
   wallet_accounts:['client_id','balance','billing_version','credit_limit'],
   wallet_log:['client_id','type','amount','balance_after','reference_type','reference_id'],
   wallet_topup_requests:['id','client_id','status','amount'],
