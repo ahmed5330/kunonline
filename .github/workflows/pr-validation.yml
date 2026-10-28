@@ -61,6 +61,8 @@ jobs:
           node scripts/android-accounting-fake-test.mjs
       - name: Run full contract and unit suite
         run: npm test
+      - name: HR draft net-collection commission policy (pure synthetic evidence)
+        run: node scripts/hr-payroll-core-test.mjs
       - name: Inventory workspace UX browser regression
         run: node scripts/browser-inventory-workspace-fixture-test.mjs
       - name: Sidebar cross-group navigation browser regression
