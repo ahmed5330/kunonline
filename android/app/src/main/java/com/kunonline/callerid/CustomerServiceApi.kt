@@ -190,8 +190,8 @@ object KunCustomerServiceApi {
         CustomerServiceJsonResult(true, "تم تحميل السجل", json(response))
     }
 
-    fun updateState(context: Context, orderId: String, state: String, deferUntil: String = "", stockBatchId: String = "", cancelReason: String = ""): CustomerServiceJsonResult =
-        withClient(context) { cookie, clientId ->
+    fun updateState(context: Context, orderId: String, state: String, deferUntil: String = "", stockBatchId: String = "", cancelReason: String = "", selectedClientId: String = ""): CustomerServiceJsonResult =
+        withClient(context, selectedClientId) { cookie, clientId ->
             if (state == "shipped") return@withClient CustomerServiceJsonResult(false, "إرسال الطلب للشحن يتطلب إنشاء بوليصة J&T الرسمية. استخدم زر إرسال إلى J&T.")
             if (state == "cancelled" && cancelReason.isBlank()) return@withClient CustomerServiceJsonResult(false, "اكتب سبب إلغاء الطلب أولًا")
             val payload = JSONObject().put("clientId", clientId).put("state", state)
@@ -236,16 +236,16 @@ object KunCustomerServiceApi {
         CustomerServiceJsonResult(true, "تمت إضافة الملاحظة", json(response))
     }
 
-    fun claimContact(context: Context, orderId: String): CustomerServiceJsonResult =
-        withClient(context) { cookie, clientId ->
+    fun claimContact(context: Context, orderId: String, selectedClientId: String = ""): CustomerServiceJsonResult =
+        withClient(context, selectedClientId) { cookie, clientId ->
             val payload = JSONObject().put("clientId", clientId)
             val response = request("POST", "/api/customer-service/orders/${enc(orderId)}/claim-contact?clientId=${enc(clientId)}", cookie, payload)
             if (response.code !in 200..299) return@withClient authFailure(context, response, "تعذر نقل الأوردر إلى جاري التواصل")
             CustomerServiceJsonResult(true, "الأوردر في جاري التواصل حتى يتم التأكيد أو اختيار العميل لا يرد", json(response))
         }
 
-    fun logContact(context: Context, orderId: String, channel: String = "phone", intent: String = "contact", direction: String = ""): CustomerServiceJsonResult =
-        withClient(context) { cookie, clientId ->
+    fun logContact(context: Context, orderId: String, channel: String = "phone", intent: String = "contact", direction: String = "", selectedClientId: String = ""): CustomerServiceJsonResult =
+        withClient(context, selectedClientId) { cookie, clientId ->
             val payload = JSONObject().put("clientId", clientId).put("channel", channel).put("intent", intent)
              .put("direction", direction)
             val response = request("POST", "/api/customer-service/orders/${enc(orderId)}/contact?clientId=${enc(clientId)}", cookie, payload)
@@ -326,10 +326,10 @@ object KunCustomerServiceApi {
         }.getOrElse { CustomerServiceJsonResult(false, "تعذر الاتصال بكن أونلاين") }
     }
 
-    private inline fun withClient(context: Context, block: (String, String) -> CustomerServiceJsonResult): CustomerServiceJsonResult {
+    private inline fun withClient(context: Context, selectedClientId: String = "", block: (String, String) -> CustomerServiceJsonResult): CustomerServiceJsonResult {
         val cookie = cookie(context) ?: return CustomerServiceJsonResult(false, "سجّل الدخول أولاً")
         return runCatching {
-            val clientId = resolveClientId(context, cookie)
+            val clientId = selectedClientId.ifBlank { resolveClientId(context, cookie) }
             if (clientId.isBlank()) return CustomerServiceJsonResult(false, "تعذر تحديد حساب المتجر")
             block(cookie, clientId)
         }.getOrElse { CustomerServiceJsonResult(false, "تعذر الاتصال بكن أونلاين") }

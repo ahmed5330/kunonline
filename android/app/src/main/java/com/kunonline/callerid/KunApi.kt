@@ -185,32 +185,64 @@ object KunApi {
      */
     fun lookupCallerLive(context: Context, number: String): CallerCustomer? {
         val cookie = session(context) ?: return null
+        val normalized = PhoneNormalizer.normalize(number)
+        if (normalized.isBlank()) return null
         return runCatching {
             val scope = resolveScope(cookie, context)
-            if (scope.clientId.isBlank()) return null
-            val path = "/api/mobile/caller-lookup?clientId=${enc(scope.clientId)}&phone=${enc(number)}"
-            val result = request("GET", path, cookie = cookie)
-            if (result.code !in 200..299) return null
-            val data = JSONObject(result.body)
-            if (!data.optBoolean("found", false) || session(context) != cookie) return null
-            CallerCustomer(
-                name = data.optString("name"),
-                phone = PhoneNormalizer.normalize(data.optString("phone").ifBlank { number }),
-                orderId = data.optString("orderId").takeIf { it.isNotBlank() },
-                orderRef = data.optString("orderRef").takeIf { it.isNotBlank() },
-                status = data.optString("status").takeIf { it.isNotBlank() },
-                product = data.optString("product").takeIf { it.isNotBlank() },
-                total = data.optDouble("orderTotal", 0.0).takeIf { it > 0 },
-                gov = data.optString("gov").takeIf { it.isNotBlank() },
-                address = data.optString("address").takeIf { it.isNotBlank() },
-                note = data.optString("note").takeIf { it.isNotBlank() },
-                previousOrders = (data.optInt("totalOrders", 0) - 1).coerceAtLeast(0),
-                clientId = scope.clientId,
-                storeId = data.optString("storeId").ifBlank { scope.storeId },
-                storeName = cachedStoreOptions(context)?.stores?.firstOrNull {
-                    it.clientId == scope.clientId && it.storeId == data.optString("storeId").ifBlank { scope.storeId }
-                }?.storeName.orEmpty()
-            )
+            if (scope.clientId.isNotBlank()) {
+                // Fast tenant lookup first, including customer notes and full address.
+                val path = "/api/mobile/caller-lookup?clientId=${enc(scope.clientId)}&phone=${enc(normalized)}"
+                val res = runCatching { request("GET", path, cookie = cookie) }.getOrNull()
+                if (res != null && res.code in 200..299) {
+                    val data = JSONObject(res.body)
+                    if (data.optBoolean("found", false) && session(context) == cookie) {
+                        val storeId = data.optString("storeId").ifBlank { scope.storeId }
+                        return CallerCustomer(
+                            name = data.optString("name"),
+                            phone = PhoneNormalizer.normalize(data.optString("phone").ifBlank { normalized }),
+                            orderId = data.optString("orderId").takeIf { it.isNotBlank() },
+                            orderRef = data.optString("orderRef").takeIf { it.isNotBlank() },
+                            status = data.optString("status").takeIf { it.isNotBlank() },
+                            product = data.optString("product").takeIf { it.isNotBlank() },
+                            total = data.optDouble("orderTotal", 0.0).takeIf { it > 0 },
+                            gov = data.optString("gov").takeIf { it.isNotBlank() },
+                            address = data.optString("address").takeIf { it.isNotBlank() },
+                            note = data.optString("note").takeIf { it.isNotBlank() },
+                            previousOrders = (data.optInt("totalOrders", 0) - 1).coerceAtLeast(0),
+                            clientId = scope.clientId,
+                            storeId = storeId,
+                            storeName = cachedStoreOptions(context)?.stores?.firstOrNull {
+                                it.clientId == scope.clientId && it.storeId == storeId
+                            }?.storeName.orEmpty()
+                        )
+                    }
+                }
+            }
+            // A colleague may serve several authorized stores in different tenants.
+            // The global search endpoint enforces per-user store access on the server.
+            // Never use a substring-only phone match to identify a caller.
+            val result = request("GET", "/api/mobile/orders/search?q=${enc(normalized)}&limit=25", cookie = cookie)
+            if (result.code !in 200..299 || session(context) != cookie) return null
+            val rows = JSONObject(result.body).optJSONArray("orders") ?: return null
+            for (i in 0 until rows.length()) {
+                val row = rows.optJSONObject(i) ?: continue
+                if (PhoneNormalizer.normalize(row.optString("phone")) != normalized) continue
+                val clientId = row.optString("clientId")
+                val storeId = row.optString("storeId")
+                val orderId = row.optString("id")
+                if (clientId.isBlank() || storeId.isBlank() || orderId.isBlank()) continue
+                return CallerCustomer(
+                    name = row.optString("name"), phone = normalized,
+                    orderId = orderId,
+                    orderRef = row.optString("ref").ifBlank { orderId },
+                    status = row.optString("state"),
+                    product = row.optString("product"),
+                    total = row.optDouble("total", 0.0).takeIf { it > 0 },
+                    gov = row.optString("gov"), address = null, note = null, previousOrders = 0,
+                    clientId = clientId, storeId = storeId, storeName = row.optString("storeName")
+                )
+            }
+            null
         }.getOrNull()
     }
 
