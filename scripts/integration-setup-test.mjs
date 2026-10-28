@@ -2,6 +2,7 @@ import {readFile} from 'node:fs/promises';
 const worker=await readFile(new URL('../src/index-commerce-v18.js',import.meta.url),'utf8');
 const jtWorker=await readFile(new URL('../src/index-commerce-v37.js',import.meta.url),'utf8');
 const jtWorkflow=await readFile(new URL('../src/jt-print-workflow-v2.js',import.meta.url),'utf8');
+const jtClaim=await readFile(new URL('../src/jt-shipping-claim.js',import.meta.url),'utf8');
 const v38Core=await readFile(new URL('../src/index-commerce-v38-core.js',import.meta.url),'utf8');
 const production=await readFile(new URL('../src/index-production-mobile-update.js',import.meta.url),'utf8');
 const printingRoute=await readFile(new URL('../src/production-printing-queue.js',import.meta.url),'utf8');
@@ -45,9 +46,11 @@ must(queueBlock.includes('state:row.state'),'Queue preparation must keep the cur
 
 const printStart=jtWorkflow.indexOf('async function createAndPrint'),printEnd=jtWorkflow.indexOf('export async function handleJtPrintWorkflowV2');
 const printBlock=jtWorkflow.slice(printStart,printEnd);
-for(const marker of ['createJtShipment({shipment,secrets})',"UPDATE orders SET awb=?",'jt_shipment_created','jt_print_requested',"printSize:'2'",'printCode:1','signedPost(PRINT_ORDER_PATH','jt_print_failed','jt_label_printed','official:true',"UPDATE orders SET state='shipped'",'jt_handoff_shipped'])must(printBlock.includes(marker),`Explicit Printing send workflow missing ${marker}`);
+for(const marker of ['createJtShipment({shipment,secrets})','claimJtCreate','persistJtClaimAwb','finalizeJtOfficialLabel','jt_shipment_created','jt_print_requested',"printSize:'2'",'printCode:1','signedPost(PRINT_ORDER_PATH','jt_print_failed'])must(printBlock.includes(marker),`Explicit Printing send workflow missing ${marker}`);
+must(jtClaim.includes('UPDATE orders SET awb=?'),'The durable claim must persist the carrier AWB for the exact order');
+must(jtClaim.includes("UPDATE orders SET state='shipped'")&&jtClaim.includes('jt_label_printed')&&jtClaim.includes('jt_handoff_shipped'),'The official J&T label must atomically record proof and shipped state');
 must(printBlock.indexOf('createJtShipment({shipment,secrets})')<printBlock.indexOf('signedPost(PRINT_ORDER_PATH'),'AWB creation must happen before printOrder');
-must(printBlock.indexOf('jt_label_printed')<printBlock.indexOf("UPDATE orders SET state='shipped'"),'Order may enter shipping only after official J&T label succeeds');
+must(printBlock.indexOf('signedPost(PRINT_ORDER_PATH')<printBlock.indexOf('finalizeJtOfficialLabel'),'Order may enter shipping only after official J&T print response and URL proof');
 
 must(printingRoute.includes("url.pathname!=='/api/printing'")&&printingRoute.includes("o.state IN ('confirmed','preparing')")&&printingRoute.includes("hasMore:offset+limit<total"),'Production must expose paged confirmed orders to assigned stores through dedicated Printing queue');
 must(printingRoute.includes("order.state!=='shipped'||order.queuedForPrint||order.printed"),'Unrelated shipped orders must not leak into Printing');
