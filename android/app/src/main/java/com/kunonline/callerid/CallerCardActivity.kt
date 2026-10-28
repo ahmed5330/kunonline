@@ -169,7 +169,8 @@ class CallerCardActivity : Activity() {
         }
         card.addView(ScrollView(this).apply {
             addView(body)
-        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(280)))
+        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
+            minOf(dp(470), (resources.displayMetrics.heightPixels * 0.45).toInt())))
 
         val actions = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL

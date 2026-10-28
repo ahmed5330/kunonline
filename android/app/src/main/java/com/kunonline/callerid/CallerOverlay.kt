@@ -144,7 +144,8 @@ object CallerOverlay {
             card.addView(ScrollView(app).apply {
                 isFillViewport = false
                 addView(body)
-            }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, app.dp(240)))
+            }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
+                minOf(app.dp(430), (app.resources.displayMetrics.heightPixels * 0.43).toInt())))
 
             val actions = LinearLayout(app).apply {
                 orientation = LinearLayout.VERTICAL

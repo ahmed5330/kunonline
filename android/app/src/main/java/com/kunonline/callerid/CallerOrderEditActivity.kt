@@ -142,6 +142,8 @@ private fun CallerOrderEditorContent(orderId: String, data: CustomerServiceEdito
     var couponCode by remember(data) { mutableStateOf(order.optString("couponCode")) }
     var customerNote by remember(data) { mutableStateOf(order.optString("customerNote")) }
     var totalText by remember(data) { mutableStateOf((details.optJSONObject("summary")?.optDouble("total", 0.0) ?: 0.0).toString()) }
+    val notesOnly = order.optString("awb").let { it.isNotBlank() && !it.equals("null", true) } ||
+        order.optString("state") !in setOf("pending", "new", "contacting", "no_answer", "confirmed", "preparing", "deferred")
     var saving by remember { mutableStateOf(false) }
 
     fun recalc() {
@@ -150,7 +152,7 @@ private fun CallerOrderEditorContent(orderId: String, data: CustomerServiceEdito
 
     fun save() {
         if (saving) return
-        if (name.isBlank() || phone.isBlank() || items.any { it.productName.isBlank() }) {
+        if (!notesOnly && (name.isBlank() || phone.isBlank() || items.any { it.productName.isBlank() })) {
             Toast.makeText(context, "الاسم والهاتف واسم كل منتج مطلوبة", Toast.LENGTH_LONG).show()
             return
         }
@@ -174,6 +176,11 @@ private fun CallerOrderEditorContent(orderId: String, data: CustomerServiceEdito
                         .put("unitPrice", item.unitPrice.coerceAtLeast(0.0)))
                 }
             })
+        if (notesOnly) {
+            payload.put("editMode", "notes")
+            // The server only accepts customerNote in notes mode, even for a
+            // shipped order. Do not mutate a J&T waybill or money in this state.
+        }
         saving = true
         scope.launch {
             val result = withContext(Dispatchers.IO) {
@@ -219,10 +226,11 @@ private fun CallerOrderEditorContent(orderId: String, data: CustomerServiceEdito
             Surface(color = KunColors.ChromeSoft, shape = KunRadius, modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(14.dp)) {
                     Text("الطلب #${order.optString("ref").ifBlank { orderId }}", fontWeight = FontWeight.Bold, color = KunColors.Chrome)
-                    Text("عدّل البيانات ثم احفظ من الشريط الثابت أسفل الشاشة", style = MaterialTheme.typography.bodySmall, color = KunColors.Ink2)
+                    Text(if (notesOnly) "الشحنة صدرت بالفعل؛ تعديل الملاحظات فقط متاح هنا. لتغيير بيانات الشحن استخدم إجراءات J&T." else "عدّل البيانات ثم احفظ من الشريط الثابت أسفل الشاشة", style = MaterialTheme.typography.bodySmall, color = KunColors.Ink2)
                 }
             }
 
+            if (!notesOnly) {
             KunSectionCard(Modifier.fillMaxWidth()) {
                 Text("بيانات العميل والتوصيل", style = MaterialTheme.typography.titleMedium)
                 CallerEditField(name, { name = it }, "اسم العميل")
@@ -247,10 +255,13 @@ private fun CallerOrderEditorContent(orderId: String, data: CustomerServiceEdito
                 }
             }
 
+            }
             KunSectionCard(Modifier.fillMaxWidth()) {
-                Text("الخصم والإجمالي والملاحظات", style = MaterialTheme.typography.titleMedium)
-                CallerEditField(couponCode, { couponCode = it }, "كود الخصم")
-                CallerEditField(totalText, { totalText = it }, "إجمالي الطلب", KeyboardType.Decimal)
+                Text(if (notesOnly) "تعديل الملاحظات" else "الخصم والإجمالي والملاحظات", style = MaterialTheme.typography.titleMedium)
+                if (!notesOnly) {
+                    CallerEditField(couponCode, { couponCode = it }, "كود الخصم")
+                    CallerEditField(totalText, { totalText = it }, "إجمالي الطلب", KeyboardType.Decimal)
+                }
                 OutlinedTextField(
                     value = customerNote,
                     onValueChange = { customerNote = it },
