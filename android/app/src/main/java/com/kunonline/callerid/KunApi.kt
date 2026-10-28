@@ -206,7 +206,10 @@ object KunApi {
                 note = data.optString("note").takeIf { it.isNotBlank() },
                 previousOrders = (data.optInt("totalOrders", 0) - 1).coerceAtLeast(0),
                 clientId = scope.clientId,
-                storeId = data.optString("storeId").ifBlank { scope.storeId }
+                storeId = data.optString("storeId").ifBlank { scope.storeId },
+                storeName = cachedStoreOptions(context)?.stores?.firstOrNull {
+                    it.clientId == scope.clientId && it.storeId == data.optString("storeId").ifBlank { scope.storeId }
+                }?.storeName.orEmpty()
             )
         }.getOrNull()
     }
