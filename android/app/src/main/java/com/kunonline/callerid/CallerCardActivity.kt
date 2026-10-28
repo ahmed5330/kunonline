@@ -14,6 +14,7 @@ import android.view.View
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import kotlin.concurrent.thread
@@ -152,7 +153,17 @@ class CallerCardActivity : Activity() {
             customer.note?.takeIf { it.isNotBlank() }?.let { addLine("ملاحظة: $it", 13f) }
             if (customer.previousOrders > 0) addLine("له ${customer.previousOrders} طلب سابق", 12f)
         }
-        card.addView(body)
+        val detailsHost = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(8), 0, dp(8))
+        }
+        if (!locked && !customer.orderId.isNullOrBlank()) {
+            addLine("جاري تحميل تفاصيل الطلب الكاملة…", 12f)
+            body.addView(detailsHost)
+        }
+        card.addView(ScrollView(this).apply {
+            addView(body)
+        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(280)))
 
         val actions = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -220,6 +231,23 @@ class CallerCardActivity : Activity() {
         card.addView(actions)
         root.addView(card, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
         setContentView(root)
+        if (!locked && !customer.orderId.isNullOrBlank()) {
+            thread(name = "kun-call-card-details") {
+                val result = KunCustomerServiceApi.fetchOrderDetails(this, customer.orderId,
+                    selectedClientId = customer.clientId, selectedStoreId = customer.storeId)
+                runOnUiThread {
+                    val stillUnlocked = !(getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager).isKeyguardLocked
+                    if (!isFinishing && stillUnlocked) {
+                        if (result.ok) renderCallerFullDetails(this, detailsHost, result.data)
+                        else detailsHost.addView(TextView(this).apply {
+                            text = "تعذر تحميل التفاصيل: ${result.message}"
+                            textSize = 12f
+                            setTextColor(ink2)
+                        })
+                    }
+                }
+            }
+        }
         if (!locked && intent.getBooleanExtra("start_cancel", false)) {
             customer.orderId?.takeIf { it.isNotBlank() }?.let { showCancelReason(it) }
         }
