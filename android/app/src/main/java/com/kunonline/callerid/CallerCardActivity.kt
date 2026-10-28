@@ -159,7 +159,11 @@ class CallerCardActivity : Activity() {
             setPadding(0, dp(8), 0, dp(8))
         }
         if (!locked && !customer.orderId.isNullOrBlank()) {
-            addLine("جاري تحميل تفاصيل الطلب الكاملة…", 12f)
+            detailsHost.addView(TextView(this).apply {
+                text = "جاري تحميل تفاصيل الطلب الكاملة…"
+                textSize = 12f
+                setTextColor(ink2)
+            })
             body.addView(detailsHost)
         }
         card.addView(ScrollView(this).apply {
