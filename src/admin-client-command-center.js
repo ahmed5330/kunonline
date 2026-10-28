@@ -67,11 +67,11 @@ export async function adminClientCommandCenter(env,{me,range}={}){
       SUM(CASE WHEN stock<=0 THEN 1 ELSE 0 END) out_of_stock
       FROM products WHERE active=1 GROUP BY client_id`).all(),
     env.DB.prepare(`SELECT client_id,COALESCE(SUM(spend),0) spend,COALESCE(SUM(impressions),0) impressions,COALESCE(SUM(clicks),0) clicks
-      FROM campaign_daily_metrics WHERE metric_date BETWEEN ? AND ? GROUP BY client_id`).bind(period.from,period.to).all().catch(()=>({results:[]})),
+      FROM campaign_daily_metrics WHERE metric_date BETWEEN ? AND ? GROUP BY client_id`).bind(period.from,period.to).all().catch(()=>{throw Object.assign(new Error('ملخص الإدارة غير متاح مؤقتًا لتعذر قراءة البيانات. حاول مرة أخرى.'),{status:503,code:'ADMIN_SUMMARY_DATA_UNAVAILABLE'});}),
     env.DB.prepare(`SELECT client_id,
       COALESCE(SUM(CASE WHEN type='income' THEN amount ELSE 0 END),0) income,
       COALESCE(SUM(CASE WHEN type='expense' THEN amount ELSE 0 END),0) expenses
-      FROM transactions WHERE date(COALESCE(NULLIF(TRIM(date),''),created_at)) BETWEEN date(?) AND date(?) AND client_id IS NOT NULL GROUP BY client_id`).bind(period.from,period.to).all().catch(()=>({results:[]}))
+      FROM transactions WHERE date(COALESCE(NULLIF(TRIM(date),''),created_at)) BETWEEN date(?) AND date(?) AND client_id IS NOT NULL GROUP BY client_id`).bind(period.from,period.to).all().catch(()=>{throw Object.assign(new Error('ملخص الإدارة غير متاح مؤقتًا لتعذر قراءة البيانات. حاول مرة أخرى.'),{status:503,code:'ADMIN_SUMMARY_DATA_UNAVAILABLE'});})
   ]);
   const om=mapBy(orderRows.results),im=mapBy(inventoryRows.results),am=mapBy(adRows.results),fm=mapBy(financeRows.results);
   const rows=clients.map(c=>compactHomeClient(c,om.get(String(c.clientId))||{},im.get(String(c.clientId))||{},am.get(String(c.clientId))||{},fm.get(String(c.clientId))||{}));
