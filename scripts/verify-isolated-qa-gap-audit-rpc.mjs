@@ -1,4 +1,4 @@
-import {isolatedQaRunSuffix} from './isolated-qa-runtime-identity.mjs';
+import {isolatedQaIdentity} from './isolated-qa-runtime-identity.mjs';
 import {loadIsolatedPreviewQaConfig} from './isolated-preview-qa-config.mjs';
 import {mkdtemp,writeFile,rm} from 'node:fs/promises';
 import {randomBytes} from 'node:crypto';
@@ -9,11 +9,11 @@ import {promisify} from 'node:util';
 async function main(){
   const base=process.env.KUN_PREVIEW_QA_BASE_URL;
   const config=await loadIsolatedPreviewQaConfig(base);
-  const app=config.match(/^name\s*=\s*"([^"]+)"/m)?.[1],runId=isolatedQaRunSuffix(process.env.GITHUB_RUN_ID,process.env.GITHUB_RUN_ATTEMPT);
+  const app=config.match(/^name\s*=\s*"([^"]+)"/m)?.[1],identity=isolatedQaIdentity(process.env.GITHUB_RUN_ID,process.env.GITHUB_RUN_ATTEMPT);
   const account=process.env.CLOUDFLARE_ACCOUNT_ID,token=process.env.CLOUDFLARE_API_TOKEN,id=process.env.KUN_PREVIEW_QA_D1_ID;
-  if(!/^\d+$/.test(runId||'')||app!==`kunonline-isolated-qa-${runId}`||!/^[a-f0-9]{32}$/i.test(account||'')||!token)
+  if(app!==identity.app||!/^[a-f0-9]{32}$/i.test(account||'')||!token)
     throw Error('QA_RPC_RUNTIME_INVALID');
-  const name=`kunonline-isolated-qa-audit-${runId}`;
+  const name=identity.audit;
   async function api(method,path,body){
     const response=await fetch(`https://api.cloudflare.com/client/v4/accounts/${account}/${path}`,{method,redirect:'error',signal:AbortSignal.timeout(30000),headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});
     if(method==='DELETE'&&response.status===404)return null;
@@ -28,7 +28,7 @@ async function main(){
   const settings=await api('GET',`workers/scripts/${app}/settings`);
   if((settings.bindings||[]).filter(x=>x.type==='d1').length!==1||!(settings.bindings||[]).some(x=>x.type==='d1'&&x.name==='DB'&&x.id===id)||(settings.bindings||[]).some(x=>x.type==='service'))
     throw Error('QA_RPC_APP_NOT_ISOLATED');
-  const connection=`CON-QA-EASYORDERS-${runId}`;
+  const connection=identity.connection;
   async function snapshot(){
     const result=await api('POST',`d1/database/${id}/query`,{sql:'SELECT config_json,(SELECT COUNT(*) FROM orders) AS order_count FROM store_connections WHERE id=? AND client_id=?',params:[connection,'QA-SYNTHETIC-TENANT']});
     const row=result?.[0]?.results?.[0];
