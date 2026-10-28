@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "wrangler dev --config wrangler.preview.toml",
     "dev:scheduled": "wrangler dev --config wrangler.sync.preview.toml --test-scheduled",
+    "test:jt-shipping-safe": "node --check src/jt-shipping-claim.js && node --check src/jt-print-workflow-v2.js && node scripts/jt-shipping-claim-sqlite-test.mjs && node scripts/confirmed-shipping-handoff-contract-test.mjs",
     "test:core": "node tests.mjs",
     "test:ui": "node scripts/ui-contract-test.mjs",
     "test:workflow": "node workflow-tests.mjs",
