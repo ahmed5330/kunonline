@@ -35,7 +35,7 @@ assert.match(server,/byUserId:me\.uid\|\|(me\.id\|\|)?null/,'record actor on sta
 
 assert.match(server,/CANCEL_REASON_REQUIRED/,'server must reject cancellation without a reason');
 assert.match(client,/cancelReason: String = ""/,'Android must pass a cancellation reason');
-assert.match(fallback,/showCancelReason\(orderId\)/,'call card must provide a cancellation reason input');
+assert.match(fallback,/showCancelReason\(orderId, customer\.clientId\)/,'call card must provide a cancellation reason input scoped to the customer tenant');
 assert.match(board,/سجل المكالمات المرصودة/,'call logs must be visible in customer service');
 assert.match(server,/intent==='screened'/,'call counts must distinguish observed calls');
 console.log('PASS: android cancellation reason, screened call logs, separate queues and audit contract');
