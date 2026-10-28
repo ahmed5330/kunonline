@@ -5,12 +5,12 @@ const iso=/^\d{4}-\d{2}-\d{2}$/;
 const isAdCategory=value=>/(ads?|advert|facebook|meta|google|tiktok|اعلان|إعلان|اعلانات|إعلانات)/i.test(text(value));
 function cairoToday(){const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Cairo',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date()),get=type=>parts.find(x=>x.type===type)?.value||'';return `${get('year')}-${get('month')}-${get('day')}`;}
 function dateOr(value,fallback){const v=text(value);if(v==='beginning')return '2000-01-01';return iso.test(v)?v:fallback;}
-function orderBusinessDate(row){return String(row?.date||row?.created_at||'').slice(0,10);}
+function orderBusinessDate(row){return String(text(row?.date)||row?.created_at||'').slice(0,10);}
 
 export async function collectedProfitOverview(env,{clientId,storeId=null,from=null,to=null,includeDetails=false}={}){
   const end=dateOr(to,cairoToday()),start=dateOr(from,end);if(start>end)throw Object.assign(new Error('بداية الفترة يجب أن تكون قبل نهايتها'),{status:400,code:'DATE_RANGE_INVALID'});
   const orderBinds=[clientId];let orderStore='';if(storeId){orderStore=' AND o.store_id=?';orderBinds.push(storeId);}orderBinds.push(start,end);
-  const ordersResult=await env.DB.prepare(`SELECT o.id,o.ref,o.store_id,o.name,o.total,o.collected_amount,o.collected_at,o.date,o.created_at,o.product_cost,s.name store_name,COALESCE(f.rate_pct,0) management_rate_pct,COALESCE(CASE WHEN f.status='active' THEN f.amount ELSE 0 END,0) management_fee FROM orders o LEFT JOIN stores s ON s.id=o.store_id AND s.client_id=o.client_id LEFT JOIN order_management_fees f ON f.order_id=o.id AND f.client_id=o.client_id WHERE o.client_id=?${orderStore} AND o.state='collected' AND date(COALESCE(o.collected_at,o.date,o.created_at)) BETWEEN date(?) AND date(?) AND NOT EXISTS (SELECT 1 FROM order_duplicate_links dup WHERE dup.duplicate_order_id=o.id) ORDER BY COALESCE(o.collected_at,o.date,o.created_at) DESC,o.created_at DESC`).bind(...orderBinds).all();
+  const ordersResult=await env.DB.prepare(`SELECT o.id,o.ref,o.store_id,o.name,o.total,o.collected_amount,o.collected_at,o.date,o.created_at,o.product_cost,s.name store_name,COALESCE(f.rate_pct,0) management_rate_pct,COALESCE(CASE WHEN f.status='active' THEN f.amount ELSE 0 END,0) management_fee FROM orders o LEFT JOIN stores s ON s.id=o.store_id AND s.client_id=o.client_id LEFT JOIN order_management_fees f ON f.order_id=o.id AND f.client_id=o.client_id WHERE o.client_id=?${orderStore} AND o.state='collected' AND date(COALESCE(NULLIF(TRIM(o.collected_at),''),NULLIF(TRIM(o.date),''),o.created_at)) BETWEEN date(?) AND date(?) AND NOT EXISTS (SELECT 1 FROM order_duplicate_links dup WHERE dup.duplicate_order_id=o.id) ORDER BY COALESCE(o.collected_at,o.date,o.created_at) DESC,o.created_at DESC`).bind(...orderBinds).all();
   const orders=ordersResult.results||[],orderDates=orders.map(orderBusinessDate).filter(date=>iso.test(date)).sort(),orderPeriodFrom=orderDates[0]||null,orderPeriodTo=orderDates.at(-1)||null;
   // Operational sales use the order date, while cash/expenses in this view
   // consistently use the selected COLLECTION dates. Show the order-date range
@@ -21,7 +21,7 @@ export async function collectedProfitOverview(env,{clientId,storeId=null,from=nu
   {
     const txBinds=[clientId],adsBinds=[clientId];let txStore='',adsStore='';if(storeId){txStore=' AND store_id=?';adsStore=' AND store_id=?';txBinds.push(storeId);adsBinds.push(storeId);}txBinds.push(start,end);adsBinds.push(start,end);
     const [txResult,adsRow]=await Promise.all([
-      env.DB.prepare(`SELECT id,date,created_at,category,amount,note,method,counterparty,store_id FROM transactions WHERE client_id=?${txStore} AND type='expense' AND date(COALESCE(date,created_at)) BETWEEN date(?) AND date(?) ORDER BY COALESCE(date,created_at) DESC,created_at DESC`).bind(...txBinds).all(),
+      env.DB.prepare(`SELECT id,date,created_at,category,amount,note,method,counterparty,store_id FROM transactions WHERE client_id=?${txStore} AND type='expense' AND date(COALESCE(NULLIF(TRIM(date),''),created_at)) BETWEEN date(?) AND date(?) ORDER BY COALESCE(date,created_at) DESC,created_at DESC`).bind(...txBinds).all(),
       env.DB.prepare(`SELECT COALESCE(SUM(spend),0) spend FROM campaign_daily_metrics WHERE client_id=?${adsStore} AND date(metric_date) BETWEEN date(?) AND date(?)`).bind(...adsBinds).first()
     ]);transactions=txResult.results||[];integratedAds=r2(adsRow?.spend);
   }
