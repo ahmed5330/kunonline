@@ -12,7 +12,7 @@ android {
         applicationId = "com.kunonline.callerid.stable"
         minSdk = 29
         targetSdk = 35
-        // v2.9.21: show date, product and readable Arabic customer status on global order search results.
+        // v2.9.21: signed stable release; search cards show date, product and Arabic customer status (no migration).
         versionCode = 152
         versionName = "2.9.21"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
