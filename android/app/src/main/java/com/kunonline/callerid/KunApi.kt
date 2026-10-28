@@ -204,7 +204,9 @@ object KunApi {
                 gov = data.optString("gov").takeIf { it.isNotBlank() },
                 address = data.optString("address").takeIf { it.isNotBlank() },
                 note = data.optString("note").takeIf { it.isNotBlank() },
-                previousOrders = (data.optInt("totalOrders", 0) - 1).coerceAtLeast(0)
+                previousOrders = (data.optInt("totalOrders", 0) - 1).coerceAtLeast(0),
+                clientId = scope.clientId,
+                storeId = data.optString("storeId").ifBlank { scope.storeId }
             )
         }.getOrNull()
     }
