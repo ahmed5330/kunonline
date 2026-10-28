@@ -61,7 +61,7 @@ export async function adminClientCommandCenter(env,{me,range}={}){
       SUM(CASE WHEN state='returned' THEN 1 ELSE 0 END) returned,
       COALESCE(SUM(CASE WHEN state IN ('signed','collected') THEN total ELSE 0 END),0) delivered_revenue,
       COUNT(DISTINCT customer_id) customers
-      FROM orders WHERE date(date) BETWEEN date(?) AND date(?) GROUP BY client_id`).bind(period.from,period.to).all(),
+      FROM orders WHERE date(COALESCE(NULLIF(TRIM(date),''),created_at)) BETWEEN date(?) AND date(?) GROUP BY client_id`).bind(period.from,period.to).all(),
     env.DB.prepare(`SELECT client_id,COUNT(*) products,
       SUM(CASE WHEN stock<=low_stock_threshold THEN 1 ELSE 0 END) low_stock,
       SUM(CASE WHEN stock<=0 THEN 1 ELSE 0 END) out_of_stock
@@ -71,7 +71,7 @@ export async function adminClientCommandCenter(env,{me,range}={}){
     env.DB.prepare(`SELECT client_id,
       COALESCE(SUM(CASE WHEN type='income' THEN amount ELSE 0 END),0) income,
       COALESCE(SUM(CASE WHEN type='expense' THEN amount ELSE 0 END),0) expenses
-      FROM transactions WHERE date(date) BETWEEN date(?) AND date(?) AND client_id IS NOT NULL GROUP BY client_id`).bind(period.from,period.to).all().catch(()=>({results:[]}))
+      FROM transactions WHERE date(COALESCE(NULLIF(TRIM(date),''),created_at)) BETWEEN date(?) AND date(?) AND client_id IS NOT NULL GROUP BY client_id`).bind(period.from,period.to).all().catch(()=>({results:[]}))
   ]);
   const om=mapBy(orderRows.results),im=mapBy(inventoryRows.results),am=mapBy(adRows.results),fm=mapBy(financeRows.results);
   const rows=clients.map(c=>compactHomeClient(c,om.get(String(c.clientId))||{},im.get(String(c.clientId))||{},am.get(String(c.clientId))||{},fm.get(String(c.clientId))||{}));
@@ -93,7 +93,7 @@ async function commercePeriodStats(env,{clientId,from,to}){
     SUM(CASE WHEN state='returned' THEN 1 ELSE 0 END) returned,
     COALESCE(SUM(CASE WHEN state IN ('signed','collected') THEN total ELSE 0 END),0) delivered_revenue,
     COUNT(DISTINCT customer_id) customers
-    FROM orders WHERE client_id=? AND date(date) BETWEEN date(?) AND date(?)`).bind(clientId,from,to).first();
+    FROM orders WHERE client_id=? AND date(COALESCE(NULLIF(TRIM(date),''),created_at)) BETWEEN date(?) AND date(?)`).bind(clientId,from,to).first();
   const total=n(row?.total),delivered=n(row?.delivered),returned=n(row?.returned);return {total,gmv:r2(row?.gmv),pending:n(row?.pending),confirmed:n(row?.confirmed),shipped:n(row?.shipped),delivered,collected:n(row?.collected),collectedAmount:r2(row?.collected_amount),cancelled:n(row?.cancelled),returned,deliveredRevenue:r2(row?.delivered_revenue),customers:n(row?.customers),aov:total?r2(n(row?.gmv)/total):0,confirmationRate:pct(row?.confirmed,total),deliveryRate:pct(delivered,total),cancellationRate:pct(row?.cancelled,total),returnRate:pct(returned,Math.max(1,delivered+returned))};
 }
 function change(current,previous){current=n(current);previous=n(previous);if(previous===0)return current===0?0:null;return r2((current-previous)/Math.abs(previous)*100);}
