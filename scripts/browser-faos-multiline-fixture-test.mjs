@@ -25,6 +25,10 @@ try{
  cdp=await connect(await launch(await findChrome()));await cdp.send('Runtime.enable');await cdp.send('Page.navigate',{url:'http://127.0.0.1:'+server.address().port});await waitFor('document.getElementById("root")','fixture');
  await evalJs(`window.__calls=[];window.__enabled=false;window.__store='S1';window.kunClientId=async()=> 'C1';window.kunStoreId=async()=>__store;window.confirm=()=>true;window.fetch=async(p,o={})=>{const body=JSON.parse(o.body||'null');__calls.push({p,method:o.method||'GET',body});if(o.method==='POST')return {ok:false,status:503,json:async()=>({error:'Synthetic retry'})};const data=p.includes('/catalog')?{accounts:[{code:'1110',name:'الخزنة',type:'asset'},{code:'1120',name:'البنك',type:'asset'},{code:'3100',name:'رأس المال',type:'equity'}]}:p.includes('/simulation')?{}:{capabilities:{financialPostingEnabled:__enabled},ledger:{accounts:[]}};return {ok:true,json:async()=>data};};`);
  await evalJs('eval('+JSON.stringify(uiSrc)+')');await waitFor('document.querySelector("[data-faos-tab=entry]")','workspace');
+ await evalJs('document.querySelector("[data-faos-tab=chart]").click()');await waitFor('document.querySelectorAll("[data-faos-account-code]").length===3','coded account tree');
+ assert.equal(await evalJs('document.querySelectorAll("[data-faos-account-group]").length'),2);
+ await evalJs('document.getElementById("faosChartQuery").value="1120";document.getElementById("faosChartQuery").dispatchEvent(new Event("input"))');
+ assert.equal(await evalJs('document.querySelectorAll("[data-faos-account-code]").length'),1);assert.equal(await evalJs('document.querySelector("[data-faos-account-code]").dataset.faosAccountCode'),'1120');
  await evalJs('document.querySelector("[data-faos-tab=entry]").click()');
  assert.equal(await evalJs('!!document.getElementById("faosEntryForm")'),false,'write gate stays closed');
  await evalJs('__enabled=true;KunFAOSAccountingV1.refresh()');await waitFor('document.getElementById("faosEntryForm")','synthetic writable form');
@@ -45,8 +49,10 @@ try{
  posts=await evalJs('__calls.filter(c=>c.method==="POST")');assert.equal(posts[0].body.idempotencyKey,posts[1].body.idempotencyKey);
  await evalJs('document.querySelector("[name=description]").value="قيد معدل";document.getElementById("faosEntryForm").requestSubmit()');await waitFor('__calls.filter(c=>c.method==="POST").length===3','edited payload');
  posts=await evalJs('__calls.filter(c=>c.method==="POST")');assert.notEqual(posts[1].body.idempotencyKey,posts[2].body.idempotencyKey);
+ await evalJs('document.querySelector("[name=entryMode]").value="quick";document.querySelector("[name=entryMode]").dispatchEvent(new Event("change"));document.querySelector("[name=amount]").value="3.33";document.querySelector("[name=debit]").value="1110";document.querySelector("[name=credit]").value="3100";document.getElementById("faosEntryForm").requestSubmit()');await waitFor('__calls.filter(c=>c.method==="POST").length===4','quick entry preserved');
+ posts=await evalJs('__calls.filter(c=>c.method==="POST")');assert.equal(posts[3].body.lines.length,2);assert.equal(posts[3].body.lines[0].debit,3.33);
  await evalJs('__store="S2";document.getElementById("faosEntryForm").requestSubmit()');await waitFor('document.getElementById("faosEntryFeedback").textContent.includes("تغير المتجر")','stale store blocked');
- assert.equal(await evalJs('__calls.filter(c=>c.method==="POST").length'),3);
+ assert.equal(await evalJs('__calls.filter(c=>c.method==="POST").length'),4);
  assert.equal(await evalJs('(()=>{try{KunFAOSAccountingV1.validateEntryLines([{accountCode:"BAD",debit:"1"},{accountCode:"1120",credit:"1"}])}catch{return true}return false})()'),true);
  console.log('FAOS browser fixture passed: closed gate, three balanced lines, precision/imbalance rejection, retry key reuse, changed-payload key rotation, stale-store denial; all POSTs synthetic.');
 }finally{await cleanupBrowser();await new Promise(r=>server.close(r));}

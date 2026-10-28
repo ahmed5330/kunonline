@@ -53,7 +53,7 @@
     @media(max-width:680px){.faos-v1{padding:12px}.faos-kpis{grid-template-columns:1fr 1fr}.faos-form{grid-template-columns:1fr}.faos-form .full{grid-column:auto}}
     `;document.head.appendChild(style);
   }
-  const tabs=[['health','مراجعة الأرقام'],['ledger','الأستاذ وميزان المراجعة'],['sim','اختبار الطلبات الوهمية'],['entry','قيد جديد']];
+  const tabs=[['health','مراجعة الأرقام'],['chart','شجرة الحسابات'],['ledger','الأستاذ وميزان المراجعة'],['sim','اختبار الطلبات الوهمية'],['entry','قيد جديد']];
   function shell(){
     const section=document.createElement('section');section.className='faos-v1';section.id='kunFaosWorkspace';
     section.innerHTML='<div class="faos-head"><div><h3>مركز الحسابات والدفتر المحاسبي</h3><p>تحقق مالي ومقارنة مصادر الأرقام — وفق مرجع FAOS؛ البيانات الافتراضية منفصلة بالكامل.</p></div><button class="faos-action" id="faosRefresh">تحديث الحسابات</button></div><div class="faos-tabs">'+tabs.map(([id,label])=>'<button data-faos-tab="'+id+'">'+label+'</button>').join('')+'</div><div id="faosBody" aria-live="polite"></div>';
@@ -135,6 +135,14 @@
       '<h4>اختبارات المحاسبة</h4>'+table(['قاعدة الاختبار','النتيجة'],checks)+
       '<p class="faos-muted">القيود الافتراضية: '+esc(s.journalCount)+' قيدًا · مدين '+money(s.totals?.debit)+' · دائن '+money(s.totals?.credit)+'</p>';
   }
+  function chartGroups(query=''){
+    const labels={asset:'الأصول',liability:'الالتزامات',equity:'حقوق الملكية',revenue:'الإيرادات',contra_revenue:'مردودات ومسموحات الإيرادات',expense:'المصروفات'};
+    const groups=new Map(),q=query.trim().toLocaleLowerCase();
+    for(const a of state.catalog){if(q&&!String(a.code+' '+a.name).toLocaleLowerCase().includes(q))continue;const type=labels[a.type]?a.type:'unknown';if(!groups.has(type))groups.set(type,[]);groups.get(type).push(a);}
+    if(!groups.size)return '<p class="faos-muted">لا توجد حسابات مطابقة في الدليل المحمل.</p>';
+    return [...groups].map(([type,accounts])=>'<details open data-faos-account-group="'+esc(type)+'"><summary>'+esc(labels[type]||'غير مصنف')+' ('+accounts.length+')</summary><ul>'+accounts.sort((a,b)=>String(a.code).localeCompare(String(b.code))).map(a=>'<li data-faos-account-code="'+esc(a.code)+'"><b>'+esc(a.code)+'</b> — '+esc(a.name)+'</li>').join('')+'</ul></details>').join('');
+  }
+  function chart(){return '<p class="faos-muted">دليل FAOS الحالي مجمع حسب نوع الحساب. لا ينشئ حسابات جديدة ولا يغير أكواد الدفتر.</p><label>بحث بالاسم أو الكود<input class="input" id="faosChartQuery" autocomplete="off"></label><div id="faosChartGroups">'+chartGroups()+'</div>';}
   function entry(){
     if(state.data?.capabilities?.financialPostingEnabled!==true)return '<div class="faos-note">إضافة القيود مغلقة حاليًا للحماية. الدفتر متاح للقراءة والمحاكاة فقط حتى تشغيل Preview المختبري والموافقة على المطابقة. لا يمكن إضافة قيود أو تغيير أرصدة العملاء في هذه الحالة.</div>';
     const accounts=state.catalog.filter(a=>a.code!=='4090'),opts=accounts.map(a=>'<option value="'+esc(a.code)+'">'+esc(a.code)+' — '+esc(a.name)+'</option>').join('');
@@ -191,7 +199,8 @@
   function render(){
     const body=document.getElementById('faosBody');if(!body)return;
     document.querySelectorAll('#kunFaosWorkspace [data-faos-tab]').forEach(x=>x.classList.toggle('active',x.dataset.faosTab===state.view));
-    body.innerHTML=({health,ledger,sim:simulation,entry})[state.view]();
+    body.innerHTML=({health,chart,ledger,sim:simulation,entry})[state.view]();
+    const chartQuery=document.getElementById('faosChartQuery');if(chartQuery)chartQuery.oninput=()=>{document.getElementById('faosChartGroups').innerHTML=chartGroups(chartQuery.value);};
     const form=document.getElementById('faosEntryForm');
     const entryScope=state.loadedScope?{...state.loadedScope}:null;
     const entryRows=form?bindEntry(form):null;
