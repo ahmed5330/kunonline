@@ -8,6 +8,20 @@ const r2=v=>Math.round(n(v)*100)/100;
 const now=()=>new Date().toISOString();
 const rid=p=>`${p}-${crypto.randomUUID().slice(0,10).toUpperCase()}`;
 const iso=/^\d{4}-\d{2}-\d{2}$/;
+function finiteMoney(value){
+  if(typeof value!=='number'&&(typeof value!=='string'||!value.trim()))return null;
+  const raw=Number(value),amount=r2(raw);
+  return Number.isFinite(raw)&&Number.isFinite(amount)&&Number.isSafeInteger(Math.round(amount*100))?amount:null;
+}
+async function auditedWrite(env,statements){
+  try{
+    const results=await env.DB.batch(statements);
+    if(!Array.isArray(results)||results.length!==statements.length||results.some(row=>row?.success===false))throw new Error('INCOMPLETE_ACCOUNTING_WRITE');
+    return results;
+  }catch{
+    throw Object.assign(new Error('تعذر تأكيد العملية وتسجيلها. راجع السجل قبل إعادة المحاولة.'),{status:503,code:'ACCOUNTING_WRITE_UNCONFIRMED'});
+  }
+}
 function cairoToday(){
   const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Cairo',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date()),part=type=>parts.find(x=>x.type===type)?.value||'';
   return `${part('year')}-${part('month')}-${part('day')}`;
@@ -67,8 +81,10 @@ export async function updateStoreManagementFeeSettings(env,{clientId,storeId,man
   const rate=Number(managementFeePct);
   if(!Number.isFinite(rate)||rate<0||rate>100)throw Object.assign(new Error('نسبة الإدارة لازم تكون من 0 إلى 100'),{status:400,code:'MANAGEMENT_FEE_RATE_INVALID'});
   const before=await getStoreManagementFeeSettings(env,{clientId,storeId}),ts=now();
-  await env.DB.prepare('UPDATE stores SET management_fee_pct=?,updated_at=? WHERE id=? AND client_id=?').bind(r2(rate),ts,storeId,clientId).run();
-  try{await env.DB.prepare(`INSERT INTO audit_log (id,client_id,store_id,actor_user_id,actor_email,action,entity_type,entity_id,before_json,after_json,metadata_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).bind(rid('AUD'),clientId,storeId,actor?.uid||actor?.id||null,actor?.email||actor?.role||'admin','store.management_fee.update','store',storeId,JSON.stringify({managementFeePct:before.managementFeePct}),JSON.stringify({managementFeePct:r2(rate)}),JSON.stringify({rule:'activate_on_shipped_reverse_on_return_or_cancel'}),ts).run();}catch{}
+  await auditedWrite(env,[
+    env.DB.prepare('UPDATE stores SET management_fee_pct=?,updated_at=? WHERE id=? AND client_id=?').bind(r2(rate),ts,storeId,clientId),
+    env.DB.prepare(`INSERT INTO audit_log (id,client_id,store_id,actor_user_id,actor_email,action,entity_type,entity_id,before_json,after_json,metadata_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).bind(rid('AUD'),clientId,storeId,actor?.uid||actor?.id||null,actor?.email||actor?.role||'admin','store.management_fee.update','store',storeId,JSON.stringify({managementFeePct:before.managementFeePct}),JSON.stringify({managementFeePct:r2(rate)}),JSON.stringify({rule:'activate_on_shipped_reverse_on_return_or_cancel'}),ts)
+  ]);
   const reconciliation=await reconcileStoreManagementFees(env,{clientId,storeId});
   return {ok:true,...await getStoreManagementFeeSettings(env,{clientId,storeId}),reconciliation};
 }
@@ -108,20 +124,26 @@ export async function listManagementFeeEntries(env,{clientId,storeId=null,from=n
 export async function createAccountingEntry(env,{clientId,storeId,body,actor}){
   if(!storeId)throw Object.assign(new Error('اختار متجر/فرع قبل تسجيل حركة محاسبية'),{status:400,code:'STORE_SELECTION_REQUIRED'});
   const type=text(body.type);if(!['expense','income'].includes(type))throw Object.assign(new Error('نوع الحركة لازم يكون مصروف أو إيراد'),{status:400,code:'ACCOUNTING_TYPE_INVALID'});
-  const amount=r2(body.amount);if(amount<=0)throw Object.assign(new Error('المبلغ لازم يكون أكبر من صفر'),{status:400,code:'ACCOUNTING_AMOUNT_INVALID'});
+  const amount=finiteMoney(body.amount);if(amount===null||amount<=0)throw Object.assign(new Error('اكتب مبلغًا صحيحًا أكبر من صفر وفي نطاق الدقة المحاسبية'),{status:400,code:'ACCOUNTING_AMOUNT_INVALID'});
+  const taxInput=body.taxAmount==null||(typeof body.taxAmount==='string'&&!body.taxAmount.trim())?0:body.taxAmount;
+  const taxAmount=finiteMoney(taxInput);if(taxAmount===null)throw Object.assign(new Error('اكتب قيمة ضريبة صحيحة وفي نطاق الدقة المحاسبية'),{status:400,code:'ACCOUNTING_TAX_AMOUNT_INVALID'});
   const category=text(body.category)||'أخرى',method=text(body.method)||'cash',entryId=rid('TX'),ts=now();
   const store=await env.DB.prepare('SELECT currency FROM stores WHERE id=? AND client_id=?').bind(storeId,clientId).first();if(!store)throw Object.assign(new Error('المتجر غير موجود'),{status:404,code:'STORE_NOT_FOUND'});
   const metadata=body.metadata&&typeof body.metadata==='object'&&!Array.isArray(body.metadata)?body.metadata:{};
-  await env.DB.prepare(`INSERT INTO transactions (id,type,date,category,amount,currency,method,client_id,store_id,note,created_by,created_at,document_no,counterparty,tax_amount,due_date,reference_type,reference_id,attachment_url,metadata_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-    .bind(entryId,type,day(body.date),category,amount,text(body.currency)||store.currency||'EGP',method,clientId,storeId,text(body.note),actor?.email||actor?.name||actor?.role||'user',ts,text(body.documentNo)||null,text(body.counterparty)||null,r2(body.taxAmount),iso.test(text(body.dueDate))?text(body.dueDate):null,text(body.referenceType)||null,text(body.referenceId)||null,text(body.attachmentUrl)||null,JSON.stringify(metadata)).run();
-  try{await env.DB.prepare(`INSERT INTO audit_log (id,client_id,store_id,actor_user_id,actor_email,action,entity_type,entity_id,metadata_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`).bind(rid('AUD'),clientId,storeId,actor?.uid||actor?.id||null,actor?.email||actor?.role||'user','accounting.entry.create','transaction',entryId,JSON.stringify({type,category,amount}),ts).run();}catch{}
+  await auditedWrite(env,[
+    env.DB.prepare(`INSERT INTO transactions (id,type,date,category,amount,currency,method,client_id,store_id,note,created_by,created_at,document_no,counterparty,tax_amount,due_date,reference_type,reference_id,attachment_url,metadata_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+      .bind(entryId,type,day(body.date),category,amount,text(body.currency)||store.currency||'EGP',method,clientId,storeId,text(body.note),actor?.email||actor?.name||actor?.role||'user',ts,text(body.documentNo)||null,text(body.counterparty)||null,taxAmount,iso.test(text(body.dueDate))?text(body.dueDate):null,text(body.referenceType)||null,text(body.referenceId)||null,text(body.attachmentUrl)||null,JSON.stringify(metadata)),
+    env.DB.prepare(`INSERT INTO audit_log (id,client_id,store_id,actor_user_id,actor_email,action,entity_type,entity_id,metadata_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`).bind(rid('AUD'),clientId,storeId,actor?.uid||actor?.id||null,actor?.email||actor?.role||'user','accounting.entry.create','transaction',entryId,JSON.stringify({type,category,amount}),ts)
+  ]);
   return {ok:true,id:entryId};
 }
 
 export async function deleteAccountingEntry(env,{clientId,storeId,id,actor}){
   const row=await env.DB.prepare('SELECT id FROM transactions WHERE id=? AND client_id=? AND store_id IS ?').bind(id,clientId,storeId).first();if(!row)throw Object.assign(new Error('الحركة غير موجودة'),{status:404,code:'ACCOUNTING_ENTRY_NOT_FOUND'});
-  await env.DB.prepare('DELETE FROM transactions WHERE id=? AND client_id=? AND store_id IS ?').bind(id,clientId,storeId).run();
-  try{await env.DB.prepare(`INSERT INTO audit_log (id,client_id,store_id,actor_user_id,actor_email,action,entity_type,entity_id,metadata_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`).bind(rid('AUD'),clientId,storeId,actor?.uid||actor?.id||null,actor?.email||actor?.role||'user','accounting.entry.delete','transaction',id,'{}',now()).run();}catch{}
+  await auditedWrite(env,[
+    env.DB.prepare('DELETE FROM transactions WHERE id=? AND client_id=? AND store_id IS ?').bind(id,clientId,storeId),
+    env.DB.prepare(`INSERT INTO audit_log (id,client_id,store_id,actor_user_id,actor_email,action,entity_type,entity_id,metadata_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`).bind(rid('AUD'),clientId,storeId,actor?.uid||actor?.id||null,actor?.email||actor?.role||'user','accounting.entry.delete','transaction',id,'{}',now())
+  ]);
   return {ok:true,id};
 }
 
