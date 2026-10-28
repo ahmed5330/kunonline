@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
+import {fileURLToPath} from 'node:url';
 import {execFileSync} from 'node:child_process';
 
 const read = p => fs.readFileSync(new URL('../'+p, import.meta.url), 'utf8');
@@ -11,7 +12,7 @@ for (const p of [
   'public/v2/modules-v155-customer-service-board.js',
   'public/v2/modules-v54-order-workflow-controls.js'
 ]) {
-  execFileSync(process.execPath,['--check',new URL('../'+p, import.meta.url).pathname]);
+  execFileSync(process.execPath,['--check',fileURLToPath(new URL('../'+p, import.meta.url))]);
 }
 const gateway=read('src/index-production-mobile-update.js');
 const backend=read('src/production-customer-service.js');

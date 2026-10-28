@@ -20,6 +20,17 @@ assert.ok(routes.includes("body.clientId||body.client_id||url.searchParams.get('
 const stores = new Map([['S1', {clientId:'C1',name:'QA Store 1',currency:'EGP'}],['S2',{clientId:'C1',name:'QA Store 2',currency:'EGP'}]]);
 let transactions = [];
 const fakeDB = {
+  async batch(statements) {
+    const before = structuredClone(transactions);
+    try {
+      const results = [];
+      for (const statement of statements) results.push(await statement.run());
+      return results;
+    } catch (error) {
+      transactions = before;
+      throw error;
+    }
+  },
   prepare(sql) {
     return {
       bind(...args) {
@@ -90,7 +101,7 @@ assert.equal(overview.netCash,200);
 assert.equal(overview.entries,2);
 assert.equal((await listAccountingEntries(env,{...range,from:'2026-10-23'})).length,0,'Today filter must not include yesterday');
 assert.equal((await listAccountingEntries(env,{...range,storeId:null})).length,3,'All-store view must aggregate client stores');
-await assert.rejects(add('S1','expense',0,'2026-10-22'),/المبلغ/);
+await assert.rejects(add('S1','expense',0,'2026-10-22'),e=>e.status===400&&e.code==='ACCOUNTING_AMOUNT_INVALID');
 await deleteAccountingEntry(env,{clientId:'C1',storeId:'S1',id:expense.id,actor:{email:'qa@example.test'}});
 assert.equal((await accountingOverview(env,range)).netCash,300);
 assert.equal((await listAccountingEntries(env,{...range,storeId:'S2'})).length,1,'Delete must not touch another store');
