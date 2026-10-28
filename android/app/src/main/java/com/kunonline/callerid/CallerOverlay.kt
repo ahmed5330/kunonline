@@ -181,7 +181,7 @@ object CallerOverlay {
                 }
                 button.isEnabled = false
                 thread(name = "kun-call-decision") {
-                    val result = KunCustomerServiceApi.updateState(app, orderId, target)
+                    val result = KunCustomerServiceApi.updateState(app, orderId, target, selectedClientId = customer.clientId)
                     handler.post {
                         Toast.makeText(app, if (result.ok) {
                             when (target) {
@@ -211,6 +211,8 @@ object CallerOverlay {
                         runCatching {
                             app.startActivity(Intent(app, CallerJntOrderEditActivity::class.java).apply {
                                 putExtra(CallerJntOrderEditActivity.EXTRA_ORDER_ID, orderId)
+                                putExtra(CallerJntOrderEditActivity.EXTRA_CLIENT_ID, customer.clientId)
+                                putExtra(CallerJntOrderEditActivity.EXTRA_STORE_ID, customer.storeId)
                                 putExtra(CallerJntOrderEditActivity.EXTRA_SHIPPING_ONLY, true)
                                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
                             })

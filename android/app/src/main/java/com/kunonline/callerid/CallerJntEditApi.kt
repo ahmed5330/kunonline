@@ -9,10 +9,10 @@ import java.net.URLEncoder
 object CallerJntEditApi {
     private const val BASE_URL = "https://app.kun-online.com"
 
-    fun save(context: Context, orderId: String, payload: JSONObject): CustomerServiceJsonResult {
+    fun save(context: Context, orderId: String, payload: JSONObject, selectedClientId: String = ""): CustomerServiceJsonResult {
         val cookie = KunApi.sessionCookie(context)
             ?: return CustomerServiceJsonResult(false, "سجّل الدخول أولاً")
-        val clientId = runCatching { KunApi.resolveScope(cookie, context).clientId }.getOrDefault("")
+        val clientId = selectedClientId.ifBlank { runCatching { KunApi.resolveScope(cookie, context).clientId }.getOrDefault("") }
         if (clientId.isBlank()) return CustomerServiceJsonResult(false, "تعذر تحديد حساب المتجر")
 
         return runCatching {
@@ -48,13 +48,14 @@ object CallerJntEditApi {
     }
 
     /** Shipping-only edit; does not modify products, quantities or customer collection. */
-    fun saveShipping(context: Context, orderId: String, storeId: String, payload: JSONObject): CustomerServiceJsonResult {
+    fun saveShipping(context: Context, orderId: String, storeId: String, payload: JSONObject, selectedClientId: String = ""): CustomerServiceJsonResult {
         val cookie = KunApi.sessionCookie(context) ?: return CustomerServiceJsonResult(false, "سجّل الدخول أولًا")
         val active = KunApi.resolveScope(cookie, context)
-        if (active.clientId.isBlank() || storeId.isBlank()) return CustomerServiceJsonResult(false, "حدد متجر الطلب أولًا")
+        val clientId = selectedClientId.ifBlank { active.clientId }
+        if (clientId.isBlank() || storeId.isBlank()) return CustomerServiceJsonResult(false, "حدد متجر الطلب أولًا")
         // Leave permission decisions to the authenticated server. A transient
         // store-options fetch failure must not make the save button appear broken.
-        payload.put("clientId", active.clientId).put("storeId", storeId)
+        payload.put("clientId", clientId).put("storeId", storeId)
         return runCatching {
             val encoded = URLEncoder.encode(orderId, Charsets.UTF_8.name()).replace("+", "%20")
             val connection = (URL("$BASE_URL/api/orders/$encoded/shipping-jnt").openConnection() as HttpURLConnection).apply {

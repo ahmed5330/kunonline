@@ -1,3 +1,4 @@
+import {resolveStoreScope} from './store-scope.js';
 const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}});
 const clean=value=>String(value??'').trim();
 const num=value=>Number.isFinite(Number(value))?Number(value):0;
@@ -61,8 +62,11 @@ export async function handleProductionCallerJntEdit({request,env,ctx,delegate}){
     const me=await currentUser(delegate,request,env,ctx);
     const clientId=clientIdFor(me,body);
     const orderId=decodeURIComponent(match[1]);
-    const row=await env.DB.prepare('SELECT id,client_id,name,phone,product,product_id,variant_id,product_note,qty,unit_price,total,note,history FROM orders WHERE id=? AND client_id=? LIMIT 1').bind(orderId,clientId).first();
+    const row=await env.DB.prepare('SELECT id,client_id,store_id,name,phone,product,product_id,variant_id,product_note,qty,unit_price,total,note,history FROM orders WHERE id=? AND client_id=? LIMIT 1').bind(orderId,clientId).first();
     if(!row)return json({error:'الأوردر غير موجود',code:'ORDER_NOT_FOUND'},404);
+    // The supplied clientId is never an authorization grant. Enforce the exact
+    // authenticated store ACL before any J&T edit, including cross-client callers.
+    await resolveStoreScope(env,me,clientId,row.store_id||null,{write:true});
 
     const name=clean(body.name);
     const phone=clean(body.phone);

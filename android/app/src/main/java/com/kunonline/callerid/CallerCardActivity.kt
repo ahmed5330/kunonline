@@ -47,7 +47,7 @@ class CallerCardActivity : Activity() {
         else -> state.orEmpty()
     }
 
-    private fun showCancelReason(orderId: String) {
+    private fun showCancelReason(orderId: String, clientId: String = "") {
         val field = EditText(this).apply {
             hint = "اكتب سبب الإلغاء (إجباري)"
             minLines = 2
@@ -71,7 +71,7 @@ class CallerCardActivity : Activity() {
                 }
                 confirm.isEnabled = false
                 thread(name = "kun-call-cancel-with-note") {
-                    val result = KunCustomerServiceApi.updateState(this, orderId, "cancelled", cancelReason = reason)
+                    val result = KunCustomerServiceApi.updateState(this, orderId, "cancelled", cancelReason = reason, selectedClientId = clientId)
                     runOnUiThread {
                         Toast.makeText(this, result.message, Toast.LENGTH_LONG).show()
                         if (result.ok) { dialog.dismiss(); finish() }
@@ -190,12 +190,12 @@ class CallerCardActivity : Activity() {
             }
         fun decision(button: Button, orderId: String, target: String) {
             if (target == "cancelled") {
-                showCancelReason(orderId)
+                showCancelReason(orderId, customer.clientId)
                 return
             }
             button.isEnabled = false
             thread(name = "kun-fallback-call-decision") {
-                val result = KunCustomerServiceApi.updateState(this, orderId, target)
+                val result = KunCustomerServiceApi.updateState(this, orderId, target, selectedClientId = customer.clientId)
                 runOnUiThread {
                     Toast.makeText(this, if (result.ok) {
                         when (target) {
@@ -221,6 +221,8 @@ class CallerCardActivity : Activity() {
                     action("تعديل بيانات\nالشحن J&T", chrome, Color.WHITE) {
                         startActivity(Intent(this@CallerCardActivity, CallerJntOrderEditActivity::class.java).apply {
                             putExtra(CallerJntOrderEditActivity.EXTRA_ORDER_ID, orderId)
+                            putExtra(CallerJntOrderEditActivity.EXTRA_CLIENT_ID, customer.clientId)
+                            putExtra(CallerJntOrderEditActivity.EXTRA_STORE_ID, customer.storeId)
                             putExtra(CallerJntOrderEditActivity.EXTRA_SHIPPING_ONLY, true)
                         })
                         finish()
@@ -254,7 +256,7 @@ class CallerCardActivity : Activity() {
             }
         }
         if (!locked && intent.getBooleanExtra("start_cancel", false)) {
-            customer.orderId?.takeIf { it.isNotBlank() }?.let { showCancelReason(it) }
+            customer.orderId?.takeIf { it.isNotBlank() }?.let { showCancelReason(it, customer.clientId) }
         }
     }
 }
