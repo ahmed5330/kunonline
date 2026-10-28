@@ -227,6 +227,10 @@ export async function handleProductionCustomerService({request,env,ctx,delegate}
     if(action==='history'&&method==='GET')return json({ok:true,order:mapOrder(row)});
     if(action==='state'&&method==='PATCH'){
       const state=clean(body.state);if(!STATES.includes(state))return json({error:'حالة الأوردر غير معروفة',code:'ORDER_STATE_INVALID'},400);
+      // A generic status PATCH is not evidence that the carrier accepted a shipment.
+      // Use the authenticated J&T queue + official print workflow, which records
+      // the AWB and only then commits the shipped state.
+      if(state==='shipped')return json({error:'لنقل الأوردر إلى جاري الشحن استخدم إرسال J&T وطباعة البوليصة الرسمية',code:'JT_OFFICIAL_HANDOFF_REQUIRED'},409);
       if(state==='cancelled'&&!['pending','new','contacting','no_answer','confirmed','preparing','deferred'].includes(String(row.state||'')))
         return json({error:'لا يمكن إلغاء الطلب بهذه الطريقة بعد الشحن أو التحصيل؛ استخدم إجراءات الشحن والمرتجعات',code:'ORDER_CANCEL_NOT_ALLOWED'},409);
       const claimOwner=clean(row.contact_claim_user_id),actorId=clean(me.uid||me.id||me.email||`${me.role}:${me.clientId||''}`);

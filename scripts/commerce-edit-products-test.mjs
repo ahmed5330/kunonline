@@ -24,7 +24,7 @@ assert.ok(entry.includes('shippingCost:body.shippingCost??body.shipping_cost'),'
 for(const marker of ['تم التوصيل','v47ShippingCost','shippingCost','حفظ السعر وتأكيد التوصيل','/api/post-shipping/orders/','تكلفة الشحن الفعلية',"version:'47.4'"])assert.ok(postShippingUiV47.includes(marker),`v47 delivered UI missing ${marker}`);
 assert.ok(!postShippingUiV47.includes('/api/orders/${encodeURIComponent(order.id)}'),'delivery confirmation must not route shipping cost through generic order permissions');
 assert.ok(postShippingUiV47.includes('JSON.stringify({clientId,shippingCost})'),'delivery confirmation must submit shipping cost with the dedicated post-shipping request');
-assert.ok(index.includes('/v2/modules-v54-order-workflow-controls.js?v=54.0'),'v2 shell must load the order-details workflow controls');
+assert.ok(index.includes('/v2/modules-v54-order-workflow-controls.js?v=54.1'),'v2 shell must load the order-details workflow controls');
 assert.ok(index.includes('/v2/modules-v46-variant-inventory-sync.js?v=46.3'),'v2 shell must load the current inventory price/cost editor asset');
 assert.ok(index.includes('/v2/modules-v61-product-cost-editor.js?v=61.0'),'v2 shell must load the product cost manager asset');
 assert.ok(index.includes('/v2/modules-v47-post-shipping.js?v=47.4'),'v2 shell must load the atomic delivery/shipping-cost post-shipping asset');
