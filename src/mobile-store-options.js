@@ -23,13 +23,16 @@ export async function handleMobileStoreOptions({request,env,delegate}){
     if(!identity.response.ok||!identity.data?.role)return unauthorized('محتاج تسجّل دخول','AUTH_REQUIRED',401);
     const me=identity.data;
     const context=await trustedJson(request,delegate,'/api/my-client-context');
-    if(!context.response.ok)return unauthorized('تعذر تحميل الحسابات المسموح بها','CLIENT_CONTEXT_UNAVAILABLE',context.response.status===401?401:503);
+    // The independently authenticated store ACL remains authoritative for
+    // unbound staff when the legacy context endpoint is temporarily unavailable.
+    // Owners and tenant-bound identities must never bypass that context check.
+    const role=clean(me.role),isOwner=role==='admin'||role==='client';
+    const scopedClient=clean(me.clientId||me.client_id);
+    if(!context.response.ok&&(isOwner||scopedClient||context.response.status===401))
+      return unauthorized('تعذر تحميل الحسابات المسموح بها','CLIENT_CONTEXT_UNAVAILABLE',context.response.status===401?401:503);
 
     // Clients must originate from this authenticated per-user context. Never
     // accept user-provided client IDs, role overrides or store IDs.
-    const scopedClient=clean(me.clientId||me.client_id);
-    const role=clean(me.role);
-    const isOwner=role==='admin'||role==='client';
     const allowed=new Map();
     for(const client of (Array.isArray(context.data?.clients)?context.data.clients:[])){
       const id=clientIdOf(client);

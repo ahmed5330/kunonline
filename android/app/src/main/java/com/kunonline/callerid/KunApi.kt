@@ -271,9 +271,9 @@ object KunApi {
     }
 
     /** One fast authenticated API read instead of one HTTP roundtrip per client. */
-    fun loadStoreOptions(context: Context): StoreOptionsResult {
+    fun loadStoreOptions(context: Context, forceRefresh: Boolean = false): StoreOptionsResult {
         val cookie = session(context) ?: return StoreOptionsResult(false, "سجّل الدخول أولاً")
-        cachedStoreOptions(context)?.let { return it }
+        if (!forceRefresh) cachedStoreOptions(context)?.let { return it }
         val fast = runCatching { request("GET", "/api/mobile/store-options", cookie = cookie) }.getOrNull()
             ?: return StoreOptionsResult(false, "تعذر الاتصال بالمتاجر — اعرض البيانات السابقة وحاول التحديث")
         if (fast.code == 404 || fast.code == 405) return loadStoreOptionsLegacy(context)

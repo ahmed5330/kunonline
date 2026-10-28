@@ -362,6 +362,29 @@ fun KunNativeAppV25(
                                     storeOptionsLoading = storeOptionsLoading,
                                     storeOptionsError = storeOptionsError,
                                     storeSwitching = loading,
+                                    onRefreshStores = {
+                                        if (!storeOptionsLoading && !loading) {
+                                            storeOptionsLoading = true
+                                            scope.launch {
+                                                val latest = withContext(Dispatchers.IO) {
+                                                    KunApi.loadStoreOptions(context, forceRefresh = true)
+                                                }
+                                                storeOptionsLoading = false
+                                                if (latest.ok) {
+                                                    val changed = currentStore != latest.current
+                                                    storeOptions = latest.stores
+                                                    currentStore = latest.current
+                                                    storeOptionsError = latest.message
+                                                    if (changed) {
+                                                        snapshot = null
+                                                        performRefresh(true)
+                                                    }
+                                                } else {
+                                                    storeOptionsError = latest.message
+                                                }
+                                            }
+                                        }
+                                    },
                                     onSelectStore = { option ->
                                         if (!loading) {
                                             loading = true
@@ -546,6 +569,7 @@ private fun V25Home(
     storeOptionsLoading: Boolean,
     storeOptionsError: String,
     storeSwitching: Boolean,
+    onRefreshStores: () -> Unit,
     onSelectStore: (MobileStoreOption) -> Unit,
     onOpenSections: () -> Unit,
     onOpenOrders: () -> Unit,
@@ -599,6 +623,9 @@ private fun V25Home(
                     Spacer(Modifier.width(8.dp))
                     Text("اختيار المتجر", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f))
                     if (storeOptions.isNotEmpty()) Text("${storeOptions.size} متجر", color = KunColors.Ink3, style = MaterialTheme.typography.labelMedium)
+                    TextButton(onClick = onRefreshStores, enabled = !storeOptionsLoading && !storeSwitching) {
+                        Text(if (storeOptionsLoading) "تحديث..." else "تحديث المتاجر")
+                    }
                 }
                 if (storeOptionsLoading && storeOptions.isEmpty()) {
                     LinearProgressIndicator(Modifier.fillMaxWidth(), color = KunColors.Chrome)
