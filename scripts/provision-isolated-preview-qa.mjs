@@ -1,4 +1,4 @@
-import {isolatedQaRunSuffix,waitForIsolatedQaAsset} from './isolated-qa-runtime-identity.mjs';
+import {isolatedQaIdentity,waitForIsolatedQaAsset} from './isolated-qa-runtime-identity.mjs';
 import {mkdtemp,writeFile,appendFile,rm,readFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
@@ -35,7 +35,7 @@ async function main(){
   };
   const settings=await api('GET','workers/scripts/kunonline-preview/settings');
   if(!(settings.bindings||[]).some(x=>x.type==='d1'&&x.name==='DB'&&x.id===sourceId))throw new Error('QA_SOURCE_SCHEMA_BINDING_CHANGED');
-  const name=`kunonline-isolated-qa-${isolatedQaRunSuffix(runId,process.env.GITHUB_RUN_ATTEMPT)}`;
+  const identity=isolatedQaIdentity(runId,process.env.GITHUB_RUN_ATTEMPT),name=identity.app;
   const database=await api('POST','d1/database',{name});
   validateNewQaDatabase(database,name);
   const temporary=await mkdtemp(join(tmpdir(),'kun-schema-only-'));
@@ -91,7 +91,7 @@ binding = "AI"
     await cli(['d1','execute',name,'--remote','--file',schema,'--config',config,'--yes']);
     const counts=await query('SELECT (SELECT COUNT(*) FROM orders) AS orders_count, (SELECT COUNT(*) FROM users) AS users_count, (SELECT COUNT(*) FROM store_connections) AS connections_count');
     if(!counts.length||Object.values(counts[0]).some(x=>Number(x)!==0))throw new Error('QA_SCHEMA_EXPORT_CONTAINED_CUSTOMER_ROWS');
-    const clientId='QA-SYNTHETIC-TENANT',storeId='QA-SYNTHETIC-STORE',connectionId=`CON-QA-EASYORDERS-${runId}`,at=new Date().toISOString();
+    const clientId='QA-SYNTHETIC-TENANT',storeId='QA-SYNTHETIC-STORE',connectionId=identity.connection,at=new Date().toISOString();
     const fixtureClient='PREVIEW-STORE-001';
     const fixtureState={agency:{name:'Synthetic QA Agency',adminEmail:'qa@example.test'},clients:[
       {id:fixtureClient,name:'Synthetic Store A/B tenant',status:'active',walletFeePerOrder:0,walletBalance:0},

@@ -1,5 +1,10 @@
 import assert from 'node:assert/strict';
-import {isolatedQaRunSuffix,waitForIsolatedQaAsset} from './isolated-qa-runtime-identity.mjs';
+import {isolatedQaRunSuffix,isolatedQaIdentity,waitForIsolatedQaAsset} from './isolated-qa-runtime-identity.mjs';
+const provisioned=isolatedQaIdentity('123','2'),audited=isolatedQaIdentity('123','2');
+assert.deepEqual(provisioned,audited);
+assert.equal(audited.app,'kunonline-isolated-qa-1230002');
+assert.equal(audited.audit,'kunonline-isolated-qa-audit-1230002');
+assert.equal(audited.connection,'CON-QA-EASYORDERS-123','fixture identity stays tied to run, not resource attempt suffix');
 assert.notEqual(isolatedQaRunSuffix('123','1'),isolatedQaRunSuffix('123','2'));
 assert.notEqual(isolatedQaRunSuffix('12','3'),isolatedQaRunSuffix('1','23'));
 for(const [id,attempt] of [['','1'],['0','1'],['123','0'],['123','10000'],['123','x'],['../','1']])assert.throws(()=>isolatedQaRunSuffix(id,attempt));

@@ -6,6 +6,11 @@ export function isolatedQaRunSuffix(runId,attempt='1'){
   return `${runId}${String(attempt).padStart(4,'0')}`;
 }
 
+export function isolatedQaIdentity(runId,attempt){
+  const suffix=isolatedQaRunSuffix(runId,attempt);
+  return {app:`kunonline-isolated-qa-${suffix}`,audit:`kunonline-isolated-qa-audit-${suffix}`,connection:`CON-QA-EASYORDERS-${runId}`};
+}
+
 export async function waitForIsolatedQaAsset({base,expectedBytes,fetchImpl=fetch,wait=ms=>new Promise(r=>setTimeout(r,ms)),attempts=24}={}){
   const url=new URL(base);
   if(url.protocol!=='https:'||!/^kunonline-isolated-qa-\d+\.[a-z0-9-]+\.workers\.dev$/.test(url.hostname)||url.pathname!=='/'||url.search||url.hash||url.username||url.password)
