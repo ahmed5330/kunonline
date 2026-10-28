@@ -29,6 +29,8 @@ class CallerOrderEditActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         CallerOverlay.dismiss()
         val orderId = intent.getStringExtra(EXTRA_ORDER_ID).orEmpty()
+        val clientId = intent.getStringExtra(EXTRA_CLIENT_ID).orEmpty()
+        val storeId = intent.getStringExtra(EXTRA_STORE_ID).orEmpty()
         if (orderId.isBlank()) {
             finish()
             return
@@ -36,7 +38,7 @@ class CallerOrderEditActivity : ComponentActivity() {
         setContent {
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
                 KunTheme {
-                    CallerOrderEditScreen(orderId = orderId, onClose = { finish() })
+                    CallerOrderEditScreen(orderId = orderId, clientId = clientId, storeId = storeId, onClose = { finish() })
                 }
             }
         }
@@ -44,6 +46,8 @@ class CallerOrderEditActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_ORDER_ID = "kun_order_id"
+        const val EXTRA_CLIENT_ID = "kun_client_id"
+        const val EXTRA_STORE_ID = "kun_store_id"
     }
 }
 
@@ -59,14 +63,16 @@ private data class CallerEditItem(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun CallerOrderEditScreen(orderId: String, onClose: () -> Unit) {
+private fun CallerOrderEditScreen(orderId: String, clientId: String, storeId: String, onClose: () -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf("") }
     var data by remember { mutableStateOf<CustomerServiceEditorData?>(null) }
 
-    LaunchedEffect(orderId) {
-        val result = withContext(Dispatchers.IO) { KunCustomerServiceApi.fetchEditorData(context, orderId) }
+    LaunchedEffect(orderId, clientId, storeId) {
+        val result = withContext(Dispatchers.IO) {
+            KunCustomerServiceApi.fetchEditorData(context, orderId, selectedStoreId = storeId, selectedClientId = clientId)
+        }
         loading = false
         if (result.ok) data = result else error = result.message
     }
@@ -170,7 +176,10 @@ private fun CallerOrderEditorContent(orderId: String, data: CustomerServiceEdito
             })
         saving = true
         scope.launch {
-            val result = withContext(Dispatchers.IO) { KunCustomerServiceApi.editOrder(context, orderId, payload) }
+            val result = withContext(Dispatchers.IO) {
+                KunCustomerServiceApi.editOrder(context, orderId, payload,
+                    selectedClientId = data.clientId, selectedStoreId = order.optString("storeId"))
+            }
             saving = false
             Toast.makeText(context, result.message, if (result.ok) Toast.LENGTH_SHORT else Toast.LENGTH_LONG).show()
             if (result.ok) {
