@@ -1,0 +1,37 @@
+name: Document settings offline acceptance
+on:
+  pull_request:
+    paths:
+      - 'public/v2/document-*.js'
+      - 'public/v2/order-document-preview.js'
+      - 'src/document-settings.js'
+      - 'src/index-commerce-v38.js'
+      - 'src/index-production-mobile-update.js'
+      - 'scripts/*document*test.mjs'
+      - 'docs/sql/document-settings-sandbox.sql'
+      - '.github/workflows/document-settings-offline.yml'
+permissions:
+  contents: read
+jobs:
+  synthetic-acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - name: Validate modules and scoped storage using synthetic SQLite
+        run: |
+          node --check src/document-settings.js
+          node --check src/index-commerce-v38.js
+          node --check src/index-production-mobile-update.js
+          node scripts/v2-ui-static-audit.mjs
+          node scripts/document-settings-sqlite-test.mjs
+      - name: Exercise customer document and settings in local Chromium only
+        run: |
+          node scripts/browser-order-document-preview-test.mjs
+          node scripts/browser-document-settings-fixture-test.mjs
+      - name: Preserve official carrier handoff contracts
+        run: node scripts/confirmed-shipping-handoff-contract-test.mjs
