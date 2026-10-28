@@ -12,9 +12,9 @@ android {
         applicationId = "com.kunonline.callerid.stable"
         minSdk = 29
         targetSdk = 35
-        // v2.9.19: preserve authoritative auth failures and clear denied-session sync data.
-        versionCode = 150
-        versionName = "2.9.19"
+        // v2.9.20: refresh staff stores and match caller orders across assigned stores with scoped J&T actions.
+        versionCode = 151
+        versionName = "2.9.20"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

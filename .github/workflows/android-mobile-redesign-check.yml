@@ -17,6 +17,7 @@ on:
       - 'scripts/mobile-store-options-test.mjs'
       - 'scripts/android-global-edit-caller-details-contract-test.mjs'
       - 'scripts/android-cross-store-caller-scope-test.mjs'
+      - 'scripts/caller-jnt-store-acl-test.mjs'
       - 'src/production-caller-jnt-edit.js'
       - 'src/mobile-global-order-search.js'
       - '.github/workflows/android-mobile-redesign-check.yml'
@@ -52,6 +53,7 @@ jobs:
           node scripts/mobile-store-options-test.mjs
           node scripts/android-global-edit-caller-details-contract-test.mjs
           node scripts/android-cross-store-caller-scope-test.mjs
+          node scripts/caller-jnt-store-acl-test.mjs
       - name: Customer service J&T Android UI regression
         run: |
           node scripts/android-customer-service-jnt-ux-test.mjs
