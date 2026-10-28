@@ -17,7 +17,7 @@ import {reconcileMonthlySubscriptions} from './subscription-billing.js';
 import {handleInventoryUnitTracking,syncInventoryTrackingAfterResponse,reconcileTrackedOrderLifecycles,reconcileAllClientsUnitCoverage} from './inventory-unit-tracking.js';
 
 const V2_UI_SCRIPTS=[
-  '<script src="/v2/modules-v155-accounting-faos.js?v=155.4" data-kun-accounting-faos="1"></script>',
+  '<script src="/v2/modules-v155-accounting-faos.js?v=155.5" data-kun-accounting-faos="1"></script>',
   '<script src="/v2/modules-v105-customer-service-claim.js?v=105.3" data-kun-customer-service-claim="1"></script>',
   '<script src="/v2/modules-v105-section-nav-actions.js?v=105.1" data-kun-section-nav-actions="1"></script>',
   '<script src="/v2/modules-v106-manual-jnt-order.js?v=106.0" data-kun-manual-jnt-order="1"></script>',

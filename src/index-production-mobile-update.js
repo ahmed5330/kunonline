@@ -78,6 +78,7 @@ async function websiteWithDirectAndroidDownload(request,env){
   if(!asset.ok||!type.includes('text/html'))return asset;
 
   let html=await asset.text();
+  html=html.replace(/modules-v155-accounting-faos\.js\?v=[^"']+/g,'modules-v155-accounting-faos.js?v=155.5');
   html=html
     .replace(/\/v2\/modules-v46-variant-inventory-sync\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v46-variant-inventory-sync.js?v=46.5')
     .replace(/\/v2\/modules-v43-product-catalog\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v43-product-catalog.js?v=43.1')
