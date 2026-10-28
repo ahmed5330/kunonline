@@ -1,4 +1,5 @@
-import {mkdtemp,writeFile,appendFile,rm} from 'node:fs/promises';
+import {isolatedQaRunSuffix,waitForIsolatedQaAsset} from './isolated-qa-runtime-identity.mjs';
+import {mkdtemp,writeFile,appendFile,rm,readFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 import {randomBytes,createHash} from 'node:crypto';
@@ -34,7 +35,7 @@ async function main(){
   };
   const settings=await api('GET','workers/scripts/kunonline-preview/settings');
   if(!(settings.bindings||[]).some(x=>x.type==='d1'&&x.name==='DB'&&x.id===sourceId))throw new Error('QA_SOURCE_SCHEMA_BINDING_CHANGED');
-  const name=`kunonline-isolated-qa-${runId}`;
+  const name=`kunonline-isolated-qa-${isolatedQaRunSuffix(runId,process.env.GITHUB_RUN_ATTEMPT)}`;
   const database=await api('POST','d1/database',{name});
   validateNewQaDatabase(database,name);
   const temporary=await mkdtemp(join(tmpdir(),'kun-schema-only-'));
@@ -115,6 +116,7 @@ binding = "AI"
     const d1=actualBindings.filter(x=>x.type==='d1');
     if(d1.length!==1||d1[0].id!==database.uuid||d1[0].name!=='DB'||actualBindings.some(x=>x.type==='service'))
       throw new Error('QA_DEPLOYED_ISOLATION_MISMATCH');
+    await waitForIsolatedQaAsset({base,expectedBytes:await readFile(resolve('public/v2/modules-v106-manual-jnt-order.js'))});
     console.log(`::add-mask::${database.uuid}`);
     if(!process.env.GITHUB_ENV)throw new Error('QA_JOB_ENVIRONMENT_UNAVAILABLE');
     await appendFile(process.env.GITHUB_ENV,`KUN_PREVIEW_QA_WRANGLER_CONFIG=${config}\nKUN_PREVIEW_QA_D1_ID=${database.uuid}\nKUN_PREVIEW_QA_BASE_URL=${base}\nKUN_PREVIEW_QA_EASYORDERS_CONNECTION_ID=${connectionId}\nKUN_PREVIEW_QA_SOURCE_SHA=${candidateSha}\n`);
