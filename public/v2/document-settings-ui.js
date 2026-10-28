@@ -68,7 +68,7 @@ async function openOrder(order){
   const scope={clientId:String(order.clientId||''),storeId:String(order.storeId||'')};
   try{
     const response=await api(scope),settings=normalizeDocumentSettings(response.config),profile=selectDocumentProfile(settings,order);
-    window.KunOrderDocumentPreview.open(order,{settings,profile,onPrintRequested:response.writeEnabled?async(template,size)=>api(scope,'/print-events',{method:'POST',body:JSON.stringify({id:crypto.randomUUID(),orderId:order.id,template,size})}):null,onHistory:async()=>{
+    window.KunOrderDocumentPreview.open(order,{settings,profile,onPrintRequested:response.printEventsWriteEnabled?async(template,size)=>api(scope,'/print-events',{method:'POST',body:JSON.stringify({id:crypto.randomUUID(),orderId:order.id,template,size})}):null,onHistory:async()=>{
       const d=modal('سجل طلبات الطباعة');try{const data=await api(scope,'/print-events?orderId='+encodeURIComponent(order.id));d.body.innerHTML='<p>السجل يثبت طلب فتح الطباعة، ولا يثبت خروج ورقة أو حفظ PDF. الإلغاء من نافذة الطابعة لا يمكن اكتشافه هنا.</p>'+(data.events?.length?'<table><thead><tr><th>الوقت</th><th>القالب</th><th>المقاس</th><th>المستخدم</th></tr></thead><tbody>'+data.events.map(e=>'<tr><td>'+esc(e.created_at)+'</td><td>'+esc(e.template_id)+'</td><td>'+esc(e.paper_size)+'</td><td>'+esc(e.actor)+'</td></tr>').join('')+'</tbody></table>':'<p>لا توجد طلبات طباعة مسجلة.</p>');}catch(e){d.body.textContent=e.message;}
     }});
   }catch(e){window.showToast?.(e.message);}

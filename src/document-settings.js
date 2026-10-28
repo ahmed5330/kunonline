@@ -1,4 +1,4 @@
-import {requirePermission,resolveTenant} from './access-control.js';
+import {can,requirePermission,resolveTenant} from './access-control.js';
 import {resolveStoreScope} from './store-scope.js';
 import {defaultDocumentSettings,normalizeDocumentSettings} from '../public/v2/document-print-model.js';
 
@@ -14,8 +14,9 @@ export async function handleDocumentSettings({request,env,ctx,delegate}){
     const auth=new URL(url);auth.pathname='/api/me';auth.search='';
     const r=await delegate.fetch(new Request(auth,{headers:request.headers}),env,ctx),me=await r.json().catch(()=>({}));
     if(!r.ok||!me.role)fail('مطلوب تسجيل الدخول',401,'AUTH_REQUIRED');
+    if(!['admin','client','ops','support'].includes(me.role))fail('المستندات غير متاحة لهذا الدور',403,'DOCUMENT_ROLE_DENIED');
     const write=method!=='GET',isEvent=path.endsWith('print-events');
-    requirePermission(me,isEvent?'orders':'settings',write&&!isEvent?'write':'read');
+    requirePermission(me,write&&!isEvent?'settings':'orders',write&&!isEvent?'write':'read');
     let body=null;
     if(write){if(Number(request.headers.get('content-length')||0)>220000)fail('الإعدادات أكبر من الحد المسموح',413);const raw=await request.text();if(raw.length>220000)fail('الإعدادات أكبر من الحد المسموح',413);try{body=JSON.parse(raw);}catch{fail('محتوى الطلب غير صحيح');}if(!body||typeof body!=='object'||Array.isArray(body))fail('محتوى الطلب غير صحيح');}
     const clientId=resolveTenant(me,clean(url.searchParams.get('clientId'))||null),requested=clean(url.searchParams.get('storeId'));
@@ -44,7 +45,7 @@ export async function handleDocumentSettings({request,env,ctx,delegate}){
     }
     if(method==='GET'){
       const record=await env.DB.prepare('SELECT revision,config_json FROM document_settings WHERE client_id=? AND store_id=?').bind(clientId,storeId).first();
-      return json({config:record?normalizeDocumentSettings(JSON.parse(record.config_json)):defaultDocumentSettings(),revision:record?.revision||0,writeEnabled:enabled(env),storageReady:true});
+      return json({config:record?normalizeDocumentSettings(JSON.parse(record.config_json)):defaultDocumentSettings(),revision:record?.revision||0,writeEnabled:enabled(env)&&can(me,'settings','write'),printEventsWriteEnabled:enabled(env),storageReady:true});
     }
     const config=normalizeDocumentSettings(body.config),revision=body.revision;
     if(!Number.isSafeInteger(revision)||revision<0||revision>=1e9)fail('رقم المراجعة غير صحيح');
