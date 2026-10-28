@@ -89,7 +89,7 @@ for(const marker of ["UPDATE orders SET history=json_insert","history IS ?","jt_
 assert.ok(printingRoute.includes("url.pathname!=='/api/printing'")&&printingRoute.includes("o.state IN ('confirmed','preparing')")&&printingRoute.includes("hasMore:offset+limit<total"),'Production Printing must expose assigned-store confirmed orders through paged dedicated queue');
 assert.ok(printingRoute.includes("order.state!=='shipped'||order.queuedForPrint||order.printed"),'Unrelated shipped orders must stay out of Printing');
 assert.ok(production.includes('preserveCustomerServiceOrderVisibility')&&!production.includes('data.orders=data.orders.filter('),'Confirmed orders must remain in Customer Service responses while also appearing in Printing');
-for(const marker of ['modules-v78-jt-shipping-order.js?v=78.5','modules-v79-printing.js?v=79.11','modules-v116-print-routing.js?v=116.1'])assert.ok(production.includes(marker),`Production must load/cache-bust ${marker}`);
+for(const marker of ['modules-v78-jt-shipping-order.js?v=78.5','modules-v79-printing.js?v=79.12','modules-v116-print-routing.js?v=116.1'])assert.ok(production.includes(marker),`Production must load/cache-bust ${marker}`);
 
 assert.ok(ui.includes('الإرسال الحقيقي وإنشاء AWB يتمان فقط')&&ui.includes('قسم الطباعة'),'J&T editor must explain that external sending belongs to Printing');
 assert.ok(ui.includes("version:'78.5'"),'J&T editor runtime must be v78.5');
@@ -97,7 +97,7 @@ assert.ok(!ui.includes("moveState?.(orderId,'shipped')"),'J&T data preparation m
 assert.ok(printingUi.includes('/api/printing?clientId='),'Printing UI must load the dedicated queue');
 assert.ok(printingUi.includes('إرسال إلى J&T وطباعة البوليصة'),'Printing UI must own the external carrier handoff');
 assert.ok(printingUi.includes('/api/jt/shipments/${encodeURIComponent(o.id)}')&&printingUi.includes('/api/jt/shipments/${encodeURIComponent(id)}/print'),'Printing must stage local data then perform governed J&T create/print');
-assert.ok(printingUi.includes("version:'79.11'"),'Printing runtime must expose confirmed-order carrier handoff in v79.11');
+assert.ok(printingUi.includes("version:'79.12'"),'Printing runtime must expose confirmed-order carrier handoff in v79.12');
 assert.ok(printingRouting.includes("new Set(['confirmed','preparing'])")&&printingRouting.includes('const moved=original?.(orderId,state,deferUntil)')&&printingRouting.includes("'kun:printing-ready'")&&!printingRouting.includes('card.remove()'),'Web Customer Service must keep confirmed orders visible while notifying Printing');
 assert.ok(!printingUi.includes('window.print')&&!printingUi.includes('fallbackPrint'),'Official carrier label must have no browser-generated fallback');
 
