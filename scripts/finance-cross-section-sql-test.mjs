@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
 import {DatabaseSync} from 'node:sqlite';
 import {accountingOverview,listManagementFeeEntries} from '../src/accounting.js';
 import {collectedProfitOverview} from '../src/collected-profit.js';
@@ -105,4 +106,56 @@ assert.equal(report.overview.expectedProfit,375,'600-200 COGS-20 direct shipping
 assert.equal(report.overview.expectedProfitPerActiveOrder,375);
 assert.equal(report.finance.netProfit,405,'850 revenue - 290 COGS - 100 ads - 30 rent - 20 ship - 5 order costs');
 console.log('Financial reconciliation SQL QA PASS: settlement dates, actual COD, duplicate fees, COGS, pending wallets, ad-spend chart');
+// Legacy blank dates must agree across accounting and collected-profit reports.
+const dates={clientId:'dates-client',storeId:'dates-store',from:'2026-10-28',to:'2026-10-28'};
+stmt('INSERT INTO stores VALUES(?,?,?,?,?)',['dates-store','dates-client','Dates fixture','EGP',5]);
+for(const [i,date] of [null,'','   '].entries()){
+  stmt('INSERT INTO orders VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',[
+    `DATE-${i}`,'dates-client','dates-store',date,'2026-10-28T10:00:00Z','collected',100,90,date,30,`DATE-${i}`,'Synthetic'
+  ]);
+  stmt('INSERT INTO transactions VALUES(?,?,?,?,?,?,?,?,?,?,?)',[
+    `TX-DATE-${i}`,'dates-client','dates-store','expense',date,'2026-10-28T10:00:00Z','Rent',10,'Synthetic','bank','QA'
+  ]);
+  stmt('INSERT INTO order_management_fees VALUES(?,?,?,?,?,?,?,?,?,?)',[
+    `DATE-${i}`,'dates-client','dates-store',5,100,5,'active','2026-10-28',null,'2026-10-28'
+  ]);
+}
+const missingDates=await accountingOverview(env,dates);
+assert.equal(missingDates.manualExpenses,30,'null, empty and spaces use creation date in finance');
+assert.equal(missingDates.deliveredRevenue,300);
+assert.equal(missingDates.managementFees,15);
+assert.equal(missingDates.collectedRevenue,270,'blank settlement dates fall back without changing recorded COD amounts');
+assert.equal(missingDates.verifiedCollectedRevenue,270);
+const missingCollected=await collectedProfitOverview(env,{...dates,includeDetails:true});
+assert.equal(missingCollected.collectedOrders,3);
+assert.equal(missingCollected.generalExpenses,30);
+assert.equal(missingCollected.collectedProfit,135);
+assert.equal((await listManagementFeeEntries(env,dates)).length,3);
+stmt('INSERT INTO orders VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',[
+  'EXPLICIT-OLD','dates-client','dates-store','2026-09-01','2026-10-28T10:00:00Z','signed',999,null,null,1,'OLD','Synthetic'
+]);
+stmt('INSERT INTO transactions VALUES(?,?,?,?,?,?,?,?,?,?,?)',[
+  'EXPLICIT-TX','dates-client','dates-store','expense','2026-09-01','2026-10-28T10:00:00Z','Rent',999,'Synthetic','bank','QA'
+]);
+assert.equal((await accountingOverview(env,dates)).deliveredRevenue,300,'explicit old order date beats recent creation date');
+assert.equal((await accountingOverview(env,dates)).manualExpenses,30,'explicit transaction date keeps its original period');
+assert.equal((await accountingOverview(env,{...dates,storeId:'other-store'})).collectedRevenue,0,'other store never receives these collections');
+assert.equal((await accountingOverview(env,{...dates,clientId:'other-client'})).manualExpenses,0,'other client never receives these expenses');
+console.log('Blank-date financial SQL PASS: accounting, COD, profit, fees, explicit-date precedence and store/client isolation.');
+for(const field of ['shipping_cost','other_cost','gov','source','customer_id','product_id','qty'])db.exec(`ALTER TABLE orders ADD COLUMN ${field}`);
+const actualQueries=file=>[...readFileSync(new URL('../src/'+file,import.meta.url),'utf8').matchAll(/env\.DB\.prepare\(`(SELECT[\s\S]*?)`\)/g)].map(m=>m[1]);
+const binds=['dates-client','dates-store','2026-10-28','2026-10-28'];
+const dashboardQueries=actualQueries('dashboard-intelligence.js').filter(q=>q.includes('FROM orders WHERE'));
+assert.equal(dashboardQueries.length,2);
+const dashboardOrders=dashboardQueries.map(sql=>db.prepare(sql.replaceAll('${storeClause}',' AND store_id=?')).all(...binds));
+for(const rows of dashboardOrders)assert.equal(rows.length,3,'selected and 30-day dashboard SQL includes blanks, excludes explicit older dates');
+const snapshot=computeDashboardSnapshot({orders:dashboardOrders[0],historyOrders:dashboardOrders[1],from:dates.from,to:dates.to,today:dates.to});
+assert.equal(snapshot.rates.selected.total,3,'JS rate calculation agrees with actual SQL after whitespace fallback');
+assert.equal(snapshot.rates.d30.total,3);
+const briefQueries=actualQueries('business-intelligence.js');
+const briefOrders=briefQueries.find(q=>q.includes('FROM orders WHERE'));
+assert.equal(db.prepare(briefOrders.replaceAll('${storeSql}',' AND store_id=?')).get(...binds).total,3);
+const briefFinance=briefQueries.find(q=>q.includes('FROM transactions WHERE'));
+assert.equal(db.prepare(briefFinance.replaceAll('${storeSql}',' AND store_id=?')).get(...binds).expenses,30);
+console.log('Blank-date dashboard and business brief SQL PASS: selected/30-day totals and finance agree.');
 db.close();
