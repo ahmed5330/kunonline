@@ -279,6 +279,22 @@ export async function handleProductionCustomerService({request,env,ctx,delegate}
       const u=new URL(request.url);u.pathname=`/api/orders/${encodeURIComponent(orderId)}`;u.search='';const r=await delegate.fetch(new Request(u,{method:'DELETE',headers:request.headers}),env,ctx);return r;
     }
     if(action==='edit'&&method==='PATCH'){
+      const editableStates=new Set(['pending','new','contacting','no_answer','confirmed','preparing','deferred']);
+      const fullEditAllowed=editableStates.has(clean(row.state))&&!clean(row.awb);
+      const noteOnly=body.editMode==='notes';
+      if(!fullEditAllowed&&!noteOnly)
+        return json({error:'بعد الشحن يمكن تعديل الملاحظات فقط، وتعديل بيانات البوليصة يتم عبر إجراءات J&T المخصصة',code:'ORDER_EDIT_SHIPMENT_LOCKED'},409);
+      if(noteOnly){
+        const note=clean(body.customerNote);
+        if(note.length>2000)return json({error:'الملاحظة طويلة جدًا',code:'ORDER_NOTE_TOO_LONG'},400);
+        const change={type:'order_edit',event:'notes_only',at:stamp,by:actor,byUserId:me.uid||me.id||null,source:'global-order-search',before:{customerNote:row.note||''},after:{customerNote:note}};
+        const saved=await env.DB.prepare("UPDATE orders SET note=?,history=json_insert(CASE WHEN json_valid(history) AND json_type(history)='array' THEN history ELSE '[]' END,'$[#]',json(?)) WHERE id=? AND client_id=? AND store_id IS ? AND state=? AND COALESCE(awb,'')=? AND history IS ?")
+          .bind(note,JSON.stringify(change),orderId,clientId,row.store_id??null,row.state,clean(row.awb),row.history??null).run();
+        if(Number(saved.meta?.changes)!==1)return json({error:'الطلب اتغير أثناء التعديل؛ حدّث التفاصيل ثم حاول مرة أخرى',code:'ORDER_EDIT_CONFLICT'},409);
+        await env.DB.prepare('INSERT INTO order_events (id,client_id,store_id,order_id,event_type,actor_user_id,actor_email,source,metadata_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)')
+          .bind('OEV-'+crypto.randomUUID(),clientId,row.store_id||null,orderId,'order_note_edited',me.uid||me.id||null,actor,'global-order-search',JSON.stringify(change),stamp).run();
+        return json({ok:true,editMode:'notes',order:mapOrder(await getOrder(env,clientId,orderId))});
+      }
       const name=clean(body.name),phone=clean(body.phone);if(!name||!phone)return json({error:'الاسم والهاتف مطلوبان',code:'ORDER_EDIT_REQUIRED_FIELDS'},400);
       const items=Array.isArray(body.items)?body.items:[],first=items[0]||{},product=items.map(x=>clean(x.productName)).filter(Boolean).join(' + ')||row.product||'',qty=items.length?items.reduce((s,x)=>s+Math.max(1,Number(x.qty)||1),0):n(row.qty)||1,unitPrice=items.length===1?n(first.unitPrice):n(row.unit_price),productId=items.length===1?(clean(first.productId)||null):null,variantId=items.length===1?(clean(first.variantId)||null):null,productNote=items.length===1?clean(first.variantLabel):row.product_note||'';
       const history=arr(row.history);history.push({
@@ -288,13 +304,11 @@ export async function handleProductionCustomerService({request,env,ctx,delegate}
         after:{name,phone,gov:clean(body.gov),address:clean(body.address),total:Math.max(0,n(body.total)),product,qty}
       });
       const change=history.at(-1);
-      await env.DB.batch([
-        env.DB.prepare("UPDATE orders SET name=?,phone=?,gov=?,address=?,coupon_code=?,note=?,total=?,product=?,product_id=?,variant_id=?,product_note=?,qty=?,unit_price=?,history=json_insert(CASE WHEN json_valid(history) THEN (CASE WHEN json_type(history)='array' THEN history ELSE '[]' END) ELSE '[]' END,'$[#]',json(?)) WHERE id=? AND client_id=?")
-          .bind(name,phone,clean(body.gov),clean(body.address),clean(body.couponCode)||null,clean(body.customerNote),Math.max(0,n(body.total)),product,productId,variantId,productNote,qty,unitPrice,JSON.stringify(change),orderId,clientId),
-        env.DB.prepare('INSERT INTO order_events (id,client_id,store_id,order_id,event_type,actor_user_id,actor_email,source,metadata_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)')
-          .bind('OEV-'+crypto.randomUUID(),clientId,row.store_id||null,orderId,'order_edited',me.uid||me.id||null,actor,'android-customer-service',
-            JSON.stringify({before:change.before,after:change.after,byName:actor}),stamp)
-      ]);
+      const saved=await env.DB.prepare("UPDATE orders SET name=?,phone=?,gov=?,address=?,coupon_code=?,note=?,total=?,product=?,product_id=?,variant_id=?,product_note=?,qty=?,unit_price=?,history=json_insert(CASE WHEN json_valid(history) AND json_type(history)='array' THEN history ELSE '[]' END,'$[#]',json(?)) WHERE id=? AND client_id=? AND store_id IS ? AND state=? AND COALESCE(awb,'')='' AND history IS ?")
+        .bind(name,phone,clean(body.gov),clean(body.address),clean(body.couponCode)||null,clean(body.customerNote),Math.max(0,n(body.total)),product,productId,variantId,productNote,qty,unitPrice,JSON.stringify(change),orderId,clientId,row.store_id??null,row.state,row.history??null).run();
+      if(Number(saved.meta?.changes)!==1)return json({error:'الطلب اتغير أو بدأ الشحن أثناء التعديل؛ حدّث تفاصيله',code:'ORDER_EDIT_CONFLICT'},409);
+      await env.DB.prepare('INSERT INTO order_events (id,client_id,store_id,order_id,event_type,actor_user_id,actor_email,source,metadata_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)')
+        .bind('OEV-'+crypto.randomUUID(),clientId,row.store_id||null,orderId,'order_edited',me.uid||me.id||null,actor,'android-customer-service',JSON.stringify({before:change.before,after:change.after,byName:actor}),stamp).run();
       return json({ok:true,order:mapOrder(await getOrder(env,clientId,orderId))});
     }
     return json({error:'الطريقة غير مدعومة',code:'METHOD_NOT_ALLOWED'},405);
