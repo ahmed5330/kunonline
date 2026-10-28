@@ -24,12 +24,17 @@ const allButOne=rows.filter(x=>x.table_name!=='inventory_shipments');
 assert.ok(validateReleaseSchema([{results:allButOne}]).missing.includes('inventory_shipments.id'));
 console.log('Preview D1 release schema gate PASS: required columns, read-only SQL, missing-schema fail-closed.');
 
-assert.equal(READONLY_SCHEMA_BATCHES.length,3);
+assert.equal(READONLY_SCHEMA_BATCHES.length,4,'fifteen required tables stay in batches of at most four');
+for(const [table,column] of [['audit_log','before_json'],['transactions','amount'],['stores','management_fee_pct']]){
+  assert.ok(REQUIRED_RELEASE_SCHEMA[table].includes(column));
+  const incomplete=rows.filter(row=>row.table_name!==table||row.column_name!==column);
+  assert.throws(()=>checkReleaseSchema([{success:true,results:incomplete}]),/deployment blocked/,'audited writes require the existing accounting schema');
+}
 let batches=0;
 assert.equal((await verifyReleaseSchemaReadonly(async sql=>{
   batches++;assert.ok(sql.split(' UNION ALL ').length<=4,'D1 compound SELECT bound');
   const names=[...sql.matchAll(/pragma_table_info\('([a-z_]+)'\)/g)].map(x=>x[1]);
   return [{success:true,results:rows.filter(row=>names.includes(row.table_name))}];
 })).verifiedTables,Object.keys(REQUIRED_RELEASE_SCHEMA).length);
-assert.equal(batches,3,'All bounded metadata batches must be checked');
+assert.equal(batches,4,'All bounded metadata batches must be checked');
 await assert.rejects(()=>verifyReleaseSchemaReadonly(async()=>[{success:true,results:rows.filter(row=>row.table_name!=='wallet_log')}]),/deployment blocked/);
