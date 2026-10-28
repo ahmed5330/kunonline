@@ -12,9 +12,9 @@ android {
         applicationId = "com.kunonline.callerid.stable"
         minSdk = 29
         targetSdk = 35
-        // v2.9.20: refresh staff stores and match caller orders across assigned stores with scoped J&T actions.
-        versionCode = 151
-        versionName = "2.9.20"
+        // v2.9.21: show date, product and readable Arabic customer status on global order search results.
+        versionCode = 152
+        versionName = "2.9.21"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
