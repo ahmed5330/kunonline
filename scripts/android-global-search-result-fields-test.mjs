@@ -33,6 +33,6 @@ assert.ok(ui.includes('putExtra(CallerOrderEditActivity.EXTRA_CLIENT_ID, order.c
   'search detail edit must preserve target tenant');
 assert.ok(ui.includes('putExtra(CallerOrderEditActivity.EXTRA_STORE_ID, order.storeId)'),
   'search detail edit must preserve target store');
-assert.match(build,/versionCode\s*=\s*152\b/);
-assert.match(build,/versionName\s*=\s*"2\.9\.21"/);
+assert.ok(Number(build.match(/versionCode\s*=\s*(\d+)/)?.[1]||0)>=153);
+assert.match(build,/versionName\s*=\s*"2\.9\.22"/);
 console.log('PASS: search result card and order dialog render product, date and Arabic customer status with safe scoped edit');
