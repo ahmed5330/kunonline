@@ -185,8 +185,15 @@ async function details(env,clientId,orderId){
     const {results=[]}=await env.DB.prepare('SELECT product_id,variant_id,product_name,variant_label,sku,qty,unit_price,line_total FROM order_items WHERE order_id=? AND client_id=? ORDER BY created_at,id LIMIT 30').bind(orderId,clientId).all();
     items=results.map(item=>({productId:item.product_id||'',variantId:item.variant_id||'',name:item.product_name||o.product,productName:item.product_name||o.product,variantName:item.variant_label||'',note:item.variant_label||'',quantity:n(item.qty)||1,qty:n(item.qty)||1,price:n(item.unit_price),unitPrice:n(item.unit_price),lineTotal:n(item.line_total),sku:item.sku||''}));
   }catch(error){console.warn('Optional detailed order items unavailable',error?.message||error);}
+  // An audited Kun edit may override provider-imported order_items without
+  // rewriting the original provider rows or inventory-linked source lines.
+  const editedLines=[...arr(r.history)].reverse().find(entry=>entry?.type==='order_edit'&&Array.isArray(entry?.after?.items))?.after?.items;
+  if(editedLines?.length)items=editedLines.map(line=>({productId:line.productId||'',variantId:line.variantId||'',name:line.productName||'',productName:line.productName||'',variantName:line.variantLabel||'',sku:line.sku||'',quantity:n(line.qty)||1,qty:n(line.qty)||1,price:n(line.unitPrice),unitPrice:n(line.unitPrice)}));
   if(!items.length)items=[fallback];
-  return {ok:true,order:{id:o.id,ref:o.ref,clientId:o.clientId,storeId:o.storeId,state:o.state,date:o.date,source:o.source,couponCode:r.coupon_code||'',customerNote:o.customerNote,awb:o.awb},customer:{id:r.customer_id||'',name:o.name,phone:o.phone,government:o.gov,address:o.address},address:{government:o.gov,address:o.address},items,summary:{total:o.total,qty:o.qty,discountAmount:n(r.discount_amount),shippingCost:n(r.shipping_cost),otherCost:n(r.other_cost)},raw:o};
+  const savedJnt=[...arr(r.history)].reverse().find(entry=>entry?.jtAddress)?.jtAddress||{};
+  let storeName='';
+  try{const store=await env.DB.prepare('SELECT name FROM stores WHERE id=? AND client_id=?').bind(r.store_id,clientId).first();storeName=clean(store?.name);}catch(error){console.warn('Optional caller store label unavailable',error?.message||error);}
+  return {ok:true,order:{id:o.id,ref:o.ref,clientId:o.clientId,storeId:o.storeId,storeName,state:o.state,checkpoint:o.checkpoint,date:o.date,source:o.source,couponCode:r.coupon_code||'',customerNote:o.customerNote,awb:o.awb},customer:{id:r.customer_id||'',name:o.name,phone:o.phone,phone2:clean(savedJnt.phone2),government:o.gov,address:o.address},address:{government:o.gov,address:o.address,city:clean(savedJnt.city),area:clean(savedJnt.area),street:clean(savedJnt.street)},items,summary:{total:o.total,qty:o.qty,discountAmount:n(r.discount_amount),shippingCost:n(r.shipping_cost),otherCost:n(r.other_cost)},raw:{...o,storeName}};
 }
 async function catalog(delegate,request,env,ctx,clientId){
   // Keep the detailed catalog route and store scope. The basic products route
@@ -301,7 +308,7 @@ export async function handleProductionCustomerService({request,env,ctx,delegate}
         type:'order_edit',at:stamp,by:actor,byName:actor,byUserId:me.uid||me.id||null,
         source:'android-customer-service',
         before:{name:row.name,phone:row.phone,gov:row.gov,address:row.address,total:row.total,product:row.product,qty:row.qty},
-        after:{name,phone,gov:clean(body.gov),address:clean(body.address),total:Math.max(0,n(body.total)),product,qty}
+        after:{name,phone,gov:clean(body.gov),address:clean(body.address),total:Math.max(0,n(body.total)),product,qty,items:items.slice(0,30).map(x=>({productId:clean(x.productId),variantId:clean(x.variantId),productName:clean(x.productName),variantLabel:clean(x.variantLabel),sku:clean(x.sku),qty:Math.max(1,Number(x.qty)||1),unitPrice:Math.max(0,n(x.unitPrice))}))}
       });
       const change=history.at(-1);
       const saved=await env.DB.prepare("UPDATE orders SET name=?,phone=?,gov=?,address=?,coupon_code=?,note=?,total=?,product=?,product_id=?,variant_id=?,product_note=?,qty=?,unit_price=?,history=json_insert(CASE WHEN json_valid(history) AND json_type(history)='array' THEN history ELSE '[]' END,'$[#]',json(?)) WHERE id=? AND client_id=? AND store_id IS ? AND state=? AND COALESCE(awb,'')='' AND history IS ?")
