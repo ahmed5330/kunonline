@@ -263,7 +263,7 @@ object KunCustomerServiceApi {
             if (clientId.isBlank()) return CustomerServiceJsonResult(false, "تعذر تحديد حساب المتجر")
             val storeParam = if (selectedStoreId.isBlank()) "" else "&storeId=${enc(selectedStoreId)}"
             val response = request("GET", "/api/orders/${enc(orderId)}/details?clientId=${enc(clientId)}$storeParam", cookie)
-            if (cookie(context) != cookie) return CustomerServiceJsonResult(false, "تغيّرت جلسة الحساب")
+            if (KunApi.sessionCookie(context) != cookie) return CustomerServiceJsonResult(false, "تغيّرت جلسة الحساب")
             if (response.code !in 200..299) return authFailure(context, response, "تعذر تحميل تفاصيل الطلب")
             CustomerServiceJsonResult(true, "تم تحميل تفاصيل الطلب", json(response))
         }.getOrElse { CustomerServiceJsonResult(false, "تعذر الاتصال بكن أونلاين") }
