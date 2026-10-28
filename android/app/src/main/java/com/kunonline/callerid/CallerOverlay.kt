@@ -133,7 +133,11 @@ object CallerOverlay {
                 setPadding(0, app.dp(8), 0, app.dp(8))
             }
             if (!locked && !customer.orderId.isNullOrBlank()) {
-                line("جاري تحميل تفاصيل الطلب الكاملة…", 12f, INK2)
+                detailsHost.addView(TextView(app).apply {
+                    text = "جاري تحميل تفاصيل الطلب الكاملة…"
+                    textSize = 12f
+                    setTextColor(INK2)
+                })
                 body.addView(detailsHost)
             }
             card.addView(ScrollView(app).apply {
