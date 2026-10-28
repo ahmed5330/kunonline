@@ -18,6 +18,7 @@ on:
       - 'scripts/android-global-edit-caller-details-contract-test.mjs'
       - 'scripts/android-global-search-result-fields-test.mjs'
       - 'scripts/global-search-edit-guard-test.mjs'
+      - 'scripts/global-search-edit-runtime-test.mjs'
       - 'public/v2/modules-v44-customer-service-order-edit.js'
       - 'public/v2/modules-v55-customer-search-fifo.js'
       - 'scripts/android-cross-store-caller-scope-test.mjs'
@@ -59,6 +60,7 @@ jobs:
           node scripts/android-global-search-result-fields-test.mjs
           node scripts/mobile-global-order-search-test.mjs
           node scripts/global-search-edit-guard-test.mjs
+          node scripts/global-search-edit-runtime-test.mjs
           node --check public/v2/modules-v44-customer-service-order-edit.js
           node --check public/v2/modules-v55-customer-search-fifo.js
           node --check src/production-customer-service.js
