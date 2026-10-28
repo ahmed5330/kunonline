@@ -64,6 +64,7 @@ object CallerOverlay {
                     app.startActivity(Intent(app, CallerCardActivity::class.java).apply {
                         putExtra("phone", customer.phone)
                         putExtra("incoming", incoming)
+                        putExtra("kun_caller_payload", CallerPayload.encode(customer))
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     })
                 }
@@ -171,6 +172,7 @@ object CallerOverlay {
                         app.startActivity(Intent(app, CallerCardActivity::class.java).apply {
                             putExtra("phone", customer.phone)
                             putExtra("incoming", incoming)
+                            putExtra("kun_caller_payload", CallerPayload.encode(customer))
                             putExtra("start_cancel", true)
                             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                         })

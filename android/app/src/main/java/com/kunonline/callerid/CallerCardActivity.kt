@@ -96,7 +96,8 @@ class CallerCardActivity : Activity() {
 
         val phone = intent.getStringExtra("phone").orEmpty()
         val incoming = intent.getBooleanExtra("incoming", false)
-        val customer = CustomerCache.lookup(this, phone) ?: run { finish(); return }
+        val customer = CallerPayload.decode(intent.getStringExtra("kun_caller_payload"))
+            ?: CustomerCache.lookup(this, phone) ?: run { finish(); return }
         val locked = (getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager).isKeyguardLocked
 
         val root = LinearLayout(this).apply {
