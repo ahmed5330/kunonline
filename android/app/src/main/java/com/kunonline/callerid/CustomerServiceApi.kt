@@ -255,10 +255,12 @@ object KunCustomerServiceApi {
         CustomerServiceJsonResult(true, "تم حذف الأوردر", json(response))
     }
 
-    fun fetchEditorData(context: Context, orderId: String, selectedStoreId: String = "", requireHistory: Boolean = false): CustomerServiceEditorData {
+    fun fetchEditorData(context: Context, orderId: String, selectedStoreId: String = "", requireHistory: Boolean = false, selectedClientId: String = ""): CustomerServiceEditorData {
         val cookie = cookie(context) ?: return CustomerServiceEditorData(false, "سجّل الدخول أولاً")
         return runCatching {
-            val clientId = resolveClientId(context, cookie)
+            // A global search result carries its own tenant and store scope.
+            // The server rechecks membership against user_store_access on every read.
+            val clientId = selectedClientId.ifBlank { resolveClientId(context, cookie) }
             if (clientId.isBlank()) return CustomerServiceEditorData(false, "تعذر تحديد حساب المتجر")
             val storeParam = if (selectedStoreId.isBlank()) "" else "&storeId=${enc(selectedStoreId)}"
             val detailsResponse = request("GET", "/api/orders/${enc(orderId)}/details?clientId=${enc(clientId)}$storeParam", cookie)
@@ -278,11 +280,18 @@ object KunCustomerServiceApi {
         }.getOrElse { CustomerServiceEditorData(false, "تعذر تحميل بيانات التعديل") }
     }
 
-    fun editOrder(context: Context, orderId: String, payload: JSONObject): CustomerServiceJsonResult = withClient(context) { cookie, clientId ->
-        payload.put("clientId", clientId)
-        val response = request("PATCH", "/api/customer-service/orders/${enc(orderId)}/edit?clientId=${enc(clientId)}", cookie, payload)
-        if (response.code !in 200..299) return@withClient authFailure(context, response, "تعذر حفظ تعديلات الأوردر")
-        CustomerServiceJsonResult(true, "تم تعديل الأوردر", json(response))
+    fun editOrder(context: Context, orderId: String, payload: JSONObject, selectedClientId: String = "", selectedStoreId: String = ""): CustomerServiceJsonResult {
+        val cookie = cookie(context) ?: return CustomerServiceJsonResult(false, "سجّل الدخول أولاً")
+        return runCatching {
+            val clientId = selectedClientId.ifBlank { resolveClientId(context, cookie) }
+            if (clientId.isBlank()) return CustomerServiceJsonResult(false, "تعذر تحديد حساب المتجر")
+            val storeParam = if (selectedStoreId.isBlank()) "" else "&storeId=${enc(selectedStoreId)}"
+            payload.put("clientId", clientId)
+            if (selectedStoreId.isNotBlank()) payload.put("storeId", selectedStoreId)
+            val response = request("PATCH", "/api/customer-service/orders/${enc(orderId)}/edit?clientId=${enc(clientId)}$storeParam", cookie, payload)
+            if (response.code !in 200..299) return authFailure(context, response, "تعذر حفظ تعديلات الأوردر")
+            CustomerServiceJsonResult(true, "تم تعديل الأوردر", json(response))
+        }.getOrElse { CustomerServiceJsonResult(false, "تعذر الاتصال بكن أونلاين") }
     }
 
     private inline fun withClient(context: Context, block: (String, String) -> CustomerServiceJsonResult): CustomerServiceJsonResult {
