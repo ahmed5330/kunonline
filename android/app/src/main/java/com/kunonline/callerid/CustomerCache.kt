@@ -16,7 +16,10 @@ data class CallerCustomer(
     val gov: String?,
     val address: String?,
     val note: String?,
-    val previousOrders: Int
+    val previousOrders: Int,
+    val clientId: String = "",
+    val storeId: String = "",
+    val storeName: String = ""
 )
 
 object CustomerCache {
@@ -56,6 +59,9 @@ object CustomerCache {
                 .put("address", latest.optString("address"))
                 .put("note", latest.optString("note"))
                 .put("previousOrders", (list.size - 1).coerceAtLeast(0))
+                .put("clientId", latest.optString("clientId"))
+                .put("storeId", latest.optString("storeId"))
+                .put("storeName", latest.optString("storeName"))
             editor.putString(keyFor(phone), SecureStore.encrypt(payload.toString()))
         }
         editor.putInt(META_COUNT, grouped.size)
@@ -86,7 +92,10 @@ object CustomerCache {
             gov = json.optString("gov").takeIf { it.isNotBlank() },
             address = json.optString("address").takeIf { it.isNotBlank() },
             note = json.optString("note").takeIf { it.isNotBlank() },
-            previousOrders = json.optInt("previousOrders", 0)
+            previousOrders = json.optInt("previousOrders", 0),
+            clientId = json.optString("clientId"),
+            storeId = json.optString("storeId"),
+            storeName = json.optString("storeName")
         )
     }
 
