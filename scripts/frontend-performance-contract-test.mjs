@@ -22,7 +22,7 @@ const [index,perf,post,ai,rich,ads,recovery,permissions,search,v35,sectionReload
 assert.ok(index.includes('/v2/performance-core-v52.js'), 'shared performance core must be loaded');
 assert.ok(index.indexOf('/v2/performance-core-v52.js')<index.indexOf('/v2/modules-v4.js'), 'performance core must load before feature modules');
 assert.equal(index.includes('/v2/modules-v45-post-shipping.js'),false,'superseded v45 post-shipping bundle must not load');
-assert.ok(index.includes('/v2/modules-v55-customer-search-fifo.js?v=55.3'),'name/phone customer-search bundle must be cache-busted');
+assert.ok(index.includes('/v2/modules-v55-customer-search-fifo.js?v=55.4'),'all-store customer-search and order-edit bundle must be cache-busted');
 assert.ok(index.includes('/v2/modules-v57-section-reload.js?v=57.3'),'per-section reload bundle must be loaded');
 assert.ok(index.includes('/v2/modules-v58-confirm-inventory.js?v=58.1'),'no-reload inventory confirmation bundle must be loaded');
 assert.ok(index.indexOf('/v2/modules-v57-section-reload.js')>index.indexOf('/v2/modules-v56-returns-exchanges.js'),'section reload must load after the feature-specific workspace renderers');
