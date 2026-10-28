@@ -67,6 +67,8 @@ jobs:
           node scripts/android-accounting-fake-test.mjs
       - name: Run full contract and unit suite
         run: npm test
+      - name: FAOS multi-line journal synthetic browser regression
+        run: node scripts/browser-faos-multiline-fixture-test.mjs
       - name: Inventory workspace UX browser regression
         run: node scripts/browser-inventory-workspace-fixture-test.mjs
       - name: Sidebar cross-group navigation browser regression
