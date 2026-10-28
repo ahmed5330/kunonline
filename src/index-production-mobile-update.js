@@ -1,3 +1,4 @@
+import {handleDocumentSettings} from './document-settings.js';
 import {guardSessionRequest} from './session-request-guard.js';
 import {handleFinancialAccountingOS} from './accounting-faos-api.js';
 import {routeProductionCodRead} from './production-cod-read-fallback.js';
@@ -78,6 +79,7 @@ async function websiteWithDirectAndroidDownload(request,env){
   if(!asset.ok||!type.includes('text/html'))return asset;
 
   let html=await asset.text();
+  if(!html.includes('/v2/document-settings-ui.js'))html=html.replace('</body>','<script type="module" src="/v2/document-settings-ui.js?v=1.0"></script></body>');
   html=html
     .replace(/\/v2\/modules-v46-variant-inventory-sync\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v46-variant-inventory-sync.js?v=46.5')
     .replace(/\/v2\/modules-v43-product-catalog\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v43-product-catalog.js?v=43.1')
@@ -277,6 +279,7 @@ export default {
       }
     }
 
+    const documentSettings=await handleDocumentSettings({request,env:dataEnv,ctx,delegate:delegate});if(documentSettings)return documentSettings;
     const printing=await handleProductionPrintingQueue({request,env:dataEnv,ctx,delegate});
     if(printing)return syncInventoryTrackingAfterResponse({request,response:printing,env:dataEnv,actor:'production'});
 

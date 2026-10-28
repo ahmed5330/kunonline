@@ -57,6 +57,10 @@ jobs:
         run: node scripts/customer-service-board-print-void-test.mjs
       - name: Read-only customer document browser fixture
         run: node scripts/browser-order-document-preview-test.mjs
+      - name: Store document configuration and print-request synthetic regression
+        run: |
+          node scripts/document-settings-sqlite-test.mjs
+          node scripts/browser-document-settings-fixture-test.mjs
       - name: Multi-store order alerts and accounting regression
         run: |
           node scripts/android-order-notifications-fake-test.mjs

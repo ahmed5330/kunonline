@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import {execFileSync} from 'node:child_process';
 
 const ROOT='public/v2';
 const methods='(?:forEach|map|filter|some|every|find)';
@@ -17,7 +18,11 @@ function walk(dir){
 
 for(const file of walk(ROOT)){
   const src=fs.readFileSync(file,'utf8');
-  try{new Function(src);}catch(error){
+  try{
+    if(/^\s*(?:import\s+(?:[{'"*]|[\w$]+)|export\s)/m.test(src)){
+      execFileSync(process.execPath,['--input-type=module','--check'],{input:src,stdio:['pipe','pipe','pipe']});
+    }else new Function(src);
+  }catch(error){
     issues.push(`${file}: syntax error: ${error.message}`);
     continue;
   }
