@@ -20,7 +20,7 @@
   function editIcon(){return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';}
   function closeModal(){document.getElementById('oeModalBack')?.remove();}
   function modal(html){closeModal();const back=document.createElement('div');back.className='cs-modal-back';back.id='oeModalBack';back.innerHTML=`<div class="cs-modal oe-modal" role="dialog" aria-modal="true">${html}</div>`;document.body.appendChild(back);back.onclick=event=>{if(event.target===back)closeModal();};back.querySelectorAll('[data-oe-close]').forEach(button=>button.onclick=closeModal);return back;}
-  async function orderMeta(orderId,cid){if(metaCache.has(orderId))return metaCache.get(orderId);const work=api(query(`/api/customer-service/orders/${encodeURIComponent(orderId)}/history`,cid)).then(data=>data.order||{}).catch(()=>({}));metaCache.set(orderId,work);return work;}
+  async function orderMeta(orderId,cid){const key=cid+':'+orderId;if(metaCache.has(key))return metaCache.get(key);const work=api(query(`/api/customer-service/orders/${encodeURIComponent(orderId)}/history`,cid)).then(data=>data.order||{}).catch(()=>({}));metaCache.set(key,work);return work;}
   async function decorate(card){
     if(!card||seen.has(card))return;seen.add(card);const orderId=card.dataset.csOrder;if(!orderId)return;
     const actions=card.querySelector('.cs-actions');if(actions&&!actions.querySelector('[data-oe-edit]')){const button=document.createElement('button');button.type='button';button.className='btn soft cs-edit-order-btn';button.dataset.oeEdit=orderId;button.textContent='تعديل الطلب';button.onclick=event=>{event.preventDefault();event.stopPropagation();openEditor(orderId).catch(error=>notify(error.message));};actions.prepend(button);}
@@ -34,11 +34,34 @@
   function productOptions(catalog,selected){return `<option value="">— منتج يدوي —</option>${catalog.map(product=>`<option value="${esc(product.id)}" ${String(product.id)===String(selected||'')?'selected':''}>${esc(product.name)}${product.sku?` — ${esc(product.sku)}`:''}</option>`).join('')}`;}
   function variantOptions(product,selected){return `<option value="">— بدون اختيار —</option>${(product?.variants||[]).filter(item=>item.active!==false).map(variant=>`<option value="${esc(variant.id)}" ${String(variant.id)===String(selected||'')?'selected':''}>${esc(variant.name)}${variant.sku?` — ${esc(variant.sku)}`:''}</option>`).join('')}`;}
   function initialItems(details){return (details.items||[]).map(item=>({productId:item.productId||'',variantId:item.variantId||'',productName:item.name||'',variantLabel:item.variantName||item.note||'',sku:item.variantSku||item.sku||'',qty:Math.max(1,Math.floor(num(item.quantity)||1)),unitPrice:Math.max(0,num(item.price))}));}
-  async function openEditor(orderId){
-    const cid=await clientId();if(!cid)throw new Error('تعذر تحديد حساب المتجر');const wasPostShipping=Boolean(document.getElementById('root')?.querySelector('.ps-page'));
+  async function openEditor(orderId,providedClientId='',providedStoreId=''){
+    const cid=providedClientId||await clientId();if(!cid)throw new Error('تعذر تحديد حساب المتجر');const wasPostShipping=Boolean(document.getElementById('root')?.querySelector('.ps-page'));
     modal('<h2>تعديل الطلب</h2><div class="cs-rich-loading">جارٍ تحميل بيانات الطلب والمنتجات...</div><div class="cs-modal-actions"><button class="btn soft" data-oe-close>إلغاء</button></div>');
-    const [details,meta]=await Promise.all([api(query(`/api/orders/${encodeURIComponent(orderId)}/details`,cid)),orderMeta(orderId,cid)]),storeId=details.order?.storeId||'',catalogData=await api(`${query('/api/catalog/products',cid)}${storeId?`&storeId=${encodeURIComponent(storeId)}`:''}`);closeModal();
-    const order=details.order||{},customer=details.customer||{},address=details.address||{},catalog=catalogData.products||[],inventoryRepair=repairable({...meta,state:order.state||meta.state});if(!EDITABLE.has(order.state)&&!inventoryRepair)throw new Error('التعديل متاح قبل خروج الطلب للشحن فقط، أو لإصلاح أوردر موقوف مخزنيًا');
+    const detailPath=query(`/api/orders/${encodeURIComponent(orderId)}/details`,cid)+(providedStoreId?`&storeId=${encodeURIComponent(providedStoreId)}`:'');
+    const details=await api(detailPath),order=details.order||{},customer=details.customer||{},address=details.address||{},storeId=order.storeId||providedStoreId;
+    if(providedStoreId&&storeId!==providedStoreId)throw new Error('الطلب خارج المتجر المختار');
+    const orderPath=query(`/api/customer-service/orders/${encodeURIComponent(orderId)}/edit`,cid)+(storeId?`&storeId=${encodeURIComponent(storeId)}`:'');
+    const postShipment=Boolean(order.awb&&order.awb!=='null')||!EDITABLE.has(order.state);
+    if(postShipment){
+      const back=modal(`<h2>تعديل ملاحظات الطلب — ${esc(customer.name||order.id)}</h2>
+        <p class="oe-provider-note">الطلب في مرحلة الشحن أو بعدها. يسمح بتحديث الملاحظات فقط، وأي تغيير في اسم المستلم أو العنوان أو المبلغ أو البوليصة يتطلب إجراء J&T معتمد.</p>
+        <label class="oe-section" style="display:grid;gap:8px">ملاحظات الطلب
+          <textarea class="input" id="oeCustomerNote" rows="5" maxlength="2000">${esc(order.customerNote||'')}</textarea></label>
+        <div class="cs-modal-actions"><button class="btn primary" id="oeSave">حفظ الملاحظات</button><button class="btn soft" data-oe-close>إغلاق</button></div>`);
+      back.querySelector('#oeSave').onclick=async event=>{
+        const button=event.currentTarget;
+        try{
+          button.disabled=true;button.textContent='جاري الحفظ...';
+          const note=back.querySelector('#oeCustomerNote').value.trim();
+          await api(orderPath,{method:'PATCH',body:JSON.stringify({clientId:cid,storeId,editMode:'notes',customerNote:note})});
+          metaCache.delete(cid+':'+orderId);closeModal();notify('تم حفظ الملاحظة وتسجيلها في سجل الطلب دون تغيير بيانات الشحنة');
+        }catch(error){button.disabled=false;button.textContent='حفظ الملاحظات';notify(error.message);}
+      };
+      return;
+    }
+    const [meta,catalogData]=await Promise.all([orderMeta(orderId,cid),api(`${query('/api/catalog/products',cid)}${storeId?`&storeId=${encodeURIComponent(storeId)}`:''}`).catch(()=>({products:[]}))]);
+    closeModal();
+    const catalog=catalogData.products||[],inventoryRepair=repairable({...meta,state:order.state||meta.state});
     let items=initialItems(details);if(!items.length)items=[{productId:'',variantId:'',productName:'',variantLabel:'',sku:'',qty:1,unitPrice:0}];
     const back=modal(`<h2>${inventoryRepair?'إصلاح':'تعديل'} الطلب — ${esc(customer.name||order.id)}</h2><div class="sub">غيّر بيانات العميل أو المنتجات، وسيُسجل كل ما تغيّر باسمك مع علامة «معدّل» أعلى الأوردر.</div>${inventoryRepair?'<div class="oe-inventory-repair mt">هذا الأوردر موقوف بسبب عدم اكتمال ربط/كمية المخزون. بعد الحفظ سيعيد Kun Online فحص المخزون تلقائيًا ويحاول استكمال نتيجة شيت شركة الشحن.</div>':''}${details.provider?.id?'<div class="oe-provider-note mt">بعد الحفظ تصبح النسخة المعدّلة داخل Kun Online هي النسخة المعروضة لفريق خدمة العملاء.</div>':''}<div class="oe-form mt">
       <section class="oe-section"><div class="oe-section-title">بيانات العميل والتوصيل</div><div class="oe-grid"><label>اسم العميل<input class="input" id="oeName" value="${esc(customer.name||'')}"></label><label>رقم الهاتف<input class="input" id="oePhone" type="tel" value="${esc(customer.phone||'')}"></label><label>المحافظة<input class="input" id="oeGov" value="${esc(address.government||customer.government||'')}"></label><label>العنوان<input class="input" id="oeAddress" value="${esc(address.address||customer.address||'')}"></label></div></section>
@@ -59,8 +82,8 @@
     renderItems();back.querySelector('#oeAddItem').onclick=()=>{items.push({productId:'',variantId:'',productName:'',variantLabel:'',sku:'',qty:1,unitPrice:0});renderItems();};
     back.querySelector('#oeSave').onclick=async event=>{const button=event.currentTarget;try{
       const name=back.querySelector('#oeName').value.trim(),phone=back.querySelector('#oePhone').value.trim(),gov=back.querySelector('#oeGov').value.trim(),deliveryAddress=back.querySelector('#oeAddress').value.trim(),couponCode=back.querySelector('#oeCoupon').value.trim(),customerNote=back.querySelector('#oeCustomerNote').value.trim(),total=Math.max(0,num(totalInput.value));if(!name)throw new Error('اسم العميل مطلوب');if(!phone)throw new Error('رقم الهاتف مطلوب');if(items.some(item=>!String(item.productName||'').trim()))throw new Error('اكتب اسم كل منتج في الطلب');
-      button.disabled=true;button.textContent='جارٍ حفظ التعديلات...';await api(query(`/api/customer-service/orders/${encodeURIComponent(orderId)}/edit`,cid),{method:'PATCH',body:JSON.stringify({clientId:cid,name,phone,gov,address:deliveryAddress,couponCode,customerNote,total,items})});
-      metaCache.delete(orderId);window.KunCustomerServiceRichCards?.cache?.delete(orderId);let retryError=null;if(inventoryRepair){try{await api(query(`/api/post-shipping/orders/${encodeURIComponent(orderId)}/shipping-sheet-retry`,cid),{method:'PATCH',body:JSON.stringify({clientId:cid})});}catch(error){retryError=error;}}
+      button.disabled=true;button.textContent='جارٍ حفظ التعديلات...';await api(orderPath,{method:'PATCH',body:JSON.stringify({clientId:cid,storeId,name,phone,gov,address:deliveryAddress,couponCode,customerNote,total,items})});
+      metaCache.delete(cid+':'+orderId);window.KunCustomerServiceRichCards?.cache?.delete(orderId);let retryError=null;if(inventoryRepair){try{await api(query(`/api/post-shipping/orders/${encodeURIComponent(orderId)}/shipping-sheet-retry`,cid),{method:'PATCH',body:JSON.stringify({clientId:cid})});}catch(error){retryError=error;}}
       const qty=items.reduce((sum,item)=>sum+Math.max(1,Math.floor(num(item.qty)||1)),0),productSummary=items.map(item=>`${String(item.productName||'').trim()}${String(item.variantLabel||'').trim()?` — ${String(item.variantLabel).trim()}`:''}`).filter(Boolean).join(' + ');
       window.KunCustomerServiceV31?.patchOrder?.(orderId,{name,phone,gov,address:deliveryAddress,customerNote,total,qty,product:productSummary||order.product||'',productNote:items.length===1?(items[0].variantLabel||''):''});
       if(!wasPostShipping){try{await window.KunCustomerServiceRichCards?.refresh?.(orderId);}catch{}try{await refreshDecorations(orderId);}catch{}}

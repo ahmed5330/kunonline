@@ -14,7 +14,7 @@ const stores=src('mobile-store-options.js');
 assert(api.includes('fun loadStoreOptions(context: Context, forceRefresh: Boolean = false)'));
 assert(api.includes('if (!forceRefresh) cachedStoreOptions(context)'), 'forced refresh bypasses 2-minute cache');
 assert(home.includes('onRefreshStores = {')&&home.includes('forceRefresh = true')&&home.includes('تحديث المتاجر'), 'home lets staff refresh assigned stores');
-assert(stores.includes("if(!context.response.ok&&(isOwner||scopedClient||context.response.status===401))"), 'only unbound staff may use authenticated store-grant fallback');
+assert(stores.includes("if(!context.response.ok&&(isOwner||context.response.status===401))"), 'staff with explicit cross-client grants may use the authenticated ACL when legacy client context is unavailable');
 
 assert(api.includes('/api/mobile/orders/search?q=') && api.includes('PhoneNormalizer.normalize(row.optString("phone")) != normalized'), 'caller search covers all assigned stores but matches exact normalized phone');
 assert(search.includes('user_store_access') && search.includes('st.status=\'active\''), 'the global read stays subject to live server-side active store permissions');

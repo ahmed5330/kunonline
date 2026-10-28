@@ -144,7 +144,8 @@ object CallerOverlay {
             card.addView(ScrollView(app).apply {
                 isFillViewport = false
                 addView(body)
-            }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, app.dp(240)))
+            }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
+                minOf(app.dp(430), (app.resources.displayMetrics.heightPixels * 0.43).toInt())))
 
             val actions = LinearLayout(app).apply {
                 orientation = LinearLayout.VERTICAL
@@ -269,8 +270,17 @@ object CallerOverlay {
                 currentManager = wm
                 if (!locked && !customer.orderId.isNullOrBlank()) {
                     thread(name = "kun-caller-order-details") {
-                        val result = KunCustomerServiceApi.fetchOrderDetails(app, customer.orderId,
+                        var result = KunCustomerServiceApi.fetchOrderDetails(app, customer.orderId,
                             selectedClientId = customer.clientId, selectedStoreId = customer.storeId)
+                        if (!result.ok) {
+                            // An old selected-store cache may lack the correct tenant.
+                            // Re-resolve by phone through server-enforced active grants.
+                            val fresh = KunApi.lookupCallerLive(app, customer.phone)
+                            if (fresh?.orderId != null && fresh.clientId.isNotBlank() && fresh.storeId.isNotBlank()) {
+                                result = KunCustomerServiceApi.fetchOrderDetails(app, fresh.orderId,
+                                    selectedClientId = fresh.clientId, selectedStoreId = fresh.storeId)
+                            }
+                        }
                         handler.post {
                             val stillUnlocked = !(app.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager).isKeyguardLocked
                             if (currentView === card && stillUnlocked) {

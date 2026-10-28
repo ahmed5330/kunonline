@@ -120,7 +120,7 @@ private object GlobalOrderSearchApi {
                             state = row.optString("state"),
                             total = row.optString("total"),
                             date = row.optString("date").ifBlank { row.optString("createdAt") },
-                            awb = row.optString("awb"),
+                            awb = row.optString("awb").takeUnless { it.equals("null", true) }.orEmpty(),
                             gov = row.optString("gov"),
                             product = row.optString("product")
                         ))
@@ -342,14 +342,14 @@ fun GlobalOrderSearchDialog(
                     if (order.total.isNotBlank()) Text("الإجمالي: ${order.total} ج.م")
                     if (order.gov.isNotBlank()) Text("المحافظة: ${order.gov}")
                     if (order.awb.isNotBlank()) Text("البوليصة: ${order.awb}")
-                    if (order.state !in setOf("pending", "no_answer", "confirmed", "preparing", "deferred")) {
-                        Text("هذا الطلب خرج من مرحلة التعديل العادي؛ استخدم إجراء الشحن أو المرتجعات المخصص.", color = KunColors.Ink2)
+                    if (order.state !in setOf("pending", "new", "contacting", "no_answer", "confirmed", "preparing", "deferred") || order.awb.isNotBlank()) {
+                        Text("يمكن تعديل ملاحظات هذا الطلب. تغيير بيانات الشحنة بعد إصدار البوليصة يحتاج إجراء J&T المختص.", color = KunColors.Ink2)
                     }
                 }
             },
             confirmButton = {
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    if (order.state in setOf("pending", "no_answer", "confirmed", "preparing", "deferred")) {
+                    run {
                         Button(onClick = {
                             context.startActivity(Intent(context, CallerOrderEditActivity::class.java).apply {
                                 putExtra(CallerOrderEditActivity.EXTRA_ORDER_ID, order.id)
@@ -357,7 +357,7 @@ fun GlobalOrderSearchDialog(
                                 putExtra(CallerOrderEditActivity.EXTRA_STORE_ID, order.storeId)
                             })
                             onDismiss()
-                        }) { Text("تعديل الطلب") }
+                        }) { Text(if (order.state in setOf("pending", "new", "contacting", "no_answer", "confirmed", "preparing", "deferred") && order.awb.isBlank()) "تعديل الطلب" else "تعديل الملاحظات") }
                     }
                     TextButton(
                         enabled = order.phone.isNotBlank(),

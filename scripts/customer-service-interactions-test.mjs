@@ -31,7 +31,7 @@ const read=()=>sqlite.prepare('SELECT * FROM orders WHERE id=?').get('o1');
 await assert.rejects(act('notes',{note:'   '}),e=>e.code==='NOTE_REQUIRED');
 await assert.rejects(act('notes',{note:'x'.repeat(2001)}),e=>e.code==='NOTE_TOO_LONG');
 await assert.rejects(act('notes',{note:'forbidden'},me,'o2'),e=>e.code==='STORE_ISOLATION');
-await assert.rejects(act('contact',{}, {...me,clientId:'c2'}),e=>e.code==='TENANT_ISOLATION');
+await assert.rejects(act('contact',{}, {...me,role:'client',clientId:'c2'}),e=>e.code==='TENANT_ISOLATION');
 sqlite.exec("UPDATE user_store_access SET role='viewer' WHERE user_id='u1'");
 await assert.rejects(act('contact'),e=>e.code==='STORE_READ_ONLY');
 sqlite.exec("UPDATE user_store_access SET role='member' WHERE user_id='u1'");

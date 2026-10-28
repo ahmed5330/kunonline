@@ -169,7 +169,8 @@ class CallerCardActivity : Activity() {
         }
         card.addView(ScrollView(this).apply {
             addView(body)
-        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(280)))
+        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
+            minOf(dp(470), (resources.displayMetrics.heightPixels * 0.45).toInt())))
 
         val actions = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -241,8 +242,15 @@ class CallerCardActivity : Activity() {
         setContentView(root)
         if (!locked && !customer.orderId.isNullOrBlank()) {
             thread(name = "kun-call-card-details") {
-                val result = KunCustomerServiceApi.fetchOrderDetails(this, customer.orderId,
+                var result = KunCustomerServiceApi.fetchOrderDetails(this, customer.orderId,
                     selectedClientId = customer.clientId, selectedStoreId = customer.storeId)
+                if (!result.ok) {
+                    val fresh = KunApi.lookupCallerLive(this, customer.phone)
+                    if (fresh?.orderId != null && fresh.clientId.isNotBlank() && fresh.storeId.isNotBlank()) {
+                        result = KunCustomerServiceApi.fetchOrderDetails(this, fresh.orderId,
+                            selectedClientId = fresh.clientId, selectedStoreId = fresh.storeId)
+                    }
+                }
                 runOnUiThread {
                     val stillUnlocked = !(getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager).isKeyguardLocked
                     if (!isFinishing && stillUnlocked) {

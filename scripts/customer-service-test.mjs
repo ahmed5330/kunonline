@@ -70,7 +70,7 @@ must(shippingEntry.includes("checkpoint='جاري الشحن'")&&shippingEntry.i
 
 for(const marker of ['تأكيد من المخزون','/api/catalog/products','/edit',"state:'confirmed'",'عدد القطع','سعر القطعة','المتاح حاليًا','validateAvailability','حجز/خصم الكمية','KunConfirmInventoryV58','no_answer'])must(confirmUi.includes(marker),`Inventory confirmation UI missing ${marker}`);
 must(confirmUi.includes('productId')&&confirmUi.includes('variantId')&&confirmUi.includes('unitPrice'),'Confirmation must persist exact product/variant and editable price');
-must(index.includes('/v2/modules-v55-customer-search-fifo.js?v=55.3'),'v55.3 name/phone shipping/search/date module must be loaded by v2');
+must(index.includes('/v2/modules-v55-customer-search-fifo.js?v=55.4'),'v55.4 all-store search/edit and legacy shipping/date module must be loaded by v2');
 must(index.includes('/v2/modules-v58-confirm-inventory.js?v=58.1'),'v58.1 no-reload inventory confirmation module must be loaded by v2');
 must(index.includes('/v2/modules-v75-customer-service-interactions-v753.js'),'v75.3 unified interaction counter must be loaded from its cache-safe asset path by v2');
 must((index.includes('/v2/modules-v42-customer-service-rich-cards.js?v=42.3')||index.includes('/v2/modules-v42-customer-service-rich-cards.js?v=42.4'))&&index.includes('/v2/modules-v44-customer-service-order-edit.js?v=44.1'),'In-place Customer Service detail/edit assets must be cache-busted');

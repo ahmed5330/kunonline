@@ -7,7 +7,7 @@ const [sync,printing,customer,production,ship]=await Promise.all([
   read('src/production-printing-queue.js'),
   read('src/production-customer-service.js'),
   read('src/index-production-mobile-update.js'),
-  read('src/jt-print-workflow-v2.js')
+  read('src/jt-shipping-claim.js')
 ]);
 
 // A replay from Easy Orders must not reassign a manually routed order to a
@@ -38,6 +38,6 @@ assert.ok(customer.includes("'confirmed','preparing','shipped'"));
 assert.ok(production.includes("const dataEnv=previewRuntimeEnv(env)"));
 assert.ok(production.includes("handleProductionPrintingQueue({request,env:dataEnv,ctx,delegate})"));
 assert.ok(production.includes("handleProductionCustomerService({request,env:dataEnv,ctx,delegate})"));
-assert.ok(ship.includes("UPDATE orders SET state='shipped',checkpoint='جاري الشحن'"));
+assert.ok(ship.includes("UPDATE orders SET state='shipped',checkpoint='جاري الشحن'") && ship.includes("jt_label_printed") && ship.includes("official:true"),"Only atomic official J&T label proof may transition to shipping");
 
 console.log('Operational order/store regression contract passed: protected marketplace states, stable store identity, consistent printing queue and customer-service visibility.');

@@ -28,7 +28,7 @@ export async function handleMobileStoreOptions({request,env,delegate}){
     // Owners and tenant-bound identities must never bypass that context check.
     const role=clean(me.role),isOwner=role==='admin'||role==='client';
     const scopedClient=clean(me.clientId||me.client_id);
-    if(!context.response.ok&&(isOwner||scopedClient||context.response.status===401))
+    if(!context.response.ok&&(isOwner||context.response.status===401))
       return unauthorized('تعذر تحميل الحسابات المسموح بها','CLIENT_CONTEXT_UNAVAILABLE',context.response.status===401?401:503);
 
     // Clients must originate from this authenticated per-user context. Never
@@ -36,17 +36,17 @@ export async function handleMobileStoreOptions({request,env,delegate}){
     const allowed=new Map();
     for(const client of (Array.isArray(context.data?.clients)?context.data.clients:[])){
       const id=clientIdOf(client);
-      if(!id||(scopedClient&&id!==scopedClient))continue;
+      if(!id||(isOwner&&scopedClient&&id!==scopedClient))continue;
       allowed.set(id,clean(client?.name||client?.clientName)||id);
     }
-    if(scopedClient&&!allowed.has(scopedClient)){
+    if(isOwner&&scopedClient&&!allowed.has(scopedClient)){
       return unauthorized('لا توجد صلاحية على الحساب','TENANT_ISOLATION',403);
     }
     // An unbound staff member can have explicit store grants in other client
     // accounts even if the legacy client-context list is incomplete. The
     // user_store_access JOIN below is the authority for those grants. Owners
     // must still be strictly limited by their authenticated client context.
-    if(!allowed.size&&(isOwner||scopedClient))return json({ok:true,stores:[],clients:0,defaultClientId:scopedClient,role});
+    if(!allowed.size&&isOwner)return json({ok:true,stores:[],clients:0,defaultClientId:scopedClient,role});
     const uid=clean(me.uid||me.id);
     if(!isOwner&&!uid)return unauthorized('تعذر تحديد هوية الموظف','USER_ID_REQUIRED',403);
     // One scoped indexed D1 query instead of many serial HTTP requests.
@@ -71,11 +71,11 @@ export async function handleMobileStoreOptions({request,env,delegate}){
       const clientId=clean(item.client_id),storeId=clean(item.store_id);
       const key=clientId+':'+storeId;
       if(!storeId||seen.has(key))continue;
-      if((isOwner||scopedClient)&&!allowed.has(clientId))continue;
+      if(isOwner&&!allowed.has(clientId))continue;
       seen.add(key);
       stores.push({clientId,clientName:allowed.get(clientId)||clientId,storeId,storeName:clean(item.name)||'متجر بدون اسم',role:clean(item.role)||'member'});
     }
-    return json({ok:true,stores,clients:new Set(stores.map(x=>x.clientId)).size,defaultClientId:scopedClient||stores[0]?.clientId||[...allowed.keys()][0]||'',role});
+    return json({ok:true,stores,clients:new Set(stores.map(x=>x.clientId)).size,defaultClientId:(isOwner&&scopedClient)||stores.find(x=>x.clientId===scopedClient)?.clientId||stores[0]?.clientId||[...allowed.keys()][0]||'',role});
   }catch(e){
     return unauthorized('تعذر تحميل المتاجر المتاحة','MOBILE_STORES_LOAD_FAILED',503);
   }
