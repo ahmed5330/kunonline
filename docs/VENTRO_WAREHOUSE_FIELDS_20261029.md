@@ -14,6 +14,6 @@ The original Ventro/Kun report identifies mixed transfer, scrap, return and pack
 
 Tested: real local Chromium fixture for all 18 field profiles, zero API requests on mode changes, stale identifier/adjustment reset, and existing packing/return/partial-shipment interactions. Existing in-memory SQLite warehouse regression passes isolation, concurrent scans, audit rollback, independent stocktake approval, exact-unit stock, partial returns, official carrier-label ownership, cancellation retries and no duplicate stock changes.
 
-Not tested: authenticated live UI, physical scanners, live carrier handover and real warehouse operations. Not deployed. This is a UX improvement, not completion of a new preparation-batch system. Exact original 44-row workbook mapping is pending owner attachment; do not invent a source-row ID.
+Not tested: authenticated live UI, physical scanners, live carrier handover and real warehouse operations. Not deployed. This is a UX improvement, not completion of a new preparation-batch system. Original workbook mapping is now available: items #121 (Excel row 122, new stocktake) and #138 (row 139, stock transfer), sheet `الفروق التفصيلية`, benefit from these improvements to the already existing workflows. Do not claim that this adds a new batch-preparation system.
 
 No Production/Preview database access, migrations or live deployment. Draft PR only; merging main would deploy and requires separate approval.
