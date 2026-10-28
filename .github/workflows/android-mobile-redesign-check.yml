@@ -4,6 +4,10 @@ on:
   pull_request:
     paths:
       - 'android/**'
+      - 'src/mobile-store-options.js'
+      - 'src/production-customer-service.js'
+      - 'scripts/mobile-store-options-test.mjs'
+      - 'scripts/android-global-edit-caller-details-contract-test.mjs'
       - '.github/workflows/android-mobile-redesign-check.yml'
   workflow_dispatch:
 
@@ -25,6 +29,10 @@ jobs:
           gradle-version: '8.9'
       - name: Check exact official Android launcher icon
         run: node scripts/android-launcher-icon-test.mjs
+      - name: Multi-store discovery, global edit and complete call details (offline)
+        run: |
+          node scripts/mobile-store-options-test.mjs
+          node scripts/android-global-edit-caller-details-contract-test.mjs
       - name: Customer service J&T Android UI regression
         run: |
           node scripts/android-customer-service-jnt-ux-test.mjs
