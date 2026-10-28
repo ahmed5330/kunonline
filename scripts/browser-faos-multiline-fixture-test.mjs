@@ -56,4 +56,4 @@ try{
  assert.equal(await evalJs('(()=>{try{KunFAOSAccountingV1.validateEntryLines([{accountCode:"BAD",debit:"1"},{accountCode:"1120",credit:"1"}])}catch{return true}return false})()'),true);
  console.log('FAOS browser fixture passed: closed gate, three balanced lines, precision/imbalance rejection, retry key reuse, changed-payload key rotation, stale-store denial; all POSTs synthetic.');
 }finally{await cleanupBrowser();await new Promise(r=>server.close(r));}
-
+
