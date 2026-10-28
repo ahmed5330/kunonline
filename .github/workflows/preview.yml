@@ -18,6 +18,7 @@ jobs:
       name: preview
       url: https://kunonline-preview.mr-a-mnaa.workers.dev/v2/
     env:
+      KUN_ISOLATED_QA_HTTP_RETRY: '1'
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
