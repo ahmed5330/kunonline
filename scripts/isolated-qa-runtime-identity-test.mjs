@@ -1,0 +1,20 @@
+import assert from 'node:assert/strict';
+import {isolatedQaRunSuffix,waitForIsolatedQaAsset} from './isolated-qa-runtime-identity.mjs';
+assert.notEqual(isolatedQaRunSuffix('123','1'),isolatedQaRunSuffix('123','2'));
+assert.notEqual(isolatedQaRunSuffix('12','3'),isolatedQaRunSuffix('1','23'));
+for(const [id,attempt] of [['','1'],['0','1'],['123','0'],['123','10000'],['123','x'],['../','1']])assert.throws(()=>isolatedQaRunSuffix(id,attempt));
+const base='https://kunonline-isolated-qa-1230001.example.workers.dev';
+let calls=0,waits=0;
+const expectedBytes=Buffer.from('exact candidate asset');
+await waitForIsolatedQaAsset({base,expectedBytes,wait:async()=>{waits++},fetchImpl:async(url,options)=>{
+  assert.equal(options.redirect,'error');assert.equal(url.pathname,'/v2/modules-v106-manual-jnt-order.js');
+  return ++calls<3?new Response('',{status:404}):new Response(expectedBytes);
+}});
+assert.equal(calls,3);assert.equal(waits,2);
+await assert.rejects(waitForIsolatedQaAsset({base,expectedBytes,fetchImpl:async()=>new Response('stale')}),/CONTENT_MISMATCH/);
+for(const status of [401,403,500])await assert.rejects(waitForIsolatedQaAsset({base,expectedBytes,fetchImpl:async()=>new Response('',{status})}),/HTTP_REJECTED/);
+calls=0;
+await assert.rejects(waitForIsolatedQaAsset({base,expectedBytes,attempts:3,wait:async()=>{},fetchImpl:async()=>{calls++;return new Response('',{status:404})}}),/PROPAGATION_TIMEOUT/);
+assert.equal(calls,3);
+for(const unsafe of ['https://app.kun-online.com','https://kunonline-preview.example.workers.dev',base+'/other'])await assert.rejects(waitForIsolatedQaAsset({base:unsafe,expectedBytes}),/TARGET_UNSAFE/);
+console.log('Isolated QA runtime PASS: unique validated attempts, exact asset hash, bounded 404 propagation, all other failures closed.');

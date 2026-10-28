@@ -1,3 +1,4 @@
+import {isolatedQaRunSuffix} from './isolated-qa-runtime-identity.mjs';
 import {loadIsolatedPreviewQaConfig} from './isolated-preview-qa-config.mjs';
 import {mkdtemp,writeFile,rm} from 'node:fs/promises';
 import {randomBytes} from 'node:crypto';
@@ -8,7 +9,7 @@ import {promisify} from 'node:util';
 async function main(){
   const base=process.env.KUN_PREVIEW_QA_BASE_URL;
   const config=await loadIsolatedPreviewQaConfig(base);
-  const app=config.match(/^name\s*=\s*"([^"]+)"/m)?.[1],runId=process.env.GITHUB_RUN_ID;
+  const app=config.match(/^name\s*=\s*"([^"]+)"/m)?.[1],runId=isolatedQaRunSuffix(process.env.GITHUB_RUN_ID,process.env.GITHUB_RUN_ATTEMPT);
   const account=process.env.CLOUDFLARE_ACCOUNT_ID,token=process.env.CLOUDFLARE_API_TOKEN,id=process.env.KUN_PREVIEW_QA_D1_ID;
   if(!/^\d+$/.test(runId||'')||app!==`kunonline-isolated-qa-${runId}`||!/^[a-f0-9]{32}$/i.test(account||'')||!token)
     throw Error('QA_RPC_RUNTIME_INVALID');
