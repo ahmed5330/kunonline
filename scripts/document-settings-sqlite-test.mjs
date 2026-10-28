@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import {handleDocumentSettings} from '../src/document-settings.js';
 import {DOCUMENT_TEMPLATES,defaultDocumentSettings,normalizeDocumentSettings,selectDocumentProfile} from '../public/v2/document-print-model.js';
 const db=new DatabaseSync(':memory:');
-db.exec("CREATE TABLE stores(id TEXT,client_id TEXT,name TEXT,status TEXT); INSERT INTO stores VALUES('S1','C1','One','active'),('S2','C2','Two','active'); CREATE TABLE orders(id TEXT,client_id TEXT,store_id TEXT); INSERT INTO orders VALUES('O1','C1','S1'),('O2','C2','S2');");
+db.exec("CREATE TABLE stores(id TEXT,client_id TEXT,name TEXT,status TEXT,is_default INTEGER DEFAULT 1); INSERT INTO stores(id,client_id,name,status) VALUES('S1','C1','One','active'),('S2','C2','Two','active'); CREATE TABLE user_store_access(user_id TEXT,client_id TEXT,store_id TEXT,role TEXT); INSERT INTO user_store_access VALUES('U1','C1','S1','member'); CREATE TABLE orders(id TEXT,client_id TEXT,store_id TEXT); INSERT INTO orders VALUES('O1','C1','S1'),('O2','C2','S2');");
 function prepare(sql){let bindings=[];return {sql,get bindings(){return bindings;},bind(...b){bindings=b;return this;},async first(){return db.prepare(sql).get(...bindings)||null;},async all(){return {results:db.prepare(sql).all(...bindings)};},async run(){return {meta:{changes:Number(db.prepare(sql).run(...bindings).changes)}};}};}
 const env={APP_ENV:'sandbox',DOCUMENT_SETTINGS_WRITE_ENABLED:'1',DB:{prepare,async batch(steps){db.exec('BEGIN');try{const result=[];for(const step of steps)result.push({meta:{changes:Number(db.prepare(step.sql).run(...step.bindings).changes)}});db.exec('COMMIT');return result;}catch(e){db.exec('ROLLBACK');throw e;}}}};
 async function call({method='GET',body,role='client',clientId='C1',storeId='S1',suffix='',mode='sandbox',auth=true}={}){
@@ -21,6 +21,8 @@ const original=defaultDocumentSettings();assert.equal((await call({method:'PUT',
 assert.equal((await call({method:'PUT',body:{revision:0,config:original},mode:'preview'})).status,403);
 db.exec(readFileSync(new URL('../docs/sql/document-settings-sandbox.sql',import.meta.url),'utf8'));
 assert.equal(DOCUMENT_TEMPLATES.length,11);
+const staff=await (await call({role:'ops'})).json();assert.equal(staff.storageReady,true);assert.equal(staff.writeEnabled,false);assert.equal(staff.printEventsWriteEnabled,true);
+assert.equal((await call({role:'ops',method:'PUT',body:{revision:0,config:original}})).status,403);
 original.brand.name='<img src=x onerror=alert(1)>'; // remains text, escaped by renderer.
 const save=()=>call({method:'PUT',body:{revision:0,config:original}});
 const concurrent=await Promise.all([save(),save()]);assert.deepEqual(concurrent.map(r=>r.status).sort(),[200,409]);
