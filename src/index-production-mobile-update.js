@@ -82,6 +82,8 @@ async function websiteWithDirectAndroidDownload(request,env){
   html=html.replace(/modules-v128-unit-tracking\.js\?v=[^"']+/g,'modules-v128-unit-tracking.js?v=128.5');
   if(!html.includes('/v2/document-settings-ui.js'))html=html.replace('</body>','<script type="module" src="/v2/document-settings-ui.js?v=1.0"></script></body>');
   html=html.replace(/modules-v155-accounting-faos\.js\?v=[^"']+/g,'modules-v155-accounting-faos.js?v=155.5');
+  html=html.replace(/modules-v31-customer-service\.js\?v=[^"']+/g,'modules-v31-customer-service.js?v=31.3.5');
+  if(!html.includes('/v2/order-followups.js'))html=html.replace('</body>','<script src="/v2/order-followups.js?v=1.0"></script></body>');
   html=html
     .replace(/\/v2\/modules-v46-variant-inventory-sync\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v46-variant-inventory-sync.js?v=46.5')
     .replace(/\/v2\/modules-v43-product-catalog\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v43-product-catalog.js?v=43.1')
