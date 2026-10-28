@@ -44,6 +44,9 @@ internal fun renderCallerFullDetails(context: Context, target: LinearLayout, det
     line("الهاتف", customer.optString("phone"))
     line("المحافظة", address.optString("government"))
     line("العنوان", address.optString("address"))
+    line("المدينة أو المركز", address.optString("city"))
+    line("المنطقة", address.optString("area"))
+    line("الشارع", address.optString("street"))
     line("البوليصة", order.optString("awb"))
     val items = details.optJSONArray("items")
     if (items != null && items.length() > 0) {
