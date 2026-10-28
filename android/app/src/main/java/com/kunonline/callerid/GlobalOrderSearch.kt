@@ -305,15 +305,30 @@ fun GlobalOrderSearchDialog(
                     if (order.total.isNotBlank()) Text("الإجمالي: ${order.total} ج.م")
                     if (order.gov.isNotBlank()) Text("المحافظة: ${order.gov}")
                     if (order.awb.isNotBlank()) Text("البوليصة: ${order.awb}")
+                    if (order.state !in setOf("pending", "no_answer", "confirmed", "preparing", "deferred")) {
+                        Text("هذا الطلب خرج من مرحلة التعديل العادي؛ استخدم إجراء الشحن أو المرتجعات المخصص.", color = KunColors.Ink2)
+                    }
                 }
             },
             confirmButton = {
-                TextButton(
-                    enabled = order.phone.isNotBlank(),
-                    onClick = {
-                        context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:${Uri.encode(order.phone)}")))
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (order.state in setOf("pending", "no_answer", "confirmed", "preparing", "deferred")) {
+                        Button(onClick = {
+                            context.startActivity(Intent(context, CallerOrderEditActivity::class.java).apply {
+                                putExtra(CallerOrderEditActivity.EXTRA_ORDER_ID, order.id)
+                                putExtra(CallerOrderEditActivity.EXTRA_CLIENT_ID, order.clientId)
+                                putExtra(CallerOrderEditActivity.EXTRA_STORE_ID, order.storeId)
+                            })
+                            onDismiss()
+                        }) { Text("تعديل الطلب") }
                     }
-                ) { Text("اتصال") }
+                    TextButton(
+                        enabled = order.phone.isNotBlank(),
+                        onClick = {
+                            context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:${Uri.encode(order.phone)}")))
+                        }
+                    ) { Text("اتصال") }
+                }
             },
             dismissButton = {
                 TextButton(onClick = { if (initialOrderId.isNotBlank()) onDismiss() else selected = null }) {
