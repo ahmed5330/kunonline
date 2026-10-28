@@ -126,12 +126,27 @@ try{
   })()`,'newly seeded mobile order visible in scoped Customer Service API',25000);
   await evalJs(`document.querySelector('.nav button[data-view="customer-service"]').click()`);const selector=`.cs-order[data-cs-order="${orderId}"]`;await waitFor(`document.querySelector(${JSON.stringify(selector)})?.querySelector('[data-cs-action="call"]')`,'mobile call card',15000);
   const callMeta=await evalJs(`(()=>{const a=document.querySelector(${JSON.stringify(selector)}).querySelector('[data-cs-action="call"]');return {href:a.getAttribute('href'),safe:a.dataset.mobileSafeCall};})()`);if(callMeta.href!=='tel:01012345678'||callMeta.safe!=='1')throw new Error(`Call link is not native/resume-safe on mobile: ${JSON.stringify(callMeta)}`);
-  const callPoint=await evalJs(`(async()=>{const a=document.querySelector(${JSON.stringify(selector)}).querySelector('[data-cs-action="call"]');a.scrollIntoView({block:'center',inline:'center',behavior:'auto'});await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));window.__kunQaCallHit=0;window.__kunQaCallTrusted=false;window.addEventListener('click',event=>{const call=event.target.closest?.('a[data-cs-action="call"]');if(call){window.__kunQaCallHit++;window.__kunQaCallTrusted=event.isTrusted===true;event.preventDefault();}},{capture:true,once:true});const r=a.getBoundingClientRect(),x=r.left+r.width/2,y=r.top+r.height/2,hit=document.elementFromPoint(x,y);return {x,y,width:r.width,height:r.height,vw:innerWidth,vh:innerHeight,hitTag:hit?.tagName||'',hitAction:hit?.closest?.('[data-cs-action]')?.dataset?.csAction||'',hitOrder:hit?.closest?.('[data-cs-order]')?.dataset?.csOrder||''};})()`);
-  if(!callPoint||callPoint.width<1||callPoint.height<1||callPoint.x<0||callPoint.y<0||callPoint.x>callPoint.vw||callPoint.y>callPoint.vh||callPoint.hitAction!=='call'||String(callPoint.hitOrder)!==String(orderId))throw new Error(`Mobile call target is not safely tappable: ${JSON.stringify(callPoint)}`);
+  // Smooth scrolling and late view rendering can invalidate a point after two frames.
+  // Require a stable, hit-tested target before each trusted input attempt.
+  async function callTargetPoint(){
+    await evalJs(`document.querySelector(${JSON.stringify(selector)})?.querySelector('[data-cs-action="call"]')?.scrollIntoView({block:'center',inline:'center',behavior:'instant'})`);
+    let previous=null,stableSince=0;
+      const deadline=Date.now()+6000;
+      while(Date.now()<deadline){
+        const point=await evalJs(`(()=>{const a=document.querySelector(${JSON.stringify(selector)})?.querySelector('[data-cs-action="call"]');if(!a)return null;const r=a.getBoundingClientRect(),x=r.left+r.width/2,y=r.top+r.height/2,hit=document.elementFromPoint(x,y);return {x,y,width:r.width,height:r.height,vw:innerWidth,vh:innerHeight,action:hit?.closest?.('[data-cs-action]')?.dataset.csAction,order:hit?.closest?.('[data-cs-order]')?.dataset.csOrder};})()`);
+        const safe=point&&point.width>0&&point.height>0&&point.x>=0&&point.y>=0&&point.x<=point.vw&&point.y<=point.vh&&point.action==='call'&&String(point.order)===String(orderId);
+        if(safe&&previous&&Math.abs(point.x-previous.x)<1&&Math.abs(point.y-previous.y)<1){if(Date.now()-stableSince>=300)return point;}else stableSince=Date.now();
+        previous=safe?point:null;await sleep(80);
+      }
+      throw new Error('Mobile call target did not become stable and safely tappable');
+  }
+  await evalJs(`(()=>{window.__kunQaCallHit=0;window.__kunQaCallTrusted=false;window.addEventListener('click',event=>{const call=event.target.closest?.('a[data-cs-action="call"]');if(call?.closest('[data-cs-order]')?.dataset.csOrder===${JSON.stringify(orderId)}){window.__kunQaCallHit++;window.__kunQaCallTrusted=event.isTrusted===true;event.preventDefault();}},{capture:true});})()`);
+  let callPoint=await callTargetPoint();
   await cdp.send('Input.synthesizeTapGesture',{x:callPoint.x,y:callPoint.y,duration:80,tapCount:1,gestureSourceType:'touch'});await sleep(650);
   let trustedTap=await evalJs(`window.__kunQaCallHit===1&&window.__kunQaCallTrusted===true`);
   if(!trustedTap){
     const preFallbackHits=Number(await evalJs(`window.__kunQaCallHit||0`));if(preFallbackHits!==0)throw new Error(`Mobile tap reached call control without a trusted click: hits=${preFallbackHits}`);
+    callPoint=await callTargetPoint();
     await cdp.send('Input.dispatchMouseEvent',{type:'mouseMoved',x:callPoint.x,y:callPoint.y,buttons:0,pointerType:'mouse'});
     await cdp.send('Input.dispatchMouseEvent',{type:'mousePressed',x:callPoint.x,y:callPoint.y,button:'left',buttons:1,clickCount:1,pointerType:'mouse'});
     await cdp.send('Input.dispatchMouseEvent',{type:'mouseReleased',x:callPoint.x,y:callPoint.y,button:'left',buttons:0,clickCount:1,pointerType:'mouse'});
