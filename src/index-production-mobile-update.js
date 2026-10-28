@@ -78,6 +78,8 @@ async function websiteWithDirectAndroidDownload(request,env){
   if(!asset.ok||!type.includes('text/html'))return asset;
 
   let html=await asset.text();
+  html=html.replace(/modules-v31-customer-service\.js\?v=[^"']+/g,'modules-v31-customer-service.js?v=31.3.5');
+  if(!html.includes('/v2/order-followups.js'))html=html.replace('</body>','<script src="/v2/order-followups.js?v=1.0"></script></body>');
   html=html
     .replace(/\/v2\/modules-v46-variant-inventory-sync\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v46-variant-inventory-sync.js?v=46.5')
     .replace(/\/v2\/modules-v43-product-catalog\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v43-product-catalog.js?v=43.1')

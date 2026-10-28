@@ -17,6 +17,7 @@ import {reconcileMonthlySubscriptions} from './subscription-billing.js';
 import {handleInventoryUnitTracking,syncInventoryTrackingAfterResponse,reconcileTrackedOrderLifecycles,reconcileAllClientsUnitCoverage} from './inventory-unit-tracking.js';
 
 const V2_UI_SCRIPTS=[
+  '<script src="/v2/order-followups.js?v=1.0"></script>',
   '<script src="/v2/modules-v155-accounting-faos.js?v=155.4" data-kun-accounting-faos="1"></script>',
   '<script src="/v2/modules-v105-customer-service-claim.js?v=105.3" data-kun-customer-service-claim="1"></script>',
   '<script src="/v2/modules-v105-section-nav-actions.js?v=105.1" data-kun-section-nav-actions="1"></script>',
@@ -49,6 +50,7 @@ async function injectV2Ui(request,response){
   const type=response.headers.get('content-type')||'';
   if(!type.includes('text/html'))return response;
   let html=await response.text();
+  html=html.replace(/modules-v31-customer-service\.js\?v=[^"']+/g,'modules-v31-customer-service.js?v=31.3.5');
   html=html.replaceAll(LIVE_TEAM_ASSET_FROM,LIVE_TEAM_ASSET_TO);
   const headers=new Headers(response.headers);headers.delete('content-length');headers.set('Cache-Control','no-store');
   // The public HTML now ships the live claim and period scripts directly.
