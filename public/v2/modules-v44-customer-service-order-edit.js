@@ -59,7 +59,7 @@
       };
       return;
     }
-    const [meta,catalogData]=await Promise.all([orderMeta(orderId,cid),api(`${query('/api/catalog/products',cid)}${storeId?`&storeId=${encodeURIComponent(storeId)}`:''}`)]);
+    const [meta,catalogData]=await Promise.all([orderMeta(orderId,cid),api(`${query('/api/catalog/products',cid)}${storeId?`&storeId=${encodeURIComponent(storeId)}`:''}`).catch(()=>({products:[]}))]);
     closeModal();
     const catalog=catalogData.products||[],inventoryRepair=repairable({...meta,state:order.state||meta.state});
     let items=initialItems(details);if(!items.length)items=[{productId:'',variantId:'',productName:'',variantLabel:'',sku:'',qty:1,unitPrice:0}];
