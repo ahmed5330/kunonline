@@ -1,0 +1,43 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {DatabaseSync} from 'node:sqlite';
+import {handleHRDirectory,hrEmployeePolicyAt} from '../src/hr-directory.js';
+const db=new DatabaseSync(':memory:');
+db.exec("CREATE TABLE stores(id TEXT,client_id TEXT,name TEXT,status TEXT,is_default INTEGER); INSERT INTO stores VALUES('S1','C1','One','active',1),('S2','C2','Two','active',1); CREATE TABLE user_store_access(user_id TEXT,client_id TEXT,store_id TEXT,role TEXT); INSERT INTO user_store_access VALUES('U2','C1','S1','member'),('VIEW','C1','S1','viewer'); CREATE TABLE users(id TEXT); INSERT INTO users VALUES('UNTOUCHED');");
+function prepare(sql){let bindings=[];return {sql,get bindings(){return bindings;},bind(...b){bindings=b;return this;},async first(){return db.prepare(sql).get(...bindings)||null;},async all(){return {results:db.prepare(sql).all(...bindings)};},async run(){return {meta:{changes:Number(db.prepare(sql).run(...bindings).changes)}};}};}
+const env={APP_ENV:'sandbox',HR_DIRECTORY_WRITE_ENABLED:'1',DB:{prepare,async batch(steps){db.exec('BEGIN');try{const out=steps.map(s=>({meta:{changes:Number(db.prepare(s.sql).run(...s.bindings).changes)}}));db.exec('COMMIT');return out;}catch(e){db.exec('ROLLBACK');throw e;}}}};
+async function call({path='/employees',method='GET',body,me={role:'client',clientId:'C1',uid:'U1'},clientId='C1',storeId='S1',mode='sandbox'}={}){
+ const url=new URL('https://synthetic.invalid/api/hr'+path);url.searchParams.set('clientId',clientId);url.searchParams.set('storeId',storeId);
+ return handleHRDirectory({request:new Request(url,{method,...(body?{body:JSON.stringify(body)}:{})}),env:{...env,APP_ENV:mode},delegate:{fetch:async()=>Response.json(me||{},{status:me?200:401})}});
+}
+const employee={name:'=HYPERLINK("https://invalid")',code:'EMP_1',status:'active',baseSalaryMinor:300000,commissionEnabled:true,commissionRateBps:500};
+const payload={id:'EMPLOYEE-0001',employee,effectiveMonth:'2026-10'};
+assert.equal((await call({me:null})).status,401);
+assert.equal((await call({me:{role:'accountant',uid:'U2',clientId:'C1'}})).status,403,'finance permission is not salary access');
+assert.equal((await call()).status,503,'missing schema cannot appear as empty register');
+for(const mode of ['production','preview'])assert.equal((await call({method:'POST',body:payload,mode})).status,403);
+db.exec(readFileSync(new URL('../docs/sql/hr-directory-sandbox.sql',import.meta.url),'utf8'));
+const concurrent=await Promise.all([call({method:'POST',body:payload}),call({method:'POST',body:payload})]);assert.deepEqual(concurrent.map(r=>r.status).sort(),[200,201]);
+assert.equal(db.prepare('SELECT COUNT(*) n FROM hr_employee_policies').get().n,1);assert.equal(db.prepare('SELECT COUNT(*) n FROM hr_directory_audit').get().n,1);
+assert.equal((await call({method:'POST',body:{...payload,id:'EMPLOYEE-0002'}})).status,409,'duplicate code');
+assert.equal((await call({method:'POST',body:{...payload,employee:{...employee,name:'Different'}}})).status,409,'changed replay is denied');
+assert.equal((await call({clientId:'C2',storeId:'S2'})).status,403);assert.equal((await call({storeId:'S2'})).status,403);
+const reader={role:'ops',uid:'U2',clientId:'C1',perms:['hr.read']};
+assert.equal((await call({me:reader})).status,200);assert.equal((await call({me:reader,path:'/employees.csv'})).status,403);
+assert.equal((await call({method:'POST',body:payload,me:{role:'ops',clientId:'C1',uid:'VIEW',perms:['hr.*']}})).status,403,'store viewer cannot write');
+db.exec("CREATE TRIGGER hr_test_audit_failure BEFORE INSERT ON hr_directory_audit BEGIN SELECT RAISE(ABORT,'SYNTHETIC_AUDIT_FAILURE'); END;");
+assert.equal((await call({path:'/employees/'+payload.id,method:'PUT',body:{revision:1,effectiveMonth:'2026-11',employee:{...employee,name:'Changed'}}})).status,500);
+assert.equal(db.prepare('SELECT revision FROM hr_employees').get().revision,1);db.exec('DROP TRIGGER hr_test_audit_failure');
+assert.equal((await call({path:'/employees/'+payload.id,method:'PUT',body:{revision:1,effectiveMonth:'2026-11',employee:{...employee,name:'Changed',commissionEnabled:false}}})).status,200);
+assert.equal((await call({path:'/employees/'+payload.id,method:'PUT',body:{revision:1,effectiveMonth:'2026-11',employee}})).status,409);
+const history=await (await call({path:'/employees/'+payload.id+'/history'})).json();assert.equal(history.policies.length,2);assert.equal(history.policies[0].policy.commissionEnabled,false);assert.equal(history.policies[1].policy.commissionEnabled,true);assert.equal(history.policies[0].effective_month,'2026-11');
+assert.equal((await hrEmployeePolicyAt(env,{clientId:'C1',storeId:'S1',employeeId:payload.id,period:'2026-10'})).policy.commissionEnabled,true);
+assert.equal((await hrEmployeePolicyAt(env,{clientId:'C1',storeId:'S1',employeeId:payload.id,period:'2026-11'})).policy.commissionEnabled,false);
+await assert.rejects(hrEmployeePolicyAt(env,{clientId:'C1',storeId:'S1',employeeId:payload.id,period:'2026-09'}),/لا توجد سياسة/);
+assert.throws(()=>db.prepare('DELETE FROM hr_employee_policies').run(),/IMMUTABLE/);assert.throws(()=>db.prepare('DELETE FROM hr_directory_audit').run(),/IMMUTABLE/);
+await call({method:'POST',body:{...payload,id:'EMPLOYEE-0002',employee:{...employee,code:'EMP_2'}}});
+const page=await (await call({path:'/employees?limit=1'})).json();assert.equal(page.total,2);assert.equal(page.employees.length,1);assert.equal(page.hasMore,true);
+const literal=await (await call({path:'/employees?q='+encodeURIComponent('%')})).json();assert.equal(literal.total,0,'wildcard input is literal');
+const csv=await (await call({path:'/employees.csv?q='+encodeURIComponent('HYPERLINK')})).text();assert.ok(csv.includes("'=HYPERLINK"));assert.ok(!csv.includes('Changed'));assert.ok(csv.includes('EMP_2'));
+assert.equal(db.prepare('SELECT id FROM users').get().id,'UNTOUCHED');
+console.log('HR directory SQLite PASS: private HR permissions, Production/Preview write denial, missing-schema failure, create replay, duplicate code, CAS conflict, atomic audit rollback, effective policy history, literal search/pagination, CSV formula safety and no login changes.');

@@ -1,3 +1,4 @@
+import {handleHRDirectory} from './hr-directory.js';
 import {handleDocumentSettings} from './document-settings.js';
 import {guardSessionRequest} from './session-request-guard.js';
 import {handleFinancialAccountingOS} from './accounting-faos-api.js';
@@ -79,6 +80,7 @@ async function websiteWithDirectAndroidDownload(request,env){
   if(!asset.ok||!type.includes('text/html'))return asset;
 
   let html=await asset.text();
+  if(!html.includes('/v2/hr-directory-ui.js'))html=html.replace('</body>','<script src="/v2/hr-directory-ui.js?v=1.0"></script></body>');
   html=html.replace(/modules-v128-unit-tracking\.js\?v=[^"']+/g,'modules-v128-unit-tracking.js?v=128.5');
   if(!html.includes('/v2/document-settings-ui.js'))html=html.replace('</body>','<script type="module" src="/v2/document-settings-ui.js?v=1.0"></script></body>');
   html=html.replace(/modules-v155-accounting-faos\.js\?v=[^"']+/g,'modules-v155-accounting-faos.js?v=155.5');
@@ -283,6 +285,7 @@ export default {
       }
     }
 
+    const hrDirectory=await handleHRDirectory({request,env:dataEnv,ctx,delegate:delegate});if(hrDirectory)return hrDirectory;
     const documentSettings=await handleDocumentSettings({request,env:dataEnv,ctx,delegate:delegate});if(documentSettings)return documentSettings;
     const printing=await handleProductionPrintingQueue({request,env:dataEnv,ctx,delegate});
     if(printing)return syncInventoryTrackingAfterResponse({request,response:printing,env:dataEnv,actor:'production'});

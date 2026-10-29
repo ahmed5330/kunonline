@@ -75,6 +75,10 @@ jobs:
           node scripts/browser-order-followups-fixture-test.mjs
       - name: HR draft net-collection commission policy (pure synthetic evidence)
         run: node scripts/hr-payroll-core-test.mjs
+      - name: Private HR directory acceptance (synthetic data only)
+        run: |
+          node scripts/hr-directory-sqlite-test.mjs
+          node scripts/browser-hr-directory-fixture-test.mjs
       - name: Inventory workspace UX browser regression
         run: node scripts/browser-inventory-workspace-fixture-test.mjs
       - name: Sidebar cross-group navigation browser regression
