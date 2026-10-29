@@ -1,0 +1,24 @@
+name: HR directory offline acceptance
+on:
+  pull_request:
+    paths:
+      - 'src/hr-*.js'
+      - 'public/v2/hr-*.js'
+      - 'scripts/*hr*test.mjs'
+      - 'docs/sql/hr-directory-sandbox.sql'
+      - '.github/workflows/hr-directory-offline.yml'
+permissions:
+  contents: read
+jobs:
+  synthetic-hr:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: node scripts/hr-payroll-core-test.mjs
+      - run: node scripts/hr-directory-sqlite-test.mjs
+      - run: node scripts/browser-hr-directory-fixture-test.mjs
