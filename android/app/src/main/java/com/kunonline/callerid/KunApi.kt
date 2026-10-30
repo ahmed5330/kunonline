@@ -450,8 +450,8 @@ object KunApi {
         clearScope()
         MobileSyncClient.clear()
         CustomerCache.clear(context)
-        MobileSnapshotCache.clear(context)
         CallActivityStore.clear(context)
+        MobileSnapshotCache.clear(context)
         return ActionResult(true, "تم اختيار ${option.storeName}")
     }
 
