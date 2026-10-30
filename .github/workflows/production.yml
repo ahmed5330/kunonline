@@ -106,8 +106,10 @@ jobs:
           node scripts/browser-warehouse-operations-fixture-test.mjs
           node scripts/browser-inventory-workspace-fixture-test.mjs
           node scripts/browser-sidebar-navigation-regression-test.mjs
-      - name: Dashboard Easy Orders Preview regression
-        run: node scripts/dashboard-sync-guard-test.mjs
+      - name: Dashboard Easy Orders Preview regression and safe order freshness
+        run: |
+          node scripts/dashboard-sync-guard-test.mjs
+          node scripts/order-freshness-web-test.mjs
       - name: QA catalog, dates, phones and accounting presentation regression
         run: node scripts/qa-production-regression-test.mjs
       - name: Validate Production composition and sync policy
