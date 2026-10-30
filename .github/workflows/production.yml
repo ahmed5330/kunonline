@@ -40,6 +40,7 @@ jobs:
           node --check src/mobile-store-options.js
           node scripts/mobile-store-options-test.mjs
           node scripts/team-management-test.mjs
+          node scripts/production-client-context-test.mjs
           node scripts/store-data-isolation-test.mjs
           node scripts/mobile-global-order-search-test.mjs
           node scripts/android-cross-store-caller-scope-test.mjs

@@ -18,6 +18,7 @@ import {handleInternalCollaboration} from './internal-collaboration.js';
 import {handleCollaborationOrderSearch} from './internal-collaboration-order-search.js';
 import {handleMobileOrderSearch} from './mobile-global-order-search.js';
 import {handleMobileStoreOptions} from './mobile-store-options.js';
+import {handleProductionClientContext} from './production-client-context.js';
 import {handleMobileOrderAlerts} from './mobile-order-alerts.js';
 import {ensureInternalCollaborationSchema} from './internal-collaboration-schema.js';
 import {handleProductionPreviewParity} from './production-preview-parity.js';
@@ -210,6 +211,10 @@ export default {
 
     const dataEnv=previewRuntimeEnv(env);
     const delegate=previewDelegate(env,dataEnv,ctx);
+    // Keep staff client discovery and mobile store grants on the same canonical
+    // live D1/identity, even when an older Preview worker serves legacy routes.
+    const currentClientContext=await handleProductionClientContext({request,env:dataEnv,delegate});
+    if(currentClientContext)return currentClientContext;
     const faos=await handleFinancialAccountingOS({request,env:dataEnv,ctx,delegate});
     if(faos)return faos;
     const codRead=await routeProductionCodRead({request,
