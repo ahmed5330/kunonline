@@ -9,7 +9,7 @@ import java.net.URL
 import java.net.URLEncoder
 
 data class SyncResult(val ok: Boolean, val message: String, val customerCount: Int = 0)
-data class StateResult(val ok: Boolean, val message: String, val snapshot: CommerceSnapshot? = null, val changed: Boolean = true)
+data class StateResult(val ok: Boolean, val message: String, val snapshot: CommerceSnapshot? = null, val changed: Boolean = true, val accessDenied: Boolean = false)
 data class ActionResult(val ok: Boolean, val message: String)
 data class ScopeInfo(val clientId: String = "", val storeId: String = "")
 data class MobileStoreOption(
@@ -519,9 +519,15 @@ object KunApi {
                 return StateResult(false, "انتهت الجلسة — سجّل الدخول مرة أخرى")
             }
             if (response.code == 403 || response.code == 400) clearScope()
-            if (response.code == 403 && session(context) == cookie) CustomerCache.clear(context)
+            if (response.code == 403 && session(context) == cookie) {
+                // A revoked store assignment must not remain visible offline.
+                CustomerCache.clear(context)
+                MobileSnapshotCache.clear(context)
+                verifiedOptionsUntil = 0L
+            }
             if (response.code !in 200..299) {
-                return StateResult(false, response.body.optString("error").ifBlank { "تعذر تحميل بيانات النظام" })
+                return StateResult(false, response.body.optString("error").ifBlank { "تعذر تحميل بيانات النظام" },
+                    accessDenied = response.code == 403)
             }
             if (session(context) != cookie) return StateResult(false, "تغيّرت جلسة الحساب")
             val revision = MobileDateFilterState.revision
