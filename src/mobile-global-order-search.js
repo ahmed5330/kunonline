@@ -36,7 +36,7 @@ export async function handleMobileOrderSearch({request,env,ctx,delegate}){
     if(q.length<2)return json({ok:true,query:q,orders:[],hasMore:false,nextOffset:null});
     const clientId=str(url.searchParams.get('clientId'),80);
     const storeId=str(url.searchParams.get('storeId'),80);
-    if(me.clientId&&clientId&&String(me.clientId)!==clientId)
+    if((me.role==='client'||me.role==='admin')&&me.clientId&&clientId&&String(me.clientId)!==clientId)
       return json({error:'مش مسموح الوصول لبيانات متجر آخر'},403);
 
     // Bound parameters prevent SQL injection. '%' and '_' are interpreted
@@ -46,7 +46,8 @@ export async function handleMobileOrderSearch({request,env,ctx,delegate}){
     const like='%'+term+'%';
     const where=["(o.id LIKE ? OR COALESCE(o.ref,'') LIKE ? OR COALESCE(o.awb,'') LIKE ? OR COALESCE(o.phone,'') LIKE ? OR COALESCE(o.name,'') LIKE ?)"];
     const binds=[like,like,like,like,like];
-    const tenant=me.clientId?String(me.clientId):clientId;
+    // Staff can search only explicitly granted active stores, including across client boundaries.
+    const tenant=(me.role==='admin'||me.role==='client')?(me.clientId?String(me.clientId):clientId):clientId;
     if(tenant){where.push('o.client_id=?');binds.push(tenant);}
     if(storeId){where.push('o.store_id=?');binds.push(storeId);}
     if(me.role!=='admin'&&me.role!=='client'){

@@ -52,6 +52,7 @@ jobs:
       - name: Multi-store discovery, global edit and complete call details (offline)
         run: |
           node scripts/mobile-store-options-test.mjs
+          node scripts/store-data-isolation-test.mjs
           node scripts/android-global-edit-caller-details-contract-test.mjs
           node scripts/android-global-search-result-fields-test.mjs
           node scripts/android-cross-store-caller-scope-test.mjs

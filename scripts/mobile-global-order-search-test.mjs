@@ -57,6 +57,13 @@ const base='https://app.kun-online.com/api/mobile/orders/search';
 }
 {
   const f=fakeEnv();
+  const response=await search(base+'?q=ali',{role:'support',uid:'U1',clientId:'C1'},f.env);
+  assert.equal(response.status,200);
+  assert.match(f.calls[0].sql,/user_store_access/);
+  assert.equal(f.calls[0].params.includes('C1'),false,'legacy staff default tenant must not restrict explicitly granted stores');
+}
+{
+  const f=fakeEnv();
   const response=await search(base+'?q=ali&clientId=OTHER',{role:'client',clientId:'OWN'},f.env);
   assert.equal(response.status,403);
   assert.equal(f.calls.length,0);

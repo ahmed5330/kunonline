@@ -12,9 +12,9 @@ android {
         applicationId = "com.kunonline.callerid.stable"
         minSdk = 29
         targetSdk = 35
-        // v2.9.22: encrypted offline order snapshot, safer store revocation, and cross-device freshness bridge.
-        versionCode = 153
-        versionName = "2.9.22"
+        // v2.9.23: Tester cross-client store grants and selected-store scope repair.
+        versionCode = 154
+        versionName = "2.9.23"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

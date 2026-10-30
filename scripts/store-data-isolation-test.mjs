@@ -1,5 +1,6 @@
 import {readFile} from 'node:fs/promises';
 import {resolveStoreScope,scopeRequest,listMyStores,isStoreScopedPath} from '../src/store-scope.js';
+import {tenantFromRequest} from '../src/index-commerce-v26.js';
 
 const must=(value,message)=>{if(!value)throw new Error(message);};
 const expectCode=async(fn,code)=>{
@@ -44,6 +45,15 @@ class Statement{
 }
 const env={DB:{prepare:sql=>new Statement(sql)}};
 
+// Live-permission selection must reach the correct tenant, rather than silently
+// preferring /api/me.clientId when staff switches stores on Android.
+const targetRequest = new Request('https://app.kun-online.com/api/state?clientId=CLIENT-1&storeId=STORE-A');
+must(await tenantFromRequest(targetRequest,{role:'support',uid:'OPS-1',clientId:'CLIENT-2'})==='CLIENT-1','Support explicit target must override legacy default');
+must(await tenantFromRequest(new Request('https://app.kun-online.com/api/state'),{role:'support',clientId:'CLIENT-2'})==='CLIENT-2','Support without selection may retain default');
+must(await tenantFromRequest(targetRequest,{role:'admin',clientId:'CLIENT-1'})==='CLIENT-1','Owner may read own tenant');
+await expectCode(()=>tenantFromRequest(targetRequest,{role:'client',clientId:'CLIENT-2'}),'TENANT_ISOLATION');
+const writeRequest = new Request('https://app.kun-online.com/api/orders?clientId=CLIENT-2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({clientId:'CLIENT-1'})});
+must(await tenantFromRequest(writeRequest,{role:'support',clientId:'CLIENT-2'})==='CLIENT-1','Write body selected tenant takes precedence');
 const admin={uid:'ADMIN',role:'admin'};
 const ops={uid:'OPS-1',role:'ops',clientId:'CLIENT-1'};
 const viewer={uid:'VIEW-1',role:'viewer',clientId:'CLIENT-1'};
@@ -60,7 +70,12 @@ must(scope.storeId==='STORE-B','Viewer must read its assigned store');
 await expectCode(()=>resolveStoreScope(env,viewer,'CLIENT-1','STORE-B',{write:true}),'STORE_READ_ONLY');
 await expectCode(()=>resolveStoreScope(env,viewer,'CLIENT-1','STORE-A'),'STORE_ISOLATION');
 await expectCode(()=>resolveStoreScope(env,multi,'CLIENT-1',null),'STORE_SELECTION_REQUIRED');
-await expectCode(()=>resolveStoreScope(env,{...ops,clientId:'CLIENT-2'},'CLIENT-1','STORE-A'),'TENANT_ISOLATION');
+scope=await resolveStoreScope(env,{...ops,clientId:'CLIENT-2'},'CLIENT-1','STORE-A');
+must(scope.storeId==='STORE-A'&&scope.storeRole==='manager','Explicit staff store grant authorizes crossing a default-client preference');
+await expectCode(()=>resolveStoreScope(env,{...ops,clientId:'CLIENT-2'},'CLIENT-2','STORE-A'),'STORE_ACCESS_REQUIRED');
+await expectCode(()=>resolveStoreScope(env,{role:'client',uid:'OWNER-2',clientId:'CLIENT-2'},'CLIENT-1','STORE-A'),'TENANT_ISOLATION');
+const otherScope=await listMyStores(env,{...ops,clientId:'CLIENT-2'},'CLIENT-1');
+must(otherScope.stores.length===1&&otherScope.stores[0].id==='STORE-A','Staff can list only explicitly granted cross-client stores');
 
 const scoped=await scopeRequest(new Request('https://preview.example/api/products',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({clientId:'CLIENT-1',name:'QA Product'})}),env,ops,'CLIENT-1');
 const scopedBody=await scoped.request.json();
@@ -91,6 +106,9 @@ must(migration.includes('idx_customers_store_phone'),'Customer duplicate prevent
 must(v26.includes("u.pathname==='/api/my-store-context'"),'Store picker endpoint missing');
 must(v26.includes('enforceStoreScope(request,env,me,clientId)'),'Top-level API store enforcement missing');
 must(base.includes('FROM orders WHERE client_id = ? AND store_id = ?'),'Order reads must filter by store');
+must(base.includes("const stateClientId = verifiedCrossClientState ? requestedClientId : (me.clientId || requestedClientId)"),'Staff state read must honor an explicitly authorized selected tenant');
+must(base.includes("a.user_id=? AND a.client_id=? AND a.store_id=? AND s.status='active'"),'Cross-client state must require live user/store ACL');
+must(base.includes("path === '/api/state' && request.method === 'GET'"),'Do not extend legacy cross-tenant exemption to write routes');
 must(base.includes('FROM products WHERE client_id = ? AND store_id = ?'),'Product reads must filter by store');
 must(pos.includes('AND (? IS NULL OR store_id=?)'),'POS must validate store membership');
 must(campaigns.includes('store_id'),'Campaign queries must carry store scope');
