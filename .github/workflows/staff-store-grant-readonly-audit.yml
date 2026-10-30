@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 8
     environment:
-      name: production
+      name: preview
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -43,7 +43,12 @@ jobs:
               body:JSON.stringify({sql,params})
             });
             const p=await r.json().catch(()=>({}));
-            if(!r.ok||p.success===false||p.result?.[0]?.success===false)throw Error('Read-only canonical D1 audit failed');
+            if(!r.ok||p.success===false||p.result?.[0]?.success===false){
+              // Only HTTP status and numeric Cloudflare error codes are logged:
+              // do not publish SQL results, IDs, tenant names or API response text.
+              const codes=(Array.isArray(p.errors)?p.errors:[]).map(e=>Number(e.code)||0);
+              throw Error('Canonical D1 SELECT failed: HTTP '+r.status+' CF_CODES='+codes.join(','));
+            }
             return p.result?.[0]?.results||[];
           }
           const staff=await select(`SELECT
