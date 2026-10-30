@@ -1,0 +1,87 @@
+name: Staff multi-store ACL read-only audit
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/mobile-store-options.js'
+      - 'src/team-management.js'
+      - 'src/production-client-context.js'
+      - 'src/index-production-mobile-update.js'
+      - 'android/app/src/main/java/com/kunonline/callerid/KunApi.kt'
+      - '.github/workflows/staff-store-grant-readonly-audit.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    environment:
+      name: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Read canonical live staff grants without user or order details
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const conf=fs.readFileSync('wrangler.production.toml','utf8');
+          const preview=/\[\[d1_databases\]\]\s*binding\s*=\s*"PREVIEW_DB"\s*database_name\s*=\s*"[^"]+"\s*database_id\s*=\s*"([^"]+)"/.exec(conf)?.[1];
+          const account=process.env.CLOUDFLARE_ACCOUNT_ID, token=process.env.CLOUDFLARE_API_TOKEN;
+          if(!preview||!account||!token)throw Error('Canonical D1 or read token unavailable');
+          async function select(sql,params=[]){
+            if(!/^\s*SELECT\b/i.test(sql))throw Error('Read-only SELECT required');
+            const r=await fetch(`https://api.cloudflare.com/client/v4/accounts/${account}/d1/database/${preview}/query`,{
+              method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},
+              body:JSON.stringify({sql,params})
+            });
+            const p=await r.json().catch(()=>({}));
+            if(!r.ok||p.success===false||p.result?.[0]?.success===false)throw Error('Read-only canonical D1 audit failed');
+            return p.result?.[0]?.results||[];
+          }
+          const staff=await select(`SELECT
+            COUNT(*) AS staff_accounts,
+            SUM(CASE WHEN (SELECT COUNT(*) FROM user_store_access a JOIN stores s
+              ON s.id=a.store_id AND s.client_id=a.client_id
+              WHERE a.user_id=u.id AND s.status='active')=0 THEN 1 ELSE 0 END) AS no_active_grants,
+            SUM(CASE WHEN (SELECT COUNT(*) FROM user_store_access a JOIN stores s
+              ON s.id=a.store_id AND s.client_id=a.client_id
+              WHERE a.user_id=u.id AND s.status='active')>1 THEN 1 ELSE 0 END) AS multiple_active_stores,
+            SUM(CASE WHEN (SELECT COUNT(DISTINCT a.client_id) FROM user_store_access a JOIN stores s
+              ON s.id=a.store_id AND s.client_id=a.client_id
+              WHERE a.user_id=u.id AND s.status='active')>1 THEN 1 ELSE 0 END) AS cross_client_staff,
+            SUM(CASE WHEN (SELECT COUNT(*) FROM user_store_access a
+              LEFT JOIN stores s ON s.id=a.store_id AND s.client_id=a.client_id
+              WHERE a.user_id=u.id AND (s.id IS NULL OR s.status<>'active'))>0 THEN 1 ELSE 0 END) AS with_stale_grants
+            FROM users u WHERE u.status='active' AND u.role IN ('support','ops','marketing','accountant','viewer')`);
+          const tester=await select(`SELECT COUNT(*) AS matching_accounts,
+            COALESCE(SUM((SELECT COUNT(*) FROM user_store_access a WHERE a.user_id=u.id)),0) AS saved_grants,
+            COALESCE(SUM((SELECT COUNT(*) FROM user_store_access a JOIN stores s ON s.id=a.store_id AND s.client_id=a.client_id
+              WHERE a.user_id=u.id AND s.status='active')),0) AS active_grants,
+            COALESCE(SUM((SELECT COUNT(DISTINCT a.client_id) FROM user_store_access a JOIN stores s
+              ON s.id=a.store_id AND s.client_id=a.client_id WHERE a.user_id=u.id AND s.status='active')),0) AS active_client_scopes
+            FROM users u WHERE u.status='active' AND trim(lower(u.name)) IN ('تيستر','تستر','tester')`);
+          const anonymized={canonical:'PREVIEW_DB',readOnly:true,
+            activeStaffAccounts:Number(staff[0]?.staff_accounts||0),
+            staffWithNoActiveGrants:Number(staff[0]?.no_active_grants||0),
+            staffWithMultipleActiveStores:Number(staff[0]?.multiple_active_stores||0),
+            staffWithCrossClientGrants:Number(staff[0]?.cross_client_staff||0),
+            staffWithStaleGrants:Number(staff[0]?.with_stale_grants||0),
+            testerNameMatches:Number(tester[0]?.matching_accounts||0),
+            testerRecordedGrants:Number(tester[0]?.saved_grants||0),
+            testerActiveGrants:Number(tester[0]?.active_grants||0),
+            testerActiveClientScopes:Number(tester[0]?.active_client_scopes||0)
+          };
+          console.log('Canonical live ACL totals (no PII): '+JSON.stringify(anonymized));
+          if(anonymized.testerNameMatches!==1)
+            console.log('Tester name lookup not unique; do not attribute aggregate to a specific user.');
+          if(anonymized.staffWithStaleGrants>0)
+            console.log('Warning: stale staff grants exist; investigate, do not change live records automatically.');
+          NODE
