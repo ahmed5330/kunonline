@@ -381,7 +381,7 @@ object KunApi {
             val me = request("GET", "/api/me", cookie = cookie)
             if (me.code !in 200..299) return StoreOptionsResult(false, errorMessage(me).ifBlank { "تعذر التحقق من الجلسة" })
             val identity = JSONObject(me.body)
-            val userClientId = clientIdFromIdentity(identity)
+            val userClientId = identity.optString("clientId").takeUnless { it.equals("null", true) }.orEmpty()
             val accessible = request("GET", "/api/my-client-context", cookie = cookie)
             if (accessible.code !in 200..299) {
                 return StoreOptionsResult(false, errorMessage(accessible).ifBlank { "تعذر تحميل المتاجر المسموح بها" })
@@ -391,7 +391,7 @@ object KunApi {
             for (index in 0 until clients.length()) {
                 val client = clients.optJSONObject(index) ?: continue
                 val clientId = clientIdFromIdentity(client)
-                if (clientId.isBlank() || (userClientId.isNotBlank() && clientId != userClientId)) continue
+                if (clientId.isBlank() || (identity.optString("role") in setOf("admin", "client") && userClientId.isNotBlank() && clientId != userClientId)) continue
                 val clientName = client.optString("name").ifBlank { clientId }
                 val result = request("GET", "/api/my-store-context?clientId=${enc(clientId)}", cookie = cookie)
                 if (result.code !in 200..299) continue
@@ -591,7 +591,9 @@ object KunApi {
         val me = request("GET", "/api/me", cookie = cookie)
         if (me.code in 200..299) {
             val data = runCatching { JSONObject(me.body) }.getOrNull()
-            clientId = data?.let(::clientIdFromIdentity).orEmpty()
+            // /api/me.id is a user ID, not a client ID for support staff.
+            clientId = data?.optString("clientId").orEmpty().takeUnless { it.equals("null", true) }.orEmpty()
+                .ifBlank { data?.optString("client_id").orEmpty().takeUnless { it.equals("null", true) }.orEmpty() }
         }
 
         if (clientId.isBlank()) {

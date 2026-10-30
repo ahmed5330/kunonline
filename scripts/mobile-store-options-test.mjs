@@ -54,8 +54,13 @@ assert.deepEqual(data.stores.map(s=>s.storeId),['s1'],"administrator client cont
 assert(f.queries[0].includes('s.client_id IN'),'owner store query must be client-scoped');
 f=fake('client','c2',['c1','c2']);res=await handleMobileStoreOptions({request,env:f.env,delegate:f.delegate});data=await res.json();
 assert.deepEqual(data.stores.map(s=>s.storeId),['s2'],'tenant-bound users cannot see another tenant');
-f=fake('support','c3',['c1']);res=await handleMobileStoreOptions({request,env:f.env,delegate:f.delegate});
-assert.equal(res.status,403,'identity client must occur in authorized client list');
+f=fake('support','c3',['c1']);res=await handleMobileStoreOptions({request,env:f.env,delegate:f.delegate});data=await res.json();
+assert.equal(res.status,200,'staff default client is a preference, not a permission limit');
+assert.deepEqual(data.stores.map(s=>s.storeId),['s1','s2','s3']);
+assert.equal(data.defaultClientId,'c3');
+f=fake('support','c3',[],503);res=await handleMobileStoreOptions({request,env:f.env,delegate:f.delegate});data=await res.json();
+assert.equal(res.status,200,'verified staff grants survive legacy context unavailability');
+assert.equal(data.stores.length,3);
 res=await handleMobileStoreOptions({request:new Request('https://app.kun-online.com/api/other'),env:f.env,delegate:f.delegate});
 assert.equal(res,null,'do not intercept other routes');
 console.log('PASS: store grants drive unbound staff discovery while client/owner isolation stays strict');

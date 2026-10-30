@@ -60,7 +60,12 @@ must(scope.storeId==='STORE-B','Viewer must read its assigned store');
 await expectCode(()=>resolveStoreScope(env,viewer,'CLIENT-1','STORE-B',{write:true}),'STORE_READ_ONLY');
 await expectCode(()=>resolveStoreScope(env,viewer,'CLIENT-1','STORE-A'),'STORE_ISOLATION');
 await expectCode(()=>resolveStoreScope(env,multi,'CLIENT-1',null),'STORE_SELECTION_REQUIRED');
-await expectCode(()=>resolveStoreScope(env,{...ops,clientId:'CLIENT-2'},'CLIENT-1','STORE-A'),'TENANT_ISOLATION');
+scope=await resolveStoreScope(env,{...ops,clientId:'CLIENT-2'},'CLIENT-1','STORE-A');
+must(scope.storeId==='STORE-A'&&scope.storeRole==='manager','Explicit staff store grant authorizes crossing a default-client preference');
+await expectCode(()=>resolveStoreScope(env,{...ops,clientId:'CLIENT-2'},'CLIENT-2','STORE-A'),'STORE_ACCESS_REQUIRED');
+await expectCode(()=>resolveStoreScope(env,{role:'client',uid:'OWNER-2',clientId:'CLIENT-2'},'CLIENT-1','STORE-A'),'TENANT_ISOLATION');
+const otherScope=await listMyStores(env,{...ops,clientId:'CLIENT-2'},'CLIENT-1');
+must(otherScope.stores.length===1&&otherScope.stores[0].id==='STORE-A','Staff can list only explicitly granted cross-client stores');
 
 const scoped=await scopeRequest(new Request('https://preview.example/api/products',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({clientId:'CLIENT-1',name:'QA Product'})}),env,ops,'CLIENT-1');
 const scopedBody=await scoped.request.json();

@@ -14,7 +14,7 @@ const details = source('CallerFullDetailsView.kt');
 const service = readFileSync(new URL('../src/production-customer-service.js', import.meta.url), 'utf8');
 
 assert.match(store, /user_store_access a JOIN stores s/, 'visible employee stores must come from server-owned ACL');
-assert.match(store, /if\(\(isOwner\|\|scopedClient\)\&\&!allowed\.has\(clientId\)\)continue/, 'tenant bound accounts still require client match');
+assert.match(store, /if\(isOwner\&\&!allowed\.has\(clientId\)\)continue/, 'owners remain tenant isolated; support uses exact grants');
 assert.match(store, /clientName:allowed\.get\(clientId\)\|\|clientId/, 'legacy client context is an optional label, not staff grant');
 
 for (const key of ['EXTRA_CLIENT_ID','EXTRA_STORE_ID','EXTRA_ORDER_ID']) {

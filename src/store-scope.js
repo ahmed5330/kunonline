@@ -15,7 +15,8 @@ export async function resolveStoreScope(env, me, clientId, storeId, options = {}
   const write = options.write === true;
   if (!me?.role) throw Object.assign(new Error('محتاج تسجّل دخول'), { status: 401 });
   if (!clientId) throw Object.assign(new Error('محتاج clientId'), { status: 400, code: 'CLIENT_ID_REQUIRED' });
-  if (me.clientId && String(me.clientId) !== String(clientId)) throw Object.assign(new Error('مش مسموح الوصول لبيانات حساب آخر'), {status: 403, code: 'TENANT_ISOLATION'});
+  // A staff default client is not an authorization boundary; per-store grants below are.
+  if ((me.role === 'admin' || me.role === 'client') && me.clientId && String(me.clientId) !== String(clientId)) throw Object.assign(new Error('مش مسموح الوصول لبيانات حساب آخر'), {status: 403, code: 'TENANT_ISOLATION'});
   if (me.role === 'admin' || me.role === 'client') {const store = await assertStore(env, clientId, storeId);return { clientId, storeId: store?.id || null, storeRole: 'owner', unrestricted: !store };}
   const { results = [] } = await env.DB.prepare(`SELECT a.store_id,a.role,s.name,s.status FROM user_store_access a JOIN stores s ON s.id=a.store_id AND s.client_id=a.client_id WHERE a.user_id=? AND a.client_id=? AND s.status='active' ORDER BY s.is_default DESC,s.name`).bind(me.uid, clientId).all();
   if (!results.length) throw Object.assign(new Error('لا توجد صلاحية فرع لهذا المستخدم'), {status: 403, code: 'STORE_ACCESS_REQUIRED'});
@@ -29,7 +30,7 @@ export async function resolveStoreScope(env, me, clientId, storeId, options = {}
 }
 export async function listMyStores(env, me, clientId) {
   if (!me?.role) throw Object.assign(new Error('محتاج تسجّل دخول'), { status: 401 });
-  if (me.clientId && String(me.clientId) !== String(clientId)) throw Object.assign(new Error('مش مسموح الوصول لبيانات حساب آخر'), { status: 403, code: 'TENANT_ISOLATION' });
+  if ((me.role === 'admin' || me.role === 'client') && me.clientId && String(me.clientId) !== String(clientId)) throw Object.assign(new Error('مش مسموح الوصول لبيانات حساب آخر'), { status: 403, code: 'TENANT_ISOLATION' });
   if (me.role === 'admin' || me.role === 'client') {const { results = [] } = await env.DB.prepare("SELECT id,name,code,is_default,status,'owner' role FROM stores WHERE client_id=? AND status='active' ORDER BY is_default DESC,name").bind(clientId).all();return { allStores: true, stores: results };}
   const { results = [] } = await env.DB.prepare(`SELECT s.id,s.name,s.code,s.is_default,s.status,a.role FROM user_store_access a JOIN stores s ON s.id=a.store_id AND s.client_id=a.client_id WHERE a.user_id=? AND a.client_id=? AND s.status='active' ORDER BY s.is_default DESC,s.name`).bind(me.uid, clientId).all();return { allStores: false, stores: results };
 }
