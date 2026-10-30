@@ -12,9 +12,9 @@ android {
         applicationId = "com.kunonline.callerid.stable"
         minSdk = 29
         targetSdk = 35
-        // v2.9.23: Tester cross-client store grants and selected-store scope repair.
-        versionCode = 154
-        versionName = "2.9.23"
+        // v2.9.24: display server verified store-grant diagnostics and consistent client discovery.
+        versionCode = 155
+        versionName = "2.9.24"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

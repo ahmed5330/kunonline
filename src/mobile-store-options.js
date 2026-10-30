@@ -75,7 +75,29 @@ export async function handleMobileStoreOptions({request,env,delegate}){
       seen.add(key);
       stores.push({clientId,clientName:allowed.get(clientId)||clientId,storeId,storeName:clean(item.name)||'متجر بدون اسم',role:clean(item.role)||'member'});
     }
-    return json({ok:true,stores,clients:new Set(stores.map(x=>x.clientId)).size,defaultClientId:(isOwner&&scopedClient)||stores.find(x=>x.clientId===scopedClient)?.clientId||stores[0]?.clientId||[...allowed.keys()][0]||'',role});
+    // Optional self-only support diagnostics. No user identifier or unrelated
+    // tenant records leave this endpoint. Never turn a missing grant into access.
+    let diagnostics;
+    if(url.searchParams.get('diagnostics')==='1'&&!isOwner){
+      try{
+        const audit=await env.DB.prepare(`SELECT COUNT(*) total_grants,
+          SUM(CASE WHEN s.status='active' THEN 1 ELSE 0 END) active_grants,
+          SUM(CASE WHEN s.id IS NULL THEN 1 ELSE 0 END) missing_stores,
+          SUM(CASE WHEN s.id IS NOT NULL AND s.status<>'active' THEN 1 ELSE 0 END) inactive_grants
+          FROM user_store_access a LEFT JOIN stores s ON s.id=a.store_id AND s.client_id=a.client_id
+          WHERE a.user_id=?`).bind(uid).first();
+        diagnostics={available:true,source:'live-user-store-access',
+          totalGrants:Number(audit?.total_grants)||0,
+          activeGrants:Number(audit?.active_grants)||0,
+          inactiveGrants:Number(audit?.inactive_grants)||0,
+          missingStores:Number(audit?.missing_stores)||0,
+          visibleStores:stores.length};
+      }catch{
+        diagnostics={available:false,source:'live-user-store-access'};
+      }
+    }
+    return json({ok:true,stores,clients:new Set(stores.map(x=>x.clientId)).size,defaultClientId:(isOwner&&scopedClient)||stores.find(x=>x.clientId===scopedClient)?.clientId||stores[0]?.clientId||[...allowed.keys()][0]||'',role,
+      ...(diagnostics?{diagnostics}:{})});
   }catch(e){
     return unauthorized('تعذر تحميل المتاجر المتاحة','MOBILE_STORES_LOAD_FAILED',503);
   }

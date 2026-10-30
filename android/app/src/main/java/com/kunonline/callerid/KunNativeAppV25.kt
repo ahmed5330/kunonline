@@ -93,6 +93,7 @@ fun KunNativeAppV25(
     var currentStore by remember { mutableStateOf(cachedStores?.current ?: ScopeInfo()) }
     var storeOptionsLoading by remember { mutableStateOf(false) }
     var storeOptionsError by remember { mutableStateOf("") }
+    var storeAccessDiagnostic by remember { mutableStateOf("") }
     var displayName by remember { mutableStateOf("") }
     val dateRevision = MobileDateFilterState.revision
 
@@ -185,12 +186,13 @@ fun KunNativeAppV25(
             storeOptions = emptyList()
             currentStore = ScopeInfo()
             storeOptionsError = ""
+            storeAccessDiagnostic = ""
             displayName = ""
             return@LaunchedEffect
         }
         SyncJobService.schedule(context)
         storeOptionsLoading = storeOptions.isEmpty()
-        val result = withContext(Dispatchers.IO) { KunApi.loadStoreOptions(context) }
+        val result = withContext(Dispatchers.IO) { KunApi.loadStoreOptions(context, forceRefresh = true) }
         storeOptionsLoading = false
         if (!loggedIn) return@LaunchedEffect
         if (result.ok) {
@@ -199,6 +201,7 @@ fun KunNativeAppV25(
             currentStore = result.current
             if (storeChanged) snapshot = null
             storeOptionsError = result.message
+            storeAccessDiagnostic = result.diagnostic
         } else {
             storeOptionsError = result.message
         }
@@ -384,6 +387,7 @@ fun KunNativeAppV25(
                                     currentStore = currentStore,
                                     storeOptionsLoading = storeOptionsLoading,
                                     storeOptionsError = storeOptionsError,
+                                    storeAccessDiagnostic = storeAccessDiagnostic,
                                     storeSwitching = loading,
                                     onRefreshStores = {
                                         if (!storeOptionsLoading && !loading) {
@@ -398,6 +402,7 @@ fun KunNativeAppV25(
                                                     storeOptions = latest.stores
                                                     currentStore = latest.current
                                                     storeOptionsError = latest.message
+                                                    storeAccessDiagnostic = latest.diagnostic
                                                     if (changed) {
                                                         snapshot = null
                                                         performRefresh(true)
@@ -432,6 +437,7 @@ fun KunNativeAppV25(
                                                     if (latest.ok) {
                                                         storeOptions = latest.stores
                                                         currentStore = latest.current
+                                                        storeAccessDiagnostic = latest.diagnostic
                                                     }
                                                 }
                                             }
@@ -591,6 +597,7 @@ private fun V25Home(
     currentStore: ScopeInfo,
     storeOptionsLoading: Boolean,
     storeOptionsError: String,
+    storeAccessDiagnostic: String,
     storeSwitching: Boolean,
     onRefreshStores: () -> Unit,
     onSelectStore: (MobileStoreOption) -> Unit,
@@ -680,6 +687,8 @@ private fun V25Home(
                         }
                     }
                     if (storeOptions.size > 1) Text("كل متجر يعرض بياناته وصلاحياته بشكل مستقل.", color = KunColors.Ink2, style = MaterialTheme.typography.bodySmall)
+                    if (storeAccessDiagnostic.isNotBlank()) Text(storeAccessDiagnostic, color = KunColors.Chrome, style = MaterialTheme.typography.bodySmall)
+                    Text("إصدار التطبيق: ${BuildConfig.VERSION_NAME}", color = KunColors.Ink3, style = MaterialTheme.typography.labelSmall)
                 }
             }
         }

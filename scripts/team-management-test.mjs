@@ -46,6 +46,12 @@ must(platform.platformMember===true&&platform.storeAccess.length===2,'platform m
 const platformRow=await env.DB.prepare('SELECT client_id,password FROM users WHERE id=?').bind(platform.id).first();must(platformRow.client_id===null&&platformRow.password.startsWith('pbkdf2$100000$'),'platform member must be global and password hashed');
 const platformList=await listTeamMembers(env,null,{platformScope:true});must(platformList.some(x=>x.id===platform.id&&x.storeAccess.length===2),'platform team list must expose all assigned stores');
 const clientContext=await listAccessibleClients(env,{uid:platform.id,role:'support',clientId:null});must(clientContext.clients.length===2,'global staff must receive both assigned client contexts');
+const boundWithGrants=await listAccessibleClients(env,{uid:platform.id,role:'support',clientId:client});
+must(boundWithGrants.clients.length===2&&boundWithGrants.clients.some(c=>c.id===other),'a staff default client must not mask another explicit active store grant');
+const ownerOnly=await listAccessibleClients(env,{uid:platform.id,role:'client',clientId:client});
+must(ownerOnly.clients.length===1&&ownerOnly.clients[0].id===client,'tenant owner remains restricted even with foreign grants');
+const noGrants=await listAccessibleClients(env,{uid:'NOT-ASSIGNED',role:'support',clientId:client});
+must(noGrants.clients.length===0,'a default client must not fabricate store access');
 const platformMe={uid:platform.id,role:'support',clientId:null,perms:[]};must((await resolveStoreScope(env,platformMe,client,A,{write:true})).storeId===A,'platform member must access assigned store in first client');must((await resolveStoreScope(env,platformMe,other,X,{write:true})).storeId===X,'platform member must access assigned store in second client');
 let hidden=false;try{await resolveStoreScope(env,platformMe,client,B,{write:false})}catch(e){hidden=e.code==='STORE_ISOLATION'}must(hidden,'platform member must not access unassigned branch');
 await resetTeamMemberPassword(env,null,platform.id,{platformScope:true,password:'PlatformReset12!'},admin);const platformReset=await env.DB.prepare('SELECT password FROM users WHERE id=?').bind(platform.id).first();must(platformReset.password.startsWith('pbkdf2$100000$')&&!platformReset.password.includes('PlatformReset12!'),'platform password reset must persist securely');
