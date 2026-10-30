@@ -106,6 +106,9 @@ must(migration.includes('idx_customers_store_phone'),'Customer duplicate prevent
 must(v26.includes("u.pathname==='/api/my-store-context'"),'Store picker endpoint missing');
 must(v26.includes('enforceStoreScope(request,env,me,clientId)'),'Top-level API store enforcement missing');
 must(base.includes('FROM orders WHERE client_id = ? AND store_id = ?'),'Order reads must filter by store');
+must(base.includes("const stateClientId = verifiedCrossClientState ? requestedClientId : (me.clientId || requestedClientId)"),'Staff state read must honor an explicitly authorized selected tenant');
+must(base.includes("a.user_id=? AND a.client_id=? AND a.store_id=? AND s.status='active'"),'Cross-client state must require live user/store ACL');
+must(base.includes("path === '/api/state' && request.method === 'GET'"),'Do not extend legacy cross-tenant exemption to write routes');
 must(base.includes('FROM products WHERE client_id = ? AND store_id = ?'),'Product reads must filter by store');
 must(pos.includes('AND (? IS NULL OR store_id=?)'),'POS must validate store membership');
 must(campaigns.includes('store_id'),'Campaign queries must carry store scope');

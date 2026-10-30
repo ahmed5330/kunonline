@@ -1148,11 +1148,20 @@ async function handleApi(request, env, url, path) {
   if (path === '/api/me') return json(me);
   const activeStoreId = url.searchParams.get('storeId') || request.headers.get('X-Kun-Store-Id') || null;
 
-  /* عضو الفريق المرتبط بمتجر لا يستطيع تبديل clientId يدويًا في query/body. */
+  /* A staff default client is not itself an authorization boundary.
+     For a cross-client state read, require an ACTIVE, explicitly assigned store.
+     Keep the legacy strict rule for all other routes and for tenant owners. */
+  const requestedClientId = url.searchParams.get('clientId');
+  let verifiedCrossClientState = false;
   if (me.clientId) {
-    const requestedClientId = url.searchParams.get('clientId');
     if (requestedClientId && requestedClientId !== me.clientId) {
-      return json({ error: 'مش مسموح الوصول لبيانات متجر آخر' }, 403);
+      const canCheckStore = path === '/api/state' && request.method === 'GET'
+        && me.role !== 'admin' && me.role !== 'client' && !!activeStoreId;
+      if (!canCheckStore) return json({ error: 'مش مسموح الوصول لبيانات متجر آخر' }, 403);
+      const assigned = await env.DB.prepare("SELECT 1 AS allowed FROM user_store_access a JOIN stores s ON s.id=a.store_id AND s.client_id=a.client_id WHERE a.user_id=? AND a.client_id=? AND a.store_id=? AND s.status='active'")
+        .bind(me.uid,requestedClientId,activeStoreId).first();
+      if (!assigned) return json({ error: 'مش مسموح الوصول لبيانات متجر آخر' }, 403);
+      verifiedCrossClientState = true;
     }
     if (['POST','PUT','PATCH','DELETE'].includes(request.method)) {
       const scopedBody = await request.clone().json().catch(() => null);
@@ -1166,7 +1175,7 @@ async function handleApi(request, env, url, path) {
   if (path === '/api/state' && request.method === 'GET') {
     const state = await loadState(env);
     if (isStaff(user)) {
-      const stateClientId = me.clientId || url.searchParams.get('clientId');
+      const stateClientId = verifiedCrossClientState ? requestedClientId : (me.clientId || requestedClientId);
       if (stateClientId) {
         const scoped = await scopeForClient(env, state, await listOrders(env, stateClientId, activeStoreId), stateClientId);
         if (!scoped) return json({ error: 'الحساب مش موجود' }, 404);
