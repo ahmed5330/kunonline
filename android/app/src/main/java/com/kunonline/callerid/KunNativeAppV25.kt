@@ -156,7 +156,10 @@ fun KunNativeAppV25(
             }
             syncError = result.message
             if (manual || !hadSnapshot || result.accessDenied) message = result.message
-            if (!KunApi.hasSession(context)) loggedIn = false
+            if (!KunApi.hasSession(context)) {
+                snapshot = null
+                loggedIn = false
+            }
         }
     }
 
@@ -258,6 +261,8 @@ fun KunNativeAppV25(
                             loading = false
                             message = result.message
                             if (result.ok) {
+                                // Never carry a previous account's Compose snapshot into login.
+                                snapshot = null
                                 loggedIn = true
                                 lastSyncAt = CustomerCache.lastSyncedAt(context)
                                 SyncJobService.schedule(context)
