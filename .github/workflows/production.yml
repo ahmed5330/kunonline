@@ -118,6 +118,8 @@ jobs:
           node scripts/public-site-reviews-test.mjs
       - name: Verify guarded Easy Orders Production release rollback policy
         run: node scripts/easyorders-production-release-flow-test.mjs
+      - name: Verify release smoke asset versions match reviewed UI
+        run: node scripts/release-asset-version-contract-test.mjs
       - name: Verify Worker builds without touching Production
         run: npx wrangler deploy --dry-run --config wrangler.production.toml
       - name: Block incompatible Production release until canonical Preview backend is ready
@@ -309,19 +311,19 @@ jobs:
           for i in {1..10}; do
             nonce="${GITHUB_RUN_ID}-${i}"
             page="$(curl -fsSL -H 'Cache-Control: no-cache' "https://app.kun-online.com/v2/index.html?deploy=${nonce}" 2>/dev/null || true)"
-            printing="$(curl -fsS -H 'Cache-Control: no-cache' "https://app.kun-online.com/v2/modules-v79-printing.js?v=79.11&deploy=${nonce}" 2>/dev/null || true)"
+            printing="$(curl -fsS -H 'Cache-Control: no-cache' "https://app.kun-online.com/v2/modules-v79-printing.js?v=79.12&deploy=${nonce}" 2>/dev/null || true)"
             routing="$(curl -fsS -H 'Cache-Control: no-cache' "https://app.kun-online.com/v2/modules-v116-print-routing.js?v=116.1&deploy=${nonce}" 2>/dev/null || true)"
-            units="$(curl -fsS -H 'Cache-Control: no-cache' "https://app.kun-online.com/v2/modules-v128-unit-tracking.js?v=128.4&deploy=${nonce}" 2>/dev/null || true)"
+            units="$(curl -fsS -H 'Cache-Control: no-cache' "https://app.kun-online.com/v2/modules-v128-unit-tracking.js?v=128.5&deploy=${nonce}" 2>/dev/null || true)"
             if [ -n "$page" ] \
               && grep -Fq '/v2/modules-v51-permission-navigation.js?v=51.17' <<< "$page" \
               && grep -Fq '/v2/modules-v78-jt-shipping-order.js?v=78.5' <<< "$page" \
-              && grep -Fq '/v2/modules-v79-printing.js?v=79.11' <<< "$page" \
+              && grep -Fq '/v2/modules-v79-printing.js?v=79.12' <<< "$page" \
               && grep -Fq '/v2/modules-v116-print-routing.js?v=116.1' <<< "$page" \
-              && grep -Fq '/v2/modules-v128-unit-tracking.js?v=128.4' <<< "$page" \
+              && grep -Fq '/v2/modules-v128-unit-tracking.js?v=128.5' <<< "$page" \
               && grep -Fq 'code_128' <<< "$units" \
               && grep -Fq '/api/inventory/unit-tracking/barcode' <<< "$units" \
               && grep -Fq 'طباعة باركود كل القطع الموجودة بالمخزن' <<< "$units" \
-              && grep -Fq "version:'128.4'" <<< "$units" \
+              && grep -Fq "version:'128.5'" <<< "$units" \
               && grep -Fq 'إرسال إلى J&T وطباعة البوليصة' <<< "$printing" \
               && grep -Fq "'kun:printing-ready'" <<< "$routing" \
               && grep -Fq "new Set(['confirmed','preparing'])" <<< "$routing"; then ui_verified=1; break; fi
