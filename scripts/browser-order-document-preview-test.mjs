@@ -1,4 +1,4 @@
-import {readFile,access,mkdtemp,rm} from 'node:fs/promises';
+import {readFile,writeFile,mkdir,access,mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {spawn} from 'node:child_process';
@@ -52,6 +52,16 @@ try{
   assert.ok((await evalJs('KunOrderDocumentPreview.documentHtml({total:0})')).includes('٠٫٠٠'));
   assert.equal(await evalJs('(()=>{try{KunOrderDocumentPreview.documentHtml({},"bad")}catch{return true}return false})()'),true);
   assert.equal(await evalJs('(()=>{try{KunOrderDocumentPreview.documentHtml({},"A4","bad")}catch{return true}return false})()'),true);
-  console.log('Customer document browser fixture passed: A4/A5/80mm, layouts, escaped customer data, no private notes/cost, missing amount, print, close/focus; one scoped GET and zero writes.');
+  for(const size of ['A4','A5','receipt']){
+    const encoded=await evalJs(`(async()=>{const blob=await KunOrderDocumentPreview.pdfBlob({...__order,name:'عميل الاختبار',address:'القاهرة - شارع الاختبار',product:'منتج عربي مسجل '.repeat(180)},${JSON.stringify(size)});return await new Promise(r=>{const reader=new FileReader();reader.onload=()=>r(reader.result.split(',')[1]);reader.readAsDataURL(blob);});})()`);
+    const bytes=Buffer.from(encoded,'base64'),raw=bytes.toString('latin1');assert.ok(raw.startsWith('%PDF-1.4'));assert.ok(raw.endsWith('%%EOF\n'));
+    const xref=Number(/startxref\n(\d+)/.exec(raw)[1]);assert.equal(raw.slice(xref,xref+4),'xref');
+    const entries=raw.slice(xref).split('\n'),count=Number(entries[1].split(' ')[1]);for(let i=1;i<count;i++){const offset=Number(entries[2+i].slice(0,10));assert.ok(raw.slice(offset).startsWith(i+' 0 obj\n'));}
+    assert.ok(Number(/\/Count (\d+)/.exec(raw)[1])>1,'long Arabic content must paginate');
+    if(process.env.KUN_PDF_FIXTURE_DIR){await mkdir(process.env.KUN_PDF_FIXTURE_DIR,{recursive:true});await writeFile(join(process.env.KUN_PDF_FIXTURE_DIR,size+'.pdf'),bytes);}
+  }
+  assert.equal(await evalJs('(async()=>{try{await KunOrderDocumentPreview.pdfBlob({product:"a".repeat(40001)});return false}catch{return true}})()'),true);
+  assert.deepEqual(await evalJs('__calls.map(c=>c.method)'),['GET'],'PDF generation must make no network requests');
+  console.log('Customer document browser fixture passed: three PDF page sizes and valid xref offsets, long Arabic pagination, oversize rejection, escaped preview, no private notes/cost, focus restoration; one scoped GET and zero writes.');
 }finally{await cleanupBrowser();await new Promise(r=>server.close(r));}
 
