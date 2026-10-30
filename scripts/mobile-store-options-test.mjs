@@ -19,7 +19,10 @@ function fake(role,clientId=null,clients=['c1','c2'],contextStatus=200){
   }};
   const env={DB:{prepare(sql){
     queries.push(sql);
-    return {bind(...args){return {async all(){
+    return {bind(...args){return {async first(){
+      if(sql.includes('LEFT JOIN stores s')){assert.deepEqual(args,['user-1']);return {total_grants:3,active_grants:3,inactive_grants:0,missing_stores:0};}
+      throw Error('Unexpected diagnostic query');
+    },async all(){
       // Every returned row is a real, user-scoped explicit store grant.
       if(sql.includes('user_store_access')){assert.deepEqual(args,['user-1']);return {results:sample};}
       return {results:sample.filter(r=>args.includes(r.client_id))};
@@ -61,6 +64,11 @@ assert.equal(data.defaultClientId,'c3');
 f=fake('support','c3',[],503);res=await handleMobileStoreOptions({request,env:f.env,delegate:f.delegate});data=await res.json();
 assert.equal(res.status,200,'verified staff grants survive legacy context unavailability');
 assert.equal(data.stores.length,3);
+res=await handleMobileStoreOptions({request:new Request('https://app.kun-online.com/api/mobile/store-options?diagnostics=1',{headers:{Cookie:'ko_session=test'}}),env:f.env,delegate:f.delegate});data=await res.json();
+assert.equal(data.diagnostics.available,true);
+assert.equal(data.diagnostics.totalGrants,3);
+assert.equal(data.diagnostics.visibleStores,3);
+assert.ok(!('uid' in data.diagnostics),'self diagnostics must not leak user IDs');
 res=await handleMobileStoreOptions({request:new Request('https://app.kun-online.com/api/other'),env:f.env,delegate:f.delegate});
 assert.equal(res,null,'do not intercept other routes');
 console.log('PASS: store grants drive unbound staff discovery while client/owner isolation stays strict');

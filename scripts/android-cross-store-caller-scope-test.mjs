@@ -12,6 +12,8 @@ const jnt=src('production-caller-jnt-edit.js'), search=src('mobile-global-order-
 const stores=src('mobile-store-options.js');
 
 assert(api.includes('fun loadStoreOptions(context: Context, forceRefresh: Boolean = false)'));
+assert(api.includes('/api/mobile/store-options?diagnostics=1'),'store list requests own grant counts for diagnosis');
+assert(api.includes('val arr = root.optJSONArray("stores")'),'server must not silently accept an invalid store list');
 assert(api.includes('if (!forceRefresh) cachedStoreOptions(context)'), 'forced refresh bypasses 2-minute cache');
 assert(home.includes('onRefreshStores = {')&&home.includes('forceRefresh = true')&&home.includes('تحديث المتاجر'), 'home lets staff refresh assigned stores');
 assert(stores.includes("if(!context.response.ok&&(isOwner||context.response.status===401))"), 'staff grants remain discoverable when legacy client context is temporarily unavailable');

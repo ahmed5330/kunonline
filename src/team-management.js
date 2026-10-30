@@ -109,7 +109,10 @@ export async function listTeamAccessCatalog(env,actor={},clientId=null,{platform
 
 export async function listAccessibleClients(env,me={}){
   const names=await clientNames(env);
-  if(me?.clientId){const id=String(me.clientId);return {ok:true,allClients:false,clients:[{id,name:names.get(id)||id}]};}
+  // A team member can have active grants in several clients even when their
+  // user record retains one default client. A default is not authorization.
+  // Owners remain bound to their own client; staff are scoped by live grants.
+  if(me?.clientId&&(me.role==='client'||me.role==='admin')){const id=String(me.clientId);return {ok:true,allClients:false,clients:[{id,name:names.get(id)||id}]};}
   let rows=[];
   if(me?.role==='admin')({results:rows=[]}=await env.DB.prepare("SELECT DISTINCT client_id FROM stores WHERE status='active' ORDER BY client_id").all());
   else if(me?.uid)({results:rows=[]}=await env.DB.prepare("SELECT DISTINCT a.client_id FROM user_store_access a JOIN stores s ON s.id=a.store_id AND s.client_id=a.client_id WHERE a.user_id=? AND s.status='active' ORDER BY a.client_id").bind(me.uid).all());

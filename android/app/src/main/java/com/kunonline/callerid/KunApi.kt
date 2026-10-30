@@ -23,7 +23,8 @@ data class StoreOptionsResult(
     val ok: Boolean,
     val message: String,
     val stores: List<MobileStoreOption> = emptyList(),
-    val current: ScopeInfo = ScopeInfo()
+    val current: ScopeInfo = ScopeInfo(),
+    val diagnostic: String = ""
 )
 
 object KunApi {
@@ -321,7 +322,7 @@ object KunApi {
     fun loadStoreOptions(context: Context, forceRefresh: Boolean = false): StoreOptionsResult {
         val cookie = session(context) ?: return StoreOptionsResult(false, "سجّل الدخول أولاً")
         if (!forceRefresh) cachedStoreOptions(context)?.let { return it }
-        val fast = runCatching { request("GET", "/api/mobile/store-options", cookie = cookie) }.getOrNull()
+        val fast = runCatching { request("GET", "/api/mobile/store-options?diagnostics=1", cookie = cookie) }.getOrNull()
             ?: return StoreOptionsResult(false, "تعذر الاتصال بالمتاجر — اعرض البيانات السابقة وحاول التحديث")
         if (fast.code == 404 || fast.code == 405) return loadStoreOptionsLegacy(context)
         if (fast.code !in 200..299) {
@@ -330,7 +331,9 @@ object KunApi {
         }
         return runCatching {
             val root = JSONObject(fast.body)
-            val arr = root.optJSONArray("stores") ?: JSONArray()
+            // Do not silently treat a malformed gateway response as zero stores.
+            val arr = root.optJSONArray("stores")
+                ?: return StoreOptionsResult(false, "رد السيرفر لا يحتوي قائمة المتاجر — أعد المحاولة")
             val stores = buildList {
                 for (i in 0 until arr.length()) {
                     val item = arr.optJSONObject(i) ?: continue
@@ -371,7 +374,21 @@ object KunApi {
             verifiedOptions = stores
             verifiedOptionsUntil = SystemClock.elapsedRealtime() + 120_000L
             verifiedOptionsCurrent = active
-            StoreOptionsResult(true, if (stores.isEmpty()) "لا توجد متاجر نشطة مخصصة لهذا الحساب" else "", stores, active)
+            val diagnostics = root.optJSONObject("diagnostics")
+            val hint = when {
+                owner -> ""
+                diagnostics?.optBoolean("available") == true && stores.size <= 1 -> {
+                    val total = diagnostics.optInt("totalGrants")
+                    val inactive = diagnostics.optInt("inactiveGrants")
+                    val missing = diagnostics.optInt("missingStores")
+                    "فحص السيرفر: ${stores.size} متجر ظاهر من ${total} صلاحية مسجّلة" +
+                        (if (inactive + missing > 0) " — منها ${inactive} غير نشط و${missing} غير موجود" else "") +
+                        ". لو أضفت متاجر أكثر، راجع صلاحيات الموظف في لوحة الإدارة."
+                }
+                diagnostics?.optBoolean("available") == false -> "تعذر فحص عدد صلاحيات المتاجر، لكن القائمة الحالية من السيرفر."
+                else -> ""
+            }
+            StoreOptionsResult(true, if (stores.isEmpty()) "لا توجد متاجر نشطة مخصصة لهذا الحساب" else "", stores, active, hint)
         }.getOrElse { StoreOptionsResult(false, "تعذر قراءة قائمة المتاجر") }
     }
     /** Backwards-compatible discovery for older servers only. */
