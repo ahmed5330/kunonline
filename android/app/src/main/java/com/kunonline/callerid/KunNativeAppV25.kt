@@ -150,15 +150,34 @@ fun KunNativeAppV25(
             }
             if (manual) message = result.message
         } else {
+            if (result.accessDenied) {
+                // Store permission was revoked: never keep displaying stale data.
+                snapshot = null
+            }
             syncError = result.message
-            if (manual || !hadSnapshot) message = result.message
-            if (!KunApi.hasSession(context)) loggedIn = false
+            if (manual || !hadSnapshot || result.accessDenied) message = result.message
+            if (!KunApi.hasSession(context)) {
+                snapshot = null
+                loggedIn = false
+            }
         }
     }
 
     fun refresh(manual: Boolean = false) {
         if (!loggedIn || loading) return
         scope.launch { performRefresh(manual) }
+    }
+
+    // Read the last encrypted server snapshot in the background, without
+    // blocking first frame. A live result or store switch always wins.
+    LaunchedEffect(loggedIn, currentStore) {
+        if (loggedIn && snapshot == null) {
+            val saved = withContext(Dispatchers.IO) { KunApi.cachedSnapshotFromDisk(context) }
+            if (loggedIn && snapshot == null && saved != null) {
+                snapshot = saved
+                syncError = "تُعرض بيانات محفوظة على الهاتف إلى أن يكتمل التحديث"
+            }
+        }
     }
 
     LaunchedEffect(loggedIn) {
@@ -185,7 +204,9 @@ fun KunNativeAppV25(
         }
         // Refresh with the now verified store, not an earlier pre-discovery scope.
         // A failed initial fetch also remains retryable instead of showing fake zero totals.
-        if (snapshot == null || syncError.isNotBlank()) performRefresh(false)
+        // Cached data is only a quick offline view, never proof of fresh
+        // authorization. Always revalidate against the server after startup.
+        performRefresh(false, silent = snapshot != null)
     }
     LaunchedEffect(loggedIn) {
         if (loggedIn) displayName = withContext(Dispatchers.IO) { KunApi.userDisplayName(context) }
@@ -240,6 +261,8 @@ fun KunNativeAppV25(
                             loading = false
                             message = result.message
                             if (result.ok) {
+                                // Never carry a previous account's Compose snapshot into login.
+                                snapshot = null
                                 loggedIn = true
                                 lastSyncAt = CustomerCache.lastSyncedAt(context)
                                 SyncJobService.schedule(context)

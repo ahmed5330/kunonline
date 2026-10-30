@@ -9,7 +9,7 @@ import java.net.URL
 import java.net.URLEncoder
 
 data class SyncResult(val ok: Boolean, val message: String, val customerCount: Int = 0)
-data class StateResult(val ok: Boolean, val message: String, val snapshot: CommerceSnapshot? = null, val changed: Boolean = true)
+data class StateResult(val ok: Boolean, val message: String, val snapshot: CommerceSnapshot? = null, val changed: Boolean = true, val accessDenied: Boolean = false)
 data class ActionResult(val ok: Boolean, val message: String)
 data class ScopeInfo(val clientId: String = "", val storeId: String = "")
 data class MobileStoreOption(
@@ -114,6 +114,7 @@ object KunApi {
             clearScope()
             MobileSyncClient.clear()
             CustomerCache.clear(context)
+            MobileSnapshotCache.clear(context)
             SecureStore.put(context, AUTH_PREFS, SELECTED_STORE_KEY, null)
             SecureStore.put(context, AUTH_PREFS, SESSION_KEY, cookie)
             val sync = syncWithCookie(context, cookie)
@@ -256,6 +257,20 @@ object KunApi {
         val cookie = session(context) ?: return null
         return if (parsedKey.startsWith(cookie + "|") && parsedRevision == MobileDateFilterState.revision)
             parsedSnapshot else null
+    }
+
+    /**
+     * Read the previously authenticated snapshot from encrypted on-device storage.
+     * Call this on an IO dispatcher, never the Compose main thread. It is a stale
+     * offline view; only a successful network response authorizes new mutations.
+     */
+    fun cachedSnapshotFromDisk(context: Context): CommerceSnapshot? {
+        val cookie = session(context) ?: return null
+        val selectedStore = SecureStore.get(context, AUTH_PREFS, SELECTED_STORE_KEY).orEmpty()
+        val root = MobileSnapshotCache.load(context, cookie, selectedStore) ?: return null
+        if (session(context) != cookie ||
+            SecureStore.get(context, AUTH_PREFS, SELECTED_STORE_KEY).orEmpty() != selectedStore) return null
+        return runCatching { CommerceParser.parse(root) }.getOrNull()
     }
 
     fun fetchState(context: Context, forceFull: Boolean = false): StateResult {
@@ -436,6 +451,7 @@ object KunApi {
         MobileSyncClient.clear()
         CustomerCache.clear(context)
         CallActivityStore.clear(context)
+        MobileSnapshotCache.clear(context)
         return ActionResult(true, "تم اختيار ${option.storeName}")
     }
 
@@ -503,9 +519,15 @@ object KunApi {
                 return StateResult(false, "انتهت الجلسة — سجّل الدخول مرة أخرى")
             }
             if (response.code == 403 || response.code == 400) clearScope()
-            if (response.code == 403 && session(context) == cookie) CustomerCache.clear(context)
+            if (response.code == 403 && session(context) == cookie) {
+                // A revoked store assignment must not remain visible offline.
+                CustomerCache.clear(context)
+                MobileSnapshotCache.clear(context)
+                verifiedOptionsUntil = 0L
+            }
             if (response.code !in 200..299) {
-                return StateResult(false, response.body.optString("error").ifBlank { "تعذر تحميل بيانات النظام" })
+                return StateResult(false, response.body.optString("error").ifBlank { "تعذر تحميل بيانات النظام" },
+                    accessDenied = response.code == 403)
             }
             if (session(context) != cookie) return StateResult(false, "تغيّرت جلسة الحساب")
             val revision = MobileDateFilterState.revision
@@ -520,6 +542,11 @@ object KunApi {
             val orders = root.optJSONArray("orders") ?: JSONArray()
             if (response.changed) CustomerCache.replaceAll(context, orders)
             val parsed = CommerceParser.parse(root)
+            if (response.changed && session(context) == cookie) {
+                // Local persistence must not block the server-authoritative result.
+                val selection = SecureStore.get(context, AUTH_PREFS, SELECTED_STORE_KEY).orEmpty()
+                MobileSnapshotCache.save(context, cookie, selection, root)
+            }
             parsedSnapshot = parsed
             parsedKey = cacheKey
             parsedRevision = revision
@@ -627,6 +654,7 @@ object KunApi {
     private fun clearSession(context: Context) {
         // Derived caller data must not remain after session authentication ends.
         CustomerCache.clear(context)
+        MobileSnapshotCache.clear(context)
         clearScope()
         verifiedOptionsCookie = ""
         verifiedOptionsUntil = 0L

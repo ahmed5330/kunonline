@@ -19,8 +19,10 @@ jobs:
           package-manager-cache: false
       - run: npm install --ignore-scripts
       - run: npm audit --audit-level=high
-      - name: Production smoke asset version consistency
-        run: node scripts/release-asset-version-contract-test.mjs
+      - name: Production smoke asset version consistency and order freshness
+        run: |
+          node scripts/release-asset-version-contract-test.mjs
+          node scripts/order-freshness-web-test.mjs
       - name: Admin J&T shipment access and import safety
         run: |
           node --check src/admin-jnt-shipments.js
