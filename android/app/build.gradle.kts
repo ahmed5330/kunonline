@@ -12,9 +12,9 @@ android {
         applicationId = "com.kunonline.callerid.stable"
         minSdk = 29
         targetSdk = 35
-        // v2.9.21: signed stable release; search cards show date, product and Arabic customer status (no migration).
-        versionCode = 152
-        versionName = "2.9.21"
+        // v2.9.22: encrypted offline order snapshot, safer store revocation, and cross-device freshness bridge.
+        versionCode = 153
+        versionName = "2.9.22"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
