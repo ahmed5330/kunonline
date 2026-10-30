@@ -19,14 +19,23 @@ async function currentUser(request,env,ctx){
   return d;
 }
 
-async function tenantFromRequest(request,me){
+// The authenticated role determines ownership; an ops employee's default client is
+// a preference, never a reason to ignore a request for an explicitly granted store.
+// resolveStoreScope/listMyStores verify that grant on every request.
+export async function tenantFromRequest(request,me){
   const u=new URL(request.url);
-  if(me.clientId)return me.clientId;
+  let requested=u.searchParams.get('clientId');
   if(['POST','PUT','PATCH','DELETE'].includes(request.method.toUpperCase())){
     const b=await request.clone().json().catch(()=>({}));
-    if(b.clientId||b.client_id)return b.clientId||b.client_id;
+    requested=b?.clientId||b?.client_id||requested;
   }
-  return u.searchParams.get('clientId');
+  const target=String(requested||'').trim();
+  const bound=String(me.clientId||'').trim();
+  if((me.role==='client'||me.role==='admin')&&bound){
+    if(target&&target!==bound)throw Object.assign(new Error('مش مسموح الوصول لبيانات حساب آخر'),{status:403,code:'TENANT_ISOLATION'});
+    return bound;
+  }
+  return target||bound||null;
 }
 
 async function normalizeOrderCreate(request){

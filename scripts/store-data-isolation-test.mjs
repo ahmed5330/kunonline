@@ -1,5 +1,6 @@
 import {readFile} from 'node:fs/promises';
 import {resolveStoreScope,scopeRequest,listMyStores,isStoreScopedPath} from '../src/store-scope.js';
+import {tenantFromRequest} from '../src/index-commerce-v26.js';
 
 const must=(value,message)=>{if(!value)throw new Error(message);};
 const expectCode=async(fn,code)=>{
@@ -44,6 +45,15 @@ class Statement{
 }
 const env={DB:{prepare:sql=>new Statement(sql)}};
 
+// Live-permission selection must reach the correct tenant, rather than silently
+// preferring /api/me.clientId when staff switches stores on Android.
+const targetRequest = new Request('https://app.kun-online.com/api/state?clientId=CLIENT-1&storeId=STORE-A');
+must(await tenantFromRequest(targetRequest,{role:'support',uid:'OPS-1',clientId:'CLIENT-2'})==='CLIENT-1','Support explicit target must override legacy default');
+must(await tenantFromRequest(new Request('https://app.kun-online.com/api/state'),{role:'support',clientId:'CLIENT-2'})==='CLIENT-2','Support without selection may retain default');
+must(await tenantFromRequest(targetRequest,{role:'admin',clientId:'CLIENT-1'})==='CLIENT-1','Owner may read own tenant');
+await expectCode(()=>tenantFromRequest(targetRequest,{role:'client',clientId:'CLIENT-2'}),'TENANT_ISOLATION');
+const writeRequest = new Request('https://app.kun-online.com/api/orders?clientId=CLIENT-2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({clientId:'CLIENT-1'})});
+must(await tenantFromRequest(writeRequest,{role:'support',clientId:'CLIENT-2'})==='CLIENT-1','Write body selected tenant takes precedence');
 const admin={uid:'ADMIN',role:'admin'};
 const ops={uid:'OPS-1',role:'ops',clientId:'CLIENT-1'};
 const viewer={uid:'VIEW-1',role:'viewer',clientId:'CLIENT-1'};
