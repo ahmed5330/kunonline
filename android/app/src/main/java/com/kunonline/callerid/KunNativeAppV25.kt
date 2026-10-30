@@ -150,8 +150,12 @@ fun KunNativeAppV25(
             }
             if (manual) message = result.message
         } else {
+            if (result.accessDenied) {
+                // Store permission was revoked: never keep displaying stale data.
+                snapshot = null
+            }
             syncError = result.message
-            if (manual || !hadSnapshot) message = result.message
+            if (manual || !hadSnapshot || result.accessDenied) message = result.message
             if (!KunApi.hasSession(context)) loggedIn = false
         }
     }
