@@ -4,7 +4,7 @@
   if(window.KunFAOSAccountingV1)return;
   const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const money=(v,c='EGP')=>new Intl.NumberFormat('ar-EG',{minimumFractionDigits:2,maximumFractionDigits:2}).format(Number(v)||0)+' '+(c==='EGP'?'ج.م':esc(c));
-  const state={view:'health',data:null,simulation:null,catalog:[],busy:false,pendingTab:null};
+  const state={view:'health',data:null,simulation:null,catalog:[],busy:false,pendingTab:null,loadedScope:null};
   const root=()=>document.querySelector('.acc100');
   const active=()=>document.querySelector('.nav button.active[data-view]')?.dataset.view==='accounting';
   const currentMonth=()=>document.getElementById('acc100Month')?.value||new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Cairo',year:'numeric',month:'2-digit'}).format(new Date());
@@ -13,8 +13,9 @@
     const sid=window.kunStoreId?await window.kunStoreId():'';
     return {clientId:cid||'',storeId:sid||''};
   }
-  async function api(path,{method='GET',body=null,params={}}={}){
+  async function api(path,{method='GET',body=null,params={},expectedScope=null}={}){
     const ctx=await scope(),u=new URL(path,location.origin);
+    if(expectedScope&&(ctx.clientId!==expectedScope.clientId||ctx.storeId!==expectedScope.storeId))throw new Error('تغير المتجر؛ حدّث الدفتر قبل إعادة المحاولة');
     if(ctx.clientId)u.searchParams.set('clientId',ctx.clientId);
     if(ctx.storeId)u.searchParams.set('storeId',ctx.storeId);
     Object.entries(params).forEach(([k,v])=>v&&u.searchParams.set(k,String(v)));
@@ -52,7 +53,7 @@
     @media(max-width:680px){.faos-v1{padding:12px}.faos-kpis{grid-template-columns:1fr 1fr}.faos-form{grid-template-columns:1fr}.faos-form .full{grid-column:auto}}
     `;document.head.appendChild(style);
   }
-  const tabs=[['health','مراجعة الأرقام'],['ledger','الأستاذ وميزان المراجعة'],['sim','اختبار الطلبات الوهمية'],['entry','قيد جديد']];
+  const tabs=[['health','مراجعة الأرقام'],['chart','شجرة الحسابات'],['ledger','الأستاذ وميزان المراجعة'],['sim','اختبار الطلبات الوهمية'],['entry','قيد جديد']];
   function shell(){
     const section=document.createElement('section');section.className='faos-v1';section.id='kunFaosWorkspace';
     section.innerHTML='<div class="faos-head"><div><h3>مركز الحسابات والدفتر المحاسبي</h3><p>تحقق مالي ومقارنة مصادر الأرقام — وفق مرجع FAOS؛ البيانات الافتراضية منفصلة بالكامل.</p></div><button class="faos-action" id="faosRefresh">تحديث الحسابات</button></div><div class="faos-tabs">'+tabs.map(([id,label])=>'<button data-faos-tab="'+id+'">'+label+'</button>').join('')+'</div><div id="faosBody" aria-live="polite"></div>';
@@ -64,12 +65,16 @@
     const el=document.getElementById('faosBody');if(!el||state.busy)return;state.busy=true;
     el.innerHTML='<p class="faos-muted">جارٍ فحص مصادر الحسابات ودفتر الأستاذ...</p>';
     try{
+      const loadedScope=await scope();
       const mm=currentMonth(),year=mm.split('-')[0],month=Number(mm.split('-')[1]),end=new Date(Date.UTC(Number(year),month,0)).toISOString().slice(0,10);
       const outcomes=await Promise.allSettled([
         api('/api/accounting/faos/overview',{params:{from:mm+'-01',to:end}}),
         api('/api/accounting/faos/simulation'),
         api('/api/accounting/faos/catalog')
       ]);
+      const current=await scope();
+      if(current.clientId!==loadedScope.clientId||current.storeId!==loadedScope.storeId){state.data={__error:'تغير المتجر؛ حدّث الدفتر'};state.loadedScope=null;render();return;}
+      state.loadedScope=loadedScope;
       state.data=outcomes[0].status==='fulfilled'?outcomes[0].value:{__error:outcomes[0].reason?.message||'تعذر تحميل دفتر القيود'};
       state.simulation=outcomes[1].status==='fulfilled'?outcomes[1].value:null;
       state.catalog=outcomes[2].status==='fulfilled'?outcomes[2].value.accounts||[]:[];
@@ -130,30 +135,92 @@
       '<h4>اختبارات المحاسبة</h4>'+table(['قاعدة الاختبار','النتيجة'],checks)+
       '<p class="faos-muted">القيود الافتراضية: '+esc(s.journalCount)+' قيدًا · مدين '+money(s.totals?.debit)+' · دائن '+money(s.totals?.credit)+'</p>';
   }
+  function chartGroups(query=''){
+    const labels={asset:'الأصول',liability:'الالتزامات',equity:'حقوق الملكية',revenue:'الإيرادات',contra_revenue:'مردودات ومسموحات الإيرادات',expense:'المصروفات'};
+    const groups=new Map(),q=query.trim().toLocaleLowerCase();
+    for(const a of state.catalog){if(q&&!String(a.code+' '+a.name).toLocaleLowerCase().includes(q))continue;const type=labels[a.type]?a.type:'unknown';if(!groups.has(type))groups.set(type,[]);groups.get(type).push(a);}
+    if(!groups.size)return '<p class="faos-muted">لا توجد حسابات مطابقة في الدليل المحمل.</p>';
+    return [...groups].map(([type,accounts])=>'<details open data-faos-account-group="'+esc(type)+'"><summary>'+esc(labels[type]||'غير مصنف')+' ('+accounts.length+')</summary><ul>'+accounts.sort((a,b)=>String(a.code).localeCompare(String(b.code))).map(a=>'<li data-faos-account-code="'+esc(a.code)+'"><b>'+esc(a.code)+'</b> — '+esc(a.name)+'</li>').join('')+'</ul></details>').join('');
+  }
+  function chart(){return '<p class="faos-muted">دليل FAOS الحالي مجمع حسب نوع الحساب. لا ينشئ حسابات جديدة ولا يغير أكواد الدفتر.</p><label>بحث بالاسم أو الكود<input class="input" id="faosChartQuery" autocomplete="off"></label><div id="faosChartGroups">'+chartGroups()+'</div>';}
   function entry(){
     if(state.data?.capabilities?.financialPostingEnabled!==true)return '<div class="faos-note">إضافة القيود مغلقة حاليًا للحماية. الدفتر متاح للقراءة والمحاكاة فقط حتى تشغيل Preview المختبري والموافقة على المطابقة. لا يمكن إضافة قيود أو تغيير أرصدة العملاء في هذه الحالة.</div>';
     const accounts=state.catalog.filter(a=>a.code!=='4090'),opts=accounts.map(a=>'<option value="'+esc(a.code)+'">'+esc(a.code)+' — '+esc(a.name)+'</option>').join('');
     return '<div class="faos-note">تسجيل قيد حقيقي في دفتر FAOS المستقل. لا تعدل الأوامر أو رصيد المحفظة أو المبيعات القديمة. القيود المرحلة لا تُحذف وتصحح فقط بقيد عكسي.</div>'+
       '<form id="faosEntryForm" class="faos-form"><label>التاريخ<input type="date" name="date" required value="'+new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Cairo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date())+'"></label>'+
-      '<label>قيمة القيد (جنيه)<input type="number" name="amount" required min="0.01" step="0.01"></label>'+
-      '<label>الحساب المدين<select name="debit" required>'+opts+'</select></label><label>الحساب الدائن<select name="credit" required>'+opts+'</select></label>'+
+      '<label class="full">نوع القيد<select name="entryMode"><option value="quick">قيد سريع — سطران</option><option value="multi">قيد متعدد الأسطر</option></select></label>'+
+      '<label data-faos-quick>قيمة القيد (جنيه)<input type="number" name="amount" required min="0.01" step="0.01"></label>'+
+      '<label data-faos-quick>الحساب المدين<select name="debit" required>'+opts+'</select></label><label data-faos-quick>الحساب الدائن<select name="credit" required>'+opts+'</select></label>'+
+      '<section class="full" data-faos-multi hidden style="display:none"><div class="faos-table-wrap"><table class="faos-table"><thead><tr><th>الحساب</th><th>مدين</th><th>دائن</th><th>بيان السطر</th><th>حذف</th></tr></thead><tbody data-faos-lines></tbody></table></div><button type="button" class="faos-action" data-faos-add>إضافة سطر</button><p role="status" data-faos-totals></p></section>'+
       '<label class="full">البيان<input name="description" required minlength="3" maxlength="500" placeholder="مثال: مصروف معتمد بمستند رقم ..."></label>'+
       '<div class="full faos-actions"><button class="faos-action" type="submit">مراجعة وترحيل القيد</button><span id="faosEntryFeedback" class="faos-muted"></span></div></form>';
+  }
+  function minor(value){
+    const text=String(value??'').trim();if(text==='')return 0;
+    if(!/^\d+(?:\.\d{1,2})?$/.test(text))throw new Error('أدخل مبلغًا غير سالب بدقة قرشين');
+    const [whole,fraction='']=text.split('.'),n=Number(whole)*100+Number(fraction.padEnd(2,'0'));
+    if(!Number.isSafeInteger(n))throw new Error('المبلغ أكبر من الحد المدعوم');return n;
+  }
+  function validateEntryLines(rows,catalog=state.catalog){
+    if(rows.length<2||rows.length>50)throw new Error('القيد يحتاج من سطرين إلى 50 سطرًا');
+    let debit=0,credit=0;const allowed=new Set(catalog.filter(a=>a.code!=='4090').map(a=>a.code));
+    const lines=rows.map(r=>{
+      if(!allowed.has(r.accountCode))throw new Error('اختر حسابًا من دليل الحسابات');
+      const dr=minor(r.debit),cr=minor(r.credit);if((dr>0)===(cr>0))throw new Error('كل سطر يحتاج مبلغًا في المدين أو الدائن فقط');
+      debit+=dr;credit+=cr;if(!Number.isSafeInteger(debit)||!Number.isSafeInteger(credit))throw new Error('إجمالي القيد أكبر من الحد المدعوم');
+      return {accountCode:r.accountCode,debit:dr/100,credit:cr/100,memo:String(r.memo||'').slice(0,250)};
+    });
+    if(debit!==credit)throw new Error('القيد غير متوازن — الفرق '+money((debit-credit)/100));
+    return lines;
+  }
+  function bindEntry(form){
+    const multi=form.querySelector('[data-faos-multi]'),body=form.querySelector('[data-faos-lines]'),mode=form.elements.entryMode;
+    const options=state.catalog.filter(a=>a.code!=='4090').map(a=>'<option value="'+esc(a.code)+'">'+esc(a.code)+' — '+esc(a.name)+'</option>').join('');
+    const rows=()=>[...body.querySelectorAll('tr')].map(row=>Object.fromEntries([...row.querySelectorAll('[data-field]')].map(el=>[el.dataset.field,el.value])));
+    function totals(){
+      const info=form.querySelector('[data-faos-totals]');
+      try{const data=rows(),dr=data.reduce((sum,r)=>sum+minor(r.debit),0),cr=data.reduce((sum,r)=>sum+minor(r.credit),0);info.textContent='مدين: '+money(dr/100)+' · دائن: '+money(cr/100)+' · الفرق: '+money((dr-cr)/100);}catch(e){info.textContent=e.message;}
+      body.querySelectorAll('[data-faos-remove]').forEach(b=>b.disabled=body.children.length<=2);
+      form.querySelector('[data-faos-add]').disabled=body.children.length>=50;
+    }
+    function add(){
+      if(body.children.length>=50)return;
+      const row=document.createElement('tr');row.innerHTML='<td><select data-field="accountCode" aria-label="حساب السطر">'+options+'</select></td><td><input data-field="debit" inputmode="decimal" aria-label="مدين" maxlength="16"></td><td><input data-field="credit" inputmode="decimal" aria-label="دائن" maxlength="16"></td><td><input data-field="memo" aria-label="بيان السطر" maxlength="250"></td><td><button type="button" class="faos-action" data-faos-remove>حذف السطر</button></td>';
+      row.querySelector('[data-faos-remove]').onclick=()=>{if(body.children.length>2){row.remove();totals();}};body.appendChild(row);totals();
+    }
+    add();add();body.oninput=totals;form.querySelector('[data-faos-add]').onclick=add;
+    mode.onchange=()=>{
+      const isMulti=mode.value==='multi';multi.hidden=!isMulti;multi.style.display=isMulti?'':'none';
+      form.querySelectorAll('[data-faos-quick]').forEach(label=>{label.hidden=isMulti;label.style.display=isMulti?'none':'';label.querySelectorAll('input,select').forEach(el=>el.disabled=isMulti);});
+      form.querySelector('#faosEntryFeedback').textContent='';
+    };
+    return rows;
   }
   function render(){
     const body=document.getElementById('faosBody');if(!body)return;
     document.querySelectorAll('#kunFaosWorkspace [data-faos-tab]').forEach(x=>x.classList.toggle('active',x.dataset.faosTab===state.view));
-    body.innerHTML=({health,ledger,sim:simulation,entry})[state.view]();
+    body.innerHTML=({health,chart,ledger,sim:simulation,entry})[state.view]();
+    const chartQuery=document.getElementById('faosChartQuery');if(chartQuery)chartQuery.oninput=()=>{document.getElementById('faosChartGroups').innerHTML=chartGroups(chartQuery.value);};
     const form=document.getElementById('faosEntryForm');
+    const entryScope=state.loadedScope?{...state.loadedScope}:null;
+    const entryRows=form?bindEntry(form):null;
     if(form)form.onsubmit=async e=>{
       e.preventDefault();const feedback=document.getElementById('faosEntryFeedback'),v=Object.fromEntries(new FormData(form));
-      const amount=Number(v.amount);
-      if(v.debit===v.credit){feedback.textContent='اختار حسابين مختلفين';return;}
+      if(form.dataset.submitting==='1')return;
+      let lines;
+      try{
+        if(v.entryMode!=='multi'&&v.debit===v.credit)throw new Error('اختار حسابين مختلفين');
+        lines=validateEntryLines(v.entryMode==='multi'?entryRows():[{accountCode:v.debit,debit:v.amount},{accountCode:v.credit,credit:v.amount}]);
+      }catch(error){feedback.textContent=error.message;return;}
       const ctx=await scope();if(!ctx.storeId){feedback.textContent='اختار المتجر من القائمة العلوية أولًا';return;}
+      if(!entryScope||entryScope.clientId!==ctx.clientId||entryScope.storeId!==ctx.storeId){feedback.textContent='تغير المتجر؛ حدّث الدفتر قبل الترحيل';return;}
       if(!confirm('هل تؤكد ترحيل القيد إلى دفتر FAOS للمتجر الحالي؟'))return;
       const btn=form.querySelector('[type=submit]');btn.disabled=true;
-      try{const result=await api('/api/accounting/faos/journals',{method:'POST',body:{date:v.date,currency:'EGP',description:v.description,idempotencyKey:(form.dataset.faosIdempotencyKey ||= crypto.randomUUID()),lines:[{accountCode:v.debit,debit:amount},{accountCode:v.credit,credit:amount}]}});feedback.textContent='تم حفظ القيد '+result.id;await refresh();}
-      catch(error){feedback.textContent=error.message}finally{if(btn.isConnected)btn.disabled=false}
+      form.dataset.submitting='1';
+      const payload={date:v.date,currency:'EGP',description:v.description,lines},fingerprint=JSON.stringify([ctx,payload]);
+      if(form.dataset.faosFingerprint!==fingerprint){form.dataset.faosFingerprint=fingerprint;form.dataset.faosIdempotencyKey=crypto.randomUUID();}
+      try{const result=await api('/api/accounting/faos/journals',{method:'POST',expectedScope:entryScope,body:{...payload,idempotencyKey:form.dataset.faosIdempotencyKey}});feedback.textContent='تم حفظ القيد '+result.id;await refresh();}
+      catch(error){feedback.textContent=error.message}finally{form.dataset.submitting='0';if(btn.isConnected)btn.disabled=false}
     };
   }
   function mount(){
@@ -233,5 +300,5 @@
     mount();
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
-  window.KunFAOSAccountingV1={version:'1.1',mount,refresh,open:openWorkspace,syncShortcut,simulationOnly:true};
+  window.KunFAOSAccountingV1={version:'1.2',mount,refresh,open:openWorkspace,syncShortcut,validateEntryLines,simulationOnly:true};
 })();

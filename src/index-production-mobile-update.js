@@ -1,3 +1,5 @@
+import {handleHRDirectory} from './hr-directory.js';
+import {handleDocumentSettings} from './document-settings.js';
 import {guardSessionRequest} from './session-request-guard.js';
 import {handleFinancialAccountingOS} from './accounting-faos-api.js';
 import {routeProductionCodRead} from './production-cod-read-fallback.js';
@@ -78,6 +80,12 @@ async function websiteWithDirectAndroidDownload(request,env){
   if(!asset.ok||!type.includes('text/html'))return asset;
 
   let html=await asset.text();
+  if(!html.includes('/v2/hr-directory-ui.js'))html=html.replace('</body>','<script src="/v2/hr-directory-ui.js?v=1.0"></script></body>');
+  html=html.replace(/modules-v128-unit-tracking\.js\?v=[^"']+/g,'modules-v128-unit-tracking.js?v=128.5');
+  if(!html.includes('/v2/document-settings-ui.js'))html=html.replace('</body>','<script type="module" src="/v2/document-settings-ui.js?v=1.0"></script></body>');
+  html=html.replace(/modules-v155-accounting-faos\.js\?v=[^"']+/g,'modules-v155-accounting-faos.js?v=155.5');
+  html=html.replace(/modules-v31-customer-service\.js\?v=[^"']+/g,'modules-v31-customer-service.js?v=31.3.5');
+  if(!html.includes('/v2/order-followups.js'))html=html.replace('</body>','<script src="/v2/order-followups.js?v=1.0"></script></body>');
   html=html
     .replace(/\/v2\/modules-v46-variant-inventory-sync\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v46-variant-inventory-sync.js?v=46.5')
     .replace(/\/v2\/modules-v43-product-catalog\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v43-product-catalog.js?v=43.1')
@@ -94,11 +102,14 @@ async function websiteWithDirectAndroidDownload(request,env){
     .replaceAll('/v2/modules-v51-permission-navigation.js?v=51.10','/v2/modules-v51-permission-navigation.js?v=51.17')
     .replace(/\/v2\/modules-v57-section-reload\.js(?:\?v=[\d.]+)?/g,'/v2/modules-v57-section-reload.js?v=57.3')
     .replaceAll('/v2/modules-v78-jt-shipping-order.js?v=78.4','/v2/modules-v78-jt-shipping-order.js?v=78.5')
-    .replaceAll('/v2/modules-v79-printing.js?v=79.7','/v2/modules-v79-printing.js?v=79.11')
+    .replaceAll('/v2/modules-v79-printing.js?v=79.7','/v2/modules-v79-printing.js?v=79.12')
     .replaceAll('/v2/modules-v117-team-collaboration.js?v=117.0','/v2/modules-v117-team-collaboration.js?v=117.3')
     .replaceAll('/v2/modules-v118-collaboration-order-picker.js?v=118.0','/v2/modules-v118-collaboration-order-picker.js?v=118.1.1');
   // v57 owns the ordered v66 -> v67 -> v68... chain. Injecting v66/v67 here
   // executes them twice and splits the hub state from its event handlers.
+  html=html.replace(/order-document-preview\.js\?v=[^"']+/g,'order-document-preview.js?v=1.1');
+  if(!html.includes('/v2/order-document-preview.js'))html=html.replace('</body>','<script src="/v2/order-document-preview.js?v=1.1"></script></body>');
+  html=html.replace(/modules-v79-printing\.js\?v=[^"']+/g,'modules-v79-printing.js?v=79.12');
   if(!html.includes('/v2/modules-v116-print-routing.js')){
     html=html.replace('</body>','<script src="/v2/modules-v116-print-routing.js?v=116.1" data-kun-print-routing="1"></script></body>');
   }
@@ -130,7 +141,7 @@ async function websiteWithDirectAndroidDownload(request,env){
     html=html.replace('</body>','<script src="/v2/modules-v127-subscriptions.js?v=127.22" data-kun-subscriptions-v127="1"></script></body>');
   }
   if(!html.includes('/v2/modules-v128-unit-tracking.js')){
-    html=html.replace('</body>','<script src="/v2/modules-v128-unit-tracking.js?v=128.4" data-kun-unit-tracking-v128="1"></script></body>');
+    html=html.replace('</body>','<script src="/v2/modules-v128-unit-tracking.js?v=128.5" data-kun-unit-tracking-v128="1"></script></body>');
   }
   if(!html.includes('/v2/modules-v154-admin-jnt-shipments.js')){
     html=html.replace('</body>','<script src="/v2/modules-v154-admin-jnt-shipments.js?v=154.0" data-kun-admin-jnt-shipments="1"></script></body>');
@@ -274,6 +285,8 @@ export default {
       }
     }
 
+    const hrDirectory=await handleHRDirectory({request,env:dataEnv,ctx,delegate:delegate});if(hrDirectory)return hrDirectory;
+    const documentSettings=await handleDocumentSettings({request,env:dataEnv,ctx,delegate:delegate});if(documentSettings)return documentSettings;
     const printing=await handleProductionPrintingQueue({request,env:dataEnv,ctx,delegate});
     if(printing)return syncInventoryTrackingAfterResponse({request,response:printing,env:dataEnv,actor:'production'});
 

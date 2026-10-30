@@ -1,3 +1,5 @@
+import {handleHRDirectory} from './hr-directory.js';
+import {handleDocumentSettings} from './document-settings.js';
 import {guardSessionRequest} from './session-request-guard.js';
 import {handleFinancialAccountingOS} from './accounting-faos-api.js';
 import app,{SyncEntrypoint as BaseSyncEntrypoint} from './index-commerce-v38-base.js';
@@ -17,7 +19,10 @@ import {reconcileMonthlySubscriptions} from './subscription-billing.js';
 import {handleInventoryUnitTracking,syncInventoryTrackingAfterResponse,reconcileTrackedOrderLifecycles,reconcileAllClientsUnitCoverage} from './inventory-unit-tracking.js';
 
 const V2_UI_SCRIPTS=[
-  '<script src="/v2/modules-v155-accounting-faos.js?v=155.4" data-kun-accounting-faos="1"></script>',
+  '<script src="/v2/hr-directory-ui.js?v=1.0"></script>',
+  '<script type="module" src="/v2/document-settings-ui.js?v=1.0"></script>',
+  '<script src="/v2/modules-v155-accounting-faos.js?v=155.5" data-kun-accounting-faos="1"></script>',
+  '<script src="/v2/order-followups.js?v=1.0"></script>',
   '<script src="/v2/modules-v105-customer-service-claim.js?v=105.3" data-kun-customer-service-claim="1"></script>',
   '<script src="/v2/modules-v105-section-nav-actions.js?v=105.1" data-kun-section-nav-actions="1"></script>',
   '<script src="/v2/modules-v106-manual-jnt-order.js?v=106.0" data-kun-manual-jnt-order="1"></script>',
@@ -29,7 +34,7 @@ const V2_UI_SCRIPTS=[
   '<script src="/v2/modules-v125-dashboard-section-periods.js?v=125.3" data-kun-dashboard-section-periods-v125="1"></script>',
   '<script src="/v2/modules-v126-dashboard-finance-top.js?v=126.5" data-kun-dashboard-finance-top-v126="1"></script>',
   '<script src="/v2/modules-v127-subscriptions.js?v=127.22" data-kun-subscriptions-v127="1"></script>',
-  '<script src="/v2/modules-v128-unit-tracking.js?v=128.4" data-kun-unit-tracking-v128="1"></script>'
+  '<script src="/v2/modules-v128-unit-tracking.js?v=128.5" data-kun-unit-tracking-v128="1"></script>'
 ].join('');
 const LIVE_TEAM_ASSET_FROM='/v2/modules-v117-team-collaboration.js?v=117.0';
 const LIVE_TEAM_ASSET_TO='/v2/modules-v117-team-collaboration.js?v=117.1';
@@ -49,6 +54,7 @@ async function injectV2Ui(request,response){
   const type=response.headers.get('content-type')||'';
   if(!type.includes('text/html'))return response;
   let html=await response.text();
+  html=html.replace(/modules-v31-customer-service\.js\?v=[^"']+/g,'modules-v31-customer-service.js?v=31.3.5');
   html=html.replaceAll(LIVE_TEAM_ASSET_FROM,LIVE_TEAM_ASSET_TO);
   const headers=new Headers(response.headers);headers.delete('content-length');headers.set('Cache-Control','no-store');
   // The public HTML now ships the live claim and period scripts directly.
@@ -123,6 +129,8 @@ export default {
     if(operational)return operational;
     const automation=await handleAutomationWorkflowsV104({request,env,ctx,delegate:app});
     if(automation)return automation;
+    const hrDirectory=await handleHRDirectory({request,env:env,ctx,delegate:app});if(hrDirectory)return hrDirectory;
+    const documentSettings=await handleDocumentSettings({request,env:env,ctx,delegate:app});if(documentSettings)return documentSettings;
     const faos=await handleFinancialAccountingOS({request,env,ctx,delegate:app});
     if(faos)return faos;
     const monthly=await handleAccountingMonthly({request,env,ctx,delegate:app});

@@ -55,12 +55,30 @@ jobs:
         run: node scripts/customer-service-notes-product-cards-test.mjs
       - name: Customer Service board, periods and J&T void regression
         run: node scripts/customer-service-board-print-void-test.mjs
+      - name: Read-only customer document browser fixture
+        run: node scripts/browser-order-document-preview-test.mjs
+      - name: Store document configuration and print-request synthetic regression
+        run: |
+          node scripts/document-settings-sqlite-test.mjs
+          node scripts/browser-document-settings-fixture-test.mjs
       - name: Multi-store order alerts and accounting regression
         run: |
           node scripts/android-order-notifications-fake-test.mjs
           node scripts/android-accounting-fake-test.mjs
       - name: Run full contract and unit suite
         run: npm test
+      - name: FAOS multi-line journal synthetic browser regression
+        run: node scripts/browser-faos-multiline-fixture-test.mjs
+      - name: Order-linked follow-up acceptance with synthetic store data
+        run: |
+          node scripts/order-followups-sqlite-test.mjs
+          node scripts/browser-order-followups-fixture-test.mjs
+      - name: HR draft net-collection commission policy (pure synthetic evidence)
+        run: node scripts/hr-payroll-core-test.mjs
+      - name: Private HR directory acceptance (synthetic data only)
+        run: |
+          node scripts/hr-directory-sqlite-test.mjs
+          node scripts/browser-hr-directory-fixture-test.mjs
       - name: Inventory workspace UX browser regression
         run: node scripts/browser-inventory-workspace-fixture-test.mjs
       - name: Sidebar cross-group navigation browser regression

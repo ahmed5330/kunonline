@@ -26,6 +26,19 @@ try{
  await evalJs(`window.__calls=[];window.KunActionsV23={scope:async()=>({cid:'TENANT',sid:'STORE'}),drawer:(t,h)=>document.getElementById('drawer').innerHTML=h,api:async(p,o={})=>{const b=JSON.parse(o.body||'{}');__calls.push({p,b});if(p.includes('/shipments/pack/open'))return {shipmentId:'SP-1',expected:1,scanned:0};if(p.includes('/shipments')&&b.codes)return {shipment:{id:'SP-1',status:'planned'}};if(p.includes('/shipments')&&!o.method)return {order:{id:'ORDER',ref:'طلب التجربة'},units:[{unit_code:'PLAN-UNIT',product_name:'منتج التجربة',status:'reserved'}],shipments:[]};if(p.includes('/order-scan/open'))return {order:{id:'ORDER',ref:'طلب الاختبار'},expectedCount:2,scannedCount:0};if(p.includes('/order-scan/unit')){if(b.code==='WRONG')throw new Error('القطعة لا تطابق المنتج المطلوب');return {expectedCount:2,scannedCount:1};}return {ok:true};}};`);
  await evalJs('eval('+JSON.stringify(uiSrc)+')');await waitFor('document.querySelector("[data-warehouse-ops]")','workbench button');
  await evalJs('document.querySelector("[data-warehouse-ops]").click()');
+ // Every mode exposes only its relevant fields; changing mode must never call an API.
+ const fields={packing:[],partialPacking:[],shipmentPlan:['whOrderRef','whCod','whId'],waybillCreate:['whId'],waybillPrint:['whId'],shipmentCancel:['whId','whReason'],handover:['whId','whReason'],stocktake:['whSource','whId'],transfer:['whSource','whTarget','whId'],receive:['whId'],scrap:['whReason'],approve:['whId'],partialReturn:['whReason','whId'],inspect:['whReason','whDisposition'],stockApproval:['whId','whReason','whAdjustMissing','whCorrectLocations'],exchange:['whId','whReplacementOrder','whReason'],serialize:[],lookup:[]};
+ const fieldIds=['whSource','whTarget','whId','whOrderRef','whCod','whReason','whDisposition','whReplacementOrder','whAdjustMissing','whCorrectLocations'];
+ for(const [mode,expected] of Object.entries(fields)){
+   await evalJs('document.getElementById("whMode").value='+JSON.stringify(mode)+';document.getElementById("whMode").dispatchEvent(new Event("change"))');
+   assert.deepEqual((await evalJs(JSON.stringify(fieldIds)+'.filter(id=>getComputedStyle(document.getElementById(id).closest("label")).display!=="none")')).sort(),expected.slice().sort(),mode+' fields');
+ }
+ assert.equal(await evalJs('__calls.length'),0,'mode selection cannot write');
+ await evalJs('document.getElementById("whMode").value="stockApproval";document.getElementById("whMode").dispatchEvent(new Event("change"));document.getElementById("whAdjustMissing").checked=true;document.getElementById("whCorrectLocations").checked=true;document.getElementById("whId").value="OLD-SESSION";document.getElementById("whMode").value="packing";document.getElementById("whMode").dispatchEvent(new Event("change"))');
+ assert.equal(await evalJs('document.getElementById("whId").value'),'');
+ assert.equal(await evalJs('document.getElementById("whAdjustMissing").checked||document.getElementById("whCorrectLocations").checked'),false);
+ assert.equal(await evalJs('document.getElementById("whEnd").textContent'),'إتمام تجهيز الطلب');
+ assert.equal(await evalJs('document.getElementById("whTargetLocation").disabled'),true);
  const submit=code=>evalJs('document.getElementById("whCode").value='+JSON.stringify(code)+';document.getElementById("whForm").requestSubmit();true');
  await submit('JT-REAL');await waitFor('__calls.length===1','waybill context');assert.equal(await evalJs('__calls[0].b.code'),'JT-REAL');
  await submit('WRONG');await waitFor('document.getElementById("whResult").innerText.includes("لا تطابق")','wrong scan feedback');

@@ -1,4 +1,4 @@
-/* Kun Online v128.4 — serialized stock labels, scan-to-pack/dispatch and inspected returns. */
+/* Kun Online v128.5 — serialized stock labels, scan-to-pack/dispatch and inspected returns. */
 (function(){
   const K=window.KunActionsV23;if(!K)return;
   const STATUS={packed:'مجهزة',scrapped:'هالك معتمد',missing:'مفقودة',in_transfer:'في النقل',in_stock:'في المخزون',returned_in_stock:'مرتجع وعاد للمخزون',returned_pending_inspection:'مرتجع ينتظر الفحص',quarantined:'حجر / فحص إضافي',damaged:'هالك / تالف',reserved:'محجوز لأوردر',shipped:'مع شركة الشحن',delivered:'تم تسليمه للعميل',retired:'خرج من المخزون',legacy_outbound:'حركة تاريخية خارج المخزون'};
@@ -65,9 +65,9 @@
   }
   function boot(){style();const root=document.getElementById('root');if(root)new MutationObserver(()=>{if(active())setTimeout(()=>load(false),50);}).observe(root,{childList:true,subtree:false});document.addEventListener('click',e=>{if(e.target.closest?.('.nav button[data-view="inventory"]'))setTimeout(()=>load(false),80);},true);const code=new URL(location.href).searchParams.get('unit');if(code)setTimeout(()=>lookup(code).catch(e=>notify(e.message)),600);if(active())setTimeout(()=>load(false),100);}
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();
-  window.KunUnitTrackingV128={version:'128.4',lookup,scan:openScanner,printAll:printAllAvailable,refresh:()=>{document.getElementById('unit128Panel')?.remove();return load(true);}};
+  window.KunUnitTrackingV128={version:'128.5',lookup,scan:openScanner,printAll:printAllAvailable,refresh:()=>{document.getElementById('unit128Panel')?.remove();return load(true);}};
   document.documentElement.dataset.unitTracking='v128-ready';
-})();/* Warehouse operations, v128.4. All scans are verified by the server. */
+})();/* Warehouse operations, v128.5. All scans are verified by the server. */
 (function(){
   let activeCamera=null,lastCode='',lastScan=0;
   const labels={shipmentPlan:'تقسيم طلب إلى شحنة',waybillCreate:'إنشاء بوليصة J&T للشحنة',waybillPrint:'طباعة بوليصة الشحنة',partialPacking:'تجهيز شحنة جزئية',shipmentCancel:'إلغاء شحنة قبل التسليم للمندوب',packing:'تجهيز طلب',handover:'تسليم J&T',stocktake:'جرد',transfer:'نقل مخزون',receive:'استلام النقل',scrap:'طلب هالك',approve:'اعتماد هالك',partialReturn:'استلام مرتجع',inspect:'فحص مرتجع',stockApproval:'اعتماد جرد',exchange:'ربط استبدال',serialize:'تفعيل ترقيم المنتج / Variant',lookup:'بحث قطعة / طلب / بوليصة'};
@@ -78,6 +78,43 @@
     stop();const K=window.KunActionsV23;let sessionId='',batchId='',orderId='',shipmentId='',planKey=crypto.randomUUID(),busy=false;
     K.drawer('تشغيل المخزن','<div class="card" id="warehouseOps"><label>العملية<select id="whMode" class="input">'+Object.entries(labels).map(([k,v])=>'<option value="'+k+'"'+(k==='packing'?' selected':'')+'>'+v+'</option>').join('')+'</select></label><label>المخزن / الموقع<input class="input" id="whSource" value="Main"><input class="input" id="whLocation" placeholder="الموقع اختياري"></label><label>وجهة النقل<input class="input" id="whTarget" placeholder="المخزن المستقبل"><input class="input" id="whTargetLocation" placeholder="الموقع المستقبل"></label><label>رقم العملية للاستلام أو الاعتماد<input class="input" id="whId"></label><label>رقم الطلب لتقسيم الشحنة<input class="input" id="whOrderRef"></label><label>مبلغ التحصيل لهذه الشحنة<input class="input" id="whCod" type="number" min="0" step="0.01" value="0"></label><label>المندوب / سبب الهالك<input class="input" id="whReason"></label><label>قرار فحص المرتجع<select class="input" id="whDisposition"><option value="quarantine">حجر للفحص</option><option value="restock">سليمة — متاحة للبيع</option><option value="damaged">تالفة</option></select></label><label>رقم طلب الاستبدال<input class="input" id="whReplacementOrder"></label><label><input type="checkbox" id="whAdjustMissing"> اعتماد خصم القطع الناقصة في الجرد</label><label><input type="checkbox" id="whCorrectLocations"> تصحيح مواقع القطع الممسوحة</label><div class="row mt"><button class="btn" id="whStart">بدء العملية</button><button class="btn soft" id="whCamera">الكاميرا</button><button class="btn soft" id="whEnd">اعتماد / إغلاق</button></div><form id="whForm" class="mt"><input class="input" id="whCode" autocomplete="off" placeholder="امسح البوليصة أولًا للتجهيز، أو كود القطعة"><button class="btn mt">تحقق من المسح</button></form><video id="whVideo" playsinline muted style="display:none;width:100%;max-height:220px"></video><div id="whResult" role="status" aria-live="polite" class="mt"></div><button class="btn soft mt" id="whReport">تقرير / كشف التسليم</button></div>');
     const root=document.getElementById('warehouseOps'),get=id=>root.querySelector('#'+id),value=id=>get(id).value.trim(),mode=()=>value('whMode');
+    // Field visibility is presentation only; server permissions and commands stay authoritative.
+    const profiles={
+      shipmentPlan:{fields:['whOrderRef','whCod','whId'],start:'عرض قطع الطلب',end:'حفظ الشحنة المختارة',hint:'افتح الطلب واختر القطع ومبلغ التحصيل المخصص لهذه الشحنة.'},
+      waybillCreate:{fields:['whId'],start:'إنشاء بوليصة الشحنة',hint:'أدخل رقم شحنة موجودة؛ هذا الإجراء ينشئ بوليصة فعلية لدى الناقل.'},
+      waybillPrint:{fields:['whId'],start:'طباعة بوليصة الشحنة',hint:'أدخل رقم الشحنة لطلب بوليصتها الرسمية.'},
+      shipmentCancel:{fields:['whId','whReason'],start:'إلغاء الشحنة',hint:'أدخل رقم الشحنة وسبب الإلغاء؛ تنطبق قيود الإلغاء الحالية.'},
+      packing:{fields:[],scan:true,end:'إتمام تجهيز الطلب',hint:'امسح بوليصة الطلب أولًا، ثم قطع الطلب. يجب إكمال القطع المطلوبة قبل الإتمام.'},
+      partialPacking:{fields:[],scan:true,end:'إتمام تجهيز الشحنة',hint:'امسح بوليصة الشحنة الجزئية أولًا، ثم القطع المخصصة لها.'},
+      handover:{fields:['whId','whReason'],start:'بدء دفعة تسليم',scan:true,end:'إتمام التسليم',report:true,hint:'ابدأ دفعة ثم امسح البوالص الرسمية الجاهزة للتسليم إلى المندوب.'},
+      stocktake:{fields:['whSource','whId'],start:'بدء الجرد',scan:true,end:'إنهاء العد',report:true,hint:'حدد المخزن ثم ابدأ العد. اعتماد الفروق عملية مستقلة بصلاحياتها الحالية.'},
+      transfer:{fields:['whSource','whTarget','whId'],start:'بدء النقل',scan:true,end:'إنهاء الإرسال',report:true,hint:'حدد المصدر والوجهة، ثم امسح القطع. الاستلام يتم في عملية استلام النقل.'},
+      receive:{fields:['whId'],scan:true,end:'إتمام الاستلام',report:true,hint:'أدخل رقم النقل ثم امسح القطع المستلمة.'},
+      scrap:{fields:['whReason'],scan:true,hint:'اكتب السبب ثم امسح القطعة لتسجيل طلب هالك؛ الاعتماد مستقل.'},
+      approve:{fields:['whId'],start:'اعتماد طلب الهالك',hint:'أدخل رقم طلب الهالك. قواعد الاعتماد والصلاحيات يراجعها الخادم.'},
+      partialReturn:{fields:['whReason','whId'],scan:true,hint:'امسح القطعة المرتجعة. لا تصبح متاحة للبيع قبل قرار الفحص.'},
+      inspect:{fields:['whReason','whDisposition'],scan:true,hint:'حدد نتيجة الفحص والسبب ثم امسح القطعة المرتجعة.'},
+      stockApproval:{fields:['whId','whReason','whAdjustMissing','whCorrectLocations'],start:'اعتماد فروق الجرد',report:true,hint:'راجع تقرير الجرد أولًا؛ خصم الناقص وتصحيح المواقع خياران صريحان ولا يُحددان تلقائيًا.'},
+      exchange:{fields:['whId','whReplacementOrder','whReason'],start:'ربط الاستبدال',hint:'أدخل رقم المرتجع ورقم طلب البديل للحفاظ على الربط بالطلب الأصلي.'},
+      serialize:{fields:[],scan:true,hint:'امسح كود المنتج أو المتغير لتفعيل الترقيم وفق قواعد المخزون القائمة.'},
+      lookup:{fields:[],scan:true,hint:'ابحث بكود القطعة أو رقم الطلب أو البوليصة.'}
+    };
+    const fieldIds=['whSource','whTarget','whId','whOrderRef','whCod','whReason','whDisposition','whReplacementOrder','whAdjustMissing','whCorrectLocations'];
+    const hint=document.createElement('p');hint.id='whModeHint';hint.setAttribute('role','status');root.querySelector('label').after(hint);
+    const reasonLabel=get('whReason').parentElement.firstChild,idLabel=get('whId').parentElement.firstChild;
+    function visible(node,show){node.hidden=!show;node.style.display=show?'':'none';}
+    function configureMode(){
+      const p=profiles[mode()];
+      for(const id of fieldIds){const field=get(id),visible=p.fields.includes(id);const label=field.closest('label');label.hidden=!visible;label.style.display=visible?'':'none';for(const input of label.querySelectorAll('input,select'))input.disabled=!visible;}
+      hint.textContent=p.hint;
+      visible(get('whStart'),!!p.start);get('whStart').textContent=p.start||'بدء العملية';
+      visible(get('whEnd'),!!p.end);get('whEnd').textContent=p.end||'إتمام العملية';
+      visible(get('whReport'),!!p.report);visible(get('whForm'),!!p.scan);visible(get('whCamera'),!!p.scan);
+      get('whCode').placeholder=['packing','partialPacking','handover'].includes(mode())?'امسح البوليصة أولًا':'امسح كود القطعة';
+      reasonLabel.textContent=mode()==='handover'?'اسم المندوب':'سبب العملية / ملاحظات الفحص';
+      idLabel.textContent=mode()==='exchange'?'رقم المرتجع':mode()==='approve'?'رقم طلب الهالك':['waybillCreate','waybillPrint','shipmentCancel'].includes(mode())?'رقم الشحنة':'رقم العملية';
+    }
+    configureMode();
     function reportHtml(d){
       const statuses={in_stock:'متاحة للبيع',reserved:'محجوزة',packed:'مجهزة',shipped:'مع شركة الشحن',delivered:'تم التسليم',returned_pending_inspection:'مرتجع ينتظر الفحص',returned_in_stock:'سليمة ومتاحة للبيع',quarantined:'حجر للفحص',damaged:'تالفة',missing:'مفقودة',scrapped:'هالك معتمد',approved:'تم اعتماد التسوية',planned:'خطة شحن محفوظة',waybill_pending:'إنشاء البوليصة قيد التحقق',waybill_created:'تم إنشاء البوليصة',printed:'تمت طباعة البوليصة',packing:'التجهيز جاري',handed_over:'تم التسليم لشركة الشحن',cancel_pending:'إلغاء البوليصة قيد التحقق',cancelled:'ملغاة',awaiting_replacement:'في انتظار خروج قطعة الاستبدال',in_transit:'النقل جاري',completed:'مكتملة'};
       const rows=d.units||(d.unit?[d.unit]:d.orders||[]),shipmentRows=d.shipments||[];
@@ -88,8 +125,8 @@
     }
     function show(data,error=false){get('whResult').style.color=error?'#b91c1c':'#166534';get('whResult').innerHTML=typeof data==='string'?esc(data):reportHtml(data||{});}
 
-    async function run(fn){if(busy)return;busy=true;try{const d=await fn();show(d);return d;}catch(e){show(e.message,true);if(navigator.vibrate)navigator.vibrate([80,40,80]);}finally{busy=false;get('whCode').focus();}}
-    get('whMode').onchange=()=>{sessionId=batchId=orderId=shipmentId='';planKey=crypto.randomUUID();stop();show('ابدأ العملية أو امسح الكود');};
+    async function run(fn){if(busy)return;busy=true;get('whMode').disabled=true;try{const d=await fn();show(d);return d;}catch(e){show(e.message,true);if(navigator.vibrate)navigator.vibrate([80,40,80]);}finally{busy=false;get('whMode').disabled=false;if(!get('whForm').hidden)get('whCode').focus();}}
+    get('whMode').onchange=()=>{sessionId=batchId=orderId=shipmentId='';planKey=crypto.randomUUID();stop();get('whVideo').style.display='none';for(const id of ['whId','whOrderRef','whReplacementOrder','whReason','whTarget','whTargetLocation','whCode'])get(id).value='';get('whAdjustMissing').checked=get('whCorrectLocations').checked=false;get('whCod').value='0';get('whDisposition').value='quarantine';configureMode();show(profiles[mode()].hint);};
     get('whStart').onclick=()=>run(async()=>{
       if(mode()==='shipmentPlan'){const ref=value('whOrderRef');if(!ref)throw new Error('أدخل رقم الطلب');let d=await api('/shipments?orderRef='+encodeURIComponent(ref));if(!d.units?.length&&!d.shipments?.length){await api('/order-scan/open',{context:'packing',code:ref});d=await api('/shipments?orderRef='+encodeURIComponent(ref));}orderId=d.order.id;return d;}
       if(['waybillCreate','waybillPrint','shipmentCancel'].includes(mode())){const id=value('whId');if(!id)throw new Error('أدخل رقم الشحنة');return api('/shipments/'+(mode()==='waybillCreate'?'create-waybill':mode()==='waybillPrint'?'print':'cancel'),{shipmentId:id,reason:value('whReason')});}

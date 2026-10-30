@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {execFileSync} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
 const read=path=>fs.readFileSync(new URL('../'+path,import.meta.url),'utf8');
-const check=path=>execFileSync(process.execPath,['--check',new URL('../'+path,import.meta.url).pathname],{stdio:'pipe'});
+const check=path=>execFileSync(process.execPath,['--check',fileURLToPath(new URL('../'+path,import.meta.url))],{stdio:'pipe'});
 for(const path of ['public/v2/modules-v31-customer-service.js','public/v2/modules-v42-customer-service-rich-cards.js','src/production-customer-service.js'])check(path);
 const cards=read('public/v2/modules-v31-customer-service.js');
 const rich=read('public/v2/modules-v42-customer-service-rich-cards.js');
@@ -33,7 +34,7 @@ assert.match(native,/ملاحظة العميل: /,'Customer notes visible on mob
 assert.match(native,/order.latestInternalNote/,'Staff notes retained on mobile card');
 assert.match(native,/تاريخ الطلب:/,'Order date visible');
 assert.match(native,/البوليصة:/,'AWB visible');
-assert.match(html,/modules-v31-customer-service.js\?v=31\.3\.4/,'Fresh copy JS on production');
+assert.match(html,/modules-v31-customer-service.js\?v=31\.3\.5/,'Fresh copy JS on production');
 assert.match(html,/modules-v42-customer-service-rich-cards.js\?v=42\.4/,'Fresh loaded-card name-copy JS on production');
 const androidBuild=read('android/app/build.gradle.kts');
 const buildCode=Number(androidBuild.match(/versionCode\s*=\s*(\d+)/)?.[1]||0);
