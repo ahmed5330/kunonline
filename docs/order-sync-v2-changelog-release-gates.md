@@ -71,6 +71,52 @@ a false `unchanged` when journal/authorization is down.
 - [ ] Confirm feature flag remains OFF before migration approval and that
   missing schema causes the safe legacy sync path without user-visible breakage.
 
+## Hardening and schema-contract findings (31 October)
+
+- A schema-accurate synthetic test now starts with the actual original
+  `orders` DDL in migration 0001 and applies all order columns from 0013,
+  0020, 0024 and 0090. It explicitly compares **every** real migrated
+  column with the UPDATE trigger guard: contact-claim, J&T address and
+  shipping-finance edits must emit change IDs. A primary-key change emits
+  a tombstone for the previous ID. Existing D1 versions must still be
+  audited before applying migration 0100.
+- The outer Worker returns an explicit JSON HTTP 404 when
+  `ORDER_CHANGE_FEED_ENABLED` is absent, rather than forwarding an unknown
+  route to Preview. A disabled route or malformed HTTP 200 response cannot
+  cause repeated full state scans every 15 seconds.
+- Android never holds a synchronized cursor lock across the network
+  call. Logging out or switching stores can revoke its local cursor even
+  during a request timeout. Malformed/server-error hints back off without
+  interfering with the 60-second authorized refresh.
+- Tests additionally cover bad HMAC cursors, multiple authorized stores,
+  grant revocation and prefix-retention gaps. Do **not** prune arbitrary
+  events out of the middle of the journal; retention must be prefix-based
+  with a safe gap-detection checkpoint.
+
+### Production schema and cost gates
+
+The configured Production Worker uses `PREVIEW_DB` as the canonical
+customer-data binding in `previewRuntimeEnv`. A migration on only the
+separate Production `DB` would **not** enable the endpoint. Both binding
+identity and migration ledger must be confirmed read-only before choosing
+the actual target D1. This document does not authorize writing either DB.
+
+Before any migration, check with read-only diagnostics that `orders` has
+all columns referenced by the trigger, and count legacy records with
+`store_id IS NULL`. Null-store orders cannot safely be assigned to a
+particular employee's store event feed; resolve them under the existing
+canonical authorization rules before relying on incremental delivery.
+
+**Important cost limitation:** every 15-second hint currently checks the
+live store ACL and queries the journal. The app also retains full-state
+reconciliation every 60 seconds for non-order changes. That means this
+stage improves detection latency but does **not yet** guarantee fewer D1
+reads or lower cost than the original implementation. Benchmark requests,
+rows_read, per-device battery/network and p95 latency under realistic
+concurrency before enabling the flag. Do not claim efficient delta
+synchronization until the authoritative data path actually fetches only
+changed rows and uses durable checkpoints.
+
 ## Known boundaries
 
 This journal tracks the `orders` table only, not related catalog,
