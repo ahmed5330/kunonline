@@ -23,6 +23,10 @@ jobs:
         run: |
           node scripts/release-asset-version-contract-test.mjs
           node scripts/order-freshness-web-test.mjs
+      - name: Offline D1 order journal and authenticated incremental feed
+        run: |
+          node --check src/mobile-order-changes.js
+          node scripts/mobile-order-change-journal-sqlite-test.mjs
       - name: Admin J&T shipment access and import safety
         run: |
           node --check src/admin-jnt-shipments.js
