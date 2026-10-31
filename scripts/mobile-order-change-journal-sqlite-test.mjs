@@ -37,7 +37,7 @@ const query={
   }}
 };
 const count=()=>db.prepare('SELECT COUNT(*) c FROM order_change_log').get().c;
-const save=(id,client='t1',store='a')=>db.prepare('INSERT INTO orders(id,client_id,store_id,state) VALUES (?,?,?,?)').run(id,client,store,'pending');
+const save=(id,client='t1',store='a')=>db.prepare('INSERT INTO orders(id,client_id,store_id,date,state) VALUES (?,?,?,?,?)').run(id,client,store,'2026-10-31','pending');
 save('o1');
 assert.equal(count(),1);
 db.prepare("UPDATE orders SET state='pending' WHERE id='o1'").run();
