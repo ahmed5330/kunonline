@@ -72,16 +72,20 @@ object MobileOrderChangeFeed {
         SecureStore.put(context, PREFS, "cursor", null)
     }
 
-    @Synchronized fun peek(context: Context, scope: ScopeInfo): OrderChangeHint {
+    fun peek(context: Context, scope: ScopeInfo): OrderChangeHint {
         val cookie = KunApi.sessionCookie(context) ?: return OrderChangeHint()
         val key = hash(cookie + "\u0000" + scope.clientId + "\u0000" + scope.storeId)
-        if (activeScope != key) {
-            activeScope = key
-            inactiveUntil = 0L
+        val cursor = synchronized(this) {
+            if (activeScope != key) {
+                activeScope = key
+                inactiveUntil = 0L
+            }
+            if (SystemClock.elapsedRealtime() < inactiveUntil) return OrderChangeHint()
+            val storedKey = SecureStore.get(context, PREFS, "scope")
+            if (storedKey == key) SecureStore.get(context, PREFS, "cursor").orEmpty() else ""
         }
-        if (SystemClock.elapsedRealtime() < inactiveUntil) return OrderChangeHint()
-        val storedKey = SecureStore.get(context, PREFS, "scope")
-        val cursor = if (storedKey == key) SecureStore.get(context, PREFS, "cursor").orEmpty() else ""
+        // Network access must not hold this monitor: logout and store-change
+        // revocation must remain immediate even during a 12s HTTP timeout.
         val query = buildList {
             if (scope.clientId.isNotBlank()) add("clientId=" + enc(scope.clientId))
             if (scope.storeId.isNotBlank()) add("storeId=" + enc(scope.storeId))
@@ -100,15 +104,20 @@ object MobileOrderChangeFeed {
         try {
             val code = connection.responseCode
             if (code == 404 || code == 405 || code == 503) {
-                inactiveUntil = SystemClock.elapsedRealtime() + DISABLED_MS
+                synchronized(this) {
+                    if (activeScope == key) inactiveUntil = SystemClock.elapsedRealtime() + DISABLED_MS
+                }
                 return OrderChangeHint()
             }
             if (code == 401 || code == 403) return OrderChangeHint(refresh = true)
             if (code != 200) return OrderChangeHint()
             val body = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
             val decision = OrderChangeEnvelope.parse(body)
-            if (KunApi.sessionCookie(context) != cookie || activeScope != key) return OrderChangeHint()
-            return OrderChangeHint(decision.refresh, decision.cursor, key, available = true)
+            if (KunApi.sessionCookie(context) != cookie) return OrderChangeHint()
+            return synchronized(this) {
+                if (activeScope != key) OrderChangeHint()
+                else OrderChangeHint(decision.refresh, decision.cursor, key, available = true)
+            }
         } catch (_: Exception) {
             // Corrupt/partial response never advances the cursor or claims success.
             return OrderChangeHint(refresh = true)
