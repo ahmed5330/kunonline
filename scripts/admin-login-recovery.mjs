@@ -46,7 +46,12 @@ function assertIdentity(rows,wanted){
   if(row.role&&row.role!=='admin')throw Error('Target account role mismatch');
   if(row.status!=='active')throw Error('Target administrator inactive; do not reset blindly');
   if(row.email!==wanted)throw Error('Admin email differs from canonical normalized login; manual review required');
-  const p=String(row.password??'').split('
+  const parts=String(row.password??'').split('$');
+  const rounds=Number(parts[1]);
+  if(!row.id||parts.length!==4||parts[0]!=='pbkdf2'||!Number.isSafeInteger(rounds)||rounds<1||rounds>500000||
+    !/^[A-Za-z0-9+/]+={0,2}$/.test(parts[2])||!/^[A-Za-z0-9+/]+={0,2}$/.test(parts[3])||
+    Buffer.from(parts[2],'base64').length!==16||Buffer.from(parts[3],'base64').length!==32)
+    throw Error('Stored administrator hash has incompatible format');
   return row;
 }
 function d1id(){
