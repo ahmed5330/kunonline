@@ -83,7 +83,7 @@ let remaining=await call(page.data.cursor);
 assert.equal(remaining.data.changes.length,6);assert.equal(remaining.data.hasMore,false);
 assert.equal(new Set([...page.data.changes,...remaining.data.changes].map(x=>x.seq)).size,56);
 
-const missing={SESSION_SECRET:'synthetic-secret',DB:{prepare(){throw new Error('missing table')}}};
+const missing={SESSION_SECRET:'synthetic-secret',DB:{prepare(sql){if(sql.includes('order_change_log'))throw new Error('missing table');return query.prepare(sql);}}};
 const unavailable=await call(null,'a','session-a','t1',missing);
 assert.equal(unavailable.status,503);
 assert.equal(unavailable.data.resetRequired,true);
