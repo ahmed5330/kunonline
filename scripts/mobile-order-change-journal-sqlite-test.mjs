@@ -124,5 +124,36 @@ const missing={SESSION_SECRET:'synthetic-secret',DB:{prepare(sql){if(sql.include
 const unavailable=await call(null,'a','session-a','t1',missing);
 assert.equal(unavailable.status,503);
 assert.equal(unavailable.data.resetRequired,true);
+
+// Tampering with a signed cursor must require a full authenticated snapshot.
+const forged = next.data.cursor.slice(0,-1) + (next.data.cursor.endsWith('0') ? '1' : '0');
+assert.equal((await call(forged)).data.mode,'reset');
+
+// Multi-store admin feed needs to include only its actually granted store IDs.
+const allStores = await call(null,'','session-a','t1');
+assert.equal(allStores.data.mode,'reset');
+save('scope-a','t1','a');
+save('scope-b','t1','b');
+save('other-tenant','t2','c');
+const multi = await call(allStores.data.cursor,'','session-a','t1');
+assert.deepEqual(multi.data.changes.map(x=>x.orderId),['scope-a','scope-b']);
+assert.equal(multi.data.changes.every(x=>x.clientId==='t1'),true);
+assert.equal(multi.data.changes.every(x=>Object.keys(x).sort().join(',')==='clientId,operation,orderId,seq,storeId'),true,
+  'Journal hints must never include customer PII or order payloads');
+
+// Revoke a store: the old signed cursor must stop working, without any stale
+// update from the revoked store escaping to this session.
+db.prepare("UPDATE stores SET status='inactive' WHERE id='a'").run();
+assert.equal((await call(next.data.cursor,'a')).status,403);
+const afterGrantChange=await call(allStores.data.cursor,'','session-a','t1');
+assert.equal(afterGrantChange.data.mode,'reset');
+db.prepare("UPDATE stores SET status='active' WHERE id='a'").run();
+
+// A prefix-retention cleanup must force a reset for a cursor older than
+// the earliest kept log record, not report false unchanged.
+const oldCursor=(await call(null,'a')).data.cursor;
+const currentMax=db.prepare('SELECT MAX(seq) n FROM order_change_log').get().n;
+db.prepare('DELETE FROM order_change_log WHERE seq<?').run(currentMax);
+assert.equal((await call(oldCursor)).data.mode,'reset');
 db.close();
 console.log('PASS: atomic triggers, tombstones, rollback, ACL, cursor integrity, pagination, missing schema fail-closed');
