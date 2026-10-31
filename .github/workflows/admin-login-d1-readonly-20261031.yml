@@ -1,0 +1,39 @@
+name: Primary admin login — sanitized D1 read-only audit
+# Branch only. No deploy, SQL mutation, password reset, or real login attempts.
+on:
+  push:
+    branches:
+      - ops/admin-login-readonly-audit-20261031
+    paths:
+      - '.github/workflows/admin-login-d1-readonly-20261031.yml'
+      - 'scripts/admin-login-d1-readonly-audit.mjs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: primary-admin-login-readonly-audit-20261031
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    environment:
+      name: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify isolated offline audit cases
+        run: node scripts/admin-login-d1-readonly-audit.mjs --self-test
+      - name: Read canonical and legacy admin identity structure (SELECT-only; no account identifiers logged)
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: node scripts/admin-login-d1-readonly-audit.mjs --read-only
+      - name: Confirm no release or password reset was performed
+        if: always()
+        run: echo 'Authentication audit only. Production and Preview unchanged. No deployment authorized.'
