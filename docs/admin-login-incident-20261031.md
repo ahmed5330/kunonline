@@ -48,3 +48,28 @@ This repository deliberately does not run Cloudflare admin-account diagnostics o
 9. If the account is missing, is disabled, has invalid hash or email casing, duplicates another account, or identities differ across databases, **STOP** and investigate before any recovery. The recovery script intentionally refuses these scenarios.
 
 CI proof that the offline script passes does not prove that Cloudflare credentials, backups, production Worker bindings, or the real account are healthy. Do not merge this PR as if the login were repaired.
+
+
+## 2026-10-31: Least-privilege canonical diagnosis without Production D1 access
+
+Cloudflare's Query D1 Database API explicitly accepts **D1 Read** OR **D1 Write** permission: https://developers.cloudflare.com/api/resources/d1/subresources/database/methods/query/ . A read-only diagnosis should use a **temporary D1 Read token** scoped to the account and canonical `kunonline-preview` DB as narrowly as Cloudflare's token UI permits. Do not request D1 Write or Workers deployment privileges for diagnosis.
+
+The original cross-database aggregate script requires read access to both `kunonline` and `kunonline-preview`. For an owner who has provided access **only to canonical Preview**, this wider requirement is unnecessary. Use the new **single-account, single-D1** tool instead:
+
+```bash
+# Keep temporary secrets only in the trusted local terminal's environment
+# Optionally provide the exact email using KUN_ADMIN_EMAIL environment variable;
+# otherwise the tool prompts interactively (never logs the email).
+node scripts/admin-login-canonical-readonly.mjs --self-test
+node scripts/admin-login-canonical-readonly.mjs --read-only
+```
+
+The tool uses only two fixed, parameterized SELECT statements and redacts account email/password hash from output. It checks an exact active `admin` record and whether its stored email is byte-for-byte equal to the login lookup, stored PBKDF2-SHA256 hash format, normalized-email collision, and exact-email lockout. It does not assert whether the user's actual plaintext password is correct, whether this source matches the deployed version, or that a real login succeeded.
+
+**Do not reattempt a disputed password**, even if the lock timer expires. The app uses `MAX_FAILS=5`, `LOCK_MINUTES=15`; waiting for a lock to expire does not fix unknown or incorrect credentials.
+
+A true recovery write needs a separate, explicitly approved narrow D1 Write authorization, verifiable backup, account-ownership check, audited conditional one-row change, then a private fresh login and `/api/me` check. The operator must never paste credentials into CI, a PR, chat, or browser logs.
+
+**Never invoke `wrangler d1 time-travel restore` on a live Kun database to recover one account:** Cloudflare documents it overwrites the entire database and can disrupt live orders; Time Travel is a contingency to protect data, not the recommended single-account recovery mechanism. https://developers.cloudflare.com/d1/reference/time-travel/
+
+Do not merge PR #350 into `main` or deploy any Worker as a substitute for live account verification. This PR is restricted to offline CI and operator-run tools.
