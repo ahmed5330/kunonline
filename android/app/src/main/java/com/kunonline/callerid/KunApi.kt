@@ -467,10 +467,10 @@ object KunApi {
         verifiedOptionsCurrent = ScopeInfo(option.clientId, option.storeId)
         clearScope()
         MobileSyncClient.clear()
-        MobileOrderChangeFeed.clear(context)
         CustomerCache.clear(context)
         CallActivityStore.clear(context)
         MobileSnapshotCache.clear(context)
+        MobileOrderChangeFeed.clear(context)
         return ActionResult(true, "تم اختيار ${option.storeName}")
     }
 
