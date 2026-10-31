@@ -152,6 +152,8 @@ db.prepare("UPDATE stores SET status='active' WHERE id='a'").run();
 // A prefix-retention cleanup must force a reset for a cursor older than
 // the earliest kept log record, not report false unchanged.
 const oldCursor=(await call(null,'a')).data.cursor;
+save('retention-event-1');
+save('retention-event-2');
 const currentMax=db.prepare('SELECT MAX(seq) n FROM order_change_log').get().n;
 db.prepare('DELETE FROM order_change_log WHERE seq<?').run(currentMax);
 assert.equal((await call(oldCursor)).data.mode,'reset');
