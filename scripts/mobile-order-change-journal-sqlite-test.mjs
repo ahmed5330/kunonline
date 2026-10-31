@@ -6,6 +6,16 @@ import {handleMobileOrderChanges} from '../src/mobile-order-changes.js';
 
 globalThis.crypto ||= webcrypto;
 const migration=readFileSync(new URL('../migrations/0100_order_change_journal.sql',import.meta.url),'utf8');
+// The disabled route must explicitly return 404. Proxying it to the old
+// Preview Worker could return HTTP 200 HTML, causing repeated full-state
+// refreshes every 15 seconds on Android.
+const outerWorker=readFileSync(new URL('../src/index-production-mobile-update.js',import.meta.url),'utf8');
+assert.ok(outerWorker.includes("new URL(request.url).pathname==='/api/mobile/order-changes'"),
+  'Outer Worker must intercept the order-change route');
+assert.ok(outerWorker.includes("status:404,headers:{'Content-Type':'application/json; charset=utf-8'"),
+  'When the feature flag is disabled, the app must receive an explicit 404');
+assert.ok(outerWorker.includes("dataEnv.ORDER_CHANGE_FEED_ENABLED!=='1'"),
+  'Order hints must stay disabled until the canonical migration is approved');
 // Build the real historical orders schema from the migrations, not from the
 // trigger's own field list: otherwise a missing column would be invisible.
 const db=new DatabaseSync(':memory:');
