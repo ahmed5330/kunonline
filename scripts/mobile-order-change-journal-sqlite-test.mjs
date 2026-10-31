@@ -6,10 +6,24 @@ import {handleMobileOrderChanges} from '../src/mobile-order-changes.js';
 
 globalThis.crypto ||= webcrypto;
 const migration=readFileSync(new URL('../migrations/0100_order_change_journal.sql',import.meta.url),'utf8');
-const columns=[...new Set([...migration.matchAll(/(?:OLD|NEW)\.([a-z_]+)/g)].map(m=>m[1]))];
+// Build the real historical orders schema from the migrations, not from the
+// trigger's own field list: otherwise a missing column would be invisible.
 const db=new DatabaseSync(':memory:');
-const defs=columns.filter(c=>!['id','client_id','store_id'].includes(c)).map(c=>c+' TEXT').join(',');
-db.exec('CREATE TABLE orders(id TEXT PRIMARY KEY,client_id TEXT NOT NULL,store_id TEXT,'+defs+');');
+const baseline=readFileSync(new URL('../migrations/0001_preview_schema.sql',import.meta.url),'utf8');
+const table=/CREATE TABLE IF NOT EXISTS orders \([\s\S]*?\n\);/.exec(baseline)?.[0];
+assert.ok(table,'Original orders schema must be present');
+db.exec(table);
+for (const migrationPath of ['0013_store_data_scope','0020_post_shipping_services',
+    '0024_shipping_finance','0090_customer_service_claim_jnt_address']) {
+  const sql=readFileSync(new URL('../migrations/'+migrationPath+'.sql',import.meta.url),'utf8');
+  for (const statement of sql.match(/ALTER TABLE orders ADD COLUMN [^;]+;/g)||[])
+    db.exec(statement);
+}
+const columns=db.prepare('PRAGMA table_info(orders)').all().map(x=>x.name);
+const updateTrigger=migration.slice(migration.indexOf('CREATE TRIGGER IF NOT EXISTS trg_order_changelog_update'));
+for (const column of columns)
+  assert.ok(updateTrigger.includes('OLD.'+column+' IS NOT NEW.'+column),
+    'Update journal must track existing order column: '+column);
 db.exec('CREATE TABLE stores(id TEXT PRIMARY KEY,client_id TEXT NOT NULL,name TEXT,is_default INTEGER,status TEXT);');
 db.exec("INSERT INTO stores VALUES ('a','t1','Store A',1,'active'),('b','t1','Store B',0,'active'),('c','t2','Store C',0,'active')");
 db.exec(migration);
@@ -34,12 +48,25 @@ db.prepare("UPDATE orders SET store_id='b' WHERE id='o1'").run();
 assert.equal(count(),4,'Store moves create tombstone + upsert in one transaction');
 assert.deepEqual(db.prepare('SELECT store_id,operation FROM order_change_log WHERE seq IN (3,4) ORDER BY seq').all()
   .map(x=>[x.store_id,x.operation]),[['a','remove'],['b','upsert']]);
+// Late-migrated fields used by customer service, J&T and finance must not be invisible.
+for (const column of ['contact_claim_user_id','jnt_province_code','collected_amount',
+    'carrier_shipping_cost','shipping_finance_mode']) {
+  const before=count();
+  db.prepare('UPDATE orders SET '+column+'=? WHERE id=?').run('sample-'+column,'o1');
+  assert.equal(count(),before+1,column+' must append a durable event');
+}
+// Primary-key revisions must tombstone the old ID, not leave a ghost order on mobile.
+const prior=count();
+db.prepare("UPDATE orders SET id='o1-renamed' WHERE id='o1'").run();
+assert.equal(count(),prior+2,'Renaming an ID removes the previous ID from the old snapshot');
+assert.deepEqual(db.prepare('SELECT order_id,operation FROM order_change_log WHERE seq>? ORDER BY seq').all(prior)
+  .map(x=>[x.order_id,x.operation]),[['o1','remove'],['o1-renamed','upsert']]);
 db.exec('BEGIN');
 save('will-rollback');
 db.exec('ROLLBACK');
-assert.equal(count(),4,'Journal entry must rollback atomically with order mutation');
-db.prepare("DELETE FROM orders WHERE id='o1'").run();
-assert.equal(count(),5);
+assert.equal(count(),prior+2,'Journal entry must rollback atomically with order mutation');
+db.prepare("DELETE FROM orders WHERE id='o1-renamed'").run();
+assert.equal(count(),prior+3);
 
 const delegate=(cookie='session-a')=>({fetch:async request=>{
   if(request.url.endsWith('/api/me'))return Response.json(
