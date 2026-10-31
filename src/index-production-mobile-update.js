@@ -20,6 +20,7 @@ import {handleMobileOrderSearch} from './mobile-global-order-search.js';
 import {handleMobileStoreOptions} from './mobile-store-options.js';
 import {handleProductionClientContext} from './production-client-context.js';
 import {handleMobileOrderAlerts} from './mobile-order-alerts.js';
+import {handleMobileOrderChanges} from './mobile-order-changes.js';
 import {ensureInternalCollaborationSchema} from './internal-collaboration-schema.js';
 import {handleProductionPreviewParity} from './production-preview-parity.js';
 import {handleProductionEasyOrdersHealth} from './production-easyorders-health.js';
@@ -245,6 +246,12 @@ export default {
     if(aiIntegrations)return aiIntegrations;
     const mobileStoreOptions=await handleMobileStoreOptions({request,env:dataEnv,delegate});
     if(mobileStoreOptions)return mobileStoreOptions;
+    // Disabled until migration 0100 has been reviewed and applied to the
+    // canonical D1. Never return a false "unchanged" result without the journal.
+    if(dataEnv.ORDER_CHANGE_FEED_ENABLED==='1'){
+      const orderChanges=await handleMobileOrderChanges({request,env:dataEnv,delegate});
+      if(orderChanges)return orderChanges;
+    }
     const newOrderAlerts=await handleMobileOrderAlerts({request,env:dataEnv,delegate});
     if(newOrderAlerts)return newOrderAlerts;
     const adminJntShipments=await handleAdminJntShipments({request,env:dataEnv,delegate});
