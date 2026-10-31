@@ -7,6 +7,10 @@ on:
     paths:
       - '.github/workflows/admin-login-d1-readonly-20261031.yml'
       - 'scripts/admin-login-d1-readonly-audit.mjs'
+  pull_request:
+    paths:
+      - '.github/workflows/admin-login-d1-readonly-20261031.yml'
+      - 'scripts/admin-login-d1-readonly-audit.mjs'
   workflow_dispatch:
 
 permissions:
@@ -17,7 +21,18 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  offline_contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: No-credential admin login audit contract
+        run: node scripts/admin-login-d1-readonly-audit.mjs --self-test
   audit:
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 8
     environment:
