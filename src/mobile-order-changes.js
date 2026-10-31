@@ -18,7 +18,7 @@ async function signer(secret){
   return crypto.subtle.importKey('raw',new TextEncoder().encode(secret),{name:'HMAC',hash:'SHA-256'},false,['sign']);
 }
 async function signature(key,scope,seq){
-  return hex(await crypto.subtle.sign('HMAC',key,new TextEncoder().encode(`v1|\${scope}|\${seq}`)));
+  return hex(await crypto.subtle.sign('HMAC',key,new TextEncoder().encode(`v1|${scope}|${seq}`)));
 }
 function validSeq(value){
   const n=Number(value);
