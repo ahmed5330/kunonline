@@ -42,6 +42,35 @@ a false `unchanged` when journal/authorization is down.
   existing ACL-checked order state or detail endpoint and must not treat an
   ID from this feed as proof of customer data access or mutation success.
 
+## Android consumer on this branch (not yet released)
+
+- `MobileOrderChangeFeed.kt` fetches the feature-gated endpoint in the foreground.
+  It persists the cursor with Android Keystore encryption scoped to the session
+  and selected client/store, and clears the cursor on login, logout and switching.
+- When a changed/reset hint arrives, the app first fetches a full authorised
+  snapshot. Only after that succeeds does it commit the proposed cursor.
+  `unchanged` can advance the cursor after successful server-side ACL checks
+  while the app retains a previously authenticated snapshot.
+- The foreground UI checks hints every 15 seconds when enabled and keeps its
+  existing authoritative 60-second reconciliation for **non-order** changes,
+  expired sessions, unavailable endpoints and missed hints. It does not
+  increase full-state requests to every 15 seconds.
+- 404/405/503 pauses hint attempts for five minutes while normal full-state
+  sync remains active; a malformed response cannot be acknowledged.
+- Android build number intentionally stays unchanged in the **draft** branch.
+  A release build version increment and signed-APK QA gate are required before
+  merging any Android changes into main.
+
+### Remaining Android acceptance tests
+
+- [ ] Unit and Gradle build green for the latest exact PR HEAD.
+- [ ] Two real devices + browser: insert/update/delete, move between stores,
+  stale cursor, revoked grants, offline/online, cold start and >50 event backlog.
+- [ ] Android idle battery/network measurements; do not publish until
+  incremental mode saves actual D1 reads.
+- [ ] Confirm feature flag remains OFF before migration approval and that
+  missing schema causes the safe legacy sync path without user-visible breakage.
+
 ## Known boundaries
 
 This journal tracks the `orders` table only, not related catalog,
