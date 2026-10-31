@@ -110,7 +110,12 @@ object MobileOrderChangeFeed {
                 return OrderChangeHint()
             }
             if (code == 401 || code == 403) return OrderChangeHint(refresh = true)
-            if (code != 200) return OrderChangeHint()
+            if (code != 200) {
+                if (code >= 500) synchronized(this) {
+                    if (activeScope == key) inactiveUntil = SystemClock.elapsedRealtime() + DISABLED_MS
+                }
+                return OrderChangeHint()
+            }
             val body = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
             val decision = OrderChangeEnvelope.parse(body)
             if (KunApi.sessionCookie(context) != cookie) return OrderChangeHint()
@@ -119,8 +124,13 @@ object MobileOrderChangeFeed {
                 else OrderChangeHint(decision.refresh, decision.cursor, key, available = true)
             }
         } catch (_: Exception) {
-            // Corrupt/partial response never advances the cursor or claims success.
-            return OrderChangeHint(refresh = true)
+            // Unexpected 200 HTML/malformed JSON must not trigger a *full*
+            // /api/state request every 15 seconds. Keep the existing 60-second
+            // authoritative fallback, and retry the hints after a short cooldown.
+            synchronized(this) {
+                if (activeScope == key) inactiveUntil = SystemClock.elapsedRealtime() + DISABLED_MS
+            }
+            return OrderChangeHint()
         } finally {
             connection.disconnect()
         }
