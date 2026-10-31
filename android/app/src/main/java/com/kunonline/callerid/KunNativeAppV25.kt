@@ -47,6 +47,7 @@ import java.time.Instant
 import java.util.Locale
 
 private const val V25_FOREGROUND_SYNC_MS = 60_000L
+private const val V25_ORDER_HINT_POLL_MS = 15_000L
 private const val V25_CONTACT_REFRESH_MS = 15_000L
 private const val V25_CONTACT_WINDOW_MS = 5L * 60L * 1000L
 
@@ -111,12 +112,12 @@ fun KunNativeAppV25(
         }
     }
 
-    suspend fun performRefresh(manual: Boolean = false, silent: Boolean = false) {
-        if (!loggedIn || refreshing) return
+    suspend fun performRefresh(manual: Boolean = false, silent: Boolean = false, urgent: Boolean = false): Boolean {
+        if (!loggedIn || refreshing) return false
         // A foreground resume or tab change must not request the whole order
         // snapshot again while a recent successful refresh is still fresh.
         val now = SystemClock.elapsedRealtime()
-        if (silent && snapshot != null && now - lastRefreshElapsed < V25_FOREGROUND_SYNC_MS) return
+        if (silent && !urgent && snapshot != null && now - lastRefreshElapsed < V25_FOREGROUND_SYNC_MS) return false
         refreshing = true
         if (!silent) loading = true
         val previous = snapshot
@@ -138,7 +139,7 @@ fun KunNativeAppV25(
             // list again or show loading on the screen.
             if (!result.changed && hadSnapshot) {
                 if (manual) message = result.message
-                return
+                return true
             }
             val next = result.snapshot ?: CommerceSnapshot()
             snapshot = next
@@ -162,6 +163,7 @@ fun KunNativeAppV25(
                 loggedIn = false
             }
         }
+        return result.ok
     }
 
     fun refresh(manual: Boolean = false) {
@@ -239,8 +241,29 @@ fun KunNativeAppV25(
         }
     }
     // Keep the caller-ID cache current while customer service is visible too.
-    ForegroundPolling(loggedIn, enabled = loggedIn && selected != MobileV25Tab.SETTINGS, intervalMillis = V25_FOREGROUND_SYNC_MS) {
-        performRefresh(false, silent = true)
+    ForegroundPolling(loggedIn, enabled = loggedIn && selected != MobileV25Tab.SETTINGS, intervalMillis = V25_ORDER_HINT_POLL_MS) {
+        val due = snapshot == null || lastRefreshElapsed == 0L ||
+            SystemClock.elapsedRealtime() - lastRefreshElapsed >= V25_FOREGROUND_SYNC_MS
+        if (due) {
+            // Preserve the existing periodic authoritative state reconciliation
+            // even when the journal is disabled or misses non-order changes.
+            performRefresh(false, silent = true)
+        } else {
+            val scopeAtRead = currentStore
+            val hint = withContext(Dispatchers.IO) { MobileOrderChangeFeed.peek(context, scopeAtRead) }
+            if (hint.refresh) {
+                // Cursor is committed only AFTER successful authorized refresh,
+                // never after a push/hint alone or an offline/error response.
+                val refreshed = performRefresh(false, silent = true, urgent = true)
+                if (refreshed) withContext(Dispatchers.IO) {
+                    MobileOrderChangeFeed.acknowledge(context, hint, scopeAtRead)
+                }
+            } else if (hint.available && snapshot != null) {
+                withContext(Dispatchers.IO) {
+                    MobileOrderChangeFeed.acknowledge(context, hint, scopeAtRead)
+                }
+            }
+        }
     }
 
     LaunchedEffect(newOrdersNotice) {
