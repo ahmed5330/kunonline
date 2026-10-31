@@ -32,3 +32,19 @@ The audit cannot tell whether the owner's *current plaintext password* is correc
 7. Only then mark this incident restored. Do not deploy this audit PR as a fix.
 
 **Status:** Code-level investigation prepared. Live D1 audit output and owner login success not yet verified.
+
+## Secure operator procedure (never GitHub Actions)
+
+This repository deliberately does not run Cloudflare admin-account diagnostics or password resets inside PR CI. Both tools are intended for a verified Cloudflare account owner at a **trusted local terminal**, with read-only or minimum required D1 API privileges. Do not paste tokens or passwords into chats, GitHub Issues, PR bodies, workflow dispatch fields or logs.
+
+1. Verify you control the Cloudflare account and confirm the live `kunonline-preview` database is still the canonical auth source in currently deployed Workers, not merely in source control.
+2. Create and verify a restorable Cloudflare D1 backup of the **canonical Preview DB** before any write.
+3. Set `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` as local shell environment variables. Ensure the token is scoped appropriately; avoid cloud logs.
+4. Run `node scripts/admin-login-d1-readonly-audit.mjs --read-only` to compare the two database identities. This logs **aggregate counts only**, not emails or hashes.
+5. Run `node scripts/admin-login-recovery.mjs --dry-run`. It prompts locally for the exact administrator login email, checks that exactly one active and normalized admin matches and no other account has the same login email, verifies stored hash structure and checks temporary lock; it never attempts login or changes data.
+6. If the cause is ONLY a temporary lock: wait 15 minutes (without further attempts). Do not reset the password.
+7. If a proper password recovery is genuinely required, the authorized account owner can run `node scripts/admin-login-recovery.mjs --apply --backup-confirmed --owner-verified`. It requires interactive typed confirmation and the new password twice with hidden input; changes only the canonical admin's password hash using a conditional comparison against the old hash, verifies the update and clears the matching lock row. This is a **live D1 write**, never run without explicit authorization, owner verification, and backup.
+8. The owner must sign in privately at `https://app.kun-online.com/v2/` and check that `/api/me` returns the intended `admin` role. Never put a real password or session cookie into test logs.
+9. If the account is missing, is disabled, has invalid hash or email casing, duplicates another account, or identities differ across databases, **STOP** and investigate before any recovery. The recovery script intentionally refuses these scenarios.
+
+CI proof that the offline script passes does not prove that Cloudflare credentials, backups, production Worker bindings, or the real account are healthy. Do not merge this PR as if the login were repaired.
