@@ -246,11 +246,16 @@ export default {
     if(aiIntegrations)return aiIntegrations;
     const mobileStoreOptions=await handleMobileStoreOptions({request,env:dataEnv,delegate});
     if(mobileStoreOptions)return mobileStoreOptions;
-    // Disabled until migration 0100 has been reviewed and applied to the
-    // canonical D1. Never return a false "unchanged" result without the journal.
-    if(dataEnv.ORDER_CHANGE_FEED_ENABLED==='1'){
-      const orderChanges=await handleMobileOrderChanges({request,env:dataEnv,delegate});
-      if(orderChanges)return orderChanges;
+    // Fail closed when the flag is off. Do not forward the unknown endpoint to
+    // an older Preview Worker that might return an HTML 200 fallback: Android
+    // must see 404 and back off rather than re-fetch every full state in a loop.
+    if(new URL(request.url).pathname==='/api/mobile/order-changes'){
+      if(dataEnv.ORDER_CHANGE_FEED_ENABLED!=='1'){
+        return new Response(JSON.stringify({ok:false,code:'SYNC_FEED_DISABLED'}),{
+          status:404,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'private, no-store'}
+        });
+      }
+      return handleMobileOrderChanges({request,env:dataEnv,delegate});
     }
     const newOrderAlerts=await handleMobileOrderAlerts({request,env:dataEnv,delegate});
     if(newOrderAlerts)return newOrderAlerts;
