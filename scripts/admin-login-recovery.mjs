@@ -36,6 +36,7 @@ const verifyHash=(password,hash)=>{
 const plans={
   lookup:"SELECT id,email,status,password FROM users WHERE lower(trim(email))=? AND role='admin' LIMIT 2",
   lock:"SELECT fails,locked_until FROM login_attempts WHERE email=? LIMIT 1",
+  emailCollision:"SELECT COUNT(*) AS matches FROM users WHERE lower(trim(email))=?",
   update:"UPDATE users SET password=? WHERE id=? AND role='admin' AND status='active' AND email=? AND password=?",
   clearLock:"DELETE FROM login_attempts WHERE email=?"
 };
@@ -45,7 +46,137 @@ function assertIdentity(rows,wanted){
   if(row.role&&row.role!=='admin')throw Error('Target account role mismatch');
   if(row.status!=='active')throw Error('Target administrator inactive; do not reset blindly');
   if(row.email!==wanted)throw Error('Admin email differs from canonical normalized login; manual review required');
-  if(!row.id||!verifyHash('__format_probe__',row.password)&&!/^pbkdf2\$\d+\$/.test(String(row.password))) {
+  const p=String(row.password??'').split('
+  return row;
+}
+function d1id(){
+  const config=readFileSync('wrangler.production.toml','utf8');
+  const preview=/\[\[d1_databases\]\]\s*binding\s*=\s*"PREVIEW_DB"\s*database_name\s*=\s*"[^"]+"\s*database_id\s*=\s*"([^"]+)"/.exec(config)?.[1];
+  if(!preview)throw Error('Canonical Preview DB binding not found');
+  const worker=readFileSync('src/index-production-mobile-update.js','utf8');
+  if(!worker.includes("const AUTH_PATHS=new Set(['/api/login','/api/me','/api/logout'])")||
+     !worker.includes('const identity=await previewFetch(request,env)'))
+    throw Error('Authentication source changed; do not recover against guessed database');
+  return preview;
+}
+async function ask(prompt){
+  if(!process.stdin.isTTY)throw Error('Interactive local terminal required');
+  const rl=createInterface({input:process.stdin,output:process.stdout});
+  return await new Promise(resolve=>rl.question(prompt,v=>{rl.close();resolve(v);}));
+}
+async function secret(prompt){
+  if(!process.stdin.isTTY||!process.stdin.setRawMode)throw Error('Interactive TTY with private input required');
+  process.stdout.write(prompt);
+  return await new Promise((resolve,reject)=>{
+    const chunks=[];
+    const finish=(error)=>{
+      process.stdin.off('data',onData);
+      process.stdin.setRawMode(false);
+      process.stdin.pause();
+      process.stdout.write('\n');
+      if(error)reject(error);else resolve(Buffer.concat(chunks).toString('utf8'));
+    };
+    const onData=(data)=>{
+      for(const byte of Buffer.from(data)){
+        if(byte===13||byte===10){finish();return;}
+        if(byte===3){finish(Error('Operator canceled'));return;}
+        if(byte===127||byte===8){
+          if(chunks.length)chunks.pop();
+        }else if(byte!==0&&byte!==27)chunks.push(Buffer.from([byte]));
+      }
+    };
+    process.stdin.setRawMode(true);
+    process.stdin.resume();
+    process.stdin.on('data',onData);
+  });
+}
+async function run(){
+  const flags=process.argv.slice(2);
+  if(flags.length===1&&flags[0]==='--self-test'){
+    const pwd='ExampleRecovery!2026';
+    const value=hashPassword(pwd);
+    if(!verifyHash(pwd,value)||verifyHash('wrong',value))throw Error('PBKDF2 mismatch');
+    const row={id:'synthetic',email:'owner@example.test',status:'active',password:value};
+    if(assertIdentity([row],row.email)!==row)throw Error('Identity guard failed');
+    for(const data of [[],[row,row],[{...row,email:'UPPER@example.test'}],[{...row,status:'disabled'}]]){
+      let blocked=false;try{assertIdentity(data,row.email);}catch{blocked=true;}
+      if(!blocked)throw Error('Unsafe admin identity incorrectly accepted');
+    }
+    if(!plans.update.includes("AND role='admin'")||!plans.update.includes('AND password=?')||!plans.update.includes("AND status='active'"))
+      throw Error('Compare-and-set constraints missing');
+    console.log('Primary admin recovery offline: scoped identity, hash, conflict guards OK. No live access.');
+    return;
+  }
+  if(flags.length===0)flags.push('--dry-run');
+  if(!['--dry-run','--apply'].includes(flags[0])||new Set(flags).size!==flags.length)
+    throw Error('Only --dry-run or --apply --backup-confirmed --owner-verified is supported');
+  const apply=flags.includes('--apply');
+  if(apply){
+    if(flags.length!==3||!flags.includes('--backup-confirmed')||!flags.includes('--owner-verified'))
+      throw Error('Recovery requires --apply --backup-confirmed --owner-verified');
+  } else if(flags.length!==1)throw Error('Unexpected dry-run flags');
+  if(process.env.CI==='true'||process.env.GITHUB_ACTIONS==='true')
+    throw Error('Live account recovery is forbidden in CI');
+  const account=process.env.CLOUDFLARE_ACCOUNT_ID,token=process.env.CLOUDFLARE_API_TOKEN;
+  if(!account||!token)throw Error('Cloudflare D1 scoped credentials are required locally');
+  const db=d1id();
+  const allowed=new Set([plans.lookup,plans.lock,plans.emailCollision,plans.update,plans.clearLock]);
+  async function query(sql,params=[]){
+    if(!allowed.has(sql)||(!apply&&!sql.startsWith('SELECT ')))throw Error('D1 SQL denied by read-only/mutation policy');
+    const abort=new AbortController();const timeout=setTimeout(()=>abort.abort(),15000);
+    let response;
+    try{
+      response=await fetch('https://api.cloudflare.com/client/v4/accounts/'+encodeURIComponent(account)+'/d1/database/'+encodeURIComponent(db)+'/query',{
+        method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
+        body:JSON.stringify({sql,params}),signal:abort.signal
+      });
+    }finally{clearTimeout(timeout);}
+    const result=await response.json().catch(()=>({}));
+    if(!response.ok||result.success===false||result.result?.[0]?.success===false||!result.result?.[0])
+      throw Error('Cloudflare D1 operation failed (HTTP '+response.status+'); inspect without revealing response data');
+    return result.result[0];
+  }
+  const email=lowered(await ask('Kun main admin email (kept local): '));
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))throw Error('Invalid email format');
+  const original=assertIdentity((await query(plans.lookup,[email])).results,email);
+  const collisions=(await query(plans.emailCollision,[email])).results||[];
+  if(Number(collisions[0]?.matches)!==1)
+    throw Error('Admin login identifier collides with another user; do not reset password until manually resolved');
+  const locked=(await query(plans.lock,[email])).results||[];
+  const lockUntil=Date.parse(locked[0]?.locked_until||'');
+  const lockedNow=Number.isFinite(lockUntil)&&lockUntil>Date.now();
+  console.log(JSON.stringify({canonical:'PREVIEW_DB',adminAccountMatched:true,role:'admin',active:true,
+    lockActive:lockedNow,storedPasswordFormat:'pbkdf2',mode:apply?'privileged-recovery':'read-only',
+    dataModified:false}));
+  if(!apply)return;
+  console.log('An authoritative D1 backup and out-of-band administrator ownership verification must already be completed.');
+  const confirmation=await ask('Type RESET CANONICAL KUN ADMIN to proceed: ');
+  if(confirmation!=='RESET CANONICAL KUN ADMIN')throw Error('Operator declined recovery');
+  const password=await secret('New private admin password (not echoed; 12+ characters): ');
+  if(password.length<12)throw Error('Recovery password must be 12+ characters');
+  const confirm=await secret('Repeat the new private password: ');
+  if(password!==confirm)throw Error('Passwords do not match');
+  const newHash=hashPassword(password);
+  const operation=await query(plans.update,[newHash,original.id,original.email,original.password]);
+  if(Number(operation.meta?.changes)!==1){
+    throw Error('Conditional update did not change exactly one administrator. Review D1 before further steps');
+  }
+  // Verify exactly the intended row was updated before clearing only its login lock.
+  const verify=assertIdentity((await query(plans.lookup,[email])).results,email);
+  if(verify.id!==original.id||verify.password!==newHash)
+    throw Error('Recovery update verification FAILED; inspect canonical D1 immediately');
+  await query(plans.clearLock,[email]);
+  console.log('One canonical admin password hash changed and its login lock cleared. Fresh user login and /api/me must still be verified privately.');
+}
+run().catch(error=>{
+  console.error('Kun admin recovery stopped: '+String(error?.message||'unknown').slice(0,180));
+  process.exitCode=1;
+});
+);
+  const rounds=Number(p[1]);
+  if(!row.id||p.length!==4||p[0]!=='pbkdf2'||!Number.isSafeInteger(rounds)||rounds<1||rounds>500000||
+    !/^[A-Za-z0-9+/]+={0,2}$/.test(p[2])||!/^[A-Za-z0-9+/]+={0,2}$/.test(p[3])||
+    Buffer.from(p[2],'base64').length!==16||Buffer.from(p[3],'base64').length!==32) {
     throw Error('Stored administrator hash has incompatible format');
   }
   return row;
