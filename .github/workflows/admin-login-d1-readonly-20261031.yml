@@ -5,14 +5,14 @@ on:
     paths:
       - '.github/workflows/admin-login-d1-readonly-20261031.yml'
       - 'scripts/admin-login-d1-readonly-audit.mjs'
-      - 'scripts/admin-login-recovery-offline-test.mjs'
+      - 'scripts/admin-login-recovery.mjs'
   push:
     branches:
       - ops/admin-login-readonly-audit-20261031
     paths:
       - '.github/workflows/admin-login-d1-readonly-20261031.yml'
       - 'scripts/admin-login-d1-readonly-audit.mjs'
-      - 'scripts/admin-login-recovery-offline-test.mjs'
+      - 'scripts/admin-login-recovery.mjs'
   workflow_dispatch:
 permissions:
   contents: read
@@ -28,4 +28,5 @@ jobs:
       - name: Offline, no credentials and no live mutations
         run: |
           node scripts/admin-login-d1-readonly-audit.mjs --self-test
-          if [ -f scripts/admin-login-recovery-offline-test.mjs ]; then node scripts/admin-login-recovery-offline-test.mjs; fi
+          node --check scripts/admin-login-recovery.mjs
+          node scripts/admin-login-recovery.mjs --self-test
