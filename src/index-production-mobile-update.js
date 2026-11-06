@@ -21,7 +21,7 @@ import {handleMobileStoreOptions} from './mobile-store-options.js';
 import {handleProductionClientContext} from './production-client-context.js';
 import {handleMobileOrderAlerts} from './mobile-order-alerts.js';
 import {handleMobileOrderChanges} from './mobile-order-changes.js';
-import {handleMobilePushDevices,dispatchOrderChangePush} from './mobile-push.js';
+import {handleMobilePushDevices,dispatchOrderChangePush,pushEnabled,shouldNotifyOrderWrite} from './mobile-push.js';
 import {ensureInternalCollaborationSchema} from './internal-collaboration-schema.js';
 import {handleProductionPreviewParity} from './production-preview-parity.js';
 import {handleProductionEasyOrdersHealth} from './production-easyorders-health.js';
@@ -168,7 +168,7 @@ function collaborationSchemaFailure(){
   return new Response(JSON.stringify({error:'تعذر تفعيل مخطط تواصل الفريق',code:'COLLAB_SCHEMA_BOOTSTRAP_FAILED'}),{status:503,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}});
 }
 
-export default {
+const productionHandler = {
   async fetch(request,env,ctx){
     const sessionGuard=guardSessionRequest(request);if(sessionGuard)return sessionGuard;
     // Public marketing reviews and admin moderation remain isolated from
@@ -358,5 +358,20 @@ export default {
       ctx?.waitUntil?.(reconcileAllClientsUnitCoverage(dataEnv,{limit:1000,actor:'scheduled'}).catch(()=>({ok:false})));
     }
     return app.scheduled?.(event,env,ctx);
+  }
+};
+export default {
+  ...productionHandler,
+  async fetch(request,env,ctx){
+    const response=await productionHandler.fetch(request,env,ctx);
+    const dataEnv=previewRuntimeEnv(env);
+    if(pushEnabled(dataEnv)&&shouldNotifyOrderWrite(request,response)){
+      // Fast-path hints for successful order mutations. The D1 trigger journal
+      // is authoritative; the scheduled sweep retries missed sends. This is
+      // best-effort, not exactly-once or a latency SLA.
+      ctx?.waitUntil?.(dispatchOrderChangePush(dataEnv,{immediate:true,limit:50})
+        .catch(error=>console.error('FCM post-write dispatch failed',String(error?.message||error).slice(0,130))));
+    }
+    return response;
   }
 };
