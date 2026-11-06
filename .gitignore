@@ -2,6 +2,9 @@
 .env
 .env.*
 .dev.vars
+# Never commit Firebase app config or secret service accounts.
+**/google-services.json
+**/firebase-service-account*.json
 
 # أدوات
 node_modules/
