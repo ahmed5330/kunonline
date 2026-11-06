@@ -37,7 +37,10 @@ assert(caller.includes('text = if (locked) "عميل كن أونلاين"'), 'lo
 assert(caller.includes('if (!locked) line(customer.phone'), 'lock screen must conceal customer phone');
 assert(caller.includes('if (!locked) line(orderBits'), 'lock screen must conceal order status');
 assert(caller.includes('Intent.ACTION_SCREEN_OFF'), 'screen-off must invalidate visible call overlay');
-assert(caller.includes('registerReceiver(receiver, IntentFilter(Intent.ACTION_SCREEN_OFF))'), 'screen-off privacy receiver must be registered');
+assert(caller.includes('app.registerReceiver(receiver, filter)'), 'screen privacy receiver must be registered');
+assert(caller.includes('addAction(Intent.ACTION_SCREEN_ON)'), 'proximity wake must restore an unlocked overlay');
+assert(caller.includes('card.visibility = View.INVISIBLE'), 'screen-off must conceal the visible overlay');
+assert(caller.includes('if (isLocked) dismiss() else card.visibility = View.VISIBLE'), 'only an unlocked wake may restore caller details');
 assert(caller.includes('receiverContext.unregisterReceiver(receiver)'), 'privacy receiver must be cleaned up');
 assert(caller.includes('dismiss()'), 'screen-off must dismiss call overlay');
 assert(details.includes('internal fun renderCallerProductSummary'), 'structured item renderer must exist');
