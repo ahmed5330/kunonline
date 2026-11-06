@@ -130,6 +130,52 @@ object KunCustomerServiceApi {
      * Never uses an old board if the account, store, filter or date revision changed.
      * Live server ACL checks still happen on the subsequent refresh.
      */
+    private fun parseBoardRoot(root: JSONObject, clientId: String): CustomerServiceBoardResult {
+        val stores = buildList {
+            val array = root.optJSONArray("stores") ?: JSONArray()
+            for (i in 0 until array.length()) {
+                val item = array.optJSONObject(i) ?: continue
+                add(CsStoreUi(item.optString("id"), item.optString("name"), item.optString("code"), item.optString("role")))
+            }
+        }
+        val labels = buildMap {
+            val obj = root.optJSONObject("stateLabels") ?: JSONObject()
+            val keys = obj.keys()
+            while (keys.hasNext()) {
+                val key = keys.next()
+                put(key, obj.optString(key))
+            }
+        }
+        val orders = MobileDateFilterState.filterCustomerServiceOrders(buildList {
+            val array = root.optJSONArray("orders") ?: JSONArray()
+            for (i in 0 until array.length()) array.optJSONObject(i)?.let { add(parseOrder(it)) }
+        })
+        val parsedBoard = CustomerServiceBoardResult(
+            ok = true,
+            message = "تم تحميل خدمة العملاء",
+            clientId = root.optString("clientId").ifBlank { clientId },
+            role = root.optString("role"),
+            stores = stores,
+            selectedStoreId = root.optString("selectedStoreId"),
+            orders = orders,
+            stateLabels = labels
+        )
+        return parsedBoard
+    }
+
+    /** Offline snapshot becomes readable only after the selected store is verified for this session. */
+    fun cachedBoardFromDisk(context: Context, storeId: String = "", state: String = "pending"): CustomerServiceBoardResult? {
+        val session = cookie(context) ?: return null
+        val verified = KunApi.cachedStoreOptions(context) ?: return null
+        val client = verified.current.clientId
+        if (client.isBlank()) return null
+        val selected = if (storeId.isNotBlank()) storeId else verified.current.storeId
+        if (selected.isNotBlank() && verified.stores.none { it.clientId == client && it.storeId == selected }) return null
+        val root = MobileBoardSnapshotCache.load(context, session, client, selected, state) ?: return null
+        if (cookie(context) != session) return null
+        return parseBoardRoot(root, client).takeIf { it.ok && it.clientId == client }
+    }
+
     @Synchronized fun cachedBoard(context: Context, storeId: String = "", state: String = "pending"): CustomerServiceBoardResult? {
         val session = cookie(context) ?: return null
         val verified = KunApi.cachedStoreOptions(context) ?: return null
@@ -165,6 +211,9 @@ object KunCustomerServiceApi {
             val synced = MobileSyncClient.fetch(cookie, path)
             val response = HttpResult(synced.code, synced.body.toString())
             if (KunApi.sessionCookie(context) != cookie) return CustomerServiceBoardResult(false, "تغيّرت جلسة الحساب")
+            if (response.code == 401 || response.code == 403) {
+                MobileBoardSnapshotCache.clear(context)
+            }
             if (response.code == 401) return CustomerServiceBoardResult(false, "انتهت الجلسة — سجّل الدخول مرة أخرى")
             if (response.code !in 200..299) return CustomerServiceBoardResult(false, errorMessage(response, "تعذر تحميل خدمة العملاء"))
             val key = cookie + "|" + path
@@ -173,35 +222,10 @@ object KunCustomerServiceApi {
                 return requireNotNull(boardCache)
             }
             val root = json(response)
-            val stores = buildList {
-                val array = root.optJSONArray("stores") ?: JSONArray()
-                for (i in 0 until array.length()) {
-                    val item = array.optJSONObject(i) ?: continue
-                    add(CsStoreUi(item.optString("id"), item.optString("name"), item.optString("code"), item.optString("role")))
-                }
+            val parsedBoard = parseBoardRoot(root, clientId)
+            if (synced.changed && parsedBoard.clientId == clientId) {
+                MobileBoardSnapshotCache.save(context, cookie, clientId, selected, state, root)
             }
-            val labels = buildMap {
-                val obj = root.optJSONObject("stateLabels") ?: JSONObject()
-                val keys = obj.keys()
-                while (keys.hasNext()) {
-                    val key = keys.next()
-                    put(key, obj.optString(key))
-                }
-            }
-            val orders = MobileDateFilterState.filterCustomerServiceOrders(buildList {
-                val array = root.optJSONArray("orders") ?: JSONArray()
-                for (i in 0 until array.length()) array.optJSONObject(i)?.let { add(parseOrder(it)) }
-            })
-            val parsedBoard = CustomerServiceBoardResult(
-                ok = true,
-                message = "تم تحميل خدمة العملاء",
-                clientId = root.optString("clientId").ifBlank { clientId },
-                role = root.optString("role"),
-                stores = stores,
-                selectedStoreId = root.optString("selectedStoreId"),
-                orders = orders,
-                stateLabels = labels
-            )
             boardCacheKey = key
             boardCacheRevision = revision
             boardCache = parsedBoard
