@@ -4,6 +4,9 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+// Optional Firebase project configuration; absent in CI and GitHub.
+if (file("google-services.json").exists()) apply(plugin = "com.google.gms.google-services")
+
 android {
     namespace = "com.kunonline.callerid"
     compileSdk = 35
@@ -47,6 +50,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
+    implementation("com.google.firebase:firebase-messaging:25.1.1")
     debugImplementation("androidx.compose.ui:ui-tooling")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
