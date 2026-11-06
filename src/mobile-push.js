@@ -95,6 +95,11 @@ export async function handleMobilePushDevices({request,env,delegate}){
     }
     const token=clean(body?.token);
     if(!tokenFormatValid(token))return respond({ok:false,code:'INVALID_TOKEN'},400);
+    const existingInstallations=await env.DB.prepare(
+      'SELECT COUNT(DISTINCT installation_hash) AS n FROM mobile_push_devices WHERE user_id=? AND installation_hash<>?'
+    ).bind(current.id,installationHash).first();
+    if(Number(existingInstallations?.n||0)>=5)
+      return respond({ok:false,code:'PUSH_DEVICE_LIMIT'},429);
     const stores=await authorizedStores(request,env,delegate);
     if(stores===null)return respond({ok:false,code:'STORE_SCOPE_UNAVAILABLE'},503);
     if(stores.length>200)return respond({ok:false,code:'TOO_MANY_STORES'},409);
