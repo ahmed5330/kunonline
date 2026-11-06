@@ -88,6 +88,47 @@ class CallerCardActivity : Activity() {
         dialog.show()
     }
 
+    private fun showAddNote(orderId: String, clientId: String = "") {
+        val field = EditText(this).apply {
+            hint = "اكتب الملاحظة الداخلية"
+            minLines = 2
+            maxLines = 5
+            setPadding(dp(18), dp(12), dp(18), dp(12))
+        }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("إضافة ملاحظة على الطلب")
+            .setMessage("الملاحظة هتظهر في سجل الطلب في السيستم والتطبيق.")
+            .setView(field)
+            .setNegativeButton("رجوع", null)
+            .setPositiveButton("حفظ الملاحظة", null)
+            .create()
+        dialog.setOnShowListener {
+            val save = dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+            save.setOnClickListener {
+                val note = field.text.toString().trim()
+                if (note.isBlank()) {
+                    field.error = "الملاحظة مطلوبة"
+                    return@setOnClickListener
+                }
+                save.isEnabled = false
+                thread(name = "kun-caller-add-note") {
+                    val result = KunCustomerServiceApi.addNote(this, orderId, note, selectedClientId = clientId)
+                    runOnUiThread {
+                        if (result.ok) {
+                            Toast.makeText(this, "تم حفظ الملاحظة في السيستم", Toast.LENGTH_SHORT).show()
+                            dialog.dismiss()
+                            finish()
+                        } else {
+                            dialog.setMessage("تعذر حفظ الملاحظة: ${result.message}")
+                            save.isEnabled = true
+                        }
+                    }
+                }
+            }
+        }
+        dialog.show()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setShowWhenLocked(true)
@@ -234,6 +275,11 @@ class CallerCardActivity : Activity() {
             }
         }
         val secondary = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.END }
+        if (!locked) {
+            customer.orderId?.takeIf { it.isNotBlank() }?.let { id ->
+                secondary.addView(action("الملاحظات", ground, ink) { showAddNote(id, customer.clientId) })
+            }
+        }
         secondary.addView(action("إغلاق", ground, ink2) { finish() })
         actions.addView(secondary)
         card.addView(actions)
@@ -258,6 +304,8 @@ class CallerCardActivity : Activity() {
         }
         if (!locked && intent.getBooleanExtra("start_cancel", false)) {
             customer.orderId?.takeIf { it.isNotBlank() }?.let { showCancelReason(it, customer.clientId) }
+        } else if (!locked && intent.getBooleanExtra("start_note", false)) {
+            customer.orderId?.takeIf { it.isNotBlank() }?.let { showAddNote(it, customer.clientId) }
         }
     }
 }
