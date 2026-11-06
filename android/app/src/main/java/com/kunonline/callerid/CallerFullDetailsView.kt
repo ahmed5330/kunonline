@@ -73,3 +73,51 @@ internal fun renderCallerFullDetails(context: Context, target: LinearLayout, det
     line("المصدر", order.optString("source"))
     line("ملاحظات العميل", order.optString("customerNote"))
 }
+
+/**
+ * Compact product-only summary for the live call overlay.
+ * Never expose raw order UUIDs or store IDs in this small window.
+ */
+internal fun renderCallerProductSummary(context: Context, target: LinearLayout, details: JSONObject) {
+    target.removeAllViews()
+    val items = details.optJSONArray("items") ?: return
+    if (items.length() == 0) return
+    val density = context.resources.displayMetrics.density
+    fun dp(value: Int): Int = (value * density).toInt()
+    fun add(textValue: String, bold: Boolean = false) {
+        target.addView(TextView(context).apply {
+            text = textValue
+            textSize = if (bold) 13f else 12f
+            setTextColor(if (bold) Color.rgb(24, 54, 83) else Color.rgb(70, 90, 109))
+            if (bold) setTypeface(typeface, Typeface.BOLD)
+            setPadding(0, dp(3), 0, dp(3))
+            layoutDirection = View.LAYOUT_DIRECTION_RTL
+        })
+    }
+    add("تفاصيل المنتجات (${items.length()})", true)
+    for (index in 0 until items.length()) {
+        val item = items.optJSONObject(index) ?: continue
+        val product = item.optString("name").ifBlank { item.optString("productName") }.ifBlank { "منتج" }
+        val quantity = item.optInt("quantity", item.optInt("qty", 1)).coerceAtLeast(1)
+        add("${index + 1}. $product × $quantity", true)
+        val options = item.optJSONArray("options")
+        val attributes = buildList {
+            item.optString("variantName").takeIf { it.isNotBlank() }?.let { add(it) }
+            if (options != null) {
+                for (optionIndex in 0 until options.length()) {
+                    val option = options.optJSONObject(optionIndex) ?: continue
+                    val name = option.optString("name")
+                    val value = option.optString("value")
+                    if (name.isNotBlank() && value.isNotBlank()) add("$name: $value")
+                }
+            }
+            if (options == null || options.length() == 0) {
+                item.optString("note").takeIf { it.isNotBlank() }?.let { add(it) }
+            }
+            item.optString("sku").takeIf { it.isNotBlank() }?.let { add("كود المنتج: $it") }
+            val price = item.optDouble("price", item.optDouble("unitPrice", Double.NaN))
+            if (price.isFinite()) add("سعر القطعة: $price ج.م")
+        }
+        if (attributes.isNotEmpty()) add(attributes.joinToString(" • "))
+    }
+}
