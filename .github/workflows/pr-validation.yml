@@ -27,6 +27,11 @@ jobs:
         run: |
           node --check src/mobile-order-changes.js
           node scripts/mobile-order-change-journal-sqlite-test.mjs
+      - name: FCM draft device registry and privacy-safe invalidation
+        run: |
+          node --check src/mobile-push.js
+          node --check src/index-production-mobile-update.js
+          node scripts/mobile-fcm-draft-test.mjs
       - name: Admin J&T shipment access and import safety
         run: |
           node --check src/admin-jnt-shipments.js
