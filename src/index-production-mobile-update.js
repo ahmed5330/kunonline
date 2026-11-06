@@ -21,6 +21,7 @@ import {handleMobileStoreOptions} from './mobile-store-options.js';
 import {handleProductionClientContext} from './production-client-context.js';
 import {handleMobileOrderAlerts} from './mobile-order-alerts.js';
 import {handleMobileOrderChanges} from './mobile-order-changes.js';
+import {handleMobilePushDevices,dispatchOrderChangePush} from './mobile-push.js';
 import {ensureInternalCollaborationSchema} from './internal-collaboration-schema.js';
 import {handleProductionPreviewParity} from './production-preview-parity.js';
 import {handleProductionEasyOrdersHealth} from './production-easyorders-health.js';
@@ -257,6 +258,8 @@ export default {
       }
       return handleMobileOrderChanges({request,env:dataEnv,delegate});
     }
+    const pushDevices=await handleMobilePushDevices({request,env:dataEnv,delegate});
+    if(pushDevices)return pushDevices;
     const newOrderAlerts=await handleMobileOrderAlerts({request,env:dataEnv,delegate});
     if(newOrderAlerts)return newOrderAlerts;
     const adminJntShipments=await handleAdminJntShipments({request,env:dataEnv,delegate});
@@ -342,6 +345,13 @@ export default {
   },
   scheduled(event,env,ctx){
     const dataEnv=previewRuntimeEnv(env);
+    // Background delivery uses the existing cron; this is a best-effort hint,
+    // not an instant-delivery guarantee. Disabled until explicit rollout.
+    if(String(event?.cron||'')==='*/5 * * * *'){
+      ctx?.waitUntil?.(dispatchOrderChangePush(dataEnv).catch(error=>{
+        console.error('FCM wake-up dispatch failed',String(error?.message||error).slice(0,160));
+      }));
+    }
     ctx?.waitUntil?.(reconcileMonthlySubscriptions(dataEnv,{limit:1000}).catch(()=>[]));
     ctx?.waitUntil?.(reconcileTrackedOrderLifecycles(dataEnv,{limit:1000,actor:'scheduled'}).catch(()=>({ok:false})));
     if(String(event?.cron||'')==='0 */2 * * *'){
