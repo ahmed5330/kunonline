@@ -120,7 +120,10 @@ object CallerOverlay {
             line(customer.phone, 15f, INK, true)
             if (!locked && customer.storeName.isNotBlank()) line("المتجر: ${customer.storeName}", 13f, CHROME, true)
             val orderBits = listOfNotNull(
-                customer.orderRef?.takeUnless { locked }?.let { "طلب $it" },
+                customer.orderRef?.takeUnless {
+                    locked || it.startsWith("easyorders:", ignoreCase = true) ||
+                        it.startsWith("sheet:easyorders:", ignoreCase = true) || it.length > 28
+                }?.let { "طلب $it" },
                 stateText(customer.status).takeIf { it.isNotBlank() }
             ).joinToString(" • ")
             line(orderBits, 13f, CHROME, true)
