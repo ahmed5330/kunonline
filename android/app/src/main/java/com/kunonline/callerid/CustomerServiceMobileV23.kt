@@ -330,6 +330,21 @@ fun V23CustomerService(snapshot: CommerceSnapshot, onGlobalRefresh: () -> Unit) 
     var editorData by remember { mutableStateOf<CustomerServiceEditorData?>(null) }
     var activeBoardKey by remember { mutableStateOf("") }
 
+    // Display the last encrypted board immediately, if the server has already
+    // verified this account's selected store. Never treat cache as write access.
+    LaunchedEffect(storeFilter, stateFilter) {
+        if (board == null) {
+            val requestedStore = storeFilter
+            val requestedState = stateFilter
+            val saved = withContext(Dispatchers.IO) {
+                KunCustomerServiceApi.cachedBoardFromDisk(context, requestedStore, requestedState)
+            }
+            if (board == null && storeFilter == requestedStore && stateFilter == requestedState && saved != null) {
+                board = saved
+            }
+        }
+    }
+
     suspend fun performBoardRefresh(keepOrderId: String? = selectedOrder?.id, quiet: Boolean = false) {
         val requestedStore = storeFilter
         val requestedState = stateFilter
