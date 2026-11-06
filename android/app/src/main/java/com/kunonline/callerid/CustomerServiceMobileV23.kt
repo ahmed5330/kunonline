@@ -63,6 +63,33 @@ internal fun v23ProductLines(product: String, productNote: String, qty: Int, lin
     return if (values.isNotEmpty()) values else listOf("${v23ProductCardSummary(product, productNote)} × ${qty.coerceAtLeast(1)}")
 }
 
+/** Structured per-line product details, fetched only when the order details are opened. */
+internal fun v23EnrichedProductLines(items: JSONArray): List<String> = buildList {
+    for (index in 0 until items.length()) {
+        val item = items.optJSONObject(index) ?: continue
+        val title = item.optString("name").ifBlank { item.optString("productName") }.ifBlank { "منتج" }
+        val qty = item.optInt("quantity", item.optInt("qty", 1)).coerceAtLeast(1)
+        val attributes = mutableListOf<String>()
+        item.optString("variantName").takeIf { it.isNotBlank() }?.let { attributes.add(it) }
+        val options = item.optJSONArray("options")
+        if (options != null) {
+            for (optionIndex in 0 until options.length()) {
+                val option = options.optJSONObject(optionIndex) ?: continue
+                val label = option.optString("name")
+                val value = option.optString("value")
+                if (label.isNotBlank() && value.isNotBlank()) attributes.add("$label: $value")
+            }
+        }
+        if (options == null || options.length() == 0) {
+            item.optString("note").takeIf { it.isNotBlank() }?.let { attributes.add(it) }
+        }
+        item.optString("sku").takeIf { it.isNotBlank() }?.let { attributes.add("SKU: $it") }
+        val price = item.optDouble("price", item.optDouble("unitPrice", Double.NaN))
+        if (price.isFinite()) attributes.add("سعر الوحدة: $price ج.م")
+        add("$title × $qty" + if (attributes.isEmpty()) "" else " — " + attributes.joinToString(" • "))
+    }
+}
+
 internal fun v23CanEditShipping(awb: String, state: String): Boolean =
     awb.isBlank() && state.lowercase() !in setOf("shipping","in_shipping","shipped",
         "signed","collected","delivered","returned","cancelled","completed")
@@ -764,6 +791,17 @@ private fun V23OrderDetailDialog(
     var cancelReason by remember(order.id) { mutableStateOf("") }
     var confirmDelete by remember { mutableStateOf(false) }
     var confirmShip by remember(order.id) { mutableStateOf(false) }
+    var enrichedProducts by remember(order.id) { mutableStateOf<List<String>>(emptyList()) }
+    LaunchedEffect(order.id) {
+        // Preserve the instant board summary while line items are fetched in background.
+        val result = withContext(Dispatchers.IO) {
+            KunCustomerServiceApi.fetchOrderDetails(context, order.id,
+                selectedClientId = order.clientId, selectedStoreId = order.storeId)
+        }
+        if (result.ok) {
+            enrichedProducts = v23EnrichedProductLines(result.data.optJSONArray("items") ?: JSONArray())
+        }
+    }
 
     fun runAction(block: suspend () -> CustomerServiceJsonResult, after: (() -> Unit)? = null, afterResult: ((CustomerServiceJsonResult) -> Unit)? = null) {
         if (actionBusy) return
@@ -816,7 +854,8 @@ private fun V23OrderDetailDialog(
                 V23DetailRow("المتجر", order.storeName)
                 V23DetailRow("المحافظة", order.gov)
                 V23DetailRow("العنوان", order.address)
-                V23DetailRow("المنتجات والموديل واللون", v23ProductLines(order.product, order.productNote, order.qty, order.productLines).joinToString("\n"))
+                V23DetailRow("المنتجات والموديل واللون", (enrichedProducts.takeIf { it.isNotEmpty() }
+                    ?: v23ProductLines(order.product, order.productNote, order.qty, order.productLines)).joinToString("\n"))
                 if (order.productNote.isNotBlank()) V23DetailRow("اختيار/لون/مقاس", order.productNote)
                 V23DetailRow("الكمية", order.qty.toString())
                 V23DetailRow("سعر الوحدة", v23Money(order.unitPrice))
