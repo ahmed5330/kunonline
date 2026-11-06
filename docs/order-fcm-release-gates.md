@@ -5,12 +5,13 @@
 - Authenticated `POST /api/mobile/push-devices` registers the current installation for **server-derived** active store assignments. `DELETE` revokes the current user's registration on logout. Registration does not accept client/store IDs as access grants.
 - `migrations/0101_mobile_push_device_registry.sql`: encrypted FCM token per tenant/store/user/installation; requires un-applied `0100_order_change_journal.sql`. Tokens are AES-GCM encrypted with `PUSH_TOKEN_ENC_KEY`; identifiers are HMAC digests.
 - Scheduled FCM sender reads `order_change_log`, independently checks that user and store grants still exist, and sends **data-only** `kind/clientId/storeId/seq` payloads with no customer/order details.
+- Fast-path is also requested after successful API/Webhook order mutations through `ctx.waitUntil`; the journal remains authoritative. Cron retries and coalesces missed hints. This covers explicit order routes but cannot guarantee every write pathway is immediately observed.
 - Android FirebaseMessagingService validates the hint, checks a local session and schedules a network-constrained existing authenticated sync job. The server re-authorizes all data fetches.
 - Invalid device registrations are revoked on explicit logout / inactive user / removed store grant / FCM `UNREGISTERED`; old callbacks or missing credentials fail closed.
 - `ORDER_FCM_ENABLED` and `ORDER_CHANGE_FEED_ENABLED` are both required to enable the API and scheduled dispatcher.
 
 ## What this DOES NOT guarantee
-Existing `*/5 * * * *` scheduler is at most a **best-effort five-minute dispatch cadence**, not instantaneous message delivery. FCM/Android can further delay messages in Doze, restricted background, connectivity outages or after force-stop. An actual near-instant pipeline would require publishing an outbox event / Queue message from every canonical order write and triggering a push worker without cron wait, plus measured p95 time on two real devices.
+Successful order-mutation HTTP routes can request a best-effort fast-path push, while the existing `*/5 * * * *` scheduler provides **five-minute retry/fallback cadence**. Neither is an exactly-once or instant-delivery guarantee. FCM/Android can further delay messages in Doze, restricted background, connectivity outages or after force-stop. An actual near-instant pipeline would require publishing an outbox event / Queue message from every canonical order write and triggering a push worker without cron wait, plus measured p95 time on two real devices.
 No FCM project, service account or `google-services.json` has been configured here, no real device token registered, and no live push was sent.
 
 ## Required OWNER-supplied configuration — do not commit secrets
