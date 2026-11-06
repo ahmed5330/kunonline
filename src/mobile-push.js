@@ -142,7 +142,13 @@ function serviceAccount(env){
      !clean(account.private_key).includes('BEGIN PRIVATE KEY'))throw Error('Invalid service account');
   return account;
 }
+// Per-isolate short-lived cache: avoid signing OAuth JWT for every order
+// update in a burst. Only cached for real fetch; injected test transports
+// remain isolated, and the expiry has a safety margin.
+let oauthCache=null;
 async function accessToken(account,http){
+  if(http===fetch&&oauthCache?.project===account.project_id&&
+     oauthCache.expiresAt>Date.now()+60_000)return oauthCache.value;
   const pem=account.private_key.replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\s/g,'');
   const key=await crypto.subtle.importKey('pkcs8',fromB64(pem),{name:'RSASSA-PKCS1-v1_5',hash:'SHA-256'},false,['sign']);
   const epoch=Math.floor(Date.now()/1000);
@@ -160,6 +166,11 @@ async function accessToken(account,http){
   if(!res.ok)throw Error('OAuth token request failed');
   const result=await res.json();
   if(!result.access_token)throw Error('Missing OAuth access token');
+  if(http===fetch){
+    const seconds=Number(result.expires_in)||3600;
+    oauthCache={project:account.project_id,value:result.access_token,
+      expiresAt:Date.now()+Math.max(60,Math.min(3300,seconds-120))*1000};
+  }
   return result.access_token;
 }
 
