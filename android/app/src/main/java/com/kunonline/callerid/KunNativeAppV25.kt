@@ -46,6 +46,15 @@ import java.text.NumberFormat
 import java.time.Instant
 import java.util.Locale
 
+/**
+ * Prevent redundant silent requests while respecting the active tab's cadence.
+ * A foreground operational tab should never inherit the home screen's 60s delay.
+ */
+internal fun v25SkipSilentRefresh(silent: Boolean, hasSnapshot: Boolean, nowMs: Long,
+                                  previousSuccessMs: Long, minIntervalMs: Long): Boolean =
+    silent && hasSnapshot && previousSuccessMs > 0 &&
+        nowMs >= previousSuccessMs && nowMs - previousSuccessMs < minIntervalMs.coerceAtLeast(0L)
+
 private const val V25_FOREGROUND_SYNC_MS = 60_000L
 private const val V25_OPERATIONAL_SYNC_MS = 15_000L
 private const val V25_CONTACT_REFRESH_MS = 15_000L
@@ -117,7 +126,7 @@ fun KunNativeAppV25(
         // A foreground resume or tab change must not request the whole order
         // snapshot again while a recent successful refresh is still fresh.
         val now = SystemClock.elapsedRealtime()
-        if (silent && snapshot != null && lastRefreshElapsed > 0L && now - lastRefreshElapsed < minIntervalMs) return
+        if (v25SkipSilentRefresh(silent, snapshot != null, now, lastRefreshElapsed, minIntervalMs)) return
         refreshing = true
         if (!silent) loading = true
         val previous = snapshot
