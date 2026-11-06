@@ -47,6 +47,9 @@ assert(details.includes('internal fun renderCallerProductSummary'), 'structured 
 assert(details.includes('optJSONArray("options")'), 'product summary must include color/size options');
 assert(fallback.includes('renderCallerFullDetails'), 'full protected details remain available outside overlay');
 assert(fallback.includes('start_note'), 'fallback note composer must remain accessible');
+assert(fallback.includes('setShowWhenLocked(false)'), 'fallback activity must not cover Keyguard');
+assert(fallback.includes('text = if (locked) "عميل كن أونلاين"'), 'fallback must conceal customer name while locked');
+assert(fallback.includes('if (!locked) addLine(customer.phone'), 'fallback must conceal customer phone while locked');
 for (const ui of [caller, fallback]) {
   assert(ui.includes('fetchOrderDetails'), 'call panel fetches server details');
   assert(ui.includes('stillUnlocked'), 'do not reveal live details after phone locks');
