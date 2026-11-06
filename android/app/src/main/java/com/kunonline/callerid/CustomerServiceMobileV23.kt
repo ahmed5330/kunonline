@@ -441,16 +441,28 @@ fun V23CustomerService(snapshot: CommerceSnapshot, onGlobalRefresh: () -> Unit) 
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        if (message.isNotBlank() && board?.ok != true) Text(message, Modifier.padding(horizontal = 16.dp))
+        if (!loading && message.isNotBlank() && board?.ok != true) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    if (message.contains("سجّل الدخول") || message.contains("الجلسة")) message
+                    else "تعذر تحديث الطلبات حاليًا.",
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                TextButton(onClick = { refreshBoard() }) { Text("إعادة المحاولة") }
+            }
+        }
         if (loading && board != null) {
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-            Text("جاري تحديث الطلبات… البيانات الحالية متاحة", modifier = Modifier.padding(horizontal = 16.dp),
-                style = MaterialTheme.typography.labelSmall)
         }
         if (loading && board == null) {
-            KunAsyncPanel("جاري تحميل طلبات خدمة العملاء من المتجر…")
+            Box(Modifier.fillMaxWidth().padding(vertical = 18.dp), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+            }
         } else if (filtered.isEmpty()) {
-            V23Empty(if (allOrders.isEmpty()) "لا توجد أوردرات خدمة عملاء متاحة" else "لا توجد نتائج مطابقة")
+            V23Empty(if (board == null) "الطلبات غير متاحة حاليًا" else if (allOrders.isEmpty()) "لا توجد أوردرات خدمة عملاء متاحة" else "لا توجد نتائج مطابقة")
         } else {
             LazyColumn(contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 items(filtered, key = { it.id }) { order ->
