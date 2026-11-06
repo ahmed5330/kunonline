@@ -618,6 +618,7 @@ private fun V23CustomerServiceCard(
             Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
+            KunPaymentBadge(order.paymentStatus)
             if (order.returnedFromDeferredToday) {
                 Surface(
                     color = MaterialTheme.colorScheme.errorContainer,
@@ -918,6 +919,7 @@ private fun V23OrderDetailDialog(
                 modifier = Modifier.heightIn(max = 620.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
+                KunPaymentBadge(order.paymentStatus)
                 V23DetailRow("العميل", order.name)
                 V23DetailRow("الهاتف", order.phone)
                 V23DetailRow("المتجر", order.storeName)
