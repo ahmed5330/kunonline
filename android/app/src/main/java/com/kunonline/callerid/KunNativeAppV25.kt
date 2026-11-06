@@ -1056,6 +1056,7 @@ private fun V25ContactCard(order: CsOrderUi, direction: String, onCall: () -> Un
                 }
                 V25StatusPill(order.state)
             }
+            KunPaymentBadge(order.paymentStatus)
             Text(order.phone.ifBlank { "بدون رقم هاتف" }, color = KunColors.Chrome, fontWeight = FontWeight.Bold)
             if (order.product.isNotBlank()) Text("${order.product} × ${order.qty}", color = KunColors.Ink2)
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1099,6 +1100,7 @@ private fun V25OrderCard(order: OrderUi, onCall: () -> Unit, onWhatsApp: () -> U
                 }
                 V25StatusPill(order.state)
             }
+            KunPaymentBadge(order.paymentStatus)
             if (order.lastEditBy.isNotBlank()) Text("تم التعديل بواسطة ${order.lastEditBy} ${order.lastEditAt.take(10)}", color = KunColors.Pine, style = MaterialTheme.typography.labelSmall)
             HorizontalDivider(color = KunColors.Line)
             V25Line(Icons.Outlined.Call, order.phone.ifBlank { "بدون رقم هاتف" })
@@ -1152,6 +1154,7 @@ private fun V25CompactOrder(order: OrderUi) {
             Column(Modifier.weight(1f)) {
                 Text(order.name.ifBlank { "عميل" }, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(listOf(v25VisibleOrderRef(order.ref,order.source).takeIf { it.isNotBlank() }?.let { "#$it" },v25State(order.state)).filterNotNull().joinToString(" • "), color = KunColors.Ink2, style = MaterialTheme.typography.bodySmall)
+                KunPaymentBadge(order.paymentStatus)
             }
             Text(v25Money(order.total), fontWeight = FontWeight.Bold)
         }
