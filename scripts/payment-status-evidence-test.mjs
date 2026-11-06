@@ -11,6 +11,21 @@ assert.equal(createProviderPaymentEvent('confirmed'),null);
 assert.equal(paymentFromHistory([{state:'collected'}]).status,'unknown','COD collection does not prove electronic payment');
 assert.equal(paymentFromOrder({history:[{state:'confirmed'}],providerStatus:'paid'}).status,'paid');
 assert.equal(paymentFromOrder({
+  history:[createProviderPaymentEvent('paid',{reference:'T1'})],
+  providerStatus:'refunded'
+}).status,'refunded','A fresh provider refund must win over an earlier paid journal');
+assert.equal(paymentFromHistory([
+  createProviderPaymentEvent('paid',{reference:'TX-A',at:'2026-11-06T08:00:00Z'}),
+  createProviderPaymentEvent('refunded',{reference:'TX-A',at:'2026-11-06T09:00:00Z'}),
+  createProviderPaymentEvent('paid',{reference:'TX-A',at:'2026-11-06T10:00:00Z'})
+]).status,'refunded','Same transaction cannot become paid again by replay');
+assert.equal(paymentFromHistory([
+  createProviderPaymentEvent('paid',{reference:'TX-A',at:'2026-11-06T08:00:00Z'}),
+  createProviderPaymentEvent('refunded',{reference:'TX-A',at:'2026-11-06T09:00:00Z'}),
+  createProviderPaymentEvent('paid',{reference:'TX-B',at:'2026-11-06T10:00:00Z'})
+]).status,'paid','A different later provider payment can evidence re-payment');
+
+assert.equal(paymentFromOrder({
   history:[createProviderPaymentEvent('refunded',{at:'2026-11-06T00:00:00Z'})],
   providerStatus:'paid'
 }).status,'refunded','Stale provider paid must not supersede a verified refund');
@@ -64,10 +79,45 @@ try{
   assert.equal(current().state,'shipped','Refund status must not rewrite shipping history');
   assert.equal(paymentFromHistory(current().history).status,'refunded');
 
+  const beforeReplay=JSON.parse(current().history).length;
+  await webhook({event_type:'order-status-update',order_id:'ORDER-1',
+    new_status:'paid',payment_ref_id:'SANDBOX-TRANSACTION-1'});
+  await webhook({event_type:'order-status-update',order_id:'ORDER-1',new_status:'refunded'});
+  assert.equal(JSON.parse(current().history).length,beforeReplay,
+    'Identical payment events must not append endlessly or alter the refund');
+  assert.equal(paymentFromHistory(current().history).status,'refunded',
+    'Delayed paid webhook may not reverse a verified refund');
+
+  // A full order payload can carry new payment evidence even if the order
+  // was created earlier. Previously an upsert silently dropped this event.
+  await webhook({id:'ORDER-1',store_id:'EO-SHOP-1',
+    status:'paid',cart_items:[],total_cost:250,payment_ref_id:'SANDBOX-TRANSACTION-1'});
+  assert.equal(paymentFromHistory(current().history).status,'refunded');
+
+  // A different transaction with later *provider* time is an explicit re-pay.
+  await webhook({event_type:'order-status-update',order_id:'ORDER-1',new_status:'refunded',
+    payment_ref_id:'SANDBOX-TRANSACTION-2',updated_at:'2026-11-06T10:00:00Z'});
+  await webhook({event_type:'order-status-update',order_id:'ORDER-1',new_status:'paid',
+    payment_ref_id:'SANDBOX-TRANSACTION-3',updated_at:'2026-11-06T11:00:00Z'});
+  // The old unsequenced refund is intentionally a fail-closed barrier; do not
+  // claim re-payment until the old chronology is independently reconciled.
+  assert.equal(paymentFromHistory(current().history).status,'refunded');
+
+
   await webhook({id:'ORDER-2',store_id:'EO-SHOP-1',status:'paid',cart_items:[],total_cost:100});
   const direct=db.prepare('SELECT state,history FROM orders WHERE id=?').get('ORDER-2');
   assert.equal(direct.state,'pending');
   assert.equal(paymentFromHistory(direct.history).status,'paid');
+  await webhook({id:'ORDER-2',store_id:'EO-SHOP-1',status:'paid',cart_items:[],total_cost:100});
+  assert.equal(JSON.parse(db.prepare('SELECT history FROM orders WHERE id=?').get('ORDER-2').history).length,2,
+    'Duplicate full-order webhook must not duplicate payment history');
+
+  await webhook({id:'ORDER-3',store_id:'EO-SHOP-1',status:'pending',cart_items:[],total_cost:50});
+  await webhook({id:'ORDER-3',store_id:'EO-SHOP-1',status:'paid',cart_items:[],total_cost:50,
+    payment_ref_id:'NEW-PAID-3',updated_at:'2026-11-06T11:30:00Z'});
+  assert.equal(paymentFromHistory(db.prepare('SELECT history FROM orders WHERE id=?').get('ORDER-3').history).status,'paid',
+    'Paid status in the full-order retry must reach an existing order');
+
 
   const file=p=>readFileSync(new URL('../'+p,import.meta.url),'utf8');
   for(const p of ['src/index.js','src/customer-service.js','src/production-customer-service.js']){
