@@ -264,7 +264,7 @@ object CallerOverlay {
             val maxWidth = app.resources.displayMetrics.widthPixels - app.dp(24)
             // Limit the entire window, including buttons and header, to half the display.
             // The weighted scroll view consumes only the remaining space.
-            val maxHeight = (app.resources.displayMetrics.heightPixels / 2).coerceAtLeast(app.dp(250))
+            val maxHeight = (app.resources.displayMetrics.heightPixels / 2).coerceAtLeast(1)
             val params = WindowManager.LayoutParams(
                 maxWidth,
                 maxHeight,
