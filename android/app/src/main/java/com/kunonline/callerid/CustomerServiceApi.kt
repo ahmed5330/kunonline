@@ -229,7 +229,7 @@ object KunCustomerServiceApi {
         return CustomerServiceJsonResult(true, "تم إرسال الطلب إلى J&T ونقله إلى جاري الشحن", result)
     }
 
-    fun addNote(context: Context, orderId: String, note: String): CustomerServiceJsonResult = withClient(context) { cookie, clientId ->
+    fun addNote(context: Context, orderId: String, note: String, selectedClientId: String = ""): CustomerServiceJsonResult = withClient(context, selectedClientId) { cookie, clientId ->
         val payload = JSONObject().put("clientId", clientId).put("note", note)
         val response = request("POST", "/api/customer-service/orders/${enc(orderId)}/notes?clientId=${enc(clientId)}", cookie, payload)
         if (response.code !in 200..299) return@withClient authFailure(context, response, "تعذر إضافة الملاحظة")
