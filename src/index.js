@@ -1226,6 +1226,9 @@ async function handleApi(request, env, url, path) {
     o.id = await nextOrderCode(env, o.name);
     o.state = ORDER_STATES.includes(o.state) ? o.state : 'pending';
     o.checkpoint = o.checkpoint || STATE_TEXT.pending;
+    // User-facing manual-order payloads cannot assert provider-issued payment
+    // evidence via a forged history event. The server generates the history.
+    delete o.history;
 
     /* لو جالنا كود كوبون، نتحقق منه ونحسب قيمة الخصم تلقائي (مفيش حاجة تتحسب لو الكود مش موجود/منتهي) */
     if (o.couponCode) {
