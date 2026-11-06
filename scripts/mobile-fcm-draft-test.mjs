@@ -104,6 +104,17 @@ const rejected=await handleMobilePushDevices({
   env,delegate:{fetch:async()=>response({ok:false},401)}
 });
 assert.equal(rejected.status,401);
+const quotaDb={...db,prepare(sql){
+  if(sql.includes('COUNT(DISTINCT installation_hash)')){
+    return {bind(){return {first:async()=>({n:5})}}};
+  }
+  return db.prepare(sql);
+}};
+const limited=await handleMobilePushDevices({
+  request:request('POST',{installationId:installId,token}),
+  env:{...env,DB:quotaDb},delegate
+});
+assert.equal(limited.status,429,'Stop unbounded installations per user');
 const forged=await handleMobilePushDevices({
   request:request('POST',{installationId:installId,token,
     clientId:'CLIENT-B',storeId:'STORE-B',role:'admin'}),
