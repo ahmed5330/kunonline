@@ -174,6 +174,7 @@ fun KunNativeAppV25(
     // Read the last encrypted server snapshot in the background, without
     // blocking first frame. A live result or store switch always wins.
     LaunchedEffect(loggedIn, currentStore) {
+        if (loggedIn) MobilePushRegistration.refreshAsync(context)
         if (loggedIn && snapshot == null) {
             val saved = withContext(Dispatchers.IO) { KunApi.cachedSnapshotFromDisk(context) }
             if (loggedIn && snapshot == null && saved != null) {
