@@ -1,4 +1,4 @@
-import {paymentFromHistory,createProviderPaymentEvent} from './order-payment-status.js';
+import {paymentFromHistory,createProviderPaymentEvent,appendProviderPaymentEvent} from './order-payment-status.js';
 /**
  * كن أونلاين — Cloudflare Worker
  * ---------------------------------------------------------------------------
@@ -2741,10 +2741,9 @@ async function handleWebhook(request, env, path) {
         if (!env.EASYORDERS_WEBHOOK_SECRET) return json({ error:'التحقق من مصدر الدفع غير متاح' },401);
         const matching = await env.DB.prepare('SELECT id,client_id FROM orders WHERE id=?').bind(p.order_id).first();
         if (!matching) return json({ok:true,event:'payment-update',ignored:true});
-        await env.DB.prepare(`UPDATE orders SET history=json_insert(
-          CASE WHEN json_valid(history) AND json_type(history)='array' THEN history ELSE '[]' END,
-          '$[#]',json(?)
-        ) WHERE id=? AND client_id=?`).bind(JSON.stringify(paymentEvent),matching.id,matching.client_id).run();
+        await appendProviderPaymentEvent(env.DB,{
+          orderId:matching.id,clientId:matching.client_id,event:paymentEvent
+        });
         return json({ok:true,event:'payment-update',paymentStatus:paymentEvent.paymentStatus});
       }
       const st = mapEasyOrdersStatus(p.new_status);
@@ -2774,10 +2773,9 @@ async function handleWebhook(request, env, path) {
       ? createProviderPaymentEvent(p.status,{reference:p.payment_ref_id,at:p.created_at})
       : null;
     if (verifiedInitialPayment) {
-      await env.DB.prepare(`UPDATE orders SET history=json_insert(
-        CASE WHEN json_valid(history) AND json_type(history)='array' THEN history ELSE '[]' END,
-        '$[#]',json(?)
-      ) WHERE id=? AND client_id=?`).bind(JSON.stringify(verifiedInitialPayment),p.id,client.id).run();
+      await appendProviderPaymentEvent(env.DB,{
+        orderId:p.id,clientId:client.id,event:verifiedInitialPayment
+      });
     }
     return json({ ok: true, event: 'order-created', id: p.id });
   }
