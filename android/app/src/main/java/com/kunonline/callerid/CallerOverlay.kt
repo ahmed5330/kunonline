@@ -1,8 +1,10 @@
 package com.kunonline.callerid
 
 import android.app.KeyguardManager
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.PixelFormat
@@ -24,6 +26,8 @@ import kotlin.concurrent.thread
 object CallerOverlay {
     private var currentView: View? = null
     private var currentManager: WindowManager? = null
+    private var privacyReceiver: BroadcastReceiver? = null
+    private var privacyReceiverContext: Context? = null
     private val handler = Handler(Looper.getMainLooper())
 
     private const val CHROME = 0xFF15599B.toInt()
@@ -95,7 +99,7 @@ object CallerOverlay {
                 alpha = .78f
             })
             header.addView(TextView(app).apply {
-                text = customer.name.ifBlank { "عميل كن أونلاين" }
+                text = if (locked) "عميل كن أونلاين" else customer.name.ifBlank { "عميل كن أونلاين" }
                 textSize = 21f
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
                 setTextColor(Color.WHITE)
@@ -117,7 +121,7 @@ object CallerOverlay {
                     setPadding(0, app.dp(3), 0, app.dp(3))
                 })
             }
-            line(customer.phone, 15f, INK, true)
+            if (!locked) line(customer.phone, 15f, INK, true)
             if (!locked && customer.storeName.isNotBlank()) line("المتجر: ${customer.storeName}", 13f, CHROME, true)
             val orderBits = listOfNotNull(
                 customer.orderRef?.takeUnless {
@@ -126,7 +130,7 @@ object CallerOverlay {
                 }?.let { "طلب $it" },
                 stateText(customer.status).takeIf { it.isNotBlank() }
             ).joinToString(" • ")
-            line(orderBits, 13f, CHROME, true)
+            if (!locked) line(orderBits, 13f, CHROME, true)
             val paymentHost = LinearLayout(app).apply { orientation = LinearLayout.VERTICAL }
             fun displayPayment(status: String?) {
                 paymentHost.removeAllViews()
@@ -305,6 +309,21 @@ object CallerOverlay {
                 wm.addView(card, params)
                 currentView = card
                 currentManager = wm
+                // Never leave visible customer/order details after the device locks.
+                // The overlay is recreated on the next eligible call, not on unlock.
+                val receiver = object : BroadcastReceiver() {
+                    override fun onReceive(context: Context?, intent: Intent?) {
+                        if (intent?.action == Intent.ACTION_SCREEN_OFF) handler.post { dismiss() }
+                    }
+                }
+                runCatching {
+                    app.registerReceiver(receiver, IntentFilter(Intent.ACTION_SCREEN_OFF))
+                    privacyReceiver = receiver
+                    privacyReceiverContext = app
+                }.onFailure {
+                    Log.w("KunCallerOverlay", "Unable to protect overlay on screen-off", it)
+                    dismiss()
+                }
                 if (!locked && !customer.orderId.isNullOrBlank()) {
                     thread(name = "kun-caller-order-details") {
                         val result = KunCustomerServiceApi.fetchOrderDetails(app, customer.orderId,
@@ -326,8 +345,15 @@ object CallerOverlay {
     }
 
     fun dismiss() {
-        val view = currentView ?: return
-        runCatching { currentManager?.removeView(view) }
+        val receiver = privacyReceiver
+        val receiverContext = privacyReceiverContext
+        privacyReceiver = null
+        privacyReceiverContext = null
+        if (receiver != null && receiverContext != null) {
+            runCatching { receiverContext.unregisterReceiver(receiver) }
+        }
+        val view = currentView
+        if (view != null) runCatching { currentManager?.removeView(view) }
         currentView = null
         currentManager = null
     }
