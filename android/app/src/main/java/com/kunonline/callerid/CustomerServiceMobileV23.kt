@@ -316,7 +316,7 @@ private fun V23Breakdown(title: String, rows: List<Pair<String, Int>>) {
 fun V23CustomerService(snapshot: CommerceSnapshot, onGlobalRefresh: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var board by remember { mutableStateOf<CustomerServiceBoardResult?>(null) }
+    var board by remember { mutableStateOf<CustomerServiceBoardResult?>(KunCustomerServiceApi.cachedBoard(context)) }
     var loading by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf("") }
     var query by remember { mutableStateOf("") }
