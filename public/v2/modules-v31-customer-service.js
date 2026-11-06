@@ -6,6 +6,11 @@
   const STATUS_ORDER=['pending','no_answer','confirmed','preparing','shipped','signed','collected','returned','cancelled','deferred'];
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const money=v=>new Intl.NumberFormat('ar-EG',{maximumFractionDigits:2}).format(Number(v)||0);
+  const paymentBadge=o=>o.paymentStatus==='paid'
+    ? '<span class="cs-payment-status" role="status" style="display:inline-block;padding:5px 10px;border-radius:8px;background:#e0f6e8;color:#126e45;font-weight:800">✓ مدفوع بالكامل</span>'
+    : o.paymentStatus==='refunded'
+      ? '<span class="cs-payment-status" role="status" style="display:inline-block;padding:5px 10px;border-radius:8px;background:#fbe7eb;color:#9f2f41;font-weight:800">↩ تم رد المبلغ</span>'
+      : '';
   const notify=msg=>typeof window.showToast==='function'?window.showToast(msg):console.log(msg);
   let me=null,clientId='',selectedStore='',data=null,loading=false,renderQueued=false;
 
@@ -60,6 +65,7 @@
     return `<article class="cs-order ${o.returnedFromDeferredToday?'cs-returned-today':''}" data-cs-order="${esc(o.id)}" data-cs-order-date="${esc(String(o.date||o.createdAt||'').slice(0,10))}" draggable="true" aria-label="أوردر ${esc(o.name||'بدون اسم')} — قابل للسحب إلى عمود آخر">
       ${o.returnedFromDeferredToday?'<div class="cs-return-banner">⏰ رجع من التأجيل اليوم — يحتاج متابعة</div>':''}
       <div class="cs-order-head"><div><div class="cs-customer"><span class="cs-customer-name">${esc(o.name||'بدون اسم')}</span>${o.name?`<button type="button" class="cs-copy-btn cs-copy-name" data-cs-copy-value="${esc(o.name)}" title="نسخ اسم العميل" aria-label="نسخ اسم العميل">⧉</button>`:''}</div><div class="cs-phone">${esc(o.phone||'بدون رقم')}</div></div><span class="cs-store" title="${esc(o.storeName||'')}">${esc(o.storeName||'بدون متجر')}</span></div>
+      ${paymentBadge(o)}
       <div class="cs-address">📍 ${esc([o.gov,o.address].filter(Boolean).join(' — ')||'لا يوجد عنوان')}</div>
       <div class="cs-product">${esc(o.product||'بدون منتج')}</div>
       ${o.productNote?`<div class="cs-product-note">${esc(o.productNote)}</div>`:''}
