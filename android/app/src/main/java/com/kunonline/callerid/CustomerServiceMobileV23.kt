@@ -324,6 +324,9 @@ fun V23CustomerService(snapshot: CommerceSnapshot, onGlobalRefresh: () -> Unit) 
     var filtersExpanded by remember { mutableStateOf(false) }
     var storeFilter by remember { mutableStateOf("") }
     var selectedOrder by remember { mutableStateOf<CsOrderUi?>(null) }
+    var quickNoteOrder by remember { mutableStateOf<CsOrderUi?>(null) }
+    var quickNoteText by remember { mutableStateOf("") }
+    var quickNoteBusy by remember { mutableStateOf(false) }
     var editorData by remember { mutableStateOf<CustomerServiceEditorData?>(null) }
     var activeBoardKey by remember { mutableStateOf("") }
 
@@ -454,6 +457,7 @@ fun V23CustomerService(snapshot: CommerceSnapshot, onGlobalRefresh: () -> Unit) 
                     V23CustomerServiceCard(
                         order = order,
                         onOpen = { selectedOrder = order },
+                        onNotes = { quickNoteOrder = order; quickNoteText = "" },
                         onEditShipping = { openCustomerServiceJntEditor(context, order.id, order.storeId) },
                         onCall = {
                             if (order.phone.isNotBlank()) {
@@ -499,6 +503,53 @@ fun V23CustomerService(snapshot: CommerceSnapshot, onGlobalRefresh: () -> Unit) 
         }
     }
 
+    quickNoteOrder?.let { noteOrder ->
+        AlertDialog(
+            onDismissRequest = { if (!quickNoteBusy) quickNoteOrder = null },
+            title = { Text("ملاحظات الطلب") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (noteOrder.latestInternalNote.isNotBlank()) {
+                        Text("آخر ملاحظة: ${noteOrder.latestInternalNote}",
+                            style = MaterialTheme.typography.bodySmall)
+                    }
+                    OutlinedTextField(
+                        value = quickNoteText,
+                        onValueChange = { quickNoteText = it },
+                        label = { Text("ملاحظة داخلية جديدة") },
+                        minLines = 2,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !quickNoteBusy && quickNoteText.isNotBlank(),
+                    onClick = {
+                        quickNoteBusy = true
+                        scope.launch {
+                            val result = withContext(Dispatchers.IO) {
+                                KunCustomerServiceApi.addNote(context, noteOrder.id, quickNoteText.trim(),
+                                    selectedClientId = noteOrder.clientId)
+                            }
+                            quickNoteBusy = false
+                            if (result.ok) {
+                                quickNoteOrder = null
+                                quickNoteText = ""
+                                refreshBoard(noteOrder.id)
+                                onGlobalRefresh()
+                            }
+                            Toast.makeText(context, result.message, if (result.ok) Toast.LENGTH_SHORT else Toast.LENGTH_LONG).show()
+                        }
+                    }
+                ) { Text(if (quickNoteBusy) "جاري الحفظ" else "حفظ الملاحظة") }
+            },
+            dismissButton = { TextButton(
+                enabled = !quickNoteBusy, onClick = { quickNoteOrder = null }
+            ) { Text("إلغاء") } }
+        )
+    }
+
     selectedOrder?.let { order ->
         V23OrderDetailDialog(
             order = order,
@@ -541,6 +592,7 @@ fun V23CustomerService(snapshot: CommerceSnapshot, onGlobalRefresh: () -> Unit) 
 private fun V23CustomerServiceCard(
     order: CsOrderUi,
     onOpen: () -> Unit,
+    onNotes: () -> Unit,
     onCall: () -> Unit,
     onWhatsApp: () -> Unit,
     onEditShipping: () -> Unit
@@ -731,6 +783,11 @@ private fun V23CustomerServiceCard(
                     )
                 }
                 Spacer(Modifier.weight(1f))
+                TextButton(onClick = onNotes) {
+                    Icon(Icons.Outlined.NoteAdd, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(3.dp))
+                    Text("ملاحظات")
+                }
                 TextButton(onClick = onOpen) {
                     Text("التفاصيل والتعديل")
                     Spacer(Modifier.width(4.dp))
