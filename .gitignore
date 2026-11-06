@@ -2,6 +2,9 @@
 .env
 .env.*
 .dev.vars
+# Firebase app configuration must be supplied privately, not committed.
+**/google-services.json
+**/firebase-service-account*.json
 
 # أدوات
 node_modules/
