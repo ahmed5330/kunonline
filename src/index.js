@@ -1418,6 +1418,9 @@ async function handleApi(request, env, url, path) {
           message: shippingMessageFor({ id, name: cur.name, awb }), kind: 'shipping'
         });
       }
+      // Preserve the legacy API response without overwriting the durable DB journal.
+      const history = parseJsonArr(cur.history);
+      if (transitionEvent) history.push(transitionEvent);
       return json({ ok: true, state: st, history, deferUntil, refundAmount, returnType, restocked });
     }
   }
