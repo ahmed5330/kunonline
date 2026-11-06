@@ -28,8 +28,29 @@ assert(edit.includes('selectedClientId = data.clientId'), 'editor saves only the
 assert.match(api, /fetchEditorData\(context: Context, orderId: String, selectedStoreId: String = "", requireHistory: Boolean = false, selectedClientId: String = ""\)/);
 assert(api.includes('if (selectedStoreId.isNotBlank()) payload.put("storeId", selectedStoreId)'), 'include store for ACL on writes');
 
+// The tiny floating call overlay must not expose the old raw "full details" block.
+assert(caller.includes('renderCallerProductSummary'), 'overlay renders only compact product lines');
+assert(!caller.includes('renderCallerFullDetails('), 'overlay must not show raw full details');
+assert(caller.includes('heightPixels / 2'), 'overlay height must be at most half the screen');
+assert(caller.includes('putExtra("start_note", true)'), 'call overlay must provide quick notes');
+assert(caller.includes('text = if (locked) "عميل كن أونلاين"'), 'lock screen must conceal customer names');
+assert(caller.includes('if (!locked) line(customer.phone'), 'lock screen must conceal customer phone');
+assert(caller.includes('if (!locked) line(orderBits'), 'lock screen must conceal order status');
+assert(caller.includes('Intent.ACTION_SCREEN_OFF'), 'screen-off must invalidate visible call overlay');
+assert(caller.includes('app.registerReceiver(receiver, filter)'), 'screen privacy receiver must be registered');
+assert(caller.includes('addAction(Intent.ACTION_SCREEN_ON)'), 'proximity wake must restore an unlocked overlay');
+assert(caller.includes('card.visibility = View.INVISIBLE'), 'screen-off must conceal the visible overlay');
+assert(caller.includes('if (isLocked) dismiss() else card.visibility = View.VISIBLE'), 'only an unlocked wake may restore caller details');
+assert(caller.includes('receiverContext.unregisterReceiver(receiver)'), 'privacy receiver must be cleaned up');
+assert(caller.includes('dismiss()'), 'screen-off must dismiss call overlay');
+assert(details.includes('internal fun renderCallerProductSummary'), 'structured item renderer must exist');
+assert(details.includes('optJSONArray("options")'), 'product summary must include color/size options');
+assert(fallback.includes('renderCallerFullDetails'), 'full protected details remain available outside overlay');
+assert(fallback.includes('start_note'), 'fallback note composer must remain accessible');
+assert(fallback.includes('setShowWhenLocked(false)'), 'fallback activity must not cover Keyguard');
+assert(fallback.includes('text = if (locked) "عميل كن أونلاين"'), 'fallback must conceal customer name while locked');
+assert(fallback.includes('if (!locked) addLine(customer.phone'), 'fallback must conceal customer phone while locked');
 for (const ui of [caller, fallback]) {
-  assert(ui.includes('renderCallerFullDetails'), 'call panel renders live details');
   assert(ui.includes('fetchOrderDetails'), 'call panel fetches server details');
   assert(ui.includes('stillUnlocked'), 'do not reveal live details after phone locks');
   assert(ui.includes('ScrollView'), 'long details must be scrollable');

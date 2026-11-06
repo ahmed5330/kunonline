@@ -1,8 +1,10 @@
 package com.kunonline.callerid
 
 import android.app.KeyguardManager
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.PixelFormat
@@ -10,6 +12,7 @@ import android.graphics.drawable.GradientDrawable
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
+import android.util.Log
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
@@ -23,6 +26,8 @@ import kotlin.concurrent.thread
 object CallerOverlay {
     private var currentView: View? = null
     private var currentManager: WindowManager? = null
+    private var privacyReceiver: BroadcastReceiver? = null
+    private var privacyReceiverContext: Context? = null
     private val handler = Handler(Looper.getMainLooper())
 
     private const val CHROME = 0xFF15599B.toInt()
@@ -94,7 +99,7 @@ object CallerOverlay {
                 alpha = .78f
             })
             header.addView(TextView(app).apply {
-                text = customer.name.ifBlank { "عميل كن أونلاين" }
+                text = if (locked) "عميل كن أونلاين" else customer.name.ifBlank { "عميل كن أونلاين" }
                 textSize = 21f
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
                 setTextColor(Color.WHITE)
@@ -116,13 +121,37 @@ object CallerOverlay {
                     setPadding(0, app.dp(3), 0, app.dp(3))
                 })
             }
-            line(customer.phone, 15f, INK, true)
+            if (!locked) line(customer.phone, 15f, INK, true)
             if (!locked && customer.storeName.isNotBlank()) line("المتجر: ${customer.storeName}", 13f, CHROME, true)
             val orderBits = listOfNotNull(
-                customer.orderRef?.takeUnless { locked }?.let { "طلب $it" },
+                customer.orderRef?.takeUnless {
+                    locked || it.startsWith("easyorders:", ignoreCase = true) ||
+                        it.startsWith("sheet:easyorders:", ignoreCase = true) || it.length > 28
+                }?.let { "طلب $it" },
                 stateText(customer.status).takeIf { it.isNotBlank() }
             ).joinToString(" • ")
-            line(orderBits, 13f, CHROME, true)
+            if (!locked) line(orderBits, 13f, CHROME, true)
+            val paymentHost = LinearLayout(app).apply { orientation = LinearLayout.VERTICAL }
+            fun displayPayment(status: String?) {
+                paymentHost.removeAllViews()
+                val label = when (status) {
+                    "paid" -> "✓ مدفوع بالكامل"
+                    "refunded" -> "↩ تم رد المبلغ"
+                    else -> return
+                }
+                paymentHost.addView(TextView(app).apply {
+                    text = label
+                    textSize = 14f
+                    setTypeface(typeface, android.graphics.Typeface.BOLD)
+                    setTextColor(if (status == "paid") 0xFF13774C.toInt() else 0xFF9F3341.toInt())
+                    setPadding(app.dp(10), app.dp(7), app.dp(10), app.dp(7))
+                    background = rounded(if (status == "paid") 0xFFE6F8ED.toInt() else 0xFFFCECEF.toInt(), 10f, app)
+                })
+            }
+            if (!locked) {
+                displayPayment(customer.paymentStatus)
+                body.addView(paymentHost)
+            }
             if (!locked) {
                 line(listOfNotNull(customer.product, customer.total?.let { "الإجمالي ${it.toInt()} ج.م" }).joinToString(" • "), 14f, INK)
                 line(listOfNotNull(customer.gov, customer.address).filter { it.isNotBlank() }.joinToString(" — "), 13f)
@@ -134,17 +163,13 @@ object CallerOverlay {
                 setPadding(0, app.dp(8), 0, app.dp(8))
             }
             if (!locked && !customer.orderId.isNullOrBlank()) {
-                detailsHost.addView(TextView(app).apply {
-                    text = "جاري تحميل تفاصيل الطلب الكاملة…"
-                    textSize = 12f
-                    setTextColor(INK2)
-                })
+                // Keep the initial card responsive; product lines appear when available.
                 body.addView(detailsHost)
             }
             card.addView(ScrollView(app).apply {
                 isFillViewport = false
                 addView(body)
-            }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, app.dp(240)))
+            }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
 
             val actions = LinearLayout(app).apply {
                 orientation = LinearLayout.VERTICAL
@@ -237,6 +262,20 @@ object CallerOverlay {
                 setPadding(0, app.dp(5), 0, 0)
             }
             if (!locked) {
+                customer.orderId?.takeIf { it.isNotBlank() }?.let {
+                    secondary.addView(actionButton("الملاحظات", SURFACE2, INK) {
+                        dismiss()
+                        runCatching {
+                            app.startActivity(Intent(app, CallerCardActivity::class.java).apply {
+                                putExtra("phone", customer.phone)
+                                putExtra("incoming", incoming)
+                                putExtra("kun_caller_payload", CallerPayload.encode(customer))
+                                putExtra("start_note", true)
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            })
+                        }.onFailure { Log.w("KunCallerOverlay", "Cannot open order notes", it) }
+                    })
+                }
                 secondary.addView(actionButton("فتح التطبيق", SURFACE2, INK) {
                     dismiss()
                     runCatching {
@@ -251,9 +290,12 @@ object CallerOverlay {
             card.addView(actions)
 
             val maxWidth = app.resources.displayMetrics.widthPixels - app.dp(24)
+            // Limit the entire window, including buttons and header, to half the display.
+            // The weighted scroll view consumes only the remaining space.
+            val maxHeight = (app.resources.displayMetrics.heightPixels / 2).coerceAtLeast(1)
             val params = WindowManager.LayoutParams(
                 maxWidth,
-                WindowManager.LayoutParams.WRAP_CONTENT,
+                maxHeight,
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                     WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
@@ -267,6 +309,34 @@ object CallerOverlay {
                 wm.addView(card, params)
                 currentView = card
                 currentManager = wm
+                // Never leave visible customer/order details after the device locks.
+                // The overlay is recreated on the next eligible call, not on unlock.
+                val receiver = object : BroadcastReceiver() {
+                    override fun onReceive(context: Context?, intent: Intent?) {
+                        handler.post {
+                            if (currentView !== card) return@post
+                            when (intent?.action) {
+                                Intent.ACTION_SCREEN_OFF -> card.visibility = View.INVISIBLE
+                                Intent.ACTION_SCREEN_ON -> {
+                                    val isLocked = (app.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager).isKeyguardLocked
+                                    if (isLocked) dismiss() else card.visibility = View.VISIBLE
+                                }
+                            }
+                        }
+                    }
+                }
+                runCatching {
+                    val filter = IntentFilter().apply {
+                        addAction(Intent.ACTION_SCREEN_OFF)
+                        addAction(Intent.ACTION_SCREEN_ON)
+                    }
+                    app.registerReceiver(receiver, filter)
+                    privacyReceiver = receiver
+                    privacyReceiverContext = app
+                }.onFailure {
+                    Log.w("KunCallerOverlay", "Unable to protect overlay on screen-off", it)
+                    dismiss()
+                }
                 if (!locked && !customer.orderId.isNullOrBlank()) {
                     thread(name = "kun-caller-order-details") {
                         val result = KunCustomerServiceApi.fetchOrderDetails(app, customer.orderId,
@@ -274,12 +344,11 @@ object CallerOverlay {
                         handler.post {
                             val stillUnlocked = !(app.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager).isKeyguardLocked
                             if (currentView === card && stillUnlocked) {
-                                if (result.ok) renderCallerFullDetails(app, detailsHost, result.data)
-                                else detailsHost.addView(TextView(app).apply {
-                                    text = "تعذر تحميل التفاصيل: ${result.message}"
-                                    textSize = 12f
-                                    setTextColor(INK2)
-                                })
+                                if (result.ok) {
+                                    val latestPayment = result.data.optJSONObject("order")?.optString("paymentStatus")
+                                    if (!latestPayment.isNullOrBlank()) displayPayment(latestPayment)
+                                    renderCallerProductSummary(app, detailsHost, result.data)
+                                } else Log.w("KunCallerOverlay", "Order product summary unavailable: ${result.message}")
                             }
                         }
                     }
@@ -289,8 +358,15 @@ object CallerOverlay {
     }
 
     fun dismiss() {
-        val view = currentView ?: return
-        runCatching { currentManager?.removeView(view) }
+        val receiver = privacyReceiver
+        val receiverContext = privacyReceiverContext
+        privacyReceiver = null
+        privacyReceiverContext = null
+        if (receiver != null && receiverContext != null) {
+            runCatching { receiverContext.unregisterReceiver(receiver) }
+        }
+        val view = currentView
+        if (view != null) runCatching { currentManager?.removeView(view) }
         currentView = null
         currentManager = null
     }

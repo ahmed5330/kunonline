@@ -72,8 +72,15 @@
   function render(data){
     const o=data.order||{},s=data.summary||{},items=data.items||[],customer=data.customer||{},a=data.address||{};
     const payment=PAYMENT[value(s.paymentMethod).toLowerCase()]||s.paymentMethod||'غير مسجل';
+    const paymentStatus=o.paymentStatus||s.paymentStatus||'unknown';
+    const paymentLabel=paymentStatus==='paid'?'✓ مدفوع بالكامل':paymentStatus==='refunded'?'↩ تم رد المبلغ':'الدفع غير مؤكد';
+    const paymentBanner=paymentStatus==='paid'
+      ? '<span role="status" style="display:inline-block;padding:6px 11px;border-radius:8px;background:#e1f6e9;color:#126e45;font-weight:800">✓ مدفوع بالكامل</span>'
+      : paymentStatus==='refunded'
+        ? '<span role="status" style="display:inline-block;padding:6px 11px;border-radius:8px;background:#fbe7eb;color:#9f2f41;font-weight:800">↩ تم رد المبلغ</span>'
+        : '';
     const edited=o.lastEdit||null,shipmentLocked=Boolean(o.awb)||['shipping','in_shipping','shipped','signed','delivered','collected','returned','cancelled','completed'].includes(String(o.state||'').toLowerCase());
-    return `<div class="kod-page"><div class="kod-head"><div class="kod-head-main"><div class="kod-order-id">الطلب ${esc(o.id||'')}</div><div class="kod-sub">${esc(o.storeName||'')} ${o.source?`· ${esc(o.source)}`:''} · ${fmtDate(o.date)}</div></div><div class="kod-spacer"></div><button type="button" class="btn soft" data-kod-close>إغلاق</button></div>
+    return `<div class="kod-page"><div class="kod-head"><div class="kod-head-main"><div class="kod-order-id">الطلب ${esc(o.id||'')}</div><div class="kod-sub">${esc(o.storeName||'')} ${o.source?`· ${esc(o.source)}`:''} · ${fmtDate(o.date)}</div>${paymentBanner}</div><div class="kod-spacer"></div><button type="button" class="btn soft" data-kod-close>إغلاق</button></div>
       <div class="kod-grid">
         ${data.provider?.warning?`<div class="kod-warning">تفاصيل Kun متاحة، لكن ${esc(data.provider.warning)}</div>`:''}
         <section class="kod-card kod-products-card"><h3>عناصر السلة</h3><div class="kod-products">${items.length?items.map(itemHtml).join(''):'<div class="kod-empty">لا توجد عناصر منتج مسجلة.</div>'}</div></section>
@@ -82,7 +89,7 @@
         ${edited?`<div class="kod-note">✎ تم التعديل بواسطة: ${esc(edited.byName||edited.by||'موظف')} · ${fmtDate(edited.at)}</div>`:''}
         ${shipmentLocked?'<div class="kod-note">تم إصدار الشحنة أو إنهاء الطلب. تعديل شركة J&T يتم عن طريق شركة الشحن، وليس بتغيير السجل المحلي.</div>':`<div class="kod-actions"><button type="button" class="btn primary" data-kod-jnt-edit>تعديل بيانات الشحن حسب J&T</button></div>`}
         </section>
-        <section class="kod-card kod-summary"><h3>ملخص الطلب</h3><div class="kod-field-grid">${field('الحالة',STATE[o.state]||o.state||'—')}${field('وسيلة الدفع',payment)}${field('إجمالي الكمية',s.quantity)}${field('مجموع المنتجات',`${money(s.subtotal)} EGP`)}${field('رسوم التوصيل',`${money(s.shippingCost)} EGP`)}${Number(s.discountAmount)>0?field('الخصم',`${money(s.discountAmount)} EGP`):''}${field('الإجمالي المطلوب',`${money(s.total)} EGP`)}${field('كود الكوبون',o.couponCode)}${field('رقم البوليصة',o.awb,{copy:true})}${field('مصدر الطلب',o.source)}${field('رقم الطلب الأصلي',o.ref,{copy:true})}</div>${o.customerNote?`<div class="kod-note"><b>ملاحظة على الطلب:</b> ${esc(o.customerNote)}</div>`:''}</section>
+        <section class="kod-card kod-summary"><h3>ملخص الطلب</h3><div class="kod-field-grid">${field('الحالة',STATE[o.state]||o.state||'—')}${field('وسيلة الدفع',payment)}${field('حالة الدفع',paymentLabel)}${field('إجمالي الكمية',s.quantity)}${field('مجموع المنتجات',`${money(s.subtotal)} EGP`)}${field('رسوم التوصيل',`${money(s.shippingCost)} EGP`)}${Number(s.discountAmount)>0?field('الخصم',`${money(s.discountAmount)} EGP`):''}${field('الإجمالي المطلوب',`${money(s.total)} EGP`)}${field('كود الكوبون',o.couponCode)}${field('رقم البوليصة',o.awb,{copy:true})}${field('مصدر الطلب',o.source)}${field('رقم الطلب الأصلي',o.ref,{copy:true})}</div>${o.customerNote?`<div class="kod-note"><b>ملاحظة على الطلب:</b> ${esc(o.customerNote)}</div>`:''}</section>
       </div></div>`;
   }
   async function open(orderId){

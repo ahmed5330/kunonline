@@ -1,3 +1,4 @@
+import {paymentFromHistory} from './order-payment-status.js';
 import {listMyStores,resolveStoreScope} from './store-scope.js';
 import {recoverOrderContacts} from './customer-contact-evidence.js';
 import {normalizeOutcomeReason} from './order-outcome-reason.js';
@@ -86,9 +87,10 @@ function clientIdFor(me,url,body={}){
   return requested;
 }
 function mapOrder(r){
+  const paymentStatus=paymentFromHistory(r.history).status;
   const history=arr(r.history),contacts=recoverOrderContacts(r.contact_log,history),contactLog=contacts.contactLog;
   const notes=history.filter(x=>x?.type==='internal_note'&&clean(x.note));
-  return {id:r.id,clientId:r.client_id,storeId:r.store_id||'',storeName:'',storeCode:'',ref:r.ref||r.id,date:r.date||r.created_at||'',createdAt:r.created_at||'',name:r.name||'',phone:r.phone||'',gov:r.gov||'',address:r.address||'',product:r.product||'',productId:r.product_id||'',variantId:r.variant_id||'',productNote:r.product_note||'',qty:n(r.qty)||1,unitPrice:n(r.unit_price),total:n(r.total),source:r.source||'',customerNote:r.note||'',awb:r.awb||'',state:r.state||'pending',checkpoint:r.checkpoint||LABELS[r.state]||'',deferUntil:r.defer_until||'',stockBatchId:'',stockBatchName:'',stockAllocationStatus:'',contactLog,contactCount:contacts.contactCount,screenedContactCount:contacts.screenedContactCount,recoveredContactCount:contacts.recoveredContactCount,contactCountSource:contacts.contactCountSource,history,internalNotes:notes,latestInternalNote:notes.at(-1)?.note||'',returnedFromDeferredToday:false};
+  return {paymentStatus,id:r.id,clientId:r.client_id,storeId:r.store_id||'',storeName:'',storeCode:'',ref:r.ref||r.id,date:r.date||r.created_at||'',createdAt:r.created_at||'',name:r.name||'',phone:r.phone||'',gov:r.gov||'',address:r.address||'',product:r.product||'',productId:r.product_id||'',variantId:r.variant_id||'',productNote:r.product_note||'',qty:n(r.qty)||1,unitPrice:n(r.unit_price),total:n(r.total),source:r.source||'',customerNote:r.note||'',awb:r.awb||'',state:r.state||'pending',checkpoint:r.checkpoint||LABELS[r.state]||'',deferUntil:r.defer_until||'',stockBatchId:'',stockBatchName:'',stockAllocationStatus:'',contactLog,contactCount:contacts.contactCount,screenedContactCount:contacts.screenedContactCount,recoveredContactCount:contacts.recoveredContactCount,contactCountSource:contacts.contactCountSource,history,internalNotes:notes,latestInternalNote:notes.at(-1)?.note||'',returnedFromDeferredToday:false};
 }
 async function getOrder(env,clientId,orderId){
   const row=await env.DB.prepare(`SELECT ${ORDER_COLS} FROM orders WHERE id=? AND client_id=? LIMIT 1`).bind(orderId,clientId).first();
@@ -186,7 +188,7 @@ async function details(env,clientId,orderId){
     items=results.map(item=>({productId:item.product_id||'',variantId:item.variant_id||'',name:item.product_name||o.product,productName:item.product_name||o.product,variantName:item.variant_label||'',note:item.variant_label||'',quantity:n(item.qty)||1,qty:n(item.qty)||1,price:n(item.unit_price),unitPrice:n(item.unit_price),lineTotal:n(item.line_total),sku:item.sku||''}));
   }catch(error){console.warn('Optional detailed order items unavailable',error?.message||error);}
   if(!items.length)items=[fallback];
-  return {ok:true,order:{id:o.id,ref:o.ref,clientId:o.clientId,storeId:o.storeId,state:o.state,date:o.date,source:o.source,couponCode:r.coupon_code||'',customerNote:o.customerNote,awb:o.awb},customer:{id:r.customer_id||'',name:o.name,phone:o.phone,government:o.gov,address:o.address},address:{government:o.gov,address:o.address},items,summary:{total:o.total,qty:o.qty,discountAmount:n(r.discount_amount),shippingCost:n(r.shipping_cost),otherCost:n(r.other_cost)},raw:o};
+  return {ok:true,order:{paymentStatus:o.paymentStatus,id:o.id,ref:o.ref,clientId:o.clientId,storeId:o.storeId,state:o.state,date:o.date,source:o.source,couponCode:r.coupon_code||'',customerNote:o.customerNote,awb:o.awb},customer:{id:r.customer_id||'',name:o.name,phone:o.phone,government:o.gov,address:o.address},address:{government:o.gov,address:o.address},items,summary:{paymentStatus:o.paymentStatus,total:o.total,qty:o.qty,discountAmount:n(r.discount_amount),shippingCost:n(r.shipping_cost),otherCost:n(r.other_cost)},raw:o};
 }
 async function catalog(delegate,request,env,ctx,clientId){
   // Keep the detailed catalog route and store scope. The basic products route

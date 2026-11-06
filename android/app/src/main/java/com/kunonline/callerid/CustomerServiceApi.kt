@@ -49,7 +49,8 @@ data class CsOrderUi(
     val contactLog: JSONArray,
     val raw: JSONObject,
     val productLines: JSONArray = JSONArray(),
-    val groupNotes: JSONArray = JSONArray()
+    val groupNotes: JSONArray = JSONArray(),
+    val paymentStatus: String = "unknown"
 )
 
 data class CustomerServiceBoardResult(
@@ -81,9 +82,9 @@ data class CustomerServiceEditorData(
 object KunCustomerServiceApi {
     private const val BASE_URL = "https://app.kun-online.com"
     // Preserve the already parsed board while the authenticated sync cursor is unchanged.
-    private var boardCacheKey = ""
-    private var boardCacheRevision = -1
-    private var boardCache: CustomerServiceBoardResult? = null
+    @Volatile private var boardCacheKey = ""
+    @Volatile private var boardCacheRevision = -1
+    @Volatile private var boardCache: CustomerServiceBoardResult? = null
 
     private data class HttpResult(val code: Int, val body: String)
 
@@ -124,6 +125,76 @@ object KunCustomerServiceApi {
 
     private fun resolveClientId(context: Context, cookie: String): String = KunApi.resolveScope(cookie, context).clientId
 
+    /**
+     * Instant in-process read for an already verified tenant/store selection.
+     * Never uses an old board if the account, store, filter or date revision changed.
+     * Live server ACL checks still happen on the subsequent refresh.
+     */
+    private fun parseBoardRoot(root: JSONObject, clientId: String): CustomerServiceBoardResult {
+        val stores = buildList {
+            val array = root.optJSONArray("stores") ?: JSONArray()
+            for (i in 0 until array.length()) {
+                val item = array.optJSONObject(i) ?: continue
+                add(CsStoreUi(item.optString("id"), item.optString("name"), item.optString("code"), item.optString("role")))
+            }
+        }
+        val labels = buildMap {
+            val obj = root.optJSONObject("stateLabels") ?: JSONObject()
+            val keys = obj.keys()
+            while (keys.hasNext()) {
+                val key = keys.next()
+                put(key, obj.optString(key))
+            }
+        }
+        val orders = MobileDateFilterState.filterCustomerServiceOrders(buildList {
+            val array = root.optJSONArray("orders") ?: JSONArray()
+            for (i in 0 until array.length()) array.optJSONObject(i)?.let { add(parseOrder(it)) }
+        })
+        val parsedBoard = CustomerServiceBoardResult(
+            ok = true,
+            message = "تم تحميل خدمة العملاء",
+            clientId = root.optString("clientId").ifBlank { clientId },
+            role = root.optString("role"),
+            stores = stores,
+            selectedStoreId = root.optString("selectedStoreId"),
+            orders = orders,
+            stateLabels = labels
+        )
+        return parsedBoard
+    }
+
+    /** Offline snapshot becomes readable only after the selected store is verified for this session. */
+    fun cachedBoardFromDisk(context: Context, storeId: String = "", state: String = "pending"): CustomerServiceBoardResult? {
+        val session = cookie(context) ?: return null
+        val verified = KunApi.cachedStoreOptions(context) ?: return null
+        val client = verified.current.clientId
+        if (client.isBlank()) return null
+        val selected = if (storeId.isNotBlank()) storeId else verified.current.storeId
+        if (selected.isNotBlank() && verified.stores.none { it.clientId == client && it.storeId == selected }) return null
+        val root = MobileBoardSnapshotCache.load(context, session, client, selected, state) ?: return null
+        if (cookie(context) != session) return null
+        return parseBoardRoot(root, client).takeIf { it.ok && it.clientId == client }
+    }
+
+    fun cachedBoard(context: Context, storeId: String = "", state: String = "pending"): CustomerServiceBoardResult? {
+        val session = cookie(context) ?: return null
+        val verified = KunApi.cachedStoreOptions(context) ?: return null
+        val selected = if (storeId.isNotBlank()) storeId else verified.current.storeId
+        val client = verified.current.clientId
+        if (client.isBlank()) return null
+        val path = buildString {
+            append("/api/customer-service?clientId=${enc(client)}")
+            if (selected.isNotBlank()) append("&storeId=${enc(selected)}")
+            append("&state=${enc(state)}")
+        }
+        val cached = boardCache
+        return cached?.takeIf {
+            it.ok && boardCacheKey == session + "|" + path &&
+                boardCacheRevision == MobileDateFilterState.revision &&
+                it.clientId == client
+        }
+    }
+
     @Synchronized fun fetchBoard(context: Context, storeId: String = "", state: String = "pending"): CustomerServiceBoardResult {
         val cookie = cookie(context) ?: return CustomerServiceBoardResult(false, "سجّل الدخول أولاً")
         return runCatching {
@@ -140,6 +211,9 @@ object KunCustomerServiceApi {
             val synced = MobileSyncClient.fetch(cookie, path)
             val response = HttpResult(synced.code, synced.body.toString())
             if (KunApi.sessionCookie(context) != cookie) return CustomerServiceBoardResult(false, "تغيّرت جلسة الحساب")
+            if (response.code == 401 || response.code == 403) {
+                MobileBoardSnapshotCache.clear(context)
+            }
             if (response.code == 401) return CustomerServiceBoardResult(false, "انتهت الجلسة — سجّل الدخول مرة أخرى")
             if (response.code !in 200..299) return CustomerServiceBoardResult(false, errorMessage(response, "تعذر تحميل خدمة العملاء"))
             val key = cookie + "|" + path
@@ -148,35 +222,10 @@ object KunCustomerServiceApi {
                 return requireNotNull(boardCache)
             }
             val root = json(response)
-            val stores = buildList {
-                val array = root.optJSONArray("stores") ?: JSONArray()
-                for (i in 0 until array.length()) {
-                    val item = array.optJSONObject(i) ?: continue
-                    add(CsStoreUi(item.optString("id"), item.optString("name"), item.optString("code"), item.optString("role")))
-                }
+            val parsedBoard = parseBoardRoot(root, clientId)
+            if (synced.changed && parsedBoard.clientId == clientId) {
+                MobileBoardSnapshotCache.save(context, cookie, clientId, selected, state, root)
             }
-            val labels = buildMap {
-                val obj = root.optJSONObject("stateLabels") ?: JSONObject()
-                val keys = obj.keys()
-                while (keys.hasNext()) {
-                    val key = keys.next()
-                    put(key, obj.optString(key))
-                }
-            }
-            val orders = MobileDateFilterState.filterCustomerServiceOrders(buildList {
-                val array = root.optJSONArray("orders") ?: JSONArray()
-                for (i in 0 until array.length()) array.optJSONObject(i)?.let { add(parseOrder(it)) }
-            })
-            val parsedBoard = CustomerServiceBoardResult(
-                ok = true,
-                message = "تم تحميل خدمة العملاء",
-                clientId = root.optString("clientId").ifBlank { clientId },
-                role = root.optString("role"),
-                stores = stores,
-                selectedStoreId = root.optString("selectedStoreId"),
-                orders = orders,
-                stateLabels = labels
-            )
             boardCacheKey = key
             boardCacheRevision = revision
             boardCache = parsedBoard
@@ -229,7 +278,7 @@ object KunCustomerServiceApi {
         return CustomerServiceJsonResult(true, "تم إرسال الطلب إلى J&T ونقله إلى جاري الشحن", result)
     }
 
-    fun addNote(context: Context, orderId: String, note: String): CustomerServiceJsonResult = withClient(context) { cookie, clientId ->
+    fun addNote(context: Context, orderId: String, note: String, selectedClientId: String = ""): CustomerServiceJsonResult = withClient(context, selectedClientId) { cookie, clientId ->
         val payload = JSONObject().put("clientId", clientId).put("note", note)
         val response = request("POST", "/api/customer-service/orders/${enc(orderId)}/notes?clientId=${enc(clientId)}", cookie, payload)
         if (response.code !in 200..299) return@withClient authFailure(context, response, "تعذر إضافة الملاحظة")
@@ -370,6 +419,7 @@ object KunCustomerServiceApi {
         contactLog = o.optJSONArray("contactLog") ?: JSONArray(),
         raw = o,
         productLines = o.optJSONArray("productLines") ?: JSONArray(),
-        groupNotes = o.optJSONArray("groupNotes") ?: JSONArray()
+        groupNotes = o.optJSONArray("groupNotes") ?: JSONArray(),
+        paymentStatus = o.optString("paymentStatus", "unknown")
     )
 }

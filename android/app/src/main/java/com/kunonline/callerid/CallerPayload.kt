@@ -19,6 +19,7 @@ internal object CallerPayload {
         put("clientId", customer.clientId)
         put("storeId", customer.storeId)
         put("storeName", customer.storeName)
+        put("paymentStatus", customer.paymentStatus)
     }.toString()
 
     fun decode(raw: String?): CallerCustomer? = runCatching {
@@ -43,7 +44,8 @@ internal object CallerPayload {
             previousOrders = value.optInt("previousOrders", 0),
             clientId = clientId,
             storeId = storeId,
-            storeName = value.optString("storeName")
+            storeName = value.optString("storeName"),
+            paymentStatus = value.optString("paymentStatus", "unknown")
         )
     }.getOrNull()
 }

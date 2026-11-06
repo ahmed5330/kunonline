@@ -20,6 +20,17 @@ import android.widget.Toast
 import kotlin.concurrent.thread
 
 class CallerCardActivity : Activity() {
+    private var openedWhileLocked = false
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus && openedWhileLocked &&
+            !(getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager).isKeyguardLocked) {
+            openedWhileLocked = false
+            recreate() // Reveal authorized order actions only after an actual unlock.
+        }
+    }
+
     private val chrome = 0xFF0E5095.toInt()
     private val pine = 0xFF3F8F2B.toInt()
     private val ink = 0xFF12212B.toInt()
@@ -88,9 +99,51 @@ class CallerCardActivity : Activity() {
         dialog.show()
     }
 
+    private fun showAddNote(orderId: String, clientId: String = "") {
+        val field = EditText(this).apply {
+            hint = "اكتب الملاحظة الداخلية"
+            minLines = 2
+            maxLines = 5
+            setPadding(dp(18), dp(12), dp(18), dp(12))
+        }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("إضافة ملاحظة على الطلب")
+            .setMessage("الملاحظة هتظهر في سجل الطلب في السيستم والتطبيق.")
+            .setView(field)
+            .setNegativeButton("رجوع", null)
+            .setPositiveButton("حفظ الملاحظة", null)
+            .create()
+        dialog.setOnShowListener {
+            val save = dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+            save.setOnClickListener {
+                val note = field.text.toString().trim()
+                if (note.isBlank()) {
+                    field.error = "الملاحظة مطلوبة"
+                    return@setOnClickListener
+                }
+                save.isEnabled = false
+                thread(name = "kun-caller-add-note") {
+                    val result = KunCustomerServiceApi.addNote(this, orderId, note, selectedClientId = clientId)
+                    runOnUiThread {
+                        if (result.ok) {
+                            Toast.makeText(this, "تم حفظ الملاحظة في السيستم", Toast.LENGTH_SHORT).show()
+                            dialog.dismiss()
+                            finish()
+                        } else {
+                            dialog.setMessage("تعذر حفظ الملاحظة: ${result.message}")
+                            save.isEnabled = true
+                        }
+                    }
+                }
+            }
+        }
+        dialog.show()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setShowWhenLocked(true)
+        // This full-screen fallback must never draw customer data over Keyguard.
+        setShowWhenLocked(false)
         window.statusBarColor = chrome
         window.navigationBarColor = ground
 
@@ -99,6 +152,7 @@ class CallerCardActivity : Activity() {
         val customer = CallerPayload.decode(intent.getStringExtra("kun_caller_payload"))
             ?: CustomerCache.lookup(this, phone) ?: run { finish(); return }
         val locked = (getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager).isKeyguardLocked
+        openedWhileLocked = locked
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -124,7 +178,7 @@ class CallerCardActivity : Activity() {
             alpha = .78f
         })
         header.addView(TextView(this).apply {
-            text = customer.name.ifBlank { "عميل كن أونلاين" }
+            text = if (locked) "عميل كن أونلاين" else customer.name.ifBlank { "عميل كن أونلاين" }
             textSize = 22f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             setTextColor(Color.WHITE)
@@ -146,9 +200,30 @@ class CallerCardActivity : Activity() {
                 setPadding(0, dp(4), 0, dp(4))
             })
         }
-        addLine(customer.phone, 15f, ink, true)
+        if (!locked) addLine(customer.phone, 15f, ink, true)
         if (!locked && customer.storeName.isNotBlank()) addLine("المتجر: ${customer.storeName}", 13f, chrome, true)
-        addLine(listOfNotNull(customer.orderRef?.takeUnless { locked }?.let { "طلب $it" }, stateText(customer.status).takeIf { it.isNotBlank() }).joinToString(" • "), 13f, chrome, true)
+        if (!locked) addLine(listOfNotNull(customer.orderRef?.takeUnless { it.startsWith("easyorders:", true) || it.length > 28 }?.let { "طلب $it" }, stateText(customer.status).takeIf { it.isNotBlank() }).joinToString(" • "), 13f, chrome, true)
+        val paymentHost = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        fun displayPayment(status: String?) {
+            paymentHost.removeAllViews()
+            val label = when (status) {
+                "paid" -> "✓ مدفوع بالكامل"
+                "refunded" -> "↩ تم رد المبلغ"
+                else -> return
+            }
+            paymentHost.addView(TextView(this).apply {
+                text = label
+                textSize = 14f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setTextColor(if (status == "paid") 0xFF13774C.toInt() else 0xFF9F3341.toInt())
+                background = rounded(if (status == "paid") 0xFFE6F8ED.toInt() else 0xFFFCECEF.toInt(), 10f)
+                setPadding(dp(10), dp(7), dp(10), dp(7))
+            })
+        }
+        if (!locked) {
+            displayPayment(customer.paymentStatus)
+            body.addView(paymentHost)
+        }
         if (!locked) {
             addLine(listOfNotNull(customer.product, customer.total?.let { "الإجمالي ${it.toInt()} ج.م" }).joinToString(" • "), 14f, ink)
             addLine(listOfNotNull(customer.gov, customer.address).filter { !it.isNullOrBlank() }.joinToString(" — "), 13f)
@@ -234,6 +309,11 @@ class CallerCardActivity : Activity() {
             }
         }
         val secondary = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.END }
+        if (!locked) {
+            customer.orderId?.takeIf { it.isNotBlank() }?.let { id ->
+                secondary.addView(action("الملاحظات", ground, ink) { showAddNote(id, customer.clientId) })
+            }
+        }
         secondary.addView(action("إغلاق", ground, ink2) { finish() })
         actions.addView(secondary)
         card.addView(actions)
@@ -246,7 +326,11 @@ class CallerCardActivity : Activity() {
                 runOnUiThread {
                     val stillUnlocked = !(getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager).isKeyguardLocked
                     if (!isFinishing && stillUnlocked) {
-                        if (result.ok) renderCallerFullDetails(this, detailsHost, result.data)
+                        if (result.ok) {
+                            val latestPayment = result.data.optJSONObject("order")?.optString("paymentStatus")
+                            if (!latestPayment.isNullOrBlank()) displayPayment(latestPayment)
+                            renderCallerFullDetails(this, detailsHost, result.data)
+                        }
                         else detailsHost.addView(TextView(this).apply {
                             text = "تعذر تحميل التفاصيل: ${result.message}"
                             textSize = 12f
@@ -258,6 +342,8 @@ class CallerCardActivity : Activity() {
         }
         if (!locked && intent.getBooleanExtra("start_cancel", false)) {
             customer.orderId?.takeIf { it.isNotBlank() }?.let { showCancelReason(it, customer.clientId) }
+        } else if (!locked && intent.getBooleanExtra("start_note", false)) {
+            customer.orderId?.takeIf { it.isNotBlank() }?.let { showAddNote(it, customer.clientId) }
         }
     }
 }

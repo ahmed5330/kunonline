@@ -1,3 +1,4 @@
+import {paymentFromHistory,createProviderPaymentEvent,appendProviderPaymentEvent} from './order-payment-status.js';
 /**
  * كن أونلاين — Cloudflare Worker
  * ---------------------------------------------------------------------------
@@ -289,6 +290,7 @@ const ORDER_COLS = 'id, client_id, store_id, ref, customer_id, date, name, phone
 const parseJsonArr = s => { try { const v = JSON.parse(s); return Array.isArray(v) ? v : []; } catch { return []; } };
 
 const rowToOrder = r => ({
+  paymentStatus: paymentFromHistory(r.history).status,
   id: r.id, clientId: r.client_id, storeId: r.store_id || null, ref: r.ref, customerId: r.customer_id, date: r.date, name: r.name, phone: r.phone,
   gov: r.gov, address: r.address, product: r.product, productId: r.product_id, variantId: r.variant_id, productNote: r.product_note,
   unitPrice: r.unit_price, qty: r.qty, total: r.total,
@@ -300,6 +302,10 @@ const rowToOrder = r => ({
   contactLog: parseJsonArr(r.contact_log), history: parseJsonArr(r.history)
 });
 
+// Server-generated history appends must be atomic: a concurrent verified
+// payment callback must never be erased by an outdated staff read.
+const safeOrderHistorySql = "CASE WHEN json_valid(history) THEN CASE WHEN json_type(history)='array' THEN history ELSE '[]' END ELSE '[]' END";
+
 /** الأوردرات اللي كانت مؤجّلة ووصل معادها ترجع تلقائي لـ"جاري التأكيد" —
     بيتنفّذ في أول أي قراءة عشان محتاجين مجدول (cron) منفصل */
 async function returnDueDeferredOrders(env) {
@@ -308,10 +314,11 @@ async function returnDueDeferredOrders(env) {
     "SELECT id, history FROM orders WHERE state = 'deferred' AND defer_until IS NOT NULL AND defer_until <= ?"
   ).bind(today).all();
   for (const r of (results || [])) {
-    const history = parseJsonArr(r.history);
-    history.push({ state: 'pending', at: new Date().toISOString(), note: 'رجع تلقائي من التأجيل' });
-    await env.DB.prepare('UPDATE orders SET state = ?, checkpoint = ?, history = ? WHERE id = ?')
-      .bind('pending', STATE_TEXT.pending, JSON.stringify(history), r.id).run();
+    const event = { state: 'pending', at: new Date().toISOString(), note: 'رجع تلقائي من التأجيل' };
+    await env.DB.prepare(`UPDATE orders SET state=?,checkpoint=?,
+      history=json_insert(${safeOrderHistorySql},'$[#]',json(?))
+      WHERE id=? AND state='deferred' AND defer_until IS NOT NULL AND defer_until<=?`)
+      .bind('pending', STATE_TEXT.pending, JSON.stringify(event), r.id, today).run();
   }
 }
 
@@ -575,7 +582,7 @@ function mapEasyOrdersStatus(s) {
   const k = String(s || '').toLowerCase().trim();
   const t = {
     pending: 'pending', new: 'pending',
-    confirmed: 'confirmed', paid: 'confirmed', processing: 'preparing',
+    confirmed: 'confirmed', paid: 'pending', processing: 'preparing',
     shipped: 'shipped', shipping: 'shipped',
     delivered: 'signed', completed: 'signed',
     returned: 'returned', refunded: 'returned', 'مرتجع': 'returned',
@@ -1224,6 +1231,9 @@ async function handleApi(request, env, url, path) {
     o.id = await nextOrderCode(env, o.name);
     o.state = ORDER_STATES.includes(o.state) ? o.state : 'pending';
     o.checkpoint = o.checkpoint || STATE_TEXT.pending;
+    // User-facing manual-order payloads cannot assert provider-issued payment
+    // evidence via a forged history event. The server generates the history.
+    delete o.history;
 
     /* لو جالنا كود كوبون، نتحقق منه ونحسب قيمة الخصم تلقائي (مفيش حاجة تتحسب لو الكود مش موجود/منتهي) */
     if (o.couponCode) {
@@ -1385,19 +1395,21 @@ async function handleApi(request, env, url, path) {
       const signedAt = (st === 'signed' || st === 'collected')
         ? (p.signedAt || cur.signed_at || stamp) : null;
 
-      const history = parseJsonArr(cur.history);
-      if (st !== cur.state) history.push({
+      const transitionEvent = st !== cur.state ? {
         state: st, at: new Date().toISOString(),
         note: st === 'deferred' ? `مؤجل لحد ${deferUntil}`
           : enteringReturn ? `${returnType === 'exchange' ? 'استبدال' : returnType === 'partial' ? 'مرتجع جزئي' : 'مرتجع كامل'} — استرداد ${refundAmount || 0}`
           : undefined
-      });
+      } : null;
 
       await env.DB.prepare(
-        `UPDATE orders SET state = ?, awb = ?, checkpoint = ?, shipping_cost = ?, other_cost = ?, signed_at = ?, collected_at = ?,
-           defer_until = ?, refund_amount = ?, return_type = ?, restocked = ?, history = ? WHERE id = ?`
+        `UPDATE orders SET state=?,awb=?,checkpoint=?,shipping_cost=?,other_cost=?,signed_at=?,collected_at=?,
+           defer_until=?,refund_amount=?,return_type=?,restocked=?,
+           history=CASE WHEN ?=1 THEN json_insert(${safeOrderHistorySql},'$[#]',json(?)) ELSE history END
+           WHERE id=? AND client_id=?`
       ).bind(st, awb, STATE_TEXT[st] || '', ship, other, signedAt, collectedAt, deferUntil,
-        refundAmount, returnType, restocked ? 1 : 0, JSON.stringify(history), id).run();
+        refundAmount, returnType, restocked ? 1 : 0,
+        transitionEvent ? 1 : 0, JSON.stringify(transitionEvent), id,cur.client_id).run();
 
       /* رسالة "جاري شحن طلبك" لما الأوردر يتحول لـ"جاري الشحن" */
       if (st === 'preparing' && cur.state !== 'preparing') {
@@ -1406,6 +1418,9 @@ async function handleApi(request, env, url, path) {
           message: shippingMessageFor({ id, name: cur.name, awb }), kind: 'shipping'
         });
       }
+      // Preserve the legacy API response without overwriting the durable DB journal.
+      const history = parseJsonArr(cur.history);
+      if (transitionEvent) history.push(transitionEvent);
       return json({ ok: true, state: st, history, deferUntil, refundAmount, returnType, restocked });
     }
   }
@@ -1452,8 +1467,10 @@ async function handleApi(request, env, url, path) {
     log.push(now.toISOString());
     const history = parseJsonArr(cur.history);
     history.push({ type: 'contact', at: now.toISOString(), by: user.email || user.role });
-    await env.DB.prepare('UPDATE orders SET contact_log = ?, history = ? WHERE id = ?')
-      .bind(JSON.stringify(log), JSON.stringify(history), id).run();
+    await env.DB.prepare(`UPDATE orders SET contact_log=?,
+      history=json_insert(${safeOrderHistorySql},'$[#]',json(?))
+      WHERE id=? AND client_id=?`)
+      .bind(JSON.stringify(log),JSON.stringify(history.at(-1)),id,cur.client_id).run();
     return json({ ok: true, log, history, todayCount: todayCount + 1 });
   }
 
@@ -1470,7 +1487,9 @@ async function handleApi(request, env, url, path) {
     const history = parseJsonArr(cur.history);
     const template = ['confirm', 'shipped', 'review'].includes(b.template) ? b.template : 'other';
     history.push({ type: 'whatsapp', template, at: new Date().toISOString(), by: user.email || user.role });
-    await env.DB.prepare('UPDATE orders SET history = ? WHERE id = ?').bind(JSON.stringify(history), id).run();
+    await env.DB.prepare(`UPDATE orders SET history=json_insert(${safeOrderHistorySql},'$[#]',json(?))
+      WHERE id=? AND client_id=?`)
+      .bind(JSON.stringify(history.at(-1)),id,cur.client_id).run();
     return json({ ok: true, history });
   }
 
@@ -2727,6 +2746,24 @@ async function handleWebhook(request, env, path) {
     const p = await request.json().catch(() => ({}));
 
     if (p.event_type === 'order-status-update') {
+      const paymentEvent = createProviderPaymentEvent(p.new_status,{
+        reference:p.payment_ref_id,at:p.updated_at
+      });
+      if (paymentEvent) {
+        // Legacy unscoped hook can only assert payment with a configured,
+        // verified webhook secret. Never infer payment from COD collection.
+        if (!env.EASYORDERS_WEBHOOK_SECRET) return json({ error:'التحقق من مصدر الدفع غير متاح' },401);
+        const matching = await env.DB.prepare('SELECT id,client_id FROM orders WHERE id=?').bind(p.order_id).first();
+        if (!matching) return json({ok:true,event:'payment-update',ignored:true});
+        const recorded=await appendProviderPaymentEvent(env.DB,{
+          orderId:matching.id,clientId:matching.client_id,event:paymentEvent
+        });
+        const persisted=recorded ? paymentEvent.paymentStatus : paymentFromHistory(
+          (await env.DB.prepare('SELECT history FROM orders WHERE id=? AND client_id=?')
+            .bind(matching.id,matching.client_id).first())?.history
+        ).status;
+        return json({ok:true,event:'payment-update',paymentStatus:persisted,ignored:!recorded});
+      }
       const st = mapEasyOrdersStatus(p.new_status);
       await env.DB.prepare('UPDATE orders SET state = ?, checkpoint = ? WHERE id = ?')
         .bind(st, STATE_TEXT[st] || '', p.order_id).run();
@@ -2750,6 +2787,14 @@ async function handleWebhook(request, env, path) {
       total: Number(p.total_cost) || 0, source: 'المتجر (إيزي أوردرز)', note: '',
       awb: null, state: mapEasyOrdersStatus(p.status), checkpoint: STATE_TEXT[mapEasyOrdersStatus(p.status)]
     }, client.name);
+    const verifiedInitialPayment=env.EASYORDERS_WEBHOOK_SECRET
+      ? createProviderPaymentEvent(p.status,{reference:p.payment_ref_id,at:p.created_at})
+      : null;
+    if (verifiedInitialPayment) {
+      await appendProviderPaymentEvent(env.DB,{
+        orderId:p.id,clientId:client.id,event:verifiedInitialPayment
+      });
+    }
     return json({ ok: true, event: 'order-created', id: p.id });
   }
 

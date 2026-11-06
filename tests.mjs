@@ -3,6 +3,14 @@ import worker from './src/index.js';
 const TODAY = new Date().toISOString().slice(0,10);
 
 let stateRow=null; const orders=new Map(), users=new Map(), attempts=new Map(), products=new Map(), transactions=new Map(), chatMessages=new Map(), tasks=new Map(), walletLog=new Map(), waOutbox=new Map(), stockLog=new Map(), suppliers=new Map(), customers=new Map(), coupons=new Map(), variants=new Map();
+// The in-memory test driver must model SQLite's atomic json_insert updates.
+// An entire stale history replacement would not exercise the production logic.
+const appendSyntheticHistory=(order,rawEvent)=>{
+  let events=[];
+  try{const old=JSON.parse(order.history||'[]');if(Array.isArray(old))events=old;}catch{}
+  events.push(JSON.parse(rawEvent));
+  order.history=JSON.stringify(events);
+};
 const stmt=(sql)=>({
   args:[], bind(...a){this.args=a;return this;},
   async first(){
@@ -65,6 +73,33 @@ const stmt=(sql)=>({
       orders.set(id,{id,client_id,store_id,ref,customer_id,date,name,phone,gov,address,product,product_id,variant_id,product_note,unit_price,qty,total,
         discount_amount,coupon_code,product_cost,shipping_cost,other_cost,source,note,awb,state,checkpoint,signed_at,collected_at,defer_until,
         refund_amount,return_type,restocked,contact_log,history,created_at});}
+    else if(sql.includes('UPDATE orders SET state=?,awb=?,checkpoint=?')&&sql.includes('history=CASE WHEN')){
+      const [state,awb,checkpoint,shipping_cost,other_cost,signed_at,collected_at,defer_until,
+        refund_amount,return_type,restocked,appendFlag,event,id,clientId]=this.args;
+      const o=orders.get(id);
+      if(o&&o.client_id===clientId){
+        Object.assign(o,{state,awb,checkpoint,shipping_cost,other_cost,signed_at,collected_at,
+          defer_until,refund_amount,return_type,restocked});
+        if(appendFlag)appendSyntheticHistory(o,event);
+      }
+    }
+    else if(sql.includes('UPDATE orders SET state=?,checkpoint=?')&&sql.includes('history=json_insert(')){
+      const [state,checkpoint,event,id,today]=this.args;
+      const o=orders.get(id);
+      if(o&&o.state==='deferred'&&o.defer_until<=today){
+        o.state=state;o.checkpoint=checkpoint;appendSyntheticHistory(o,event);
+      }
+    }
+    else if(sql.includes('UPDATE orders SET contact_log=?')&&sql.includes('history=json_insert(')){
+      const [contact_log,event,id,clientId]=this.args;
+      const o=orders.get(id);
+      if(o&&o.client_id===clientId){o.contact_log=contact_log;appendSyntheticHistory(o,event);}
+    }
+    else if(sql.includes('UPDATE orders SET history=json_insert(')&&sql.includes('WHERE id=? AND client_id=?')){
+      const [event,id,clientId]=this.args;
+      const o=orders.get(id);
+      if(o&&o.client_id===clientId)appendSyntheticHistory(o,event);
+    }
     else if(sql.includes('UPDATE orders SET state = ?, awb = ?')){
       const [state,awb,checkpoint,shipping_cost,other_cost,signed_at,collected_at,defer_until,
         refund_amount,return_type,restocked,history,id]=this.args;

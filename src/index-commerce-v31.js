@@ -31,6 +31,9 @@ export function normalizeEasyOrdersWebhookPayload(input){
   if(p.orderId&&!p.order_id)p.order_id=p.orderId;
   if(p.oldStatus&&!p.old_status)p.old_status=p.oldStatus;
   if(p.newStatus&&!p.new_status)p.new_status=p.newStatus;
+  if(p.paymentRefId&&!p.payment_ref_id)p.payment_ref_id=p.paymentRefId;
+  if(root.payment_ref_id&&!p.payment_ref_id)p.payment_ref_id=root.payment_ref_id;
+  if(root.paymentRefId&&!p.payment_ref_id)p.payment_ref_id=root.paymentRefId;
   if(p.storeId&&!p.store_id)p.store_id=p.storeId;
   if(p.cartItems&&!p.cart_items)p.cart_items=p.cartItems;
   if(p.fullName&&!p.full_name)p.full_name=p.fullName;

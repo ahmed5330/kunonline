@@ -46,7 +46,17 @@ import java.text.NumberFormat
 import java.time.Instant
 import java.util.Locale
 
+/**
+ * Prevent redundant silent requests while respecting the active tab's cadence.
+ * A foreground operational tab should never inherit the home screen's 60s delay.
+ */
+internal fun v25SkipSilentRefresh(silent: Boolean, hasSnapshot: Boolean, nowMs: Long,
+                                  previousSuccessMs: Long, minIntervalMs: Long): Boolean =
+    silent && hasSnapshot && previousSuccessMs > 0 &&
+        nowMs >= previousSuccessMs && nowMs - previousSuccessMs < minIntervalMs.coerceAtLeast(0L)
+
 private const val V25_FOREGROUND_SYNC_MS = 60_000L
+private const val V25_OPERATIONAL_SYNC_MS = 15_000L
 private const val V25_CONTACT_REFRESH_MS = 15_000L
 private const val V25_CONTACT_WINDOW_MS = 5L * 60L * 1000L
 
@@ -111,12 +121,12 @@ fun KunNativeAppV25(
         }
     }
 
-    suspend fun performRefresh(manual: Boolean = false, silent: Boolean = false) {
+    suspend fun performRefresh(manual: Boolean = false, silent: Boolean = false, minIntervalMs: Long = V25_FOREGROUND_SYNC_MS) {
         if (!loggedIn || refreshing) return
         // A foreground resume or tab change must not request the whole order
         // snapshot again while a recent successful refresh is still fresh.
         val now = SystemClock.elapsedRealtime()
-        if (silent && snapshot != null && now - lastRefreshElapsed < V25_FOREGROUND_SYNC_MS) return
+        if (v25SkipSilentRefresh(silent, snapshot != null, now, lastRefreshElapsed, minIntervalMs)) return
         refreshing = true
         if (!silent) loading = true
         val previous = snapshot
@@ -239,8 +249,10 @@ fun KunNativeAppV25(
         }
     }
     // Keep the caller-ID cache current while customer service is visible too.
-    ForegroundPolling(loggedIn, enabled = loggedIn && selected != MobileV25Tab.SETTINGS, intervalMillis = V25_FOREGROUND_SYNC_MS) {
-        performRefresh(false, silent = true)
+    val operationalSyncMs = if (selected == MobileV25Tab.ORDERS || selected == MobileV25Tab.CUSTOMER_SERVICE)
+        V25_OPERATIONAL_SYNC_MS else V25_FOREGROUND_SYNC_MS
+    ForegroundPolling(loggedIn to selected, enabled = loggedIn && selected != MobileV25Tab.SETTINGS, intervalMillis = operationalSyncMs) {
+        performRefresh(false, silent = true, minIntervalMs = operationalSyncMs)
     }
 
     LaunchedEffect(newOrdersNotice) {
@@ -659,11 +671,13 @@ private fun V25Home(
                 }
                 if (storeOptionsLoading && storeOptions.isEmpty()) {
                     LinearProgressIndicator(Modifier.fillMaxWidth(), color = KunColors.Chrome)
-                    Text("جاري تحميل المتاجر المتاحة…", color = KunColors.Ink2)
                 } else if (storeOptions.isEmpty()) {
-                    Text(storeOptionsError.ifBlank { "لا توجد متاجر متاحة للحساب" }, color = KunColors.Ink2)
+                    Text(if (storeOptionsError.isNotBlank()) "تعذر تحديث المتاجر. استخدم زر تحديث المتاجر."
+                         else "لا توجد متاجر متاحة للحساب", color = KunColors.Ink2)
                 } else {
-                    if (storeOptionsError.isNotBlank()) Text(storeOptionsError, color = KunColors.Brick, style = MaterialTheme.typography.bodySmall)
+                    // Keep the last verified store choices visible on transient refresh failures.
+                    if (storeOptionsError.isNotBlank()) Text("المتاجر المعروضة محفوظة من آخر تحديث ناجح.",
+                        color = KunColors.Ink2, style = MaterialTheme.typography.bodySmall)
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         items(storeOptions, key = { "${it.clientId}:${it.storeId}" }) { option ->
                             val active = currentStore.clientId == option.clientId && currentStore.storeId == option.storeId
@@ -1054,6 +1068,7 @@ private fun V25ContactCard(order: CsOrderUi, direction: String, onCall: () -> Un
                 }
                 V25StatusPill(order.state)
             }
+            KunPaymentBadge(order.paymentStatus)
             Text(order.phone.ifBlank { "بدون رقم هاتف" }, color = KunColors.Chrome, fontWeight = FontWeight.Bold)
             if (order.product.isNotBlank()) Text("${order.product} × ${order.qty}", color = KunColors.Ink2)
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1097,6 +1112,7 @@ private fun V25OrderCard(order: OrderUi, onCall: () -> Unit, onWhatsApp: () -> U
                 }
                 V25StatusPill(order.state)
             }
+            KunPaymentBadge(order.paymentStatus)
             if (order.lastEditBy.isNotBlank()) Text("تم التعديل بواسطة ${order.lastEditBy} ${order.lastEditAt.take(10)}", color = KunColors.Pine, style = MaterialTheme.typography.labelSmall)
             HorizontalDivider(color = KunColors.Line)
             V25Line(Icons.Outlined.Call, order.phone.ifBlank { "بدون رقم هاتف" })
@@ -1150,6 +1166,7 @@ private fun V25CompactOrder(order: OrderUi) {
             Column(Modifier.weight(1f)) {
                 Text(order.name.ifBlank { "عميل" }, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(listOf(v25VisibleOrderRef(order.ref,order.source).takeIf { it.isNotBlank() }?.let { "#$it" },v25State(order.state)).filterNotNull().joinToString(" • "), color = KunColors.Ink2, style = MaterialTheme.typography.bodySmall)
+                KunPaymentBadge(order.paymentStatus)
             }
             Text(v25Money(order.total), fontWeight = FontWeight.Bold)
         }

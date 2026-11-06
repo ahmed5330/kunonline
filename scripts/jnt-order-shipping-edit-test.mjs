@@ -22,7 +22,7 @@ assert.ok(app.includes('lastEditBy'),'Order card must show editor identity');
 assert.ok(bridge.includes('/shipping-jnt'));
 assert.ok(native.includes('saveShipping(context, orderId')&&native.includes('shippingOnly'));
 assert.ok(models.includes('lastEditBy = lastEdit(o)'));
-assert.ok(index.includes('modules-v40-order-details.js?v=40.2'));
+assert.ok(index.includes('modules-v40-order-details.js?v=40.3'));
 assert.ok(Number(gradle.match(/versionCode\s*=\s*(\d+)/)?.[1]||0)>=134,'Android build code must not regress');
 assert.match(gradle,/versionName\s*=\s*"\d+\.\d+\.\d+"/);
 

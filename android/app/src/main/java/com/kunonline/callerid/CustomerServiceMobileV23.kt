@@ -63,6 +63,33 @@ internal fun v23ProductLines(product: String, productNote: String, qty: Int, lin
     return if (values.isNotEmpty()) values else listOf("${v23ProductCardSummary(product, productNote)} × ${qty.coerceAtLeast(1)}")
 }
 
+/** Structured per-line product details, fetched only when the order details are opened. */
+internal fun v23EnrichedProductLines(items: JSONArray): List<String> = buildList {
+    for (index in 0 until items.length()) {
+        val item = items.optJSONObject(index) ?: continue
+        val title = item.optString("name").ifBlank { item.optString("productName") }.ifBlank { "منتج" }
+        val qty = item.optInt("quantity", item.optInt("qty", 1)).coerceAtLeast(1)
+        val attributes = mutableListOf<String>()
+        item.optString("variantName").takeIf { it.isNotBlank() }?.let { attributes.add(it) }
+        val options = item.optJSONArray("options")
+        if (options != null) {
+            for (optionIndex in 0 until options.length()) {
+                val option = options.optJSONObject(optionIndex) ?: continue
+                val label = option.optString("name")
+                val value = option.optString("value")
+                if (label.isNotBlank() && value.isNotBlank()) attributes.add("$label: $value")
+            }
+        }
+        if (options == null || options.length() == 0) {
+            item.optString("note").takeIf { it.isNotBlank() }?.let { attributes.add(it) }
+        }
+        item.optString("sku").takeIf { it.isNotBlank() }?.let { attributes.add("SKU: $it") }
+        val price = item.optDouble("price", item.optDouble("unitPrice", Double.NaN))
+        if (price.isFinite()) attributes.add("سعر الوحدة: $price ج.م")
+        add("$title × $qty" + if (attributes.isEmpty()) "" else " — " + attributes.joinToString(" • "))
+    }
+}
+
 internal fun v23CanEditShipping(awb: String, state: String): Boolean =
     awb.isBlank() && state.lowercase() !in setOf("shipping","in_shipping","shipped",
         "signed","collected","delivered","returned","cancelled","completed")
@@ -289,7 +316,7 @@ private fun V23Breakdown(title: String, rows: List<Pair<String, Int>>) {
 fun V23CustomerService(snapshot: CommerceSnapshot, onGlobalRefresh: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var board by remember { mutableStateOf<CustomerServiceBoardResult?>(null) }
+    var board by remember { mutableStateOf<CustomerServiceBoardResult?>(KunCustomerServiceApi.cachedBoard(context)) }
     var loading by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf("") }
     var query by remember { mutableStateOf("") }
@@ -297,8 +324,26 @@ fun V23CustomerService(snapshot: CommerceSnapshot, onGlobalRefresh: () -> Unit) 
     var filtersExpanded by remember { mutableStateOf(false) }
     var storeFilter by remember { mutableStateOf("") }
     var selectedOrder by remember { mutableStateOf<CsOrderUi?>(null) }
+    var quickNoteOrder by remember { mutableStateOf<CsOrderUi?>(null) }
+    var quickNoteText by remember { mutableStateOf("") }
+    var quickNoteBusy by remember { mutableStateOf(false) }
     var editorData by remember { mutableStateOf<CustomerServiceEditorData?>(null) }
     var activeBoardKey by remember { mutableStateOf("") }
+
+    // Display the last encrypted board immediately, if the server has already
+    // verified this account's selected store. Never treat cache as write access.
+    LaunchedEffect(storeFilter, stateFilter) {
+        if (board == null) {
+            val requestedStore = storeFilter
+            val requestedState = stateFilter
+            val saved = withContext(Dispatchers.IO) {
+                KunCustomerServiceApi.cachedBoardFromDisk(context, requestedStore, requestedState)
+            }
+            if (board == null && storeFilter == requestedStore && stateFilter == requestedState && saved != null) {
+                board = saved
+            }
+        }
+    }
 
     suspend fun performBoardRefresh(keepOrderId: String? = selectedOrder?.id, quiet: Boolean = false) {
         val requestedStore = storeFilter
@@ -325,7 +370,7 @@ fun V23CustomerService(snapshot: CommerceSnapshot, onGlobalRefresh: () -> Unit) 
         scope.launch { performBoardRefresh(keepOrderId) }
     }
 
-    ForegroundPolling(storeFilter to stateFilter, intervalMillis = 30_000L) {
+    ForegroundPolling(storeFilter to stateFilter, intervalMillis = 15_000L) {
         performBoardRefresh(quiet = true)
     }
 
@@ -411,22 +456,35 @@ fun V23CustomerService(snapshot: CommerceSnapshot, onGlobalRefresh: () -> Unit) 
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        if (message.isNotBlank() && board?.ok != true) Text(message, Modifier.padding(horizontal = 16.dp))
+        if (!loading && message.isNotBlank() && board?.ok != true) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    if (message.contains("سجّل الدخول") || message.contains("الجلسة")) message
+                    else "تعذر تحديث الطلبات حاليًا.",
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                TextButton(onClick = { refreshBoard() }) { Text("إعادة المحاولة") }
+            }
+        }
         if (loading && board != null) {
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-            Text("جاري تحديث الطلبات… البيانات الحالية متاحة", modifier = Modifier.padding(horizontal = 16.dp),
-                style = MaterialTheme.typography.labelSmall)
         }
         if (loading && board == null) {
-            KunAsyncPanel("جاري تحميل طلبات خدمة العملاء من المتجر…")
+            Box(Modifier.fillMaxWidth().padding(vertical = 18.dp), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+            }
         } else if (filtered.isEmpty()) {
-            V23Empty(if (allOrders.isEmpty()) "لا توجد أوردرات خدمة عملاء متاحة" else "لا توجد نتائج مطابقة")
+            V23Empty(if (board == null) "الطلبات غير متاحة حاليًا" else if (allOrders.isEmpty()) "لا توجد أوردرات خدمة عملاء متاحة" else "لا توجد نتائج مطابقة")
         } else {
             LazyColumn(contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 items(filtered, key = { it.id }) { order ->
                     V23CustomerServiceCard(
                         order = order,
                         onOpen = { selectedOrder = order },
+                        onNotes = { quickNoteOrder = order; quickNoteText = "" },
                         onEditShipping = { openCustomerServiceJntEditor(context, order.id, order.storeId) },
                         onCall = {
                             if (order.phone.isNotBlank()) {
@@ -472,6 +530,53 @@ fun V23CustomerService(snapshot: CommerceSnapshot, onGlobalRefresh: () -> Unit) 
         }
     }
 
+    quickNoteOrder?.let { noteOrder ->
+        AlertDialog(
+            onDismissRequest = { if (!quickNoteBusy) quickNoteOrder = null },
+            title = { Text("ملاحظات الطلب") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (noteOrder.latestInternalNote.isNotBlank()) {
+                        Text("آخر ملاحظة: ${noteOrder.latestInternalNote}",
+                            style = MaterialTheme.typography.bodySmall)
+                    }
+                    OutlinedTextField(
+                        value = quickNoteText,
+                        onValueChange = { quickNoteText = it },
+                        label = { Text("ملاحظة داخلية جديدة") },
+                        minLines = 2,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !quickNoteBusy && quickNoteText.isNotBlank(),
+                    onClick = {
+                        quickNoteBusy = true
+                        scope.launch {
+                            val result = withContext(Dispatchers.IO) {
+                                KunCustomerServiceApi.addNote(context, noteOrder.id, quickNoteText.trim(),
+                                    selectedClientId = noteOrder.clientId)
+                            }
+                            quickNoteBusy = false
+                            if (result.ok) {
+                                quickNoteOrder = null
+                                quickNoteText = ""
+                                refreshBoard(noteOrder.id)
+                                onGlobalRefresh()
+                            }
+                            Toast.makeText(context, result.message, if (result.ok) Toast.LENGTH_SHORT else Toast.LENGTH_LONG).show()
+                        }
+                    }
+                ) { Text(if (quickNoteBusy) "جاري الحفظ" else "حفظ الملاحظة") }
+            },
+            dismissButton = { TextButton(
+                enabled = !quickNoteBusy, onClick = { quickNoteOrder = null }
+            ) { Text("إلغاء") } }
+        )
+    }
+
     selectedOrder?.let { order ->
         V23OrderDetailDialog(
             order = order,
@@ -514,6 +619,7 @@ fun V23CustomerService(snapshot: CommerceSnapshot, onGlobalRefresh: () -> Unit) 
 private fun V23CustomerServiceCard(
     order: CsOrderUi,
     onOpen: () -> Unit,
+    onNotes: () -> Unit,
     onCall: () -> Unit,
     onWhatsApp: () -> Unit,
     onEditShipping: () -> Unit
@@ -527,6 +633,7 @@ private fun V23CustomerServiceCard(
             Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
+            KunPaymentBadge(order.paymentStatus)
             if (order.returnedFromDeferredToday) {
                 Surface(
                     color = MaterialTheme.colorScheme.errorContainer,
@@ -704,6 +811,11 @@ private fun V23CustomerServiceCard(
                     )
                 }
                 Spacer(Modifier.weight(1f))
+                TextButton(onClick = onNotes) {
+                    Icon(Icons.Outlined.NoteAdd, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(3.dp))
+                    Text("ملاحظات")
+                }
                 TextButton(onClick = onOpen) {
                     Text("التفاصيل والتعديل")
                     Spacer(Modifier.width(4.dp))
@@ -764,6 +876,17 @@ private fun V23OrderDetailDialog(
     var cancelReason by remember(order.id) { mutableStateOf("") }
     var confirmDelete by remember { mutableStateOf(false) }
     var confirmShip by remember(order.id) { mutableStateOf(false) }
+    var enrichedProducts by remember(order.id) { mutableStateOf<List<String>>(emptyList()) }
+    LaunchedEffect(order.id) {
+        // Preserve the instant board summary while line items are fetched in background.
+        val result = withContext(Dispatchers.IO) {
+            KunCustomerServiceApi.fetchOrderDetails(context, order.id,
+                selectedClientId = order.clientId, selectedStoreId = order.storeId)
+        }
+        if (result.ok) {
+            enrichedProducts = v23EnrichedProductLines(result.data.optJSONArray("items") ?: JSONArray())
+        }
+    }
 
     fun runAction(block: suspend () -> CustomerServiceJsonResult, after: (() -> Unit)? = null, afterResult: ((CustomerServiceJsonResult) -> Unit)? = null) {
         if (actionBusy) return
@@ -811,12 +934,14 @@ private fun V23OrderDetailDialog(
                 modifier = Modifier.heightIn(max = 620.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
+                KunPaymentBadge(order.paymentStatus)
                 V23DetailRow("العميل", order.name)
                 V23DetailRow("الهاتف", order.phone)
                 V23DetailRow("المتجر", order.storeName)
                 V23DetailRow("المحافظة", order.gov)
                 V23DetailRow("العنوان", order.address)
-                V23DetailRow("المنتجات والموديل واللون", v23ProductLines(order.product, order.productNote, order.qty, order.productLines).joinToString("\n"))
+                V23DetailRow("المنتجات والموديل واللون", (enrichedProducts.takeIf { it.isNotEmpty() }
+                    ?: v23ProductLines(order.product, order.productNote, order.qty, order.productLines)).joinToString("\n"))
                 if (order.productNote.isNotBlank()) V23DetailRow("اختيار/لون/مقاس", order.productNote)
                 V23DetailRow("الكمية", order.qty.toString())
                 V23DetailRow("سعر الوحدة", v23Money(order.unitPrice))
