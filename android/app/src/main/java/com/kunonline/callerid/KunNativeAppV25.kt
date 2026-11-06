@@ -112,12 +112,12 @@ fun KunNativeAppV25(
         }
     }
 
-    suspend fun performRefresh(manual: Boolean = false, silent: Boolean = false) {
+    suspend fun performRefresh(manual: Boolean = false, silent: Boolean = false, minIntervalMs: Long = V25_FOREGROUND_SYNC_MS) {
         if (!loggedIn || refreshing) return
         // A foreground resume or tab change must not request the whole order
         // snapshot again while a recent successful refresh is still fresh.
         val now = SystemClock.elapsedRealtime()
-        if (silent && snapshot != null && now - lastRefreshElapsed < V25_FOREGROUND_SYNC_MS) return
+        if (silent && snapshot != null && lastRefreshElapsed > 0L && now - lastRefreshElapsed < minIntervalMs) return
         refreshing = true
         if (!silent) loading = true
         val previous = snapshot
@@ -243,7 +243,7 @@ fun KunNativeAppV25(
     val operationalSyncMs = if (selected == MobileV25Tab.ORDERS || selected == MobileV25Tab.CUSTOMER_SERVICE)
         V25_OPERATIONAL_SYNC_MS else V25_FOREGROUND_SYNC_MS
     ForegroundPolling(loggedIn to selected, enabled = loggedIn && selected != MobileV25Tab.SETTINGS, intervalMillis = operationalSyncMs) {
-        performRefresh(false, silent = true)
+        performRefresh(false, silent = true, minIntervalMs = operationalSyncMs)
     }
 
     LaunchedEffect(newOrdersNotice) {
