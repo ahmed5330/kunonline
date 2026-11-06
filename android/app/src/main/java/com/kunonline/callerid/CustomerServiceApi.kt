@@ -125,6 +125,30 @@ object KunCustomerServiceApi {
 
     private fun resolveClientId(context: Context, cookie: String): String = KunApi.resolveScope(cookie, context).clientId
 
+    /**
+     * Instant in-process read for an already verified tenant/store selection.
+     * Never uses an old board if the account, store, filter or date revision changed.
+     * Live server ACL checks still happen on the subsequent refresh.
+     */
+    @Synchronized fun cachedBoard(context: Context, storeId: String = "", state: String = "pending"): CustomerServiceBoardResult? {
+        val session = cookie(context) ?: return null
+        val verified = KunApi.cachedStoreOptions(context) ?: return null
+        val selected = if (storeId.isNotBlank()) storeId else verified.current.storeId
+        val client = verified.current.clientId
+        if (client.isBlank()) return null
+        val path = buildString {
+            append("/api/customer-service?clientId=${enc(client)}")
+            if (selected.isNotBlank()) append("&storeId=${enc(selected)}")
+            append("&state=${enc(state)}")
+        }
+        val cached = boardCache
+        return cached?.takeIf {
+            it.ok && boardCacheKey == session + "|" + path &&
+                boardCacheRevision == MobileDateFilterState.revision &&
+                it.clientId == client
+        }
+    }
+
     @Synchronized fun fetchBoard(context: Context, storeId: String = "", state: String = "pending"): CustomerServiceBoardResult {
         val cookie = cookie(context) ?: return CustomerServiceBoardResult(false, "سجّل الدخول أولاً")
         return runCatching {
