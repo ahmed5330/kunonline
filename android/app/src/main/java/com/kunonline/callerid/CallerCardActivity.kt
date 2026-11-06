@@ -131,7 +131,8 @@ class CallerCardActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setShowWhenLocked(true)
+        // This full-screen fallback must never draw customer data over Keyguard.
+        setShowWhenLocked(false)
         window.statusBarColor = chrome
         window.navigationBarColor = ground
 
@@ -165,7 +166,7 @@ class CallerCardActivity : Activity() {
             alpha = .78f
         })
         header.addView(TextView(this).apply {
-            text = customer.name.ifBlank { "عميل كن أونلاين" }
+            text = if (locked) "عميل كن أونلاين" else customer.name.ifBlank { "عميل كن أونلاين" }
             textSize = 22f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             setTextColor(Color.WHITE)
@@ -187,9 +188,9 @@ class CallerCardActivity : Activity() {
                 setPadding(0, dp(4), 0, dp(4))
             })
         }
-        addLine(customer.phone, 15f, ink, true)
+        if (!locked) addLine(customer.phone, 15f, ink, true)
         if (!locked && customer.storeName.isNotBlank()) addLine("المتجر: ${customer.storeName}", 13f, chrome, true)
-        addLine(listOfNotNull(customer.orderRef?.takeUnless { locked || it.startsWith("easyorders:", true) || it.length > 28 }?.let { "طلب $it" }, stateText(customer.status).takeIf { it.isNotBlank() }).joinToString(" • "), 13f, chrome, true)
+        if (!locked) addLine(listOfNotNull(customer.orderRef?.takeUnless { it.startsWith("easyorders:", true) || it.length > 28 }?.let { "طلب $it" }, stateText(customer.status).takeIf { it.isNotBlank() }).joinToString(" • "), 13f, chrome, true)
         val paymentHost = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         fun displayPayment(status: String?) {
             paymentHost.removeAllViews()
