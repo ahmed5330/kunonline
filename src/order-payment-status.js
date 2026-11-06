@@ -43,5 +43,8 @@ export function paymentFromHistory(value) {
 export function paymentFromOrder({history,providerStatus} = {}) {
   const stored = paymentFromHistory(history);
   const fresh = verifiedProviderPaymentStatus(providerStatus);
+  // Without a trusted sequence number, a stale provider read reporting "paid"
+  // must never override an authenticated refund event already in the journal.
+  if (stored.status === 'refunded' && fresh !== 'refunded') return stored;
   return fresh === 'unknown' ? stored : {status:fresh,source:'easyorders',reference:stored.reference,at:stored.at};
 }
