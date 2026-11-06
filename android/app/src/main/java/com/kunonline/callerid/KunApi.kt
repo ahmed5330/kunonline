@@ -116,6 +116,7 @@ object KunApi {
             MobileSyncClient.clear()
             CustomerCache.clear(context)
             MobileSnapshotCache.clear(context)
+        MobileBoardSnapshotCache.clear(context)
             SecureStore.put(context, AUTH_PREFS, SELECTED_STORE_KEY, null)
             SecureStore.put(context, AUTH_PREFS, SESSION_KEY, cookie)
             val sync = syncWithCookie(context, cookie)
@@ -469,6 +470,7 @@ object KunApi {
         CustomerCache.clear(context)
         CallActivityStore.clear(context)
         MobileSnapshotCache.clear(context)
+        MobileBoardSnapshotCache.clear(context)
         return ActionResult(true, "تم اختيار ${option.storeName}")
     }
 
@@ -540,6 +542,7 @@ object KunApi {
                 // A revoked store assignment must not remain visible offline.
                 CustomerCache.clear(context)
                 MobileSnapshotCache.clear(context)
+        MobileBoardSnapshotCache.clear(context)
                 verifiedOptionsUntil = 0L
             }
             if (response.code !in 200..299) {
@@ -674,6 +677,7 @@ object KunApi {
         // Derived caller data must not remain after session authentication ends.
         CustomerCache.clear(context)
         MobileSnapshotCache.clear(context)
+        MobileBoardSnapshotCache.clear(context)
         clearScope()
         verifiedOptionsCookie = ""
         verifiedOptionsUntil = 0L
