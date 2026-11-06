@@ -82,9 +82,9 @@ data class CustomerServiceEditorData(
 object KunCustomerServiceApi {
     private const val BASE_URL = "https://app.kun-online.com"
     // Preserve the already parsed board while the authenticated sync cursor is unchanged.
-    private var boardCacheKey = ""
-    private var boardCacheRevision = -1
-    private var boardCache: CustomerServiceBoardResult? = null
+    @Volatile private var boardCacheKey = ""
+    @Volatile private var boardCacheRevision = -1
+    @Volatile private var boardCache: CustomerServiceBoardResult? = null
 
     private data class HttpResult(val code: Int, val body: String)
 
@@ -176,7 +176,7 @@ object KunCustomerServiceApi {
         return parseBoardRoot(root, client).takeIf { it.ok && it.clientId == client }
     }
 
-    @Synchronized fun cachedBoard(context: Context, storeId: String = "", state: String = "pending"): CustomerServiceBoardResult? {
+    fun cachedBoard(context: Context, storeId: String = "", state: String = "pending"): CustomerServiceBoardResult? {
         val session = cookie(context) ?: return null
         val verified = KunApi.cachedStoreOptions(context) ?: return null
         val selected = if (storeId.isNotBlank()) storeId else verified.current.storeId
