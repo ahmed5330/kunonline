@@ -20,6 +20,17 @@ import android.widget.Toast
 import kotlin.concurrent.thread
 
 class CallerCardActivity : Activity() {
+    private var openedWhileLocked = false
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus && openedWhileLocked &&
+            !(getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager).isKeyguardLocked) {
+            openedWhileLocked = false
+            recreate() // Reveal authorized order actions only after an actual unlock.
+        }
+    }
+
     private val chrome = 0xFF0E5095.toInt()
     private val pine = 0xFF3F8F2B.toInt()
     private val ink = 0xFF12212B.toInt()
@@ -141,6 +152,7 @@ class CallerCardActivity : Activity() {
         val customer = CallerPayload.decode(intent.getStringExtra("kun_caller_payload"))
             ?: CustomerCache.lookup(this, phone) ?: run { finish(); return }
         val locked = (getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager).isKeyguardLocked
+        openedWhileLocked = locked
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
