@@ -124,6 +124,27 @@ object CallerOverlay {
                 stateText(customer.status).takeIf { it.isNotBlank() }
             ).joinToString(" • ")
             line(orderBits, 13f, CHROME, true)
+            val paymentHost = LinearLayout(app).apply { orientation = LinearLayout.VERTICAL }
+            fun displayPayment(status: String?) {
+                paymentHost.removeAllViews()
+                val label = when (status) {
+                    "paid" -> "✓ مدفوع بالكامل"
+                    "refunded" -> "↩ تم رد المبلغ"
+                    else -> return
+                }
+                paymentHost.addView(TextView(app).apply {
+                    text = label
+                    textSize = 14f
+                    setTypeface(typeface, android.graphics.Typeface.BOLD)
+                    setTextColor(if (status == "paid") 0xFF13774C.toInt() else 0xFF9F3341.toInt())
+                    setPadding(app.dp(10), app.dp(7), app.dp(10), app.dp(7))
+                    background = rounded(if (status == "paid") 0xFFE6F8ED.toInt() else 0xFFFCECEF.toInt(), 10f, app)
+                })
+            }
+            if (!locked) {
+                displayPayment(customer.paymentStatus)
+                body.addView(paymentHost)
+            }
             if (!locked) {
                 line(listOfNotNull(customer.product, customer.total?.let { "الإجمالي ${it.toInt()} ج.م" }).joinToString(" • "), 14f, INK)
                 line(listOfNotNull(customer.gov, customer.address).filter { it.isNotBlank() }.joinToString(" — "), 13f)
@@ -288,8 +309,11 @@ object CallerOverlay {
                         handler.post {
                             val stillUnlocked = !(app.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager).isKeyguardLocked
                             if (currentView === card && stillUnlocked) {
-                                if (result.ok) renderCallerProductSummary(app, detailsHost, result.data)
-                                else Log.w("KunCallerOverlay", "Order product summary unavailable: ${result.message}")
+                                if (result.ok) {
+                                    val latestPayment = result.data.optJSONObject("order")?.optString("paymentStatus")
+                                    if (!latestPayment.isNullOrBlank()) displayPayment(latestPayment)
+                                    renderCallerProductSummary(app, detailsHost, result.data)
+                                } else Log.w("KunCallerOverlay", "Order product summary unavailable: ${result.message}")
                             }
                         }
                     }
