@@ -1,4 +1,4 @@
-import {paymentFromHistory} from './order-payment-status.js';
+import {paymentFromHistory,createProviderPaymentEvent} from './order-payment-status.js';
 /**
  * كن أونلاين — Cloudflare Worker
  * ---------------------------------------------------------------------------
@@ -2729,6 +2729,21 @@ async function handleWebhook(request, env, path) {
     const p = await request.json().catch(() => ({}));
 
     if (p.event_type === 'order-status-update') {
+      const paymentEvent = createProviderPaymentEvent(p.new_status,{
+        reference:p.payment_ref_id,at:p.updated_at
+      });
+      if (paymentEvent) {
+        // Legacy unscoped hook can only assert payment with a configured,
+        // verified webhook secret. Never infer payment from COD collection.
+        if (!env.EASYORDERS_WEBHOOK_SECRET) return json({ error:'التحقق من مصدر الدفع غير متاح' },401);
+        const matching = await env.DB.prepare('SELECT id,client_id FROM orders WHERE id=?').bind(p.order_id).first();
+        if (!matching) return json({ok:true,event:'payment-update',ignored:true});
+        await env.DB.prepare(`UPDATE orders SET history=json_insert(
+          CASE WHEN json_valid(history) AND json_type(history)='array' THEN history ELSE '[]' END,
+          '$[#]',json(?)
+        ) WHERE id=? AND client_id=?`).bind(JSON.stringify(paymentEvent),matching.id,matching.client_id).run();
+        return json({ok:true,event:'payment-update',paymentStatus:paymentEvent.paymentStatus});
+      }
       const st = mapEasyOrdersStatus(p.new_status);
       await env.DB.prepare('UPDATE orders SET state = ?, checkpoint = ? WHERE id = ?')
         .bind(st, STATE_TEXT[st] || '', p.order_id).run();
@@ -2752,6 +2767,15 @@ async function handleWebhook(request, env, path) {
       total: Number(p.total_cost) || 0, source: 'المتجر (إيزي أوردرز)', note: '',
       awb: null, state: mapEasyOrdersStatus(p.status), checkpoint: STATE_TEXT[mapEasyOrdersStatus(p.status)]
     }, client.name);
+    const verifiedInitialPayment=env.EASYORDERS_WEBHOOK_SECRET
+      ? createProviderPaymentEvent(p.status,{reference:p.payment_ref_id,at:p.created_at})
+      : null;
+    if (verifiedInitialPayment) {
+      await env.DB.prepare(`UPDATE orders SET history=json_insert(
+        CASE WHEN json_valid(history) AND json_type(history)='array' THEN history ELSE '[]' END,
+        '$[#]',json(?)
+      ) WHERE id=? AND client_id=?`).bind(JSON.stringify(verifiedInitialPayment),p.id,client.id).run();
+    }
     return json({ ok: true, event: 'order-created', id: p.id });
   }
 
