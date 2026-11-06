@@ -302,6 +302,10 @@ const rowToOrder = r => ({
   contactLog: parseJsonArr(r.contact_log), history: parseJsonArr(r.history)
 });
 
+// Server-generated history appends must be atomic: a concurrent verified
+// payment callback must never be erased by an outdated staff read.
+const safeOrderHistorySql = "CASE WHEN json_valid(history) THEN CASE WHEN json_type(history)='array' THEN history ELSE '[]' END ELSE '[]' END";
+
 /** الأوردرات اللي كانت مؤجّلة ووصل معادها ترجع تلقائي لـ"جاري التأكيد" —
     بيتنفّذ في أول أي قراءة عشان محتاجين مجدول (cron) منفصل */
 async function returnDueDeferredOrders(env) {
@@ -310,10 +314,11 @@ async function returnDueDeferredOrders(env) {
     "SELECT id, history FROM orders WHERE state = 'deferred' AND defer_until IS NOT NULL AND defer_until <= ?"
   ).bind(today).all();
   for (const r of (results || [])) {
-    const history = parseJsonArr(r.history);
-    history.push({ state: 'pending', at: new Date().toISOString(), note: 'رجع تلقائي من التأجيل' });
-    await env.DB.prepare('UPDATE orders SET state = ?, checkpoint = ?, history = ? WHERE id = ?')
-      .bind('pending', STATE_TEXT.pending, JSON.stringify(history), r.id).run();
+    const event = { state: 'pending', at: new Date().toISOString(), note: 'رجع تلقائي من التأجيل' };
+    await env.DB.prepare(`UPDATE orders SET state=?,checkpoint=?,
+      history=json_insert(${safeOrderHistorySql},'$[#]',json(?))
+      WHERE id=? AND state='deferred' AND defer_until IS NOT NULL AND defer_until<=?`)
+      .bind('pending', STATE_TEXT.pending, JSON.stringify(event), r.id, today).run();
   }
 }
 
@@ -1390,19 +1395,21 @@ async function handleApi(request, env, url, path) {
       const signedAt = (st === 'signed' || st === 'collected')
         ? (p.signedAt || cur.signed_at || stamp) : null;
 
-      const history = parseJsonArr(cur.history);
-      if (st !== cur.state) history.push({
+      const transitionEvent = st !== cur.state ? {
         state: st, at: new Date().toISOString(),
         note: st === 'deferred' ? `مؤجل لحد ${deferUntil}`
           : enteringReturn ? `${returnType === 'exchange' ? 'استبدال' : returnType === 'partial' ? 'مرتجع جزئي' : 'مرتجع كامل'} — استرداد ${refundAmount || 0}`
           : undefined
-      });
+      } : null;
 
       await env.DB.prepare(
-        `UPDATE orders SET state = ?, awb = ?, checkpoint = ?, shipping_cost = ?, other_cost = ?, signed_at = ?, collected_at = ?,
-           defer_until = ?, refund_amount = ?, return_type = ?, restocked = ?, history = ? WHERE id = ?`
+        `UPDATE orders SET state=?,awb=?,checkpoint=?,shipping_cost=?,other_cost=?,signed_at=?,collected_at=?,
+           defer_until=?,refund_amount=?,return_type=?,restocked=?,
+           history=CASE WHEN ?=1 THEN json_insert(${safeOrderHistorySql},'$[#]',json(?)) ELSE history END
+           WHERE id=? AND client_id=?`
       ).bind(st, awb, STATE_TEXT[st] || '', ship, other, signedAt, collectedAt, deferUntil,
-        refundAmount, returnType, restocked ? 1 : 0, JSON.stringify(history), id).run();
+        refundAmount, returnType, restocked ? 1 : 0,
+        transitionEvent ? 1 : 0, JSON.stringify(transitionEvent), id,cur.client_id).run();
 
       /* رسالة "جاري شحن طلبك" لما الأوردر يتحول لـ"جاري الشحن" */
       if (st === 'preparing' && cur.state !== 'preparing') {
@@ -1457,8 +1464,10 @@ async function handleApi(request, env, url, path) {
     log.push(now.toISOString());
     const history = parseJsonArr(cur.history);
     history.push({ type: 'contact', at: now.toISOString(), by: user.email || user.role });
-    await env.DB.prepare('UPDATE orders SET contact_log = ?, history = ? WHERE id = ?')
-      .bind(JSON.stringify(log), JSON.stringify(history), id).run();
+    await env.DB.prepare(`UPDATE orders SET contact_log=?,
+      history=json_insert(${safeOrderHistorySql},'$[#]',json(?))
+      WHERE id=? AND client_id=?`)
+      .bind(JSON.stringify(log),JSON.stringify(history.at(-1)),id,cur.client_id).run();
     return json({ ok: true, log, history, todayCount: todayCount + 1 });
   }
 
@@ -1475,7 +1484,9 @@ async function handleApi(request, env, url, path) {
     const history = parseJsonArr(cur.history);
     const template = ['confirm', 'shipped', 'review'].includes(b.template) ? b.template : 'other';
     history.push({ type: 'whatsapp', template, at: new Date().toISOString(), by: user.email || user.role });
-    await env.DB.prepare('UPDATE orders SET history = ? WHERE id = ?').bind(JSON.stringify(history), id).run();
+    await env.DB.prepare(`UPDATE orders SET history=json_insert(${safeOrderHistorySql},'$[#]',json(?))
+      WHERE id=? AND client_id=?`)
+      .bind(JSON.stringify(history.at(-1)),id,cur.client_id).run();
     return json({ ok: true, history });
   }
 
