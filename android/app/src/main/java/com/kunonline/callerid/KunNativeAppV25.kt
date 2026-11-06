@@ -47,6 +47,7 @@ import java.time.Instant
 import java.util.Locale
 
 private const val V25_FOREGROUND_SYNC_MS = 60_000L
+private const val V25_OPERATIONAL_SYNC_MS = 15_000L
 private const val V25_CONTACT_REFRESH_MS = 15_000L
 private const val V25_CONTACT_WINDOW_MS = 5L * 60L * 1000L
 
@@ -239,7 +240,9 @@ fun KunNativeAppV25(
         }
     }
     // Keep the caller-ID cache current while customer service is visible too.
-    ForegroundPolling(loggedIn, enabled = loggedIn && selected != MobileV25Tab.SETTINGS, intervalMillis = V25_FOREGROUND_SYNC_MS) {
+    val operationalSyncMs = if (selected == MobileV25Tab.ORDERS || selected == MobileV25Tab.CUSTOMER_SERVICE)
+        V25_OPERATIONAL_SYNC_MS else V25_FOREGROUND_SYNC_MS
+    ForegroundPolling(loggedIn to selected, enabled = loggedIn && selected != MobileV25Tab.SETTINGS, intervalMillis = operationalSyncMs) {
         performRefresh(false, silent = true)
     }
 
