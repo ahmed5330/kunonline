@@ -85,7 +85,7 @@ async function websiteWithDirectAndroidDownload(request,env){
   html=html.replace(/modules-v128-unit-tracking\.js\?v=[^"']+/g,'modules-v128-unit-tracking.js?v=128.5');
   if(!html.includes('/v2/document-settings-ui.js'))html=html.replace('</body>','<script type="module" src="/v2/document-settings-ui.js?v=1.0"></script></body>');
   html=html.replace(/modules-v155-accounting-faos\.js\?v=[^"']+/g,'modules-v155-accounting-faos.js?v=155.5');
-  html=html.replace(/modules-v31-customer-service\.js\?v=[^"']+/g,'modules-v31-customer-service.js?v=31.3.5');
+  html=html.replace(/modules-v31-customer-service\.js\?v=[^"']+/g,'modules-v31-customer-service.js?v=31.3.6');
   if(!html.includes('/v2/order-followups.js'))html=html.replace('</body>','<script src="/v2/order-followups.js?v=1.0"></script></body>');
   if(!html.includes('/v2/modules-v161-order-freshness.js'))
     html=html.replace('</body>','<script src="/v2/modules-v161-order-freshness.js?v=161.0" defer></script></body>');
