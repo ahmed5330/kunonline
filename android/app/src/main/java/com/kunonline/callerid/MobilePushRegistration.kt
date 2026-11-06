@@ -47,8 +47,8 @@ internal object MobilePushRegistration {
     private fun register(context: Context, token: String) {
         val cookie = KunApi.sessionCookie(context) ?: return
         val id = installationId(context)
-        val request = JSONObject().put("installationId", id).put("token", token)
-        val success = request("POST", cookie, request)
+        val payload = JSONObject().put("installationId", id).put("token", token)
+        val success = request("POST", cookie, payload)
         if (success && KunApi.sessionCookie(context) != cookie) {
             // Login switched while network was pending: best effort to revoke
             // the old session's installation without using the new credentials.
