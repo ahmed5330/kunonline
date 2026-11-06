@@ -119,10 +119,40 @@ try{
     'Paid status in the full-order retry must reach an existing order');
 
 
+  // A different payment with a strictly later provider timestamp is allowed
+  // after a fully dated refund, without reopening the old transaction.
+  await webhook({id:'ORDER-4',store_id:'EO-SHOP-1',status:'pending',cart_items:[],total_cost:90});
+  for(const [new_status,ref,updated_at] of [
+    ['paid','TX-4','2026-11-06T07:00:00Z'],
+    ['refunded','TX-4','2026-11-06T08:00:00Z'],
+    ['paid','TX-5','2026-11-06T09:00:00Z']
+  ]){
+    await webhook({event_type:'order-status-update',order_id:'ORDER-4',new_status,
+      payment_ref_id:ref,updated_at});
+  }
+  assert.equal(paymentFromHistory(db.prepare('SELECT history FROM orders WHERE id=?').get('ORDER-4').history).status,'paid',
+    'New reference and later provider timestamp can prove a fresh payment');
+
+  // The safe SQL append must retain payment evidence after a staff update.
+  const historyBeforeStaff=db.prepare('SELECT history FROM orders WHERE id=?').get('ORDER-4').history;
+  db.prepare(`UPDATE orders SET state=?,history=json_insert(
+    CASE WHEN json_valid(history) THEN CASE WHEN json_type(history)='array' THEN history ELSE '[]' END ELSE '[]' END,
+    '$[#]',json(?)) WHERE id=?`)
+    .run('confirmed',JSON.stringify({state:'confirmed',at:'2026-11-06T10:00:00Z'}),'ORDER-4');
+  const historyAfterStaff=db.prepare('SELECT history FROM orders WHERE id=?').get('ORDER-4').history;
+  assert.equal(paymentFromHistory(historyAfterStaff).status,'paid',
+    'Staff order history append must retain payment events');
+  assert(JSON.parse(historyAfterStaff).length>JSON.parse(historyBeforeStaff).length);
+
   const file=p=>readFileSync(new URL('../'+p,import.meta.url),'utf8');
   for(const p of ['src/index.js','src/customer-service.js','src/production-customer-service.js']){
     assert(file(p).includes('paymentFromHistory'),'Payment proof is missing from '+p);
   }
+  const index=file('src/index.js');
+  assert(index.includes('safeOrderHistorySql')&&index.includes('history=json_insert('),
+    'Staff history updates must append atomically without erasing payment events');
+  assert(!index.includes('history = ? WHERE id = ?'),
+    'Unsafe history overwrites must not be reintroduced');
   for(const p of ['public/v2/modules-v31-customer-service.js',
        'public/v2/modules-v40-order-details.js',
        'public/v2/modules-v42-customer-service-rich-cards.js']){
