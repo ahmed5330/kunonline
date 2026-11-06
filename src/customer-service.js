@@ -1,3 +1,4 @@
+import {paymentFromHistory} from './order-payment-status.js';
 import {requirePermission,resolveTenant} from './access-control.js';
 import {listMyStores} from './store-scope.js';
 import {recoverOrderContacts} from './customer-contact-evidence.js';
@@ -101,12 +102,13 @@ function canonicalNoteEvent(row){
   return {type:'internal_note',note,at:row?.canonical_latest_note_at||null,by,byName:by,byUserId:null,noteId:row?.canonical_latest_note_id||null,canonical:true};
 }
 function mapOrder(row,today){
+  const paymentStatus=paymentFromHistory(row.history).status;
   const history=parseArr(row.history),canonical=canonicalNoteEvent(row);
   if(canonical&&!history.some(x=>(canonical.noteId&&x?.noteId===canonical.noteId)||(x?.type==='internal_note'&&clean(x.note)===canonical.note&&String(x.at||'')===String(canonical.at||''))))history.push(canonical);
   const contacts=recoverOrderContacts(row.contact_log,history),contactLog=contacts.contactLog,meta=historyMeta(history),returnedToday=Boolean(meta.returnedAt&&cairoDate(new Date(meta.returnedAt))===today&&row.state==='pending');
   return {
     id:row.id,clientId:row.client_id,storeId:row.store_id||null,storeName:row.store_name||'بدون متجر محدد',storeCode:row.store_code||null,
-    ref:row.ref||null,date:row.date||row.created_at||null,createdAt:row.created_at||null,name:row.name||'',phone:row.phone||'',gov:row.gov||'',address:row.address||'',
+    paymentStatus,ref:row.ref||null,date:row.date||row.created_at||null,createdAt:row.created_at||null,name:row.name||'',phone:row.phone||'',gov:row.gov||'',address:row.address||'',
     product:row.product||'',productId:row.product_id||null,variantId:row.variant_id||null,productNote:row.product_note||'',qty:Number(row.qty||1),unitPrice:Number(row.unit_price||0),total:Number(row.total||0),
     source:row.source||'',customerNote:row.note||'',awb:row.awb||'',state:row.state||'pending',checkpoint:row.checkpoint||'',deferUntil:row.defer_until||null,
     stockBatchId:row.stock_batch_id||null,stockBatchName:row.stock_batch_name||null,stockAllocationStatus:row.stock_allocation_status||null,
