@@ -2,7 +2,7 @@
 
 ## Implementation scope (PR stacked on PR #351)
 - Optional Android Firebase Messaging SDK. No `google-services.json` in source; debug/release CI compiles without it. No Firebase registration when it is absent.
-- Authenticated `POST /api/mobile/push-devices` registers the current installation for **server-derived** active store assignments. `DELETE` revokes the current user's registration on logout. Registration does not accept client/store IDs as access grants.
+- Authenticated `POST /api/mobile/push-devices` registers the current installation for **server-derived** active store assignments (maximum five existing installations per user; additional attempts return HTTP 429). `DELETE` revokes the current user's registration on logout. Registration does not accept client/store IDs as access grants.
 - `migrations/0101_mobile_push_device_registry.sql`: encrypted FCM token per tenant/store/user/installation; requires un-applied `0100_order_change_journal.sql`. Tokens are AES-GCM encrypted with `PUSH_TOKEN_ENC_KEY`; identifiers are HMAC digests.
 - Scheduled FCM sender reads `order_change_log`, independently checks that user and store grants still exist, and sends **data-only** `kind/clientId/storeId/seq` payloads with no customer/order details.
 - Fast-path is also requested after successful API/Webhook order mutations through `ctx.waitUntil`; the journal remains authoritative. Cron retries and coalesces missed hints. This covers explicit order routes but cannot guarantee every write pathway is immediately observed.
