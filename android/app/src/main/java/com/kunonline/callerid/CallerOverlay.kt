@@ -313,11 +313,24 @@ object CallerOverlay {
                 // The overlay is recreated on the next eligible call, not on unlock.
                 val receiver = object : BroadcastReceiver() {
                     override fun onReceive(context: Context?, intent: Intent?) {
-                        if (intent?.action == Intent.ACTION_SCREEN_OFF) handler.post { dismiss() }
+                        handler.post {
+                            if (currentView !== card) return@post
+                            when (intent?.action) {
+                                Intent.ACTION_SCREEN_OFF -> card.visibility = View.INVISIBLE
+                                Intent.ACTION_SCREEN_ON -> {
+                                    val isLocked = (app.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager).isKeyguardLocked
+                                    if (isLocked) dismiss() else card.visibility = View.VISIBLE
+                                }
+                            }
+                        }
                     }
                 }
                 runCatching {
-                    app.registerReceiver(receiver, IntentFilter(Intent.ACTION_SCREEN_OFF))
+                    val filter = IntentFilter().apply {
+                        addAction(Intent.ACTION_SCREEN_OFF)
+                        addAction(Intent.ACTION_SCREEN_ON)
+                    }
+                    app.registerReceiver(receiver, filter)
                     privacyReceiver = receiver
                     privacyReceiverContext = app
                 }.onFailure {
