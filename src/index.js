@@ -1,3 +1,4 @@
+import {paymentFromHistory} from './order-payment-status.js';
 /**
  * كن أونلاين — Cloudflare Worker
  * ---------------------------------------------------------------------------
@@ -289,6 +290,7 @@ const ORDER_COLS = 'id, client_id, store_id, ref, customer_id, date, name, phone
 const parseJsonArr = s => { try { const v = JSON.parse(s); return Array.isArray(v) ? v : []; } catch { return []; } };
 
 const rowToOrder = r => ({
+  paymentStatus: paymentFromHistory(r.history).status,
   id: r.id, clientId: r.client_id, storeId: r.store_id || null, ref: r.ref, customerId: r.customer_id, date: r.date, name: r.name, phone: r.phone,
   gov: r.gov, address: r.address, product: r.product, productId: r.product_id, variantId: r.variant_id, productNote: r.product_note,
   unitPrice: r.unit_price, qty: r.qty, total: r.total,
@@ -575,7 +577,7 @@ function mapEasyOrdersStatus(s) {
   const k = String(s || '').toLowerCase().trim();
   const t = {
     pending: 'pending', new: 'pending',
-    confirmed: 'confirmed', paid: 'confirmed', processing: 'preparing',
+    confirmed: 'confirmed', paid: 'pending', processing: 'preparing',
     shipped: 'shipped', shipping: 'shipped',
     delivered: 'signed', completed: 'signed',
     returned: 'returned', refunded: 'returned', 'مرتجع': 'returned',
