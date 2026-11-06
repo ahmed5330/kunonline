@@ -370,7 +370,7 @@ fun V23CustomerService(snapshot: CommerceSnapshot, onGlobalRefresh: () -> Unit) 
         scope.launch { performBoardRefresh(keepOrderId) }
     }
 
-    ForegroundPolling(storeFilter to stateFilter, intervalMillis = 30_000L) {
+    ForegroundPolling(storeFilter to stateFilter, intervalMillis = 15_000L) {
         performBoardRefresh(quiet = true)
     }
 
