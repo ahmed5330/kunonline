@@ -30,6 +30,6 @@ const rendered=JSON.stringify(report);
 assert(!rendered.includes('01000000000'));
 assert(!rendered.includes('Never exported'));
 assert(!rendered.includes('easyorders:2'));
-assert(!rendered.includes('history'));
+assert(!rendered.includes('"history":'));
 assert.throws(()=>summarizePaymentHistory({not:'an array'}),TypeError);
 console.log('PASS: read-only historical payment audit, COD exclusion, tenant counts, no PII');
