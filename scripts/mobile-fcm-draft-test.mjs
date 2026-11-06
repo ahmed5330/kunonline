@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {DatabaseSync} from 'node:sqlite';
 import {readFileSync} from 'node:fs';
 import {
   pushEnabled,tokenFormatValid,installFormatValid,invalidationData,
@@ -9,6 +10,20 @@ const response=(value,status=200)=>new Response(JSON.stringify(value),{
   status,headers:{'Content-Type':'application/json'}
 });
 const source=path=>readFileSync(new URL('../'+path,import.meta.url),'utf8');
+const registry=new DatabaseSync(':memory:');
+try{
+  registry.exec(source('migrations/0101_mobile_push_device_registry.sql'));
+  const columns=registry.prepare('PRAGMA table_info(mobile_push_devices)').all().map(x=>x.name);
+  for(const name of ['id','installation_hash','user_id','client_id','store_id',
+      'token_hash','token_ciphertext','last_seq','retry_after']){
+    assert(columns.includes(name),'Missing mobile push registry field '+name);
+  }
+  assert(!columns.includes('customer_name')&&!columns.includes('order_payload'));
+  assert.throws(()=>registry.prepare('INSERT INTO mobile_push_devices(id,installation_hash,user_id,client_id,store_id,token_hash,token_ciphertext,last_seq,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)')
+      .run('a','i','u','c','s','h','e',-1,'now','now'),
+    /CHECK constraint/);
+}finally{registry.close();}
+
 const installId='11111111-2222-4333-8444-555555555555';
 const token='synthetic_token_v1:'+('A'.repeat(160));
 assert(tokenFormatValid(token));
