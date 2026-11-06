@@ -1,7 +1,7 @@
 import {readConnectionSecrets} from './integration-provider-validation.js';
 import {providerById} from './provider-registry.js';
 import {mutateEasyOrdersConfig} from './easyorders-connection-config.js';
-import {createProviderPaymentEvent,appendProviderPaymentEvent} from './order-payment-status.js';
+import {createProviderPaymentEvent,appendProviderPaymentEvent,paymentFromHistory} from './order-payment-status.js';
 
 const text=v=>String(v??'').trim(),now=()=>new Date().toISOString();
 const MODES=[
@@ -143,12 +143,16 @@ export async function handleEasyOrdersWebhook(request,env,{connectionId=null,rou
       // This is financial evidence only. Do not mutate shipping/COD.
       // The append is replay-safe and protects refunded transactions from
       // delayed old "paid" callbacks.
-      await appendProviderPaymentEvent(env.DB,{
+      const recorded=await appendProviderPaymentEvent(env.DB,{
         orderId:row.id,clientId:connection.client_id,event:paymentEvidence
       });
+      const stored=recorded ? paymentEvidence.paymentStatus : paymentFromHistory(
+        (await env.DB.prepare('SELECT history FROM orders WHERE id=? AND client_id=?')
+          .bind(row.id,connection.client_id).first())?.history
+      ).status;
       await env.DB.prepare('UPDATE store_connections SET last_sync_at=?,last_error=NULL,updated_at=? WHERE id=? AND client_id=?')
         .bind(now(),now(),connection.id,connection.client_id).run();
-      return {ok:true,event:'payment-update',paymentStatus:paymentEvidence.paymentStatus,id:row.id};
+      return {ok:true,event:'payment-update',paymentStatus:stored,ignored:!recorded,id:row.id};
     }
     const state=mapEasyOrdersStatus(payload.new_status);
     // A delayed Easy Orders callback must not undo confirmation or J&T handoff.
