@@ -80,8 +80,10 @@ try{
   assert.equal(paymentFromHistory(current().history).status,'refunded');
 
   const beforeReplay=JSON.parse(current().history).length;
-  await webhook({event_type:'order-status-update',order_id:'ORDER-1',
+  const staleReplay=await webhook({event_type:'order-status-update',order_id:'ORDER-1',
     new_status:'paid',payment_ref_id:'SANDBOX-TRANSACTION-1'});
+  assert.equal(staleReplay.ignored,true,'Stale payment callback must be acknowledged as ignored');
+  assert.equal(staleReplay.paymentStatus,'refunded','Response must reflect stored refund, not stale paid');
   await webhook({event_type:'order-status-update',order_id:'ORDER-1',new_status:'refunded'});
   assert.equal(JSON.parse(current().history).length,beforeReplay,
     'Identical payment events must not append endlessly or alter the refund');
