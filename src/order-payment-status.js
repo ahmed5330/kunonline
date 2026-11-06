@@ -88,6 +88,7 @@ export function paymentFromOrder({history,providerStatus}={}){
   // Provider order detail reads have no monotonic event sequence. They are
   // useful when no journal exists; never override an already verified journal
   // with an unsequenced contradictory response.
+  if(fresh==='refunded')return {status:'refunded',source:'easyorders',reference:stored.reference,at:stored.at};
   return stored.status!=='unknown' ? stored :
     fresh==='unknown' ? stored : {status:fresh,source:'easyorders',reference:'',at:''};
 }
@@ -102,24 +103,25 @@ export async function appendProviderPaymentEvent(db,{orderId,clientId,event}){
   const state=verifiedProviderPaymentStatus(event.paymentStatus);
   if(state==='unknown')return false;
   const ref=clean(event.ref),time=normalizeDate(event.providerAt);
-  const history="CASE WHEN json_valid(history) AND json_type(history)='array' THEN history ELSE '[]' END";
+  const history="CASE WHEN json_valid(history) THEN CASE WHEN json_type(history)='array' THEN history ELSE '[]' END ELSE '[]' END";
+  const safeEntry="CASE WHEN payment_entry.type='object' THEN payment_entry.value ELSE '{}' END";
   const condition=`SELECT 1 FROM json_each(${history}) AS payment_entry
-    WHERE json_extract(payment_entry.value,'$.type')='payment_status'
-      AND json_extract(payment_entry.value,'$.source')='easyorders-webhook'`;
+    WHERE json_extract(${safeEntry},'$.type')='payment_status'
+      AND json_extract(${safeEntry},'$.source')='easyorders-webhook'`;
   const sql=`UPDATE orders
     SET history=json_insert(${history},'$[#]',json(?))
     WHERE id=? AND client_id=?
       AND NOT EXISTS (${condition}
-        AND json_extract(payment_entry.value,'$.paymentStatus')=?
-        AND COALESCE(json_extract(payment_entry.value,'$.ref'),'')=?)
+        AND json_extract(${safeEntry},'$.paymentStatus')=?
+        AND COALESCE(json_extract(${safeEntry},'$.ref'),'')=?)
       AND NOT EXISTS (${condition}
-        AND json_extract(payment_entry.value,'$.paymentStatus')='refunded'
+        AND json_extract(${safeEntry},'$.paymentStatus')='refunded'
         AND ?='paid'
         AND (
-          ?='' OR COALESCE(json_extract(payment_entry.value,'$.ref'),'')=''
-          OR COALESCE(json_extract(payment_entry.value,'$.ref'),'')=?
-          OR ?='' OR COALESCE(json_extract(payment_entry.value,'$.providerAt'),'')=''
-          OR ?<=json_extract(payment_entry.value,'$.providerAt')
+          ?='' OR COALESCE(json_extract(${safeEntry},'$.ref'),'')=''
+          OR COALESCE(json_extract(${safeEntry},'$.ref'),'')=?
+          OR ?='' OR COALESCE(json_extract(${safeEntry},'$.providerAt'),'')=''
+          OR ?<=json_extract(${safeEntry},'$.providerAt')
         ))`;
   const result=await db.prepare(sql).bind(JSON.stringify(event),orderId,clientId,state,ref,state,
     ref,ref,time,time).run();
