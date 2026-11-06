@@ -101,7 +101,7 @@ internal fun renderCallerProductSummary(context: Context, target: LinearLayout, 
         val quantity = item.optInt("quantity", item.optInt("qty", 1)).coerceAtLeast(1)
         add("${index + 1}. $product × $quantity", true)
         val options = item.optJSONArray("options")
-        val attributes = buildList {
+        val attributes = buildList<String> {
             item.optString("variantName").takeIf { it.isNotBlank() }?.let { add(it) }
             if (options != null) {
                 for (optionIndex in 0 until options.length()) {
