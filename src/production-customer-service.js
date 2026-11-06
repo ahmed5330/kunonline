@@ -1,3 +1,4 @@
+import {paymentFromHistory} from './order-payment-status.js';
 import {listMyStores,resolveStoreScope} from './store-scope.js';
 import {recoverOrderContacts} from './customer-contact-evidence.js';
 import {normalizeOutcomeReason} from './order-outcome-reason.js';
@@ -86,9 +87,10 @@ function clientIdFor(me,url,body={}){
   return requested;
 }
 function mapOrder(r){
+  const paymentStatus=paymentFromHistory(r.history).status;
   const history=arr(r.history),contacts=recoverOrderContacts(r.contact_log,history),contactLog=contacts.contactLog;
   const notes=history.filter(x=>x?.type==='internal_note'&&clean(x.note));
-  return {id:r.id,clientId:r.client_id,storeId:r.store_id||'',storeName:'',storeCode:'',ref:r.ref||r.id,date:r.date||r.created_at||'',createdAt:r.created_at||'',name:r.name||'',phone:r.phone||'',gov:r.gov||'',address:r.address||'',product:r.product||'',productId:r.product_id||'',variantId:r.variant_id||'',productNote:r.product_note||'',qty:n(r.qty)||1,unitPrice:n(r.unit_price),total:n(r.total),source:r.source||'',customerNote:r.note||'',awb:r.awb||'',state:r.state||'pending',checkpoint:r.checkpoint||LABELS[r.state]||'',deferUntil:r.defer_until||'',stockBatchId:'',stockBatchName:'',stockAllocationStatus:'',contactLog,contactCount:contacts.contactCount,screenedContactCount:contacts.screenedContactCount,recoveredContactCount:contacts.recoveredContactCount,contactCountSource:contacts.contactCountSource,history,internalNotes:notes,latestInternalNote:notes.at(-1)?.note||'',returnedFromDeferredToday:false};
+  return {paymentStatus,id:r.id,clientId:r.client_id,storeId:r.store_id||'',storeName:'',storeCode:'',ref:r.ref||r.id,date:r.date||r.created_at||'',createdAt:r.created_at||'',name:r.name||'',phone:r.phone||'',gov:r.gov||'',address:r.address||'',product:r.product||'',productId:r.product_id||'',variantId:r.variant_id||'',productNote:r.product_note||'',qty:n(r.qty)||1,unitPrice:n(r.unit_price),total:n(r.total),source:r.source||'',customerNote:r.note||'',awb:r.awb||'',state:r.state||'pending',checkpoint:r.checkpoint||LABELS[r.state]||'',deferUntil:r.defer_until||'',stockBatchId:'',stockBatchName:'',stockAllocationStatus:'',contactLog,contactCount:contacts.contactCount,screenedContactCount:contacts.screenedContactCount,recoveredContactCount:contacts.recoveredContactCount,contactCountSource:contacts.contactCountSource,history,internalNotes:notes,latestInternalNote:notes.at(-1)?.note||'',returnedFromDeferredToday:false};
 }
 async function getOrder(env,clientId,orderId){
   const row=await env.DB.prepare(`SELECT ${ORDER_COLS} FROM orders WHERE id=? AND client_id=? LIMIT 1`).bind(orderId,clientId).first();
