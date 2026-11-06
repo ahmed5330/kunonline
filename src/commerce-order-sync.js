@@ -1,6 +1,7 @@
 import {readConnectionSecrets} from './integration-provider-validation.js';
 import {providerById} from './provider-registry.js';
 import {mutateEasyOrdersConfig} from './easyorders-connection-config.js';
+import {createProviderPaymentEvent} from './order-payment-status.js';
 
 const text=v=>String(v??'').trim(),now=()=>new Date().toISOString();
 const MODES=[
@@ -10,7 +11,7 @@ const MODES=[
   {id:'day',label:'آخر يوم'},
   {id:'since_connection',label:'بدءًا من الربط'}
 ];
-export const mapEasyOrdersStatus=value=>({pending:'pending',confirmed:'confirmed',processing:'preparing',preparing:'preparing',shipped:'shipped',delivered:'signed',signed:'signed',paid:'collected',collected:'collected',cancelled:'cancelled',canceled:'cancelled',returned:'returned',refunded:'returned'})[text(value).toLowerCase()]||'pending';
+export const mapEasyOrdersStatus=value=>({pending:'pending',confirmed:'confirmed',processing:'preparing',preparing:'preparing',shipped:'shipped',delivered:'signed',signed:'signed',paid:'pending',collected:'collected',cancelled:'cancelled',canceled:'cancelled',returned:'returned',refunded:'pending'})[text(value).toLowerCase()]||'pending';
 const checkpoint=state=>({pending:'جاري التأكيد',confirmed:'تم التأكيد',preparing:'جاري التجهيز',shipped:'جاري الشحن',signed:'تم التسليم',collected:'تم التحصيل',cancelled:'ملغي',returned:'مرتجع'}[state]||state);
 const safeEqual=(a,b)=>{a=text(a);b=text(b);if(a.length!==b.length)return false;let diff=0;for(let i=0;i<a.length;i++)diff|=a.charCodeAt(i)^b.charCodeAt(i);return diff===0;};
 function parseConfig(row){try{return JSON.parse(row?.config_json||'{}')}catch{return {};}}
@@ -87,7 +88,10 @@ async function upsertEasyOrder(env,connection,p){
   const id=existing?.id||scopedId;
   const customerId=await customer(env,connection,p,storeId);
   const upsertSql=`INSERT INTO orders (id,client_id,store_id,ref,customer_id,date,name,phone,gov,address,product,product_note,unit_price,qty,total,product_cost,shipping_cost,source,note,state,checkpoint,contact_log,history,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET store_id=COALESCE(orders.store_id,excluded.store_id),customer_id=COALESCE(excluded.customer_id,orders.customer_id),date=excluded.date,name=excluded.name,phone=excluded.phone,gov=excluded.gov,address=excluded.address,product=excluded.product,product_note=excluded.product_note,unit_price=excluded.unit_price,qty=excluded.qty,total=excluded.total,product_cost=excluded.product_cost,shipping_cost=excluded.shipping_cost,state=CASE WHEN orders.state IN ('no_answer','deferred') THEN orders.state WHEN (orders.state IN ('shipped','signed','collected','returned','cancelled') AND excluded.state IN ('pending','confirmed','preparing')) OR (orders.state IN ('confirmed','preparing') AND excluded.state='pending') THEN orders.state ELSE excluded.state END,checkpoint=CASE WHEN orders.state IN ('no_answer','deferred') THEN orders.checkpoint WHEN (orders.state IN ('shipped','signed','collected','returned','cancelled') AND excluded.state IN ('pending','confirmed','preparing')) OR (orders.state IN ('confirmed','preparing') AND excluded.state='pending') THEN orders.checkpoint ELSE excluded.checkpoint END WHERE orders.client_id=excluded.client_id AND (orders.store_id=excluded.store_id OR orders.store_id IS NULL)`;
-  const writeOrder=candidateId=>env.DB.prepare(upsertSql).bind(candidateId,connection.client_id,storeId,ref,customerId,orderDate,text(p.full_name),normalizePhone(p.phone)||text(p.phone),text(p.government),text(p.address),product,notes,items.length===1?Number(items[0].price)||0:0,qty,Number(p.total_cost)||0,Number(p.cost)||0,Number(p.shipping_cost)||0,'المتجر (Easy Orders)','',state,checkpoint(state),'[]',JSON.stringify([{state,at:createdAt,source:'easyorders-webhook'}]),createdAt).run();
+  const writeOrder=candidateId=>env.DB.prepare(upsertSql).bind(candidateId,connection.client_id,storeId,ref,customerId,orderDate,text(p.full_name),normalizePhone(p.phone)||text(p.phone),text(p.government),text(p.address),product,notes,items.length===1?Number(items[0].price)||0:0,qty,Number(p.total_cost)||0,Number(p.cost)||0,Number(p.shipping_cost)||0,'المتجر (Easy Orders)','',state,checkpoint(state),'[]',JSON.stringify([{state,at:createdAt,source:'easyorders-webhook'},...(
+    createProviderPaymentEvent(p.status,{reference:p.payment_ref_id,at:createdAt}) ?
+      [createProviderPaymentEvent(p.status,{reference:p.payment_ref_id,at:createdAt})] : []
+  )]),createdAt).run();
   let savedId=id,result=await writeOrder(savedId);
   if(result?.success===false)throw Object.assign(new Error('Easy Orders order write failed'),{status:503,code:'EASYORDERS_ORDER_WRITE_FAILED'});
   if(result?.meta?.changes===0&&savedId===externalId&&!existing){
@@ -125,6 +129,20 @@ export async function handleEasyOrdersWebhook(request,env,{connectionId=null,rou
     if(!connectedStoreId)throw Object.assign(new Error('لا يوجد متجر مرتبط لتحديث حالة Easy Orders'),{status:409,code:'EASYORDERS_KUN_STORE_UNBOUND'});
     const row=await env.DB.prepare("SELECT id FROM orders WHERE client_id=? AND (id=? OR ref=?) AND (store_id=? OR store_id IS NULL) LIMIT 1")
       .bind(connection.client_id,text(payload.order_id),`easyorders:${text(payload.order_id)}`,connectedStoreId).first();if(!row)return {ok:true,event:'status-update',ignored:true,note:'الأوردر غير موجود بعد'};
+    const paymentEvidence=createProviderPaymentEvent(payload.new_status,{
+      reference:payload.payment_ref_id,at:payload.updated_at||now()
+    });
+    if(paymentEvidence){
+      // This is a financial event, NOT a shipping/COD collection transition.
+      // Append in SQLite atomically so concurrent staff history edits survive.
+      await env.DB.prepare(`UPDATE orders SET history=json_insert(
+        CASE WHEN json_valid(history) AND json_type(history)='array' THEN history ELSE '[]' END,
+        '$[#]',json(?)
+      ) WHERE id=? AND client_id=?`).bind(JSON.stringify(paymentEvidence),row.id,connection.client_id).run();
+      await env.DB.prepare('UPDATE store_connections SET last_sync_at=?,last_error=NULL,updated_at=? WHERE id=? AND client_id=?')
+        .bind(now(),now(),connection.id,connection.client_id).run();
+      return {ok:true,event:'payment-update',paymentStatus:paymentEvidence.paymentStatus,id:row.id};
+    }
     const state=mapEasyOrdersStatus(payload.new_status);
     // A delayed Easy Orders callback must not undo confirmation or J&T handoff.
     // Compare atomically in SQLite: two staff/sync actions may arrive together.
