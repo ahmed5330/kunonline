@@ -21,7 +21,8 @@ data class OrderUi(
     val source: String,
     val storeId: String = "",
     val lastEditBy: String = "",
-    val lastEditAt: String = ""
+    val lastEditAt: String = "",
+    val paymentStatus: String = "unknown"
 )
 
 data class CustomerUi(
@@ -109,7 +110,8 @@ object CommerceParser {
                     source = o.str("source"),
                     storeId = o.str("storeId").ifBlank { o.str("store_id") },
                     lastEditBy = lastEdit(o).optString("byName").ifBlank { lastEdit(o).optString("by") },
-                    lastEditAt = lastEdit(o).optString("at")
+                    lastEditAt = lastEdit(o).optString("at"),
+                    paymentStatus = o.str("paymentStatus").ifBlank { "unknown" }
                 )
             )
         }
