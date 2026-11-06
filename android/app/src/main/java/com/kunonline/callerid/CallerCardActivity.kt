@@ -189,7 +189,28 @@ class CallerCardActivity : Activity() {
         }
         addLine(customer.phone, 15f, ink, true)
         if (!locked && customer.storeName.isNotBlank()) addLine("المتجر: ${customer.storeName}", 13f, chrome, true)
-        addLine(listOfNotNull(customer.orderRef?.takeUnless { locked }?.let { "طلب $it" }, stateText(customer.status).takeIf { it.isNotBlank() }).joinToString(" • "), 13f, chrome, true)
+        addLine(listOfNotNull(customer.orderRef?.takeUnless { locked || it.startsWith("easyorders:", true) || it.length > 28 }?.let { "طلب $it" }, stateText(customer.status).takeIf { it.isNotBlank() }).joinToString(" • "), 13f, chrome, true)
+        val paymentHost = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        fun displayPayment(status: String?) {
+            paymentHost.removeAllViews()
+            val label = when (status) {
+                "paid" -> "✓ مدفوع بالكامل"
+                "refunded" -> "↩ تم رد المبلغ"
+                else -> return
+            }
+            paymentHost.addView(TextView(this).apply {
+                text = label
+                textSize = 14f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setTextColor(if (status == "paid") 0xFF13774C.toInt() else 0xFF9F3341.toInt())
+                background = rounded(if (status == "paid") 0xFFE6F8ED.toInt() else 0xFFFCECEF.toInt(), 10f)
+                setPadding(dp(10), dp(7), dp(10), dp(7))
+            })
+        }
+        if (!locked) {
+            displayPayment(customer.paymentStatus)
+            body.addView(paymentHost)
+        }
         if (!locked) {
             addLine(listOfNotNull(customer.product, customer.total?.let { "الإجمالي ${it.toInt()} ج.م" }).joinToString(" • "), 14f, ink)
             addLine(listOfNotNull(customer.gov, customer.address).filter { !it.isNullOrBlank() }.joinToString(" — "), 13f)
@@ -292,7 +313,11 @@ class CallerCardActivity : Activity() {
                 runOnUiThread {
                     val stillUnlocked = !(getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager).isKeyguardLocked
                     if (!isFinishing && stillUnlocked) {
-                        if (result.ok) renderCallerFullDetails(this, detailsHost, result.data)
+                        if (result.ok) {
+                            val latestPayment = result.data.optJSONObject("order")?.optString("paymentStatus")
+                            if (!latestPayment.isNullOrBlank()) displayPayment(latestPayment)
+                            renderCallerFullDetails(this, detailsHost, result.data)
+                        }
                         else detailsHost.addView(TextView(this).apply {
                             text = "تعذر تحميل التفاصيل: ${result.message}"
                             textSize = 12f
