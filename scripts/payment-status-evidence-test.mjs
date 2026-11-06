@@ -10,6 +10,10 @@ assert.equal(mapEasyOrdersStatus('refunded'),'pending','Refund must NOT imply re
 assert.equal(createProviderPaymentEvent('confirmed'),null);
 assert.equal(paymentFromHistory([{state:'collected'}]).status,'unknown','COD collection does not prove electronic payment');
 assert.equal(paymentFromOrder({history:[{state:'confirmed'}],providerStatus:'paid'}).status,'paid');
+assert.equal(paymentFromOrder({
+  history:[createProviderPaymentEvent('refunded',{at:'2026-11-06T00:00:00Z'})],
+  providerStatus:'paid'
+}).status,'refunded','Stale provider paid must not supersede a verified refund');
 
 const db=new DatabaseSync(':memory:');
 db.exec(`
