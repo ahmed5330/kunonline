@@ -33,6 +33,13 @@ assert(caller.includes('renderCallerProductSummary'), 'overlay renders only comp
 assert(!caller.includes('renderCallerFullDetails('), 'overlay must not show raw full details');
 assert(caller.includes('heightPixels / 2'), 'overlay height must be at most half the screen');
 assert(caller.includes('putExtra("start_note", true)'), 'call overlay must provide quick notes');
+assert(caller.includes('text = if (locked) "عميل كن أونلاين"'), 'lock screen must conceal customer names');
+assert(caller.includes('if (!locked) line(customer.phone'), 'lock screen must conceal customer phone');
+assert(caller.includes('if (!locked) line(orderBits'), 'lock screen must conceal order status');
+assert(caller.includes('Intent.ACTION_SCREEN_OFF'), 'screen-off must invalidate visible call overlay');
+assert(caller.includes('registerReceiver(receiver, IntentFilter(Intent.ACTION_SCREEN_OFF))'), 'screen-off privacy receiver must be registered');
+assert(caller.includes('receiverContext.unregisterReceiver(receiver)'), 'privacy receiver must be cleaned up');
+assert(caller.includes('dismiss()'), 'screen-off must dismiss call overlay');
 assert(details.includes('internal fun renderCallerProductSummary'), 'structured item renderer must exist');
 assert(details.includes('optJSONArray("options")'), 'product summary must include color/size options');
 assert(fallback.includes('renderCallerFullDetails'), 'full protected details remain available outside overlay');
