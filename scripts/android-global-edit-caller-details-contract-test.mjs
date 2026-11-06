@@ -28,8 +28,16 @@ assert(edit.includes('selectedClientId = data.clientId'), 'editor saves only the
 assert.match(api, /fetchEditorData\(context: Context, orderId: String, selectedStoreId: String = "", requireHistory: Boolean = false, selectedClientId: String = ""\)/);
 assert(api.includes('if (selectedStoreId.isNotBlank()) payload.put("storeId", selectedStoreId)'), 'include store for ACL on writes');
 
+// The tiny floating call overlay must not expose the old raw "full details" block.
+assert(caller.includes('renderCallerProductSummary'), 'overlay renders only compact product lines');
+assert(!caller.includes('renderCallerFullDetails('), 'overlay must not show raw full details');
+assert(caller.includes('heightPixels / 2'), 'overlay height must be at most half the screen');
+assert(caller.includes('putExtra("start_note", true)'), 'call overlay must provide quick notes');
+assert(details.includes('internal fun renderCallerProductSummary'), 'structured item renderer must exist');
+assert(details.includes('optJSONArray("options")'), 'product summary must include color/size options');
+assert(fallback.includes('renderCallerFullDetails'), 'full protected details remain available outside overlay');
+assert(fallback.includes('start_note'), 'fallback note composer must remain accessible');
 for (const ui of [caller, fallback]) {
-  assert(ui.includes('renderCallerFullDetails'), 'call panel renders live details');
   assert(ui.includes('fetchOrderDetails'), 'call panel fetches server details');
   assert(ui.includes('stillUnlocked'), 'do not reveal live details after phone locks');
   assert(ui.includes('ScrollView'), 'long details must be scrollable');
