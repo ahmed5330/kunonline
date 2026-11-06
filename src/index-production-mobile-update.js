@@ -364,8 +364,11 @@ export default {
   ...productionHandler,
   async fetch(request,env,ctx){
     const response=await productionHandler.fetch(request,env,ctx);
+    // Security: an auth guard or rejected request must complete before *any*
+    // environment access, including lazy PREVIEW_DB proxies.
+    if(!shouldNotifyOrderWrite(request,response))return response;
     const dataEnv=previewRuntimeEnv(env);
-    if(pushEnabled(dataEnv)&&shouldNotifyOrderWrite(request,response)){
+    if(pushEnabled(dataEnv)){
       // Fast-path hints for successful order mutations. The D1 trigger journal
       // is authoritative; the scheduled sweep retries missed sends. This is
       // best-effort, not exactly-once or a latency SLA.
