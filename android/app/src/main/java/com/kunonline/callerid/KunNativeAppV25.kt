@@ -659,11 +659,13 @@ private fun V25Home(
                 }
                 if (storeOptionsLoading && storeOptions.isEmpty()) {
                     LinearProgressIndicator(Modifier.fillMaxWidth(), color = KunColors.Chrome)
-                    Text("جاري تحميل المتاجر المتاحة…", color = KunColors.Ink2)
                 } else if (storeOptions.isEmpty()) {
-                    Text(storeOptionsError.ifBlank { "لا توجد متاجر متاحة للحساب" }, color = KunColors.Ink2)
+                    Text(if (storeOptionsError.isNotBlank()) "تعذر تحديث المتاجر. استخدم زر تحديث المتاجر."
+                         else "لا توجد متاجر متاحة للحساب", color = KunColors.Ink2)
                 } else {
-                    if (storeOptionsError.isNotBlank()) Text(storeOptionsError, color = KunColors.Brick, style = MaterialTheme.typography.bodySmall)
+                    // Keep the last verified store choices visible on transient refresh failures.
+                    if (storeOptionsError.isNotBlank()) Text("المتاجر المعروضة محفوظة من آخر تحديث ناجح.",
+                        color = KunColors.Ink2, style = MaterialTheme.typography.bodySmall)
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         items(storeOptions, key = { "${it.clientId}:${it.storeId}" }) { option ->
                             val active = currentStore.clientId == option.clientId && currentStore.storeId == option.storeId
