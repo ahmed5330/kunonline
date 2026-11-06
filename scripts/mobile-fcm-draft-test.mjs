@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {
   pushEnabled,tokenFormatValid,installFormatValid,invalidationData,
-  handleMobilePushDevices,dispatchOrderChangePush,sendFcmInvalidation
+  handleMobilePushDevices,dispatchOrderChangePush,sendFcmInvalidation,shouldNotifyOrderWrite
 } from '../src/mobile-push.js';
 
 const response=(value,status=200)=>new Response(JSON.stringify(value),{
@@ -16,6 +16,16 @@ assert(installFormatValid(installId));
 assert(!tokenFormatValid('hi'));
 assert(!installFormatValid('../evil'));
 assert(!pushEnabled({ORDER_FCM_ENABLED:'0',ORDER_CHANGE_FEED_ENABLED:'1'}));
+const successful=new Response('{}',{status:200});
+const denied=new Response('{}',{status:403});
+for(const endpoint of ['/api/orders','/api/orders/ord1','/api/customer-service/ord1/notes',
+  '/webhooks/easyorders','/api/jnt/shipments']){
+  assert(shouldNotifyOrderWrite(new Request('https://kun.invalid'+endpoint,{method:'POST'}),successful),
+    'An authorized order write should trigger fast push: '+endpoint);
+}
+assert(!shouldNotifyOrderWrite(new Request('https://kun.invalid/api/orders'),successful));
+assert(!shouldNotifyOrderWrite(new Request('https://kun.invalid/api/orders',{method:'POST'}),denied));
+assert(!shouldNotifyOrderWrite(new Request('https://kun.invalid/api/login',{method:'POST'}),successful));
 assert.deepEqual(invalidationData({clientId:'c',storeId:'s',seq:42}),
   {kind:'orders_changed',clientId:'c',storeId:'s',seq:'42'});
 
@@ -135,6 +145,11 @@ assert.equal(sent.message.token,token);
 assert.deepEqual(sent.message.data,{kind:'orders_changed',clientId:'CLIENT-A',storeId:'STORE-A',seq:'5'});
 assert(!JSON.stringify(sent.message).match(/customer|phone|address|product/i));
 assert(statements.some(s=>s.sql.includes('UPDATE mobile_push_devices SET last_seq=')));
+calls.length=0;
+const instant=await dispatchOrderChangePush({...env,
+  FIREBASE_SERVICE_ACCOUNT_JSON:JSON.stringify(serviceAccount)},{http,immediate:true});
+assert.equal(instant.sent,1,'Immediate post-write fast path should also send a data-only hint');
+assert.equal(calls.filter(x=>x.url.includes('fcm.googleapis.com')).length,1);
 fakeStatus='suspended';
 calls.length=0;
 const revoked=await dispatchOrderChangePush({...env,
