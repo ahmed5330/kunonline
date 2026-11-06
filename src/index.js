@@ -2755,10 +2755,14 @@ async function handleWebhook(request, env, path) {
         if (!env.EASYORDERS_WEBHOOK_SECRET) return json({ error:'التحقق من مصدر الدفع غير متاح' },401);
         const matching = await env.DB.prepare('SELECT id,client_id FROM orders WHERE id=?').bind(p.order_id).first();
         if (!matching) return json({ok:true,event:'payment-update',ignored:true});
-        await appendProviderPaymentEvent(env.DB,{
+        const recorded=await appendProviderPaymentEvent(env.DB,{
           orderId:matching.id,clientId:matching.client_id,event:paymentEvent
         });
-        return json({ok:true,event:'payment-update',paymentStatus:paymentEvent.paymentStatus});
+        const persisted=recorded ? paymentEvent.paymentStatus : paymentFromHistory(
+          (await env.DB.prepare('SELECT history FROM orders WHERE id=? AND client_id=?')
+            .bind(matching.id,matching.client_id).first())?.history
+        ).status;
+        return json({ok:true,event:'payment-update',paymentStatus:persisted,ignored:!recorded});
       }
       const st = mapEasyOrdersStatus(p.new_status);
       await env.DB.prepare('UPDATE orders SET state = ?, checkpoint = ? WHERE id = ?')
