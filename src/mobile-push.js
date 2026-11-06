@@ -20,6 +20,15 @@ export const installFormatValid=id=>/^[A-Za-z0-9_\-]{20,128}$/.test(id);
 export const invalidationData=({clientId,storeId,seq})=>({
   kind:'orders_changed',clientId:clean(clientId),storeId:clean(storeId),seq:String(seq)
 });
+export function shouldNotifyOrderWrite(request,response){
+  if(!pushEnabledMarker(request) || !response?.ok)return false;
+  const path=new URL(request.url).pathname.toLowerCase();
+  return /^\/api\/(orders(?:\/|$)|customer-service(?:\/|$)|jnt(?:\/|$)|jt(?:\/|$))/.test(path)
+    || /^\/webhooks?\/easyorders(?:\/|$)/.test(path);
+}
+function pushEnabledMarker(request){
+  return ['POST','PUT','PATCH','DELETE'].includes(request.method);
+}
 async function tokenKey(secret,usage){
   const hash=await crypto.subtle.digest('SHA-256',encoder.encode('kun-fcm-v1:'+secret));
   return crypto.subtle.importKey('raw',hash,{name:'AES-GCM'},false,usage);
@@ -180,14 +189,17 @@ async function stillAllowed(db,row){
     .bind(row.user_id,row.client_id,row.store_id).first();
   return !!grant?.ok;
 }
-export async function dispatchOrderChangePush(env,{http=fetch,limit=50}={}){
+export async function dispatchOrderChangePush(env,{http=fetch,limit=50,immediate=false}={}){
   if(!pushEnabled(env)||!env.DB||!env.PUSH_TOKEN_ENC_KEY||!env.FIREBASE_SERVICE_ACCOUNT_JSON)
     return {enabled:false,sent:0};
   const account=serviceAccount(env);
   const due=timestamp(),metrics={enabled:true,checked:0,sent:0,revoked:0,failed:0};
-  const rows=(await env.DB.prepare(`SELECT * FROM mobile_push_devices
-    WHERE retry_after IS NULL OR retry_after<=? ORDER BY COALESCE(last_attempt_at,'') ASC LIMIT ?`)
-    .bind(due,Math.min(100,Math.max(1,limit))).all()).results||[];
+  const maxDevices=Math.min(100,Math.max(1,limit));
+  const dueQuery=immediate
+    ? "SELECT * FROM mobile_push_devices ORDER BY COALESCE(last_attempt_at,'') ASC LIMIT ?"
+    : "SELECT * FROM mobile_push_devices WHERE retry_after IS NULL OR retry_after<=? ORDER BY COALESCE(last_attempt_at,'') ASC LIMIT ?";
+  const rows=(await env.DB.prepare(dueQuery)
+    .bind(...(immediate?[maxDevices]:[due,maxDevices])).all()).results||[];
   let auth=null;
   for(const row of rows){
     metrics.checked++;
