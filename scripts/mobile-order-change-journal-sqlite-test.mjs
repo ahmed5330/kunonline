@@ -100,6 +100,11 @@ const call=async(cursor,storeId='a',cookie='session-a',clientId='t1',e=env)=>{
 };
 const first=await call();
 assert.equal(first.data.mode,'reset','A new app must get an authoritative snapshot before saving cursor');
+const dedicated=await call(null,'a','session-a','t1',{
+  DB:query,ORDER_CHANGE_FEED_HMAC_KEY:'synthetic-independent-cursor-secret'
+});
+assert.equal(dedicated.status,200,'The Production Worker need not possess Preview auth SESSION_SECRET');
+assert.equal(dedicated.data.mode,'reset');
 assert.equal((await call(first.data.cursor)).data.mode,'unchanged');
 save('a2');
 let next=await call(first.data.cursor);
