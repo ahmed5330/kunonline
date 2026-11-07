@@ -11,10 +11,13 @@
 - SIGNUP_TOKEN_SECRET — سر عشوائي لا يقل عن 32 حرفًا، مستقل عن SESSION_SECRET.
 - RESEND_API_KEY — مفتاح مزود إرسال البريد Resend.
 - SIGNUP_EMAIL_FROM — عنوان مرسل في نطاق موثَّق لدى Resend (SPF/DKIM).
+- SIGNUP_TURNSTILE_SITE_KEY — مفتاح موقع Turnstile العام، يتم عرضه للعميل في صفحة التسجيل فقط.
+- SIGNUP_TURNSTILE_SECRET_KEY — مفتاح Turnstile السري، يتم استخدامه من Worker في التحقق بالخادم.
 أضف الأسرار في إعدادات Cloudflare، لا تضعها في ملفات GitHub.
 
 ## مسارات API
-- POST /api/auth/signup: JSON به name وstoreName وemail.
+- GET /api/auth/signup/config: حالة تفعيل التسجيل ومفتاح Turnstile العام فقط.
+- POST /api/auth/signup: JSON به name وstoreName وemail وturnstileToken صادرة من Turnstile.
 - POST /api/auth/activate: JSON به email وcode وpassword.
 - كود التفعيل يحفظ كبصمة HMAC فقط؛ كلمة المرور تحفظ PBKDF2 متوافقة مع نظام الدخول.
 - الحد الأقصى لخمس محاولات لكل كود، ومهلة 90 ثانية لإعادة الإرسال، وحدود طلبات لكل IP وإيميل.
@@ -23,8 +26,9 @@
 ## اختبارات وتفعيل
 1. اختبارات Syntax وSQLite والتدفق الآمن: node scripts/self-signup-contract-test.mjs.
 2. نفّذ migration 0100_self_signup_email_trial.sql في قاعدة اختبار معزولة بعد مراجعتها فقط.
-3. اختبر وصول رسالة بريد حقيقية، والتفعيل، وإعادة الإرسال، والرمز الخطأ والمنتهي، وتسجيل الدخول، ومنع التكرار.
+3. اختبر وصول رسالة بريد حقيقية، والتفعيل، وإعادة الإرسال، والرمز الخطأ والمنتهي، وتسجيل الدخول، ومنع التكرار. اختبر كذلك Cloudflare Turnstile بمفتاح اختبار في بيئة معزولة، ثم بمفاتيح أصلية عند التفعيل.
 4. لا تُنفذ ترحيلًا أو نشرًا على Preview أو Production دون موافقة صريحة، ونسق تحديث Worker الهوية بينهما.
-5. قبل الإطلاق العام، راجع إضافة Cloudflare Turnstile؛ حدود الإيميل والـIP وحدها لا تكفي لمنع جميع محاولات إساءة الاستخدام.
+5. تم تضمين Cloudflare Turnstile والتحقق من الرمز في الخادم؛ لن يُفتح التسجيل ما لم تُضف مفاتيحه مع أسرار البريد. راجع حدود إرسال Resend وإيقاف البريد المسئ والكشف عن الاحتيال قبل الإطلاق العام.
+6. إعداد متغيرات التسجيل على Worker الهوية المرتبط بقاعدة PREVIEW_DB وليس Production فقط: Production يوجه POST وGET الإعداد إلى خدمة Preview، لذلك يجب تنسيق البيئتين دون تغيير بيانات العملاء.
 
 اختبارات GitHub لا تثبت وصول بريد فعلي أو عمل Production؛ يلزم اختبار إرسال وتشغيل حقيقي في بيئة اختبار.
