@@ -69,6 +69,8 @@ jobs:
         run: |
           node scripts/android-order-notifications-fake-test.mjs
           node scripts/android-accounting-fake-test.mjs
+      - name: Synthetic staff multi-store ACL and live audit SQL contract
+        run: node scripts/staff-store-grant-readonly-sqlite-test.mjs
       - name: Run full contract and unit suite
         run: npm test
       - name: FAOS multi-line journal synthetic browser regression
