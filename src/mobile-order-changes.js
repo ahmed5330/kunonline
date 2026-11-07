@@ -65,7 +65,9 @@ export async function handleMobileOrderChanges({request,env,delegate}){
   const result=await authenticatedScopes({request,env,delegate});
   if(result.response)return result.response;
   const stores=result.stores;
-  const secret=clean(env.SESSION_SECRET);
+  // Production may delegate authentication to PREVIEW_APP without sharing its
+  // SESSION_SECRET. Prefer a separately configured cursor-only signing key.
+  const secret=clean(env.ORDER_CHANGE_FEED_HMAC_KEY||env.SESSION_SECRET);
   if(!secret||!env.DB)return json({ok:false,code:'SYNC_NOT_CONFIGURED'},503);
   const key=await signer(secret);
   const identity=JSON.stringify([request.headers.get('Cookie'),request.headers.get('Authorization'),
