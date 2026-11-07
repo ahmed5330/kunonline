@@ -31,8 +31,7 @@ a false `unchanged` when journal/authorization is down.
   `/api/mobile/store-options` on every poll; optional caller-supplied
   `clientId` and `storeId` can narrow authorised scopes, never expand them.
 - Cursor HMAC is tied to the authenticated session, active authorised store
-  grants and requested scope, and is stable across Worker isolates. It uses
-  `SESSION_SECRET` that is already environment-managed (never exposed).
+  grants and requested scope, and is stable across Worker isolates. It uses a separate Production Worker secret `ORDER_CHANGE_FEED_HMAC_KEY` (or legacy `SESSION_SECRET` when present). Production may delegate authentication to the Preview Worker without possessing its signing secret. Provision the cursor-only key independently; never expose it.
 - Initial/invalid/revoked-scope/too-old cursor returns `mode=reset`, forcing
   an authoritative full fetch. `mode=changes` returns up to 50 ordered IDs
   and operations with `hasMore` pagination; `unchanged` is returned only
