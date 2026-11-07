@@ -55,5 +55,6 @@ function attach(){
  const btn=document.createElement('button');btn.id='kun-signup-open';btn.type='button';btn.textContent='إنشاء حساب جديد — 30 يوم مجانًا';btn.addEventListener('click',open);
  const note=form.querySelector('.login-note');if(note)note.before(btn);else form.appendChild(btn);return true;
 }
+window.KunSelfSignup={open};
 if(!attach()){const observer=new MutationObserver(()=>{if(attach())observer.disconnect();});observer.observe(document.documentElement,{childList:true,subtree:true});}
 })();
