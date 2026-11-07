@@ -31,7 +31,7 @@ substitute for an authorized backup and schema audit.
 
 ## Required OWNER-supplied configuration — do not commit secrets
 1. Create a Firebase project and register Android application **`com.kunonline.callerid.stable`**.
-2. Privately supply `android/app/google-services.json` **only to an approved build environment**. It is ignored by Git. The Google Services plugin runs conditionally when this file is present.
+2. Set private GitHub Actions secret `GOOGLE_SERVICES_JSON_BASE64` to the base64-encoded, authorized Firebase Android `google-services.json` content. The stable release workflow validates that it contains package `com.kunonline.callerid.stable`, creates it only inside the isolated runner before Gradle, and deletes it afterward. It is Git-ignored and must never be committed or pasted into chat. If the secret is missing, CI deliberately builds **without** Firebase registration, so such an APK cannot deliver FCM notifications.
 3. Provision a least-privilege Firebase service account with permission to send Firebase Cloud Messaging API v1 messages. Store the entire JSON **only** in Cloudflare secret `FIREBASE_SERVICE_ACCOUNT_JSON` for the reviewed Worker. Never paste it into a chat, commit, CI log or code.
 4. Generate an independent high-entropy `PUSH_TOKEN_ENC_KEY` and store it as a Worker secret; protect and plan rotation/re-encryption. Tokens are encrypted at rest.
 5. After reviewing canonical D1 binding and testing backups/rollback on isolated sandbox, apply **0100 and then 0101** only following explicit approval. Never run migrations by opening the PR.
