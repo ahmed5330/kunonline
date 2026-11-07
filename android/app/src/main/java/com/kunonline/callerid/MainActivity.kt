@@ -31,6 +31,7 @@ class MainActivity : ComponentActivity() {
         notificationOrderTarget = OrderNotifications.notificationTarget(intent)
         if (KunApi.hasSession(this)) {
             SyncJobService.schedule(this)
+            MobilePushRegistration.refreshAsync(this)
         }
         setContent {
             KunNativeAppV26(this)
@@ -41,6 +42,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        if (KunApi.hasSession(this)) MobilePushRegistration.refreshAsync(this)
         AppUpdateManager.resumePending(this)
     }
 
