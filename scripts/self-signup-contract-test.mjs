@@ -35,6 +35,8 @@ db.exec("CREATE TABLE users (id TEXT PRIMARY KEY,email TEXT UNIQUE NOT NULL,name
 db.exec("CREATE TABLE tenant_settings (client_id TEXT PRIMARY KEY,display_name TEXT,timezone TEXT,currency TEXT,locale TEXT,plan TEXT,status TEXT,created_at TEXT,updated_at TEXT);");
 db.exec("CREATE TABLE wallet_accounts (client_id TEXT PRIMARY KEY,balance REAL,currency TEXT,base_order_fee REAL,min_order_fee REAL,max_order_fee REAL,credit_limit REAL,billing_version TEXT,billing_start_rowid INTEGER,status TEXT,updated_at TEXT);");
 db.exec("CREATE TABLE subscriptions (id TEXT PRIMARY KEY,client_id TEXT,plan TEXT,status TEXT,billing_cycle TEXT,amount REAL,currency TEXT,period_start TEXT,period_end TEXT,provider TEXT,created_at TEXT,updated_at TEXT);");
+db.exec("CREATE TABLE stores (id TEXT PRIMARY KEY,client_id TEXT,name TEXT,code TEXT,currency TEXT,timezone TEXT,status TEXT,is_default INTEGER,created_at TEXT,updated_at TEXT);");
+db.exec("CREATE TABLE user_store_access (id TEXT PRIMARY KEY,client_id TEXT,user_id TEXT,store_id TEXT,role TEXT,created_at TEXT);");
 db.exec(migration);
 const DB={
   prepare(sql){
@@ -113,6 +115,10 @@ try{
   const sub=db.prepare('SELECT * FROM subscriptions WHERE client_id=?').get(user.client_id);
   const wallet=db.prepare('SELECT * FROM wallet_accounts WHERE client_id=?').get(user.client_id);
   assert.equal(tenant.display_name,'My Store');
+  const store=db.prepare('SELECT * FROM stores WHERE client_id=?').get(user.client_id);
+  const ownerGrant=db.prepare('SELECT * FROM user_store_access WHERE client_id=? AND user_id=?').get(user.client_id,user.id);
+  assert.ok(store&&store.is_default===1&&store.status==='active'&&store.name==='My Store','default active store must exist');
+  assert.ok(ownerGrant&&ownerGrant.store_id===store.id&&ownerGrant.role==='owner','new account must own its default store');
   assert.equal(sub.status,'trialing');
   assert.equal(sub.period_end,__signupInternals.plusDays(sub.period_start,30));
   assert.equal(sub.amount,0);
@@ -124,6 +130,7 @@ try{
   assert.equal(response.status,202,'existing email gets safe generic reply');
   assert.equal(mails.length,1,'existing account never receives a new activation code');
   assert.equal(db.prepare('SELECT COUNT(*) count FROM subscriptions WHERE client_id=?').get(user.client_id).count,1,'one trial per verified email');
+  assert.equal(db.prepare('SELECT COUNT(*) count FROM stores WHERE client_id=?').get(user.client_id).count,1,'one store must be created');
 
   // Expiry: a verified code must never activate outside the 10-minute window.
   response=await handleSelfSignup(request('/api/auth/signup',{name:'Layla',storeName:'Layla Store',email:'layla@example.com'},'203.0.113.12'),env);
@@ -182,5 +189,5 @@ try{
   response=await handleSelfSignup(request('/api/auth/signup',{name:'Nour',storeName:'Nour Store',email:'nour@example.com'},'203.0.113.9'),env);
   assert.equal(response.status,503);
   assert.equal(db.prepare('SELECT COUNT(*) count FROM signup_pending WHERE email=?').get('nour@example.com').count,0);
-  console.log('Self-signup: email, Turnstile, code expiry, 5 attempts, resend cooldown, atomic activation, trial, tenant, wallet, replay and error-handling tests passed.');
+  console.log('Self-signup: email, Turnstile, expiry, 5 attempts, resend cooldown, atomic activation, trial, tenant, default store, owner grant, wallet, replay and delivery error tests passed.');
 }finally{globalThis.fetch=originalFetch;db.close();}
