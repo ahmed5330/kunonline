@@ -37,7 +37,7 @@ const LEGACY_APK_URL='https://github.com/ahmed5330/kunonline/releases/download/a
 const DIRECT_APK_PATH='/api/mobile/app-update/apk';
 const HTML_PATHS=new Set(['/','/index.html','/v2','/v2/','/v2/index.html']);
 // Auth endpoints must reach one signer/verifier, without billing, finance or UI response adapters.
-const AUTH_PATHS=new Set(['/api/login','/api/me','/api/logout']);
+const AUTH_PATHS=new Set(['/api/login','/api/me','/api/logout','/api/auth/signup','/api/auth/activate']);
 
 function previewRuntimeEnv(env){
   if(!env?.PREVIEW_DB)return env;
