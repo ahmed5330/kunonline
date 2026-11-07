@@ -190,6 +190,8 @@ const stmt=(sql)=>({
     if(sql.includes('FROM users')){
       let ulist=[...users.values()];
       if(sql.includes('WHERE client_id = ?')) ulist=ulist.filter(u=>u.client_id===this.args[0]);
+      if(sql.includes('WHERE lower(trim(email)) = ?'))
+        ulist=ulist.filter(u=>String(u.email||'').trim().toLowerCase()===this.args[0]).slice(0,2);
       return {results:ulist};
     }
     if(sql.includes('FROM products')){
@@ -367,6 +369,18 @@ const invalidRoleLogin=await call('/api/login',{method:'POST',body:JSON.stringif
 check('الدور غير المعروف مرفوض قبل إصدار Cookie',invalidRoleLogin.status===403&&!invalidRoleLogin.headers.get('Set-Cookie'));
 check('محاولة الدخول بدور غير معروف لا تحدث last_login',invalidRoleUser.last_login===originalLastLogin);
 invalidRoleUser.role=actualRole;
+const legacyEmailBefore=invalidRoleUser.email;
+invalidRoleUser.email='  OPS.C1@X.COM  ';
+const legacyLogin=await call('/api/login',{method:'POST',body:JSON.stringify({email:'ops.c1@x.com',password:'OpsC1Pass99'})});
+check('حساب قديم بإيميل فيه مسافات وحروف كبيرة يقبل تسجيل الدخول الصحيح فقط',
+  legacyLogin.status===200 && signedRole(ck(legacyLogin)).role==='ops' && signedRole(ck(legacyLogin)).clientId==='c1');
+const conflicting={...invalidRoleUser,id:'SYNTHETIC-DUPLICATE',email:'ops.c1@x.com'};
+users.set(conflicting.id,conflicting);
+const ambiguousLogin=await call('/api/login',{method:'POST',body:JSON.stringify({email:'ops.c1@x.com',password:'OpsC1Pass99'})});
+check('تطابق أكثر من حساب بنفس الإيميل المطبّع يمنع تسجيل الدخول ولا يصدر Cookie',
+  ambiguousLogin.status>=400 && !ambiguousLogin.headers.get('Set-Cookie'));
+users.delete(conflicting.id);
+invalidRoleUser.email=legacyEmailBefore;
 let [,rbacProduct]=await j(await call('/api/products',{method:'POST',body:JSON.stringify({clientId:'c1',name:'QA RBAC Product',sku:'QA-RBAC'})},adminCookie));
 check('خدمة العملاء ممنوعة من إنشاء منتج',(await call('/api/products',{method:'POST',body:JSON.stringify({clientId:'c1',name:'ممنوع'})},supportC1Cookie)).status===403);
 check('خدمة العملاء ممنوعة من حذف منتج بالـID',(await call('/api/products/'+rbacProduct.id,{method:'DELETE'},supportC1Cookie)).status===403);
