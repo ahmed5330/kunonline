@@ -114,6 +114,7 @@ object KunApi {
             // authenticated account switches and initial sync cannot complete.
             clearScope()
             MobileSyncClient.clear()
+            MobileOrderChangeFeed.clear(context)
             CustomerCache.clear(context)
             MobileSnapshotCache.clear(context)
         MobileBoardSnapshotCache.clear(context)
@@ -369,6 +370,7 @@ object KunApi {
                 }
                 clearScope()
                 MobileSyncClient.clear()
+                MobileOrderChangeFeed.clear(context)
                 CustomerCache.clear(context)
             }
             verifiedOptionsCookie = cookie
@@ -471,6 +473,7 @@ object KunApi {
         CallActivityStore.clear(context)
         MobileSnapshotCache.clear(context)
         MobileBoardSnapshotCache.clear(context)
+        MobileOrderChangeFeed.clear(context)
         return ActionResult(true, "تم اختيار ${option.storeName}")
     }
 
@@ -674,6 +677,8 @@ object KunApi {
 
     private fun session(context: Context): String? = SecureStore.get(context, AUTH_PREFS, SESSION_KEY)
     private fun clearSession(context: Context) {
+        // Revoke push credentials on expiry/revocation as well as manual logout.
+        MobilePushRegistration.revokeAsync(context)
         // Derived caller data must not remain after session authentication ends.
         CustomerCache.clear(context)
         MobileSnapshotCache.clear(context)
@@ -684,6 +689,7 @@ object KunApi {
         verifiedOptions = emptyList()
         verifiedOptionsCurrent = ScopeInfo()
         MobileSyncClient.clear()
+        MobileOrderChangeFeed.clear(context)
         SecureStore.put(context, AUTH_PREFS, SELECTED_STORE_KEY, null)
         SecureStore.put(context, AUTH_PREFS, SESSION_KEY, null)
     }
