@@ -10,6 +10,7 @@ on:
       - 'public/v2/index.html'
       - 'migrations/0100_self_signup_email_trial.sql'
       - 'scripts/self-signup-contract-test.mjs'
+      - 'scripts/self-signup-real-journey-test.mjs'
       - '.github/workflows/self-signup-tests.yml'
   workflow_dispatch: {}
 permissions:
@@ -25,3 +26,4 @@ jobs:
       - run: node --check src/self-signup.js
       - run: node --check public/v2/signup-v162.js
       - run: node scripts/self-signup-contract-test.mjs
+      - run: node scripts/self-signup-real-journey-test.mjs
