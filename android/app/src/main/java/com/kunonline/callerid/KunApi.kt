@@ -491,7 +491,6 @@ object KunApi {
     fun sessionCookie(context: Context): String? = session(context)
 
     fun logout(context: Context) {
-        MobilePushRegistration.revokeAsync(context)
         OrderNotifications.clearForLogout(context)
         SyncJobService.cancel(context)
         clearSession(context)
@@ -678,6 +677,8 @@ object KunApi {
 
     private fun session(context: Context): String? = SecureStore.get(context, AUTH_PREFS, SESSION_KEY)
     private fun clearSession(context: Context) {
+        // Revoke push credentials on expiry/revocation as well as manual logout.
+        MobilePushRegistration.revokeAsync(context)
         // Derived caller data must not remain after session authentication ends.
         CustomerCache.clear(context)
         MobileSnapshotCache.clear(context)
