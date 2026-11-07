@@ -23,6 +23,7 @@ class SyncJobService : JobService() {
 
     companion object {
         private const val JOB_ID = 24091
+        private const val PUSH_JOB_ID = 24092
         private const val PERIOD_MS = 15L * 60L * 1000L
 
         fun schedule(context: Context): Boolean = runCatching {
@@ -35,8 +36,24 @@ class SyncJobService : JobService() {
             scheduler.schedule(job) == JobScheduler.RESULT_SUCCESS
         }.getOrDefault(false)
 
+        fun scheduleImmediate(context: Context): Boolean = runCatching {
+            if (!KunApi.hasSession(context)) return@runCatching false
+            val scheduler = context.getSystemService(JobScheduler::class.java) ?: return@runCatching false
+            val job = JobInfo.Builder(PUSH_JOB_ID, ComponentName(context, SyncJobService::class.java))
+                .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
+                .setMinimumLatency(0L)
+                .setOverrideDeadline(15_000L)
+                .build()
+            scheduler.schedule(job) == JobScheduler.RESULT_SUCCESS
+        }.getOrDefault(false)
+
         fun cancel(context: Context) {
-            runCatching { context.getSystemService(JobScheduler::class.java)?.cancel(JOB_ID) }
+            runCatching {
+                context.getSystemService(JobScheduler::class.java)?.apply {
+                    cancel(JOB_ID)
+                    cancel(PUSH_JOB_ID)
+                }
+            }
         }
     }
 }
