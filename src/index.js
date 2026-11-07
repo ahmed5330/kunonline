@@ -1110,11 +1110,6 @@ async function handleApi(request, env, url, path) {
       return json({ error: 'الإيميل أو كلمة المرور غير صحيحة.' + hint }, 401);
     }
     if (user.status !== 'active') return json({ error: 'الحساب موقوف. كلّم فريق كن أونلاين.' }, 403);
-
-    await clearFails(env, mail);
-    await env.DB.prepare('UPDATE users SET last_login = ? WHERE id = ?')
-      .bind(new Date().toISOString(), user.id).run();
-
     // The signed cookie must describe the role actually stored in D1.
     // Before this guard, every non-client (ops/support/accountant/viewer)
     // received a cookie whose role falsely said admin. Downstream handlers
@@ -1122,6 +1117,11 @@ async function handleApi(request, env, url, path) {
     if (!Object.prototype.hasOwnProperty.call(ROLES, user.role)) {
       return json({ error: 'صلاحيات الحساب غير معروفة. تواصل مع الإدارة.' }, 403);
     }
+
+    await clearFails(env, mail);
+    await env.DB.prepare('UPDATE users SET last_login = ? WHERE id = ?')
+      .bind(new Date().toISOString(), user.id).run();
+
     const payload = {
       role: user.role,
       ...(user.role !== 'admin' ? { clientId: user.client_id || null } : {}),
