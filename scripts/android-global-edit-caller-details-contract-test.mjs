@@ -22,7 +22,9 @@ for (const key of ['EXTRA_CLIENT_ID','EXTRA_STORE_ID','EXTRA_ORDER_ID']) {
   assert(edit.includes(key), 'editor must consume ' + key);
 }
 assert(search.includes('تعديل الطلب'), 'search has an edit action');
-assert(search.includes('order.state in setOf("pending", "no_answer", "confirmed", "preparing", "deferred")'), 'immutable shipped/COD orders cannot enter regular edit');
+assert(search.includes('تعديل الملاحظات'), 'shipped/COD orders should expose the safe notes-only action');
+assert(edit.includes('payload.put("editMode", "notes")'), 'notes-only mode must be explicit to the server');
+assert(service.includes('ORDER_EDIT_SHIPMENT_LOCKED') && service.includes('ORDER_EDIT_CONFLICT'), 'server must reject unsafe shipped edits and concurrent writes');
 assert(edit.includes('selectedClientId = clientId'), 'editor loads exact searched tenant');
 assert(edit.includes('selectedClientId = data.clientId'), 'editor saves only the tenant returned by verified details');
 assert.match(api, /fetchEditorData\(context: Context, orderId: String, selectedStoreId: String = "", requireHistory: Boolean = false, selectedClientId: String = ""\)/);

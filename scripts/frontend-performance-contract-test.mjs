@@ -22,7 +22,7 @@ const [index,perf,post,ai,rich,ads,recovery,permissions,search,v35,sectionReload
 assert.ok(index.includes('/v2/performance-core-v52.js'), 'shared performance core must be loaded');
 assert.ok(index.indexOf('/v2/performance-core-v52.js')<index.indexOf('/v2/modules-v4.js'), 'performance core must load before feature modules');
 assert.equal(index.includes('/v2/modules-v45-post-shipping.js'),false,'superseded v45 post-shipping bundle must not load');
-assert.ok(index.includes('/v2/modules-v55-customer-search-fifo.js?v=55.3'),'name/phone customer-search bundle must be cache-busted');
+assert.ok(index.includes('/v2/modules-v55-customer-search-fifo.js?v=55.4'),'global cross-store search/edit bundle must be cache-busted');
 assert.ok(index.includes('/v2/modules-v57-section-reload.js?v=57.3'),'per-section reload bundle must be loaded');
 assert.ok(index.includes('/v2/modules-v58-confirm-inventory.js?v=58.1'),'no-reload inventory confirmation bundle must be loaded');
 assert.ok(index.indexOf('/v2/modules-v57-section-reload.js')>index.indexOf('/v2/modules-v56-returns-exchanges.js'),'section reload must load after the feature-specific workspace renderers');
@@ -50,7 +50,7 @@ assert.ok(search.includes('العملاء المطابقون للاسم أو ا�
 assert.ok(search.includes('phoneMatch=phone.length>=3&&digits(cardPhone(card)).includes(phone)'),'operational search must match normalized customer phone digits');
 assert.equal(search.includes('/api/state?clientId='),false,'operational name/phone search must never load the full /api/state payload');
 assert.ok(search.includes("observe(root,{childList:true,subtree:false})"),'customer-search observer must be root-only instead of watching the full document tree');
-assert.ok(search.includes('stateOnlyShip')&&search.includes('بدون أي تعديل على المخزون'),'shipping transition must stay independent from inventory');
+assert.ok(search.includes('stateOnlyShip')&&search.includes('KunPrintingV79?.shipById')&&!search.includes('stockBatchId'),'shipping transition must use J&T official AWB flow without stock batch selection');
 assert.ok(confirmInventory.includes('validateAvailability')&&confirmInventory.includes('تأكيد من المخزون'),'confirmation UI must validate live inventory before confirming');
 assert.ok(confirmInventory.includes('KunCustomerServiceV31?.moveState?.')&&!confirmInventory.includes('KunCustomerServiceV31?.render?.'),'confirmation must update Customer Service in place instead of rebuilding the board');
 assert.ok(confirmInventory.includes("observe(root,{childList:true,subtree:false})"),'confirmation observer must watch root children only');
