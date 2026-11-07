@@ -1,0 +1,29 @@
+name: Self signup safe-contract tests
+on:
+  pull_request:
+    paths:
+      - 'src/self-signup.js'
+      - 'src/index-commerce-v38.js'
+      - 'src/index-production-mobile-update.js'
+      - 'public/v2/signup-v162.js'
+      - 'public/v2/modules-v26-auth.js'
+      - 'public/v2/index.html'
+      - 'migrations/0100_self_signup_email_trial.sql'
+      - 'scripts/self-signup-contract-test.mjs'
+      - 'scripts/self-signup-real-journey-test.mjs'
+      - '.github/workflows/self-signup-tests.yml'
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  self-signup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --check src/self-signup.js
+      - run: node --check public/v2/signup-v162.js
+      - run: node scripts/self-signup-contract-test.mjs
+      - run: node scripts/self-signup-real-journey-test.mjs

@@ -45,7 +45,8 @@
     };
     const renderSignup=()=>{
       signupTab.classList.add('active');loginTab.classList.remove('active');
-      body.innerHTML=`<div class="v28-auth-note"><b>إنشاء الحسابات الجديدة يتم حاليًا من إدارة Kun Online.</b><br>بعد إضافة المتجر من Kun Admin، صاحب الحساب يقدر يدخل هنا بالبريد الإلكتروني وكلمة المرور المؤقتة. التسجيل الذاتي المفتوح للمتاجر غير مفعّل حاليًا حتى لا يتم إنشاء Tenant أو صلاحيات بدون إعداد الإدارة.</div><div class="v28-auth-actions"><button class="btn soft" id="v28BackLogin" type="button">عندي حساب — تسجيل الدخول</button></div>`;
+      body.innerHTML=`<div class="v28-auth-note"><b>ابدأ استخدام كن أونلاين لمدة 30 يوم مجانًا.</b><br>سجّل بإيميلك، فعّل الحساب بكود بيجيلك على البريد، وبعدها ابدأ إدارة متجرك.</div><div class="v28-auth-actions"><button class="btn primary" id="v28OpenSelfSignup" type="button">إنشاء حساب وتجربة مجانية</button><button class="btn soft" id="v28BackLogin" type="button">عندي حساب — تسجيل الدخول</button></div>`;
+      document.getElementById('v28OpenSelfSignup').onclick=()=>{if(window.KunSelfSignup?.open)window.KunSelfSignup.open();else{const b=document.getElementById('v28OpenSelfSignup');b.textContent='خدمة التسجيل غير متاحة حاليًا';b.disabled=true;}};
       document.getElementById('v28BackLogin').onclick=renderLogin;
     };
     loginTab.onclick=renderLogin;signupTab.onclick=renderSignup;(initialTab==='signup'?renderSignup:renderLogin)();
