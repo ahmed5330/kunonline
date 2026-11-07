@@ -140,7 +140,7 @@ async function activate(request,env){
   if(existing)return json({error:'الحساب موجود بالفعل. سجّل الدخول.'},409);
   const claim=await env.DB.prepare('SELECT email FROM signup_trial_claims WHERE email=?').bind(email).first();
   if(claim)return json({error:'تم استخدام التجربة المجانية لهذا البريد من قبل.'},409);
-  const clientId='SELF-'+crypto.randomUUID(),uid=crypto.randomUUID(),subscriptionId='SUB-'+crypto.randomUUID();
+  const clientId='SELF-'+crypto.randomUUID(),storeId='STR-'+crypto.randomUUID(),uid=crypto.randomUUID(),subscriptionId='SUB-'+crypto.randomUUID();
   const started=cairoDay(),ends=plusDays(started,30),hashed=await passwordHash(password);
   try{
     // D1 batch is transactional: no half-created users, wallets or subscriptions.
@@ -152,15 +152,19 @@ async function activate(request,env){
         .bind(clientId,now),
       env.DB.prepare("INSERT INTO subscriptions (id,client_id,plan,status,billing_cycle,amount,currency,period_start,period_end,provider,created_at,updated_at) VALUES (?,?,'trial','trialing','monthly',0,'EGP',?,?,'self_signup',?,?)")
         .bind(subscriptionId,clientId,started,ends,now,now),
+      env.DB.prepare("INSERT INTO stores (id,client_id,name,code,currency,timezone,status,is_default,created_at,updated_at) VALUES (?,?,?,'MAIN','EGP','Africa/Cairo','active',1,?,?)")
+        .bind(storeId,clientId,pending.store_name,now,now),
       env.DB.prepare("INSERT INTO users (id,email,name,password,role,client_id,status,created_at) VALUES (?,?,?,?,'client',?,'active',?)")
         .bind(uid,email,pending.full_name,hashed,clientId,now),
+      env.DB.prepare("INSERT INTO user_store_access (id,client_id,user_id,store_id,role,created_at) VALUES (?,?,?,?,'owner',?)")
+        .bind('USA-'+crypto.randomUUID(),clientId,uid,storeId,now),
       env.DB.prepare('DELETE FROM signup_pending WHERE email=? AND code_digest=?').bind(email,codeDigest)
     ]);
   }catch(error){
     if(/UNIQUE constraint failed|constraint failed/i.test(String(error?.message||error)))return json({error:'الحساب تم تفعيله بالفعل. جرّب تسجيل الدخول.'},409);
     throw error;
   }
-  return json({ok:true,message:'اتفعّل حسابك وبدأت تجربتك المجانية لمدة 30 يومًا.',trialEndsAt:ends},201);
+  return json({ok:true,message:'اتفعّل حسابك ومتجرك وبدأت تجربتك المجانية لمدة 30 يومًا.',trialEndsAt:ends,storeId},201);
 }
 export async function handleSelfSignup(request,env){
   const url=new URL(request.url),path=url.pathname;
