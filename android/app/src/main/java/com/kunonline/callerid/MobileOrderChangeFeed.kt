@@ -12,19 +12,41 @@ import java.security.MessageDigest
 data class OrderChangeDecision(
     val refresh: Boolean,
     val cursor: String,
-    val hasMore: Boolean = false
+    val hasMore: Boolean = false,
+    val reset: Boolean = false
 )
 
 object OrderChangeEnvelope {
+    private val cursorPattern = Regex("v1\\.[0-9]+\\.[a-f0-9]{64}")
+
+    private fun sequence(cursor: String): Long? {
+        if (!cursorPattern.matches(cursor)) return null
+        return cursor.substringAfter("v1.").substringBefore('.').toLongOrNull()
+            ?.takeIf { it >= 0L }
+    }
+
+    /**
+     * Concurrent sync responses can finish out of order. Do not persist a
+     * lower journal position after a newer response has already been saved.
+     * A server-requested reset is the exception, but the caller must finish
+     * the authoritative snapshot before acknowledging it.
+     */
+    fun mayAcknowledge(previous: String, incoming: String, isReset: Boolean): Boolean {
+        val next = sequence(incoming) ?: return false
+        if (isReset) return true
+        val prior = sequence(previous) ?: return true
+        return next >= prior
+    }
+
     fun parse(value: JSONObject): OrderChangeDecision {
         require(value.optBoolean("ok", false))
         require(value.getInt("protocol") == 1)
         val cursor = value.getString("cursor")
-        require(cursor.matches(Regex("v1\\.[0-9]+\\.[a-f0-9]{64}")))
+        require(sequence(cursor) != null)
         return when (value.getString("mode")) {
             "reset" -> {
                 require(value.optBoolean("resetRequired"))
-                OrderChangeDecision(true, cursor)
+                OrderChangeDecision(true, cursor, reset = true)
             }
             "changes" -> {
                 require((value.optJSONArray("changes")?.length() ?: 0) > 0)
@@ -43,7 +65,8 @@ data class OrderChangeHint(
     val refresh: Boolean = false,
     val cursor: String = "",
     val scopeKey: String = "",
-    val available: Boolean = false
+    val available: Boolean = false,
+    val reset: Boolean = false
 )
 
 /**
@@ -121,7 +144,7 @@ object MobileOrderChangeFeed {
             if (KunApi.sessionCookie(context) != cookie) return OrderChangeHint()
             return synchronized(this) {
                 if (activeScope != key) OrderChangeHint()
-                else OrderChangeHint(decision.refresh, decision.cursor, key, available = true)
+                else OrderChangeHint(decision.refresh, decision.cursor, key, available = true, reset = decision.reset)
             }
         } catch (_: Exception) {
             // Unexpected 200 HTML/malformed JSON must not trigger a *full*
@@ -140,6 +163,9 @@ object MobileOrderChangeFeed {
         if (!hint.available || hint.cursor.isBlank() || activeScope != hint.scopeKey) return
         val cookie = KunApi.sessionCookie(context) ?: return
         if (hint.scopeKey != hash(cookie + "\u0000" + scope.clientId + "\u0000" + scope.storeId)) return
+        val prior = if (SecureStore.get(context, PREFS, "scope") == hint.scopeKey)
+            SecureStore.get(context, PREFS, "cursor").orEmpty() else ""
+        if (!OrderChangeEnvelope.mayAcknowledge(prior, hint.cursor, hint.reset)) return
         SecureStore.put(context, PREFS, "scope", hint.scopeKey)
         SecureStore.put(context, PREFS, "cursor", hint.cursor)
     }
