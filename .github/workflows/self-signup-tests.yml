@@ -6,6 +6,7 @@ on:
       - 'src/index-commerce-v38.js'
       - 'src/index-production-mobile-update.js'
       - 'public/v2/signup-v162.js'
+      - 'public/v2/modules-v26-auth.js'
       - 'public/v2/index.html'
       - 'migrations/0100_self_signup_email_trial.sql'
       - 'scripts/self-signup-contract-test.mjs'
