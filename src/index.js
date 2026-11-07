@@ -146,8 +146,18 @@ const publicUser = u => ({
   status: u.status, lastLogin: u.last_login
 });
 
-const findUserByEmail = (env, email) =>
-  env.DB.prepare('SELECT * FROM users WHERE email = ?').bind(email).first();
+// Some legacy accounts were stored before normalized email persistence.
+// Resolve by canonical identity, never silently choose among collisions.
+// A conflict is a stop condition, especially for platform-admin accounts.
+const findUserByEmail = async (env, email) => {
+  const normalized = String(email ?? '').trim().toLowerCase();
+  if (!normalized) return null;
+  const {results=[]} = await env.DB.prepare(
+    'SELECT * FROM users WHERE lower(trim(email)) = ? LIMIT 2'
+  ).bind(normalized).all();
+  if (results.length > 1) throw new Error('AMBIGUOUS_USER_EMAIL');
+  return results[0] || null;
+};
 
 async function countUsers(env) {
   const r = await env.DB.prepare('SELECT COUNT(*) AS n FROM users').first();
