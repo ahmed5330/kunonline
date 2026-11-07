@@ -16,8 +16,8 @@ android {
         minSdk = 29
         targetSdk = 35
         // v2.9.24: display server verified store-grant diagnostics and consistent client discovery.
-        versionCode = 156
-        versionName = "2.9.25"
+        versionCode = 157
+        versionName = "2.9.26"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
