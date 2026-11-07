@@ -1115,9 +1115,19 @@ async function handleApi(request, env, url, path) {
     await env.DB.prepare('UPDATE users SET last_login = ? WHERE id = ?')
       .bind(new Date().toISOString(), user.id).run();
 
-    const payload = user.role === 'client'
-      ? { role: 'client', clientId: user.client_id, email: user.email, uid: user.id }
-      : { role: 'admin', email: user.email, uid: user.id };
+    // The signed cookie must describe the role actually stored in D1.
+    // Before this guard, every non-client (ops/support/accountant/viewer)
+    // received a cookie whose role falsely said admin. Downstream handlers
+    // must continue to resolve permissions from the live user record.
+    if (!Object.prototype.hasOwnProperty.call(ROLES, user.role)) {
+      return json({ error: 'صلاحيات الحساب غير معروفة. تواصل مع الإدارة.' }, 403);
+    }
+    const payload = {
+      role: user.role,
+      ...(user.role !== 'admin' ? { clientId: user.client_id || null } : {}),
+      email: user.email,
+      uid: user.id
+    };
     const token = await makeSession(payload, secret);
     return json(payload, 200, {
       'Set-Cookie': `${COOKIE}=${token}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${WEEK}`
