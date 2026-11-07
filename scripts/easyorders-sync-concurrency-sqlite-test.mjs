@@ -180,7 +180,9 @@ try{
   const recovery=await reconcileEasyOrdersOrders(env,{
     clientId:'TENANT-A',connectionId:'CON-D',maxRequests:3,lookback:10,fetcher:fakeApi
   });
-  assert.equal(recovery.results[0].status,'healthy',JSON.stringify(recovery.results[0]));
+  assert.equal(recovery.results[0].status,'catching_up','Confirmed 404 must stay queued, not falsely report healthy');
+  assert.deepEqual(config('CON-D').easyOrdersRecoveryPendingShortIds,[502],
+    'Short ID 502 was missing at provider; preserve it for future retry');
   assert.deepEqual(seen,[500,501,502],'Foreign storefront response cannot terminate recovery scan');
   assert.equal(recovery.foreignStoreSkipped,1,'Foreign storefront is observed but never ingested');
   assert.equal(recovery.recovered,1,'Sibling Kun store with same provider ID is a NEW recovery');
