@@ -59,6 +59,12 @@ internal object MobilePushRegistration {
     fun revokeAsync(context: Context) {
         val cookie = KunApi.sessionCookie(context) ?: return
         val id = installationId(context)
+        // The server may no longer accept an expired session: invalidate the
+        // locally cached FCM token too so it cannot keep receiving hints.
+        if (isConfigured(context)) {
+            FirebaseMessaging.getInstance().deleteToken()
+                .addOnFailureListener { Log.w("KunFCM", "Firebase token revocation unavailable") }
+        }
         thread(name = "kun-fcm-revoke") {
             request("DELETE", cookie, JSONObject().put("installationId", id))
         }
