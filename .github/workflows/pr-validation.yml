@@ -27,6 +27,8 @@ jobs:
         run: |
           node --check src/mobile-order-changes.js
           node scripts/mobile-order-change-journal-sqlite-test.mjs
+      - name: Canonical dual-D1 sync migration preflight (read-only)
+        run: node scripts/order-sync-d1-binding-preflight.mjs
       - name: FCM draft device registry and privacy-safe invalidation
         run: |
           node --check src/mobile-push.js
