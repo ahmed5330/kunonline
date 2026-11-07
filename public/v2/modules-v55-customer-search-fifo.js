@@ -64,7 +64,34 @@
   function scan(){scanQueued=false;ensureStyle();document.querySelectorAll('#root .cs-order[data-cs-order],#root .ps-order[data-v47-order]').forEach(addDate);updateInventoryCopy();const input=document.getElementById('globalSearch');if(input?.value&&operationalView()){filterOperationalCards(input.value);if(globalReadyQuery!==input.value.trim())renderOperationalMatches(input.value,operationalCustomerMatches(input.value));}}
   function scheduleScan(){if(scanQueued)return;scanQueued=true;(window.requestAnimationFrame||setTimeout)(scan);}
 
-  async function stateOnlyShip(select){const card=select.closest('[data-cs-order]'),orderId=card?.dataset.csOrder;if(!orderId)return;const previous=select.dataset.current||'preparing';select.disabled=true;try{const cid=await clientId();if(!cid)throw new Error('تعذر تحديد حساب المتجر');const history=await api(`/api/customer-service/orders/${encodeURIComponent(orderId)}/history?clientId=${encodeURIComponent(cid)}`),order=history.order||{},storeId=order.storeId||'';await api(`/api/customer-service/orders/${encodeURIComponent(orderId)}/state?clientId=${encodeURIComponent(cid)}${storeId?`&storeId=${encodeURIComponent(storeId)}`:''}`,{method:'PATCH',body:JSON.stringify({clientId:cid,...(storeId?{storeId}:{}),state:'shipped'})});select.dataset.current='shipped';notify('تم نقل الأوردر إلى «جاري الشحن» بدون أي تعديل على المخزون');await window.KunCustomerServiceV31?.render?.();await sleep(0);scheduleScan();}catch(error){notify(error.message);select.value=previous;select.disabled=false;}}
+  async function stateOnlyShip(select){
+    const card=select.closest('[data-cs-order]'),orderId=card?.dataset.csOrder;
+    if(!orderId)return;
+    const previous=select.dataset.current||'preparing';
+    select.disabled=true;
+    try {
+      const cid=await clientId();
+      if(!cid)throw new Error('تعذر تحديد حساب المتجر');
+      const history=await api(`/api/customer-service/orders/${encodeURIComponent(orderId)}/history?clientId=${encodeURIComponent(cid)}`);
+      const storeId=history.order?.storeId||'';
+      const shipById=window.KunPrintingV79?.shipById;
+      if(typeof shipById!=='function')throw new Error('إجراءات J&T الرسمية غير متاحة، افتح قسم الطباعة');
+      // A generic state PATCH cannot create an official AWB or printed label.
+      // The shared flow asks for confirmation, queues with J&T, then prints
+      // before transitioning to shipped. Cancelling leaves the state unchanged.
+      const result=await shipById(orderId,storeId);
+      if(result?.cancelled){select.value=previous;return;}
+      if(result?.state!=='shipped'||!result?.awb)throw new Error('لم يتم تأكيد إصدار البوليصة الرسمية');
+      select.dataset.current='shipped';
+      select.value='shipped';
+      scheduleScan();
+    }catch(error){
+      notify(error.message||'تعذر إرسال الأوردر إلى J&T');
+      select.value=previous;
+    }finally{
+      select.disabled=false;
+    }
+  }
 
   document.addEventListener('change',event=>{const select=event.target.closest?.('[data-cs-state]');if(!select||select.value!=='shipped'||select.dataset.current==='shipped')return;event.preventDefault();event.stopImmediatePropagation();stateOnlyShip(select);},true);
   document.addEventListener('input',event=>{if(event.target?.id==='globalSearch'){applySearch(event.target.value);scheduleGlobalSearch(event.target.value);}},true);
