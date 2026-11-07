@@ -1,0 +1,36 @@
+name: Primary admin login — offline recovery safety checks
+# This PR workflow never receives Cloudflare credentials and never reads live D1.
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/admin-login-d1-readonly-20261031.yml'
+      - 'scripts/admin-login-d1-readonly-audit.mjs'
+      - 'scripts/admin-login-recovery.mjs'
+      - 'scripts/admin-login-canonical-readonly.mjs'
+  push:
+    branches:
+      - ops/admin-login-readonly-audit-20261031
+    paths:
+      - '.github/workflows/admin-login-d1-readonly-20261031.yml'
+      - 'scripts/admin-login-d1-readonly-audit.mjs'
+      - 'scripts/admin-login-recovery.mjs'
+      - 'scripts/admin-login-canonical-readonly.mjs'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  offline_contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Offline, no credentials and no live mutations
+        run: |
+          node scripts/admin-login-d1-readonly-audit.mjs --self-test
+          node --check scripts/admin-login-canonical-readonly.mjs
+          node scripts/admin-login-canonical-readonly.mjs --self-test
+          node --check scripts/admin-login-recovery.mjs
+          node scripts/admin-login-recovery.mjs --self-test
