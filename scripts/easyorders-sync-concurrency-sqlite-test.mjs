@@ -75,6 +75,24 @@ try{
   );
   assert.equal(initial.easyOrdersRecoveryHighestShortId,100);
   assert.equal(initial.easyOrdersRecoveryCursor,101);
+  const savedGaps=mergeEasyOrdersRecoveryPatch(
+    {easyOrdersRecoveryPendingShortIds:[10,11],easyOrdersRecoveryProbeCursor:50,
+      easyOrdersRecoveryCursor:32},
+    {easyOrdersRecoveryPendingAdd:[11,12],easyOrdersRecoveryPendingRemove:[10],
+      easyOrdersRecoveryProbeCursor:49,easyOrdersRecoveryCursor:31,
+      easyOrdersRecoveryLastStatus:'healthy'}
+  );
+  assert.deepEqual(savedGaps.easyOrdersRecoveryPendingShortIds,[11,12],
+    'Pending retries must be unioned against fresh CAS state, not overwritten');
+  assert.equal(savedGaps.easyOrdersRecoveryProbeCursor,50);
+  assert.equal(savedGaps.easyOrdersRecoveryCursor,32);
+  assert.equal(savedGaps.easyOrdersRecoveryLastStatus,'catching_up',
+    'Unresolved provider Short IDs can never show healthy');
+  assert.throws(()=>mergeEasyOrdersRecoveryPatch(
+    {easyOrdersRecoveryPendingShortIds:Array.from({length:120},(_,i)=>i+1)},
+    {easyOrdersRecoveryPendingAdd:[121]}
+  ),/safe limit/,'Never silently drop pending IDs when the queue reaches 120');
+
   race=current=>({...current,webhookLastShortId:222,easyOrdersRecoveryHighestShortId:222});
   const saved=await update('CON-A',current=>mergeEasyOrdersRecoveryPatch(current,{
     easyOrdersRecoveryHighestShortId:200,easyOrdersRecoveryCursor:201,
@@ -198,6 +216,23 @@ try{
     'No order from another Easy Orders store may enter the Kun database');
   assert.equal(db.prepare('SELECT state FROM orders WHERE id=?').get(a.id).state,'pending',
     'Recovery must not change existing sibling store order');
+  // A previously HTTP 404 Short ID can arrive later. Revisit the durable
+  // queue and import once to this tenant/store, never update sibling orders.
+  const recovered502=await reconcileEasyOrdersOrders(env,{
+    clientId:'TENANT-A',connectionId:'CON-D',maxRequests:4,lookback:10,
+    fetcher:async url=>{
+      const id=Number(url.split('/').at(-1));
+      return id===502
+        ?Response.json({...p,id:'LATE-ORDER-502',short_id:502,store_id:'EO-EXTERNAL-D'})
+        :Response.json({message:'record not found'},{status:404});
+    }
+  });
+  assert.equal(recovered502.recovered,1,'Delayed 404 must be recoverable from the pending queue');
+  assert.equal(config('CON-D').easyOrdersRecoveryPendingShortIds.includes(502),false,
+    'Recovered Short ID must leave the durable retry list');
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM orders WHERE ref='easyorders:LATE-ORDER-502'").get().n,1,
+    'Delayed order must import exactly once into the same tenant and store');
+
   // Unbound integrations must be explicitly repaired via authenticated
   // webhook rather than assigning the first random provider store from API.
   db.prepare('INSERT INTO store_connections (id,client_id,provider,status,config_json,updated_at,external_store_id) VALUES (?,?,?,?,?,?,?)')
