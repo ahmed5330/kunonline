@@ -89,6 +89,8 @@ jobs:
         run: node scripts/browser-sidebar-navigation-regression-test.mjs
       - name: Growth planner real Chromium interaction regression
         run: node scripts/browser-growth-planner-fixture-test.mjs
+      - name: Reject unsafe audit sandbox bindings (offline only)
+        run: npm run test:audit-sandbox-safety
       - name: Verify Preview isolation
         run: npm run check:preview-config
       - name: Verify Production remains migration-free
