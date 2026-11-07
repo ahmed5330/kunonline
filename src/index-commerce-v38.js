@@ -15,6 +15,7 @@ import {handleOperationalWorkflowV110} from './operational-workflow-v110.js';
 import {handleMobileAppUpdate} from './mobile-app-update.js';
 import {handleCustomerServicePeriodV111} from './customer-service-period-v111.js';
 import {handleSubscriptionControl} from './subscription-control.js';
+import {handleSelfSignup} from './self-signup.js';
 import {reconcileMonthlySubscriptions} from './subscription-billing.js';
 import {handleInventoryUnitTracking,syncInventoryTrackingAfterResponse,reconcileTrackedOrderLifecycles,reconcileAllClientsUnitCoverage} from './inventory-unit-tracking.js';
 
@@ -111,6 +112,8 @@ export default {
     if(rootRedirect)return rootRedirect;
     const mobileUpdate=await handleMobileAppUpdate(request);
     if(mobileUpdate)return mobileUpdate;
+    const selfSignup=await handleSelfSignup(request,env);
+    if(selfSignup)return selfSignup;
     // Billing enforcement must run before add-on APIs (AI, Clarity, competitors)
     // so a paused/empty paid wallet cannot bypass the central 402 gate.
     const subscription=await handleSubscriptionControl({request,env,ctx,delegate:app});
