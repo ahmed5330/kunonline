@@ -10,6 +10,7 @@ const worker=read('src/index-commerce-v38.js');
 const prod=read('src/index-production-mobile-update.js');
 const html=read('public/v2/index.html');
 const ui=read('public/v2/signup-v162.js');
+const legacyAuth=read('public/v2/modules-v26-auth.js');
 const migration=read('migrations/0100_self_signup_email_trial.sql');
 
 assert.match(worker,/handleSelfSignup\(request,env\)/,'preview signup route must run before billing');
@@ -17,6 +18,11 @@ assert.match(prod,/AUTH_PATHS=new Set\(\[[^\n]*\/api\/auth\/signup[^\n]*\/api\/a
 assert.match(html,/signup-v162\.js\?v=162\.0/,'signup UI must be served');
 assert.match(ui,/\/api\/auth\/signup/);
 assert.match(ui,/\/api\/auth\/activate/);
+assert.match(ui,/\/api\/auth\/signup\/config/);
+assert.match(ui,/turnstile\.render/,'signup UI requires verified challenge');
+assert.match(ui,/window\.KunSelfSignup=\{open\}/,'legacy tab and gateway share one signup UI');
+assert.match(legacyAuth,/KunSelfSignup\?\.open/,'legacy signup tab must open new journey');
+assert.doesNotMatch(legacyAuth,/التسجيل الذاتي المفتوح للمتاجر غير مفعّل حاليًا/,'legacy page cannot contradict active signup');
 assert.match(migration,/CREATE TABLE IF NOT EXISTS signup_trial_claims/);
 assert.match(migration,/email TEXT PRIMARY KEY/);
 assert.equal(__signupInternals.plusDays('2026-11-07',30),'2026-12-07');
@@ -48,15 +54,29 @@ const DB={
     catch(e){db.exec('ROLLBACK');throw e;}
   }
 };
-const env={DB,SELF_SIGNUP_ENABLED:'true',SIGNUP_TOKEN_SECRET:'test_secret_'.repeat(4),RESEND_API_KEY:'test-only',SIGNUP_EMAIL_FROM:'accounts@example.com'};
+const env={DB,SELF_SIGNUP_ENABLED:'true',SIGNUP_TOKEN_SECRET:'test_secret_'.repeat(4),RESEND_API_KEY:'test-only',SIGNUP_EMAIL_FROM:'accounts@example.com',SIGNUP_TURNSTILE_SITE_KEY:'1x00000000000000000000AA',SIGNUP_TURNSTILE_SECRET_KEY:'test-turnstile-secret'};
 const url='https://app.kun-online.com';
 const request=(route,payload,ip='203.0.113.4',origin=url)=>new Request(url+route,{
-  method:'POST',headers:{Origin:origin,'Content-Type':'application/json','cf-connecting-ip':ip},body:JSON.stringify(payload)
+  method:'POST',headers:{Origin:origin,'Content-Type':'application/json','cf-connecting-ip':ip},
+  body:JSON.stringify(route==='/api/auth/signup'?{...payload,turnstileToken:payload?.turnstileToken===undefined?'token-from-browser':payload.turnstileToken}:payload)
 });
 const originalFetch=globalThis.fetch;
 let mails=[];
-globalThis.fetch=async (_url,opts)=>{mails.push(JSON.parse(opts.body));return new Response('{"id":"fake"}',{status:200});};
+let challengeValid=true;
+let mailValid=true;
+globalThis.fetch=async (url,opts)=>{
+  if(String(url).includes('/turnstile/v0/siteverify')){
+    const body=JSON.parse(opts.body);
+    assert.equal(body.secret,env.SIGNUP_TURNSTILE_SECRET_KEY);
+    return Response.json({success:challengeValid,hostname:'app.kun-online.com'});
+  }
+  if(!mailValid)return new Response('{"message":"invalid provider"}',{status:400});
+  mails.push(JSON.parse(opts.body));return new Response('{"id":"fake"}',{status:200});
+};
 try{
+  let config=await handleSelfSignup(new Request(url+'/api/auth/signup/config',{method:'GET'}),env);
+  assert.equal(config.status,200);
+  assert.deepEqual(await config.json(),{enabled:true,turnstileSiteKey:env.SIGNUP_TURNSTILE_SITE_KEY});
   let response=await handleSelfSignup(request('/api/auth/signup',{name:'Samir',storeName:'My Store',email:'SHOP@example.com'}),{DB});
   assert.equal(response.status,503,'registration is fail-closed without provider configuration');
   response=await handleSelfSignup(request('/api/auth/signup',{name:'Samir',storeName:'My Store',email:'SHOP@example.com'},'203.0.113.4','https://evil.example'),env);
@@ -105,10 +125,62 @@ try{
   assert.equal(mails.length,1,'existing account never receives a new activation code');
   assert.equal(db.prepare('SELECT COUNT(*) count FROM subscriptions WHERE client_id=?').get(user.client_id).count,1,'one trial per verified email');
 
+  // Expiry: a verified code must never activate outside the 10-minute window.
+  response=await handleSelfSignup(request('/api/auth/signup',{name:'Layla',storeName:'Layla Store',email:'layla@example.com'},'203.0.113.12'),env);
+  assert.equal(response.status,202);
+  const laylaCode=mails.at(-1).text.match(/([0-9]{8})/)[1];
+  db.prepare('UPDATE signup_pending SET expires_at=? WHERE email=?').run('2020-01-01T00:00:00.000Z','layla@example.com');
+  response=await handleSelfSignup(request('/api/auth/activate',{email:'layla@example.com',code:laylaCode,password:'VeryLongPassword123!' },'203.0.113.12'),env);
+  assert.equal(response.status,400);
+  assert.equal(db.prepare('SELECT COUNT(*) count FROM users WHERE email=?').get('layla@example.com').count,0);
+
+  // Five wrong codes must exhaust the current token without granting the trial.
+  response=await handleSelfSignup(request('/api/auth/signup',{name:'Mona',storeName:'Mona Store',email:'mona@example.com'},'203.0.113.13'),env);
+  assert.equal(response.status,202);
+  const monaCode=mails.at(-1).text.match(/([0-9]{8})/)[1];
+  const wrong=monaCode==='11111111'?'99999999':'11111111';
+  for(let n=0;n<5;n++){
+    response=await handleSelfSignup(request('/api/auth/activate',{email:'mona@example.com',code:wrong,password:'VeryLongPassword123!'},'203.0.113.13'),env);
+    assert.equal(response.status,400);
+  }
+  response=await handleSelfSignup(request('/api/auth/activate',{email:'mona@example.com',code:monaCode,password:'VeryLongPassword123!'},'203.0.113.13'),env);
+  assert.equal(response.status,400,'correct code after fifth failed guess must be rejected');
+
+  // Sending again before the 90-second cooldown must not send another mail.
+  response=await handleSelfSignup(request('/api/auth/signup',{name:'Adel',storeName:'Adel Store',email:'adel@example.com'},'203.0.113.14'),env);
+  assert.equal(response.status,202);
+  const oldCode=mails.at(-1).text.match(/([0-9]{8})/)[1];
+  const beforeResend=mails.length;
+  response=await handleSelfSignup(request('/api/auth/signup',{name:'Adel',storeName:'Adel Store',email:'adel@example.com'},'203.0.113.14'),env);
+  assert.equal(response.status,202);
+  assert.equal(mails.length,beforeResend);
+  db.prepare('UPDATE signup_pending SET sent_at=? WHERE email=?').run('2020-01-01T00:00:00.000Z','adel@example.com');
+  response=await handleSelfSignup(request('/api/auth/signup',{name:'Adel',storeName:'Adel Store',email:'adel@example.com'},'203.0.113.14'),env);
+  assert.equal(response.status,202);
+  assert.equal(mails.length,beforeResend+1);
+  const newCode=mails.at(-1).text.match(/([0-9]{8})/)[1];
+  if(oldCode!==newCode){
+    response=await handleSelfSignup(request('/api/auth/activate',{email:'adel@example.com',code:oldCode,password:'VeryLongPassword123!'},'203.0.113.14'),env);
+    assert.equal(response.status,400,'resending invalidates previous code');
+  }
+  response=await handleSelfSignup(request('/api/auth/activate',{email:'adel@example.com',code:newCode,password:'VeryLongPassword123!'},'203.0.113.14'),env);
+  assert.equal(response.status,201);
+  response=await handleSelfSignup(request('/api/auth/activate',{email:'adel@example.com',code:newCode,password:'VeryLongPassword123!'},'203.0.113.14'),env);
+  assert.equal(response.status,400,'activation code must be one-time only');
+
+  // Missing or rejected Turnstile tokens must never send mail or create tenants.
+  response=await handleSelfSignup(request('/api/auth/signup',{name:'No Token',storeName:'Denied Store',email:'denied@example.com',turnstileToken:''},'203.0.113.15'),env);
+  assert.equal(response.status,403);
+  challengeValid=false;
+  response=await handleSelfSignup(request('/api/auth/signup',{name:'Bot',storeName:'Bot Store',email:'bot@example.com'},'203.0.113.16'),env);
+  assert.equal(response.status,403);
+  assert.equal(db.prepare('SELECT COUNT(*) count FROM signup_pending WHERE email=?').get('bot@example.com').count,0);
+  challengeValid=true;
+
   // Check fail-closed delivery: an undelivered code must not block later retries.
-  globalThis.fetch=async()=>new Response('{"message":"invalid provider"}',{status:400});
+  mailValid=false;
   response=await handleSelfSignup(request('/api/auth/signup',{name:'Nour',storeName:'Nour Store',email:'nour@example.com'},'203.0.113.9'),env);
   assert.equal(response.status,503);
   assert.equal(db.prepare('SELECT COUNT(*) count FROM signup_pending WHERE email=?').get('nour@example.com').count,0);
-  console.log('Self-signup: email, code, atomic activation, trial, tenant, wallet, replay and error-handling tests passed.');
+  console.log('Self-signup: email, Turnstile, code expiry, 5 attempts, resend cooldown, atomic activation, trial, tenant, wallet, replay and error-handling tests passed.');
 }finally{globalThis.fetch=originalFetch;db.close();}
