@@ -86,7 +86,8 @@
     "test:faos-release": "node scripts/faos-accounting-qa-test.mjs && node scripts/faos-api-isolation-test.mjs && node scripts/faos-coa-reference-contract-test.mjs && node scripts/faos-event-projection-test.mjs && node scripts/faos-operational-sql-test.mjs && node scripts/faos-posting-live-sql-test.mjs && node scripts/faos-reconciliation-test.mjs && python3 scripts/faos-ledger-schema-test.py",
     "test:residual-audit": "node scripts/audit-20261023-regression-test.mjs && node scripts/production-cod-read-fallback-test.mjs",
     "test:production-faos-readonly": "node --loader ./scripts/session-test-cloudflare-loader.mjs scripts/production-faos-readonly-gateway-test.mjs",
-    "test:growth-release": "node scripts/scaling-readiness-test.mjs && node scripts/growth-scenario-test.mjs && node scripts/growth-operating-evidence-test.mjs && node scripts/growth-experiment-test.mjs && node scripts/production-preview-release-gate-test.mjs && node scripts/browser-growth-planner-fixture-test.mjs && node scripts/growth-local-worker-smoke.mjs"
+    "test:growth-release": "node scripts/scaling-readiness-test.mjs && node scripts/growth-scenario-test.mjs && node scripts/growth-operating-evidence-test.mjs && node scripts/growth-experiment-test.mjs && node scripts/production-preview-release-gate-test.mjs && node scripts/browser-growth-planner-fixture-test.mjs && node scripts/growth-local-worker-smoke.mjs",
+    "test:audit-sandbox-safety": "node scripts/audit-sandbox-safety-test.mjs"
   },
   "devDependencies": {
     "wrangler": "4.151.0"
