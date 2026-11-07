@@ -62,15 +62,15 @@ must(searchUi.includes('phoneMatch=phone.length>=3&&digits(cardPhone(card)).incl
 must(!searchUi.includes('/api/state?clientId='),'Operational customer search must not load the full state payload');
 must(searchUi.includes('filterOperationalCards')&&searchUi.includes('v55-filter-hidden'),'Customer Service search must filter operational columns to matching customer names or phone numbers');
 must(searchUi.includes('v55-order-date')&&searchUi.includes('تاريخ الطلب'),'Every operational order card must receive an explicit order-date row');
-must(searchUi.includes("select.value!=='shipped'")&&searchUi.includes("state:'shipped'")&&searchUi.includes('stateOnlyShip'),'Shipping transition must bypass the legacy stock chooser and remain state-only');
-must(searchUi.includes('بدون أي تعديل على المخزون')&&!searchUi.includes('stockBatchId'),'Shipping UI must not select or send an inventory batch');
+must(searchUi.includes("select.value!=='shipped'")&&searchUi.includes("KunPrintingV79?.shipById")&&searchUi.includes('stateOnlyShip')&&!searchUi.includes("state:'shipped'"),'Shipping selector must invoke the official J&T queue+print handoff, never a generic state PATCH');
+must(searchUi.includes('KunPrintingV79?.shipById')&&!searchUi.includes('stockBatchId'),'Shipping UI must call official J&T and never require an inventory batch');
 
 for(const marker of ['customerServiceShippingFallback','customerServiceShippingHandoff','الحالة دي برّه الصلاحية المتاحة ليك',"['confirmed','preparing','shipped']","state='shipped'","inventoryChanged:false"])must(shippingEntry.includes(marker),`Tenant Customer Service shipping handoff guard missing ${marker}`);
 must(shippingEntry.includes("checkpoint='جاري الشحن'")&&shippingEntry.includes('customerServiceEnabled'),'Tenant Customer Service must be able to hand a confirmed/preparing order to shipping without expanding access to unrelated states');
 
 for(const marker of ['تأكيد من المخزون','/api/catalog/products','/edit',"state:'confirmed'",'عدد القطع','سعر القطعة','المتاح حاليًا','validateAvailability','حجز/خصم الكمية','KunConfirmInventoryV58','no_answer'])must(confirmUi.includes(marker),`Inventory confirmation UI missing ${marker}`);
 must(confirmUi.includes('productId')&&confirmUi.includes('variantId')&&confirmUi.includes('unitPrice'),'Confirmation must persist exact product/variant and editable price');
-must(index.includes('/v2/modules-v55-customer-search-fifo.js?v=55.3'),'v55.3 name/phone shipping/search/date module must be loaded by v2');
+must(index.includes('/v2/modules-v55-customer-search-fifo.js?v=55.4'),'v55.4 global all-store search/edit and shipping/date module must be loaded by v2');
 must(index.includes('/v2/modules-v58-confirm-inventory.js?v=58.1'),'v58.1 no-reload inventory confirmation module must be loaded by v2');
 must(index.includes('/v2/modules-v75-customer-service-interactions-v753.js'),'v75.3 unified interaction counter must be loaded from its cache-safe asset path by v2');
 must((index.includes('/v2/modules-v42-customer-service-rich-cards.js?v=42.3')||index.includes('/v2/modules-v42-customer-service-rich-cards.js?v=42.4')||index.includes('/v2/modules-v42-customer-service-rich-cards.js?v=42.5'))&&index.includes('/v2/modules-v44-customer-service-order-edit.js?v=44.1'),'In-place Customer Service detail/edit assets must be cache-busted');
