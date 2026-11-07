@@ -4,7 +4,7 @@
  * Never email reusable passwords. No account is usable before code verification.
  * Disabled unless explicitly configured. No production migrations are auto-applied.
  */
-const PATHS=new Set(['/api/auth/signup','/api/auth/activate']);
+const PATHS=new Set(['/api/auth/signup','/api/auth/activate','/api/auth/signup/config']);
 const json=(payload,status=200)=>new Response(JSON.stringify(payload),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}});
 const clean=(v,max=120)=>String(v??'').trim().slice(0,max);
 const encoded=new TextEncoder();
@@ -45,7 +45,8 @@ async function passwordHash(password){
 function configured(env){
   return env?.SELF_SIGNUP_ENABLED==='true'&&env?.DB&&
     String(env.SIGNUP_TOKEN_SECRET||'').length>=32&&
-    Boolean(env.RESEND_API_KEY)&&Boolean(env.SIGNUP_EMAIL_FROM);
+    Boolean(env.RESEND_API_KEY)&&Boolean(env.SIGNUP_EMAIL_FROM)&&
+    Boolean(env.SIGNUP_TURNSTILE_SITE_KEY)&&Boolean(env.SIGNUP_TURNSTILE_SECRET_KEY);
 }
 async function readBody(request){
   const raw=await request.text();
@@ -76,6 +77,19 @@ async function sendCode(env,email,code,storeName){
   });
   if(!response.ok)throw new Error('MAIL_PROVIDER_REJECTED');
 }
+async function verifySignupChallenge(request,env,token){
+  if(typeof token!=='string'||token.length<10||token.length>2048)return false;
+  const ip=clean(request.headers.get('cf-connecting-ip')||'',100);
+  try{
+    const response=await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({secret:env.SIGNUP_TURNSTILE_SECRET_KEY,response:token,remoteip:ip||undefined})
+    });
+    if(!response.ok)return false;
+    const verified=await response.json().catch(()=>({}));
+    return verified.success===true&&verified.hostname===new URL(request.url).hostname;
+  }catch{return false;}
+}
 async function signup(request,env){
   const b=await readBody(request);
   const email=clean(b?.email,254).toLowerCase(),name=clean(b?.name),storeName=clean(b?.storeName);
@@ -83,6 +97,7 @@ async function signup(request,env){
   const ip=clean(request.headers.get('cf-connecting-ip')||'',100)||'unknown:'+email;
   if(!await throttle(env,'signup-ip',ip,20,3600))return json({error:'محاولات كثيرة من نفس الاتصال. حاول لاحقًا.'},429);
   if(!await throttle(env,'signup-email',email,4,86400))return json(generic,202);
+  if(!await verifySignupChallenge(request,env,b?.turnstileToken))return json({error:'تعذر التحقق الأمني. جدّد التحقق وحاول مرة أخرى.'},403);
   // Never overwrite existing accounts or disclose whether a user exists.
   const [user,claim]=await Promise.all([
     env.DB.prepare('SELECT id FROM users WHERE email=?').bind(email).first(),
@@ -150,6 +165,10 @@ async function activate(request,env){
 export async function handleSelfSignup(request,env){
   const url=new URL(request.url),path=url.pathname;
   if(!PATHS.has(path))return null;
+  if(path==='/api/auth/signup/config'){
+    if(request.method!=='GET')return json({error:'الطريقة غير مسموحة'},405);
+    return json({enabled:!!configured(env),turnstileSiteKey:configured(env)?env.SIGNUP_TURNSTILE_SITE_KEY:null});
+  }
   if(request.method!=='POST')return json({error:'الطريقة غير مسموحة'},405);
   const origin=request.headers.get('origin');
   if(origin){let ok=false;try{ok=new URL(origin).origin===url.origin;}catch{}if(!ok)return json({error:'مصدر الطلب غير مسموح'},403);}
