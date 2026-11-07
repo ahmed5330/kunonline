@@ -359,6 +359,14 @@ r=await call('/api/users',{method:'POST',body:JSON.stringify({
 check('إنشاء تشغيل مرتبط بالحساب',r.status===200);
 const opsC1Cookie=ck(await call('/api/login',{method:'POST',body:JSON.stringify({email:'ops.c1@x.com',password:'OpsC1Pass99'})}));
 check('Cookie موظف التشغيل لا يمنحه دور مدير',signedRole(opsC1Cookie).role==='ops'&&signedRole(opsC1Cookie).clientId==='c1');
+const invalidRoleUser=[...users.values()].find(user=>user.email==='ops.c1@x.com');
+const actualRole=invalidRoleUser.role;
+const originalLastLogin=invalidRoleUser.last_login;
+invalidRoleUser.role='not-a-valid-role';
+const invalidRoleLogin=await call('/api/login',{method:'POST',body:JSON.stringify({email:'ops.c1@x.com',password:'OpsC1Pass99'})});
+check('الدور غير المعروف مرفوض قبل إصدار Cookie',invalidRoleLogin.status===403&&!invalidRoleLogin.headers.get('Set-Cookie'));
+check('محاولة الدخول بدور غير معروف لا تحدث last_login',invalidRoleUser.last_login===originalLastLogin);
+invalidRoleUser.role=actualRole;
 let [,rbacProduct]=await j(await call('/api/products',{method:'POST',body:JSON.stringify({clientId:'c1',name:'QA RBAC Product',sku:'QA-RBAC'})},adminCookie));
 check('خدمة العملاء ممنوعة من إنشاء منتج',(await call('/api/products',{method:'POST',body:JSON.stringify({clientId:'c1',name:'ممنوع'})},supportC1Cookie)).status===403);
 check('خدمة العملاء ممنوعة من حذف منتج بالـID',(await call('/api/products/'+rbacProduct.id,{method:'DELETE'},supportC1Cookie)).status===403);
