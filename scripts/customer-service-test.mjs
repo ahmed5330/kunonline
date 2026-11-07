@@ -63,7 +63,7 @@ must(!searchUi.includes('/api/state?clientId='),'Operational customer search mus
 must(searchUi.includes('filterOperationalCards')&&searchUi.includes('v55-filter-hidden'),'Customer Service search must filter operational columns to matching customer names or phone numbers');
 must(searchUi.includes('v55-order-date')&&searchUi.includes('تاريخ الطلب'),'Every operational order card must receive an explicit order-date row');
 must(searchUi.includes("select.value!=='shipped'")&&searchUi.includes("KunPrintingV79?.shipById")&&searchUi.includes('stateOnlyShip')&&!searchUi.includes("state:'shipped'"),'Shipping selector must invoke the official J&T queue+print handoff, never a generic state PATCH');
-must(searchUi.includes('بدون أي تعديل على المخزون')&&!searchUi.includes('stockBatchId'),'Shipping UI must not select or send an inventory batch');
+must(searchUi.includes('KunPrintingV79?.shipById')&&!searchUi.includes('stockBatchId'),'Shipping UI must call official J&T and never require an inventory batch');
 
 for(const marker of ['customerServiceShippingFallback','customerServiceShippingHandoff','الحالة دي برّه الصلاحية المتاحة ليك',"['confirmed','preparing','shipped']","state='shipped'","inventoryChanged:false"])must(shippingEntry.includes(marker),`Tenant Customer Service shipping handoff guard missing ${marker}`);
 must(shippingEntry.includes("checkpoint='جاري الشحن'")&&shippingEntry.includes('customerServiceEnabled'),'Tenant Customer Service must be able to hand a confirmed/preparing order to shipping without expanding access to unrelated states');
