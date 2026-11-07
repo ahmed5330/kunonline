@@ -11,8 +11,8 @@ function auditQuery(name){
   const expression=new RegExp('const '+name+'=await select\\(\\`([\\s\\S]*?)\\`\\);');
   const match=yaml.match(expression);
   assert(match,'Unable to locate live read-only '+name+' SQL');
-  assert.match(match[1],/^\\s*SELECT\\b/i,'Live ACL audit must only SELECT');
-  assert.doesNotMatch(match[1],/;\\s*\\S|\\b(?:INSERT|UPDATE|DELETE|DROP|ALTER|REPLACE|ATTACH|PRAGMA)\\b/i);
+  assert.match(match[1],/^\s*SELECT\b/i,'Live ACL audit must only SELECT');
+  assert.doesNotMatch(match[1],/;\s*\S|\b(?:INSERT|UPDATE|DELETE|DROP|ALTER|REPLACE|ATTACH|PRAGMA)\b/i);
   return match[1];
 }
 const db=new DatabaseSync(':memory:');
@@ -52,7 +52,7 @@ CREATE TABLE state(id INTEGER PRIMARY KEY,json TEXT);
 
   const sqlLog=[];
   const env={DB:{prepare(sql){
-    assert(/^\\s*SELECT\\b/i.test(sql),'No staff discovery test should write any row');
+    assert(/^\s*SELECT\b/i.test(sql),'No staff discovery test should write any row');
     sqlLog.push(sql);
     return {
       bind(...args){return {
