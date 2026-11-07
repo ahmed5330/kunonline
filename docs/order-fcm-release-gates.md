@@ -14,6 +14,21 @@
 Successful order-mutation HTTP routes can request a best-effort fast-path push, while the existing `*/5 * * * *` scheduler provides **five-minute retry/fallback cadence**. Neither is an exactly-once or instant-delivery guarantee. FCM/Android can further delay messages in Doze, restricted background, connectivity outages or after force-stop. An actual near-instant pipeline would require publishing an outbox event / Queue message from every canonical order write and triggering a push worker without cron wait, plus measured p95 time on two real devices.
 No FCM project, service account or `google-services.json` has been configured here, no real device token registered, and no live push was sent.
 
+## Canonical D1 binding — verify before migration
+The current `wrangler.production.toml` binds `DB=kunonline` and
+`PREVIEW_DB=kunonline-preview`. The Production Worker currently routes
+operational authenticated APIs via `previewRuntimeEnv(env)`, which binds
+their `env.DB` to **PREVIEW_DB**. These are two distinct D1 databases.
+Do not run migration 0100/0101 blindly against the DB named
+`kunonline`: it would leave the live operational change feed without
+its tables. First verify the actual Worker routing, backup both D1
+instances independently, and record which database is the canonical
+write source before any approved migration.
+
+Run `node scripts/order-sync-d1-binding-preflight.mjs` for a read-only
+repository configuration check. It does not verify the live schema or
+substitute for an authorized backup and schema audit.
+
 ## Required OWNER-supplied configuration — do not commit secrets
 1. Create a Firebase project and register Android application **`com.kunonline.callerid.stable`**.
 2. Privately supply `android/app/google-services.json` **only to an approved build environment**. It is ignored by Git. The Google Services plugin runs conditionally when this file is present.
