@@ -50,7 +50,7 @@ assert.ok(search.includes('العملاء المطابقون للاسم أو ا�
 assert.ok(search.includes('phoneMatch=phone.length>=3&&digits(cardPhone(card)).includes(phone)'),'operational search must match normalized customer phone digits');
 assert.equal(search.includes('/api/state?clientId='),false,'operational name/phone search must never load the full /api/state payload');
 assert.ok(search.includes("observe(root,{childList:true,subtree:false})"),'customer-search observer must be root-only instead of watching the full document tree');
-assert.ok(search.includes('stateOnlyShip')&&search.includes('بدون أي تعديل على المخزون'),'shipping transition must stay independent from inventory');
+assert.ok(search.includes('stateOnlyShip')&&search.includes('KunPrintingV79?.shipById')&&!search.includes('stockBatchId'),'shipping transition must use J&T official AWB flow without stock batch selection');
 assert.ok(confirmInventory.includes('validateAvailability')&&confirmInventory.includes('تأكيد من المخزون'),'confirmation UI must validate live inventory before confirming');
 assert.ok(confirmInventory.includes('KunCustomerServiceV31?.moveState?.')&&!confirmInventory.includes('KunCustomerServiceV31?.render?.'),'confirmation must update Customer Service in place instead of rebuilding the board');
 assert.ok(confirmInventory.includes("observe(root,{childList:true,subtree:false})"),'confirmation observer must watch root children only');
