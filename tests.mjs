@@ -190,6 +190,8 @@ const stmt=(sql)=>({
     if(sql.includes('FROM users')){
       let ulist=[...users.values()];
       if(sql.includes('WHERE client_id = ?')) ulist=ulist.filter(u=>u.client_id===this.args[0]);
+      if(sql.includes('WHERE lower(trim(email)) = ?'))
+        ulist=ulist.filter(u=>String(u.email||'').trim().toLowerCase()===this.args[0]).slice(0,2);
       return {results:ulist};
     }
     if(sql.includes('FROM products')){
@@ -285,6 +287,12 @@ const call=(p,o={},c)=>worker.fetch(new Request('https://app.kun-online.com'+p,
   {...o,headers:{'Content-Type':'application/json',...(c?{Cookie:c}:{}),...(o.headers||{})}}),env);
 const j=async r=>[r.status,await r.json().catch(()=>null)];
 const ck=r=>(r.headers.get('Set-Cookie')||'').split(';')[0];
+// Decode only local synthetic test cookies. No production cookies or passwords
+// are read, stored or printed by this test.
+const signedRole=cookie=>{
+  const token=String(cookie||'').split(';')[0].split('=')[1]||'';
+  return JSON.parse(Buffer.from(token.split('.')[0],'base64url').toString('utf8'));
+};
 let pass=0,fail=0; const check=(n,c,x='')=>{c?pass++:fail++;console.log((c?'  PASS':'  FAIL')+' — '+n,x);};
 const head=t=>console.log('\n'+t);
 
@@ -296,6 +304,7 @@ check('كلمة مرور قصيرة مرفوضة',
 let r=await call('/api/setup',{method:'POST',body:JSON.stringify({email:'Ahmed@Kun-Online.com',password:'MyStr0ngPass'})});
 const adminCookie=ck(r);
 check('إنشاء حساب الإدارة', r.status===200);
+check('رمز جلسة المدير يحمل صلاحيات مدير فقط',signedRole(adminCookie).role==='admin'&&!signedRole(adminCookie).clientId);
 check('الإيميل بحروف صغيرة', [...users.values()][0].email==='ahmed@kun-online.com');
 check('كلمة المرور مشفّرة PBKDF2', /^pbkdf2\$100000\$/.test([...users.values()][0].password)
   && !JSON.stringify([...users.values()]).includes('MyStr0ngPass'));
@@ -322,6 +331,7 @@ check('إيميل الإدارة ما ينفعش يتحوّل لحساب عمي�
 r=await call('/api/login',{method:'POST',body:JSON.stringify({email:'b@x.com',password:'ClientPass99'})});
 const clientCookie=ck(r);
 check('دخول العميل', r.status===200);
+check('رمز جلسة العميل يحفظ دوره ونطاقه',signedRole(clientCookie).role==='client'&&signedRole(clientCookie).clientId==='c2');
 
 head('أعضاء الفريق المرتبطون بمتجر');
 r=await call('/api/users',{method:'POST',body:JSON.stringify({
@@ -330,6 +340,7 @@ r=await call('/api/users',{method:'POST',body:JSON.stringify({
 check('إنشاء عضو مشاهدة مرتبط بالحساب',r.status===200);
 const viewerLogin=await call('/api/login',{method:'POST',body:JSON.stringify({email:'viewer.c1@x.com',password:'ViewerPass99'})});
 const viewerCookie=ck(viewerLogin);
+check('Cookie موظف المشاهدة لا يمنحه دور مدير',signedRole(viewerCookie).role==='viewer'&&signedRole(viewerCookie).clientId==='c1');
 const [,viewerMe]=await j(await call('/api/me',{},viewerCookie));
 check('جلسة عضو الفريق تحتفظ بالدور والحساب',viewerMe.role==='viewer'&&viewerMe.clientId==='c1');
 const [,scopedTeam]=await j(await call('/api/users?clientId=c1',{},adminCookie));
@@ -343,11 +354,33 @@ r=await call('/api/users',{method:'POST',body:JSON.stringify({
 })},adminCookie);
 check('إنشاء خدمة عملاء مرتبطة بالحساب',r.status===200);
 const supportC1Cookie=ck(await call('/api/login',{method:'POST',body:JSON.stringify({email:'support.c1@x.com',password:'SupportC1Pass99'})}));
+check('Cookie موظف خدمة العملاء لا يمنحه دور مدير',signedRole(supportC1Cookie).role==='support'&&signedRole(supportC1Cookie).clientId==='c1');
 r=await call('/api/users',{method:'POST',body:JSON.stringify({
   email:'ops.c1@x.com',name:'تشغيل متجر أ',role:'ops',clientId:'c1',password:'OpsC1Pass99'
 })},adminCookie);
 check('إنشاء تشغيل مرتبط بالحساب',r.status===200);
 const opsC1Cookie=ck(await call('/api/login',{method:'POST',body:JSON.stringify({email:'ops.c1@x.com',password:'OpsC1Pass99'})}));
+check('Cookie موظف التشغيل لا يمنحه دور مدير',signedRole(opsC1Cookie).role==='ops'&&signedRole(opsC1Cookie).clientId==='c1');
+const invalidRoleUser=[...users.values()].find(user=>user.email==='ops.c1@x.com');
+const actualRole=invalidRoleUser.role;
+const originalLastLogin=invalidRoleUser.last_login;
+invalidRoleUser.role='not-a-valid-role';
+const invalidRoleLogin=await call('/api/login',{method:'POST',body:JSON.stringify({email:'ops.c1@x.com',password:'OpsC1Pass99'})});
+check('الدور غير المعروف مرفوض قبل إصدار Cookie',invalidRoleLogin.status===403&&!invalidRoleLogin.headers.get('Set-Cookie'));
+check('محاولة الدخول بدور غير معروف لا تحدث last_login',invalidRoleUser.last_login===originalLastLogin);
+invalidRoleUser.role=actualRole;
+const legacyEmailBefore=invalidRoleUser.email;
+invalidRoleUser.email='  OPS.C1@X.COM  ';
+const legacyLogin=await call('/api/login',{method:'POST',body:JSON.stringify({email:'ops.c1@x.com',password:'OpsC1Pass99'})});
+check('حساب قديم بإيميل فيه مسافات وحروف كبيرة يقبل تسجيل الدخول الصحيح فقط',
+  legacyLogin.status===200 && signedRole(ck(legacyLogin)).role==='ops' && signedRole(ck(legacyLogin)).clientId==='c1');
+const conflicting={...invalidRoleUser,id:'SYNTHETIC-DUPLICATE',email:'ops.c1@x.com'};
+users.set(conflicting.id,conflicting);
+const ambiguousLogin=await call('/api/login',{method:'POST',body:JSON.stringify({email:'ops.c1@x.com',password:'OpsC1Pass99'})});
+check('تطابق أكثر من حساب بنفس الإيميل المطبّع يمنع تسجيل الدخول ولا يصدر Cookie',
+  ambiguousLogin.status>=400 && !ambiguousLogin.headers.get('Set-Cookie'));
+users.delete(conflicting.id);
+invalidRoleUser.email=legacyEmailBefore;
 let [,rbacProduct]=await j(await call('/api/products',{method:'POST',body:JSON.stringify({clientId:'c1',name:'QA RBAC Product',sku:'QA-RBAC'})},adminCookie));
 check('خدمة العملاء ممنوعة من إنشاء منتج',(await call('/api/products',{method:'POST',body:JSON.stringify({clientId:'c1',name:'ممنوع'})},supportC1Cookie)).status===403);
 check('خدمة العملاء ممنوعة من حذف منتج بالـID',(await call('/api/products/'+rbacProduct.id,{method:'DELETE'},supportC1Cookie)).status===403);
