@@ -2,6 +2,7 @@
 // Stored inside the existing order history; no D1 migration or inventory write.
 const clean=v=>String(v??'').trim();
 const clip=(v,n=180)=>clean(v).slice(0,n);
+const optionName=value=>({color:'اللون',colour:'اللون',size:'المقاس',model:'الموديل',type:'النوع',material:'الخامة',style:'النوع'}[clean(value).toLowerCase()]||clip(value,70));
 const count=v=>{const n=Number(v);return Number.isFinite(n)?Math.min(9999,Math.max(1,Math.floor(n))):1;};
 const money=v=>{const n=Number(v);return Number.isFinite(n)&&n>=0?n:0;};
 const normalizeDate=v=>{const s=clean(v);if(!/^\d{4}-\d{2}-\d{2}[T ]/.test(s))return '';const t=Date.parse(s);return Number.isFinite(t)?new Date(t).toISOString():'';};
@@ -14,7 +15,7 @@ export async function easyOrdersItemsSnapshot(order){
     const product=entry?.product||{},variant=entry?.variant||{};
     const optionList=Array.isArray(variant.variation_props)?variant.variation_props:[];
     const options=optionList.slice(0,20).map(option=>({
-      name:clip(option?.variation||option?.name,70),
+      name:optionName(option?.variation||option?.name),
       value:clip(option?.variation_prop||option?.value,140)
     })).filter(option=>option.name&&option.value);
     const variantLabel=clip(variant.name||variant.title||options.map(o=>o.name+': '+o.value).join('، '),300);
