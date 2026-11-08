@@ -12,9 +12,10 @@ android {
         applicationId = "com.kunonline.callerid.stable"
         minSdk = 29
         targetSdk = 35
-        // v2.9.24: display server verified store-grant diagnostics and consistent client discovery.
-        versionCode = 156
-        versionName = "2.9.25"
+        // v2.9.27: compact call card + provider item lines + faster cached order refresh.
+        // Reserve build 157 for the still-unreleased v2.9.26 FCM draft.
+        versionCode = 158
+        versionName = "2.9.27"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
