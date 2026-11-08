@@ -5,6 +5,16 @@ const src=name=>readFileSync(new URL('../src/'+name,import.meta.url),'utf8');
 const card=java('CallerCardActivity.kt'),overlay=java('CallerOverlay.kt');
 const detail=java('CallerFullDetailsView.kt'),home=java('KunNativeAppV25.kt');
 const cs=java('CustomerServiceApi.kt'),badge=java('KunPaymentBadge.kt');
+const api=java('KunApi.kt');
+const login=api.split('fun loginAndSync(')[1]?.split('fun repairPasswordWithStoredAdminSession(')[0]||'';
+assert(login.includes('request("GET", "/api/me", cookie = cookie)'), 'login must verify session before rendering');
+assert(login.includes('CustomerCache.clear(context)')&&login.includes('MobileSnapshotCache.clear(context)'),
+  'no previous account cache is exposed during login');
+assert(login.includes('SyncResult(true, "تم تسجيل الدخول بنجاح", 0)'), 'verified session opens home immediately');
+assert(!login.includes('val sync = syncWithCookie(context, cookie)'),
+  'login cannot wait for a large order snapshot before displaying home');
+assert(home.includes('performRefresh(false, silent = snapshot != null)'),
+  'scoped order refresh must happen asynchronously after store permission discovery');
 const sync=src('commerce-order-sync.js'),backend=src('production-customer-service.js');
 assert(card.includes('renderCallerProductSummary(this, detailsHost, result.data)'));
 assert(!card.includes('renderCallerFullDetails(this, detailsHost, result.data)'),
