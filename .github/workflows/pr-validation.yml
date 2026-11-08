@@ -77,6 +77,17 @@ jobs:
         run: |
           node scripts/easyorders-item-evidence-sqlite-test.mjs
           node scripts/android-paid-overlay-sync-contract-test.mjs
+      - name: Offline D1 order journal and authenticated incremental feed
+        run: |
+          node --check src/mobile-order-changes.js
+          node scripts/mobile-order-change-journal-sqlite-test.mjs
+      - name: Canonical dual-D1 migration identity preflight (offline)
+        run: node scripts/order-sync-d1-binding-preflight.mjs
+      - name: FCM disabled-by-default server device registry and privacy-safe hints
+        run: |
+          node --check src/mobile-push.js
+          node --check src/index-production-mobile-update.js
+          node scripts/mobile-fcm-draft-test.mjs
       - name: Run full contract and unit suite
         run: npm test
       - name: FAOS multi-line journal synthetic browser regression

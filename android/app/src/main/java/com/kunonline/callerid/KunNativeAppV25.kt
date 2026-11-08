@@ -57,6 +57,7 @@ internal fun v25SkipSilentRefresh(silent: Boolean, hasSnapshot: Boolean, nowMs: 
 
 private const val V25_FOREGROUND_SYNC_MS = 15_000L
 private const val V25_OPERATIONAL_SYNC_MS = 10_000L
+private const val V25_AUTH_RECONCILE_MS = 60_000L
 private const val V25_CONTACT_REFRESH_MS = 15_000L
 private const val V25_CONTACT_WINDOW_MS = 5L * 60L * 1000L
 
@@ -121,12 +122,12 @@ fun KunNativeAppV25(
         }
     }
 
-    suspend fun performRefresh(manual: Boolean = false, silent: Boolean = false, minIntervalMs: Long = V25_FOREGROUND_SYNC_MS) {
-        if (!loggedIn || refreshing) return
+    suspend fun performRefresh(manual: Boolean = false, silent: Boolean = false, minIntervalMs: Long = V25_FOREGROUND_SYNC_MS, urgent: Boolean = false): Boolean {
+        if (!loggedIn || refreshing) return false
         // A foreground resume or tab change must not request the whole order
         // snapshot again while a recent successful refresh is still fresh.
         val now = SystemClock.elapsedRealtime()
-        if (v25SkipSilentRefresh(silent, snapshot != null, now, lastRefreshElapsed, minIntervalMs)) return
+        if (!urgent && v25SkipSilentRefresh(silent, snapshot != null, now, lastRefreshElapsed, minIntervalMs)) return false
         refreshing = true
         // Never block an already-cached board with a full-screen loader.
         if (!silent && snapshot == null) loading = true
@@ -149,7 +150,7 @@ fun KunNativeAppV25(
             // list again or show loading on the screen.
             if (!result.changed && hadSnapshot) {
                 if (manual) message = result.message
-                return
+                return true
             }
             val next = result.snapshot ?: CommerceSnapshot()
             snapshot = next
@@ -173,6 +174,7 @@ fun KunNativeAppV25(
                 loggedIn = false
             }
         }
+        return result.ok
     }
 
     fun refresh(manual: Boolean = false) {
@@ -183,6 +185,7 @@ fun KunNativeAppV25(
     // Read the last encrypted server snapshot in the background, without
     // blocking first frame. A live result or store switch always wins.
     LaunchedEffect(loggedIn, currentStore) {
+        if (loggedIn) MobilePushRegistration.refreshAsync(context)
         if (loggedIn && snapshot == null) {
             val saved = withContext(Dispatchers.IO) { KunApi.cachedSnapshotFromDisk(context) }
             if (loggedIn && snapshot == null && saved != null) {
@@ -252,8 +255,26 @@ fun KunNativeAppV25(
     // Keep the caller-ID cache current while customer service is visible too.
     val operationalSyncMs = if (selected == MobileV25Tab.ORDERS || selected == MobileV25Tab.CUSTOMER_SERVICE)
         V25_OPERATIONAL_SYNC_MS else V25_FOREGROUND_SYNC_MS
-    ForegroundPolling(loggedIn to selected, enabled = loggedIn && selected != MobileV25Tab.SETTINGS, intervalMillis = operationalSyncMs) {
-        performRefresh(false, silent = true, minIntervalMs = operationalSyncMs)
+    ForegroundPolling(loggedIn to selected, enabled = loggedIn && selected != MobileV25Tab.SETTINGS, intervalMillis = V25_OPERATIONAL_SYNC_MS) {
+        // Signed change IDs are invalidation hints, never a data-access grant.
+        val scopeAtRead = currentStore
+        val hint = withContext(Dispatchers.IO) { MobileOrderChangeFeed.peek(context, scopeAtRead) }
+        if (hint.refresh) {
+            val refreshed = performRefresh(false, silent = true, urgent = true)
+            if (refreshed && hint.available) withContext(Dispatchers.IO) {
+                MobileOrderChangeFeed.acknowledge(context, hint, scopeAtRead)
+            }
+        } else if (hint.available && snapshot != null) {
+            withContext(Dispatchers.IO) {
+                MobileOrderChangeFeed.acknowledge(context, hint, scopeAtRead)
+            }
+            // Reconcile other fields and session rights even with no order hint.
+            performRefresh(false, silent = true, minIntervalMs = V25_AUTH_RECONCILE_MS)
+        } else {
+            // Migration absent or flag off: preserve the existing fast
+            // 10s operational / 15s other foreground snapshot schedule.
+            performRefresh(false, silent = true, minIntervalMs = operationalSyncMs)
+        }
     }
 
     LaunchedEffect(newOrdersNotice) {
