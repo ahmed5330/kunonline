@@ -20,7 +20,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   linux-full:
-    if: github.head_ref == 'fix/easyorders-sync-hotfix-20261024' || github.head_ref == 'release/easyorders-production-gated-20261025'
+    if: github.head_ref == 'fix/easyorders-sync-hotfix-20261024' || github.head_ref == 'release/easyorders-production-gated-20261025' || (github.head_ref == 'release/kun-safe-integration-20261107' && github.event.pull_request.number == 359)
     runs-on: ubuntu-latest
     timeout-minutes: 35
     env:
@@ -53,7 +53,7 @@ jobs:
         run: npm test
       - run: git diff --check
   windows-sync:
-    if: github.head_ref == 'fix/easyorders-sync-hotfix-20261024' || github.head_ref == 'release/easyorders-production-gated-20261025'
+    if: github.head_ref == 'fix/easyorders-sync-hotfix-20261024' || github.head_ref == 'release/easyorders-production-gated-20261025' || (github.head_ref == 'release/kun-safe-integration-20261107' && github.event.pull_request.number == 359)
     runs-on: windows-latest
     timeout-minutes: 15
     env:
