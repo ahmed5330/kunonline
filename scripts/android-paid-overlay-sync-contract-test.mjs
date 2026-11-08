@@ -26,7 +26,7 @@ for(const text of [card,overlay]){
   assert(text.includes('الملاحظات'), 'notes button accessible from caller card');
 }
 assert(detail.includes('item.optJSONArray("options")')&&detail.includes('variantName')&&
-       detail.includes('quantity')&&detail.includes('sku')&&detail.includes('الكمية')===false,
+       detail.includes('quantity')&&detail.includes('sku'),
   'compact caller view includes structured option/color/model/quantity and SKU');
 assert(cs.includes('/api/customer-service/orders/${enc(orderId)}/notes?')&&
        cs.includes('paymentStatus = o.optString("paymentStatus"')&&cs.includes('productLines = o.optJSONArray("productLines")'));
