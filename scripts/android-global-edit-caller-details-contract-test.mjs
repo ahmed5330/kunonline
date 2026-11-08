@@ -47,7 +47,10 @@ assert(caller.includes('receiverContext.unregisterReceiver(receiver)'), 'privacy
 assert(caller.includes('dismiss()'), 'screen-off must dismiss call overlay');
 assert(details.includes('internal fun renderCallerProductSummary'), 'structured item renderer must exist');
 assert(details.includes('optJSONArray("options")'), 'product summary must include color/size options');
-assert(fallback.includes('renderCallerFullDetails'), 'full protected details remain available outside overlay');
+assert(details.includes('internal fun renderCallerFullDetails'), 'the protected full-details renderer remains available to a dedicated order view');
+assert(fallback.includes('renderCallerProductSummary'), 'the fallback must also use compact product details');
+assert(!fallback.includes('renderCallerFullDetails('), 'the user requested removing full-order details from both floating call surfaces');
+assert(fallback.includes('heightPixels / 2'), 'even the fallback must stay within half of the screen');
 assert(fallback.includes('start_note'), 'fallback note composer must remain accessible');
 assert(fallback.includes('setShowWhenLocked(false)'), 'fallback activity must not cover Keyguard');
 assert(fallback.includes('text = if (locked) "عميل كن أونلاين"'), 'fallback must conceal customer name while locked');
@@ -65,4 +68,4 @@ for(const key of ['couponCode','shippingCost','otherCost','variantName','unitPri
 }
 assert(service.includes('FROM order_items WHERE order_id=? AND client_id=?'), 'complete details are tenant-bound');
 assert(service.includes('items=results.map'), 'complete details include multiple order lines');
-console.log('PASS: tester stores, tenant/store-scoped global edits, complete private live call details');
+console.log('PASS: tester stores, tenant/store-scoped global edits, compact private call product details');
