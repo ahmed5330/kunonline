@@ -1,4 +1,5 @@
 import {paymentFromHistory} from './order-payment-status.js';
+import {easyOrdersItemsFromHistory} from './easyorders-item-evidence.js';
 import {listMyStores,resolveStoreScope} from './store-scope.js';
 import {recoverOrderContacts} from './customer-contact-evidence.js';
 import {normalizeOutcomeReason} from './order-outcome-reason.js';
@@ -139,6 +140,17 @@ async function attachOrderProductLines(env,clientId,orders){
       break;
     }
   }
+  // Legacy Easy Orders imports may not have order_items. Preserve the
+  // provider-signed product breakdown without overriding real item rows.
+  for(const order of orders){
+    if(order.productLines?.length)continue;
+    const providerLines=easyOrdersItemsFromHistory(order.history);
+    if(providerLines.length)order.productLines=providerLines.map(item=>({
+      name:clean(item.name||item.productName)||order.product||'منتج',
+      variant:clean(item.variantName)||item.options?.map(o=>clean(o.name)+': '+clean(o.value)).filter(Boolean).join('، ')||'',
+      qty:Math.max(1,Math.floor(n(item.quantity||item.qty)||1))
+    }));
+  }
   return orders;
 }
 
@@ -190,6 +202,7 @@ async function details(env,clientId,orderId){
   // An audited Kun edit may override provider-imported order_items without
   // rewriting the original provider rows or inventory-linked source lines.
   const editedLines=[...arr(r.history)].reverse().find(entry=>entry?.type==='order_edit'&&Array.isArray(entry?.after?.items))?.after?.items;
+  if(!items.length)items=easyOrdersItemsFromHistory(r.history);
   if(editedLines?.length)items=editedLines.map(line=>({productId:line.productId||'',variantId:line.variantId||'',name:line.productName||'',productName:line.productName||'',variantName:line.variantLabel||'',sku:line.sku||'',quantity:n(line.qty)||1,qty:n(line.qty)||1,price:n(line.unitPrice),unitPrice:n(line.unitPrice)}));
   if(!items.length)items=[fallback];
   const savedJnt=[...arr(r.history)].reverse().find(entry=>entry?.jtAddress)?.jtAddress||{};
