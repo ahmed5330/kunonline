@@ -2,6 +2,7 @@ import {readConnectionSecrets} from './integration-provider-validation.js';
 import {providerById} from './provider-registry.js';
 import {mutateEasyOrdersConfig} from './easyorders-connection-config.js';
 import {createProviderPaymentEvent,appendProviderPaymentEvent,paymentFromHistory} from './order-payment-status.js';
+import {easyOrdersItemsSnapshot,appendEasyOrdersItemsSnapshot} from './easyorders-item-evidence.js';
 
 const text=v=>String(v??'').trim(),now=()=>new Date().toISOString();
 const MODES=[
@@ -87,11 +88,12 @@ async function upsertEasyOrder(env,connection,p){
   const scopedId=collision?'EO-'+Array.from(new Uint8Array(fingerprint),b=>b.toString(16).padStart(2,'0')).join('').slice(0,32):externalId;
   const id=existing?.id||scopedId;
   const customerId=await customer(env,connection,p,storeId);
+  const itemEvidence=await easyOrdersItemsSnapshot(p);
   const initialPayment=createProviderPaymentEvent(p.status,{
     reference:p.payment_ref_id,at:p.updated_at
   });
   const upsertSql=`INSERT INTO orders (id,client_id,store_id,ref,customer_id,date,name,phone,gov,address,product,product_note,unit_price,qty,total,product_cost,shipping_cost,source,note,state,checkpoint,contact_log,history,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET store_id=COALESCE(orders.store_id,excluded.store_id),customer_id=COALESCE(excluded.customer_id,orders.customer_id),date=excluded.date,name=excluded.name,phone=excluded.phone,gov=excluded.gov,address=excluded.address,product=excluded.product,product_note=excluded.product_note,unit_price=excluded.unit_price,qty=excluded.qty,total=excluded.total,product_cost=excluded.product_cost,shipping_cost=excluded.shipping_cost,state=CASE WHEN orders.state IN ('no_answer','deferred') THEN orders.state WHEN (orders.state IN ('shipped','signed','collected','returned','cancelled') AND excluded.state IN ('pending','confirmed','preparing')) OR (orders.state IN ('confirmed','preparing') AND excluded.state='pending') THEN orders.state ELSE excluded.state END,checkpoint=CASE WHEN orders.state IN ('no_answer','deferred') THEN orders.checkpoint WHEN (orders.state IN ('shipped','signed','collected','returned','cancelled') AND excluded.state IN ('pending','confirmed','preparing')) OR (orders.state IN ('confirmed','preparing') AND excluded.state='pending') THEN orders.checkpoint ELSE excluded.checkpoint END WHERE orders.client_id=excluded.client_id AND (orders.store_id=excluded.store_id OR orders.store_id IS NULL)`;
-  const writeOrder=candidateId=>env.DB.prepare(upsertSql).bind(candidateId,connection.client_id,storeId,ref,customerId,orderDate,text(p.full_name),normalizePhone(p.phone)||text(p.phone),text(p.government),text(p.address),product,notes,items.length===1?Number(items[0].price)||0:0,qty,Number(p.total_cost)||0,Number(p.cost)||0,Number(p.shipping_cost)||0,'المتجر (Easy Orders)','',state,checkpoint(state),'[]',JSON.stringify([{state,at:createdAt,source:'easyorders-webhook'},...(initialPayment?[initialPayment]:[])]),createdAt).run();
+  const writeOrder=candidateId=>env.DB.prepare(upsertSql).bind(candidateId,connection.client_id,storeId,ref,customerId,orderDate,text(p.full_name),normalizePhone(p.phone)||text(p.phone),text(p.government),text(p.address),product,notes,items.length===1?Number(items[0].price)||0:0,qty,Number(p.total_cost)||0,Number(p.cost)||0,Number(p.shipping_cost)||0,'المتجر (Easy Orders)','',state,checkpoint(state),'[]',JSON.stringify([{state,at:createdAt,source:'easyorders-webhook'},...(initialPayment?[initialPayment]:[]),...(itemEvidence?[itemEvidence]:[])]),createdAt).run();
   let savedId=id,result=await writeOrder(savedId);
   if(result?.success===false)throw Object.assign(new Error('Easy Orders order write failed'),{status:503,code:'EASYORDERS_ORDER_WRITE_FAILED'});
   if(result?.meta?.changes===0&&savedId===externalId&&!existing){
@@ -117,6 +119,7 @@ async function upsertEasyOrder(env,connection,p){
       orderId:savedId,clientId:connection.client_id,event:initialPayment
     });
   }
+  if(itemEvidence)await appendEasyOrdersItemsSnapshot(env.DB,{orderId:savedId,clientId:connection.client_id,snapshot:itemEvidence});
   await env.DB.prepare('UPDATE store_connections SET last_sync_at=?,last_error=NULL,updated_at=? WHERE id=? AND client_id=?').bind(now(),now(),connection.id,connection.client_id).run();return {ok:true,event:'order-created',id:savedId,clientId:connection.client_id,storeId,date:orderDate};
 }
 
