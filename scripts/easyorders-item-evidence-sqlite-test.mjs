@@ -40,6 +40,15 @@ try{
   assert.equal(snap.items.length,2);
   assert.equal(snap.items[0].quantity,2);
   assert.deepEqual(snap.items[0].options.map(x=>x.value),['بترولي','L','روزالين']);
+  const official=await easyOrdersItemsSnapshot({
+    updated_at:provider.updated_at,
+    cart_items:[{product:{name:'ترينج شبابي',sku:'SKU-01'},variant:{variation_props:[
+      {variation:'color',variation_prop:'#808080'},{variation:'size',variation_prop:'L'}
+    ]},quantity:2,price:220}]
+  });
+  assert.deepEqual(official.items[0].options.map(x=>x.name),['اللون','المقاس'],
+    'English option keys from the official API appear as Arabic attributes');
+  assert.equal(official.items[0].sku,'SKU-01');
   assert.equal(snap.items[0].sku,'SKU-PLEAT-L');
   assert.equal(snap.items[1].quantity,1);
   assert(!('paymentStatus' in snap),'item snapshot may not forge verified payment evidence');
