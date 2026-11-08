@@ -22,7 +22,9 @@ for (const key of ['EXTRA_CLIENT_ID','EXTRA_STORE_ID','EXTRA_ORDER_ID']) {
   assert(edit.includes(key), 'editor must consume ' + key);
 }
 assert(search.includes('تعديل الطلب'), 'search has an edit action');
-assert(search.includes('order.state in setOf("pending", "no_answer", "confirmed", "preparing", "deferred")'), 'immutable shipped/COD orders cannot enter regular edit');
+assert(search.includes('تعديل الملاحظات'), 'shipped/COD orders should expose the safe notes-only action');
+assert(edit.includes('payload.put("editMode", "notes")'), 'notes-only mode must be explicit to the server');
+assert(service.includes('ORDER_EDIT_SHIPMENT_LOCKED') && service.includes('ORDER_EDIT_CONFLICT'), 'server must reject unsafe shipped edits and concurrent writes');
 assert(edit.includes('selectedClientId = clientId'), 'editor loads exact searched tenant');
 assert(edit.includes('selectedClientId = data.clientId'), 'editor saves only the tenant returned by verified details');
 assert.match(api, /fetchEditorData\(context: Context, orderId: String, selectedStoreId: String = "", requireHistory: Boolean = false, selectedClientId: String = ""\)/);
@@ -45,7 +47,10 @@ assert(caller.includes('receiverContext.unregisterReceiver(receiver)'), 'privacy
 assert(caller.includes('dismiss()'), 'screen-off must dismiss call overlay');
 assert(details.includes('internal fun renderCallerProductSummary'), 'structured item renderer must exist');
 assert(details.includes('optJSONArray("options")'), 'product summary must include color/size options');
-assert(fallback.includes('renderCallerFullDetails'), 'full protected details remain available outside overlay');
+assert(details.includes('internal fun renderCallerFullDetails'), 'the protected full-details renderer remains available to a dedicated order view');
+assert(fallback.includes('renderCallerProductSummary'), 'the fallback must also use compact product details');
+assert(!fallback.includes('renderCallerFullDetails('), 'the user requested removing full-order details from both floating call surfaces');
+assert(fallback.includes('heightPixels / 2'), 'even the fallback must stay within half of the screen');
 assert(fallback.includes('start_note'), 'fallback note composer must remain accessible');
 assert(fallback.includes('setShowWhenLocked(false)'), 'fallback activity must not cover Keyguard');
 assert(fallback.includes('text = if (locked) "عميل كن أونلاين"'), 'fallback must conceal customer name while locked');
@@ -63,4 +68,4 @@ for(const key of ['couponCode','shippingCost','otherCost','variantName','unitPri
 }
 assert(service.includes('FROM order_items WHERE order_id=? AND client_id=?'), 'complete details are tenant-bound');
 assert(service.includes('items=results.map'), 'complete details include multiple order lines');
-console.log('PASS: tester stores, tenant/store-scoped global edits, complete private live call details');
+console.log('PASS: tester stores, tenant/store-scoped global edits, compact private call product details');

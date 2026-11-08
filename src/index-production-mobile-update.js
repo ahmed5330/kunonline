@@ -20,6 +20,8 @@ import {handleMobileOrderSearch} from './mobile-global-order-search.js';
 import {handleMobileStoreOptions} from './mobile-store-options.js';
 import {handleProductionClientContext} from './production-client-context.js';
 import {handleMobileOrderAlerts} from './mobile-order-alerts.js';
+import {handleMobileOrderChanges} from './mobile-order-changes.js';
+import {handleMobilePushDevices,dispatchOrderChangePush,pushEnabled,shouldNotifyOrderWrite} from './mobile-push.js';
 import {ensureInternalCollaborationSchema} from './internal-collaboration-schema.js';
 import {handleProductionPreviewParity} from './production-preview-parity.js';
 import {handleProductionEasyOrdersHealth} from './production-easyorders-health.js';
@@ -166,7 +168,7 @@ function collaborationSchemaFailure(){
   return new Response(JSON.stringify({error:'تعذر تفعيل مخطط تواصل الفريق',code:'COLLAB_SCHEMA_BOOTSTRAP_FAILED'}),{status:503,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}});
 }
 
-export default {
+const productionHandler = {
   async fetch(request,env,ctx){
     const sessionGuard=guardSessionRequest(request);if(sessionGuard)return sessionGuard;
     // Public marketing reviews and admin moderation remain isolated from
@@ -245,6 +247,16 @@ export default {
     if(aiIntegrations)return aiIntegrations;
     const mobileStoreOptions=await handleMobileStoreOptions({request,env:dataEnv,delegate});
     if(mobileStoreOptions)return mobileStoreOptions;
+    if(new URL(request.url).pathname==='/api/mobile/order-changes'){
+      if(dataEnv.ORDER_CHANGE_FEED_ENABLED!=='1'){
+        return new Response(JSON.stringify({ok:false,code:'SYNC_FEED_DISABLED'}),{
+          status:404,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'private, no-store'}
+        });
+      }
+      return handleMobileOrderChanges({request,env:dataEnv,delegate});
+    }
+    const pushDevices=await handleMobilePushDevices({request,env:dataEnv,delegate});
+    if(pushDevices)return pushDevices;
     const newOrderAlerts=await handleMobileOrderAlerts({request,env:dataEnv,delegate});
     if(newOrderAlerts)return newOrderAlerts;
     const adminJntShipments=await handleAdminJntShipments({request,env:dataEnv,delegate});
@@ -330,11 +342,30 @@ export default {
   },
   scheduled(event,env,ctx){
     const dataEnv=previewRuntimeEnv(env);
+    if(String(event?.cron||'')==='*/5 * * * *'){
+      ctx?.waitUntil?.(dispatchOrderChangePush(dataEnv).catch(error=>{
+        console.error('FCM wake-up dispatch failed',String(error?.message||error).slice(0,160));
+      }));
+    }
     ctx?.waitUntil?.(reconcileMonthlySubscriptions(dataEnv,{limit:1000}).catch(()=>[]));
     ctx?.waitUntil?.(reconcileTrackedOrderLifecycles(dataEnv,{limit:1000,actor:'scheduled'}).catch(()=>({ok:false})));
     if(String(event?.cron||'')==='0 */2 * * *'){
       ctx?.waitUntil?.(reconcileAllClientsUnitCoverage(dataEnv,{limit:1000,actor:'scheduled'}).catch(()=>({ok:false})));
     }
     return app.scheduled?.(event,env,ctx);
+  }
+};
+export default {
+  ...productionHandler,
+  async fetch(request,env,ctx){
+    const response=await productionHandler.fetch(request,env,ctx);
+    // Auth-denied and unrelated requests must never inspect environment.
+    if(!shouldNotifyOrderWrite(request,response))return response;
+    const dataEnv=previewRuntimeEnv(env);
+    if(pushEnabled(dataEnv)){
+      ctx?.waitUntil?.(dispatchOrderChangePush(dataEnv,{immediate:true,limit:50})
+        .catch(error=>console.error('FCM post-write dispatch failed',String(error?.message||error).slice(0,130))));
+    }
+    return response;
   }
 };

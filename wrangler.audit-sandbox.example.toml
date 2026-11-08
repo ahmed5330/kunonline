@@ -1,0 +1,23 @@
+# TEMPLATE ONLY — NEVER DEPLOY THIS FILE. Placeholder IDs fail static preflight.
+# Provision a brand-new D1/Worker ONLY after explicit authorization.
+# Production uses DB=kunonline and PREVIEW_DB=kunonline-preview: both are live.
+# No service bindings, commerce routes, Cron, provider credentials, assets, or network integrations.
+name = "REPLACE_WITH_UNIQUE_AUDIT_SANDBOX_WORKER"
+main = "src/audit-sandbox-probe.js"
+compatibility_date = "2026-08-23"
+workers_dev = false
+
+[[d1_databases]]
+binding = "DB"
+database_name = "REPLACE_WITH_NEW_AUDIT_SANDBOX_D1"
+database_id = "REPLACE_WITH_NEW_D1_UUID"
+migrations_dir = "sandbox/migrations"
+
+[triggers]
+crons = []
+
+[vars]
+APP_ENV = "audit_sandbox"
+SANDBOX_EGRESS_OFFLINE = "true"
+# SANDBOX_QA_SECRET must be injected separately in the new isolated environment.
+# Never copy Production/Preview secrets into an audit sandbox.

@@ -114,23 +114,17 @@ object KunApi {
             // authenticated account switches and initial sync cannot complete.
             clearScope()
             MobileSyncClient.clear()
+            MobileOrderChangeFeed.clear(context)
             CustomerCache.clear(context)
             MobileSnapshotCache.clear(context)
         MobileBoardSnapshotCache.clear(context)
             SecureStore.put(context, AUTH_PREFS, SELECTED_STORE_KEY, null)
             SecureStore.put(context, AUTH_PREFS, SESSION_KEY, cookie)
-            val sync = syncWithCookie(context, cookie)
-            // A new or empty store may not be ready for its initial data sync.
-            // Keep a verified session instead of misreporting valid credentials as bad.
-            when {
-                sync.ok -> sync
-                session(context) != cookie -> SyncResult(false, sync.message)
-                else -> SyncResult(
-                    true,
-                    "تم تسجيل الدخول بنجاح، لكن تعذر تحديث البيانات مؤقتًا. جرّب زر التحديث بعد الدخول.",
-                    CustomerCache.count(context)
-                )
-            }
+            // Authentication is complete only after /api/me. Never block the
+            // first frame on a potentially huge /api/state download: V25's
+            // loggedIn effect loads verified store grants and a scoped delta in
+            // the background. Prior-account caches were cleared above.
+            SyncResult(true, "تم تسجيل الدخول بنجاح", 0)
         }.getOrElse { SyncResult(false, "تعذر الاتصال بكن أونلاين") }
     }
 
@@ -369,6 +363,7 @@ object KunApi {
                 }
                 clearScope()
                 MobileSyncClient.clear()
+                MobileOrderChangeFeed.clear(context)
                 CustomerCache.clear(context)
             }
             verifiedOptionsCookie = cookie
@@ -467,6 +462,7 @@ object KunApi {
         verifiedOptionsCurrent = ScopeInfo(option.clientId, option.storeId)
         clearScope()
         MobileSyncClient.clear()
+        MobileOrderChangeFeed.clear(context)
         CustomerCache.clear(context)
         CallActivityStore.clear(context)
         MobileSnapshotCache.clear(context)
@@ -674,6 +670,7 @@ object KunApi {
 
     private fun session(context: Context): String? = SecureStore.get(context, AUTH_PREFS, SESSION_KEY)
     private fun clearSession(context: Context) {
+        MobilePushRegistration.revokeAsync(context)
         // Derived caller data must not remain after session authentication ends.
         CustomerCache.clear(context)
         MobileSnapshotCache.clear(context)
@@ -684,6 +681,7 @@ object KunApi {
         verifiedOptions = emptyList()
         verifiedOptionsCurrent = ScopeInfo()
         MobileSyncClient.clear()
+        MobileOrderChangeFeed.clear(context)
         SecureStore.put(context, AUTH_PREFS, SELECTED_STORE_KEY, null)
         SecureStore.put(context, AUTH_PREFS, SESSION_KEY, null)
     }

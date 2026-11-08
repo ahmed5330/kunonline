@@ -55,8 +55,9 @@ internal fun v25SkipSilentRefresh(silent: Boolean, hasSnapshot: Boolean, nowMs: 
     silent && hasSnapshot && previousSuccessMs > 0 &&
         nowMs >= previousSuccessMs && nowMs - previousSuccessMs < minIntervalMs.coerceAtLeast(0L)
 
-private const val V25_FOREGROUND_SYNC_MS = 60_000L
-private const val V25_OPERATIONAL_SYNC_MS = 15_000L
+private const val V25_FOREGROUND_SYNC_MS = 15_000L
+private const val V25_OPERATIONAL_SYNC_MS = 10_000L
+private const val V25_AUTH_RECONCILE_MS = 60_000L
 private const val V25_CONTACT_REFRESH_MS = 15_000L
 private const val V25_CONTACT_WINDOW_MS = 5L * 60L * 1000L
 
@@ -121,14 +122,15 @@ fun KunNativeAppV25(
         }
     }
 
-    suspend fun performRefresh(manual: Boolean = false, silent: Boolean = false, minIntervalMs: Long = V25_FOREGROUND_SYNC_MS) {
-        if (!loggedIn || refreshing) return
+    suspend fun performRefresh(manual: Boolean = false, silent: Boolean = false, minIntervalMs: Long = V25_FOREGROUND_SYNC_MS, urgent: Boolean = false): Boolean {
+        if (!loggedIn || refreshing) return false
         // A foreground resume or tab change must not request the whole order
         // snapshot again while a recent successful refresh is still fresh.
         val now = SystemClock.elapsedRealtime()
-        if (v25SkipSilentRefresh(silent, snapshot != null, now, lastRefreshElapsed, minIntervalMs)) return
+        if (!urgent && v25SkipSilentRefresh(silent, snapshot != null, now, lastRefreshElapsed, minIntervalMs)) return false
         refreshing = true
-        if (!silent) loading = true
+        // Never block an already-cached board with a full-screen loader.
+        if (!silent && snapshot == null) loading = true
         val previous = snapshot
         val hadSnapshot = previous != null
         val previousIds = if (hadSnapshot && !silent) rawOrderIds(previous) else emptySet()
@@ -148,7 +150,7 @@ fun KunNativeAppV25(
             // list again or show loading on the screen.
             if (!result.changed && hadSnapshot) {
                 if (manual) message = result.message
-                return
+                return true
             }
             val next = result.snapshot ?: CommerceSnapshot()
             snapshot = next
@@ -172,6 +174,7 @@ fun KunNativeAppV25(
                 loggedIn = false
             }
         }
+        return result.ok
     }
 
     fun refresh(manual: Boolean = false) {
@@ -182,6 +185,7 @@ fun KunNativeAppV25(
     // Read the last encrypted server snapshot in the background, without
     // blocking first frame. A live result or store switch always wins.
     LaunchedEffect(loggedIn, currentStore) {
+        if (loggedIn) MobilePushRegistration.refreshAsync(context)
         if (loggedIn && snapshot == null) {
             val saved = withContext(Dispatchers.IO) { KunApi.cachedSnapshotFromDisk(context) }
             if (loggedIn && snapshot == null && saved != null) {
@@ -251,8 +255,26 @@ fun KunNativeAppV25(
     // Keep the caller-ID cache current while customer service is visible too.
     val operationalSyncMs = if (selected == MobileV25Tab.ORDERS || selected == MobileV25Tab.CUSTOMER_SERVICE)
         V25_OPERATIONAL_SYNC_MS else V25_FOREGROUND_SYNC_MS
-    ForegroundPolling(loggedIn to selected, enabled = loggedIn && selected != MobileV25Tab.SETTINGS, intervalMillis = operationalSyncMs) {
-        performRefresh(false, silent = true, minIntervalMs = operationalSyncMs)
+    ForegroundPolling(loggedIn to selected, enabled = loggedIn && selected != MobileV25Tab.SETTINGS, intervalMillis = V25_OPERATIONAL_SYNC_MS) {
+        // Signed change IDs are invalidation hints, never a data-access grant.
+        val scopeAtRead = currentStore
+        val hint = withContext(Dispatchers.IO) { MobileOrderChangeFeed.peek(context, scopeAtRead) }
+        if (hint.refresh) {
+            val refreshed = performRefresh(false, silent = true, urgent = true)
+            if (refreshed && hint.available) withContext(Dispatchers.IO) {
+                MobileOrderChangeFeed.acknowledge(context, hint, scopeAtRead)
+            }
+        } else if (hint.available && snapshot != null) {
+            withContext(Dispatchers.IO) {
+                MobileOrderChangeFeed.acknowledge(context, hint, scopeAtRead)
+            }
+            // Reconcile other fields and session rights even with no order hint.
+            performRefresh(false, silent = true, minIntervalMs = V25_AUTH_RECONCILE_MS)
+        } else {
+            // Migration absent or flag off: preserve the existing fast
+            // 10s operational / 15s other foreground snapshot schedule.
+            performRefresh(false, silent = true, minIntervalMs = operationalSyncMs)
+        }
     }
 
     LaunchedEffect(newOrdersNotice) {
@@ -669,15 +691,10 @@ private fun V25Home(
                         Text(if (storeOptionsLoading) "تحديث..." else "تحديث المتاجر")
                     }
                 }
-                if (storeOptionsLoading && storeOptions.isEmpty()) {
-                    LinearProgressIndicator(Modifier.fillMaxWidth(), color = KunColors.Chrome)
-                } else if (storeOptions.isEmpty()) {
-                    Text(if (storeOptionsError.isNotBlank()) "تعذر تحديث المتاجر. استخدم زر تحديث المتاجر."
-                         else "لا توجد متاجر متاحة للحساب", color = KunColors.Ink2)
-                } else {
-                    // Keep the last verified store choices visible on transient refresh failures.
-                    if (storeOptionsError.isNotBlank()) Text("المتاجر المعروضة محفوظة من آخر تحديث ناجح.",
-                        color = KunColors.Ink2, style = MaterialTheme.typography.bodySmall)
+                if (storeOptions.isEmpty() && !storeOptionsLoading && storeOptionsError.isBlank()) {
+                    Text("لا توجد متاجر متاحة للحساب", color = KunColors.Ink2)
+                } else if (storeOptions.isNotEmpty()) {
+                    // Keep last verified choices visible without a noisy transient-error banner.
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         items(storeOptions, key = { "${it.clientId}:${it.storeId}" }) { option ->
                             val active = currentStore.clientId == option.clientId && currentStore.storeId == option.storeId
@@ -701,7 +718,6 @@ private fun V25Home(
                         }
                     }
                     if (storeOptions.size > 1) Text("كل متجر يعرض بياناته وصلاحياته بشكل مستقل.", color = KunColors.Ink2, style = MaterialTheme.typography.bodySmall)
-                    if (storeAccessDiagnostic.isNotBlank()) Text(storeAccessDiagnostic, color = KunColors.Chrome, style = MaterialTheme.typography.bodySmall)
                     Text("إصدار التطبيق: ${BuildConfig.VERSION_NAME}", color = KunColors.Ink3, style = MaterialTheme.typography.labelSmall)
                 }
             }
@@ -717,14 +733,10 @@ private fun V25Home(
                 }
             }
         }
-        if (syncError.isNotBlank()) {
-            item {
-                KunSectionCard {
-                    Text("تعذر تحديث بيانات الطلبات", color = KunColors.Brick, fontWeight = FontWeight.Bold)
-                    Text(syncError, color = KunColors.Ink2, style = MaterialTheme.typography.bodySmall)
-                    TextButton(onClick = onRefresh) { Text("إعادة محاولة التحميل") }
-                }
-            }
+        if (!dataReady && syncError.isNotBlank()) {
+            // No stale order data may be shown after access denial. Provide an
+            // explicit retry without displaying provider/internal error details.
+            item { TextButton(onClick = onRefresh) { Text("تحديث الطلبات") } }
         } else if (dataReady && orders.isEmpty() && rawOrderCount > 0) {
             item {
                 KunSectionCard {
@@ -757,7 +769,8 @@ private fun V25Home(
         }
         item {
             if (dataReady) KunSevenDayOrdersTrend(snapshot.raw)
-            else KunSectionCard { Text("جاري تجهيز بيانات الطلبات…", color = KunColors.Ink2) }
+            // Do not mount a blocking "loading store data" card while the encrypted
+            // local snapshot is being refreshed in the background.
         }
         item {
             KunSectionCard {
@@ -810,7 +823,7 @@ private fun V25Home(
                 }
             }
         } else if (orders.isEmpty()) {
-            item { V25Empty(if (syncError.isNotBlank()) "تعذر تحديث الطلبات — جرّب إعادة التحميل" else "لا توجد طلبات في الفترة المختارة") }
+            item { V25Empty(if (syncError.isNotBlank()) "الطلبات غير متاحة حاليًا — استخدم التحديث" else "لا توجد طلبات في الفترة المختارة") }
         } else {
             items(orders.take(6), key = { it.id }) { order -> V25CompactOrder(order) }
         }

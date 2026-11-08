@@ -15,7 +15,7 @@ for (const endpoint of ['/api/me', '/api/my-client-context', '/api/my-store-cont
 assert.match(api, /option\.clientId == choice\.clientId && it\.storeId == choice\.storeId|it\.clientId == choice\.clientId && it\.storeId == choice\.storeId/, 'Validate both client and store identities');
 assert.ok(api.includes('SELECTED_STORE_KEY'), 'Persist scoped choice independently of global login');
 assert.match(api, /SecureStore\.put\(context, AUTH_PREFS, SELECTED_STORE_KEY, null\)/, 'Clear saved store on session change');
-assert.match(api, /MobileSyncClient\.clear\(\)\s*CustomerCache\.clear\(context\)\s*CallActivityStore\.clear\(context\)/, 'Purge previous store caches on switch');
+assert.match(api, /MobileSyncClient\.clear\(\)\s*MobileOrderChangeFeed\.clear\(context\)\s*CustomerCache\.clear\(context\)\s*CallActivityStore\.clear\(context\)/, 'Purge previous store caches on switch');
 assert.ok(api.includes('preferredClient == clientId && preferredStore in allowed'), 'Revalidate saved store against the live store ACL');
 assert.ok(api.includes('scope.storeId')) ;
 assert.match(api, /values\.put\("storeId", scope\.storeId\)/, 'Native writes inherit selected store');

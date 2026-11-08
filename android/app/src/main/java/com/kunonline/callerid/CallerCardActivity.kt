@@ -11,6 +11,7 @@ import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
+import android.view.WindowManager
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
@@ -156,8 +157,8 @@ class CallerCardActivity : Activity() {
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            setPadding(dp(16), dp(24), dp(16), dp(24))
+            gravity = Gravity.TOP
+            setPadding(dp(8), dp(8), dp(8), dp(8))
             setBackgroundColor(ground)
             layoutDirection = View.LAYOUT_DIRECTION_RTL
         }
@@ -234,17 +235,10 @@ class CallerCardActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(0, dp(8), 0, dp(8))
         }
-        if (!locked && !customer.orderId.isNullOrBlank()) {
-            detailsHost.addView(TextView(this).apply {
-                text = "جاري تحميل تفاصيل الطلب الكاملة…"
-                textSize = 12f
-                setTextColor(ink2)
-            })
-            body.addView(detailsHost)
-        }
+        if (!locked && !customer.orderId.isNullOrBlank()) body.addView(detailsHost)
         card.addView(ScrollView(this).apply {
             addView(body)
-        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(280)))
+        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
 
         val actions = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -317,8 +311,13 @@ class CallerCardActivity : Activity() {
         secondary.addView(action("إغلاق", ground, ink2) { finish() })
         actions.addView(secondary)
         card.addView(actions)
-        root.addView(card, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        root.addView(card, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.MATCH_PARENT))
         setContentView(root)
+        // An Activity fallback must obey the same half-screen privacy and size bound
+        // as the SYSTEM_ALERT_WINDOW overlay. Only the product list scrolls.
+        window.setGravity(Gravity.TOP or Gravity.CENTER_HORIZONTAL)
+        window.setLayout(WindowManager.LayoutParams.MATCH_PARENT,
+            (resources.displayMetrics.heightPixels / 2).coerceAtLeast(1))
         if (!locked && !customer.orderId.isNullOrBlank()) {
             thread(name = "kun-call-card-details") {
                 val result = KunCustomerServiceApi.fetchOrderDetails(this, customer.orderId,
@@ -329,13 +328,10 @@ class CallerCardActivity : Activity() {
                         if (result.ok) {
                             val latestPayment = result.data.optJSONObject("order")?.optString("paymentStatus")
                             if (!latestPayment.isNullOrBlank()) displayPayment(latestPayment)
-                            renderCallerFullDetails(this, detailsHost, result.data)
+                            renderCallerProductSummary(this, detailsHost, result.data)
                         }
-                        else detailsHost.addView(TextView(this).apply {
-                            text = "تعذر تحميل التفاصيل: ${result.message}"
-                            textSize = 12f
-                            setTextColor(ink2)
-                        })
+                        // Transient detail failures do not cover the call controls
+                        // with error banners. Existing verified payment status stays visible.
                     }
                 }
             }

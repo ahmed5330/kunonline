@@ -2,6 +2,9 @@
 .env
 .env.*
 .dev.vars
+# Never commit Firebase app config or service account credentials.
+**/google-services.json
+**/firebase-service-account*.json
 
 # أدوات
 node_modules/
@@ -9,3 +12,7 @@ node_modules/
 dist/
 .DS_Store
 *.log
+
+# Audit Sandbox config and private test-only secret files are local operator files.
+wrangler.audit-sandbox.toml
+.dev.vars.*
