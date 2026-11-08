@@ -4,10 +4,20 @@ import {easyOrdersItemsSnapshot,easyOrdersItemsFromHistory,appendEasyOrdersItems
 const db=new DatabaseSync(':memory:');
 try{
   db.exec("CREATE TABLE orders(id TEXT PRIMARY KEY,client_id TEXT NOT NULL,history TEXT)");
-  const fake={prepare(sql){return {bind(...params){return {async run(){
-    const value=db.prepare(sql).run(...params);
-    return {success:true,meta:{changes:Number(value.changes)}};
-  }};}}};
+  const fake={
+    prepare(sql){
+      return {
+        bind(...params){
+          return {
+            async run(){
+              const value=db.prepare(sql).run(...params);
+              return {success:true,meta:{changes:Number(value.changes)}};
+            }
+          };
+        }
+      };
+    }
+  };
   const provider={
     updated_at:'2026-11-08T16:10:00Z',
     status:'paid',
