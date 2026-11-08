@@ -69,6 +69,14 @@ jobs:
         run: |
           node scripts/android-order-notifications-fake-test.mjs
           node scripts/android-accounting-fake-test.mjs
+      - name: Synthetic staff multi-store ACL and live audit SQL contract
+        run: node scripts/staff-store-grant-readonly-sqlite-test.mjs
+      - name: Safe Cloudflare effective binding inventory (offline fake GETs)
+        run: node scripts/cloudflare-effective-bindings-readonly-test.mjs
+      - name: Paid Easy Orders structured item evidence and Android caller/UI parity
+        run: |
+          node scripts/easyorders-item-evidence-sqlite-test.mjs
+          node scripts/android-paid-overlay-sync-contract-test.mjs
       - name: Run full contract and unit suite
         run: npm test
       - name: FAOS multi-line journal synthetic browser regression
@@ -89,6 +97,8 @@ jobs:
         run: node scripts/browser-sidebar-navigation-regression-test.mjs
       - name: Growth planner real Chromium interaction regression
         run: node scripts/browser-growth-planner-fixture-test.mjs
+      - name: Reject unsafe audit sandbox bindings (offline only)
+        run: npm run test:audit-sandbox-safety
       - name: Verify Preview isolation
         run: npm run check:preview-config
       - name: Verify Production remains migration-free

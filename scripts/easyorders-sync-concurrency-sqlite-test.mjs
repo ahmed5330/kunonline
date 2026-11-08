@@ -75,6 +75,24 @@ try{
   );
   assert.equal(initial.easyOrdersRecoveryHighestShortId,100);
   assert.equal(initial.easyOrdersRecoveryCursor,101);
+  const savedGaps=mergeEasyOrdersRecoveryPatch(
+    {easyOrdersRecoveryPendingShortIds:[10,11],easyOrdersRecoveryProbeCursor:50,
+      easyOrdersRecoveryCursor:32},
+    {easyOrdersRecoveryPendingAdd:[11,12],easyOrdersRecoveryPendingRemove:[10],
+      easyOrdersRecoveryProbeCursor:49,easyOrdersRecoveryCursor:31,
+      easyOrdersRecoveryLastStatus:'healthy'}
+  );
+  assert.deepEqual(savedGaps.easyOrdersRecoveryPendingShortIds,[11,12],
+    'Pending retries must be unioned against fresh CAS state, not overwritten');
+  assert.equal(savedGaps.easyOrdersRecoveryProbeCursor,50);
+  assert.equal(savedGaps.easyOrdersRecoveryCursor,32);
+  assert.equal(savedGaps.easyOrdersRecoveryLastStatus,'catching_up',
+    'Unresolved provider Short IDs can never show healthy');
+  assert.throws(()=>mergeEasyOrdersRecoveryPatch(
+    {easyOrdersRecoveryPendingShortIds:Array.from({length:120},(_,i)=>i+1)},
+    {easyOrdersRecoveryPendingAdd:[121]}
+  ),/safe limit/,'Never silently drop pending IDs when the queue reaches 120');
+
   race=current=>({...current,webhookLastShortId:222,easyOrdersRecoveryHighestShortId:222});
   const saved=await update('CON-A',current=>mergeEasyOrdersRecoveryPatch(current,{
     easyOrdersRecoveryHighestShortId:200,easyOrdersRecoveryCursor:201,
@@ -180,7 +198,9 @@ try{
   const recovery=await reconcileEasyOrdersOrders(env,{
     clientId:'TENANT-A',connectionId:'CON-D',maxRequests:3,lookback:10,fetcher:fakeApi
   });
-  assert.equal(recovery.results[0].status,'healthy',JSON.stringify(recovery.results[0]));
+  assert.equal(recovery.results[0].status,'catching_up','Confirmed 404 must stay queued, not falsely report healthy');
+  assert.deepEqual(config('CON-D').easyOrdersRecoveryPendingShortIds,[502],
+    'Short ID 502 was missing at provider; preserve it for future retry');
   assert.deepEqual(seen,[500,501,502],'Foreign storefront response cannot terminate recovery scan');
   assert.equal(recovery.foreignStoreSkipped,1,'Foreign storefront is observed but never ingested');
   assert.equal(recovery.recovered,1,'Sibling Kun store with same provider ID is a NEW recovery');
@@ -196,6 +216,23 @@ try{
     'No order from another Easy Orders store may enter the Kun database');
   assert.equal(db.prepare('SELECT state FROM orders WHERE id=?').get(a.id).state,'pending',
     'Recovery must not change existing sibling store order');
+  // A previously HTTP 404 Short ID can arrive later. Revisit the durable
+  // queue and import once to this tenant/store, never update sibling orders.
+  const recovered502=await reconcileEasyOrdersOrders(env,{
+    clientId:'TENANT-A',connectionId:'CON-D',maxRequests:4,lookback:10,
+    fetcher:async url=>{
+      const id=Number(url.split('/').at(-1));
+      return id===502
+        ?Response.json({...p,id:'LATE-ORDER-502',short_id:502,store_id:'EO-EXTERNAL-D'})
+        :Response.json({message:'record not found'},{status:404});
+    }
+  });
+  assert.equal(recovered502.recovered,1,'Delayed 404 must be recoverable from the pending queue');
+  assert.equal(config('CON-D').easyOrdersRecoveryPendingShortIds.includes(502),false,
+    'Recovered Short ID must leave the durable retry list');
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM orders WHERE ref='easyorders:LATE-ORDER-502'").get().n,1,
+    'Delayed order must import exactly once into the same tenant and store');
+
   // Unbound integrations must be explicitly repaired via authenticated
   // webhook rather than assigning the first random provider store from API.
   db.prepare('INSERT INTO store_connections (id,client_id,provider,status,config_json,updated_at,external_store_id) VALUES (?,?,?,?,?,?,?)')
@@ -308,5 +345,68 @@ try{
   assert.equal(config('CON-SERVER').easyOrdersRecoveryCursor,802);
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM orders WHERE ref='easyorders:SERVER-RECOVER-800'").get().n,1);
   assert.deepEqual(serverAttempts,[800,800,801],'503 retry must fetch exactly the failed Short ID');
+  // Live-safe regression: Easy Orders actually returns HTTP 400 "record
+  // not found" for some Short IDs, yet a known order from the SAME store
+  // returns HTTP 200. Require a fresh positive control AND a second 400;
+  // queue the hole durably for later retry rather than losing the order.
+  db.prepare('INSERT INTO stores VALUES (?,?,?,?,?)').run('STORE-400','TENANT-A','active',0,now);
+  db.prepare('INSERT INTO store_connections (id,client_id,provider,status,config_json,updated_at,external_store_id) VALUES (?,?,?,?,?,?,?)')
+    .run('CON-400','TENANT-A','easyorders','connected',JSON.stringify({
+      kunStoreId:'STORE-400',webhookLastShortId:401,
+      easyOrdersRecoveryHighestShortId:401,easyOrdersRecoveryCursor:400
+    }),now,'EO-EXTERNAL-400');
+  db.prepare('INSERT INTO integration_secrets VALUES (?,?,?,?,?)').run(
+    'TENANT-A','CON-400','api_key',secret.ciphertextB64,secret.ivB64
+  );
+  let delayed400=true,attempts400=[];
+  const proven400Api=async (url,opts)=>{
+    assert.equal(opts.headers['Api-Key'],'ONLY-A-SYNTHETIC-EASYORDERS-API-KEY');
+    const id=Number(url.split('/').at(-1));attempts400.push(id);
+    if(id===400)return delayed400
+      ?Response.json({message:'record not found'},{status:400})
+      :Response.json({...p,id:'LATE-ORDER-400',short_id:400,store_id:'EO-EXTERNAL-400'});
+    if(id===401)return Response.json({...p,
+      id:'KNOWN-SHOP-401',short_id:401,store_id:'EO-EXTERNAL-400'});
+    return Response.json({message:'record not found'},{status:404});
+  };
+  const confirmed400=await reconcileEasyOrdersOrders(env,{
+    clientId:'TENANT-A',connectionId:'CON-400',maxRequests:4,
+    fetcher:proven400Api,trigger:'cron'
+  });
+  assert.equal(confirmed400.ok,true,JSON.stringify(confirmed400));
+  assert.deepEqual(attempts400,[400,401,400,401],
+    'First 400 requires known 200 identity proof and second independent 400');
+  assert.equal(confirmed400.requests,4,'Positive control and verification retry use bounded Cron quota');
+  assert.equal(config('CON-400').easyOrdersRecoveryCursor,402);
+  assert.deepEqual(config('CON-400').easyOrdersRecoveryPendingShortIds,[400],
+    'A 400 not-found historical gap is DURABLY queued, never forgotten');
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM orders WHERE ref='easyorders:LATE-ORDER-400'").get().n,0);
+  delayed400=false;attempts400=[];
+  const restored400=await reconcileEasyOrdersOrders(env,{
+    clientId:'TENANT-A',connectionId:'CON-400',maxRequests:8,
+    fetcher:proven400Api,trigger:'cron'
+  });
+  assert.equal(restored400.recovered,1,
+    'The previously missing 400 Short ID must be ingested when provider publishes it');
+  assert.equal(config('CON-400').easyOrdersRecoveryPendingShortIds.includes(400),false);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM orders WHERE ref='easyorders:LATE-ORDER-400'").get().n,1);
+  // No known positive reference means HTTP 400 must NOT be accepted as a
+  // missing order, even if the body says "record not found".
+  db.prepare('INSERT INTO stores VALUES (?,?,?,?,?)').run('STORE-400-UNSAFE','TENANT-A','active',0,now);
+  db.prepare('INSERT INTO store_connections (id,client_id,provider,status,config_json,updated_at,external_store_id) VALUES (?,?,?,?,?,?,?)')
+    .run('CON-400-UNSAFE','TENANT-A','easyorders','connected',JSON.stringify({
+      kunStoreId:'STORE-400-UNSAFE',
+      easyOrdersRecoveryHighestShortId:900,easyOrdersRecoveryCursor:900
+    }),now,'EO-EXTERNAL-UNSAFE');
+  db.prepare('INSERT INTO integration_secrets VALUES (?,?,?,?,?)').run(
+    'TENANT-A','CON-400-UNSAFE','api_key',secret.ciphertextB64,secret.ivB64
+  );
+  const unsafe400=await reconcileEasyOrdersOrders(env,{
+    clientId:'TENANT-A',connectionId:'CON-400-UNSAFE',maxRequests:5,
+    trigger:'cron',fetcher:async()=>Response.json({message:'record not found'},{status:400})
+  });
+  assert.equal(unsafe400.ok,false);
+  assert.equal(config('CON-400-UNSAFE').easyOrdersRecoveryCursor,900,
+    'Unverified 400 never checkpoints or marks the order absent');
   console.log('Easy Orders SQLite sync PASS: concurrent webhook/cron CAS, monotonic high-water, correct catching-up, tenant+store collision isolation, idempotent retries.');
 }finally{db.close();}

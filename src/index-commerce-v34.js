@@ -135,7 +135,9 @@ async function runScheduledWithEasyOrdersRecovery(controller,env,ctx){
   if(cron==='* * * * *')return {ok:true,easyOrdersRecovery:'skipped',metaNearLive:await syncAllMetaAdsNearLiveScheduled(env,{days:2})};
   if(cron==='0 */2 * * *')return {ok:true,easyOrdersRecovery:'skipped',metaGranular:await syncAllMetaAdsGranularScheduled(env,{days:30})};
   if(cron!=='*/5 * * * *')return {ok:true,easyOrdersRecovery:'skipped'};
-  const result=await reconcileEasyOrdersOrders(env,{maxRequests:30,lookback:80});
+  // Explicit Cron trigger enables same-store positive-control handling of upstream HTTP 400.
+  // The authenticated manual route remains in conservative non-Cron mode.
+  const result=await reconcileEasyOrdersOrders(env,{maxRequests:30,lookback:80,trigger:'cron'});
   await reconcileRecoveredFees(env,result);
   return result;
 }

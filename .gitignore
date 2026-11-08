@@ -9,3 +9,7 @@ node_modules/
 dist/
 .DS_Store
 *.log
+
+# Audit Sandbox config and private test-only secret files are local operator files.
+wrangler.audit-sandbox.toml
+.dev.vars.*
