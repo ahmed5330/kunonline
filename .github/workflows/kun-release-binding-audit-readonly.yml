@@ -1,0 +1,48 @@
+name: Kun PR359 release — read-only effective Cloudflare binding audit
+
+on:
+  push:
+    branches:
+      - release/kun-safe-integration-20261107
+    paths:
+      - '.github/workflows/kun-release-binding-audit-readonly.yml'
+      - 'scripts/cloudflare-effective-bindings-readonly.mjs'
+      - 'scripts/cloudflare-effective-bindings-readonly-test.mjs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kun-pr359-cloudflare-settings-readonly
+  cancel-in-progress: false
+
+jobs:
+  bindings-readonly:
+    runs-on: ubuntu-latest
+    environment:
+      name: preview
+    timeout-minutes: 7
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - name: Verify that no cloud secrets are needed for synthetic tests
+        env:
+          CLOUDFLARE_API_TOKEN: ''
+          CLOUDFLARE_ACCOUNT_ID: ''
+        run: node scripts/cloudflare-effective-bindings-readonly-test.mjs
+      - name: Verify actual Production and canonical Preview Worker bindings via Cloudflare GET only
+        run: |
+          set -euo pipefail
+          test -n "${CLOUDFLARE_ACCOUNT_ID}" && test -n "${CLOUDFLARE_API_TOKEN}"
+          node scripts/cloudflare-effective-bindings-readonly.mjs
+      - name: Explicitly refuse to claim safe deployment or backups
+        run: |
+          echo 'REMOTE WORKER BINDINGS ONLY; no customer D1 backup or restore verified.'
+          echo 'No Worker deploy, no D1 SQL, no migration, no traffic mutation.'
