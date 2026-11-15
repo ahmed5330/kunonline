@@ -29,11 +29,11 @@ release tags, newest aliases, manifests, or canonical binaries.
 
 ## Future uploads
 
-The separate signed-release workflow should publish the canonical versionCode
-APK, the stable direct link and manifest. Uploading a third byte-identical
-version-name alias in every release is not needed by the current manifest
-updater. Any decision to stop publishing that compatibility alias should
-be reviewed separately to ensure no external clients rely on it.
+The signed-release workflow in this draft change keeps the canonical
+versionCode APK, stable direct link and manifest, but stops uploading the
+third byte-identical version-name alias in future releases. The current
+manifest updater uses the canonical URL. Review compatibility with any
+external clients before merging the draft PR.
 
 Deleting release assets is independent of Git history and cannot be rolled
 back by reverting a commit. Review the dry run before applying.
