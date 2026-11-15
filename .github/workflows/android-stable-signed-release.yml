@@ -155,15 +155,12 @@ jobs:
         run: |
           set -euo pipefail
           CANONICAL="Kun-Online-Mobile-v${APP_VERSION}-c${APP_CODE}.apk"
-          VERSIONED="Kun-Online-Mobile-v${APP_VERSION}.apk"
           STABLE="Kun-Online-Mobile.apk"
           MANIFEST="Kun-Online-Mobile-latest.json"
 
           cp /tmp/Kun-Online-Mobile.apk "/tmp/$CANONICAL"
-          cp /tmp/Kun-Online-Mobile.apk "/tmp/$VERSIONED"
 
           gh release upload android-latest "/tmp/$CANONICAL" --clobber
-          gh release upload android-latest "/tmp/$VERSIONED" --clobber
           gh release upload android-latest "/tmp/$STABLE" --clobber
 
           node <<'NODE'
@@ -183,10 +180,9 @@ jobs:
             --notes "Stable-signed Kun Online Android v$APP_VERSION (code $APP_CODE). The permanent release manifest lets installed apps discover future signed releases automatically."
 
           gh release view android-latest --json assets --jq '.assets[].name' | grep -Fxq "$CANONICAL"
-          gh release view android-latest --json assets --jq '.assets[].name' | grep -Fxq "$VERSIONED"
           gh release view android-latest --json assets --jq '.assets[].name' | grep -Fxq "$STABLE"
           gh release view android-latest --json assets --jq '.assets[].name' | grep -Fxq "$MANIFEST"
-          echo "Published $CANONICAL, compatibility aliases, and $MANIFEST"
+          echo "Published $CANONICAL, stable link, and $MANIFEST"
 
       - name: Verify production updater discovers this release
         env:

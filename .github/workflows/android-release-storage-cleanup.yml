@@ -1,0 +1,45 @@
+name: Android release storage cleanup (manual and conservative)
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: 'Delete verified historical aliases instead of previewing'
+        type: boolean
+        required: true
+        default: false
+      confirmation:
+        description: 'For deletion type DELETE_VERIFIED_ZERO_DOWNLOAD_DUPLICATES'
+        type: string
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+concurrency:
+  group: kunonline-release-storage-cleanup
+  cancel-in-progress: false
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate cleanup selector
+        run: node --test scripts/release-storage-cleanup.test.cjs
+      - name: Preview verified historical aliases
+        if: ${{ !inputs.apply }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/release-storage-cleanup.cjs
+      - name: Apply with explicit typed confirmation
+        if: ${{ inputs.apply }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CLEANUP_CONFIRMATION: ${{ inputs.confirmation }}
+        run: node scripts/release-storage-cleanup.cjs --apply
