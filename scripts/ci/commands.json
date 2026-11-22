@@ -1,0 +1,55 @@
+{
+  "install": [
+    [
+      "npm",
+      "install",
+      "--ignore-scripts"
+    ]
+  ],
+  "quick": [
+    [
+      "node",
+      "--test",
+      "scripts/ci/verify.test.mjs"
+    ],
+    [
+      "npm",
+      "run",
+      "test:core"
+    ],
+    [
+      "npm",
+      "run",
+      "test:access"
+    ]
+  ],
+  "full": [
+    [
+      "node",
+      "--test",
+      "scripts/ci/verify.test.mjs"
+    ],
+    [
+      "npm",
+      "test"
+    ],
+    [
+      "npm",
+      "run",
+      "check:deploy"
+    ],
+    [
+      "npm",
+      "run",
+      "check:production-config"
+    ],
+    [
+      "node",
+      "node_modules/wrangler/bin/wrangler.js",
+      "deploy",
+      "--dry-run",
+      "--config",
+      "wrangler.production.toml"
+    ]
+  ]
+}

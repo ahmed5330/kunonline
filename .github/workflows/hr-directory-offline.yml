@@ -9,6 +9,10 @@ on:
       - '.github/workflows/hr-directory-offline.yml'
 permissions:
   contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   synthetic-hr:
     runs-on: ubuntu-latest

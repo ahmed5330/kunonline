@@ -9,3 +9,6 @@ node_modules/
 dist/
 .DS_Store
 *.log
+
+# Local CI evidence; never upload credentials or generated reports.
+.ci-status/
